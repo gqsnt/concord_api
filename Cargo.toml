@@ -1,0 +1,20 @@
+[workspace]
+members = [
+    "client_api_lib",
+    "client_api_macros",
+    "client_api_examples",
+]
+resolver = "3"
+
+
+[workspace.dependencies]
+reqwest = "0.13.1"
+http = "1.4.0"
+bytes = "1.11.0"
+serde = "1.0.228"
+serde_json = "1.0.148"
+base64 = "0.22.1"
+tokio = "1.48.0"
+thiserror = "2.0.17"
+urlencoding = "2.1.3"
+url="2.5.7"
