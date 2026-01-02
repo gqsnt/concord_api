@@ -323,6 +323,7 @@ impl Parse for QueryItem {
 
 #[derive(Debug)]
 pub struct EndpointDecl {
+    pub name: Ident, // user-defined endpoint name
     pub method: Ident,
     pub path: LitStr,
     pub headers: Vec<HeaderRule>,
@@ -341,6 +342,7 @@ pub struct MapClause {
 impl Parse for EndpointDecl {
     fn parse(input: ParseStream) -> Result<Self> {
         let method: Ident = input.parse()?;
+        let name: Ident = input.parse()?;
         let path: LitStr = input.parse()?;
 
         let mut headers_v = Vec::new();
@@ -384,6 +386,7 @@ impl Parse for EndpointDecl {
         input.parse::<Token![;]>()?;
 
         Ok(Self {
+            name,
             method,
             path,
             headers: headers_v,

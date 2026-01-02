@@ -80,16 +80,16 @@ mod api {
 
             // /posts
             path "posts" {
-                GET "" query { userId?: u32 } headers { "x-debug": "{debug:bool=false}" } -> JsonEncoding<Vec<models::Post>>;
-                GET "{id:i32}" headers {"x-test":"{name?:Region}"} -> JsonEncoding<models::Post>;
-                GET "{post_id:i32}/comments" -> JsonEncoding<Vec<models::Comment>>;
-                POST "" body JsonEncoding<models::NewPost>  -> JsonEncoding<models::Post>;
+               GET GetPosts "" query { userId?: u32 } headers { "x-debug": "{debug:bool=false}" } -> JsonEncoding<Vec<models::Post>>;
+                GET GetPost "{id:i32}" headers {"x-test":"{name?:Region}"} -> JsonEncoding<models::Post>;
+                GET GetPostComments "{post_id:i32}/comments" -> JsonEncoding<Vec<models::Comment>>;
+                POST CreatePost "" body JsonEncoding<models::NewPost>  -> JsonEncoding<models::Post>;
             }
 
             // /users
             path "users" {
-                GET "{id:i32}" -> JsonEncoding<models::User>;
-                GET "{id:i32}/posts" query { userId?: u32 } -> JsonEncoding<Vec<models::Post>> | Vec<String> => {
+                GET GetUser "{id:i32}" -> JsonEncoding<models::User>;
+                GET GetUserPosts "{id:i32}/posts" query { userId?: u32 } -> JsonEncoding<Vec<models::Post>> | Vec<String> => {
                     r.into_iter().map(|p| p.title).collect()
                 };
             }
