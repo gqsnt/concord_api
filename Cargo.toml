@@ -1,20 +1,43 @@
 [workspace]
-members = [
-    "client_api_lib",
-    "client_api_macros",
-    "client_api_examples",
-]
+members = ["concord_core", "concord_macros", "concord_examples"]
+default-members = ["concord_core", "concord_macros"]
 resolver = "3"
 
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-reqwest = "0.13.1"
+reqwest = { version = "0.13.1",default-features = false }
 http = "1.4.0"
 bytes = "1.11.0"
 serde = "1.0.228"
 serde_json = "1.0.148"
 base64 = "0.22.1"
-tokio = "1.48.0"
+tokio = {version = "1.48.0",default-features = false }
 thiserror = "2.0.17"
 urlencoding = "2.1.3"
 url="2.5.7"
+
+dotenvy = "0.15.7"
+
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+debug = false
+panic = "abort"
+
+
+[profile.dev.package.concord_macros]
+opt-level = 3
+
+[profile.dev.package.syn]
+opt-level = 3
+
+[profile.dev.package.quote]
+opt-level = 3
+
+[profile.dev.package.proc-macro2]
+opt-level = 3
