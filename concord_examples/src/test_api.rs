@@ -80,7 +80,7 @@ api! {
 }
 
 pub async fn test_api() -> Result<(), ApiClientError> {
-    let client = client::Client::new(client::Vars::new(true));
+    let client = client::Client::new(true);
 
     let posts = client
         .clone()

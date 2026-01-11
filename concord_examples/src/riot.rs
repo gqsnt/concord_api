@@ -462,10 +462,11 @@ pub mod models {
 
 pub async fn test_riot() -> Result<(), ApiClientError> {
 
+
     dotenvy::dotenv().ok();
     let api_key = dotenvy::var("RIOT_API_KEY").expect("RIOT_API_KEY missing");
 
-    let riot = riot_client::Client::new(riot_client::Vars::new(api_key));
+    let riot = riot_client::RiotClient::new(api_key);
     let default_region = RegionalRoute::Europe;
 
     let account = riot

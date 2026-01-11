@@ -13,7 +13,7 @@ pub fn emit(ir: Ir) -> TokenStream2 {
 
     let vars_struct = emit_client_vars(&ir.client_vars);
     let cx_struct = emit_client_context(&scheme, &domain, &ir.client_policy);
-
+    let client_wrapper = emit_client_wrapper(&ir);
     let internal_mod = emit_internal(&ir);
     let endpoints_mod = emit_endpoints(&ir);
 
@@ -24,7 +24,7 @@ pub fn emit(ir: Ir) -> TokenStream2 {
             #vars_struct
             #cx_struct
 
-            pub type Client = ::concord_core::prelude::ApiClient<Cx>;
+            #client_wrapper
 
             #endpoints_mod
             #internal_mod
@@ -312,6 +312,150 @@ fn emit_endpoints(ir: &Ir) -> TokenStream2 {
         pub mod endpoints {
             use super::*;
             #( #endpoint_defs )*
+        }
+    }
+}
+
+fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
+    use quote::quote;
+
+    let client_ty = &ir.client_name;
+
+    // same "required vars" as Vars::new(...)
+    let required: Vec<&VarInfo> = ir
+        .client_vars
+        .iter()
+        .filter(|v| !v.optional && v.default.is_none())
+        .collect();
+
+    let new_args: Vec<TokenStream2> = required
+        .iter()
+        .map(|v| {
+            let f = &v.rust;
+            let ty = &v.ty;
+            quote! { #f: #ty }
+        })
+        .collect();
+
+    let new_pass: Vec<TokenStream2> = required
+        .iter()
+        .map(|v| {
+            let f = &v.rust;
+            quote! { #f }
+        })
+        .collect();
+    let new_args = new_args.as_slice();
+    let new_pass = new_pass.as_slice();
+
+    let var_setters = ir.client_vars.iter().map(|v| {
+        let f = &v.rust;
+        let ty = &v.ty;
+        let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
+        if v.optional {
+            let clear_name = emit_helpers::ident(&format!("clear_{f}"), f.span());
+            quote! {
+                #[inline]
+                pub fn #set_name(&mut self, v: #ty) -> &mut Self {
+                    self.inner.vars_mut().#f = ::core::option::Option::Some(v);
+                    self
+                }
+                #[inline]
+                pub fn #clear_name(&mut self) -> &mut Self {
+                    self.inner.vars_mut().#f = ::core::option::Option::None;
+                    self
+                }
+            }
+        } else {
+            quote! {
+                #[inline]
+                pub fn #set_name(&mut self, v: #ty) -> &mut Self {
+                    self.inner.vars_mut().#f = v;
+                    self
+                }
+            }
+        }
+    });
+
+    quote! {
+        #[derive(Clone)]
+        pub struct #client_ty {
+            inner: ::concord_core::prelude::ApiClient<Cx>,
+        }
+
+        impl #client_ty {
+            #[inline]
+            pub fn new( #( #new_args ),* ) -> Self {
+                let vars = Vars::new( #( #new_pass ),* );
+                Self { inner: ::concord_core::prelude::ApiClient::<Cx>::new(vars) }
+            }
+
+            #[inline]
+            pub fn new_with_transport(
+                #( #new_args, )*
+                transport: impl ::concord_core::prelude::Transport
+            ) -> Self {
+                let vars = Vars::new( #( #new_pass ),* );
+                Self { inner: ::concord_core::prelude::ApiClient::<Cx>::with_transport(vars, transport) }
+            }
+
+            #( #var_setters )*
+
+            #[inline]
+            pub fn debug_level(&self) -> ::concord_core::prelude::DebugLevel {
+                self.inner.debug_level()
+            }
+
+            #[inline]
+            pub fn set_debug_level(&mut self, level: ::concord_core::prelude::DebugLevel) {
+                self.inner.set_debug_level(level);
+            }
+
+            #[inline]
+            pub fn with_debug_level(mut self, level: ::concord_core::prelude::DebugLevel) -> Self {
+                self.inner.set_debug_level(level);
+                self
+            }
+
+            #[inline]
+            pub fn pagination_caps(&self) -> ::concord_core::prelude::Caps {
+                self.inner.pagination_caps()
+            }
+
+            #[inline]
+            pub fn set_pagination_caps(&mut self, caps: ::concord_core::prelude::Caps) {
+                self.inner.set_pagination_caps(caps);
+            }
+
+            #[inline]
+            pub fn with_pagination_caps(mut self, caps: ::concord_core::prelude::Caps) -> Self {
+                self.inner.set_pagination_caps(caps);
+                self
+            }
+
+            #[inline]
+            pub async fn execute<E>(
+                &self,
+                ep: E,
+            ) -> ::core::result::Result<
+                <E::Response as ::concord_core::internal::ResponseSpec>::Output,
+                ::concord_core::prelude::ApiClientError
+            >
+            where
+                E: ::concord_core::prelude::Endpoint<Cx>,
+            {
+                self.inner.execute(ep).await
+            }
+
+            #[inline]
+            pub fn collect_all_items<E>(
+                &self,
+                ep: E,
+            ) -> ::concord_core::prelude::CollectAllItems<'_, Cx, E>
+            where
+                E: ::concord_core::prelude::CollectAllItemsEndpoint<Cx>,
+            {
+                self.inner.collect_all_items(ep)
+            }
         }
     }
 }

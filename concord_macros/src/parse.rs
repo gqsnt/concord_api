@@ -3,8 +3,7 @@ use crate::ast::*;
 use crate::kw;
 use syn::parse::{Parse, ParseStream};
 use syn::{braced, bracketed, token, Expr, Ident, LitStr, Path, Result, Token, Type};
-use proc_macro2::{TokenStream as TokenStream2, TokenTree};
-
+use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
 
 impl Parse for ApiFile {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -54,7 +53,7 @@ impl Parse for ClientDef {
             } else if content.peek(kw::timeout) {
                 content.parse::<kw::timeout>()?;
                 content.parse::<Token![:]>()?;
-                policy.timeout = Some(parse_expr_until_delim(&content)?);
+                policy.timeout = Some(content.parse::<Expr>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else {
                 let tt: proc_macro2::TokenTree = content.parse()?;
@@ -109,7 +108,7 @@ impl Parse for LayerDefTaggedPrefix {
             } else if content.peek(kw::timeout) {
                 content.parse::<kw::timeout>()?;
                 content.parse::<Token![:]>()?;
-                policy.timeout = Some(parse_expr_until_delim(&content)?);
+                policy.timeout = Some(content.parse::<Expr>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::prefix) || content.peek(kw::path) {
                 items.push(content.parse::<Item>()?);
@@ -148,7 +147,7 @@ impl Parse for LayerDefTaggedPath {
             } else if content.peek(kw::timeout) {
                 content.parse::<kw::timeout>()?;
                 content.parse::<Token![:]>()?;
-                policy.timeout = Some(parse_expr_until_delim(&content)?);
+                policy.timeout = Some(content.parse::<Expr>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::prefix) || content.peek(kw::path) {
                 items.push(content.parse::<Item>()?);
@@ -187,7 +186,7 @@ impl Parse for EndpointDef {
             } else if input.peek(kw::timeout) {
                 input.parse::<kw::timeout>()?;
                 input.parse::<Token![:]>()?;
-                policy.timeout = Some(parse_expr_until_delim(input)?);
+                policy.timeout = Some(parse_expr_until_comma_or_endpoint_arrow(input)?);
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::paginate) {
                 if paginate.is_some() {
@@ -274,35 +273,68 @@ struct PolicyBlockTaggedQuery(PolicyBlock);
 impl Parse for PolicyBlockTaggedHeaders {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::headers>()?;
-        Ok(Self(parse_policy_block(input)?))
+        Ok(Self(parse_policy_block(input, PolicyBlockKind::Headers)?))
     }
 }
 
 impl Parse for PolicyBlockTaggedQuery {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::query>()?;
-        Ok(Self(parse_policy_block(input)?))
+        Ok(Self(parse_policy_block(input, PolicyBlockKind::Query)?))
     }
 }
 
-fn parse_policy_block(input: ParseStream<'_>) -> Result<PolicyBlock> {
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum PolicyBlockKind {
+    Headers,
+    Query,
+}
+
+fn key_spec_span(key: &KeySpec) -> Span {
+    match key {
+        KeySpec::Ident(id) => id.span(),
+        KeySpec::Str(s) => s.span(),
+    }
+}
+
+fn stmt_span(stmt: &PolicyStmt) -> Span {
+    match stmt {
+        PolicyStmt::Remove { key } => key_spec_span(key),
+        PolicyStmt::Set { key, .. } => key_spec_span(key),
+        PolicyStmt::Bind { key, .. } => key_spec_span(key),
+        PolicyStmt::BindShort { ident_key, .. } => ident_key.span(),
+    }
+}
+
+fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<PolicyBlock> {
     let content;
     braced!(content in input);
     let mut stmts = Vec::new();
-    let mut first = true;
     while !content.is_empty() {
-        if !first {
-            if content.peek(Token![,]) {
-                content.parse::<Token![,]>()?;
-                if content.is_empty() {
-                    return Err(syn::Error::new(content.span(), "trailing `,` not allowed in policy block"));
-                }
-            } else {
-                return Err(syn::Error::new(content.span(), "expected `,` between policy statements"));
+        let stmt: PolicyStmt = content.parse()?;
+
+        // 1.2: `+=` is query-only. Forbid in `headers {}` with a direct diagnostic.
+        if kind == PolicyBlockKind::Headers {
+            if let PolicyStmt::Set { op: SetOp::Push, .. } = &stmt {
+                return Err(syn::Error::new(
+                    stmt_span(&stmt),
+                    "`+=` is not allowed in `headers {}` blocks (query-only operator)",
+                ));
             }
         }
-        stmts.push(content.parse::<PolicyStmt>()?);
-        first = false;
+
+        stmts.push(stmt);
+
+        // 1.3: allow trailing commas, but still require commas between statements.
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+            // trailing comma is allowed => if block ends after this, we simply exit
+            continue;
+        }
+        if !content.is_empty() {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(tt.span(), "expected `,` between policy statements"));
+        }
     }
     Ok(PolicyBlock { stmts })
 }
@@ -489,24 +521,6 @@ impl Parse for CodecSpec {
     }
 }
 
-
-fn parse_expr_until_delim(input: ParseStream<'_>) -> Result<Expr> {
-    let mut ts = TokenStream2::new();
-    while !input.is_empty()
-        && !input.peek(Token![->])
-        && !input.peek(Token![,])
-        && !input.peek(Token![;])
-    {
-        let tt: TokenTree = input.parse()?;
-        ts.extend(std::iter::once(tt));
-    }
-    if ts.is_empty() {
-        return Err(syn::Error::new(input.span(), "expected an expression"));
-    }
-    syn::parse2::<Expr>(ts)
-}
-
-
 fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue> {
     if input.peek(kw::fmt) {
         let fmt_kw: kw::fmt = input.parse()?;
@@ -568,4 +582,58 @@ fn parse_route_expr_dot(input: ParseStream<'_>) -> Result<RouteExpr> {
         atoms.push(parse_route_atom(input)?);
     }
     Ok(RouteExpr { atoms })
+}
+
+fn parse_expr_until_comma_or_endpoint_arrow(input: ParseStream<'_>) -> Result<Expr> {
+    let mut ts = TokenStream2::new();
+
+    // Small closure-awareness:
+    // If the timeout expr is a closure like `|x| -> T { ... }`, we must not stop on that `->`.
+    // We only stop on `->` when it is NOT immediately after a top-level closure parameter list.
+    let mut in_closure_params = false;
+    let mut just_closed_closure_params = false;
+
+    while !input.is_empty() {
+        if input.peek(Token![,]) {
+            break;
+        }
+
+        if input.peek(Token![->]) {
+            if just_closed_closure_params {
+                // This `->` belongs to a closure return type; consume it into the expr stream.
+                let t1: TokenTree = input.parse()?;
+                let t2: TokenTree = input.parse()?;
+                ts.extend([t1, t2]);
+                just_closed_closure_params = false;
+                continue;
+            }
+            // This is the endpoint `->` delimiter.
+            break;
+        }
+
+        let tt: TokenTree = input.parse()?;
+
+        // Track top-level closure `|...|` so we don't confuse its `->` with the endpoint `->`.
+        match &tt {
+            TokenTree::Punct(p) if p.as_char() == '|' => {
+                if !in_closure_params {
+                    in_closure_params = true;
+                    just_closed_closure_params = false;
+                } else {
+                    in_closure_params = false;
+                    just_closed_closure_params = true;
+                }
+            }
+            _ => {
+                if just_closed_closure_params {
+                    // Any token other than the closure `->` cancels the "just closed params" state.
+                    just_closed_closure_params = false;
+                }
+            }
+        }
+
+        ts.extend(std::iter::once(tt));
+    }
+
+    syn::parse2::<Expr>(ts)
 }

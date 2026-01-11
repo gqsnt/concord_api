@@ -20,8 +20,8 @@ async fn timeout_layering_client_path_endpoint() {
       }
 
       path "x" {
-        timeout: core::time::Duration::from_secs(10),
-        GET A "" timeout: core::time::Duration::from_secs(2) -> Json<()>;
+        timeout: core::time::Duration::from_secs(10)
+        GET A "" timeout: core::time::Duration::from_secs(2), -> Json<()>;
       }
     }
     use api_timeout::*;
@@ -87,4 +87,28 @@ async fn content_type_injection_only_when_missing_and_body_present() {
         assert!(req.headers.get(CONTENT_TYPE).is_none());
         assert!(req.body.is_none());
     }
+}
+
+
+
+#[tokio::test]
+async fn timeout_endpoint_allows_no_comma_before_arrow() {
+    api! {
+        client ApiTimeoutNoComma {
+            scheme: https,
+            host: "example.com",
+            timeout: core::time::Duration::from_secs(30)
+        }
+        path "x" {
+            timeout: core::time::Duration::from_secs(10)
+            // NOTE: no comma before `->`
+            GET A "" timeout: core::time::Duration::from_secs(2) -> Json<()>;
+        }
+    }
+    use api_timeout_no_comma::*;
+    let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
+    let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+    let _ = api.execute(endpoints::A::new()).await.unwrap();
+    let req = &recorded.lock().unwrap()[0];
+    assert_eq!(req.timeout, Some(core::time::Duration::from_secs(2)));
 }

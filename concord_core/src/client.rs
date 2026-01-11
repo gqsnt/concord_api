@@ -57,6 +57,21 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     pub fn vars(&self) -> &Cx::Vars {
         &self.vars
     }
+
+    #[inline]
+    pub fn vars_mut(&mut self) -> &mut Cx::Vars {
+        &mut self.vars
+    }
+
+    #[inline]
+    pub fn set_vars(&mut self, vars: Cx::Vars) {
+        self.vars = vars;
+    }
+
+    #[inline]
+    pub fn update_vars(&mut self, f: impl FnOnce(&mut Cx::Vars)) {
+        f(&mut self.vars);
+    }
     #[inline]
     pub fn transport(&self) -> &Arc<dyn Transport> {
         &self.transport
