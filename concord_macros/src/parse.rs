@@ -92,7 +92,7 @@ struct LayerDefTaggedPath(LayerDef);
 impl Parse for LayerDefTaggedPrefix {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::prefix>()?;
-        let template: LitStr = input.parse()?;
+        let route: RouteExpr = parse_route_expr_dot(input)?;
         let content;
         braced!(content in input);
 
@@ -121,7 +121,7 @@ impl Parse for LayerDefTaggedPrefix {
 
         Ok(Self(LayerDef {
             kind: LayerKind::Prefix,
-            template,
+            route,
             policy,
             items,
         }))
@@ -131,7 +131,7 @@ impl Parse for LayerDefTaggedPrefix {
 impl Parse for LayerDefTaggedPath {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::path>()?;
-        let template: LitStr = input.parse()?;
+        let route: RouteExpr = parse_route_expr_slash(input)?;
         let content;
         braced!(content in input);
 
@@ -159,7 +159,7 @@ impl Parse for LayerDefTaggedPath {
 
         Ok(Self(LayerDef {
             kind: LayerKind::Path,
-            template,
+            route,
             policy,
             items,
         }))
@@ -170,7 +170,7 @@ impl Parse for EndpointDef {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let method: Ident = input.parse()?;
         let name: Ident = input.parse()?;
-        let route: LitStr = input.parse()?;
+        let route: RouteExpr = parse_route_expr_slash(input)?;
 
         let mut policy = PolicyBlocks::default();
         let mut paginate: Option<PaginateSpec> = None;
@@ -221,7 +221,7 @@ impl Parse for EndpointDef {
             None
         };
 
-        let semi: token::Semi = input.parse()?;
+        let _semi: token::Semi = input.parse()?;
 
         Ok(Self {
             method,
@@ -232,7 +232,6 @@ impl Parse for EndpointDef {
             body,
             response,
             map,
-            semi,
         })
     }
 }
@@ -536,4 +535,37 @@ fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue>
     }
 
     Ok(PolicyValue::Expr(input.parse::<syn::Expr>()?))
+}
+
+
+fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
+    if input.peek(LitStr) {
+        return Ok(RouteAtom::Static(input.parse::<LitStr>()?));
+    }
+    if input.peek(token::Brace) {
+        let b = input.parse::<Braced<TemplateVarDecl>>()?;
+        return Ok(RouteAtom::Var(b.inner));
+    }
+    let tt: proc_macro2::TokenTree = input.parse()?;
+    Err(syn::Error::new(tt.span(), "expected string literal or `{var:Ty}` in route"))
+}
+
+fn parse_route_expr_slash(input: ParseStream<'_>) -> Result<RouteExpr> {
+    let mut atoms: Vec<RouteAtom> = Vec::new();
+    atoms.push(parse_route_atom(input)?);
+    while input.peek(Token![/]) {
+        input.parse::<Token![/]>()?;
+        atoms.push(parse_route_atom(input)?);
+    }
+    Ok(RouteExpr { atoms })
+}
+
+fn parse_route_expr_dot(input: ParseStream<'_>) -> Result<RouteExpr> {
+    let mut atoms: Vec<RouteAtom> = Vec::new();
+    atoms.push(parse_route_atom(input)?);
+    while input.peek(Token![.]) {
+        input.parse::<Token![.]>()?;
+        atoms.push(parse_route_atom(input)?);
+    }
+    Ok(RouteExpr { atoms })
 }

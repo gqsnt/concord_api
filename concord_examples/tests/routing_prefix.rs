@@ -32,7 +32,7 @@ async fn prefix_default_and_override_and_order() {
         host: "example.com",
       }
 
-      prefix "{region:Region=Region::EUW}.api" {
+     prefix {region:Region=Region::EUW} . "api" {
         GET Ping "" -> Json<()>;
       }
     }
@@ -64,7 +64,7 @@ async fn prefix_optional_label_omitted_without_double_dot() {
         host: "example.com",
       }
 
-      prefix "{sub?:String}.api" {
+     prefix {sub?:String} . "api" {
         GET Ping "" -> Json<()>;
       }
     }
@@ -95,7 +95,7 @@ async fn prefix_host_label_validation_errors() {
         host: "example.com",
       }
 
-      prefix "{region:Region=Region::EUW}.api" {
+      prefix {region:Region=Region::EUW} . "api" {
         GET Ping "" -> Json<()>;
       }
     }

@@ -13,7 +13,7 @@ async fn path_concat_and_percent_encoding_and_alias() {
       }
 
       path "lol" {
-        GET GetMatch "matches/{matchId as match_id:String}" -> Json<()>;
+       GET GetMatch "matches" / {matchId as match_id:String} -> Json<()>;
       }
     }
     use api_path::*;
@@ -37,7 +37,7 @@ async fn optional_path_segment_omitted_no_double_slash() {
       }
 
       // endpoint path contains an optional segment
-      GET One "x/{opt?:String}/y" -> Json<()>;
+      GET One "x" / {opt?:String} / "y" -> Json<()>;
     }
     use api_opt_seg::*;
 

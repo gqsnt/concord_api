@@ -15,50 +15,50 @@ api! {
     }
 
     // PLATFORM ROUTING: {platform}.api.riotgames.com
-    prefix "{platform:PlatformRoute}.api" {
+   prefix {platform:PlatformRoute} . "api"{
         path "lol" {
             path "summoner/v4/summoners" {
-                GET GetSummonerByPuuid "by-puuid/{puuid:String}" -> Json<models::SummonerDto>;
-                GET GetSummonerById "{summoner_id:String}" -> Json<models::SummonerDto>;
-                GET GetSummonerByName "by-name/{summoner_name:String}" -> Json<models::SummonerDto>;
+                GET GetSummonerByPuuid "by-puuid" / {puuid:String} -> Json<models::SummonerDto>;
+                GET GetSummonerById {summoner_id:String} -> Json<models::SummonerDto>;
+                GET GetSummonerByName "by-name" / {summoner_name:String} -> Json<models::SummonerDto>;
             }
 
             path "champion-mastery/v4" {
                 path "champion-masteries" {
-                    GET GetChampionMasteriesBySummoner "by-summoner/{summoner_id:String}"
+                    GET GetChampionMasteriesBySummoner "by-summoner" / {summoner_id:String}
                         -> Json<Vec<models::ChampionMasteryDto>>;
 
-                    GET GetChampionMasteryByChampion "by-summoner/{summoner_id:String}/by-champion/{champion_id:i64}"
+                    GET GetChampionMasteryByChampion "by-summoner" / {summoner_id:String} / "by-champion" / {champion_id:i64}
                         -> Json<models::ChampionMasteryDto>;
                 }
 
                 path "scores" {
-                    GET GetChampionMasteryScore "by-summoner/{summoner_id:String}" -> Json<i32>;
+                    GET GetChampionMasteryScore "by-summoner" / {summoner_id:String} -> Json<i32>;
                 }
             }
 
             path "league/v4" {
                 path "challengerleagues" {
-                    GET GetChallengerLeagueByQueue "by-queue/{queue:LeagueQueue}" -> Json<models::LeagueListDto>;
+                    GET GetChallengerLeagueByQueue "by-queue" / {queue:LeagueQueue} -> Json<models::LeagueListDto>;
                 }
 
                 path "grandmasterleagues" {
-                    GET GetGrandmasterLeagueByQueue "by-queue/{queue:LeagueQueue}" -> Json<models::LeagueListDto>;
+                    GET GetGrandmasterLeagueByQueue "by-queue" / {queue:LeagueQueue}-> Json<models::LeagueListDto>;
                 }
 
                 path "masterleagues" {
-                    GET GetMasterLeagueByQueue "by-queue/{queue:LeagueQueue}" -> Json<models::LeagueListDto>;
+                    GET GetMasterLeagueByQueue "by-queue" / {queue:LeagueQueue} -> Json<models::LeagueListDto>;
                 }
 
                 path "leagues" {
-                    GET GetLeagueById "{league_id:String}" -> Json<models::LeagueListDto>;
+                    GET GetLeagueById  {league_id:String} -> Json<models::LeagueListDto>;
                 }
 
                 path "entries" {
-                    GET GetLeagueEntriesBySummoner "by-summoner/{summoner_id:String}"
+                    GET GetLeagueEntriesBySummoner "by-summoner" / {summoner_id:String}
                         -> Json<Vec<models::LeagueEntryDto>>;
 
-                    GET GetLeagueEntries "{queue:String}/{tier:String}/{division:String}"
+                    GET GetLeagueEntries {queue:String} / {tier:String} / {division:String}
                         query { page?: u32 }
                         -> Json<Vec<models::LeagueEntryDto>>;
                 }
@@ -70,7 +70,7 @@ api! {
                 }
 
                 path "active-games/by-summoner" {
-                    GET GetCurrentGameInfoBySummoner "{summoner_id:String}" -> Json<models::CurrentGameInfoDto>;
+                    GET GetCurrentGameInfoBySummoner  {summoner_id:String} -> Json<models::CurrentGameInfoDto>;
                 }
             }
 
@@ -81,19 +81,19 @@ api! {
     }
 
     // REGIONAL ROUTING: {region}.api.riotgames.com
-    prefix "{region:RegionalRoute}.api" {
+    prefix {region:RegionalRoute} . "api" {
         path "riot/account/v1/accounts" {
-            GET GetAccountByRiotId "by-riot-id/{game_name:String}/{tag_line:String}" -> Json<models::AccountDto>;
-            GET GetAccountByPuuid "by-puuid/{puuid:String}" -> Json<models::AccountDto>;
+            GET GetAccountByRiotId "by-riot-id" / {game_name:String} / {tag_line:String} -> Json<models::AccountDto>;
+            GET GetAccountByPuuid "by-puuid" / {puuid:String} -> Json<models::AccountDto>;
         }
 
         path "riot/account/v1/active-shards" {
-            GET GetActiveShardByGameAndPuuid "by-game/{game:String}/by-puuid/{puuid:String}"
+            GET GetActiveShardByGameAndPuuid "by-game" / {game:String} / "by-puuid" / {puuid:String}
                 -> Json<models::ActiveShardDto>;
         }
 
         path "lol/match/v5/matches" {
-            GET GetMatchIdsByPuuid "by-puuid/{puuid:String}/ids"
+            GET GetMatchIdsByPuuid "by-puuid" / {puuid:String} / "ids"
                 query {
                     queue?: u16,
                     "startTime" as start_time?: i64,
@@ -107,8 +107,8 @@ api! {
                 }
                 -> Json<Vec<String>>;
 
-            GET GetMatch "{match_id:String}" -> Json<models::MatchDto>;
-            GET GetTimeline "{match_id:String}/timeline" -> Json<models::TimelineDto>;
+            GET GetMatch {match_id:String} -> Json<models::MatchDto>;
+            GET GetTimeline {match_id:String} / "timeline" -> Json<models::TimelineDto>;
         }
     }
 }
@@ -127,20 +127,19 @@ api! {
         path "api" {
             GET GetVersions "versions.json" -> Json<Vec<String>>;
             // NOTE: pass region including ".json" (ex: "euw.json")
-            GET GetRealmByRegion "realms/{region:String}" -> Json<models::RealmDto>;
+            GET GetRealmByRegion "realms" / {region:String} -> Json<models::RealmDto>;
         }
 
         path "cdn" {
             GET GetLanguages "languages.json" -> Json<Vec<String>>;
         }
-
-        path "cdn/{version:String}" {
-            path "data/{locale:String=\"en_US\".to_string()}" {
+        path "cdn" / {version:String} {
+            path "data" / {locale:String="en_US".to_string()} {
                 path "champion" {
                     GET GetChampionList "champion.json" -> Json<models::ChampionListDto>;
                     GET GetChampionFull "championFull.json" -> Json<serde_json::Value>;
                     // NOTE: pass champion including ".json" (ex: "Aatrox.json")
-                    GET GetChampionDetail "{champion:String}" -> Json<models::ChampionDetailDto>;
+                    GET GetChampionDetail {champion:String} -> Json<models::ChampionDetailDto>;
                 }
 
                 GET GetSummonerSpells "summoner.json" -> Json<models::SummonerSpellListDto>;

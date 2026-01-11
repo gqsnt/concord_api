@@ -1,5 +1,4 @@
 use concord_macros::api;
-use concord_core::prelude::Json;
 
 api! {
   client UiDup {
@@ -8,8 +7,7 @@ api! {
   }
 
   // same rust field name, different types => must fail
-  GET A "x/{id:u32}" -> Json<()>;
-  GET B "y/{id:String}" -> Json<()>;
+  GET A "x" / {id:u32} query {id:String} -> Json<()>;
 }
 
 fn main() {

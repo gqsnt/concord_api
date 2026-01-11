@@ -543,14 +543,13 @@ fn emit_policy_ops(policy: &PolicyBlocksResolved, kind: PolicyKeyKind, ctx: Poli
 
     ops.iter()
         .map(|op| match op {
-            PolicyOp::Remove { key, kind: _ } => emit_remove_op(key, kind, ctx),
+            PolicyOp::Remove { key } => emit_remove_op(key, kind, ctx),
             PolicyOp::Bind { key, field, optional, kind: _ } => emit_bind_op(key, kind, field, *optional, ctx),
             PolicyOp::Set {
                 key,
                 value,
                 op,
                 conditional_on_optional_ref,
-                kind: _,
             } => emit_set_op(key, kind, value, *op, *conditional_on_optional_ref, ctx),
         })
         .collect()

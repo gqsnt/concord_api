@@ -3,7 +3,6 @@ use crate::ast::*;
 use crate::emit_helpers;
 use proc_macro2::Span;
 use std::collections::{BTreeMap};
-use std::str::FromStr;
 use syn::{spanned::Spanned, Expr, Ident, LitStr, Result, Type};
 
 #[derive(Debug)]
@@ -32,7 +31,6 @@ pub struct VarInfo {
 pub struct LayerIr {
     pub id: usize,
     pub kind: LayerKind,
-    pub template: LitStr,
     pub prefix_pieces: Vec<PrefixPiece>, // if Prefix
     pub path_pieces: Vec<PathPiece>,     // if Path
     pub policy: PolicyBlocksResolved,
@@ -43,7 +41,6 @@ pub struct LayerIr {
 pub struct EndpointIr {
     pub name: Ident,
     pub method: Ident,
-    pub route: LitStr,
     pub route_pieces: Vec<PathPiece>,
 
     pub ancestry: Vec<usize>, // layer ids in nesting order (outer -> inner)
@@ -86,10 +83,9 @@ pub struct PolicyBlocksResolved {
 
 #[derive(Debug, Clone)]
 pub enum PolicyOp {
-    Remove { key: KeyResolved, kind: PolicyKeyKind },
+    Remove { key: KeyResolved },
     Set {
         key: KeyResolved,
-        kind: PolicyKeyKind,
         value: ValueKind,
         op: SetOp,
         // if value is a pure optional ref, emit conditional set/remove
@@ -213,15 +209,14 @@ fn collect_client_binds(policy: &PolicyBlocks, out: &mut BTreeMap<String, VarInf
     // nouveau: fmt decls
     for blk in policy.headers.iter().chain(policy.query.iter()) {
         for stmt in &blk.stmts {
-            if let PolicyStmt::Set { value, .. } = stmt {
-                if let crate::ast::PolicyValue::Fmt(fmt) = value {
+            if let PolicyStmt::Set { value, .. } = stmt
+                && let crate::ast::PolicyValue::Fmt(fmt) = value {
                     for p in &fmt.pieces {
                         if let crate::ast::FmtPiece::Var(d) = p {
                             upsert_var(out, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
                         }
                     }
                 }
-            }
         }
     }
 
@@ -232,8 +227,8 @@ fn collect_client_binds(policy: &PolicyBlocks, out: &mut BTreeMap<String, VarInf
 fn collect_policy_fmt_decls(policy: &crate::ast::PolicyBlocks, out: &mut Vec<VarInfo>) {
     for blk in policy.headers.iter().chain(policy.query.iter()) {
         for stmt in &blk.stmts {
-            if let crate::ast::PolicyStmt::Set { value, .. } = stmt {
-                if let crate::ast::PolicyValue::Fmt(fmt) = value {
+            if let crate::ast::PolicyStmt::Set { value, .. } = stmt
+                && let crate::ast::PolicyValue::Fmt(fmt) = value {
                     for p in &fmt.pieces {
                         if let crate::ast::FmtPiece::Var(d) = p {
                             out.push(VarInfo {
@@ -245,7 +240,6 @@ fn collect_policy_fmt_decls(policy: &crate::ast::PolicyBlocks, out: &mut Vec<Var
                         }
                     }
                 }
-            }
         }
     }
 }
@@ -307,8 +301,7 @@ fn walk_items(
         match it {
             Item::Layer(ld) => {
                 let id = layers.len();
-                let (prefix_pieces, path_pieces, decls) = analyze_layer_template_and_decls(ld)?;
-
+                let (prefix_pieces, path_pieces, decls) = analyze_layer_route_and_decls(ld)?;
                 let policy = resolve_policy_blocks(
                     &ld.policy,
                     PolicyOwner::Layer,
@@ -319,7 +312,6 @@ fn walk_items(
                 layers.push(LayerIr {
                     id,
                     kind: ld.kind,
-                    template: ld.template.clone(),
                     prefix_pieces,
                     path_pieces,
                     policy,
@@ -339,48 +331,74 @@ fn walk_items(
     Ok(())
 }
 
-fn analyze_layer_template_and_decls(ld: &LayerDef) -> Result<(Vec<PrefixPiece>, Vec<PathPiece>, Vec<VarInfo>)> {
-    let span = ld.template.span();
-    let s = ld.template.value();
+fn reject_formatted_lit(lit: &LitStr, ctx: &'static str) -> Result<()> {
+    let s = lit.value();
+    if s.contains('{') || s.contains('}') {
+        return Err(syn::Error::new(
+            lit.span(),
+            format!(
+                "{ctx} string literals must not contain `{{` or `}}`; use separate atoms (e.g. \"a\" / {{id:Ty}} / \"b\" or {{x:Ty}} . \"api\")"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn varinfo_from_decl(d: &TemplateVarDecl) -> VarInfo {
+    VarInfo {
+        rust: d.rust.clone(),
+        optional: d.optional,
+        ty: d.ty.clone(),
+        default: d.default.clone(),
+    }
+}
+
+fn analyze_layer_route_and_decls(ld: &LayerDef) -> Result<(Vec<PrefixPiece>, Vec<PathPiece>, Vec<VarInfo>)> {
     let mut decls: Vec<VarInfo> = Vec::new();
+    let mut prefix_pieces: Vec<PrefixPiece> = Vec::new();
+    let mut path_pieces: Vec<PathPiece> = Vec::new();
 
-    let (prefix_pieces, path_pieces) = match ld.kind {
+    match ld.kind {
         LayerKind::Prefix => {
-            let pieces = parse_prefix_template(&s, span)?;
-            (pieces, Vec::new())
-        }
-        LayerKind::Path => {
-            let pieces = parse_path_template(&s, span)?;
-            (Vec::new(), pieces)
-        }
-    };
-
-    // Collect declared vars from placeholders WITH full type/default by parsing again.
-    // Prefix:
-    if ld.kind == LayerKind::Prefix {
-        for part in s.split('.') {
-            let part = part.trim();
-            if is_braced(part) {
-                let decl = parse_template_var_decl_str(strip_braces(part), span)?;
-                decls.push(VarInfo {
-                    rust: decl.rust,
-                    optional: decl.optional,
-                    ty: decl.ty,
-                    default: decl.default,
-                });
+            for atom in &ld.route.atoms {
+                match atom {
+                    RouteAtom::Static(lit) => {
+                        reject_formatted_lit(lit, "prefix")?;
+                        // Allow "a.b.c" as a shorthand: split into host labels.
+                        for label in lit.value().split('.') {
+                            let label = label.trim();
+                            if label.is_empty() {
+                                return Err(syn::Error::new(lit.span(), "prefix label must not be empty"));
+                            }
+                            prefix_pieces.push(PrefixPiece::Static(label.to_string()));
+                        }
+                    }
+                    RouteAtom::Var(d) => {
+                        decls.push(varinfo_from_decl(d));
+                        prefix_pieces.push(PrefixPiece::Var {
+                            wire: d.wire.to_string(),
+                            field: d.rust.clone(),
+                            optional: d.optional,
+                        });
+                    }
+                }
             }
         }
-    } else {
-        for part in s.split('/') {
-            let part = part.trim();
-            if is_braced(part) {
-                let decl = parse_template_var_decl_str(strip_braces(part), span)?;
-                decls.push(VarInfo {
-                    rust: decl.rust,
-                    optional: decl.optional,
-                    ty: decl.ty,
-                    default: decl.default,
-                });
+        LayerKind::Path => {
+            for atom in &ld.route.atoms {
+                match atom {
+                    RouteAtom::Static(lit) => {
+                        reject_formatted_lit(lit, "path")?;
+                        path_pieces.push(PathPiece::Static(lit.value()));
+                    }
+                    RouteAtom::Var(d) => {
+                        decls.push(varinfo_from_decl(d));
+                        path_pieces.push(PathPiece::Var {
+                            field: d.rust.clone(),
+                            optional: d.optional,
+                        });
+                    }
+                }
             }
         }
     }
@@ -415,9 +433,22 @@ fn analyze_endpoint(
     client_vars: &BTreeMap<String, VarInfo>,
     layers: &[LayerIr],
 ) -> Result<EndpointIr> {
-    let span = ed.route.span();
-    let route_str = ed.route.value();
-    let route_pieces = parse_path_template(&route_str, span)?;
+    let mut route_pieces: Vec<PathPiece> = Vec::new();
+    // Convert route expr to pieces; forbid old "a/{x}" inside string literals.
+    for atom in &ed.route.atoms {
+        match atom {
+            RouteAtom::Static(lit) => {
+                reject_formatted_lit(lit, "endpoint route")?;
+                route_pieces.push(PathPiece::Static(lit.value()));
+            }
+            RouteAtom::Var(d) => {
+                route_pieces.push(PathPiece::Var {
+                    field: d.rust.clone(),
+                    optional: d.optional,
+                });
+            }
+        }
+    }
 
     // Build endpoint var registry: collect vars from all ancestry layer decls + endpoint route decls + endpoint binds
     let mut ep_vars: BTreeMap<String, VarInfo> = BTreeMap::new();
@@ -429,14 +460,12 @@ fn analyze_endpoint(
         }
     }
 
-    // endpoint route placeholders decls
-    for part in route_str.split('/') {
-        let part = part.trim();
-        if is_braced(part) {
-            let decl = parse_template_var_decl_str(strip_braces(part), span)?;
-            upsert_var(&mut ep_vars, &decl.rust, decl.optional, &decl.ty, decl.default.as_ref())?;
+    for atom in &ed.route.atoms {
+        if let RouteAtom::Var(d) = atom {
+            upsert_var(&mut ep_vars, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
         }
     }
+
 
     // endpoint binds decls
     for blk in ed.policy.headers.iter().chain(ed.policy.query.iter()) {
@@ -478,7 +507,6 @@ fn analyze_endpoint(
     Ok(EndpointIr {
         name: ed.name.clone(),
         method: ed.method.clone(),
-        route: ed.route.clone(),
         route_pieces,
         ancestry: ancestry.to_vec(),
         vars: ep_vars.values().cloned().collect(),
@@ -555,7 +583,6 @@ fn resolve_policy_block(
             PolicyStmt::Remove { key } => {
                 ops.push(PolicyOp::Remove {
                     key: resolve_key(key),
-                    kind,
                 });
             }
             PolicyStmt::Set { key, value, op } => {
@@ -584,7 +611,6 @@ fn resolve_policy_block(
 
                 ops.push(PolicyOp::Set {
                     key: resolve_key(key),
-                    kind,
                     value: vk,
                     op: *op,
                     conditional_on_optional_ref: cond,
@@ -773,68 +799,6 @@ fn resolve_policy_value_kind(
     }
 }
 
-
-
-fn parse_prefix_template(s: &str, span: Span) -> Result<Vec<PrefixPiece>> {
-    let parts: Vec<&str> = s.split('.').map(|p| p.trim()).collect();
-    if parts.is_empty() {
-        return Err(syn::Error::new(span, "empty prefix template"));
-    }
-    let mut out = Vec::new();
-    for part in parts {
-        if part.is_empty() {
-            return Err(syn::Error::new(span, "empty label in prefix template"));
-        }
-        if is_braced(part) {
-            let decl = parse_template_var_decl_str(strip_braces(part), span)?;
-            out.push(PrefixPiece::Var {
-                wire: decl.wire.to_string(),
-                field: decl.rust,
-                optional: decl.optional,
-            });
-        } else {
-            out.push(PrefixPiece::Static(part.to_string()));
-        }
-    }
-    Ok(out)
-}
-
-fn parse_path_template(s: &str, span: Span) -> Result<Vec<PathPiece>> {
-    let raw = s.trim();
-    if raw.is_empty() {
-        return Ok(Vec::new());
-    }
-    let parts: Vec<&str> = raw.split('/').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
-    let mut out = Vec::new();
-    for part in parts {
-        if is_braced(part) {
-            let decl = parse_template_var_decl_str(strip_braces(part), span)?;
-            out.push(PathPiece::Var {
-                field: decl.rust,
-                optional: decl.optional,
-            });
-        } else {
-            out.push(PathPiece::Static(part.to_string()));
-        }
-    }
-    Ok(out)
-}
-
-fn is_braced(s: &str) -> bool {
-    s.starts_with('{') && s.ends_with('}') && s.len() >= 2
-}
-
-fn strip_braces(s: &str) -> &str {
-    &s[1..s.len() - 1]
-}
-
-fn parse_template_var_decl_str(s: &str, span: Span) -> Result<TemplateVarDecl> {
-    // Parse with syn from a string token stream.
-    let ts = proc_macro2::TokenStream::from_str(s)
-        .map_err(|e| syn::Error::new(span, format!("invalid placeholder decl: {e}")))?;
-    syn::parse2::<TemplateVarDecl>(ts)
-        .map_err(|e| syn::Error::new(span, format!("invalid placeholder decl: {e}")))
-}
 
 impl syn::parse::Parse for TemplateVarDecl {
     fn parse(input: syn::parse::ParseStream<'_>) -> Result<Self> {

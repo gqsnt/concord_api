@@ -1,5 +1,5 @@
 use proc_macro2::Span;
-use syn::{braced, token, Expr, Ident, LitStr, Path, Type};
+use syn::{braced, Expr, Ident, LitStr, Path, Type};
 use syn::spanned::Spanned;
 
 #[derive(Debug)]
@@ -34,10 +34,22 @@ pub enum LayerKind {
     Path,
 }
 
+
+#[derive(Debug, Clone)]
+pub struct RouteExpr {
+    pub atoms: Vec<RouteAtom>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RouteAtom {
+    Static(LitStr),
+    Var(TemplateVarDecl),
+}
+
 #[derive(Debug)]
 pub struct LayerDef {
     pub kind: LayerKind,
-    pub template: LitStr,
+    pub route: RouteExpr,
     pub policy: PolicyBlocks,
     pub items: Vec<Item>,
 }
@@ -46,7 +58,7 @@ pub struct LayerDef {
 pub struct EndpointDef {
     pub method: Ident, // "GET", "POST", ...
     pub name: Ident,
-    pub route: LitStr,
+    pub route: RouteExpr,
 
     pub policy: PolicyBlocks,
 
@@ -56,7 +68,6 @@ pub struct EndpointDef {
     pub response: CodecSpec,
     pub map: Option<MapSpec>,
 
-    pub semi: token::Semi,
 }
 
 #[derive(Debug)]
@@ -146,16 +157,15 @@ pub struct CodecSpec {
 
 /// Parser helper for blocks.
 pub struct Braced<T> {
-    pub brace: token::Brace,
     pub inner: T,
 }
 
 impl<T: syn::parse::Parse> syn::parse::Parse for Braced<T> {
     fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
         let content;
-        let brace = braced!(content in input);
+        braced!(content in input);
         let inner = content.parse::<T>()?;
-        Ok(Self { brace, inner })
+        Ok(Self { inner })
     }
 }
 

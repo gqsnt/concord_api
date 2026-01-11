@@ -60,17 +60,17 @@ api! {
                 }
                 -> Json<Vec<models::Post>>;
 
-            GET GetPost "{id:i32}" -> Json<models::Post>;
+            GET GetPost {id:i32} -> Json<models::Post>;
 
-            GET GetPostComments "{post_id:i32}/comments" -> Json<Vec<models::Comment>>;
+            GET GetPostComments {post_id:i32}/"comments" -> Json<Vec<models::Comment>>;
 
             POST CreatePost "" body Json<models::NewPost> -> Json<models::Post>;
         }
 
         path "users" {
-            GET GetUser "{id:i32}" -> Json<models::User>;
+            GET GetUser {id:i32} -> Json<models::User>;
 
-            GET GetUserPosts "{id:i32}/posts"
+            GET GetUserPosts {id:i32}/"posts"
                 query { "userId" as user_id?: u32 }
                 -> Json<Vec<models::Post>> | Vec<String> => {
                     IntoIterator::into_iter(r).map(|p| p.title).collect()
