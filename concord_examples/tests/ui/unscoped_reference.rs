@@ -5,7 +5,7 @@ api! {
     scheme: https,
     host: "example.com",
     headers {
-      "x" = token; // ERROR: unscoped
+      "x" = token // ERROR: unscoped
     }
   }
 }

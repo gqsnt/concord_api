@@ -5,7 +5,7 @@ api! {
     scheme: https,
     host: "example.com",
     headers {
-      "x" = cx.missing; // ERROR: unknown cx var
+      "x" = cx.missing // ERROR: unknown cx var
     }
   }
 }

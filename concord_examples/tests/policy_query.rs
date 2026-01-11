@@ -11,21 +11,21 @@ async fn query_set_remove_push_override_and_tostring() {
         scheme: https,
         host: "example.com",
         query {
-          "sdk" = "concord";
-          "dup" += "c0";
+          "sdk" = "concord",
+          "dup" += "c0"
         }
       }
 
       path "x" {
         query {
-          -"sdk";            // remove client sdk
-          "dup" += "p1";     // keep dup from client + add
-          "n" = 12u64;       // ToString
-          "b" = false;       // ToString
+          -"sdk",            // remove client sdk
+          "dup" += "p1",     // keep dup from client + add
+          "n" = 12u64,       // ToString
+          "b" = false       // ToString
         }
 
         // endpoint overrides dup key (set => remove all dup then add)
-        GET One "" query { "dup" = "e1"; } -> Json<()>;
+        GET One "" query { "dup" = "e1" } -> Json<()>;
       }
     }
     use api_query::*;

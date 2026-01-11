@@ -831,6 +831,10 @@ fn emit_value_expr(v: &ValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
         },
         ValueKind::EpField(f) => quote! { &ep.#f },
         ValueKind::OtherExpr(e) => quote! { (#e) },
+        ValueKind::Fmt(fmt) => {
+            let build = emit_fmt_build_string(fmt, ctx);
+            quote! { { #build } }
+        }
     }
 }
 
@@ -931,7 +935,12 @@ fn emit_paginate_part(ep: &EndpointIr, paginate_ty: &Ident) -> TokenStream2 {
             }
             ValueKind::LitStr(s) => quote! { ::concord_core::prelude::ControllerValue::Str(#s.to_string()) },
             ValueKind::OtherExpr(e) => quote! { ::concord_core::prelude::ControllerValue::Any(::std::boxed::Box::new((#e))) },
+            ValueKind::Fmt(fmt) => {
+                let build = emit_fmt_build_string(fmt, PolicyEmitCtx::Endpoint);
+                quote! { ::concord_core::prelude::ControllerValue::Str({ #build }) }
+            }
             ValueKind::CxField(_) => unreachable!(),
+
         };
         quote! {
             ctrl.set_kv(#key, #val)?;

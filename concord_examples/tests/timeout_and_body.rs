@@ -16,12 +16,11 @@ async fn timeout_layering_client_path_endpoint() {
       client ApiTimeout {
         scheme: https,
         host: "example.com",
-        timeout: core::time::Duration::from_secs(30),
+        timeout: core::time::Duration::from_secs(30)
       }
 
       path "x" {
-        timeout: core::time::Duration::from_secs(10);
-
+        timeout: core::time::Duration::from_secs(10),
         GET A "" timeout: core::time::Duration::from_secs(2) -> Json<()>;
       }
     }
@@ -47,7 +46,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
 
       // Explicit content-type should not be overridden
       POST B "y"
-      headers { "content-type" = "text/plain"; }
+      headers { "content-type" = "text/plain" }
       body Json<NewObj>
       -> Json<()>;
 

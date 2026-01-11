@@ -33,13 +33,12 @@ async fn cursor_pagination_keys_flow_and_first_cursor_omitted() {
 
       GET List "x"
       query {
-        "pageCursor" as page_cursor?: String;
-        "pageSize"   as page_size: u64 = 2;
-         "pageTezst" = fmt[]
+        "pageCursor" as page_cursor?: String,
+        "pageSize"   as page_size: u64 = 2
       }
       paginate CursorPagination {
-        cursor   = ep.page_cursor;
-        per_page = ep.page_size;
+        cursor   = ep.page_cursor,
+        per_page = ep.page_size
       }
       -> Json<Page>;
     }
@@ -93,12 +92,12 @@ async fn cursor_loop_detection_and_max_pages() {
 
       GET List "x"
       query {
-        "pageCursor" as page_cursor?: String;
-        "pageSize"   as page_size: u64 = 1;
+        "pageCursor" as page_cursor?: String,
+        "pageSize"   as page_size: u64 = 1
       }
       paginate CursorPagination {
-        cursor   = ep.page_cursor;
-        per_page = ep.page_size;
+        cursor   = ep.page_cursor,
+        per_page = ep.page_size
       }
       -> Json<Page>;
     }

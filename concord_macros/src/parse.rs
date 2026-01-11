@@ -40,13 +40,11 @@ impl Parse for ClientDef {
                     _ => return Err(syn::Error::new(v.span(), "scheme must be `http` or `https`")),
                 });
                 let _ = content.parse::<Option<Token![,]>>()?;
-                let _ = content.parse::<Option<Token![;]>>()?;
             } else if content.peek(kw::host) {
                 content.parse::<kw::host>()?;
                 content.parse::<Token![:]>()?;
                 host = Some(content.parse::<LitStr>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-                let _ = content.parse::<Option<Token![;]>>()?;
             } else if content.peek(kw::headers) {
                 policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
@@ -58,7 +56,6 @@ impl Parse for ClientDef {
                 content.parse::<Token![:]>()?;
                 policy.timeout = Some(parse_expr_until_delim(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-                let _ = content.parse::<Option<Token![;]>>()?;
             } else {
                 let tt: proc_macro2::TokenTree = content.parse()?;
                 return Err(syn::Error::new(tt.span(), "unexpected token in client block"));
@@ -105,14 +102,15 @@ impl Parse for LayerDefTaggedPrefix {
         while !content.is_empty() {
             if content.peek(kw::headers) {
                 policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::query) {
                 policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::timeout) {
                 content.parse::<kw::timeout>()?;
                 content.parse::<Token![:]>()?;
                 policy.timeout = Some(parse_expr_until_delim(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-                let _ = content.parse::<Option<Token![;]>>()?;
             } else if content.peek(kw::prefix) || content.peek(kw::path) {
                 items.push(content.parse::<Item>()?);
             } else {
@@ -143,14 +141,15 @@ impl Parse for LayerDefTaggedPath {
         while !content.is_empty() {
             if content.peek(kw::headers) {
                 policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::query) {
                 policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::timeout) {
                 content.parse::<kw::timeout>()?;
                 content.parse::<Token![:]>()?;
                 policy.timeout = Some(parse_expr_until_delim(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-                let _ = content.parse::<Option<Token![;]>>()?;
             } else if content.peek(kw::prefix) || content.peek(kw::path) {
                 items.push(content.parse::<Item>()?);
             } else {
@@ -181,26 +180,28 @@ impl Parse for EndpointDef {
         while !input.peek(Token![->]) {
             if input.peek(kw::headers) {
                 policy.headers = Some(input.parse::<PolicyBlockTaggedHeaders>()?.0);
+                let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::query) {
                 policy.query = Some(input.parse::<PolicyBlockTaggedQuery>()?.0);
+                let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::timeout) {
                 input.parse::<kw::timeout>()?;
                 input.parse::<Token![:]>()?;
                 policy.timeout = Some(parse_expr_until_delim(input)?);
                 let _ = input.parse::<Option<Token![,]>>()?;
-                let _ = input.parse::<Option<Token![;]>>()?;
             } else if input.peek(kw::paginate) {
                 if paginate.is_some() {
                     return Err(syn::Error::new(name.span(), "duplicate `paginate`"));
                 }
                 paginate = Some(input.parse::<PaginateSpec>()?);
+                let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::body) {
                 if body.is_some() {
                     return Err(syn::Error::new(name.span(), "duplicate `body`"));
                 }
                 input.parse::<kw::body>()?;
                 body = Some(input.parse::<CodecSpec>()?);
-                let _ = input.parse::<Option<Token![;]>>()?;
+                let _ = input.parse::<Option<Token![,]>>()?;
             } else {
                 let tt: proc_macro2::TokenTree = input.parse()?;
                 return Err(syn::Error::new(tt.span(), "unexpected token in endpoint; expected headers/query/timeout/paginate/body or `->`"));
@@ -245,12 +246,23 @@ impl Parse for PaginateSpec {
         braced!(content in input);
 
         let mut assigns = Vec::new();
+        let mut first = true;
         while !content.is_empty() {
+            if !first {
+                if content.peek(Token![,]) {
+                    content.parse::<Token![,]>()?;
+                    if content.is_empty() {
+                        return Err(syn::Error::new(content.span(), "trailing `,` not allowed in paginate block"));
+                    }
+                } else {
+                    return Err(syn::Error::new(content.span(), "expected `,` between paginate assignments"));
+                }
+            }
             let key: Ident = content.parse()?;
             content.parse::<Token![=]>()?;
             let value: Expr = content.parse()?;
-            content.parse::<Token![;]>()?;
             assigns.push(PaginateAssign { key, value });
+            first = false;
         }
 
         Ok(Self { ctrl_ty, assigns })
@@ -278,9 +290,20 @@ fn parse_policy_block(input: ParseStream<'_>) -> Result<PolicyBlock> {
     let content;
     braced!(content in input);
     let mut stmts = Vec::new();
+    let mut first = true;
     while !content.is_empty() {
+        if !first {
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+                if content.is_empty() {
+                    return Err(syn::Error::new(content.span(), "trailing `,` not allowed in policy block"));
+                }
+            } else {
+                return Err(syn::Error::new(content.span(), "expected `,` between policy statements"));
+            }
+        }
         stmts.push(content.parse::<PolicyStmt>()?);
-        content.parse::<Token![;]>()?;
+        first = false;
     }
     Ok(PolicyBlock { stmts })
 }
@@ -487,7 +510,8 @@ fn parse_expr_until_delim(input: ParseStream<'_>) -> Result<Expr> {
 
 fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue> {
     if input.peek(kw::fmt) {
-        input.parse::<kw::fmt>()?;
+        let fmt_kw: kw::fmt = input.parse()?;
+        let span = fmt_kw.span;
         let require_all = input.parse::<Option<Token![?]>>()?.is_some();
 
         let content;
@@ -508,7 +532,7 @@ fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue>
             let _ = content.parse::<Option<Token![,]>>()?;
         }
 
-        return Ok(PolicyValue::Fmt(FmtSpec { require_all, pieces }));
+        return Ok(PolicyValue::Fmt(FmtSpec { span, require_all, pieces }));
     }
 
     Ok(PolicyValue::Expr(input.parse::<syn::Expr>()?))

@@ -657,6 +657,7 @@ fn resolve_policy_block(
                     }
                 }
                 ValueKind::LitStr(_) => {}
+                ValueKind::Fmt(_) => {}
             }
         }
     }

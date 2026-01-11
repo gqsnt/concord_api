@@ -45,18 +45,18 @@ api! {
         scheme: https,
         host: "typicode.com",
         headers {
-            "user-agent" as user_agent: String = "ClientApiExample/1.0".to_string();
-            "x-client-trace" as client_trace: bool;
+            "user-agent" as user_agent: String = "ClientApiExample/1.0".to_string(),
+            "x-client-trace" as client_trace: bool
         }
     }
 
     prefix "jsonplaceholder" {
         path "posts" {
             GET GetPosts ""
-                query { "userId" as user_id?: u32; }
+                query { "userId" as user_id?: u32 }
                 headers {
-                    x_debug: bool = true;
-                    "x-debug" = format!("test:{}", ep.x_debug);
+                    x_debug: bool = true,
+                    "x-debug" = format!("test:{}", ep.x_debug)
                 }
                 -> Json<Vec<models::Post>>;
 
@@ -71,7 +71,7 @@ api! {
             GET GetUser "{id:i32}" -> Json<models::User>;
 
             GET GetUserPosts "{id:i32}/posts"
-                query { "userId" as user_id?: u32; }
+                query { "userId" as user_id?: u32 }
                 -> Json<Vec<models::Post>> | Vec<String> => {
                     IntoIterator::into_iter(r).map(|p| p.title).collect()
                 };

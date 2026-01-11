@@ -8,9 +8,9 @@ api! {
         scheme: https,
         host: "riotgames.com",
         headers {
-            "user-agent" as user_agent: String = "ClientApiRiotExample/1.0".to_string();
-            "x-riot-token" as api_key: String;
-            "x-client-trace" as client_trace: bool = false;
+            "user-agent" as user_agent: String = "ClientApiRiotExample/1.0".to_string(),
+            "x-riot-token" as api_key: String,
+            "x-client-trace" as client_trace: bool = false
         }
     }
 
@@ -59,7 +59,7 @@ api! {
                         -> Json<Vec<models::LeagueEntryDto>>;
 
                     GET GetLeagueEntries "{queue:String}/{tier:String}/{division:String}"
-                        query { page?: u32; }
+                        query { page?: u32 }
                         -> Json<Vec<models::LeagueEntryDto>>;
                 }
             }
@@ -95,15 +95,15 @@ api! {
         path "lol/match/v5/matches" {
             GET GetMatchIdsByPuuid "by-puuid/{puuid:String}/ids"
                 query {
-                    queue?: u16;
-                    "startTime" as start_time?: i64;
-                    "endTime" as end_time?: i64;
-                    start: u64 = 0;
-                    count: u64 = 20;
+                    queue?: u16,
+                    "startTime" as start_time?: i64,
+                    "endTime" as end_time?: i64,
+                    start: u64 = 0,
+                    count: u64 = 20
                 }
                 paginate OffsetLimitPagination {
-                    offset = ep.start;
-                    limit  = ep.count;
+                    offset = ep.start,
+                    limit  = ep.count
                 }
                 -> Json<Vec<String>>;
 
@@ -118,7 +118,7 @@ api! {
         scheme: https,
         host: "leagueoflegends.com",
         headers {
-            "user-agent" as user_agent: String = "ClientApiDDragonExample/1.0".to_string();
+            "user-agent" as user_agent: String = "ClientApiDDragonExample/1.0".to_string()
         }
     }
 

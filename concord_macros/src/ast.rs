@@ -1,5 +1,6 @@
-
+use proc_macro2::Span;
 use syn::{braced, token, Expr, Ident, LitStr, Path, Type};
+use syn::spanned::Spanned;
 
 #[derive(Debug)]
 pub struct ApiFile {
@@ -165,8 +166,19 @@ pub enum PolicyValue {
     Fmt(FmtSpec),
 }
 
+impl PolicyValue {
+    #[inline]
+    pub fn span(&self) -> Span {
+        match self {
+            PolicyValue::Expr(e) => e.span(),
+            PolicyValue::Fmt(f) => f.span,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FmtSpec {
+    pub span: Span,
     pub require_all: bool,     // fmt? => true
     pub pieces: Vec<FmtPiece>, // ["...", {x:u32}, ...]
 }

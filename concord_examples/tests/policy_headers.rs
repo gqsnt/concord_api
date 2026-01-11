@@ -14,22 +14,22 @@ async fn header_key_variants_kebab_string_bind_remove_override() {
 
         headers {
           // ident => kebab-case
-          user_agent as user_agent: String = "ua".to_string();
-          x_debug = "caribou";            // => "x-debug"
-          "x-static" = "s";              // string key
-          "x-flag" as flag: bool = true; // bind + default => emitted
+          user_agent as user_agent: String = "ua".to_string(),
+          x_debug = "caribou",            // => "x-debug"
+          "x-static" = "s",              // string key
+          "x-flag" as flag: bool = true // bind + default => emitted
         }
       }
 
       // override x-debug and remove x-static at layer below
       path "p" {
         headers {
-          "x-debug" = "override";
-          -"x-static";
+          "x-debug" = "override",
+          -"x-static"
         }
 
         // endpoint removes x-flag
-        GET One "" headers { -"x-flag"; } -> Json<()>;
+        GET One "" headers { -"x-flag" } -> Json<()>;
       }
     }
     use api_headers::*;
@@ -54,10 +54,10 @@ async fn header_value_from_cx_to_string_and_invalid_header_value_error() {
         host: "example.com",
 
         headers {
-          "x-bad" as bad: String;      // client var
-          "x-bool" as trace: bool = false;
-          "x-bad" = cx.bad;            // uses cx
-          "x-bool" = cx.trace;         // ToString => "false"
+          "x-bad" as bad: String,      // client var
+          "x-bool" as trace: bool = false,
+          "x-bad" = cx.bad,            // uses cx
+          "x-bool" = cx.trace         // ToString => "false"
         }
       }
 
@@ -102,17 +102,17 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
       client ApiAccept {
         scheme: https,
         host: "example.com",
-        headers { "accept" = "text/plain"; } // set at client
+        headers { "accept" = "text/plain" } // set at client
       }
 
       // runtime should override to application/json for Json response
       GET A "" -> Json<()>;
 
       // endpoint explicit set should block runtime override
-      GET B "" headers { "accept" = "text/plain"; } -> Json<()>;
+      GET B "" headers { "accept" = "text/plain" } -> Json<()>;
 
       // endpoint remove should block runtime injection (Accept absent)
-      GET C "" headers { -"accept"; } -> Json<()>;
+      GET C "" headers { -"accept" } -> Json<()>;
     }
     use api_accept::*;
 

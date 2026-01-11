@@ -13,7 +13,7 @@ async fn query_fmt_set_required_var() {
         }
         GET One "x"
         query {
-            "q" = fmt["a:", {v:String}];
+            "q" = fmt["a:", {v:String}]
         }
         -> Json<()>;
     }
@@ -45,7 +45,7 @@ async fn query_fmt_require_all_optional_removes_key_when_missing() {
         }
         GET One "x"
         query {
-            "q" = fmt?["a:", {v?:String}];
+            "q" = fmt?["a:", {v?:String}]
         }
         -> Json<()>;
     }
@@ -97,8 +97,8 @@ async fn query_fmt_push_appends_duplicate_keys() {
         }
         GET One "x"
         query {
-            "dup" += fmt["p:", {v:String}];
-            "dup" += "s";
+            "dup" += fmt["p:", {v:String}],
+            "dup" += "s"
         }
         -> Json<()>;
     }
