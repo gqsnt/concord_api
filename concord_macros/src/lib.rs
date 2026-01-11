@@ -1,21 +1,24 @@
 use proc_macro::TokenStream;
 
+mod ast;
 mod codegen;
-mod ir;
+mod emit_helpers;
+mod kw;
 mod parse;
+mod sema;
 
 #[proc_macro]
 pub fn api(input: TokenStream) -> TokenStream {
-    let ast = syn::parse_macro_input!(input as parse::ApiFile);
-    match ir::lower(ast).and_then(codegen::emit) {
-        Ok(ts) => ts.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
+    let input2: proc_macro2::TokenStream = input.into();
+    let ast = match syn::parse2::<ast::ApiFile>(input2) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
 
-#[proc_macro_derive(ControllerBuild)]
-pub fn derive_controller_build(input: TokenStream) -> TokenStream {
-    derive_controller_build::derive(input)
-}
+    let ir = match sema::analyze(ast) {
+        Ok(v) => v,
+        Err(e) => return e.to_compile_error().into(),
+    };
 
-mod derive_controller_build;
+    codegen::emit(ir).into()
+}

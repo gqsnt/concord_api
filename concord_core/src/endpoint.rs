@@ -1,5 +1,5 @@
 use crate::client::{ApiClient, ClientContext};
-use crate::codec::{Encodes, NoContentEncoding};
+use crate::codec::{Encodes, NoContent};
 use crate::debug::DebugLevel;
 use crate::error::ApiClientError;
 use crate::pagination::PaginationPart;
@@ -82,7 +82,7 @@ pub struct NoBody;
 
 impl<E> BodyPart<E> for NoBody {
     type Body = ();
-    type Enc = NoContentEncoding;
+    type Enc = NoContent;
     fn body(_: &E) -> Option<&Self::Body> {
         None
     }

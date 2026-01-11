@@ -1,36 +1,128 @@
-use concord_core::internal::{PolicyPart, RoutePart};
+use bytes::Bytes;
 use concord_core::prelude::*;
-use core::time::Duration;
+use concord_core::transport::*;
+use http::{HeaderMap, StatusCode};
+use serde::Serialize;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 
-#[allow(unused)]
-pub fn build_route_and_policy<Cx, E>(vars: Cx::Vars, ep: &E) -> (RouteParts, Policy)
-where
-    Cx: ClientContext,
-    E: Endpoint<Cx>,
-{
-    let client = ApiClient::<Cx>::new(vars.clone());
-
-    let mut route = Cx::base_route(&vars);
-    <<E as Endpoint<Cx>>::Route as RoutePart<Cx, E>>::apply(ep, &client, &mut route).unwrap();
-
-    let mut policy = Cx::base_policy(&vars).unwrap_or_default();
-    policy.set_layer(PolicyLayer::Endpoint);
-    <<E as Endpoint<Cx>>::Policy as PolicyPart<Cx, E>>::apply(ep, &client, &mut policy).unwrap();
-
-    (route, policy)
+pub fn json_bytes<T: Serialize>(v: &T) -> Bytes {
+    Bytes::from(serde_json::to_vec(v).expect("json encode"))
 }
 
-#[allow(unused)]
-pub fn header(policy: &Policy, name: &'static str) -> Option<String> {
-    let n = http::header::HeaderName::from_static(name);
-    policy
-        .headers()
-        .get(n)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
+#[derive(Clone, Debug)]
+pub struct RecordedRequest {
+    pub url: url::Url,
+    pub headers: http::HeaderMap,
+    pub body: Option<Bytes>,
+    pub timeout: Option<std::time::Duration>,
 }
 
-#[allow(unused)]
-pub fn timeout(policy: &Policy) -> Option<Duration> {
-    policy.timeout()
+#[derive(Clone, Debug)]
+pub struct MockReply {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
+    pub body: Bytes,
+}
+
+impl MockReply {
+    pub fn ok_json(body: Bytes) -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            http::HeaderValue::from_static("application/json"),
+        );
+        Self {
+            status: StatusCode::OK,
+            headers,
+            body,
+        }
+    }
+
+    pub fn ok_text(body: Bytes) -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            http::HeaderValue::from_static("text/plain"),
+        );
+        Self {
+            status: StatusCode::OK,
+            headers,
+            body,
+        }
+    }
+
+    pub fn status(status: StatusCode) -> Self {
+        Self {
+            status,
+            headers: HeaderMap::new(),
+            body: Bytes::new(),
+        }
+    }
+}
+
+struct OneShotBody {
+    chunk: Option<Bytes>,
+}
+
+impl TransportBody for OneShotBody {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
+        Box::pin(async move { Ok(self.chunk.take()) })
+    }
+}
+
+#[derive(Clone)]
+pub struct MockTransport {
+    recorded: Arc<Mutex<Vec<RecordedRequest>>>,
+    replies: Arc<Mutex<Vec<MockReply>>>,
+}
+
+impl MockTransport {
+    pub fn new(replies: Vec<MockReply>) -> (Self, Arc<Mutex<Vec<RecordedRequest>>>) {
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let replies = Arc::new(Mutex::new(replies));
+        (
+            Self {
+                recorded: recorded.clone(),
+                replies,
+            },
+            recorded,
+        )
+    }
+}
+
+impl concord_core::prelude::Transport for MockTransport {
+    fn send<'a>(
+        &'a self,
+        req: &'a BuiltRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send + 'a>> {
+        let recorded = self.recorded.clone();
+        let replies = self.replies.clone();
+
+        Box::pin(async move {
+            recorded.lock().unwrap().push(RecordedRequest {
+                url: req.url.clone(),
+                headers: req.headers.clone(),
+                body: req.body.clone(),
+                timeout: req.timeout,
+            });
+
+            let reply = replies
+                .lock()
+                .unwrap()
+                .remove(0);
+
+            Ok(TransportResponse {
+                status: reply.status,
+                headers: reply.headers,
+                content_length: Some(reply.body.len() as u64),
+                body: Box::new(OneShotBody {
+                    chunk: Some(reply.body),
+                }),
+            })
+        })
+    }
 }

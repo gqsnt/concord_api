@@ -3,17 +3,17 @@ use bytes::Bytes;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-pub struct JsonEncoding;
+pub struct Json;
 
-impl ContentType for JsonEncoding {
+impl ContentType for Json {
     const CONTENT_TYPE: &'static str = "application/json";
 }
 
-impl FormatType for JsonEncoding {
+impl FormatType for Json {
     const FORMAT_TYPE: Format = Format::Text;
 }
 
-impl<T> Encodes<T> for JsonEncoding
+impl<T> Encodes<T> for Json
 where
     T: Serialize,
 {
@@ -23,7 +23,7 @@ where
     }
 }
 
-impl<T> Decodes<T> for JsonEncoding
+impl<T> Decodes<T> for Json
 where
     T: DeserializeOwned,
 {

@@ -2,17 +2,17 @@ use crate::codec::{ContentType, Decodes, Encodes, Format, FormatType};
 use bytes::Bytes;
 use std::str::Utf8Error;
 
-pub struct TextEncoding;
+pub struct Text;
 
-impl ContentType for TextEncoding {
+impl ContentType for Text {
     const CONTENT_TYPE: &'static str = "text/plain";
 }
 
-impl FormatType for TextEncoding {
+impl FormatType for Text {
     const FORMAT_TYPE: Format = Format::Text;
 }
 
-impl<T> Encodes<T> for TextEncoding
+impl<T> Encodes<T> for Text
 where
     T: AsRef<str>,
 {
@@ -22,7 +22,7 @@ where
     }
 }
 
-impl Decodes<String> for TextEncoding {
+impl Decodes<String> for Text {
     type Error = Utf8Error;
     fn decode(bytes: &Bytes) -> Result<String, Self::Error> {
         Ok(std::str::from_utf8(bytes)?.to_string())

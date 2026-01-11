@@ -91,25 +91,25 @@ pub trait Encodes<T>: ContentType + FormatType {
     fn encode(output: &T) -> Result<Bytes, Self::Error>;
 }
 
-pub struct NoContentEncoding;
+pub struct NoContent;
 
-impl ContentType for NoContentEncoding {
+impl ContentType for NoContent {
     const CONTENT_TYPE: &'static str = "";
     const IS_NO_CONTENT: bool = true;
 }
 
-impl FormatType for NoContentEncoding {
+impl FormatType for NoContent {
     const FORMAT_TYPE: Format = Format::Text;
 }
 
-impl Encodes<()> for NoContentEncoding {
+impl Encodes<()> for NoContent {
     type Error = std::convert::Infallible;
     fn encode(_output: &()) -> Result<Bytes, Self::Error> {
         Ok(Bytes::new())
     }
 }
 
-impl Decodes<()> for NoContentEncoding {
+impl Decodes<()> for NoContent {
     type Error = std::convert::Infallible;
     fn decode(_bytes: &Bytes) -> Result<(), Self::Error> {
         Ok(())

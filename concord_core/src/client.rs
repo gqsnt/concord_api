@@ -465,7 +465,7 @@ async fn read_body_all(body: &mut dyn TransportBody) -> Result<Bytes, TransportE
 mod test {
     use super::*;
     use crate::codec::{
-        ContentType, Encodes, Format, FormatType, NoContentEncoding, text::TextEncoding,
+        ContentType, Encodes, Format, FormatType, NoContent, text::Text,
     };
     use crate::endpoint::{NoPolicy, NoRoute};
     use crate::pagination::NoPagination;
@@ -511,7 +511,7 @@ mod test {
         type Policy = NoPolicy;
         type Pagination = NoPagination;
         type Body = EpBody;
-        type Response = crate::endpoint::Decoded<TextEncoding, String>;
+        type Response = crate::endpoint::Decoded<Text, String>;
     }
 
     #[test]
@@ -528,7 +528,7 @@ mod test {
 
         // sanity: NoContentEncoding is text-format (empty)
         let empty = Bytes::new();
-        let s = crate::codec::format_debug_body::<NoContentEncoding>(&empty, 1024);
+        let s = crate::codec::format_debug_body::<NoContent>(&empty, 1024);
         assert_eq!(s, "");
     }
 }

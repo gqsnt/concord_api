@@ -4,12 +4,12 @@ mod client;
 mod codec;
 mod debug;
 mod endpoint;
-mod error;
+pub mod error;
 mod http_transport;
 mod pagination;
 mod policy;
 mod timeout;
-mod transport;
+pub mod transport;
 mod types;
 
 pub mod internal {
@@ -28,8 +28,8 @@ pub mod internal {
 pub mod prelude {
     pub use crate::client::{ApiClient, ClientContext};
     #[cfg(feature = "json")]
-    pub use crate::codec::json::JsonEncoding;
-    pub use crate::codec::{NoContentEncoding, text::TextEncoding};
+    pub use crate::codec::json::Json;
+    pub use crate::codec::{NoContent, text::Text};
     pub use crate::debug::DebugLevel;
     pub use crate::endpoint::Endpoint;
     pub use crate::error::{ApiClientError, FxError};

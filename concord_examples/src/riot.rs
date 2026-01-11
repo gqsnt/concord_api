@@ -1,149 +1,154 @@
-use concord_core::prelude::{JsonEncoding as Json, *};
+// Path: ".\\concord_examples\\src\\riot.rs" (replace BOTH api! blocks + update test_riot())
+use concord_core::prelude::*;
 use concord_macros::api;
 use serde::{Deserialize, Serialize};
 
 api! {
-      client RiotClient {
+    client RiotClient {
         scheme: https,
-        host: "api.riotgames.com",
-        params {
-            api_key: String;
-            user_agent: String = "ClientApiRiotExample/1.0".to_string();
-            client_trace: bool = false;
-        }
+        host: "riotgames.com",
         headers {
-            "user-agent" => user_agent,
-            "x-riot-token" => api_key,
-            "x-client-trace" => client_trace,
+            "user-agent" as user_agent: String = "ClientApiRiotExample/1.0".to_string();
+            "x-riot-token" as api_key: String;
+            "x-client-trace" as client_trace: bool = false;
         }
     }
 
-  // PLATFORM ROUTING: {platform}.api.riotgames.com
-  prefix {platform: PlatformRoute} {
-    path "lol" {
-      path "summoner"/"v4"/"summoners" {
-        GET GetSummonerByPuuid "by-puuid"/{puuid: String} -> Json<models::SummonerDto>;
-        GET GetSummonerById {summoner_id: String} -> Json<models::SummonerDto>;
-        GET GetSummonerByName "by-name"/{summoner_name: String} -> Json<models::SummonerDto>;
-      }
+    // PLATFORM ROUTING: {platform}.api.riotgames.com
+    prefix "{platform:PlatformRoute}.api" {
+        path "lol" {
+            path "summoner/v4/summoners" {
+                GET GetSummonerByPuuid "by-puuid/{puuid:String}" -> Json<models::SummonerDto>;
+                GET GetSummonerById "{summoner_id:String}" -> Json<models::SummonerDto>;
+                GET GetSummonerByName "by-name/{summoner_name:String}" -> Json<models::SummonerDto>;
+            }
 
-      path "champion-mastery"/"v4" {
-        path "champion-masteries" {
-          GET GetChampionMasteriesBySummoner "by-summoner"/{summoner_id: String}
-            -> Json<Vec<models::ChampionMasteryDto>>;
+            path "champion-mastery/v4" {
+                path "champion-masteries" {
+                    GET GetChampionMasteriesBySummoner "by-summoner/{summoner_id:String}"
+                        -> Json<Vec<models::ChampionMasteryDto>>;
 
-          GET GetChampionMasteryByChampion "by-summoner"/{summoner_id: String}/"by-champion"/{champion_id: i64}
-            -> Json<models::ChampionMasteryDto>;
-        }
+                    GET GetChampionMasteryByChampion "by-summoner/{summoner_id:String}/by-champion/{champion_id:i64}"
+                        -> Json<models::ChampionMasteryDto>;
+                }
 
-        path "scores" {
-          GET GetChampionMasteryScore "by-summoner"/{summoner_id: String} -> Json<i32>;
-        }
-      }
+                path "scores" {
+                    GET GetChampionMasteryScore "by-summoner/{summoner_id:String}" -> Json<i32>;
+                }
+            }
 
-      path "league"/"v4" {
-        path "challengerleagues" {
-          GET GetChallengerLeagueByQueue "by-queue"/{queue: LeagueQueue} -> Json<models::LeagueListDto>;
-        }
-        path "grandmasterleagues" {
-          GET GetGrandmasterLeagueByQueue "by-queue"/{queue: LeagueQueue} -> Json<models::LeagueListDto>;
-        }
-        path "masterleagues" {
-          GET GetMasterLeagueByQueue "by-queue"/{queue: LeagueQueue} -> Json<models::LeagueListDto>;
-        }
-        path "leagues" {
-          GET GetLeagueById {league_id: String} -> Json<models::LeagueListDto>;
-        }
-        path "entries" {
-          GET GetLeagueEntriesBySummoner "by-summoner"/{summoner_id: String}
-            -> Json<Vec<models::LeagueEntryDto>>;
+            path "league/v4" {
+                path "challengerleagues" {
+                    GET GetChallengerLeagueByQueue "by-queue/{queue:LeagueQueue}" -> Json<models::LeagueListDto>;
+                }
 
-          GET GetLeagueEntries {queue: String}/{tier: String}/{division: String}
-            query { page?: u32 }
-            -> Json<Vec<models::LeagueEntryDto>>;
-        }
-      }
+                path "grandmasterleagues" {
+                    GET GetGrandmasterLeagueByQueue "by-queue/{queue:LeagueQueue}" -> Json<models::LeagueListDto>;
+                }
 
-      path "spectator"/"v4" {
-        path "featured-games" {
-          GET GetFeaturedGames "" -> Json<models::FeaturedGamesDto>;
-        }
-        path "active-games"/"by-summoner" {
-          GET GetCurrentGameInfoBySummoner {summoner_id: String} -> Json<models::CurrentGameInfoDto>;
-        }
-      }
+                path "masterleagues" {
+                    GET GetMasterLeagueByQueue "by-queue/{queue:LeagueQueue}" -> Json<models::LeagueListDto>;
+                }
 
-      path "status"/"v4" {
-        GET GetPlatformData "platform-data" -> Json<models::PlatformDataDto>;
-      }
-    }
-  }
+                path "leagues" {
+                    GET GetLeagueById "{league_id:String}" -> Json<models::LeagueListDto>;
+                }
 
-  // REGIONAL ROUTING: {region}.api.riotgames.com
-  prefix {region: RegionalRoute} {
-    path "riot"/"account"/"v1"/"accounts" {
-      GET GetAccountByRiotId "by-riot-id"/{game_name: String}/{tag_line: String} -> Json<models::AccountDto>;
-      GET GetAccountByPuuid "by-puuid"/{puuid: String} -> Json<models::AccountDto>;
+                path "entries" {
+                    GET GetLeagueEntriesBySummoner "by-summoner/{summoner_id:String}"
+                        -> Json<Vec<models::LeagueEntryDto>>;
+
+                    GET GetLeagueEntries "{queue:String}/{tier:String}/{division:String}"
+                        query { page?: u32; }
+                        -> Json<Vec<models::LeagueEntryDto>>;
+                }
+            }
+
+            path "spectator/v4" {
+                path "featured-games" {
+                    GET GetFeaturedGames "" -> Json<models::FeaturedGamesDto>;
+                }
+
+                path "active-games/by-summoner" {
+                    GET GetCurrentGameInfoBySummoner "{summoner_id:String}" -> Json<models::CurrentGameInfoDto>;
+                }
+            }
+
+            path "status/v4" {
+                GET GetPlatformData "platform-data" -> Json<models::PlatformDataDto>;
+            }
+        }
     }
 
-    path "riot"/"account"/"v1"/"active-shards" {
-      GET GetActiveShardByGameAndPuuid "by-game"/{game: String}/"by-puuid"/{puuid: String}
-        -> Json<models::ActiveShardDto>;
-    }
-
-    path "lol"/"match"/"v5"/"matches" {
-      GET GetMatchIdsByPuuid "by-puuid"/{puuid: String}/"ids"
-        query {
-                    queue?: u16,
-                    start_time?: i64,
-                    end_time?: i64,
-                    start: u64 = 0,
-                    count: u64 = 20,
+    // REGIONAL ROUTING: {region}.api.riotgames.com
+    prefix "{region:RegionalRoute}.api" {
+        path "riot/account/v1/accounts" {
+            GET GetAccountByRiotId "by-riot-id/{game_name:String}/{tag_line:String}" -> Json<models::AccountDto>;
+            GET GetAccountByPuuid "by-puuid/{puuid:String}" -> Json<models::AccountDto>;
         }
-           paginate OffsetLimitPagination {
-                offset: start,
-                limit: count,
-           }
-        -> Json<Vec<String>>;
 
-      GET GetMatch {match_id: String} -> Json<models::MatchDto>;
-      GET GetTimeline {match_id: String}/"timeline" -> Json<models::TimelineDto>;
+        path "riot/account/v1/active-shards" {
+            GET GetActiveShardByGameAndPuuid "by-game/{game:String}/by-puuid/{puuid:String}"
+                -> Json<models::ActiveShardDto>;
+        }
+
+        path "lol/match/v5/matches" {
+            GET GetMatchIdsByPuuid "by-puuid/{puuid:String}/ids"
+                query {
+                    queue?: u16;
+                    "startTime" as start_time?: i64;
+                    "endTime" as end_time?: i64;
+                    start: u64 = 0;
+                    count: u64 = 20;
+                }
+                paginate OffsetLimitPagination {
+                    offset = ep.start;
+                    limit  = ep.count;
+                }
+                -> Json<Vec<String>>;
+
+            GET GetMatch "{match_id:String}" -> Json<models::MatchDto>;
+            GET GetTimeline "{match_id:String}/timeline" -> Json<models::TimelineDto>;
+        }
     }
-  }
 }
 
 api! {
-  client DDragonClient {
-    scheme: https,
-    host: "leagueoflegends.com",
-    params { user_agent: String = "ClientApiDDragonExample/1.0".to_string(); }
-    headers { "user-agent" => user_agent}
-  }
-
-  prefix "ddragon" {
-    path "api" {
-      GET GetVersions "versions.json" -> Json<Vec<String>>;
-      GET GetRealmByRegion "realms"/{region: String} ".json" -> Json<models::RealmDto>;
+    client DDragonClient {
+        scheme: https,
+        host: "leagueoflegends.com",
+        headers {
+            "user-agent" as user_agent: String = "ClientApiDDragonExample/1.0".to_string();
+        }
     }
 
-    path "cdn" {
-      GET GetLanguages "languages.json" -> Json<Vec<String>>;
-    }
-
-    path "cdn"/{version: String} {
-      path "data"/{locale: String = "en_US".to_string()} {
-        path "champion" {
-          GET GetChampionList "champion.json" -> Json<models::ChampionListDto>;
-          GET GetChampionFull "championFull.json" -> Json<serde_json::Value>;
-          GET GetChampionDetail {champion: String} ".json" -> Json<models::ChampionDetailDto>;
+    // ddragon.leagueoflegends.com
+    prefix "ddragon" {
+        path "api" {
+            GET GetVersions "versions.json" -> Json<Vec<String>>;
+            // NOTE: pass region including ".json" (ex: "euw.json")
+            GET GetRealmByRegion "realms/{region:String}" -> Json<models::RealmDto>;
         }
 
-        GET GetSummonerSpells "summoner.json" -> Json<models::SummonerSpellListDto>;
-        GET GetItems "item.json" -> Json<models::ItemListDto>;
-        GET GetRunesReforged "runesReforged.json" -> Json<models::RunesReforgedDto>;
-      }
+        path "cdn" {
+            GET GetLanguages "languages.json" -> Json<Vec<String>>;
+        }
+
+        path "cdn/{version:String}" {
+            path "data/{locale:String=\"en_US\".to_string()}" {
+                path "champion" {
+                    GET GetChampionList "champion.json" -> Json<models::ChampionListDto>;
+                    GET GetChampionFull "championFull.json" -> Json<serde_json::Value>;
+                    // NOTE: pass champion including ".json" (ex: "Aatrox.json")
+                    GET GetChampionDetail "{champion:String}" -> Json<models::ChampionDetailDto>;
+                }
+
+                GET GetSummonerSpells "summoner.json" -> Json<models::SummonerSpellListDto>;
+                GET GetItems "item.json" -> Json<models::ItemListDto>;
+                GET GetRunesReforged "runesReforged.json" -> Json<models::RunesReforgedDto>;
+            }
+        }
     }
-  }
 }
 
 /// Platform routing values (LoL).
@@ -230,6 +235,7 @@ impl core::fmt::Display for LeagueQueue {
         f.write_str(s)
     }
 }
+
 
 pub mod models {
     use super::*;
@@ -452,4 +458,37 @@ pub mod models {
     // /cdn/{version}/data/{locale}/runesReforged.json
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RunesReforgedDto(pub Value);
+}
+
+
+pub async fn test_riot() -> Result<(), ApiClientError> {
+
+    dotenvy::dotenv().ok();
+    let api_key = dotenvy::var("RIOT_API_KEY").expect("RIOT_API_KEY missing");
+
+    let riot = riot_client::Client::new(riot_client::Vars::new(api_key));
+    let default_region = RegionalRoute::Europe;
+
+    let account = riot
+        .execute(riot_client::endpoints::GetAccountByRiotId::new(
+            "Random Iron".to_string(),
+            default_region,
+            "EUVV".to_string(),
+        ))
+        .await?;
+    println!(
+        "Account: {}#{} puuid={}",
+        account.game_name, account.tag_line, account.puuid
+    );
+
+    let match_ids: Vec<String> = riot
+        .collect_all_items(
+            riot_client::endpoints::GetMatchIdsByPuuid::new(account.puuid.clone(), default_region)
+                .count(100),
+        )
+        .max_items(10_000)
+        .await?;
+    println!("match_ids Len: {:?}", match_ids.len());
+
+    Ok(())
 }
