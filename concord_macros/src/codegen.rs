@@ -143,6 +143,8 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
 
     quote! {
         let mut policy = ::concord_core::prelude::Policy::new();
+        #[allow(unused_variables)]
+        let cx = vars;
         #( #ops )*
         ::core::result::Result::Ok(policy)
     }
@@ -161,12 +163,12 @@ fn emit_internal(ir: &Ir) -> TokenStream2 {
             Cx: ::concord_core::prelude::ClientContext,
             P: ::concord_core::internal::PolicyPart<Cx, E>,
         {
-            fn apply(ep: &E, client: &::concord_core::prelude::ApiClient<Cx>, policy: &mut ::concord_core::prelude::Policy)
+            fn apply(ep: &E, vars: &Cx::Vars, policy: &mut ::concord_core::prelude::Policy)
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
                 let prev = policy.layer();
                 policy.set_layer(Self::LAYER);
-                let r = P::apply(ep, client, policy);
+                let r = P::apply(ep, vars, policy);
                 policy.set_layer(prev);
                 r
             }
@@ -177,12 +179,12 @@ fn emit_internal(ir: &Ir) -> TokenStream2 {
             Cx: ::concord_core::prelude::ClientContext,
             P: ::concord_core::internal::PolicyPart<Cx, E>,
         {
-            fn apply(ep: &E, client: &::concord_core::prelude::ApiClient<Cx>, policy: &mut ::concord_core::prelude::Policy)
+            fn apply(ep: &E, vars: &Cx::Vars, policy: &mut ::concord_core::prelude::Policy)
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
                 let prev = policy.layer();
                 policy.set_layer(Self::LAYER);
-                let r = P::apply(ep, client, policy);
+                let r = P::apply(ep, vars, policy);
                 policy.set_layer(prev);
                 r
             }
@@ -227,7 +229,7 @@ fn emit_layer_parts(ir: &Ir, layer: &LayerIr) -> TokenStream2 {
             impl ::concord_core::internal::RoutePart<super::Cx, super::endpoints::#ep_name> for #route_ty {
                 fn apply(
                     ep: &super::endpoints::#ep_name,
-                    _client: &::concord_core::prelude::ApiClient<super::Cx>,
+                    vars: &super::Vars,
                     route: &mut ::concord_core::prelude::RouteParts
                 ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
                     #route_apply
@@ -240,7 +242,7 @@ fn emit_layer_parts(ir: &Ir, layer: &LayerIr) -> TokenStream2 {
             impl ::concord_core::internal::PolicyPart<super::Cx, super::endpoints::#ep_name> for #policy_ty {
                 fn apply(
                     ep: &super::endpoints::#ep_name,
-                    client: &::concord_core::prelude::ApiClient<super::Cx>,
+                    vars: &super::Vars,
                     policy: &mut ::concord_core::prelude::Policy
                 ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
                     #policy_apply
@@ -278,9 +280,10 @@ fn emit_endpoint_parts(ep: &EndpointIr) -> TokenStream2 {
         where
             Cx: ::concord_core::prelude::ClientContext,
         {
-            fn apply(ep: &super::endpoints::#name, _client: &::concord_core::prelude::ApiClient<Cx>, route: &mut ::concord_core::prelude::RouteParts)
+            fn apply(ep: &super::endpoints::#name, vars: &Cx::Vars, route: &mut ::concord_core::prelude::RouteParts)
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
+                let _ = vars;
                 #route_apply
                 ::core::result::Result::Ok(())
             }
@@ -291,7 +294,7 @@ fn emit_endpoint_parts(ep: &EndpointIr) -> TokenStream2 {
         where
             Cx: ::concord_core::prelude::ClientContext,
         {
-            fn apply(ep: &super::endpoints::#name, client: &::concord_core::prelude::ApiClient<Cx>, policy: &mut ::concord_core::prelude::Policy)
+            fn apply(ep: &super::endpoints::#name, vars: &Cx::Vars, policy: &mut ::concord_core::prelude::Policy)
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
                 #policy_apply
@@ -378,84 +381,55 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
 
     quote! {
         #[derive(Clone)]
-        pub struct #client_ty {
-            inner: ::concord_core::prelude::ApiClient<Cx>,
+        pub struct #client_ty<T: ::concord_core::prelude::Transport = ::concord_core::prelude::ReqwestTransport> {
+            inner: ::concord_core::prelude::ApiClient<Cx, T>,
         }
-
-        impl #client_ty {
+        impl #client_ty<::concord_core::prelude::ReqwestTransport> {
             #[inline]
             pub fn new( #( #new_args ),* ) -> Self {
                 let vars = Vars::new( #( #new_pass ),* );
-                Self { inner: ::concord_core::prelude::ApiClient::<Cx>::new(vars) }
+                Self { inner: ::concord_core::prelude::ApiClient::<Cx, ::concord_core::prelude::ReqwestTransport>::new(vars) }
             }
+
 
             #[inline]
-            pub fn new_with_transport(
+            pub fn new_with_transport<T2: ::concord_core::prelude::Transport>(
                 #( #new_args, )*
-                transport: impl ::concord_core::prelude::Transport
-            ) -> Self {
+                transport: T2
+            ) -> #client_ty<T2> {
                 let vars = Vars::new( #( #new_pass ),* );
-                Self { inner: ::concord_core::prelude::ApiClient::<Cx>::with_transport(vars, transport) }
+                #client_ty { inner: ::concord_core::prelude::ApiClient::<Cx, T2>::with_transport(vars, transport) }
             }
 
+
+        }
+
+        impl<T: ::concord_core::prelude::Transport> #client_ty<T> {
             #( #var_setters )*
 
             #[inline]
-            pub fn debug_level(&self) -> ::concord_core::prelude::DebugLevel {
-                self.inner.debug_level()
-            }
-
+            pub fn debug_level(&self) -> ::concord_core::prelude::DebugLevel { self.inner.debug_level() }
             #[inline]
-            pub fn set_debug_level(&mut self, level: ::concord_core::prelude::DebugLevel) {
-                self.inner.set_debug_level(level);
-            }
-
+            pub fn set_debug_level(&mut self, level: ::concord_core::prelude::DebugLevel) { self.inner.set_debug_level(level); }
             #[inline]
-            pub fn with_debug_level(mut self, level: ::concord_core::prelude::DebugLevel) -> Self {
-                self.inner.set_debug_level(level);
-                self
-            }
-
+            pub fn with_debug_level(mut self, level: ::concord_core::prelude::DebugLevel) -> Self { self.inner.set_debug_level(level); self }
             #[inline]
-            pub fn pagination_caps(&self) -> ::concord_core::prelude::Caps {
-                self.inner.pagination_caps()
-            }
-
+            pub fn pagination_caps(&self) -> ::concord_core::prelude::Caps { self.inner.pagination_caps() }
             #[inline]
-            pub fn set_pagination_caps(&mut self, caps: ::concord_core::prelude::Caps) {
-                self.inner.set_pagination_caps(caps);
-            }
-
+            pub fn set_pagination_caps(&mut self, caps: ::concord_core::prelude::Caps) { self.inner.set_pagination_caps(caps); }
             #[inline]
-            pub fn with_pagination_caps(mut self, caps: ::concord_core::prelude::Caps) -> Self {
-                self.inner.set_pagination_caps(caps);
-                self
-            }
-
+            pub fn with_pagination_caps(mut self, caps: ::concord_core::prelude::Caps) -> Self { self.inner.set_pagination_caps(caps); self }
             #[inline]
-            pub async fn execute<E>(
-                &self,
-                ep: E,
-            ) -> ::core::result::Result<
+            pub async fn execute<E>(&self, ep: E) -> ::core::result::Result<
                 <E::Response as ::concord_core::internal::ResponseSpec>::Output,
                 ::concord_core::prelude::ApiClientError
             >
-            where
-                E: ::concord_core::prelude::Endpoint<Cx>,
-            {
-                self.inner.execute(ep).await
-            }
-
+            where E: ::concord_core::prelude::Endpoint<Cx>,
+            { self.inner.execute(ep).await }
             #[inline]
-            pub fn collect_all_items<E>(
-                &self,
-                ep: E,
-            ) -> ::concord_core::prelude::CollectAllItems<'_, Cx, E>
-            where
-                E: ::concord_core::prelude::CollectAllItemsEndpoint<Cx>,
-            {
-                self.inner.collect_all_items(ep)
-            }
+            pub fn collect_all_items<E>(&self, ep: E) -> ::concord_core::prelude::CollectAllItems<'_, Cx, E, T>
+            where E: ::concord_core::prelude::CollectAllItemsEndpoint<Cx>,
+            { self.inner.collect_all_items(ep) }
         }
     }
 }
@@ -670,6 +644,11 @@ enum PolicyEmitCtx {
 
 fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> TokenStream2 {
     let mut ops = Vec::new();
+
+    ops.push(quote! {
+        #[allow(unused_variables)]
+        let cx = vars;
+    });
     ops.extend(emit_policy_ops(policy, PolicyKeyKind::Header, ctx));
     ops.extend(emit_policy_ops(policy, PolicyKeyKind::Query, ctx));
     if let Some(t) = &policy.timeout {
@@ -836,7 +815,7 @@ fn emit_set_op(
                 let as_ref_expr = match value {
                     ValueKind::CxField(f) => match ctx {
                         PolicyEmitCtx::ClientBase => quote! { vars.#f.as_ref() },
-                        _ => quote! { client.vars().#f.as_ref() },
+                        _ => quote! { vars.#f.as_ref() },
                     },
                     ValueKind::EpField(f) => quote! { ep.#f.as_ref() },
                     _ => unreachable!(),
@@ -900,7 +879,7 @@ fn emit_set_op(
                 let as_ref_expr = match value {
                     ValueKind::CxField(f) => match ctx {
                         PolicyEmitCtx::ClientBase => quote! { vars.#f.as_ref() },
-                        _ => quote! { client.vars().#f.as_ref() },
+                        _ => quote! { vars.#f.as_ref() },
                     },
                     ValueKind::EpField(f) => quote! { ep.#f.as_ref() },
                     _ => unreachable!(),
@@ -970,7 +949,7 @@ fn emit_value_expr(v: &ValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
         ValueKind::LitStr(s) => quote! { #s },
         ValueKind::CxField(f) => match ctx {
             PolicyEmitCtx::ClientBase => quote! { &vars.#f },
-            _ => quote! { &client.vars().#f },
+            _ => quote! { &vars.#f },
         },
         ValueKind::EpField(f) => quote! { &ep.#f },
         ValueKind::OtherExpr(e) => quote! { (#e) },
@@ -1055,39 +1034,62 @@ fn emit_paginate_part(ep: &EndpointIr, paginate_ty: &Ident) -> TokenStream2 {
     };
 
     let ctrl_ty = &p.ctrl_ty;
-    let hints = p.assigns.iter().filter_map(|(k, v)| {
+    let ctrl_last = ctrl_ty
+        .segments
+        .last()
+        .map(|s| s.ident.to_string())
+        .unwrap_or_default();
+    let is_cursor = ctrl_last == "CursorPagination";
+    let is_offset_limit = ctrl_last == "OffsetLimitPagination";
+    let is_paged = ctrl_last == "PagedPagination";
+
+    let auto_key_assigns = p.assigns.iter().filter_map(|(k, v)| {
         let ValueKind::EpField(f) = v else { return None; };
         let key_res = find_query_key_for_ep_field(ep, f)?;
         let (_ks, _sp, key_ts) = emit_key_string(key_res, PolicyKeyKind::Query);
-        let param = LitStr::new(&k.to_string(), k.span());
-        Some(quote! {
-        ::concord_core::internal::Controller::<super::Cx, super::endpoints::#name>::hint_param_key(
-            &mut ctrl,
-            #param,
-            #key_ts
-        );
-    })
+        let k_str = k.to_string();
+
+        if is_cursor {
+            if k_str == "cursor" {
+                return Some(quote! { ctrl.cursor_key = ::std::borrow::Cow::from(#key_ts); });
+            }
+            if k_str == "per_page" {
+                return Some(quote! { ctrl.per_page_key = ::std::borrow::Cow::from(#key_ts); });
+            }
+        }
+        if is_offset_limit {
+            if k_str == "offset" {
+                return Some(quote! { ctrl.offset_key = ::std::borrow::Cow::from(#key_ts); });
+            }
+            if k_str == "limit" {
+                return Some(quote! { ctrl.limit_key = ::std::borrow::Cow::from(#key_ts); });
+            }
+        }
+        if is_paged {
+            if k_str == "page" {
+                return Some(quote! { ctrl.page_key = ::std::borrow::Cow::from(#key_ts); });
+            }
+            if k_str == "per_page" {
+                return Some(quote! { ctrl.per_page_key = ::std::borrow::Cow::from(#key_ts); });
+            }
+        }
+        None
     });
 
+    // Typed controller init: assign fields directly (no ControllerBuild / ControllerValue / hints).
     let assigns = p.assigns.iter().map(|(k, v)| {
-        let key = LitStr::new(&k.to_string(), k.span());
         let val = match v {
-            ValueKind::EpField(f) => {
-                // use Any to support Option<T> and T
-                quote! { ::concord_core::prelude::ControllerValue::Any(::std::boxed::Box::new(ep.#f.clone())) }
-            }
-            ValueKind::LitStr(s) => quote! { ::concord_core::prelude::ControllerValue::Str(#s.to_string()) },
-            ValueKind::OtherExpr(e) => quote! { ::concord_core::prelude::ControllerValue::Any(::std::boxed::Box::new((#e))) },
+            ValueKind::EpField(f) => quote! { ep.#f.clone() },
+            // Prefer Cow for string literals; if the field expects String, user must write `"x".to_string()`.
+            ValueKind::LitStr(s) => quote! { ::std::borrow::Cow::from(#s) },
+            ValueKind::CxField(f) => quote! { cx.#f.clone() },
+            ValueKind::OtherExpr(e) => quote! { (#e) },
             ValueKind::Fmt(fmt) => {
                 let build = emit_fmt_build_string(fmt, PolicyEmitCtx::Endpoint);
-                quote! { ::concord_core::prelude::ControllerValue::Str({ #build }) }
+                quote! { { #build } }
             }
-            ValueKind::CxField(_) => unreachable!(),
-
         };
-        quote! {
-            ctrl.set_kv(#key, #val)?;
-        }
+        quote! { ctrl.#k = #val; }
     });
 
     quote! {
@@ -1097,11 +1099,13 @@ fn emit_paginate_part(ep: &EndpointIr, paginate_ty: &Ident) -> TokenStream2 {
             type Ctrl = #ctrl_ty;
 
             fn controller(
-                _client: &::concord_core::prelude::ApiClient<super::Cx>,
+                vars: &super::Vars,
                 ep: &super::endpoints::#name
             ) -> ::core::result::Result<Self::Ctrl, ::concord_core::prelude::ApiClientError> {
+                #[allow(unused_variables)]
+                let cx = vars;
                 let mut ctrl: Self::Ctrl = ::core::default::Default::default();
-                #( #hints )*
+                #( #auto_key_assigns )*
                 #( #assigns )*
                 ::core::result::Result::Ok(ctrl)
             }

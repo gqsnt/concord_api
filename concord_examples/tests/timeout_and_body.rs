@@ -27,7 +27,7 @@ async fn timeout_layering_client_path_endpoint() {
     use api_timeout::*;
 
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+    let api = ApiTimeout::new_with_transport(transport);
 
     let _ = api.execute(endpoints::A::new()).await.unwrap();
     let req = &recorded.lock().unwrap()[0];
@@ -58,7 +58,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
     // A => inject application/json
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api = ApiClient::<api_body::Cx>::with_transport(api_body::Vars::new(), transport);
+        let api = ApiBody::new_with_transport( transport);
 
         let _ = api.execute(endpoints::A::new(NewObj { id: "1".into() })).await.unwrap();
         let req = &recorded.lock().unwrap()[0];
@@ -69,7 +69,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
     // B => keep text/plain
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+        let api =  ApiBody::new_with_transport( transport);
 
         let _ = api.execute(endpoints::B::new(NewObj { id: "1".into() })).await.unwrap();
         let req = &recorded.lock().unwrap()[0];
@@ -80,7 +80,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
     // C => no Content-Type injected
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+        let api =  ApiBody::new_with_transport( transport);
 
         let _ = api.execute(endpoints::C::new()).await.unwrap();
         let req = &recorded.lock().unwrap()[0];
@@ -107,7 +107,7 @@ async fn timeout_endpoint_allows_no_comma_before_arrow() {
     }
     use api_timeout_no_comma::*;
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+    let api = ApiTimeoutNoComma::new_with_transport(transport);
     let _ = api.execute(endpoints::A::new()).await.unwrap();
     let req = &recorded.lock().unwrap()[0];
     assert_eq!(req.timeout, Some(core::time::Duration::from_secs(2)));

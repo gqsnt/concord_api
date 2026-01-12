@@ -2,7 +2,7 @@ use crate::client::ClientContext;
 use crate::endpoint::{Endpoint, ResponseSpec};
 use crate::error::ApiClientError;
 use crate::pagination::{
-    Control, Controller, ControllerBuild, ControllerValue, PageItems, ProgressKey, Stop,
+    Control, Controller, PageItems, ProgressKey, Stop,
 };
 use crate::policy::PolicyPatch;
 use crate::transport::DecodedResponse;
@@ -70,13 +70,7 @@ where
 {
     type State = CursorState;
 
-    fn hint_param_key(&mut self, param: &'static str, key: &'static str) {
-        match param {
-            "cursor" => self.cursor_key = Cow::from(key),
-            "per_page" => self.per_page_key = Cow::from(key),
-            _ => {}
-        }
-    }
+
 
     fn init(&self, _ep: &E) -> Result<Self::State, ApiClientError> {
         if self.per_page == 0 {
@@ -144,52 +138,4 @@ where
     }
 }
 
-impl ControllerBuild for CursorPagination {
-    fn set_kv(&mut self, key: &'static str, value: ControllerValue) -> Result<(), ApiClientError> {
-        match key {
-            "cursor" => {
-                self.cursor = value.into_option_field::<String>().ok_or(
-                    ApiClientError::ControllerConfig {
-                        key,
-                        expected: "Option<String>|String",
-                    },
-                )?;
-                Ok(())
-            }
-            "per_page" => {
-                self.per_page =
-                    value
-                        .into_typed::<u64>()
-                        .ok_or(ApiClientError::ControllerConfig {
-                            key,
-                            expected: "u64",
-                        })?;
-                Ok(())
-            }
-            "send_cursor_on_first" => {
-                self.send_cursor_on_first =
-                    value
-                        .into_typed::<bool>()
-                        .ok_or(ApiClientError::ControllerConfig {
-                            key,
-                            expected: "bool",
-                        })?;
-                Ok(())
-            }
-            "stop_when_cursor_missing" => {
-                self.stop_when_cursor_missing =
-                    value
-                        .into_typed::<bool>()
-                        .ok_or(ApiClientError::ControllerConfig {
-                            key,
-                            expected: "bool",
-                        })?;
-                Ok(())
-            }
-            _ => Err(ApiClientError::ControllerConfig {
-                key,
-                expected: "known key",
-            }),
-        }
-    }
-}
+

@@ -2,12 +2,11 @@ pub mod cursor;
 pub mod offset_limit;
 pub mod paged;
 
-use crate::client::{ApiClient, ClientContext};
+use crate::client::ClientContext;
 use crate::endpoint::{Endpoint, ResponseSpec};
 use crate::error::ApiClientError;
 use crate::policy::PolicyPatch;
 use crate::transport::{DecodedResponse, RequestMeta};
-use std::any::Any;
 use std::collections::HashSet;
 use std::future::IntoFuture;
 
@@ -28,52 +27,12 @@ pub enum ProgressKey {
     Bytes(Vec<u8>),
 }
 
-#[derive(Debug)]
-pub enum ControllerValue {
-    U64(u64),
-    Str(String),
-    Bytes(Vec<u8>),
-    Any(Box<dyn Any + Send + Sync>),
-}
 
-impl ControllerValue {
-    #[inline]
-    fn into_any(self) -> Box<dyn Any + Send + Sync> {
-        match self {
-            ControllerValue::U64(v) => Box::new(v),
-            ControllerValue::Str(v) => Box::new(v),
-            ControllerValue::Bytes(v) => Box::new(v),
-            ControllerValue::Any(v) => v,
-        }
-    }
-
-    #[inline]
-    pub fn into_typed<T: Any + Send + Sync>(self) -> Option<T> {
-        self.into_any().downcast::<T>().ok().map(|b| *b)
-    }
-
-    #[inline]
-    pub fn into_option_field<T: Any + Send + Sync>(self) -> Option<Option<T>> {
-        let boxed = self.into_any();
-
-        // 1) Si c'est déjà un Option<T>, on renvoie l'Option<T> telle quelle (même None).
-        match boxed.downcast::<Option<T>>() {
-            Ok(v) => Some(*v),
-
-            // 2) Sinon, on réessaie en tant que T, et on l'emballe en Some(T).
-            Err(boxed) => boxed.downcast::<T>().ok().map(|v| Some(*v)),
-        }
-    }
-}
-
-pub trait ControllerBuild: Default + Send + Sync + 'static {
-    fn set_kv(&mut self, key: &'static str, value: ControllerValue) -> Result<(), ApiClientError>;
-}
 
 pub trait Controller<Cx: ClientContext, E: Endpoint<Cx>>: Send + Sync + 'static {
     type State: Send + Sync + 'static;
 
-    fn hint_param_key(&mut self, _param: &'static str, _key: &'static str) {}
+
 
     fn init(&self, ep: &E) -> Result<Self::State, ApiClientError>;
 
@@ -167,7 +126,7 @@ impl<T: Send + 'static> PageItems for Vec<T> {
 
 pub trait PaginationPart<Cx: ClientContext, E: Endpoint<Cx>>: Send + Sync + 'static {
     type Ctrl: Controller<Cx, E>;
-    fn controller(client: &ApiClient<Cx>, ep: &E) -> Result<Self::Ctrl, ApiClientError>;
+    fn controller(vars: &Cx::Vars, ep: &E) -> Result<Self::Ctrl, ApiClientError>;
 }
 
 pub struct NoPagination;
@@ -175,7 +134,7 @@ pub struct NoController;
 
 impl<Cx: ClientContext, E: Endpoint<Cx>> PaginationPart<Cx, E> for NoPagination {
     type Ctrl = NoController;
-    fn controller(_: &ApiClient<Cx>, _: &E) -> Result<Self::Ctrl, ApiClientError> {
+    fn controller(_: &Cx::Vars, _: &E) -> Result<Self::Ctrl, ApiClientError> {
         Ok(NoController)
     }
 }
@@ -207,14 +166,14 @@ where
 }
 
 // ---------------- Collection driver ----------------
-pub struct CollectAllItems<'a, Cx: ClientContext, E: Endpoint<Cx>> {
-    client: &'a ApiClient<Cx>,
+pub struct CollectAllItems<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> {
+    client: &'a crate::client::ApiClient<Cx, T>,
     ep: E,
     caps: Caps,
 }
-impl<'a, Cx: ClientContext, E: Endpoint<Cx>> CollectAllItems<'a, Cx, E> {
+impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> CollectAllItems<'a, Cx, E, T> {
     #[inline]
-    pub(crate) fn new(client: &'a ApiClient<Cx>, ep: E, caps: Caps) -> Self {
+    pub(crate) fn new(client: &'a crate::client::ApiClient<Cx, T>, ep: E, caps: Caps) -> Self {
         Self { client, ep, caps }
     }
     #[inline]
@@ -234,11 +193,12 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>> CollectAllItems<'a, Cx, E> {
     }
 }
 
-impl<'a, Cx, E> IntoFuture for CollectAllItems<'a, Cx, E>
+impl<'a, Cx, E, T> IntoFuture for CollectAllItems<'a, Cx, E, T>
 where
     Cx: ClientContext,
     E: CollectAllItemsEndpoint<Cx>,
     <<E as Endpoint<Cx>>::Response as ResponseSpec>::Output: PageItems,
+    T: crate::transport::Transport,
 {
     type Output = Result<
         Vec<<<<E as Endpoint<Cx>>::Response as ResponseSpec>::Output as PageItems>::Item>,
@@ -250,7 +210,7 @@ where
 
     fn into_future(mut self) -> Self::IntoFuture {
         Box::pin(async move {
-            let ctrl = <E::Pagination as PaginationPart<Cx, E>>::controller(self.client, &self.ep)?;
+            let ctrl = <E::Pagination as PaginationPart<Cx, E>>::controller(self.client.vars(), &self.ep)?;
             let mut st = ctrl.init(&self.ep)?;
             let mut seen: HashSet<ProgressKey> = HashSet::new();
             let mut out: Vec<<<E::Response as ResponseSpec>::Output as PageItems>::Item> =

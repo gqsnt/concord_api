@@ -95,10 +95,10 @@ impl MockTransport {
 }
 
 impl concord_core::prelude::Transport for MockTransport {
-    fn send<'a>(
-        &'a self,
-        req: &'a BuiltRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send + 'a>> {
+    fn send(
+        &self,
+        req: BuiltRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
         let recorded = self.recorded.clone();
         let replies = self.replies.clone();
 
@@ -116,6 +116,8 @@ impl concord_core::prelude::Transport for MockTransport {
                 .remove(0);
 
             Ok(TransportResponse {
+                meta: req.meta,
+                url: req.url,
                 status: reply.status,
                 headers: reply.headers,
                 content_length: Some(reply.body.len() as u64),

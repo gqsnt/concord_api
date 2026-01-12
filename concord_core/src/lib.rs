@@ -15,12 +15,12 @@ mod types;
 pub mod internal {
     #[doc(hidden)]
     pub use crate::endpoint::{
-        BodyPart, Chain, Decoded, Mapped, NoBody, NoPolicy, NoRoute, PolicyPart, ResponseSpec,
-        RoutePart, Transform,
+        BodyPart, Chain, Decoded, Mapped, MappedResp, NoBody, NoPolicy, NoRoute, PolicyPart,
+        ResponseSpec, RoutePart, Transform, TransformResp,
     };
     #[doc(hidden)]
     pub use crate::pagination::{
-        Control, Controller, ControllerBuild, ControllerValue, CursorPagination, HasNextCursor,
+        Control, Controller, CursorPagination, HasNextCursor,
         NoController, NoPagination, OffsetLimitPagination, PagedPagination, PaginationPart,
         ProgressKey,
     };
@@ -34,7 +34,7 @@ pub mod prelude {
     pub use crate::endpoint::Endpoint;
     pub use crate::error::{ApiClientError, FxError};
     pub use crate::pagination::{
-        Caps, CollectAllItems, CollectAllItemsEndpoint, ControllerBuild, ControllerValue,
+        Caps, CollectAllItems, CollectAllItemsEndpoint,
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
         ProgressKey, Stop,
     };

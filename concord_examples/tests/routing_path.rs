@@ -19,7 +19,7 @@ async fn path_concat_and_percent_encoding_and_alias() {
     use api_path::*;
 
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<api_path::Cx>::with_transport(api_path::Vars::new(), transport);
+    let api = ApiPath::new_with_transport( transport);
 
     // alias field name: match_id
     let _ = api.execute(endpoints::GetMatch::new("a/b".to_string())).await.unwrap();
@@ -43,14 +43,14 @@ async fn optional_path_segment_omitted_no_double_slash() {
 
     // opt=None => "/x/y"
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<api_opt_seg::Cx>::with_transport(api_opt_seg::Vars::new(), transport);
+    let api = ApiOptSeg::new_with_transport( transport);
     let _ = api.execute(endpoints::One::new()).await.unwrap();
     let req = &recorded.lock().unwrap()[0];
     assert_eq!(req.url.path(), "/x/y");
 
     // opt=Some("z") => "/x/z/y"
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+    let api =ApiOptSeg::new_with_transport(transport);
 
     let _ = api.execute(endpoints::One::new().opt("z".to_string())).await.unwrap();
     let req = &recorded.lock().unwrap()[0];

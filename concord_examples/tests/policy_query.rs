@@ -31,7 +31,7 @@ async fn query_set_remove_push_override_and_tostring() {
     use api_query::*;
 
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<api_query::Cx>::with_transport(api_query::Vars::new(), transport);
+    let api = ApiQuery::new_with_transport(transport);
 
     let _ = api.execute(endpoints::One::new()).await.unwrap();
     let req = &recorded.lock().unwrap()[0];

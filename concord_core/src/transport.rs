@@ -79,6 +79,8 @@ pub trait TransportBody: Send + 'static {
 }
 
 pub struct TransportResponse {
+    pub meta: RequestMeta,
+    pub url: Url,
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub content_length: Option<u64>,
@@ -91,10 +93,10 @@ pub struct TransportResponse {
 /// - Must honor `BuiltRequest` fields (url/headers/body/timeout) as appropriate.
 /// - Must not leak a concrete HTTP client type in its public surface.
 pub trait Transport: Send + Sync + 'static {
-    fn send<'a>(
-        &'a self,
-        req: &'a BuiltRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send + 'a>>;
+    fn send(
+        &self,
+        req: BuiltRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>;
 }
 
 #[derive(Clone)]
@@ -127,17 +129,16 @@ impl TransportBody for ReqwestBody {
 }
 
 impl Transport for ReqwestTransport {
-    fn send<'a>(
-        &'a self,
-        req: &'a BuiltRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send + 'a>> {
+    fn send(
+        &self,
+        req: BuiltRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
         let client = self.client.clone();
-        let method = req.meta.method.clone();
-        let url = req.url.clone();
-        let headers = req.headers.clone();
-        let body = req.body.clone();
-        let timeout = req.timeout;
         Box::pin(async move {
+            let BuiltRequest { meta, url, headers, body, timeout } = req;
+            // reqwest needs an owned Url; we keep a copy for returning meta.
+            let url_for_resp = url.clone();
+            let method = meta.method.clone();
             let mut rb = client.request(method, url).headers(headers);
             if let Some(b) = body {
                 rb = rb.body(b);
@@ -150,6 +151,8 @@ impl Transport for ReqwestTransport {
             let headers = resp.headers().clone();
             let content_length = resp.content_length();
             Ok(TransportResponse {
+                meta,
+                url: url_for_resp,
                 status,
                 headers,
                 content_length,

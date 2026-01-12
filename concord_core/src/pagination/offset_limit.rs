@@ -2,7 +2,7 @@ use crate::client::ClientContext;
 use crate::endpoint::{Endpoint, ResponseSpec};
 use crate::error::ApiClientError;
 use crate::pagination::{
-    Control, Controller, ControllerBuild, ControllerValue, PageItems, ProgressKey, Stop,
+    Control, Controller, PageItems, ProgressKey, Stop,
 };
 use crate::policy::PolicyPatch;
 use crate::transport::DecodedResponse;
@@ -52,13 +52,7 @@ where
 {
     type State = OffsetLimitState;
 
-    fn hint_param_key(&mut self, param: &'static str, key: &'static str) {
-        match param {
-            "offset" => self.offset_key = Cow::from(key),
-            "limit" => self.limit_key = Cow::from(key),
-            _ => {}
-        }
-    }
+
 
     fn init(&self, _ep: &E) -> Result<Self::State, ApiClientError> {
         if self.limit == 0 {
@@ -102,32 +96,4 @@ where
     }
 }
 
-impl ControllerBuild for OffsetLimitPagination {
-    fn set_kv(&mut self, key: &'static str, value: ControllerValue) -> Result<(), ApiClientError> {
-        match key {
-            "offset" => {
-                self.offset =
-                    value
-                        .into_typed::<u64>()
-                        .ok_or(ApiClientError::ControllerConfig {
-                            key,
-                            expected: "u64",
-                        })?;
-                Ok(())
-            }
-            "limit" => {
-                self.limit = value
-                    .into_typed::<u64>()
-                    .ok_or(ApiClientError::ControllerConfig {
-                        key,
-                        expected: "u64",
-                    })?;
-                Ok(())
-            }
-            _ => Err(ApiClientError::ControllerConfig {
-                key,
-                expected: "known key",
-            }),
-        }
-    }
-}
+

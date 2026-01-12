@@ -11,7 +11,6 @@ use bytes::Bytes;
 use http::StatusCode;
 use http::header::CONTENT_TYPE;
 use http::uri::Scheme;
-use std::sync::Arc;
 
 pub trait ClientContext: Sized {
     type Vars: Clone + Send + Sync + 'static;
@@ -28,14 +27,14 @@ pub trait ClientContext: Sized {
 }
 
 #[derive(Clone)]
-pub struct ApiClient<Cx: ClientContext> {
-    transport: Arc<dyn Transport>,
+pub struct ApiClient<Cx: ClientContext, T: Transport = ReqwestTransport> {
+    transport: T,
     vars: Cx::Vars,
     debug_level: DebugLevel,
     pagination_caps: Caps,
 }
 
-impl<Cx: ClientContext> ApiClient<Cx> {
+impl<Cx: ClientContext> ApiClient<Cx, ReqwestTransport> {
     pub fn new(vars: Cx::Vars) -> Self {
         Self::with_reqwest_client(vars, reqwest::Client::new())
     }
@@ -43,10 +42,11 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     pub fn with_reqwest_client(vars: Cx::Vars, client: reqwest::Client) -> Self {
         Self::with_transport(vars, ReqwestTransport::new(client))
     }
-
-    pub fn with_transport(vars: Cx::Vars, transport: impl Transport) -> Self {
+}
+impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
+    pub fn with_transport(vars: Cx::Vars, transport: T) -> Self {
         Self {
-            transport: Arc::new(transport),
+            transport,
             vars,
             debug_level: DebugLevel::default(),
             pagination_caps: Caps::default(),
@@ -73,7 +73,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         f(&mut self.vars);
     }
     #[inline]
-    pub fn transport(&self) -> &Arc<dyn Transport> {
+    pub fn transport(&self) -> &T {
         &self.transport
     }
 
@@ -245,7 +245,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             .map_err(|e| ApiClientError::in_endpoint(ep.name(), e))
     }
 
-    pub fn collect_all_items<E>(&self, ep: E) -> CollectAllItems<'_, Cx, E>
+    pub fn collect_all_items<E>(&self, ep: E) -> CollectAllItems<'_, Cx, E, T>
     where
         E: CollectAllItemsEndpoint<Cx>,
     {
@@ -253,7 +253,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     }
 }
 
-impl<Cx: ClientContext> ApiClient<Cx> {
+impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     fn build_request<E, F>(
         &self,
         ep: &E,
@@ -266,13 +266,13 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     {
         // Route = base + endpoint route part
         let mut route = Cx::base_route(self.vars());
-        <E::Route as RoutePart<Cx, E>>::apply(ep, self, &mut route)?;
+        <E::Route as RoutePart<Cx, E>>::apply(ep, self.vars(), &mut route)?;
 
         // Policy layering model:
         // client (base_policy) -> (prefix/path) -> endpoint -> runtime injections
         let mut policy = Cx::base_policy(self.vars())?;
         policy.set_layer(PolicyLayer::Endpoint);
-        <E::Policy as PolicyPart<Cx, E>>::apply(ep, self, &mut policy)?;
+        <E::Policy as PolicyPart<Cx, E>>::apply(ep, self.vars(), &mut policy)?;
 
         // Runtime Accept injection (decoder-owned) after endpoint policy.
         policy.set_layer(PolicyLayer::Runtime);
@@ -340,7 +340,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         dbg_vv: bool,
         url_str: &str,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let mut resp = self.transport.send(&built).await?;
+        let mut resp = self.transport.send(built).await?;
         let status = resp.status;
         let resp_headers = resp.headers;
 
@@ -373,8 +373,8 @@ impl<Cx: ClientContext> ApiClient<Cx> {
 
         let bytes = read_body_all(resp.body.as_mut()).await?;
         Ok(BuiltResponse {
-            meta: built.meta,
-            url: built.url,
+            meta: resp.meta,
+            url: resp.url,
             status,
             headers: resp_headers,
             body: bytes,
@@ -415,17 +415,17 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             body: crate::error::body_as_text(&resp.headers, &resp.body, Some(resp.body.len())),
         })?;
 
-        let out =
-            <E::Response as ResponseSpec>::map(decoded).map_err(|e| ApiClientError::Transform {
-                endpoint: resp.meta.endpoint,
-                source: e,
-            })?;
-        Ok(DecodedResponse {
+        let endpoint = resp.meta.endpoint;
+        let decoded_resp = DecodedResponse {
             meta: resp.meta,
             url: resp.url,
             status: resp.status,
             headers: resp.headers,
-            value: out,
+            value: decoded,
+        };
+        <E::Response as ResponseSpec>::map_response(decoded_resp).map_err(|e| ApiClientError::Transform {
+            endpoint,
+            source: e,
         })
     }
 }

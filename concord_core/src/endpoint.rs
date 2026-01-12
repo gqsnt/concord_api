@@ -1,33 +1,34 @@
-use crate::client::{ApiClient, ClientContext};
+use crate::client::ClientContext;
 use crate::codec::{Encodes, NoContent};
 use crate::debug::DebugLevel;
 use crate::error::ApiClientError;
 use crate::pagination::PaginationPart;
 use crate::policy::Policy;
 use crate::types::RouteParts;
+use crate::transport::DecodedResponse;
 use http::Method;
 use std::marker::PhantomData;
 
 /// RoutePart modifie `RouteParts` (host + path).
 pub trait RoutePart<Cx: ClientContext, E>: Send + Sync + 'static {
-    fn apply(ep: &E, client: &ApiClient<Cx>, route: &mut RouteParts) -> Result<(), ApiClientError>;
+    fn apply(ep: &E, vars: &Cx::Vars, route: &mut RouteParts) -> Result<(), ApiClientError>;
 }
 
 /// PolicyPart modifie `Policy` (headers + query).
 pub trait PolicyPart<Cx: ClientContext, E>: Send + Sync + 'static {
-    fn apply(ep: &E, client: &ApiClient<Cx>, policy: &mut Policy) -> Result<(), ApiClientError>;
+    fn apply(ep: &E, vars: &Cx::Vars, policy: &mut Policy) -> Result<(), ApiClientError>;
 }
 
 pub struct NoRoute;
 impl<Cx: ClientContext, E> RoutePart<Cx, E> for NoRoute {
-    fn apply(_: &E, _: &ApiClient<Cx>, _: &mut RouteParts) -> Result<(), ApiClientError> {
+    fn apply(_: &E, _: &Cx::Vars, _: &mut RouteParts) -> Result<(), ApiClientError> {
         Ok(())
     }
 }
 
 pub struct NoPolicy;
 impl<Cx: ClientContext, E> PolicyPart<Cx, E> for NoPolicy {
-    fn apply(_: &E, _: &ApiClient<Cx>, _: &mut Policy) -> Result<(), ApiClientError> {
+    fn apply(_: &E, _: &Cx::Vars, _: &mut Policy) -> Result<(), ApiClientError> {
         Ok(())
     }
 }
@@ -52,9 +53,9 @@ where
     A: RoutePart<Cx, E>,
     B: RoutePart<Cx, E>,
 {
-    fn apply(ep: &E, client: &ApiClient<Cx>, route: &mut RouteParts) -> Result<(), ApiClientError> {
-        A::apply(ep, client, route)?;
-        B::apply(ep, client, route)?;
+    fn apply(ep: &E, vars: &Cx::Vars, route: &mut RouteParts) -> Result<(), ApiClientError> {
+        A::apply(ep, vars, route)?;
+        B::apply(ep, vars, route)?;
         Ok(())
     }
 }
@@ -64,9 +65,9 @@ where
     A: PolicyPart<Cx, E>,
     B: PolicyPart<Cx, E>,
 {
-    fn apply(ep: &E, client: &ApiClient<Cx>, policy: &mut Policy) -> Result<(), ApiClientError> {
-        A::apply(ep, client, policy)?;
-        B::apply(ep, client, policy)?;
+    fn apply(ep: &E, vars: &Cx::Vars, policy: &mut Policy) -> Result<(), ApiClientError> {
+        A::apply(ep, vars, policy)?;
+        B::apply(ep, vars, policy)?;
         Ok(())
     }
 }
@@ -100,7 +101,9 @@ pub trait ResponseSpec: Send + Sync + 'static {
         <Self::Dec as crate::codec::ContentType>::IS_NO_CONTENT
     }
 
-    fn map(decoded: Self::Decoded) -> Result<Self::Output, crate::error::FxError>;
+    fn map_response(
+        resp: DecodedResponse<Self::Decoded>,
+    ) -> Result<DecodedResponse<Self::Output>, crate::error::FxError>;
 }
 
 /// Helper générique : (decoder, type)
@@ -115,8 +118,8 @@ where
     type Output = T;
     type Dec = Dec;
 
-    fn map(decoded: T) -> Result<T, crate::error::FxError> {
-        Ok(decoded)
+    fn map_response(resp: DecodedResponse<T>) -> Result<DecodedResponse<T>, crate::error::FxError> {
+        Ok(resp)
     }
 }
 
@@ -136,8 +139,33 @@ where
     type Output = M::Out;
     type Dec = R::Dec;
 
-    fn map(decoded: Self::Decoded) -> Result<Self::Output, crate::error::FxError> {
-        M::map(decoded)
+    fn map_response(
+        resp: DecodedResponse<Self::Decoded>,
+    ) -> Result<DecodedResponse<Self::Output>, crate::error::FxError> {
+        let DecodedResponse { meta, url, status, headers, value } = resp;
+        let out = M::map(value)?;
+        Ok(DecodedResponse { meta, url, status, headers, value: out })
+    }
+}
+
+pub trait TransformResp<T>: Send + Sync + 'static {
+    type Out: Send + 'static;
+    fn map(resp: DecodedResponse<T>) -> Result<DecodedResponse<Self::Out>, crate::error::FxError>;
+}
+
+pub struct MappedResp<R, M>(PhantomData<(R, M)>);
+impl<R, M> ResponseSpec for MappedResp<R, M>
+where
+    R: ResponseSpec,
+    M: TransformResp<R::Decoded>,
+{
+    type Decoded = R::Decoded;
+    type Output = M::Out;
+    type Dec = R::Dec;
+    fn map_response(
+        resp: DecodedResponse<Self::Decoded>,
+    ) -> Result<DecodedResponse<Self::Output>, crate::error::FxError> {
+        M::map(resp)
     }
 }
 

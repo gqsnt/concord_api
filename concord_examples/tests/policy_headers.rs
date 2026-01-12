@@ -35,7 +35,7 @@ async fn header_key_variants_kebab_string_bind_remove_override() {
     use api_headers::*;
 
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<api_headers::Cx>::with_transport(api_headers::Vars::new(), transport);
+    let api = ApiHeaders::new_with_transport( transport);
 
     let _ = api.execute(endpoints::One::new()).await.unwrap();
     let req = &recorded.lock().unwrap()[0];
@@ -68,8 +68,7 @@ async fn header_value_from_cx_to_string_and_invalid_header_value_error() {
     // Case OK: trace false emits "false"
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let vars = Vars::new("ok".to_string());
-        let api = ApiClient::<Cx>::with_transport(vars, transport);
+        let api = ApiHeaderInvalid::new_with_transport("ok".to_string(), transport);
 
         let _ = api.execute(endpoints::One::new()).await.unwrap();
         let req = &recorded.lock().unwrap()[0];
@@ -79,8 +78,7 @@ async fn header_value_from_cx_to_string_and_invalid_header_value_error() {
     // Case invalid header value (newline) => ApiClientError::InvalidParam("header:x-bad") (wrapped)
     {
         let (transport, _recorded) = MockTransport::new(vec![]);
-        let vars = Vars::new("a\nb".to_string());
-        let api = ApiClient::<Cx>::with_transport(vars, transport);
+        let api = ApiHeaderInvalid::new_with_transport("a\nb".to_string(), transport);
 
         let err = api.execute(endpoints::One::new()).await.unwrap_err();
         match err {
@@ -119,7 +117,7 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
     // A => accept application/json
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+        let api = ApiAccept::new_with_transport(transport);
         let _ = api.execute(endpoints::A::new()).await.unwrap();
         let req = &recorded.lock().unwrap()[0];
         assert_eq!(req.headers.get(ACCEPT).unwrap().to_str().unwrap(), "application/json");
@@ -128,7 +126,7 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
     // B => accept text/plain
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+        let api =ApiAccept::new_with_transport(transport);
         let _ = api.execute(endpoints::B::new()).await.unwrap();
         let req = &recorded.lock().unwrap()[0];
         assert_eq!(req.headers.get(ACCEPT).unwrap().to_str().unwrap(), "text/plain");
@@ -137,7 +135,7 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
     // C => no accept
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+        let api = ApiAccept::new_with_transport( transport);
         let _ = api.execute(endpoints::C::new()).await.unwrap();
         let req = &recorded.lock().unwrap()[0];
         assert!(req.headers.get(ACCEPT).is_none());

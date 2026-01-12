@@ -52,7 +52,7 @@ async fn cursor_pagination_keys_flow_and_first_cursor_omitted() {
         MockReply::ok_json(json_bytes(&p2)),
     ]);
 
-    let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+    let api = ApiCursor::new_with_transport(transport);
     let out: Vec<Item> = api.collect_all_items(endpoints::List::new()).await.unwrap();
     assert_eq!(out.len(), 2);
 
@@ -113,7 +113,7 @@ async fn cursor_loop_detection_and_max_pages() {
         MockReply::ok_json(json_bytes(&p)),
     ]);
 
-    let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+    let api = ApiCursorLoop::new_with_transport(transport);
 
     let err = api
         .collect_all_items(endpoints::List::new())
@@ -133,7 +133,7 @@ async fn cursor_loop_detection_and_max_pages() {
         MockReply::ok_json(json_bytes(&p2)),
         MockReply::ok_json(json_bytes(&p2)),
     ]);
-    let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
+    let api = ApiCursorLoop::new_with_transport(transport);
 
     let err = api
         .collect_all_items(endpoints::List::new())

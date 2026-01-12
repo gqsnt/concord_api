@@ -24,8 +24,7 @@ async fn map_closure_variant() {
 
     let reply = vec![Item { id: "a".into() }, Item { id: "b".into() }];
     let (transport, _recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&reply))]);
-    let api = ApiClient::<Cx>::with_transport(Vars::new(), transport);
-
+    let api = ApiMap::new_with_transport(transport);
     let out: Vec<String> = api.execute(endpoints::Ids::new()).await.unwrap();
     assert_eq!(out, vec!["a".to_string(), "b".to_string()]);
 }

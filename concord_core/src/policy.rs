@@ -25,6 +25,7 @@ pub struct Policy {
 
     // If endpoint policy explicitly sets OR removes Accept, runtime decoder injection must not override it.
     accept_explicit_by_endpoint: bool,
+    accept_explicit_by_runtime: bool,
 }
 
 impl Policy {
@@ -35,6 +36,7 @@ impl Policy {
             timeout: None,
             layer: PolicyLayer::Client,
             accept_explicit_by_endpoint: false,
+            accept_explicit_by_runtime: false,
         }
     }
 
@@ -97,7 +99,7 @@ impl Policy {
         if ct.is_empty() {
             return;
         }
-        if self.accept_explicit_by_endpoint {
+        if self.accept_explicit_by_endpoint || self.accept_explicit_by_runtime {
             return;
         }
         // Always override whatever was there (base/prefix/path), because decoder owns Accept.
@@ -175,10 +177,24 @@ impl<'a> PolicyPatch<'a> {
         self.inner.timeout = t;
     }
 
+    #[inline]
+    pub fn set_accept_override(&mut self, v: Option<HeaderValue>) {
+        // Explicit override authorizes runtime changes coherently.
+        self.inner.accept_explicit_by_runtime = true;
+        match v {
+            Some(hv) => {
+                self.inner.headers.insert(ACCEPT, hv);
+            }
+            None => {
+                let _ = self.inner.headers.remove(ACCEPT);
+            }
+        }
+    }
+
     fn guard_accept(&self, name: &HeaderName) -> Result<(), ApiClientError> {
         if self.inner.layer == PolicyLayer::Runtime
             && *name == ACCEPT
-            && !self.inner.accept_explicit_by_endpoint
+            && !(self.inner.accept_explicit_by_endpoint || self.inner.accept_explicit_by_runtime)
         {
             return Err(ApiClientError::PolicyViolation(
                 "runtime cannot override Accept unless endpoint explicitly set/removed it",

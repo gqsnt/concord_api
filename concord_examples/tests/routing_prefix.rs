@@ -40,8 +40,7 @@ async fn prefix_default_and_override_and_order() {
     use api_prefix_default::*;
 
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let vars = api_prefix_default::Vars::new();
-    let api = ApiClient::<api_prefix_default::Cx>::with_transport(vars, transport);
+    let api = ApiPrefixDefault::new_with_transport( transport);
 
     let _ = api.execute(endpoints::Ping::new()).await.unwrap();
     let host0 = recorded.lock().unwrap()[0].url.host_str().unwrap().to_string();
@@ -49,7 +48,7 @@ async fn prefix_default_and_override_and_order() {
     assert!(!host0.starts_with("api.euw1"));
 
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<api_prefix_default::Cx>::with_transport(api_prefix_default::Vars::new(), transport);
+    let api = ApiPrefixDefault::new_with_transport(transport);
 
     let _ = api.execute(endpoints::Ping::new().region(Region::NA)).await.unwrap();
     let host1 = recorded.lock().unwrap()[0].url.host_str().unwrap().to_string();
@@ -72,7 +71,7 @@ async fn prefix_optional_label_omitted_without_double_dot() {
 
     // sub=None => "api.example.com" (pas ".api.example.com")
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<api_prefix_opt::Cx>::with_transport(api_prefix_opt::Vars::new(), transport);
+    let api = ApiPrefixOpt::new_with_transport( transport);
 
     let _ = api.execute(endpoints::Ping::new()).await.unwrap();
     let host0 = recorded.lock().unwrap()[0].url.host_str().unwrap().to_string();
@@ -80,7 +79,7 @@ async fn prefix_optional_label_omitted_without_double_dot() {
 
     // sub=Some("x") => "x.api.example.com"
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-    let api = ApiClient::<api_prefix_opt::Cx>::with_transport(api_prefix_opt::Vars::new(), transport);
+    let api = ApiPrefixOpt::new_with_transport( transport);
 
     let _ = api.execute(endpoints::Ping::new().sub("x".to_string())).await.unwrap();
     let host1 = recorded.lock().unwrap()[0].url.host_str().unwrap().to_string();
@@ -104,7 +103,7 @@ async fn prefix_host_label_validation_errors() {
     // BadDot => ContainsDot
     {
         let (transport, _recorded) = MockTransport::new(vec![]);
-        let api = ApiClient::<api_prefix_invalid::Cx>::with_transport(api_prefix_invalid::Vars::new(), transport);
+        let api = ApiPrefixInvalid::new_with_transport( transport);
 
         let err = api.execute(endpoints::Ping::new().region(Region::BadDot)).await.unwrap_err();
         match err {
@@ -121,7 +120,7 @@ async fn prefix_host_label_validation_errors() {
     // BadDashStart => StartsOrEndsDash
     {
         let (transport, _recorded) = MockTransport::new(vec![]);
-        let api = ApiClient::<api_prefix_invalid::Cx>::with_transport(api_prefix_invalid::Vars::new(), transport);
+        let api = ApiPrefixInvalid::new_with_transport( transport);
 
         let err = api.execute(endpoints::Ping::new().region(Region::BadDashStart)).await.unwrap_err();
         match err {
@@ -138,7 +137,7 @@ async fn prefix_host_label_validation_errors() {
     // BadUnderscore => InvalidByte
     {
         let (transport, _recorded) = MockTransport::new(vec![]);
-        let api = ApiClient::<api_prefix_invalid::Cx>::with_transport(api_prefix_invalid::Vars::new(), transport);
+        let api = ApiPrefixInvalid::new_with_transport( transport);
 
         let err = api.execute(endpoints::Ping::new().region(Region::BadUnderscore)).await.unwrap_err();
         match err {

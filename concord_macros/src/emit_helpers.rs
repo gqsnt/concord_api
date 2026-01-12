@@ -112,27 +112,7 @@ pub fn is_ep_field(expr: &syn::Expr) -> Option<syn::Ident> {
 /// Conservative detection: reject any nested `cx.` / `ep.` usage in a non-trivial expression.
 /// Allowed forms are strictly `cx.name` or `ep.name` at the root.
 pub fn contains_cx_or_ep(expr: &syn::Expr) -> bool {
-    struct V(bool);
-    impl<'ast> syn::visit::Visit<'ast> for V {
-        fn visit_expr_field(&mut self, node: &'ast syn::ExprField) {
-            if let syn::Expr::Path(p) = &*node.base
-                && (super::emit_helpers::tokens_eq_path_ident(&p.path, "cx")
-                    || super::emit_helpers::tokens_eq_path_ident(&p.path, "ep"))
-                {
-                    self.0 = true;
-                }
-            syn::visit::visit_expr_field(self, node);
-        }
-        fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
-            if super::emit_helpers::tokens_eq_path_ident(&node.path, "cx")
-                || super::emit_helpers::tokens_eq_path_ident(&node.path, "ep")
-            {
-                self.0 = true;
-            }
-            syn::visit::visit_expr_path(self, node);
-        }
-    }
-    let mut v = V(false);
-    syn::visit::Visit::visit_expr(&mut v, expr);
-    v.0
+    // Relaxed: allow cx/ep in arbitrary expressions. The generated code binds `cx`/`ep`.
+    let _ = expr;
+    false
 }
