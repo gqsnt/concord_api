@@ -420,16 +420,12 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
             #[inline]
             pub fn with_pagination_caps(mut self, caps: ::concord_core::prelude::Caps) -> Self { self.inner.set_pagination_caps(caps); self }
             #[inline]
-            pub async fn execute<E>(&self, ep: E) -> ::core::result::Result<
-                <E::Response as ::concord_core::internal::ResponseSpec>::Output,
-                ::concord_core::prelude::ApiClientError
-            >
-            where E: ::concord_core::prelude::Endpoint<Cx>,
-            { self.inner.execute(ep).await }
-            #[inline]
-            pub fn collect_all_items<E>(&self, ep: E) -> ::concord_core::prelude::CollectAllItems<'_, Cx, E, T>
-            where E: ::concord_core::prelude::CollectAllItemsEndpoint<Cx>,
-            { self.inner.collect_all_items(ep) }
+            pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, Cx, E, T>
+            where
+                E: ::concord_core::prelude::Endpoint<Cx>,
+            {
+                self.inner.request(ep)
+            }
         }
     }
 }

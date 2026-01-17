@@ -26,7 +26,7 @@ async fn prefix_layer_fmt_adds_one_host_label() {
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
     let api = ApiPrefixLayerFmt::new_with_transport(transport);
 
-    let _ = api.execute(endpoints::One::new("42".to_string())).await.unwrap();
+    let _ = api.request(endpoints::One::new("42".to_string())).await.unwrap();
 
     let req = &recorded.lock().unwrap()[0];
     assert_eq!(req.url.host_str().unwrap(), "api.t42.example.com");
@@ -56,11 +56,11 @@ async fn prefix_layer_fmt_require_all_omits_label_when_missing() {
     let api = ApiPrefixLayerFmtOpt::new_with_transport(transport);
 
     // id=None => host is api.example.com
-    let _ = api.execute(endpoints::One::new()).await.unwrap();
+    let _ = api.request(endpoints::One::new()).await.unwrap();
 
     // id=Some => host is api.tz.example.com
     let _ = api
-        .execute(endpoints::One::new().id("z".to_string()))
+        .request(endpoints::One::new().id("z".to_string()))
         .await
         .unwrap();
 
@@ -89,7 +89,7 @@ async fn path_layer_fmt_builds_single_segment_and_encodes() {
     let api = ApiPathLayerFmt::new_with_transport(transport);
 
     // v contains '/', must remain a single segment => %2F
-    let _ = api.execute(endpoints::One::new("a/b".to_string())).await.unwrap();
+    let _ = api.request(endpoints::One::new("a/b".to_string())).await.unwrap();
 
     let req = &recorded.lock().unwrap()[0];
     assert_eq!(req.url.path(), "/v1/pa%2Fb/x");
@@ -118,11 +118,11 @@ async fn path_layer_fmt_require_all_omits_segment_no_double_slash() {
     let api = ApiPathLayerFmtOpt::new_with_transport(transport);
 
     // v=None => omit fmt segment => "/v1/z/x"
-    let _ = api.execute(endpoints::One::new()).await.unwrap();
+    let _ = api.request(endpoints::One::new()).await.unwrap();
 
     // v=Some => include fmt segment => "/v1/pk/z/x"
     let _ = api
-        .execute(endpoints::One::new().v("k".to_string()))
+        .request(endpoints::One::new().v("k".to_string()))
         .await
         .unwrap();
 

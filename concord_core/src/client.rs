@@ -2,8 +2,9 @@ use crate::codec::{ContentType, Decodes, Encodes};
 use crate::debug::DebugLevel;
 use crate::endpoint::{BodyPart, Endpoint, PolicyPart, ResponseSpec, RoutePart};
 use crate::error::ApiClientError;
-use crate::pagination::{Caps, CollectAllItems, CollectAllItemsEndpoint};
+use crate::pagination::Caps;
 use crate::policy::{Policy, PolicyLayer, PolicyPatch};
+use crate::request::PendingRequest;
 use crate::transport::{BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta};
 use crate::transport::{ReqwestTransport, Transport, TransportBody, TransportError};
 use crate::types::RouteParts;
@@ -87,6 +88,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         self.debug_level = level;
     }
 
+
+
     #[inline]
     pub fn pagination_caps(&self) -> Caps {
         self.pagination_caps
@@ -109,63 +112,25 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         self
     }
 
-    pub async fn execute<E>(
-        &self,
-        ep: E,
-    ) -> Result<<E::Response as ResponseSpec>::Output, ApiClientError>
+    #[inline]
+    pub fn request<E>(&self, ep: E) -> PendingRequest<'_, Cx, E, T>
     where
         E: Endpoint<Cx>,
     {
-        self.execute_ref(&ep).await
+        PendingRequest::new(self, ep)
     }
 
-    pub async fn execute_ref<E>(
-        &self,
-        ep: &E,
-    ) -> Result<<E::Response as ResponseSpec>::Output, ApiClientError>
-    where
-        E: Endpoint<Cx>,
-    {
-        let meta = RequestMeta {
-            endpoint: ep.name(),
-            method: E::METHOD.clone(),
-            idempotent: matches!(
-                E::METHOD,
-                http::Method::GET
-                    | http::Method::HEAD
-                    | http::Method::PUT
-                    | http::Method::DELETE
-                    | http::Method::OPTIONS
-            ),
-            attempt: 0,
-            page_index: 0,
-        };
-        Ok(self.execute_decoded_ref(ep, meta).await?.value)
-    }
-
-    pub async fn execute_decoded_ref<E>(
+    pub(crate) async fn execute_decoded_ref_with<E, F>(
         &self,
         ep: &E,
         meta: RequestMeta,
-    ) -> Result<DecodedResponse<<E::Response as ResponseSpec>::Output>, ApiClientError>
-    where
-        E: Endpoint<Cx>,
-    {
-        self.execute_decoded_ref_with(ep, meta, |_policy| Ok(()))
-            .await
-    }
-
-    pub async fn execute_decoded_ref_with<E, F>(
-        &self,
-        ep: &E,
-        meta: RequestMeta,
+        dbg: DebugLevel,
         patch_policy: F,
     ) -> Result<DecodedResponse<<E::Response as ResponseSpec>::Output>, ApiClientError>
     where
         E: Endpoint<Cx>,
         F: for<'a> FnOnce(&mut PolicyPatch<'a>) -> Result<(), ApiClientError>,
     {
-        let dbg = ep.debug_level().unwrap_or(self.debug_level);
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
 
@@ -243,13 +208,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
         Self::decode_built_response::<E>(resp)
             .map_err(|e| ApiClientError::in_endpoint(ep.name(), e))
-    }
-
-    pub fn collect_all_items<E>(&self, ep: E) -> CollectAllItems<'_, Cx, E, T>
-    where
-        E: CollectAllItemsEndpoint<Cx>,
-    {
-        CollectAllItems::new(self, ep, self.pagination_caps)
     }
 }
 

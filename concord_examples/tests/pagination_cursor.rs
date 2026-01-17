@@ -53,7 +53,7 @@ async fn cursor_pagination_keys_flow_and_first_cursor_omitted() {
     ]);
 
     let api = ApiCursor::new_with_transport(transport);
-    let out: Vec<Item> = api.collect_all_items(endpoints::List::new()).await.unwrap();
+    let out = api.request(endpoints::List::new()).paginate().await.unwrap();
     assert_eq!(out.len(), 2);
 
     let reqs = recorded.lock().unwrap();
@@ -116,7 +116,8 @@ async fn cursor_loop_detection_and_max_pages() {
     let api = ApiCursorLoop::new_with_transport(transport);
 
     let err = api
-        .collect_all_items(endpoints::List::new())
+        .request(endpoints::List::new())
+        .paginate()
         .detect_loops(true)
         .await
         .unwrap_err();
@@ -136,7 +137,8 @@ async fn cursor_loop_detection_and_max_pages() {
     let api = ApiCursorLoop::new_with_transport(transport);
 
     let err = api
-        .collect_all_items(endpoints::List::new())
+        .request(endpoints::List::new())
+        .paginate()
         .max_pages(2)
         .detect_loops(false)
         .await

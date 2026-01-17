@@ -84,25 +84,25 @@ pub async fn test_api() -> Result<(), ApiClientError> {
 
     let posts = client
         .clone()
-        .with_debug_level(DebugLevel::VV)
-        .execute(client::endpoints::GetPosts::new().user_id(1).x_debug(true))
+        .request(client::endpoints::GetPosts::new().user_id(1).x_debug(true))
+        .debug_level(DebugLevel::VV)
         .await?;
     println!("GET /posts?userId=1 => {} posts", posts.len());
 
     let post = client
         .clone()
-        .with_debug_level(DebugLevel::V)
-        .execute(client::endpoints::GetPost::new(1))
+        .request(client::endpoints::GetPost::new(1))
+        .debug_level(DebugLevel::V)
         .await?;
     println!("GET /posts/1 => title={:?}", post.title);
 
     let comments = client
-        .execute(client::endpoints::GetPostComments::new(1))
+        .request(client::endpoints::GetPostComments::new(1))
         .await?;
     println!("GET /posts/1/comments => {} comments", comments.len());
 
     let created = client
-        .execute(client::endpoints::CreatePost::new(
+        .request(client::endpoints::CreatePost::new(
             models::NewPost {
                 title: "foo".to_string(),
                 body: "bar".to_string(),
@@ -113,12 +113,12 @@ pub async fn test_api() -> Result<(), ApiClientError> {
     println!("POST /posts => id={} user_id={}", created.id, created.user_id);
 
     let user = client
-        .execute(client::endpoints::GetUser::new(1))
+        .request(client::endpoints::GetUser::new(1))
         .await?;
     println!("GET /users/1 => username={}", user.username);
 
     let titles = client
-        .execute(client::endpoints::GetUserPosts::new(1))
+        .request(client::endpoints::GetUserPosts::new(1))
         .await?;
     println!("GET /users/1/posts => {} titles (mapped)", titles.len());
 

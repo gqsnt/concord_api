@@ -26,7 +26,7 @@ async fn status_204_requires_no_content_response_spec() {
         let (transport, _recorded) = MockTransport::new(vec![MockReply::status(StatusCode::NO_CONTENT)]);
         let api = ApiNoContent::new_with_transport( transport);
 
-        let err = api.execute(endpoints::A::new()).await.unwrap_err();
+        let err = api.request(endpoints::A::new()).await.unwrap_err();
         match err {
             ApiClientError::InEndpoint { source, .. } => match *source {
                 ApiClientError::NoContentStatusRequiresNoContent { status, .. } => {
@@ -43,7 +43,7 @@ async fn status_204_requires_no_content_response_spec() {
         let (transport, _recorded) = MockTransport::new(vec![MockReply::status(StatusCode::NO_CONTENT)]);
         let api = ApiNoContent::new_with_transport( transport);
 
-        let _ = api.execute(endpoints::B::new()).await.unwrap();
+        let _ = api.request(endpoints::B::new()).await.unwrap();
     }
 }
 
@@ -65,7 +65,7 @@ async fn head_requires_no_content_response_spec() {
         let (transport, _recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
         let api = ApiHead::new_with_transport( transport);
 
-        let err = api.execute(endpoints::A::new()).await.unwrap_err();
+        let err = api.request(endpoints::A::new()).await.unwrap_err();
         match err {
             ApiClientError::InEndpoint { source, .. } => match *source {
                 ApiClientError::HeadRequiresNoContent { .. } => {}
@@ -80,6 +80,6 @@ async fn head_requires_no_content_response_spec() {
         let (transport, _recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
         let api = ApiHead::new_with_transport( transport);
 
-        let _ = api.execute(endpoints::B::new()).await.unwrap();
+        let _ = api.request(endpoints::B::new()).await.unwrap();
     }
 }

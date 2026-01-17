@@ -1,6 +1,5 @@
 use crate::client::ClientContext;
 use crate::codec::{Encodes, NoContent};
-use crate::debug::DebugLevel;
 use crate::error::ApiClientError;
 use crate::pagination::PaginationPart;
 use crate::policy::Policy;
@@ -173,6 +172,7 @@ where
 pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
     const METHOD: Method;
 
+
     type Route: RoutePart<Cx, Self>;
     type Policy: PolicyPart<Cx, Self>;
     type Pagination: PaginationPart<Cx, Self>;
@@ -189,9 +189,5 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
 
     fn response_is_no_content() -> bool {
         <Self::Response as ResponseSpec>::is_no_content()
-    }
-
-    fn debug_level(&self) -> Option<DebugLevel> {
-        None
     }
 }

@@ -470,7 +470,7 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
     let default_region = RegionalRoute::Europe;
 
     let account = riot
-        .execute(riot_client::endpoints::GetAccountByRiotId::new(
+        .request(riot_client::endpoints::GetAccountByRiotId::new(
             "Random Iron".to_string(),
             default_region,
             "EUVV".to_string(),
@@ -481,11 +481,12 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
         account.game_name, account.tag_line, account.puuid
     );
 
-    let match_ids: Vec<String> = riot
-        .collect_all_items(
+    let match_ids = riot
+        .request(
             riot_client::endpoints::GetMatchIdsByPuuid::new(account.puuid.clone(), default_region)
                 .count(100),
         )
+        .paginate()
         .max_items(10_000)
         .await?;
     println!("match_ids Len: {:?}", match_ids.len());
