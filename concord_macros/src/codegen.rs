@@ -985,6 +985,35 @@ fn emit_prefix_route_apply(pieces: &[PrefixPiece]) -> TokenStream2 {
                     });
                 }
             }
+            PrefixPiece::Fmt(fmt) => {
+                let ctx = PolicyEmitCtx::Endpoint;
+                let build = emit_fmt_build_string(fmt, ctx);
+
+                if fmt.require_all {
+                    let guard = emit_fmt_require_all_guard(fmt, ctx);
+                    ops.push(quote! {
+                        {
+                            if { #guard } {
+                                let __fmt_s: ::std::string::String = { #build };
+                                route.host_mut().push_label(
+                                    __fmt_s,
+                                    ::concord_core::prelude::HostLabelSource::Mixed
+                                );
+                            }
+                        }
+                    });
+                } else {
+                    ops.push(quote! {
+                        {
+                            let __fmt_s: ::std::string::String = { #build };
+                            route.host_mut().push_label(
+                                __fmt_s,
+                                ::concord_core::prelude::HostLabelSource::Mixed
+                            );
+                        }
+                    });
+                }
+            }
         }
     }
     quote! { #( #ops )* }
@@ -1007,6 +1036,29 @@ fn emit_path_route_apply(pieces: &[PathPiece]) -> TokenStream2 {
                     });
                 } else {
                     ops.push(quote! { route.path_mut().push_segment_encoded(&ep.#field.to_string()); });
+                }
+            }
+            PathPiece::Fmt(fmt) => {
+                let ctx = PolicyEmitCtx::Endpoint;
+                let build = emit_fmt_build_string(fmt, ctx);
+
+                if fmt.require_all {
+                    let guard = emit_fmt_require_all_guard(fmt, ctx);
+                    ops.push(quote! {
+                        {
+                            if { #guard } {
+                                let __fmt_s: ::std::string::String = { #build };
+                                route.path_mut().push_segment_encoded(&__fmt_s);
+                            }
+                        }
+                    });
+                } else {
+                    ops.push(quote! {
+                        {
+                            let __fmt_s: ::std::string::String = { #build };
+                            route.path_mut().push_segment_encoded(&__fmt_s);
+                        }
+                    });
                 }
             }
         }
@@ -1135,6 +1187,21 @@ fn emit_map_part(ep: &EndpointIr, map_ty: &Ident) -> TokenStream2 {
                 ::core::result::Result::Ok(out)
             }
         }
+    }
+}
+
+
+fn emit_fmt_require_all_guard(fmt: &FmtResolved, ctx: PolicyEmitCtx) -> TokenStream2 {
+    let checks = fmt.pieces.iter().filter_map(|p| {
+        let FmtResolvedPiece::Var { field, optional: true } = p else { return None; };
+        let acc = emit_fmt_access(ctx, field);
+        Some(quote! { if #acc.is_none() { __fmt_ok = false; } })
+    });
+
+    quote! {
+        let mut __fmt_ok: bool = true;
+        #( #checks )*
+        __fmt_ok
     }
 }
 

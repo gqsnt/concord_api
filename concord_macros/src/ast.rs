@@ -44,6 +44,7 @@ pub struct RouteExpr {
 pub enum RouteAtom {
     Static(LitStr),
     Var(TemplateVarDecl),
+    Fmt(FmtSpec),
 }
 
 #[derive(Debug)]

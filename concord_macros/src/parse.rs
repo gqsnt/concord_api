@@ -521,31 +521,36 @@ impl Parse for CodecSpec {
     }
 }
 
+fn parse_fmt_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
+    let fmt_kw: kw::fmt = input.parse()?;
+    let span = fmt_kw.span;
+    let require_all = input.parse::<Option<Token![?]>>()?.is_some();
+
+    let content;
+    bracketed!(content in input);
+
+    let mut pieces: Vec<FmtPiece> = Vec::new();
+    while !content.is_empty() {
+        if content.peek(LitStr) {
+            pieces.push(FmtPiece::Lit(content.parse::<LitStr>()?));
+        } else if content.peek(token::Brace) {
+            let b = content.parse::<Braced<TemplateVarDecl>>()?;
+            pieces.push(FmtPiece::Var(b.inner));
+        } else {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(tt.span(), "expected string literal or `{var:Ty}` in fmt[...]"));
+        }
+        let _ = content.parse::<Option<Token![,]>>()?;
+    }
+
+    Ok(FmtSpec { span, require_all, pieces })
+}
+
+
+
 fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue> {
     if input.peek(kw::fmt) {
-        let fmt_kw: kw::fmt = input.parse()?;
-        let span = fmt_kw.span;
-        let require_all = input.parse::<Option<Token![?]>>()?.is_some();
-
-        let content;
-        bracketed!(content in input);
-
-        let mut pieces: Vec<FmtPiece> = Vec::new();
-        while !content.is_empty() {
-            if content.peek(LitStr) {
-                pieces.push(FmtPiece::Lit(content.parse::<LitStr>()?));
-            } else if content.peek(token::Brace) {
-                let b = content.parse::<Braced<TemplateVarDecl>>()?;
-                pieces.push(FmtPiece::Var(b.inner));
-            } else {
-                let tt: TokenTree = content.parse()?;
-                return Err(syn::Error::new(tt.span(), "expected string literal or `{var:Ty}` in fmt[...]"));
-            }
-
-            let _ = content.parse::<Option<Token![,]>>()?;
-        }
-
-        return Ok(PolicyValue::Fmt(FmtSpec { span, require_all, pieces }));
+        return Ok(PolicyValue::Fmt(parse_fmt_spec(input)?));
     }
 
     Ok(PolicyValue::Expr(input.parse::<syn::Expr>()?))
@@ -553,6 +558,9 @@ fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue>
 
 
 fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
+    if input.peek(kw::fmt) {
+        return Ok(RouteAtom::Fmt(parse_fmt_spec(input)?));
+    }
     if input.peek(LitStr) {
         return Ok(RouteAtom::Static(input.parse::<LitStr>()?));
     }
