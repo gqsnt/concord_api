@@ -81,8 +81,11 @@ pub enum HostLabelInvalidReason {
     Empty,
     ContainsDot,
     ContainsSlash,
+    ContainsScheme,
+    ContainsWhitespace,
     StartsOrEndsDash,
     InvalidByte(u8),
+    AbsoluteModePushLabel,
 }
 
 impl ApiClientError {

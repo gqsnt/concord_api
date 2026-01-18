@@ -1,5 +1,5 @@
 use proc_macro2::Span;
-use syn::{braced, Expr, Ident, LitStr, Path, Type};
+use syn::{Expr, Ident, LitStr, Path, Type};
 use syn::spanned::Spanned;
 
 #[derive(Debug)]
@@ -14,6 +14,13 @@ pub struct ClientDef {
     pub scheme: SchemeLit,
     pub host: LitStr,
     pub policy: PolicyBlocks,
+    pub vars: Option<VarsBlock>,
+    pub auth_vars: Option<VarsBlock>,
+}
+
+#[derive(Debug)]
+pub struct VarsBlock {
+    pub decls: Vec<VarDeclNoWire>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -44,7 +51,20 @@ pub struct RouteExpr {
 pub enum RouteAtom {
     Static(LitStr),
     Var(TemplateVarDecl),
+    Ref(ScopedRef),
     Fmt(FmtSpec),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefScope {
+    Cx,
+    Ep,
+    Auth,
+}
+#[derive(Debug, Clone)]
+pub struct ScopedRef {
+    pub scope: RefScope,
+    pub ident: Ident,
 }
 
 #[derive(Debug)]
@@ -156,19 +176,8 @@ pub struct CodecSpec {
     pub ty: Type,
 }
 
-/// Parser helper for blocks.
-pub struct Braced<T> {
-    pub inner: T,
-}
 
-impl<T: syn::parse::Parse> syn::parse::Parse for Braced<T> {
-    fn parse(input: syn::parse::ParseStream<'_>) -> syn::Result<Self> {
-        let content;
-        braced!(content in input);
-        let inner = content.parse::<T>()?;
-        Ok(Self { inner })
-    }
-}
+
 
 
 #[derive(Debug)]
@@ -198,4 +207,5 @@ pub struct FmtSpec {
 pub enum FmtPiece {
     Lit(LitStr),
     Var(TemplateVarDecl), // réutilise déjà votre parser de `{wire as rust?: Ty = default}`
+    Ref(ScopedRef),
 }

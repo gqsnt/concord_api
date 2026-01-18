@@ -24,12 +24,14 @@ pub enum HostLabelSource {
 #[derive(Clone, Debug)]
 pub struct HostParts {
     spec: HostSpec,
+    absolute_push_attempt: Option<HostLabel>,
 }
 
 impl Default for HostParts {
     fn default() -> Self {
         Self {
             spec: HostSpec::SuffixDomain { labels: Vec::new() },
+            absolute_push_attempt: None,
         }
     }
 }
@@ -38,6 +40,7 @@ impl HostParts {
     #[inline]
     pub fn set_absolute(&mut self, host: impl Into<String>) {
         self.spec = HostSpec::Absolute { host: host.into() };
+        self.absolute_push_attempt = None;
     }
 
     #[inline]
@@ -53,8 +56,10 @@ impl HostParts {
                 source,
             }),
             HostSpec::Absolute { .. } => {
-                // absolute host mode: pushing labels is nonsensical; keep behavior strict.
-                // Caller should switch back to SuffixDomain explicitly if needed.
+                // Ne pas ignorer silencieusement : on mémorise l'intention et validate() échouera.
+                if self.absolute_push_attempt.is_none() {
+                    self.absolute_push_attempt = Some(HostLabel { value: value.into(), source });
+                }
             }
         }
     }
@@ -62,12 +67,48 @@ impl HostParts {
     pub fn validate(&self, endpoint: &'static str) -> Result<(), ApiClientError> {
         match &self.spec {
             HostSpec::Absolute { host } => {
+                if let Some(lbl) = &self.absolute_push_attempt {
+                    let placeholder = match lbl.source {
+                        HostLabelSource::Placeholder { name } => Some(name),
+                        _ => None,
+                    };
+                    return Err(ApiClientError::InvalidHostLabel {
+                        endpoint,
+                        label: lbl.value.clone(),
+                        index: 0,
+                        placeholder,
+                        reason: HostLabelInvalidReason::AbsoluteModePushLabel,
+                    });
+                }
                 let h = host.as_str();
-                if h.is_empty()
-                    || h.contains('/')
-                    || h.contains("://")
-                    || h.chars().any(|c| c.is_whitespace())
-                {
+                if h.is_empty() {
+                    return Err(ApiClientError::InvalidHostLabel {
+                        endpoint,
+                        label: host.clone(),
+                        index: 0,
+                        placeholder: None,
+                        reason: HostLabelInvalidReason::Empty,
+                    });
+                }
+                if h.contains("://") {
+                    return Err(ApiClientError::InvalidHostLabel {
+                        endpoint,
+                        label: host.clone(),
+                        index: 0,
+                        placeholder: None,
+                        reason: HostLabelInvalidReason::ContainsScheme,
+                    });
+                }
+                if h.chars().any(|c| c.is_whitespace()) {
+                    return Err(ApiClientError::InvalidHostLabel {
+                        endpoint,
+                        label: host.clone(),
+                        index: 0,
+                        placeholder: None,
+                        reason: HostLabelInvalidReason::ContainsWhitespace,
+                    });
+                }
+                if h.contains('/') {
                     return Err(ApiClientError::InvalidHostLabel {
                         endpoint,
                         label: host.clone(),
@@ -265,7 +306,6 @@ impl UrlPath {
     /// - Utilisé pour les `{placeholder}` (valeurs dynamiques).
     /// - Garantit une sémantique "un segment" (pas de '/').
     pub fn push_segment_encoded(&mut self, seg: &str) {
-        let seg = seg.trim();
         if seg.is_empty() || seg == "/" {
             return;
         }
@@ -345,5 +385,26 @@ mod test {
 
         p.push_raw("comments/");
         assert_eq!(p.as_str(), "/posts/1/comments");
+    }
+
+    #[test]
+    fn test_url_path_segment_encoded_does_not_trim_spaces() {
+        let mut p = UrlPath::new();
+        p.push_segment_encoded(" a ");
+        assert_eq!(p.as_str(), "/%20a%20");
+    }
+
+    #[test]
+    fn test_host_parts_absolute_rejects_push_label() {
+        let mut h = HostParts::default();
+        h.set_absolute("api.example.net");
+        h.push_label_static("v1");
+        let err = h.validate("TestEndpoint").unwrap_err();
+        match err {
+            ApiClientError::InvalidHostLabel { reason, .. } => {
+                assert!(matches!(reason, HostLabelInvalidReason::AbsoluteModePushLabel));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }

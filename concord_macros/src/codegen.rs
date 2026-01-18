@@ -12,6 +12,7 @@ pub fn emit(ir: Ir) -> TokenStream2 {
     let domain = ir.domain.clone();
 
     let vars_struct = emit_client_vars(&ir.client_vars);
+    let auth_vars_struct = emit_client_auth_vars(&ir.client_auth_vars);
     let cx_struct = emit_client_context(&scheme, &domain, &ir.client_policy);
     let client_wrapper = emit_client_wrapper(&ir);
     let internal_mod = emit_internal(&ir);
@@ -22,6 +23,7 @@ pub fn emit(ir: Ir) -> TokenStream2 {
             use super::*;
 
             #vars_struct
+            #auth_vars_struct
             #cx_struct
 
             #client_wrapper
@@ -122,10 +124,14 @@ fn emit_client_context(scheme: &TokenStream2, domain: &LitStr, policy: &PolicyBl
 
         impl ::concord_core::prelude::ClientContext for Cx {
             type Vars = Vars;
+            type AuthVars = AuthVars;
             const SCHEME: ::http::uri::Scheme = #scheme;
             const DOMAIN: &'static str = #domain;
 
-            fn base_policy(vars: &Self::Vars) -> ::core::result::Result<::concord_core::prelude::Policy, ::concord_core::prelude::ApiClientError> {
+            fn base_policy(
+                vars: &Self::Vars,
+                auth: &Self::AuthVars
+            ) -> ::core::result::Result<::concord_core::prelude::Policy, ::concord_core::prelude::ApiClientError> {
                 #base_policy
             }
         }
@@ -145,8 +151,83 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
         let mut policy = ::concord_core::prelude::Policy::new();
         #[allow(unused_variables)]
         let cx = vars;
+        #[allow(unused_variables)]
+        let auth = auth;
         #( #ops )*
         ::core::result::Result::Ok(policy)
+    }
+}
+
+fn emit_client_auth_vars(vars: &[VarInfo]) -> TokenStream2 {
+    use quote::quote;
+    let fields = vars.iter().map(|v| {
+        let name = &v.rust;
+        if v.optional {
+            quote! { pub #name: ::std::sync::Arc<::std::sync::RwLock<::core::option::Option<::concord_core::prelude::SecretString>>> }
+        } else {
+            quote! { pub #name: ::std::sync::Arc<::std::sync::RwLock<::concord_core::prelude::SecretString>> }
+        }
+    });
+    let required: Vec<&VarInfo> = vars.iter().filter(|v| !v.optional && v.default.is_none()).collect();
+    let new_args = required.iter().map(|v| {
+        let name = &v.rust;
+        let ty = &v.ty;
+        quote! { #name: #ty }
+    });
+    let init_fields = vars.iter().map(|v| {
+        let name = &v.rust;
+        if !v.optional && v.default.is_none() {
+            quote! { #name: ::std::sync::Arc::new(::std::sync::RwLock::new(::concord_core::prelude::SecretString::from(#name))) }
+        } else if v.optional {
+            if let Some(d) = &v.default {
+                quote! { #name: ::std::sync::Arc::new(::std::sync::RwLock::new(::core::option::Option::Some(::concord_core::prelude::SecretString::from(#d)))) }
+            } else {
+                quote! { #name: ::std::sync::Arc::new(::std::sync::RwLock::new(::core::option::Option::None)) }
+            }
+        } else {
+            let d = v.default.as_ref().unwrap();
+            quote! { #name: ::std::sync::Arc::new(::std::sync::RwLock::new(::concord_core::prelude::SecretString::from(#d))) }
+        }
+    });
+    // Default if no required args
+    let can_default = required.is_empty();
+    let default_impl = if can_default {
+        quote! {
+            impl ::core::default::Default for AuthVars {
+                fn default() -> Self { Self::new() }
+            }
+        }
+    } else {
+        quote! {}
+    };
+    // empty auth vars => unit struct
+    if vars.is_empty() {
+        return quote! {
+            #[derive(Clone, Default)]
+            pub struct AuthVars;
+            impl AuthVars {
+                #[inline]
+                pub fn new() -> Self { Self }
+            }
+        };
+    }
+    let new_sig = if required.is_empty() {
+        quote! { pub fn new() -> Self }
+    } else {
+        quote! { pub fn new( #( #new_args ),* ) -> Self }
+    };
+    quote! {
+        #[derive(Clone)]
+        pub struct AuthVars {
+            #( #fields, )*
+        }
+        impl AuthVars {
+            #[inline]
+            #new_sig {
+                Self { #( #init_fields, )* }
+            }
+        }
+        #default_impl
     }
 }
 
@@ -163,12 +244,12 @@ fn emit_internal(ir: &Ir) -> TokenStream2 {
             Cx: ::concord_core::prelude::ClientContext,
             P: ::concord_core::internal::PolicyPart<Cx, E>,
         {
-            fn apply(ep: &E, vars: &Cx::Vars, policy: &mut ::concord_core::prelude::Policy)
+           fn apply(ep: &E, vars: &Cx::Vars, auth: &Cx::AuthVars, policy: &mut ::concord_core::prelude::Policy)
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
                 let prev = policy.layer();
                 policy.set_layer(Self::LAYER);
-                let r = P::apply(ep, vars, policy);
+                let r = P::apply(ep, vars, auth, policy);
                 policy.set_layer(prev);
                 r
             }
@@ -179,12 +260,12 @@ fn emit_internal(ir: &Ir) -> TokenStream2 {
             Cx: ::concord_core::prelude::ClientContext,
             P: ::concord_core::internal::PolicyPart<Cx, E>,
         {
-            fn apply(ep: &E, vars: &Cx::Vars, policy: &mut ::concord_core::prelude::Policy)
+            fn apply(ep: &E, vars: &Cx::Vars, auth: &Cx::AuthVars, policy: &mut ::concord_core::prelude::Policy)
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
                 let prev = policy.layer();
                 policy.set_layer(Self::LAYER);
-                let r = P::apply(ep, vars, policy);
+                let r = P::apply(ep, vars, auth, policy);
                 policy.set_layer(prev);
                 r
             }
@@ -230,8 +311,10 @@ fn emit_layer_parts(ir: &Ir, layer: &LayerIr) -> TokenStream2 {
                 fn apply(
                     ep: &super::endpoints::#ep_name,
                     vars: &super::Vars,
+                    auth: &super::AuthVars,
                     route: &mut ::concord_core::prelude::RouteParts
                 ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
+                    let _ = auth;
                     #route_apply
                     ::core::result::Result::Ok(())
                 }
@@ -243,6 +326,7 @@ fn emit_layer_parts(ir: &Ir, layer: &LayerIr) -> TokenStream2 {
                 fn apply(
                     ep: &super::endpoints::#ep_name,
                     vars: &super::Vars,
+                    auth: &super::AuthVars,
                     policy: &mut ::concord_core::prelude::Policy
                 ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
                     #policy_apply
@@ -294,7 +378,7 @@ fn emit_endpoint_parts(ep: &EndpointIr) -> TokenStream2 {
         where
             Cx: ::concord_core::prelude::ClientContext,
         {
-            fn apply(ep: &super::endpoints::#name, vars: &Cx::Vars, policy: &mut ::concord_core::prelude::Policy)
+            fn apply(ep: &super::endpoints::#name, vars: &Cx::Vars, auth: &Cx::AuthVars, policy: &mut ::concord_core::prelude::Policy)
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
                 #policy_apply
@@ -350,6 +434,27 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
     let new_args = new_args.as_slice();
     let new_pass = new_pass.as_slice();
 
+    let required_auth: Vec<&VarInfo> = ir
+        .client_auth_vars
+        .iter()
+        .filter(|v| !v.optional && v.default.is_none())
+        .collect();
+    let new_auth_args: Vec<TokenStream2> = required_auth
+        .iter()
+        .map(|v| {
+            let f = &v.rust;
+            let ty = &v.ty;
+            quote! { #f: #ty }
+        })
+        .collect();
+    let new_auth_pass: Vec<TokenStream2> = required_auth
+        .iter()
+        .map(|v| {
+            let f = &v.rust;
+            quote! { #f }
+        })
+        .collect();
+
     let var_setters = ir.client_vars.iter().map(|v| {
         let f = &v.rust;
         let ty = &v.ty;
@@ -379,26 +484,56 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
         }
     });
 
+    let auth_setters = ir.client_auth_vars.iter().map(|v| {
+        let f = &v.rust;
+        let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
+        if v.optional {
+            let clear_name = emit_helpers::ident(&format!("clear_{f}"), f.span());
+            quote! {
+            #[inline]
+            pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
+                *self.inner.auth_vars().#f.write().unwrap() = ::core::option::Option::Some(v.into());
+                self
+            }
+            #[inline]
+            pub fn #clear_name(&self) -> &Self {
+                *self.inner.auth_vars().#f.write().unwrap() = ::core::option::Option::None;
+                self
+            }
+        }
+        } else {
+            quote! {
+            #[inline]
+            pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
+                *self.inner.auth_vars().#f.write().unwrap() = v.into();
+                self
+            }
+        }
+        }
+    });
+
     quote! {
         #[derive(Clone)]
-        pub struct #client_ty<T: ::concord_core::prelude::Transport = ::concord_core::prelude::ReqwestTransport> {
+        pub struct #client_ty<T: ::concord_core::prelude::Transport = ::std::sync::Arc<::concord_core::prelude::ReqwestTransport>> {
             inner: ::concord_core::prelude::ApiClient<Cx, T>,
         }
-        impl #client_ty<::concord_core::prelude::ReqwestTransport> {
+        impl #client_ty<::std::sync::Arc<::concord_core::prelude::ReqwestTransport>> {
             #[inline]
-            pub fn new( #( #new_args ),* ) -> Self {
+            pub fn new( #( #new_args ),*, #( #new_auth_args ),* ) -> Self {
                 let vars = Vars::new( #( #new_pass ),* );
-                Self { inner: ::concord_core::prelude::ApiClient::<Cx, ::concord_core::prelude::ReqwestTransport>::new(vars) }
+                let auth_vars = AuthVars::new( #( #new_auth_pass ),* );
+               Self { inner: ::concord_core::prelude::ApiClient::<Cx, ::std::sync::Arc<::concord_core::prelude::ReqwestTransport>>::new(vars, auth_vars) }
             }
 
 
             #[inline]
             pub fn new_with_transport<T2: ::concord_core::prelude::Transport>(
-                #( #new_args, )*
+                #( #new_args, )* #( #new_auth_args, )*
                 transport: T2
             ) -> #client_ty<T2> {
                 let vars = Vars::new( #( #new_pass ),* );
-                #client_ty { inner: ::concord_core::prelude::ApiClient::<Cx, T2>::with_transport(vars, transport) }
+                let auth_vars = AuthVars::new( #( #new_auth_pass ),* );
+                #client_ty { inner: ::concord_core::prelude::ApiClient::<Cx, T2>::with_transport(vars, auth_vars, transport) }
             }
 
 
@@ -406,6 +541,7 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
 
         impl<T: ::concord_core::prelude::Transport> #client_ty<T> {
             #( #var_setters )*
+            #( #auth_setters )*
 
             #[inline]
             pub fn debug_level(&self) -> ::concord_core::prelude::DebugLevel { self.inner.debug_level() }
@@ -644,6 +780,10 @@ fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> To
     ops.push(quote! {
         #[allow(unused_variables)]
         let cx = vars;
+        #[allow(unused_variables)]
+        let auth = auth;
+        #[allow(unused_variables)]
+        let ep = ep;
     });
     ops.extend(emit_policy_ops(policy, PolicyKeyKind::Header, ctx));
     ops.extend(emit_policy_ops(policy, PolicyKeyKind::Query, ctx));
@@ -776,7 +916,7 @@ fn emit_set_op(
             let name = emit_helpers::emit_header_name(&ks, sp);
             if let ValueKind::Fmt(fmt) = value {
                 let err = syn::LitStr::new(&format!("header:{ks}"), sp);
-                let build = emit_fmt_build_string(fmt, ctx);
+                let build = emit_fmt_build_string(fmt);
                 let insert = quote! {
                     let __hv = ::http::HeaderValue::from_str(&__fmt_s)
                         .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(#err))?;
@@ -785,9 +925,12 @@ fn emit_set_op(
 
                 if fmt.require_all {
                     let checks = fmt.pieces.iter().filter_map(|p| {
-                        let FmtResolvedPiece::Var { field, optional: true } = p else { return None; };
-                        let acc = emit_fmt_access(ctx, field);
-                        Some(quote! { if #acc.is_none() { __fmt_ok = false; } })
+                        let FmtResolvedPiece::Var { source, field, optional: true } = p else { return None; };
+                        match source {
+                            FmtVarSource::Cx => Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } }),
+                            FmtVarSource::Ep => Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } }),
+                            FmtVarSource::Auth => Some(quote! { if auth.#field.read().unwrap().is_none() { __fmt_ok = false; } }),
+                        }
                     });
                     return quote! {
                         let mut __fmt_ok: bool = true;
@@ -805,6 +948,33 @@ fn emit_set_op(
                         #insert
                     };
                 }
+            }
+            // auth direct (non-fmt)
+            if let ValueKind::AuthField(fld) = value {
+                let err = syn::LitStr::new(&format!("header:{ks}"), sp);
+                return if let Some(OptionalRefKind::Auth) = conditional {
+                    quote! {
+                        {
+                            let __g = auth.#fld.read().unwrap();
+                            if let ::core::option::Option::Some(__v) = __g.as_ref() {
+                                let __hv = ::http::HeaderValue::from_str(__v.expose())
+                                    .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(#err))?;
+                                policy.insert_header(#name, __hv);
+                            } else {
+                                policy.remove_header(#name);
+                            }
+                        }
+                    }
+                } else {
+                    quote! {
+                        {
+                            let __g = auth.#fld.read().unwrap();
+                            let __hv = ::http::HeaderValue::from_str(__g.expose())
+                                .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(#err))?;
+                            policy.insert_header(#name, __hv);
+                        }
+                    }
+                };
             }
             // conditional optional ref => if Some set else remove
             if let Some(_ref_kind) = conditional {
@@ -843,16 +1013,19 @@ fn emit_set_op(
             let (ks, sp, _) = emit_key_string(key, kind);
             let lit = emit_helpers::lit_str(&ks, sp);
             if let ValueKind::Fmt(fmt) = value {
-                let build = emit_fmt_build_string(fmt, ctx);
+                let build = emit_fmt_build_string(fmt);
                 let setter = match op {
                     SetOp::Set  => quote! { policy.set_query(#lit, __fmt_s); },
                     SetOp::Push => quote! { policy.push_query(#lit, __fmt_s); },
                 };
                 if fmt.require_all {
                     let checks = fmt.pieces.iter().filter_map(|p| {
-                        let FmtResolvedPiece::Var { field, optional: true } = p else { return None; };
-                        let acc = emit_fmt_access(ctx, field);
-                        Some(quote! { if #acc.is_none() { __fmt_ok = false; } })
+                        let FmtResolvedPiece::Var { source, field, optional: true } = p else { return None; };
+                        match source {
+                            FmtVarSource::Cx => Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } }),
+                            FmtVarSource::Ep => Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } }),
+                            FmtVarSource::Auth => Some(quote! { if auth.#field.read().unwrap().is_none() { __fmt_ok = false; } }),
+                        }
                     });
                     return quote! {
                         let mut __fmt_ok: bool = true;
@@ -870,6 +1043,33 @@ fn emit_set_op(
                         #setter
                     };
                 }
+            }
+            if let ValueKind::AuthField(fld) = value {
+                let setter = match op {
+                    SetOp::Set => quote! { policy.set_query(#lit, __s); },
+                    SetOp::Push => quote! { policy.push_query(#lit, __s); },
+                };
+                return if let Some(OptionalRefKind::Auth) = conditional {
+                    quote! {
+                        {
+                            let __g = auth.#fld.read().unwrap();
+                            if let ::core::option::Option::Some(__v) = __g.as_ref() {
+                                let __s: ::std::string::String = __v.expose().to_owned();
+                                #setter
+                            } else {
+                                policy.remove_query(#lit);
+                            }
+                        }
+                    }
+                } else {
+                    quote! {
+                        {
+                            let __g = auth.#fld.read().unwrap();
+                            let __s: ::std::string::String = __g.expose().to_owned();
+                            #setter
+                        }
+                        }
+                };
             }
             if let Some(_ref_kind) = conditional {
                 let as_ref_expr = match value {
@@ -903,14 +1103,8 @@ fn emit_set_op(
 }
 
 
-fn emit_fmt_access(ctx: PolicyEmitCtx, f: &syn::Ident) -> proc_macro2::TokenStream {
-    match ctx {
-        PolicyEmitCtx::ClientBase => quote! { vars.#f },
-        PolicyEmitCtx::Layer | PolicyEmitCtx::Endpoint => quote! { ep.#f },
-    }
-}
 
-fn emit_fmt_build_string(fmt: &FmtResolved, ctx: PolicyEmitCtx) -> proc_macro2::TokenStream {
+fn emit_fmt_build_string(fmt: &FmtResolved) -> proc_macro2::TokenStream {
     let mut ops: Vec<proc_macro2::TokenStream> = Vec::new();
 
     for p in &fmt.pieces {
@@ -918,16 +1112,45 @@ fn emit_fmt_build_string(fmt: &FmtResolved, ctx: PolicyEmitCtx) -> proc_macro2::
             FmtResolvedPiece::Lit(s) => {
                 ops.push(quote! { __fmt_s.push_str(#s); });
             }
-            FmtResolvedPiece::Var { field, optional } => {
-                let acc = emit_fmt_access(ctx, field);
-                if *optional {
-                    ops.push(quote! {
-                        if let ::core::option::Option::Some(__v) = #acc.as_ref() {
-                            __fmt_s.push_str(&__v.to_string());
+            FmtResolvedPiece::Var { source, field, optional } => {
+                match source {
+                    FmtVarSource::Cx => {
+                        if *optional {
+                            ops.push(quote! {
+                            if let ::core::option::Option::Some(__v) = vars.#field.as_ref() {
+                                __fmt_s.push_str(&__v.to_string());
+                            }
+                        });
+                        } else {
+                            ops.push(quote! { __fmt_s.push_str(&vars.#field.to_string()); });
                         }
-                    });
-                } else {
-                    ops.push(quote! { __fmt_s.push_str(&#acc.to_string()); });
+                    }
+                    FmtVarSource::Ep => {
+                        if *optional {
+                            ops.push(quote! {
+                                if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
+                                    __fmt_s.push_str(&__v.to_string());
+                                }
+                            });
+                        } else {
+                            ops.push(quote! { __fmt_s.push_str(&ep.#field.to_string()); });
+                        }
+                    }
+                    FmtVarSource::Auth => {
+                        if *optional {
+                            ops.push(quote! {
+                                let __g = auth.#field.read().unwrap();
+                                if let ::core::option::Option::Some(__v) = __g.as_ref() {
+                                    __fmt_s.push_str(__v.expose());
+                                }
+                            });
+                        } else {
+                            ops.push(quote! {
+                                let __g = auth.#field.read().unwrap();
+                                __fmt_s.push_str(__g.expose());
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -948,9 +1171,10 @@ fn emit_value_expr(v: &ValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
             _ => quote! { &vars.#f },
         },
         ValueKind::EpField(f) => quote! { &ep.#f },
+        ValueKind::AuthField(f) => quote! { auth.#f.read().unwrap().expose().to_owned() },
         ValueKind::OtherExpr(e) => quote! { (#e) },
         ValueKind::Fmt(fmt) => {
-            let build = emit_fmt_build_string(fmt, ctx);
+            let build = emit_fmt_build_string(fmt);
             quote! { { #build } }
         }
     }
@@ -981,12 +1205,25 @@ fn emit_prefix_route_apply(pieces: &[PrefixPiece]) -> TokenStream2 {
                     });
                 }
             }
+            PrefixPiece::CxVar { field, optional } => {
+                let wire_lit = LitStr::new(&format!("cx.{}", field), Span::call_site());
+                if *optional {
+                    ops.push(quote! {
+                        if let ::core::option::Option::Some(__v) = vars.#field.as_ref() {
+                            route.host_mut().push_label(__v.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
+                        }
+                    });
+                } else {
+                    ops.push(quote! {
+                        route.host_mut().push_label(vars.#field.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
+                    });
+                }
+            }
             PrefixPiece::Fmt(fmt) => {
-                let ctx = PolicyEmitCtx::Endpoint;
-                let build = emit_fmt_build_string(fmt, ctx);
+                let build = emit_fmt_build_string(fmt);
 
                 if fmt.require_all {
-                    let guard = emit_fmt_require_all_guard(fmt, ctx);
+                    let guard = emit_fmt_require_all_guard(fmt);
                     ops.push(quote! {
                         {
                             if { #guard } {
@@ -1034,12 +1271,22 @@ fn emit_path_route_apply(pieces: &[PathPiece]) -> TokenStream2 {
                     ops.push(quote! { route.path_mut().push_segment_encoded(&ep.#field.to_string()); });
                 }
             }
+            PathPiece::CxVar { field, optional } => {
+                if *optional {
+                    ops.push(quote! {
+                        if let ::core::option::Option::Some(__v) = vars.#field.as_ref() {
+                            route.path_mut().push_segment_encoded(&__v.to_string());
+                        }
+                    });
+                } else {
+                    ops.push(quote! { route.path_mut().push_segment_encoded(&vars.#field.to_string()); });
+                }
+            }
             PathPiece::Fmt(fmt) => {
-                let ctx = PolicyEmitCtx::Endpoint;
-                let build = emit_fmt_build_string(fmt, ctx);
+                let build = emit_fmt_build_string(fmt);
 
                 if fmt.require_all {
-                    let guard = emit_fmt_require_all_guard(fmt, ctx);
+                    let guard = emit_fmt_require_all_guard(fmt);
                     ops.push(quote! {
                         {
                             if { #guard } {
@@ -1131,9 +1378,15 @@ fn emit_paginate_part(ep: &EndpointIr, paginate_ty: &Ident) -> TokenStream2 {
             // Prefer Cow for string literals; if the field expects String, user must write `"x".to_string()`.
             ValueKind::LitStr(s) => quote! { ::std::borrow::Cow::from(#s) },
             ValueKind::CxField(f) => quote! { cx.#f.clone() },
+            ValueKind::AuthField(_) => quote! {{
+                compile_error!(
+                    "paginate: auth vars are not accessible in PaginationPart::controller (only cx vars + endpoint are passed)"
+                );
+                ::core::unreachable!()
+            }},
             ValueKind::OtherExpr(e) => quote! { (#e) },
             ValueKind::Fmt(fmt) => {
-                let build = emit_fmt_build_string(fmt, PolicyEmitCtx::Endpoint);
+                let build = emit_fmt_build_string(fmt);
                 quote! { { #build } }
             }
         };
@@ -1187,11 +1440,14 @@ fn emit_map_part(ep: &EndpointIr, map_ty: &Ident) -> TokenStream2 {
 }
 
 
-fn emit_fmt_require_all_guard(fmt: &FmtResolved, ctx: PolicyEmitCtx) -> TokenStream2 {
+fn emit_fmt_require_all_guard(fmt: &FmtResolved) -> TokenStream2 {
     let checks = fmt.pieces.iter().filter_map(|p| {
-        let FmtResolvedPiece::Var { field, optional: true } = p else { return None; };
-        let acc = emit_fmt_access(ctx, field);
-        Some(quote! { if #acc.is_none() { __fmt_ok = false; } })
+        let FmtResolvedPiece::Var { source, field, optional: true } = p else { return None; };
+        match source {
+            FmtVarSource::Cx => Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } }),
+            FmtVarSource::Ep => Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } }),
+            FmtVarSource::Auth => Some(quote! { if auth.#field.read().unwrap().is_none() { __fmt_ok = false; } }),
+        }
     });
 
     quote! {

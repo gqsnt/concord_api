@@ -1,3 +1,5 @@
+use http::{HeaderMap, Method, StatusCode};
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u8)]
 #[derive(Default)]
@@ -32,5 +34,95 @@ impl core::fmt::Display for DebugLevel {
             DebugLevel::V => f.write_str("v"),
             DebugLevel::VV => f.write_str("vv"),
         }
+    }
+}
+
+
+pub trait DebugSink: Send + Sync + 'static {
+    fn request_start(
+        &self,
+        dbg: DebugLevel,
+        method: &Method,
+        url: &str,
+        endpoint: &'static str,
+        page_index: u32,
+    );
+    fn request_headers(&self, dbg: DebugLevel, headers: &HeaderMap);
+    fn request_body(&self, dbg: DebugLevel, body_len: usize, preview: &str);
+
+    fn response_status(&self, dbg: DebugLevel, status: StatusCode, url: &str, ok: bool);
+    fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap);
+    fn response_body(&self, dbg: DebugLevel, body_len: usize, preview: &str);
+    fn response_body_preview(&self, dbg: DebugLevel, preview: &str);
+}
+
+#[derive(Default)]
+pub struct NoopDebugSink;
+impl DebugSink for NoopDebugSink {
+    #[inline] fn request_start(&self, _: DebugLevel, _: &Method, _: &str, _: &'static str, _: u32) {}
+    #[inline] fn request_headers(&self, _: DebugLevel, _: &HeaderMap) {}
+    #[inline] fn request_body(&self, _: DebugLevel, _: usize, _: &str) {}
+    #[inline] fn response_status(&self, _: DebugLevel, _: StatusCode, _: &str, _: bool) {}
+    #[inline] fn response_headers(&self, _: DebugLevel, _: &HeaderMap) {}
+    #[inline] fn response_body(&self, _: DebugLevel, _: usize, _: &str) {}
+    #[inline] fn response_body_preview(&self, _: DebugLevel, _: &str) {}
+}
+
+/// Reproduit le comportement actuel (stderr).
+pub struct StderrDebugSink;
+impl DebugSink for StderrDebugSink {
+    fn request_start(
+        &self,
+        dbg: DebugLevel,
+        method: &Method,
+        url: &str,
+        endpoint: &'static str,
+        page_index: u32,
+    ) {
+        if page_index == 0 {
+            eprintln!("[client_api:{}] -> {} {} ({})", dbg, method, url, endpoint);
+        } else {
+            eprintln!(
+                "[client_api:{}] -> {} {} ({}) page={}",
+                dbg, method, url, endpoint, page_index
+            );
+        }
+    }
+    fn request_headers(&self, dbg: DebugLevel, headers: &HeaderMap) {
+        eprintln!("[client_api:{}] request headers:", dbg);
+        for (k, v) in headers.iter() {
+            let vs = v.to_str().unwrap_or("<non-utf8>");
+            eprintln!("  {}: {}", k, vs);
+        }
+    }
+    fn request_body(&self, dbg: DebugLevel, body_len: usize, preview: &str) {
+        eprintln!(
+            "[client_api:{}] request body ({} bytes): {}",
+            dbg, body_len, preview
+        );
+    }
+
+    fn response_status(&self, dbg: DebugLevel, status: StatusCode, url: &str, ok: bool) {
+        if ok {
+            eprintln!("[client_api:{}] <- {} {} (ok)", dbg, status.as_u16(), url);
+        } else {
+            eprintln!("[client_api:{}] <- {} {} (error)", dbg, status.as_u16(), url);
+        }
+    }
+    fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap) {
+        eprintln!("[client_api:{}] response headers:", dbg);
+        for (k, v) in headers.iter() {
+            let vs = v.to_str().unwrap_or("<non-utf8>");
+            eprintln!("  {}: {}", k, vs);
+        }
+    }
+    fn response_body(&self, dbg: DebugLevel, body_len: usize, preview: &str) {
+        eprintln!(
+            "[client_api:{}] response body ({} bytes): {}",
+            dbg, body_len, preview
+        );
+    }
+    fn response_body_preview(&self, dbg: DebugLevel, preview: &str) {
+        eprintln!("[client_api:{}] response body preview: {}", dbg, preview);
     }
 }

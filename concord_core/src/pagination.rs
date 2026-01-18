@@ -6,8 +6,7 @@ use crate::client::ClientContext;
 use crate::endpoint::{Endpoint, ResponseSpec};
 use crate::error::ApiClientError;
 use crate::policy::PolicyPatch;
-use crate::transport::{DecodedResponse, RequestMeta};
-use std::collections::HashSet;
+use crate::transport::DecodedResponse;
 
 pub use cursor::{CursorPagination, HasNextCursor};
 pub use offset_limit::OffsetLimitPagination;
@@ -161,33 +160,5 @@ where
     <E::Response as ResponseSpec>::Output: PageItems,
     <E::Pagination as PaginationPart<Cx, E>>::Ctrl: Controller<Cx, E>,
 {
-}
-
-// ---------------- Collection driver ----------------
-pub struct CollectAllItems<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> {
-    client: &'a crate::client::ApiClient<Cx, T>,
-    ep: E,
-    caps: Caps,
-}
-impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> CollectAllItems<'a, Cx, E, T> {
-    #[inline]
-    pub(crate) fn new(client: &'a crate::client::ApiClient<Cx, T>, ep: E, caps: Caps) -> Self {
-        Self { client, ep, caps }
-    }
-    #[inline]
-    pub fn max_pages(mut self, v: u32) -> Self {
-        self.caps.max_pages = v;
-        self
-    }
-    #[inline]
-    pub fn max_items(mut self, v: u64) -> Self {
-        self.caps.max_items = v;
-        self
-    }
-    #[inline]
-    pub fn detect_loops(mut self, v: bool) -> Self {
-        self.caps.detect_loops = v;
-        self
-    }
 }
 

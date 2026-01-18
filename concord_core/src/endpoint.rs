@@ -10,24 +10,34 @@ use std::marker::PhantomData;
 
 /// RoutePart modifie `RouteParts` (host + path).
 pub trait RoutePart<Cx: ClientContext, E>: Send + Sync + 'static {
-    fn apply(ep: &E, vars: &Cx::Vars, route: &mut RouteParts) -> Result<(), ApiClientError>;
+    fn apply(
+        ep: &E,
+        vars: &Cx::Vars,
+        auth: &Cx::AuthVars,
+        route: &mut RouteParts
+    ) -> Result<(), ApiClientError>;
 }
 
 /// PolicyPart modifie `Policy` (headers + query).
 pub trait PolicyPart<Cx: ClientContext, E>: Send + Sync + 'static {
-    fn apply(ep: &E, vars: &Cx::Vars, policy: &mut Policy) -> Result<(), ApiClientError>;
+    fn apply(
+        ep: &E,
+        vars: &Cx::Vars,
+        auth: &Cx::AuthVars,
+        policy: &mut Policy
+    ) -> Result<(), ApiClientError>;
 }
 
 pub struct NoRoute;
 impl<Cx: ClientContext, E> RoutePart<Cx, E> for NoRoute {
-    fn apply(_: &E, _: &Cx::Vars, _: &mut RouteParts) -> Result<(), ApiClientError> {
+    fn apply(_: &E, _: &Cx::Vars, _: &Cx::AuthVars, _: &mut RouteParts) -> Result<(), ApiClientError> {
         Ok(())
     }
 }
 
 pub struct NoPolicy;
 impl<Cx: ClientContext, E> PolicyPart<Cx, E> for NoPolicy {
-    fn apply(_: &E, _: &Cx::Vars, _: &mut Policy) -> Result<(), ApiClientError> {
+    fn apply(_: &E, _: &Cx::Vars, _: &Cx::AuthVars, _: &mut Policy) -> Result<(), ApiClientError> {
         Ok(())
     }
 }
@@ -52,9 +62,9 @@ where
     A: RoutePart<Cx, E>,
     B: RoutePart<Cx, E>,
 {
-    fn apply(ep: &E, vars: &Cx::Vars, route: &mut RouteParts) -> Result<(), ApiClientError> {
-        A::apply(ep, vars, route)?;
-        B::apply(ep, vars, route)?;
+    fn apply(ep: &E, vars: &Cx::Vars, auth: &Cx::AuthVars, route: &mut RouteParts) -> Result<(), ApiClientError> {
+        A::apply(ep, vars, auth, route)?;
+        B::apply(ep, vars, auth, route)?;
         Ok(())
     }
 }
@@ -64,9 +74,9 @@ where
     A: PolicyPart<Cx, E>,
     B: PolicyPart<Cx, E>,
 {
-    fn apply(ep: &E, vars: &Cx::Vars, policy: &mut Policy) -> Result<(), ApiClientError> {
-        A::apply(ep, vars, policy)?;
-        B::apply(ep, vars, policy)?;
+    fn apply(ep: &E, vars: &Cx::Vars, auth: &Cx::AuthVars, policy: &mut Policy) -> Result<(), ApiClientError> {
+        A::apply(ep, vars, auth, policy)?;
+        B::apply(ep, vars, auth, policy)?;
         Ok(())
     }
 }

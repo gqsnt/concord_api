@@ -1,5 +1,5 @@
 use crate::codec::{ContentType, Decodes, Encodes};
-use crate::debug::DebugLevel;
+use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::endpoint::{BodyPart, Endpoint, PolicyPart, ResponseSpec, RoutePart};
 use crate::error::ApiClientError;
 use crate::pagination::Caps;
@@ -12,45 +12,52 @@ use bytes::Bytes;
 use http::StatusCode;
 use http::header::CONTENT_TYPE;
 use http::uri::Scheme;
+use std::sync::Arc;
+
 
 pub trait ClientContext: Sized {
     type Vars: Clone + Send + Sync + 'static;
+    type AuthVars: Clone + Send + Sync + 'static;
     const SCHEME: Scheme;
     const DOMAIN: &'static str;
 
-    fn base_route(_vars: &Self::Vars) -> RouteParts {
+    fn base_route(_vars: &Self::Vars, _auth: &Self::AuthVars) -> RouteParts {
         RouteParts::new()
     }
 
-    fn base_policy(_vars: &Self::Vars) -> Result<Policy, ApiClientError> {
+    fn base_policy(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Result<Policy, ApiClientError> {
         Ok(Policy::new())
     }
 }
 
 #[derive(Clone)]
-pub struct ApiClient<Cx: ClientContext, T: Transport = ReqwestTransport> {
+pub struct ApiClient<Cx: ClientContext, T: Transport+ Clone = ReqwestTransport> {
     transport: T,
     vars: Cx::Vars,
+    auth_vars: Cx::AuthVars,
     debug_level: DebugLevel,
     pagination_caps: Caps,
+    debug_sink: Arc<dyn DebugSink>,
 }
-
 impl<Cx: ClientContext> ApiClient<Cx, ReqwestTransport> {
-    pub fn new(vars: Cx::Vars) -> Self {
-        Self::with_reqwest_client(vars, reqwest::Client::new())
+    pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
+        Self::with_reqwest_client(vars, auth_vars, reqwest::Client::new())
     }
-
-    pub fn with_reqwest_client(vars: Cx::Vars, client: reqwest::Client) -> Self {
-        Self::with_transport(vars, ReqwestTransport::new(client))
+    pub fn with_reqwest_client(vars: Cx::Vars, auth_vars: Cx::AuthVars, client: reqwest::Client) -> Self {
+        Self::with_transport(vars, auth_vars, ReqwestTransport::new(client))
     }
 }
+
+
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
-    pub fn with_transport(vars: Cx::Vars, transport: T) -> Self {
+    pub fn with_transport(vars: Cx::Vars, auth_vars: Cx::AuthVars, transport: T) -> Self {
         Self {
             transport,
             vars,
+            auth_vars,
             debug_level: DebugLevel::default(),
             pagination_caps: Caps::default(),
+            debug_sink: Arc::new(StderrDebugSink),
         }
     }
 
@@ -73,6 +80,24 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     pub fn update_vars(&mut self, f: impl FnOnce(&mut Cx::Vars)) {
         f(&mut self.vars);
     }
+
+    #[inline]
+    pub fn auth_vars(&self) -> &Cx::AuthVars {
+        &self.auth_vars
+    }
+    #[inline]
+    pub fn auth_vars_mut(&mut self) -> &mut Cx::AuthVars {
+        &mut self.auth_vars
+    }
+    #[inline]
+    pub fn set_auth_vars(&mut self, auth_vars: Cx::AuthVars) {
+        self.auth_vars = auth_vars;
+    }
+    #[inline]
+    pub fn update_auth_vars(&mut self, f: impl FnOnce(&mut Cx::AuthVars)) {
+        f(&mut self.auth_vars);
+    }
+
     #[inline]
     pub fn transport(&self) -> &T {
         &self.transport
@@ -88,7 +113,21 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         self.debug_level = level;
     }
 
+    #[inline]
+    pub fn debug_sink(&self) -> &Arc<dyn DebugSink> {
+        &self.debug_sink
+    }
 
+    #[inline]
+    pub fn set_debug_sink(&mut self, sink: Arc<dyn DebugSink>) {
+        self.debug_sink = sink;
+    }
+
+    #[inline]
+    pub fn with_debug_sink(mut self, sink: Arc<dyn DebugSink>) -> Self {
+        self.debug_sink = sink;
+        self
+    }
 
     #[inline]
     pub fn pagination_caps(&self) -> Caps {
@@ -111,6 +150,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         self.debug_level = level;
         self
     }
+
 
     #[inline]
     pub fn request<E>(&self, ep: E) -> PendingRequest<'_, Cx, E, T>
@@ -140,41 +180,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let url_str = built.url.as_str().to_string();
 
         if dbg_verbose {
-            if built.meta.page_index == 0 {
-                eprintln!(
-                    "[client_api:{}] -> {} {} ({})",
-                    dbg,
-                    E::METHOD,
-                    url_str,
-                    ep.name()
-                );
-            } else {
-                eprintln!(
-                    "[client_api:{}] -> {} {} ({}) page={}",
-                    dbg,
-                    E::METHOD,
-                    url_str,
-                    ep.name(),
-                    built.meta.page_index
-                );
-            }
+            self.debug_sink.request_start(dbg, &E::METHOD, &url_str, ep.name(), built.meta.page_index);
         }
 
         if dbg_vv {
-            eprintln!("[client_api:{}] request headers:", dbg);
-            for (k, v) in built.headers.iter() {
-                let vs = v.to_str().unwrap_or("<non-utf8>");
-                eprintln!("  {}: {}", k, vs);
-            }
+            self.debug_sink.request_headers(dbg, &built.headers);
             if let Some(body) = built.body.as_ref() {
                 const MAX_CHARS: usize = 32 * 1024;
                 let s = format_request_body_for_debug::<Cx, E>(body, MAX_CHARS);
-                eprintln!(
-                    "[client_api:{}] request body ({} bytes): {}",
-                    dbg,
-                    body.len(),
-                    s
-                );
+                self.debug_sink.request_body(dbg, body.len(), &s);
             }
         }
         // 2) Send
@@ -183,27 +197,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .await
             .map_err(|e| ApiClientError::in_endpoint(ep.name(), e))?;
         if dbg_verbose {
-            eprintln!(
-                "[client_api:{}] <- {} {} (ok)",
-                dbg,
-                resp.status.as_u16(),
-                url_str
-            );
+            self.debug_sink.response_status(dbg, resp.status, &url_str, true);
         }
         if dbg_vv {
             const MAX_CHARS: usize = 32 * 1024;
             let s = format_response_body_for_debug::<Cx, E>(&resp.body, MAX_CHARS);
-            eprintln!("[client_api:{}] response headers:", dbg);
-            for (k, v) in resp.headers.iter() {
-                let vs = v.to_str().unwrap_or("<non-utf8>");
-                eprintln!("  {}: {}", k, vs);
-            }
-            eprintln!(
-                "[client_api:{}] response body ({} bytes): {}",
-                dbg,
-                resp.body.len(),
-                s
-            );
+            self.debug_sink.response_headers(dbg, &resp.headers);
+            self.debug_sink.response_body(dbg, resp.body.len(), &s);
         }
 
         Self::decode_built_response::<E>(resp)
@@ -223,14 +223,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         F: for<'a> FnOnce(&mut PolicyPatch<'a>) -> Result<(), ApiClientError>,
     {
         // Route = base + endpoint route part
-        let mut route = Cx::base_route(self.vars());
-        <E::Route as RoutePart<Cx, E>>::apply(ep, self.vars(), &mut route)?;
+        let mut route = Cx::base_route(self.vars(), self.auth_vars());
+        <E::Route as RoutePart<Cx, E>>::apply(ep, self.vars(), self.auth_vars(), &mut route)?;
 
         // Policy layering model:
         // client (base_policy) -> (prefix/path) -> endpoint -> runtime injections
-        let mut policy = Cx::base_policy(self.vars())?;
+        let mut policy = Cx::base_policy(self.vars(), self.auth_vars())?;
         policy.set_layer(PolicyLayer::Endpoint);
-        <E::Policy as PolicyPart<Cx, E>>::apply(ep, self.vars(), &mut policy)?;
+        <E::Policy as PolicyPart<Cx, E>>::apply(ep, self.vars(), self.auth_vars(), &mut policy)?;
 
         // Runtime Accept injection (decoder-owned) after endpoint policy.
         policy.set_layer(PolicyLayer::Runtime);
@@ -301,26 +301,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut resp = self.transport.send(built).await?;
         let status = resp.status;
         let resp_headers = resp.headers;
+        let content_length = resp.content_length;
 
         if !status.is_success() {
             let full_len = resp.content_length.map(|n| n as usize);
             let preview_bytes = read_body_preview(resp.body.as_mut(), 8 * 1024).await?;
             let preview = crate::error::body_as_text(&resp_headers, &preview_bytes, full_len);
             if dbg_verbose {
-                eprintln!(
-                    "[client_api:{}] <- {} {} (error)",
-                    dbg,
-                    status.as_u16(),
-                    url_str
-                );
+                self.debug_sink.response_status(dbg, status, url_str, false);
             }
             if dbg_vv {
-                eprintln!("[client_api:{}] response headers:", dbg);
-                for (k, v) in resp_headers.iter() {
-                    let vs = v.to_str().unwrap_or("<non-utf8>");
-                    eprintln!("  {}: {}", k, vs);
-                }
-                eprintln!("[client_api:{}] response body preview: {}", dbg, preview);
+                self.debug_sink.response_headers(dbg, &resp_headers);
+                self.debug_sink.response_body_preview(dbg, &preview);
             }
             return Err(ApiClientError::HttpStatus {
                 status,
@@ -329,7 +321,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             });
         }
 
-        let bytes = read_body_all(resp.body.as_mut()).await?;
+        let bytes = read_body_all(resp.body.as_mut(), content_length).await?;
         Ok(BuiltResponse {
             meta: resp.meta,
             url: resp.url,
@@ -426,8 +418,14 @@ async fn read_body_preview(
     Ok(buf.freeze())
 }
 
-async fn read_body_all(body: &mut dyn TransportBody) -> Result<Bytes, TransportError> {
-    let mut buf = bytes::BytesMut::with_capacity(8 * 1024);
+async fn read_body_all(body: &mut dyn TransportBody, content_length: Option<u64>) -> Result<Bytes, TransportError> {
+    const MAX_PREALLOC: usize = 512 * 1024;
+    let mut cap = 8 * 1024;
+    if let Some(n) = content_length {
+        let n_usize = usize::try_from(n).unwrap_or(usize::MAX);
+        cap = cap.max(n_usize.min(MAX_PREALLOC));
+    }
+    let mut buf = bytes::BytesMut::with_capacity(cap);
     while let Some(chunk) = body.next_chunk().await? {
         buf.extend_from_slice(&chunk);
     }
@@ -447,6 +445,7 @@ mod test {
     struct TestCx;
     impl ClientContext for TestCx {
         type Vars = ();
+        type AuthVars = ();
         const SCHEME: Scheme = Scheme::HTTPS;
         const DOMAIN: &'static str = "example.com";
     }

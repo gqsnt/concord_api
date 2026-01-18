@@ -95,6 +95,20 @@ pub fn is_cx_field(expr: &syn::Expr) -> Option<syn::Ident> {
     }
 }
 
+pub fn is_auth_field(expr: &syn::Expr) -> Option<syn::Ident> {
+    match expr {
+        syn::Expr::Field(f) => {
+            if let syn::Expr::Path(p) = &*f.base
+                && tokens_eq_path_ident(&p.path, "auth")
+                && let syn::Member::Named(id) = &f.member {
+                return Some(id.clone());
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 pub fn is_ep_field(expr: &syn::Expr) -> Option<syn::Ident> {
     match expr {
         syn::Expr::Field(f) => {

@@ -44,13 +44,17 @@ api! {
     client Client {
         scheme: https,
         host: "typicode.com",
+        vars{
+            prefix_: String = "jsonplaceholder.typicode.com".to_string()
+        }
+
         headers {
             "user-agent" as user_agent: String = "ClientApiExample/1.0".to_string(),
             "x-client-trace" as client_trace: bool
         }
     }
 
-    prefix "jsonplaceholder" {
+    prefix {cx.prefix_} {
         path "posts" {
             GET GetPosts ""
                 query { "userId" as user_id?: u32 }

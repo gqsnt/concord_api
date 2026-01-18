@@ -1,7 +1,6 @@
 use http::{HeaderMap, Method, StatusCode};
 use std::time::Duration;
 use url::Url;
-
 use bytes::Bytes;
 use std::future::Future;
 use std::pin::Pin;
@@ -92,12 +91,13 @@ pub struct TransportResponse {
 /// Contract:
 /// - Must honor `BuiltRequest` fields (url/headers/body/timeout) as appropriate.
 /// - Must not leak a concrete HTTP client type in its public surface.
-pub trait Transport: Send + Sync + 'static {
+pub trait Transport: Send +Clone+ Sync + 'static {
     fn send(
         &self,
         req: BuiltRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>;
 }
+
 
 #[derive(Clone)]
 pub struct ReqwestTransport {
