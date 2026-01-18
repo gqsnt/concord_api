@@ -8,69 +8,98 @@ use thiserror::Error;
 
 pub type FxError = Box<dyn Error + Send + Sync>;
 
+#[derive(Clone, Debug)]
+pub struct ErrorContext {
+    pub endpoint: &'static str,
+    pub method: http::Method,
+}
+
+impl core::fmt::Display for ErrorContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{} {}", self.method, self.endpoint)
+    }
+}
+
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum ApiClientError {
-    #[error("invalid/missing param: {0}")]
-    InvalidParam(&'static str),
+    #[error("{ctx}: invalid/missing param: {param}")]
+    InvalidParam {
+        ctx: ErrorContext,
+        param: &'static str,
+    },
 
-    #[error("build url error: {0}")]
-    BuildUrl(#[from] url::ParseError),
+    #[error("{ctx}: build url error: {source}")]
+    BuildUrl {
+        ctx: ErrorContext,
+        source: url::ParseError,
+    },
 
-    #[error("transport: {0}")]
-    Transport(#[from] crate::transport::TransportError),
+    #[error("{ctx}: transport: {source}")]
+    Transport {
+        ctx: ErrorContext,
+        source: crate::transport::TransportError,
+    },
 
-    #[error("status {status}")]
+    #[error("{ctx}: status {status}")]
     HttpStatus {
+        ctx: ErrorContext,
         status: StatusCode,
         headers: HeaderMap,
         body: String,
     },
 
-    #[error("decode error: {source}")]
-    Decode { source: FxError, body: String },
-    #[error("HEAD response requires NoContentEncoding (endpoint={endpoint})")]
-    HeadRequiresNoContent { endpoint: &'static str },
-    #[error("transform error (endpoint={endpoint}): {source}")]
-    Transform {
-        endpoint: &'static str,
+    #[error("{ctx}: decode error: {source}")]
+    Decode {
+        ctx: ErrorContext,
         source: FxError,
+        body: String,
     },
-    #[error(
-        "status {status} has no content; endpoint must use NoContentEncoding (endpoint={endpoint})"
-    )]
+
+    #[error("{ctx}: HEAD response requires NoContentEncoding")]
+    HeadRequiresNoContent { ctx: ErrorContext },
+
+    #[error("{ctx}: transform error: {source}")]
+    Transform { ctx: ErrorContext, source: FxError },
+    #[error("{ctx}: status {status} has no content; endpoint must use NoContentEncoding")]
     NoContentStatusRequiresNoContent {
-        endpoint: &'static str,
+        ctx: ErrorContext,
         status: StatusCode,
     },
-    #[error("codec: {0}")]
-    Codec(#[from] FxError),
+    #[error("{ctx}: codec: {source}")]
+    Codec { ctx: ErrorContext, source: FxError },
 
-    #[error("pagination: {0}")]
-    Pagination(Cow<'static, str>),
-    #[error("pagination limit reached: {0}")]
-    PaginationLimit(Cow<'static, str>),
-
-    #[error("in endpoint {endpoint}: {source}")]
-    InEndpoint {
-        endpoint: &'static str,
-        source: Box<ApiClientError>,
+    #[error("{ctx}: pagination: {msg}")]
+    Pagination {
+        ctx: ErrorContext,
+        msg: Cow<'static, str>,
     },
-    #[error("policy violation: {0}")]
-    PolicyViolation(&'static str),
+
+    #[error("{ctx}: pagination limit reached: {msg}")]
+    PaginationLimit {
+        ctx: ErrorContext,
+        msg: Cow<'static, str>,
+    },
+
+    #[error("{ctx}: policy violation: {msg}")]
+    PolicyViolation {
+        ctx: ErrorContext,
+        msg: &'static str,
+    },
     #[error(
-        "invalid host label in endpoint {endpoint}: label[{index}]='{label}' (placeholder={placeholder:?}) reason={reason:?}"
+        "{ctx}: invalid host label: label[{index}]='{label}' (placeholder={placeholder:?}) reason={reason:?}"
     )]
     InvalidHostLabel {
-        endpoint: &'static str,
+        ctx: ErrorContext,
         label: String,
         index: usize,
         placeholder: Option<&'static str>,
         reason: HostLabelInvalidReason,
     },
 
-    #[error("controller config error: key={key} expected={expected}")]
+    #[error("{ctx}: controller config error: key={key} expected={expected}")]
     ControllerConfig {
+        ctx: ErrorContext,
         key: &'static str,
         expected: &'static str,
     },
@@ -89,17 +118,11 @@ pub enum HostLabelInvalidReason {
 }
 
 impl ApiClientError {
-    pub fn codec_error(error: impl Into<FxError>) -> ApiClientError {
-        ApiClientError::Codec(error.into())
-    }
     #[inline]
-    pub fn in_endpoint(endpoint: &'static str, e: ApiClientError) -> ApiClientError {
-        match e {
-            ApiClientError::InEndpoint { .. } => e,
-            _ => ApiClientError::InEndpoint {
-                endpoint,
-                source: Box::new(e),
-            },
+    pub fn codec_error(ctx: ErrorContext, error: impl Into<FxError>) -> ApiClientError {
+        ApiClientError::Codec {
+            ctx,
+            source: error.into(),
         }
     }
 }

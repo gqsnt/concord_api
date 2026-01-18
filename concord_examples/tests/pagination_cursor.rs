@@ -70,6 +70,7 @@ async fn cursor_pagination_keys_flow_and_first_cursor_omitted() {
     let out = api
         .request(endpoints::List::new())
         .paginate()
+        .collect()
         .await
         .unwrap();
     assert_eq!(out.len(), 2);
@@ -144,11 +145,12 @@ async fn cursor_loop_detection_and_max_pages() {
         .request(endpoints::List::new())
         .paginate()
         .detect_loops(true)
+        .collect()
         .await
         .unwrap_err();
 
     match err {
-        ApiClientError::Pagination(_) => {}
+        ApiClientError::Pagination { .. } => {}
         other => panic!("unexpected error: {other:?}"),
     }
 
@@ -169,11 +171,12 @@ async fn cursor_loop_detection_and_max_pages() {
         .paginate()
         .max_pages(2)
         .detect_loops(false)
+        .collect()
         .await
         .unwrap_err();
 
     match err {
-        ApiClientError::PaginationLimit(_) => {}
+        ApiClientError::PaginationLimit { .. } => {}
         other => panic!("unexpected error: {other:?}"),
     }
 }

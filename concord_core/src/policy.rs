@@ -1,4 +1,4 @@
-use crate::error::ApiClientError;
+use crate::error::{ApiClientError, ErrorContext};
 use core::time::Duration;
 use http::header::{ACCEPT, CONTENT_TYPE, HeaderName};
 use http::{HeaderMap, HeaderValue};
@@ -130,13 +130,14 @@ impl Policy {
 }
 
 pub struct PolicyPatch<'a> {
+    ctx: ErrorContext,
     inner: &'a mut Policy,
 }
 
 impl<'a> PolicyPatch<'a> {
     #[inline]
-    pub(crate) fn new(inner: &'a mut Policy) -> Self {
-        Self { inner }
+    pub(crate) fn new(ctx: ErrorContext, inner: &'a mut Policy) -> Self {
+        Self { ctx, inner }
     }
 
     #[inline]
@@ -196,9 +197,10 @@ impl<'a> PolicyPatch<'a> {
             && *name == ACCEPT
             && !(self.inner.accept_explicit_by_endpoint || self.inner.accept_explicit_by_runtime)
         {
-            return Err(ApiClientError::PolicyViolation(
-                "runtime cannot override Accept unless endpoint explicitly set/removed it",
-            ));
+            return Err(ApiClientError::PolicyViolation {
+                ctx: self.ctx.clone(),
+                msg: "runtime cannot override Accept unless endpoint explicitly set/removed it",
+            });
         }
         Ok(())
     }

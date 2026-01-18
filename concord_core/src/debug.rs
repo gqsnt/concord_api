@@ -1,3 +1,5 @@
+use crate::codec::{self, Format};
+use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -47,12 +49,18 @@ pub trait DebugSink: Send + Sync + 'static {
         page_index: u32,
     );
     fn request_headers(&self, dbg: DebugLevel, headers: &HeaderMap);
-    fn request_body(&self, dbg: DebugLevel, body_len: usize, preview: &str);
+    fn request_body(&self, dbg: DebugLevel, body: &Bytes, format: Format, max_chars: usize);
 
     fn response_status(&self, dbg: DebugLevel, status: StatusCode, url: &str, ok: bool);
     fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap);
-    fn response_body(&self, dbg: DebugLevel, body_len: usize, preview: &str);
-    fn response_body_preview(&self, dbg: DebugLevel, preview: &str);
+    fn response_body(&self, dbg: DebugLevel, body: &Bytes, format: Format, max_chars: usize);
+    fn response_body_preview(
+        &self,
+        dbg: DebugLevel,
+        headers: &HeaderMap,
+        body: &Bytes,
+        full_len: Option<usize>,
+    );
 }
 
 #[derive(Default)]
@@ -63,15 +71,15 @@ impl DebugSink for NoopDebugSink {
     #[inline]
     fn request_headers(&self, _: DebugLevel, _: &HeaderMap) {}
     #[inline]
-    fn request_body(&self, _: DebugLevel, _: usize, _: &str) {}
+    fn request_body(&self, _: DebugLevel, _: &Bytes, _: Format, _: usize) {}
     #[inline]
     fn response_status(&self, _: DebugLevel, _: StatusCode, _: &str, _: bool) {}
     #[inline]
     fn response_headers(&self, _: DebugLevel, _: &HeaderMap) {}
     #[inline]
-    fn response_body(&self, _: DebugLevel, _: usize, _: &str) {}
+    fn response_body(&self, _: DebugLevel, _: &Bytes, _: Format, _: usize) {}
     #[inline]
-    fn response_body_preview(&self, _: DebugLevel, _: &str) {}
+    fn response_body_preview(&self, _: DebugLevel, _: &HeaderMap, _: &Bytes, _: Option<usize>) {}
 }
 
 /// Reproduit le comportement actuel (stderr).
@@ -101,10 +109,13 @@ impl DebugSink for StderrDebugSink {
             eprintln!("  {}: {}", k, vs);
         }
     }
-    fn request_body(&self, dbg: DebugLevel, body_len: usize, preview: &str) {
+    fn request_body(&self, dbg: DebugLevel, body: &Bytes, format: Format, max_chars: usize) {
+        let preview = codec::format_bytes_for_debug(format, body.as_ref(), max_chars);
         eprintln!(
             "[client_api:{}] request body ({} bytes): {}",
-            dbg, body_len, preview
+            dbg,
+            body.len(),
+            preview
         );
     }
 
@@ -127,13 +138,23 @@ impl DebugSink for StderrDebugSink {
             eprintln!("  {}: {}", k, vs);
         }
     }
-    fn response_body(&self, dbg: DebugLevel, body_len: usize, preview: &str) {
+    fn response_body(&self, dbg: DebugLevel, body: &Bytes, format: Format, max_chars: usize) {
+        let preview = codec::format_bytes_for_debug(format, body.as_ref(), max_chars);
         eprintln!(
             "[client_api:{}] response body ({} bytes): {}",
-            dbg, body_len, preview
+            dbg,
+            body.len(),
+            preview
         );
     }
-    fn response_body_preview(&self, dbg: DebugLevel, preview: &str) {
+    fn response_body_preview(
+        &self,
+        dbg: DebugLevel,
+        headers: &HeaderMap,
+        body: &Bytes,
+        full_len: Option<usize>,
+    ) {
+        let preview = crate::error::body_as_text(headers, body, full_len);
         eprintln!("[client_api:{}] response body preview: {}", dbg, preview);
     }
 }

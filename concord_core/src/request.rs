@@ -1,14 +1,13 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{Endpoint, ResponseSpec};
-use crate::error::ApiClientError;
+use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
     Caps, Control, Controller, PageItems, PaginatedEndpoint, PaginationPart, ProgressKey,
 };
 use crate::policy::PolicyPatch;
 use crate::timeout::TimeoutOverride;
 use crate::transport::{DecodedResponse, RequestMeta};
-use core::future::IntoFuture;
 use std::collections::HashSet;
 use std::time::Duration;
 
@@ -106,6 +105,10 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     ) -> Result<DecodedResponse<<E::Response as ResponseSpec>::Output>, ApiClientError> {
         let dbg = self.opts.debug_level.unwrap_or(self.client.debug_level());
         let timeout_override = self.opts.timeout_override;
+        let _ctx = ErrorContext {
+            endpoint: self.ep.name(),
+            method: E::METHOD.clone(),
+        };
         let meta = RequestMeta {
             endpoint: self.ep.name(),
             method: E::METHOD.clone(),
@@ -129,21 +132,6 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         <E::Pagination as PaginationPart<Cx, E>>::Ctrl: Controller<Cx, E>,
     {
         PaginatedRequest::new(self)
-    }
-}
-
-impl<'a, Cx, E, T> IntoFuture for PendingRequest<'a, Cx, E, T>
-where
-    Cx: ClientContext,
-    E: Endpoint<Cx>,
-    T: crate::transport::Transport,
-{
-    type Output = Result<<E::Response as ResponseSpec>::Output, ApiClientError>;
-    type IntoFuture =
-        std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
-
-    fn into_future(self) -> Self::IntoFuture {
-        Box::pin(async move { self.execute().await })
     }
 }
 
@@ -179,120 +167,131 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         self.caps.detect_loops = v;
         self
     }
-}
 
-impl<'a, Cx, E, T> IntoFuture for PaginatedRequest<'a, Cx, E, T>
-where
-    Cx: ClientContext,
-    E: PaginatedEndpoint<Cx>,
-    <E::Response as ResponseSpec>::Output: PageItems,
-    <E::Pagination as PaginationPart<Cx, E>>::Ctrl: Controller<Cx, E>,
-    T: crate::transport::Transport,
-{
-    type Output =
-        Result<Vec<<<E::Response as ResponseSpec>::Output as PageItems>::Item>, ApiClientError>;
-    type IntoFuture =
-        std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
+    pub async fn for_each_page<F>(mut self, mut f: F) -> Result<(), ApiClientError>
+    where
+        E: PaginatedEndpoint<Cx>,
+        <E::Response as ResponseSpec>::Output: PageItems,
+        <E::Pagination as PaginationPart<Cx, E>>::Ctrl: Controller<Cx, E>,
+        T: crate::transport::Transport,
+        F: FnMut(
+            DecodedResponse<<E::Response as ResponseSpec>::Output>,
+        ) -> Result<Control, ApiClientError>,
+    {
+        let ctrl = <E::Pagination as PaginationPart<Cx, E>>::controller(
+            self.pending.client.vars(),
+            &self.pending.ep,
+        )?;
+        let mut st = ctrl.init(&self.pending.ep)?;
+        let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
+            Some(HashSet::new())
+        } else {
+            None
+        };
 
-    fn into_future(mut self) -> Self::IntoFuture {
-        Box::pin(async move {
-            let ctrl = <E::Pagination as PaginationPart<Cx, E>>::controller(
-                self.pending.client.vars(),
-                &self.pending.ep,
-            )?;
-            let mut st = ctrl.init(&self.pending.ep)?;
-            let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
-                Some(HashSet::new())
-            } else {
-                None
-            };
-            let mut out: Vec<<<E::Response as ResponseSpec>::Output as PageItems>::Item> =
-                Vec::new();
-            let mut items_count: u64 = 0;
+        let dbg = self
+            .pending
+            .opts
+            .debug_level
+            .unwrap_or(self.pending.client.debug_level());
+        let timeout_override = self.pending.opts.timeout_override;
+        let attempt = self.pending.opts.attempt;
 
-            let dbg = self
-                .pending
-                .opts
-                .debug_level
-                .unwrap_or(self.pending.client.debug_level());
-            let timeout_override = self.pending.opts.timeout_override;
-            let attempt = self.pending.opts.attempt;
+        let ctx = ErrorContext {
+            endpoint: self.pending.ep.name(),
+            method: E::METHOD.clone(),
+        };
 
-            for page_index in 0..self.caps.max_pages {
-                if let Some(seen) = seen.as_mut()
-                    && let Some(k) = ctrl.progress_key(&st, &self.pending.ep)
-                    && !seen.insert(k.clone())
-                {
-                    return Err(ApiClientError::Pagination(
-                        format!(
-                            "loop detected (endpoint={} page_index={} key={:?})",
-                            self.pending.ep.name(),
-                            page_index,
-                            k
-                        )
-                        .into(),
-                    ));
-                }
-
-                let meta = RequestMeta {
-                    endpoint: self.pending.ep.name(),
-                    method: E::METHOD.clone(),
-                    idempotent: is_idempotent(&E::METHOD),
-                    attempt,
-                    page_index,
-                };
-
-                let resp: DecodedResponse<<E::Response as ResponseSpec>::Output> = self
-                    .pending
-                    .client
-                    .execute_decoded_ref_with(&self.pending.ep, meta, dbg, |policy| {
-                        apply_timeout_override(policy, timeout_override);
-                        ctrl.apply_policy(&st, &self.pending.ep, policy)
-                    })
-                    .await?;
-
-                let control = ctrl.on_page(&mut st, &mut self.pending.ep, &resp)?;
-                let page_len = resp.value.len() as u64;
-                if page_len > 0 {
-                    let new_total = items_count.checked_add(page_len).ok_or_else(|| {
-                        ApiClientError::Pagination(
-                            format!("items overflow (endpoint={})", self.pending.ep.name()).into(),
-                        )
-                    })?;
-                    if new_total > self.caps.max_items {
-                        return Err(ApiClientError::PaginationLimit(
-                            format!(
-                                "max_items reached (endpoint={} max={} seen={})",
-                                self.pending.ep.name(),
-                                self.caps.max_items,
-                                new_total
-                            )
-                            .into(),
-                        ));
-                    }
-                    items_count = new_total;
-                }
-
-                out.extend(
-                    <<E::Response as ResponseSpec>::Output as PageItems>::inner_into_iter(
-                        resp.value,
-                    ),
-                );
-                match control {
-                    Control::Continue => continue,
-                    Control::Stop => return Ok(out),
-                }
+        let mut items_count: u64 = 0;
+        for page_index in 0..self.caps.max_pages {
+            if let Some(seen) = seen.as_mut()
+                && let Some(k) = ctrl.progress_key(&st, &self.pending.ep)
+                && !seen.insert(k.clone())
+            {
+                return Err(ApiClientError::Pagination {
+                    ctx: ctx.clone(),
+                    msg: format!("loop detected (page_index={} key={:?})", page_index, k).into(),
+                });
             }
 
-            Err(ApiClientError::PaginationLimit(
-                format!(
-                    "max_pages reached (endpoint={} max_pages={} seen_items={})",
-                    self.pending.ep.name(),
-                    self.caps.max_pages,
-                    items_count
-                )
-                .into(),
-            ))
+            let meta = RequestMeta {
+                endpoint: self.pending.ep.name(),
+                method: E::METHOD.clone(),
+                idempotent: is_idempotent(&E::METHOD),
+                attempt,
+                page_index,
+            };
+
+            let resp: DecodedResponse<<E::Response as ResponseSpec>::Output> = self
+                .pending
+                .client
+                .execute_decoded_ref_with(&self.pending.ep, meta, dbg, |policy| {
+                    apply_timeout_override(policy, timeout_override);
+                    ctrl.apply_policy(&st, &self.pending.ep, policy)
+                })
+                .await?;
+
+            let control_ctrl = ctrl.on_page(&mut st, &mut self.pending.ep, &resp)?;
+            let page_len = resp.value.len() as u64;
+            if page_len > 0 {
+                let new_total = items_count.checked_add(page_len).ok_or_else(|| {
+                    ApiClientError::Pagination {
+                        ctx: ctx.clone(),
+                        msg: "items overflow".into(),
+                    }
+                })?;
+                if new_total > self.caps.max_items {
+                    return Err(ApiClientError::PaginationLimit {
+                        ctx: ctx.clone(),
+                        msg: format!(
+                            "max_items reached (max={} seen={})",
+                            self.caps.max_items, new_total
+                        )
+                        .into(),
+                    });
+                }
+                items_count = new_total;
+            }
+
+            let control_user = f(resp)?;
+            let control = match (control_ctrl, control_user) {
+                (Control::Stop, _) => Control::Stop,
+                (_, Control::Stop) => Control::Stop,
+                _ => Control::Continue,
+            };
+            match control {
+                Control::Continue => continue,
+                Control::Stop => return Ok(()),
+            }
+        }
+
+        Err(ApiClientError::PaginationLimit {
+            ctx,
+            msg: format!(
+                "max_pages reached (max_pages={} seen_items={})",
+                self.caps.max_pages, items_count
+            )
+            .into(),
         })
+    }
+
+    pub async fn collect(
+        self,
+    ) -> Result<Vec<<<E::Response as ResponseSpec>::Output as PageItems>::Item>, ApiClientError>
+    where
+        E: PaginatedEndpoint<Cx>,
+        <E::Response as ResponseSpec>::Output: PageItems,
+        <E::Pagination as PaginationPart<Cx, E>>::Ctrl: Controller<Cx, E>,
+        T: crate::transport::Transport,
+    {
+        let mut out: Vec<<<E::Response as ResponseSpec>::Output as PageItems>::Item> = Vec::new();
+        self.for_each_page(|resp| {
+            out.extend(
+                <<E::Response as ResponseSpec>::Output as PageItems>::inner_into_iter(resp.value),
+            );
+            Ok(Control::Continue)
+        })
+        .await?;
+        Ok(out)
     }
 }

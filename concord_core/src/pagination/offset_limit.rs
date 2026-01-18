@@ -1,6 +1,6 @@
 use crate::client::ClientContext;
 use crate::endpoint::{Endpoint, ResponseSpec};
-use crate::error::ApiClientError;
+use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{Control, Controller, PageItems, ProgressKey, Stop};
 use crate::policy::PolicyPatch;
 use crate::transport::DecodedResponse;
@@ -52,7 +52,14 @@ where
 
     fn init(&self, _ep: &E) -> Result<Self::State, ApiClientError> {
         if self.limit == 0 {
-            return Err(ApiClientError::Pagination("offset/limit: limit=0".into()));
+            let ctx = ErrorContext {
+                endpoint: std::any::type_name::<E>(),
+                method: E::METHOD.clone(),
+            };
+            return Err(ApiClientError::Pagination {
+                ctx,
+                msg: "offset/limit: limit=0".into(),
+            });
         }
         Ok(OffsetLimitState {
             offset: self.offset,
@@ -80,10 +87,16 @@ where
         if matches!(self.stop, Stop::OnEmpty) && resp.value.len() == 0 {
             return Ok(Control::Stop);
         }
-        st.offset = st
-            .offset
-            .checked_add(st.limit)
-            .ok_or_else(|| ApiClientError::Pagination("offset/limit: offset overflow".into()))?;
+        st.offset = st.offset.checked_add(st.limit).ok_or_else(|| {
+            let ctx = ErrorContext {
+                endpoint: std::any::type_name::<E>(),
+                method: E::METHOD.clone(),
+            };
+            ApiClientError::Pagination {
+                ctx,
+                msg: "offset/limit: offset overflow".into(),
+            }
+        })?;
         Ok(Control::Continue)
     }
 

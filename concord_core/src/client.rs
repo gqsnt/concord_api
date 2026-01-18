@@ -1,7 +1,8 @@
+use crate::codec::FormatType;
 use crate::codec::{ContentType, Decodes, Encodes};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::endpoint::{BodyPart, Endpoint, PolicyPart, ResponseSpec, RoutePart};
-use crate::error::ApiClientError;
+use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::Caps;
 use crate::policy::{Policy, PolicyLayer, PolicyPatch};
 use crate::request::PendingRequest;
@@ -24,7 +25,11 @@ pub trait ClientContext: Sized {
         RouteParts::new()
     }
 
-    fn base_policy(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Result<Policy, ApiClientError> {
+    fn base_policy(
+        _vars: &Self::Vars,
+        _auth: &Self::AuthVars,
+        _ctx: &ErrorContext,
+    ) -> Result<Policy, ApiClientError> {
         Ok(Policy::new())
     }
 }
@@ -161,6 +166,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         PendingRequest::new(self, ep)
     }
 
+    #[inline]
+    fn ctx_for<E: Endpoint<Cx>>(ep: &E) -> ErrorContext {
+        ErrorContext {
+            endpoint: ep.name(),
+            method: E::METHOD.clone(),
+        }
+    }
+
     pub(crate) async fn execute_decoded_ref_with<E, F>(
         &self,
         ep: &E,
@@ -174,10 +187,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
+        let ctx = Self::ctx_for::<E>(ep);
 
-        let built = self
-            .build_request::<E, F>(ep, meta, patch_policy)
-            .map_err(|e| ApiClientError::in_endpoint(ep.name(), e))?;
+        let built = self.build_request::<E, F>(ep, meta, patch_policy)?;
         let url_str = built.url.as_str().to_string();
 
         if dbg_verbose {
@@ -194,28 +206,27 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             self.debug_sink.request_headers(dbg, &built.headers);
             if let Some(body) = built.body.as_ref() {
                 const MAX_CHARS: usize = 32 * 1024;
-                let s = format_request_body_for_debug::<Cx, E>(body, MAX_CHARS);
-                self.debug_sink.request_body(dbg, body.len(), &s);
+                let fmt = <<E::Body as BodyPart<E>>::Enc as FormatType>::FORMAT_TYPE;
+                self.debug_sink.request_body(dbg, body, fmt, MAX_CHARS);
             }
         }
         // 2) Send
         let resp = self
-            .send_built_request(built, dbg, dbg_verbose, dbg_vv, &url_str)
-            .await
-            .map_err(|e| ApiClientError::in_endpoint(ep.name(), e))?;
+            .send_built_request(built, dbg, dbg_verbose, dbg_vv, &url_str, &ctx)
+            .await?;
         if dbg_verbose {
             self.debug_sink
                 .response_status(dbg, resp.status, &url_str, true);
         }
         if dbg_vv {
             const MAX_CHARS: usize = 32 * 1024;
-            let s = format_response_body_for_debug::<Cx, E>(&resp.body, MAX_CHARS);
+            let fmt = <<E::Response as ResponseSpec>::Dec as FormatType>::FORMAT_TYPE;
             self.debug_sink.response_headers(dbg, &resp.headers);
-            self.debug_sink.response_body(dbg, resp.body.len(), &s);
+            self.debug_sink
+                .response_body(dbg, &resp.body, fmt, MAX_CHARS);
         }
 
-        Self::decode_built_response::<E>(resp)
-            .map_err(|e| ApiClientError::in_endpoint(ep.name(), e))
+        Self::decode_built_response::<E>(resp, ctx)
     }
 }
 
@@ -230,13 +241,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         E: Endpoint<Cx>,
         F: for<'a> FnOnce(&mut PolicyPatch<'a>) -> Result<(), ApiClientError>,
     {
+        let ctx = Self::ctx_for::<E>(ep);
         // Route = base + endpoint route part
         let mut route = Cx::base_route(self.vars(), self.auth_vars());
         <E::Route as RoutePart<Cx, E>>::apply(ep, self.vars(), self.auth_vars(), &mut route)?;
 
         // Policy layering model:
         // client (base_policy) -> (prefix/path) -> endpoint -> runtime injections
-        let mut policy = Cx::base_policy(self.vars(), self.auth_vars())?;
+        let mut policy = Cx::base_policy(self.vars(), self.auth_vars(), &ctx)?;
         policy.set_layer(PolicyLayer::Endpoint);
         <E::Policy as PolicyPart<Cx, E>>::apply(ep, self.vars(), self.auth_vars(), &mut policy)?;
 
@@ -249,7 +261,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
         // Runtime patch (pagination controller, etc.)
         {
-            let mut patch = PolicyPatch::new(&mut policy);
+            let mut patch = PolicyPatch::new(ctx.clone(), &mut policy);
             patch_policy(&mut patch)?;
         }
 
@@ -257,13 +269,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let (mut headers, query, timeout) = policy.into_parts();
 
         // URL
-        route
-            .host()
-            .validate(ep.name())
-            .map_err(|e| ApiClientError::in_endpoint(ep.name(), e))?;
+        route.host().validate(ctx.clone())?;
         let host = route.host().join(Cx::DOMAIN);
         let base = format!("{}://{}", Cx::SCHEME, host);
-        let mut url = url::Url::parse(&base)?;
+        let mut url = url::Url::parse(&base).map_err(|e| ApiClientError::BuildUrl {
+            ctx: ctx.clone(),
+            source: e,
+        })?;
         url.set_path(route.path().as_str());
         {
             let mut qp = url.query_pairs_mut();
@@ -278,7 +290,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let encoded = <<E::Body as BodyPart<E>>::Enc as Encodes<
                 <E::Body as BodyPart<E>>::Body,
             >>::encode(body)
-            .map_err(ApiClientError::codec_error)?;
+            .map_err(|e| ApiClientError::codec_error(ctx.clone(), e))?;
 
             if !headers.contains_key(CONTENT_TYPE) {
                 let ct = <<E::Body as BodyPart<E>>::Enc as ContentType>::CONTENT_TYPE;
@@ -305,31 +317,51 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         dbg_verbose: bool,
         dbg_vv: bool,
         url_str: &str,
+        ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let mut resp = self.transport.send(built).await?;
+        let mut resp = self
+            .transport
+            .send(built)
+            .await
+            .map_err(|e| ApiClientError::Transport {
+                ctx: ctx.clone(),
+                source: e,
+            })?;
         let status = resp.status;
         let resp_headers = resp.headers;
         let content_length = resp.content_length;
 
         if !status.is_success() {
             let full_len = resp.content_length.map(|n| n as usize);
-            let preview_bytes = read_body_preview(resp.body.as_mut(), 8 * 1024).await?;
+            let preview_bytes = read_body_preview(resp.body.as_mut(), 8 * 1024)
+                .await
+                .map_err(|e| ApiClientError::Transport {
+                    ctx: ctx.clone(),
+                    source: e,
+                })?;
             let preview = crate::error::body_as_text(&resp_headers, &preview_bytes, full_len);
             if dbg_verbose {
                 self.debug_sink.response_status(dbg, status, url_str, false);
             }
             if dbg_vv {
                 self.debug_sink.response_headers(dbg, &resp_headers);
-                self.debug_sink.response_body_preview(dbg, &preview);
+                self.debug_sink
+                    .response_body_preview(dbg, &resp_headers, &preview_bytes, full_len);
             }
             return Err(ApiClientError::HttpStatus {
+                ctx: ctx.clone(),
                 status,
                 headers: resp_headers,
                 body: preview,
             });
         }
 
-        let bytes = read_body_all(resp.body.as_mut(), content_length).await?;
+        let bytes = read_body_all(resp.body.as_mut(), content_length)
+            .await
+            .map_err(|e| ApiClientError::Transport {
+                ctx: ctx.clone(),
+                source: e,
+            })?;
         Ok(BuiltResponse {
             meta: resp.meta,
             url: resp.url,
@@ -341,6 +373,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     fn decode_built_response<E>(
         resp: BuiltResponse,
+        ctx: ErrorContext,
     ) -> Result<DecodedResponse<<E::Response as ResponseSpec>::Output>, ApiClientError>
     where
         E: Endpoint<Cx>,
@@ -348,9 +381,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         // Enforce the documented constraints:
         // - HEAD must map to a NoContent decoder (body is empty by definition).
         if resp.meta.method == http::Method::HEAD && !E::response_is_no_content() {
-            return Err(ApiClientError::HeadRequiresNoContent {
-                endpoint: resp.meta.endpoint,
-            });
+            return Err(ApiClientError::HeadRequiresNoContent { ctx });
         }
 
         // - 204/205 are "no content" success statuses. If the endpoint expects content, fail early with a clear error.
@@ -360,7 +391,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         ) && !E::response_is_no_content()
         {
             return Err(ApiClientError::NoContentStatusRequiresNoContent {
-                endpoint: resp.meta.endpoint,
+                ctx,
                 status: resp.status,
             });
         }
@@ -369,11 +400,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             <E::Response as ResponseSpec>::Decoded,
         >>::decode(&resp.body)
         .map_err(|e| ApiClientError::Decode {
+            ctx: ctx.clone(),
             source: e.into(),
             body: crate::error::body_as_text(&resp.headers, &resp.body, Some(resp.body.len())),
         })?;
 
-        let endpoint = resp.meta.endpoint;
         let decoded_resp = DecodedResponse {
             meta: resp.meta,
             url: resp.url,
@@ -381,29 +412,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             headers: resp.headers,
             value: decoded,
         };
-        <E::Response as ResponseSpec>::map_response(decoded_resp).map_err(|e| {
-            ApiClientError::Transform {
-                endpoint,
-                source: e,
-            }
-        })
+        <E::Response as ResponseSpec>::map_response(decoded_resp)
+            .map_err(|e| ApiClientError::Transform { ctx, source: e })
     }
-}
-
-fn format_request_body_for_debug<Cx, E>(bytes: &Bytes, max_chars: usize) -> String
-where
-    Cx: ClientContext,
-    E: Endpoint<Cx>,
-{
-    crate::codec::format_debug_body::<<E::Body as BodyPart<E>>::Enc>(bytes, max_chars)
-}
-
-fn format_response_body_for_debug<Cx, E>(bytes: &Bytes, max_chars: usize) -> String
-where
-    Cx: ClientContext,
-    E: Endpoint<Cx>,
-{
-    crate::codec::format_debug_body::<<E::Response as ResponseSpec>::Dec>(bytes, max_chars)
 }
 
 async fn read_body_preview(
@@ -432,12 +443,22 @@ async fn read_body_all(
     body: &mut dyn TransportBody,
     content_length: Option<u64>,
 ) -> Result<Bytes, TransportError> {
-    const MAX_PREALLOC: usize = 512 * 1024;
-    let mut cap = 8 * 1024;
-    if let Some(n) = content_length {
-        let n_usize = usize::try_from(n).unwrap_or(usize::MAX);
-        cap = cap.max(n_usize.min(MAX_PREALLOC));
-    }
+    // Sanity cap: au-delà, on évite toute pré-allocation “grosse” basée sur Content-Length.
+    const SANITY_CAP: usize = 2 * 1024 * 1024; // 2MB
+    const SMALL_START: usize = 8 * 1024;
+    const LARGE_START: usize = 64 * 1024;
+
+    let cap = match content_length {
+        None => SMALL_START,
+        Some(n) => {
+            let n_usize = usize::try_from(n).unwrap_or(usize::MAX);
+            if n_usize <= SANITY_CAP {
+                n_usize.max(SMALL_START)
+            } else {
+                LARGE_START
+            }
+        }
+    };
     let mut buf = bytes::BytesMut::with_capacity(cap);
     while let Some(chunk) = body.next_chunk().await? {
         buf.extend_from_slice(&chunk);
@@ -448,7 +469,9 @@ async fn read_body_all(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::{ContentType, Encodes, Format, FormatType, NoContent, text::Text};
+    use crate::codec::{
+        ContentType, Encodes, Format, FormatType, NoContent, format_debug_body, text::Text,
+    };
     use crate::endpoint::{NoPolicy, NoRoute};
     use crate::pagination::NoPagination;
     use std::convert::Infallible;
@@ -459,6 +482,14 @@ mod test {
         type AuthVars = ();
         const SCHEME: Scheme = Scheme::HTTPS;
         const DOMAIN: &'static str = "example.com";
+
+        fn base_policy(
+            _vars: &Self::Vars,
+            _auth: &Self::AuthVars,
+            _ctx: &ErrorContext,
+        ) -> Result<Policy, ApiClientError> {
+            Ok(Policy::new())
+        }
     }
 
     struct BinaryEncoding;
@@ -501,12 +532,12 @@ mod test {
     fn debug_preview_uses_request_encoder_and_response_decoder_formats() {
         // Request: binary => base64
         let req = Bytes::from_static(&[0x00, 0x01, 0x02]);
-        let req_s = format_request_body_for_debug::<TestCx, Ep>(&req, 1024);
+        let req_s = format_debug_body(&req, 1024);
         assert_eq!(req_s, "AAEC");
 
         // Response: text => UTF-8
         let resp = Bytes::from_static(b"hello");
-        let resp_s = format_response_body_for_debug::<TestCx, Ep>(&resp, 1024);
+        let resp_s = format_debug_body(&resp, 1024);
         assert_eq!(resp_s, "hello");
 
         // sanity: NoContentEncoding is text-format (empty)

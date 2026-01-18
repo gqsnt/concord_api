@@ -24,6 +24,7 @@ async fn path_concat_and_percent_encoding_and_alias() {
     // alias field name: match_id
     let _ = api
         .request(endpoints::GetMatch::new("a/b".to_string()))
+        .execute()
         .await
         .unwrap();
 
@@ -48,6 +49,7 @@ async fn path_fmt_builds_single_segment_and_encodes() {
 
     let _ = api
         .request(endpoints::One::new("a/b".to_string()))
+        .execute()
         .await
         .unwrap();
     let req = &recorded.lock().unwrap()[0];
@@ -72,9 +74,10 @@ async fn path_fmt_require_all_optional_omits_segment_when_missing() {
     ]);
     let api = ApiPathFmtOpt::new_with_transport(transport);
 
-    let _ = api.request(endpoints::One::new()).await.unwrap();
+    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
     let _ = api
         .request(endpoints::One::new().v("z".to_string()))
+        .execute()
         .await
         .unwrap();
 
@@ -99,7 +102,7 @@ async fn optional_path_segment_omitted_no_double_slash() {
     // opt=None => "/x/y"
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
     let api = ApiOptSeg::new_with_transport(transport);
-    let _ = api.request(endpoints::One::new()).await.unwrap();
+    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
     let req = &recorded.lock().unwrap()[0];
     assert_eq!(req.url.path(), "/x/y");
 
@@ -109,6 +112,7 @@ async fn optional_path_segment_omitted_no_double_slash() {
 
     let _ = api
         .request(endpoints::One::new().opt("z".to_string()))
+        .execute()
         .await
         .unwrap();
     let req = &recorded.lock().unwrap()[0];

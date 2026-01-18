@@ -24,6 +24,7 @@ async fn query_fmt_set_required_var() {
 
     let _ = api
         .request(endpoints::One::new("z".to_string()))
+        .execute()
         .await
         .unwrap();
 
@@ -61,10 +62,11 @@ async fn query_fmt_require_all_optional_removes_key_when_missing() {
     let api = ApiQueryFmtOpt::new_with_transport(transport);
 
     // v=None => "q" removed
-    let _ = api.request(endpoints::One::new()).await.unwrap();
+    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
     // v=Some => "q" present
     let _ = api
         .request(endpoints::One::new().v("z".to_string()))
+        .execute()
         .await
         .unwrap();
 
@@ -112,6 +114,7 @@ async fn query_fmt_push_appends_duplicate_keys() {
 
     let _ = api
         .request(endpoints::One::new("z".to_string()))
+        .execute()
         .await
         .unwrap();
 

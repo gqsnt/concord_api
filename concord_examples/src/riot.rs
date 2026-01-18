@@ -7,9 +7,12 @@ api! {
     client RiotClient {
         scheme: https,
         host: "riotgames.com",
+        auth_vars {
+            api_key:String
+        }
         headers {
             "user-agent" as user_agent: String = "ClientApiRiotExample/1.0".to_string(),
-            "x-riot-token" as api_key: String,
+            "X-Riot-Token" = auth.api_key,
             "x-client-trace" as client_trace: bool = false
         }
     }
@@ -471,6 +474,7 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
             default_region,
             "EUVV".to_string(),
         ))
+        .execute()
         .await?;
     println!(
         "Account: {}#{} puuid={}",
@@ -484,6 +488,7 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
         )
         .paginate()
         .max_items(10_000)
+        .collect()
         .await?;
     println!("match_ids Len: {:?}", match_ids.len());
 

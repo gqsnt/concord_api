@@ -1,6 +1,6 @@
 use crate::client::ClientContext;
 use crate::endpoint::{Endpoint, ResponseSpec};
-use crate::error::ApiClientError;
+use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{Control, Controller, PageItems, ProgressKey, Stop};
 use crate::policy::PolicyPatch;
 use crate::transport::DecodedResponse;
@@ -55,12 +55,24 @@ where
 
     fn init(&self, _ep: &E) -> Result<Self::State, ApiClientError> {
         if self.per_page == 0 {
-            return Err(ApiClientError::Pagination("paged: per_page=0".into()));
+            let ctx = ErrorContext {
+                endpoint: std::any::type_name::<E>(),
+                method: E::METHOD.clone(),
+            };
+            return Err(ApiClientError::Pagination {
+                ctx,
+                msg: "paged: per_page=0".into(),
+            });
         }
         if self.page == 0 {
-            return Err(ApiClientError::Pagination(
-                "paged: page=0 (use 1-based or set explicitly)".into(),
-            ));
+            let ctx = ErrorContext {
+                endpoint: std::any::type_name::<E>(),
+                method: E::METHOD.clone(),
+            };
+            return Err(ApiClientError::Pagination {
+                ctx,
+                msg: "paged: page=0".into(),
+            });
         }
         Ok(PagedState {
             page: self.page,
@@ -93,10 +105,16 @@ where
             return Ok(Control::Stop);
         }
 
-        st.page = st
-            .page
-            .checked_add(1)
-            .ok_or_else(|| ApiClientError::Pagination("paged: page overflow".into()))?;
+        st.page = st.page.checked_add(1).ok_or_else(|| {
+            let ctx = ErrorContext {
+                endpoint: std::any::type_name::<E>(),
+                method: E::METHOD.clone(),
+            };
+            ApiClientError::Pagination {
+                ctx,
+                msg: "paged: page overflow".into(),
+            }
+        })?;
 
         Ok(Control::Continue)
     }

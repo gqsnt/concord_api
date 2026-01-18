@@ -90,6 +90,7 @@ pub async fn test_api() -> Result<(), ApiClientError> {
         .clone()
         .request(client::endpoints::GetPosts::new().user_id(1).x_debug(true))
         .debug_level(DebugLevel::VV)
+        .execute()
         .await?;
     println!("GET /posts?userId=1 => {} posts", posts.len());
 
@@ -97,11 +98,13 @@ pub async fn test_api() -> Result<(), ApiClientError> {
         .clone()
         .request(client::endpoints::GetPost::new(1))
         .debug_level(DebugLevel::V)
+        .execute()
         .await?;
     println!("GET /posts/1 => title={:?}", post.title);
 
     let comments = client
         .request(client::endpoints::GetPostComments::new(1))
+        .execute()
         .await?;
     println!("GET /posts/1/comments => {} comments", comments.len());
 
@@ -111,17 +114,22 @@ pub async fn test_api() -> Result<(), ApiClientError> {
             body: "bar".to_string(),
             user_id: 10,
         }))
+        .execute()
         .await?;
     println!(
         "POST /posts => id={} user_id={}",
         created.id, created.user_id
     );
 
-    let user = client.request(client::endpoints::GetUser::new(1)).await?;
+    let user = client
+        .request(client::endpoints::GetUser::new(1))
+        .execute()
+        .await?;
     println!("GET /users/1 => username={}", user.username);
 
     let titles = client
         .request(client::endpoints::GetUserPosts::new(1))
+        .execute()
         .await?;
     println!("GET /users/1/posts => {} titles (mapped)", titles.len());
 

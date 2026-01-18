@@ -1,6 +1,6 @@
 use crate::client::ClientContext;
 use crate::endpoint::{Endpoint, ResponseSpec};
-use crate::error::ApiClientError;
+use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{Control, Controller, PageItems, ProgressKey, Stop};
 use crate::policy::PolicyPatch;
 use crate::transport::DecodedResponse;
@@ -70,7 +70,14 @@ where
 
     fn init(&self, _ep: &E) -> Result<Self::State, ApiClientError> {
         if self.per_page == 0 {
-            return Err(ApiClientError::Pagination("cursor: per_page=0".into()));
+            let ctx = ErrorContext {
+                endpoint: std::any::type_name::<E>(),
+                method: E::METHOD.clone(),
+            };
+            return Err(ApiClientError::Pagination {
+                ctx,
+                msg: "cursor: per_page=0".into(),
+            });
         }
         Ok(CursorState {
             cursor: self.cursor.clone(),

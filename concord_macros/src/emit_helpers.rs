@@ -42,22 +42,36 @@ pub fn lit_str(s: &str, span: Span) -> LitStr {
 /// `let name = HeaderName::from_bytes(b"...").map_err(|_| ApiClientError::InvalidParam(concat!("header:", "...")))?;`
 pub fn emit_header_name(key: &str, span: Span) -> TokenStream2 {
     let key_lit = LitStr::new(key, span);
-    let err = LitStr::new(&format!("header:{}", key), span);
-    quote! {
+    let param_lit = LitStr::new(&format!("header:{key}"), span);
+
+    quote! {{
         ::http::header::HeaderName::from_bytes(#key_lit.as_bytes())
-            .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(#err))?
+            .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam {
+                ctx: ctx.clone(),
+                param: #param_lit,
+            })?
+    }}
+}
+
+/// - The generated code expects a `ctx` variable to be in scope (it is in policy apply fns).
+#[inline]
+pub fn emit_err_invalid_param(param: &str, span: Span) -> TokenStream2 {
+    let lit = LitStr::new(param, span);
+    quote! {
+        ::concord_core::prelude::ApiClientError::InvalidParam {
+            ctx: ctx.clone(),
+            param: #lit,
+        }
     }
 }
 
 pub fn emit_header_value_from_expr(expr: &syn::Expr, key: &str, span: Span) -> TokenStream2 {
-    let err = LitStr::new(&format!("header:{}", key), span);
-    quote! {
-        {
-            let __s = (#expr).to_string();
-            ::http::HeaderValue::from_str(&__s)
-                .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(#err))?
-        }
-    }
+    let param = format!("header:{key}");
+    let err = emit_err_invalid_param(&param, span);
+    quote! {{
+        ::http::HeaderValue::from_str(&(#expr).to_string())
+            .map_err(|_| #err)?
+    }}
 }
 
 pub fn emit_header_value_from_static(s: &LitStr) -> TokenStream2 {

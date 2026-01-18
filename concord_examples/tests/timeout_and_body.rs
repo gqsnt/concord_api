@@ -29,7 +29,7 @@ async fn timeout_layering_client_path_endpoint() {
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
     let api = ApiTimeout::new_with_transport(transport);
 
-    let _ = api.request(endpoints::A::new()).await.unwrap();
+    let _ = api.request(endpoints::A::new()).execute().await.unwrap();
     let req = &recorded.lock().unwrap()[0];
     assert_eq!(req.timeout, Some(core::time::Duration::from_secs(2)));
 }
@@ -62,6 +62,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
 
         let _ = api
             .request(endpoints::A::new(NewObj { id: "1".into() }))
+            .execute()
             .await
             .unwrap();
         let req = &recorded.lock().unwrap()[0];
@@ -79,6 +80,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
 
         let _ = api
             .request(endpoints::B::new(NewObj { id: "1".into() }))
+            .execute()
             .await
             .unwrap();
         let req = &recorded.lock().unwrap()[0];
@@ -94,7 +96,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
         let api = ApiBody::new_with_transport(transport);
 
-        let _ = api.request(endpoints::C::new()).await.unwrap();
+        let _ = api.request(endpoints::C::new()).execute().await.unwrap();
         let req = &recorded.lock().unwrap()[0];
         assert!(req.headers.get(CONTENT_TYPE).is_none());
         assert!(req.body.is_none());
@@ -118,7 +120,7 @@ async fn timeout_endpoint_allows_no_comma_before_arrow() {
     use api_timeout_no_comma::*;
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
     let api = ApiTimeoutNoComma::new_with_transport(transport);
-    let _ = api.request(endpoints::A::new()).await.unwrap();
+    let _ = api.request(endpoints::A::new()).execute().await.unwrap();
     let req = &recorded.lock().unwrap()[0];
     assert_eq!(req.timeout, Some(core::time::Duration::from_secs(2)));
 }

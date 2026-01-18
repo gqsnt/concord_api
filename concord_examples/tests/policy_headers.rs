@@ -37,7 +37,7 @@ async fn header_key_variants_kebab_string_bind_remove_override() {
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
     let api = ApiHeaders::new_with_transport(transport);
 
-    let _ = api.request(endpoints::One::new()).await.unwrap();
+    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
     let req = &recorded.lock().unwrap()[0];
 
     assert_eq!(req.headers.get(USER_AGENT).unwrap().to_str().unwrap(), "ua");
@@ -73,7 +73,7 @@ async fn header_value_from_cx_to_string_and_invalid_header_value_error() {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
         let api = ApiHeaderInvalid::new_with_transport("ok".to_string(), transport);
 
-        let _ = api.request(endpoints::One::new()).await.unwrap();
+        let _ = api.request(endpoints::One::new()).execute().await.unwrap();
         let req = &recorded.lock().unwrap()[0];
         assert_eq!(
             req.headers.get("x-bool").unwrap().to_str().unwrap(),
@@ -86,15 +86,16 @@ async fn header_value_from_cx_to_string_and_invalid_header_value_error() {
         let (transport, _recorded) = MockTransport::new(vec![]);
         let api = ApiHeaderInvalid::new_with_transport("a\nb".to_string(), transport);
 
-        let err = api.request(endpoints::One::new()).await.unwrap_err();
+        let err = api
+            .request(endpoints::One::new())
+            .execute()
+            .await
+            .unwrap_err();
         match err {
-            ApiClientError::InEndpoint { source, .. } => match *source {
-                ApiClientError::InvalidParam(s) => {
-                    assert!(s.contains("header"));
-                    assert!(s.contains("x-bad"));
-                }
-                other => panic!("unexpected inner error: {other:?}"),
-            },
+            ApiClientError::InvalidParam { ctx, param } => {
+                assert!(param.contains("header"));
+                assert!(param.contains("x-bad"));
+            }
             other => panic!("unexpected error: {other:?}"),
         }
     }
@@ -124,7 +125,7 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
         let api = ApiAccept::new_with_transport(transport);
-        let _ = api.request(endpoints::A::new()).await.unwrap();
+        let _ = api.request(endpoints::A::new()).execute().await.unwrap();
         let req = &recorded.lock().unwrap()[0];
         assert_eq!(
             req.headers.get(ACCEPT).unwrap().to_str().unwrap(),
@@ -136,7 +137,7 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
         let api = ApiAccept::new_with_transport(transport);
-        let _ = api.request(endpoints::B::new()).await.unwrap();
+        let _ = api.request(endpoints::B::new()).execute().await.unwrap();
         let req = &recorded.lock().unwrap()[0];
         assert_eq!(
             req.headers.get(ACCEPT).unwrap().to_str().unwrap(),
@@ -148,7 +149,7 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
         let api = ApiAccept::new_with_transport(transport);
-        let _ = api.request(endpoints::C::new()).await.unwrap();
+        let _ = api.request(endpoints::C::new()).execute().await.unwrap();
         let req = &recorded.lock().unwrap()[0];
         assert!(req.headers.get(ACCEPT).is_none());
     }

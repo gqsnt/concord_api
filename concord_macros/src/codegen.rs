@@ -5,17 +5,67 @@ use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{Ident, LitStr};
 
+#[inline]
+fn client_prefixed_ident(client: &Ident, suffix: &str) -> Ident {
+    // Example: RiotClient + "Vars" => RiotClientVars
+    emit_helpers::ident(&format!("{}{}", client, suffix), client.span())
+}
+
+#[inline]
+fn value_uses_auth(v: &ValueKind) -> bool {
+    match v {
+        ValueKind::AuthField(_) => true,
+        ValueKind::Fmt(fmt) => fmt.pieces.iter().any(|p| {
+            matches!(
+                p,
+                FmtResolvedPiece::Var {
+                    source: FmtVarSource::Auth,
+                    ..
+                }
+            )
+        }),
+        _ => false,
+    }
+}
+
+#[inline]
+fn policy_uses_auth(policy: &PolicyBlocksResolved) -> bool {
+    let ops_use = |op: &PolicyOp| match op {
+        PolicyOp::Set { value, .. } => value_uses_auth(value),
+        _ => false,
+    };
+    policy.headers.iter().any(ops_use)
+        || policy.query.iter().any(ops_use)
+        || policy
+            .timeout
+            .as_ref()
+            .is_some_and(value_uses_auth)
+}
+
 pub fn emit(ir: Ir) -> TokenStream2 {
     let mod_name = ir.mod_name.clone();
     let scheme = emit_scheme(ir.scheme);
     let domain = ir.domain.clone();
 
-    let vars_struct = emit_client_vars(&ir.client_vars);
-    let auth_vars_struct = emit_client_auth_vars(&ir.client_auth_vars);
-    let cx_struct = emit_client_context(&scheme, &domain, &ir.client_policy);
-    let client_wrapper = emit_client_wrapper(&ir);
-    let internal_mod = emit_internal(&ir);
-    let endpoints_mod = emit_endpoints(&ir);
+    let vars_ty = client_prefixed_ident(&ir.client_name, "Vars");
+    let auth_inner_ty = client_prefixed_ident(&ir.client_name, "AuthInner");
+    let auth_vars_ty = client_prefixed_ident(&ir.client_name, "AuthVars");
+    let cx_ty = client_prefixed_ident(&ir.client_name, "Cx");
+
+    let vars_struct = emit_client_vars(&ir.client_vars, &vars_ty);
+    let auth_vars_struct =
+        emit_client_auth_vars(&ir.client_auth_vars, &auth_inner_ty, &auth_vars_ty);
+    let cx_struct = emit_client_context(
+        &scheme,
+        &domain,
+        &ir.client_policy,
+        &vars_ty,
+        &auth_vars_ty,
+        &cx_ty,
+    );
+    let client_wrapper = emit_client_wrapper(&ir, &vars_ty, &auth_vars_ty, &cx_ty);
+    let internal_mod = emit_internal(&ir, &vars_ty, &auth_vars_ty, &cx_ty);
+    let endpoints_mod = emit_endpoints(&ir, &cx_ty);
 
     quote! {
         mod #mod_name {
@@ -40,7 +90,7 @@ fn emit_scheme(s: crate::ast::SchemeLit) -> TokenStream2 {
     }
 }
 
-fn emit_client_vars(vars: &[VarInfo]) -> TokenStream2 {
+fn emit_client_vars(vars: &[VarInfo], vars_ty: &Ident) -> TokenStream2 {
     let fields = vars.iter().map(|v| {
         let name = &v.rust;
         let ty = &v.ty;
@@ -99,18 +149,18 @@ fn emit_client_vars(vars: &[VarInfo]) -> TokenStream2 {
 
     quote! {
         #[derive(Clone)]
-        pub struct Vars {
+       pub struct #vars_ty {
             #( #fields, )*
         }
 
-        impl Vars {
+       impl #vars_ty {
             #[inline]
             pub fn new( #( #new_args ),* ) -> Self {
                 Self { #( #init_fields, )* }
             }
 
             #( #setters )*
-        }
+       }
     }
 }
 
@@ -118,22 +168,26 @@ fn emit_client_context(
     scheme: &TokenStream2,
     domain: &LitStr,
     policy: &PolicyBlocksResolved,
+    vars_ty: &Ident,
+    auth_vars_ty: &Ident,
+    cx_ty: &Ident,
 ) -> TokenStream2 {
     let base_policy = emit_policy_fn_base(policy);
 
     quote! {
         #[derive(Clone)]
-        pub struct Cx;
+        pub struct #cx_ty;
 
-        impl ::concord_core::prelude::ClientContext for Cx {
-            type Vars = Vars;
-            type AuthVars = AuthVars;
+        impl ::concord_core::prelude::ClientContext for #cx_ty {
+            type Vars = #vars_ty;
+            type AuthVars = #auth_vars_ty;
             const SCHEME: ::http::uri::Scheme = #scheme;
             const DOMAIN: &'static str = #domain;
 
             fn base_policy(
                 vars: &Self::Vars,
-                auth: &Self::AuthVars
+                auth: &Self::AuthVars,
+                ctx: &::concord_core::prelude::ErrorContext,
             ) -> ::core::result::Result<::concord_core::prelude::Policy, ::concord_core::prelude::ApiClientError> {
                 #base_policy
             }
@@ -158,27 +212,53 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
         ops.push(quote! { policy.set_timeout(#ex); });
     }
 
+    let lock_auth = if policy_uses_auth(policy) {
+        quote! { let auth = auth.read().unwrap(); }
+    } else {
+        quote! {}
+    };
+
     quote! {
         let mut policy = ::concord_core::prelude::Policy::new();
+        let ctx = ctx.clone();
         #[allow(unused_variables)]
         let cx = vars;
         #[allow(unused_variables)]
         let auth = auth;
+        #lock_auth
         #( #ops )*
         ::core::result::Result::Ok(policy)
     }
 }
 
-fn emit_client_auth_vars(vars: &[VarInfo]) -> TokenStream2 {
+fn emit_client_auth_vars(
+    vars: &[VarInfo],
+    auth_inner_ty: &Ident,
+    auth_vars_ty: &Ident,
+) -> TokenStream2 {
     use quote::quote;
-    let fields = vars.iter().map(|v| {
+
+    // empty auth vars => unit struct (no lock)
+    if vars.is_empty() {
+        return quote! {
+            #[derive(Clone, Default)]
+            pub struct #auth_vars_ty;
+            impl #auth_vars_ty {
+                #[inline]
+                pub fn new() -> Self { Self }
+            }
+        };
+    }
+
+    let inner_fields = vars.iter().map(|v| {
         let name = &v.rust;
         if v.optional {
-            quote! { pub #name: ::std::sync::Arc<::std::sync::RwLock<::core::option::Option<::concord_core::prelude::SecretString>>> }
+            quote! { pub #name: ::core::option::Option<::concord_core::prelude::SecretString> }
         } else {
-            quote! { pub #name: ::std::sync::Arc<::std::sync::RwLock<::concord_core::prelude::SecretString>> }
+            quote! { pub #name: ::concord_core::prelude::SecretString }
         }
     });
+
     let required: Vec<&VarInfo> = vars
         .iter()
         .filter(|v| !v.optional && v.default.is_none())
@@ -188,43 +268,34 @@ fn emit_client_auth_vars(vars: &[VarInfo]) -> TokenStream2 {
         let ty = &v.ty;
         quote! { #name: #ty }
     });
-    let init_fields = vars.iter().map(|v| {
+    let inner_init_fields = vars.iter().map(|v| {
         let name = &v.rust;
         if !v.optional && v.default.is_none() {
-            quote! { #name: ::std::sync::Arc::new(::std::sync::RwLock::new(::concord_core::prelude::SecretString::from(#name))) }
+            quote! { #name: ::concord_core::prelude::SecretString::new(#name) }
         } else if v.optional {
             if let Some(d) = &v.default {
-                quote! { #name: ::std::sync::Arc::new(::std::sync::RwLock::new(::core::option::Option::Some(::concord_core::prelude::SecretString::from(#d)))) }
+                quote! { #name: ::core::option::Option::Some(::concord_core::prelude::SecretString::new(#d)) }
             } else {
-                quote! { #name: ::std::sync::Arc::new(::std::sync::RwLock::new(::core::option::Option::None)) }
+                quote! { #name: ::core::option::Option::None }
             }
         } else {
             let d = v.default.as_ref().unwrap();
-            quote! { #name: ::std::sync::Arc::new(::std::sync::RwLock::new(::concord_core::prelude::SecretString::from(#d))) }
+            quote! { #name: ::concord_core::prelude::SecretString::new(#d) }
         }
     });
+
     // Default if no required args
     let can_default = required.is_empty();
     let default_impl = if can_default {
         quote! {
-            impl ::core::default::Default for AuthVars {
+            impl ::core::default::Default for #auth_vars_ty {
                 fn default() -> Self { Self::new() }
             }
         }
     } else {
         quote! {}
     };
-    // empty auth vars => unit struct
-    if vars.is_empty() {
-        return quote! {
-            #[derive(Clone, Default)]
-            pub struct AuthVars;
-            impl AuthVars {
-                #[inline]
-                pub fn new() -> Self { Self }
-            }
-        };
-    }
+
     let new_sig = if required.is_empty() {
         quote! { pub fn new() -> Self }
     } else {
@@ -232,20 +303,30 @@ fn emit_client_auth_vars(vars: &[VarInfo]) -> TokenStream2 {
     };
     quote! {
         #[derive(Clone)]
-        pub struct AuthVars {
-            #( #fields, )*
+        pub struct #auth_inner_ty {
+            #( #inner_fields, )*
         }
-        impl AuthVars {
+        #[derive(Clone)]
+        pub struct #auth_vars_ty(pub ::std::sync::Arc<::std::sync::RwLock<#auth_inner_ty>>);
+
+        impl ::core::ops::Deref for #auth_vars_ty {
+            type Target = ::std::sync::RwLock<#auth_inner_ty>;
+            #[inline]
+            fn deref(&self) -> &Self::Target { &self.0 }
+        }
+
+        impl #auth_vars_ty {
             #[inline]
             #new_sig {
-                Self { #( #init_fields, )* }
+                let inner = #auth_inner_ty { #( #inner_init_fields, )* };
+                Self(::std::sync::Arc::new(::std::sync::RwLock::new(inner)))
             }
         }
         #default_impl
     }
 }
 
-fn emit_internal(ir: &Ir) -> TokenStream2 {
+fn emit_internal(ir: &Ir, vars_ty: &Ident, auth_vars_ty: &Ident, cx_ty: &Ident) -> TokenStream2 {
     let wrappers = quote! {
         pub struct __LayerPrefix<P>(::core::marker::PhantomData<P>);
         pub struct __LayerEndpoint<P>(::core::marker::PhantomData<P>);
@@ -286,8 +367,14 @@ fn emit_internal(ir: &Ir) -> TokenStream2 {
         }
     };
 
-    let layer_route_policy = ir.layers.iter().map(|l| emit_layer_parts(ir, l));
-    let endpoint_parts = ir.endpoints.iter().map(emit_endpoint_parts);
+    let layer_route_policy = ir
+        .layers
+        .iter()
+        .map(|l| emit_layer_parts(ir, l, vars_ty, auth_vars_ty, cx_ty));
+    let endpoint_parts = ir
+        .endpoints
+        .iter()
+        .map(|ep| emit_endpoint_parts(ep, vars_ty, auth_vars_ty, cx_ty));
 
     quote! {
         mod __internal {
@@ -299,7 +386,13 @@ fn emit_internal(ir: &Ir) -> TokenStream2 {
     }
 }
 
-fn emit_layer_parts(ir: &Ir, layer: &LayerIr) -> TokenStream2 {
+fn emit_layer_parts(
+    ir: &Ir,
+    layer: &LayerIr,
+    vars_ty: &Ident,
+    auth_vars_ty: &Ident,
+    cx_ty: &Ident,
+) -> TokenStream2 {
     let id = layer.id;
     let route_ty = emit_helpers::ident(&format!("__Route_L{id}"), Span::call_site());
     let policy_ty = emit_helpers::ident(&format!("__Policy_L{id}"), Span::call_site());
@@ -321,11 +414,11 @@ fn emit_layer_parts(ir: &Ir, layer: &LayerIr) -> TokenStream2 {
         let ep_name = &ep.name;
 
         route_impls.push(quote! {
-            impl ::concord_core::internal::RoutePart<super::Cx, super::endpoints::#ep_name> for #route_ty {
+            impl ::concord_core::internal::RoutePart<super::#cx_ty, super::endpoints::#ep_name> for #route_ty {
                 fn apply(
                     ep: &super::endpoints::#ep_name,
-                    vars: &super::Vars,
-                    auth: &super::AuthVars,
+                    vars: &super::#vars_ty,
+                    auth: &super::#auth_vars_ty,
                     route: &mut ::concord_core::prelude::RouteParts
                 ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
                     let _ = auth;
@@ -336,13 +429,17 @@ fn emit_layer_parts(ir: &Ir, layer: &LayerIr) -> TokenStream2 {
         });
 
         policy_impls.push(quote! {
-            impl ::concord_core::internal::PolicyPart<super::Cx, super::endpoints::#ep_name> for #policy_ty {
+            impl ::concord_core::internal::PolicyPart<super::#cx_ty, super::endpoints::#ep_name> for #policy_ty {
                 fn apply(
                     ep: &super::endpoints::#ep_name,
-                    vars: &super::Vars,
-                    auth: &super::AuthVars,
+                    vars: &super::#vars_ty,
+                    auth: &super::#auth_vars_ty,
                     policy: &mut ::concord_core::prelude::Policy
                 ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
+                    let ctx = ::concord_core::prelude::ErrorContext {
+                        endpoint: ep.name(),
+                        method: <super::endpoints::#ep_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::METHOD.clone(),
+                    };
                     #policy_apply
                     ::core::result::Result::Ok(())
                 }
@@ -358,8 +455,14 @@ fn emit_layer_parts(ir: &Ir, layer: &LayerIr) -> TokenStream2 {
     }
 }
 
-fn emit_endpoint_parts(ep: &EndpointIr) -> TokenStream2 {
+fn emit_endpoint_parts(
+    ep: &EndpointIr,
+    vars_ty: &Ident,
+    auth_vars_ty: &Ident,
+    cx_ty: &Ident,
+) -> TokenStream2 {
     let name = &ep.name;
+    let method = &ep.method;
     let route_ty = emit_helpers::ident(&format!("__Route_{name}"), Span::call_site());
     let policy_ty = emit_helpers::ident(&format!("__Policy_{name}"), Span::call_site());
 
@@ -367,21 +470,18 @@ fn emit_endpoint_parts(ep: &EndpointIr) -> TokenStream2 {
     let policy_apply = emit_policy_apply_fn(&ep.policy, PolicyEmitCtx::Endpoint);
 
     let paginate_ty = emit_helpers::ident(&format!("__Pag_{name}"), Span::call_site());
-    let paginate_impl = emit_paginate_part(ep, &paginate_ty);
+    let paginate_impl = emit_paginate_part(ep, &paginate_ty, cx_ty, vars_ty);
 
     let map_ty = emit_helpers::ident(&format!("__Map_{name}"), Span::call_site());
     let map_impl = emit_map_part(ep, &map_ty);
 
     quote! {
         pub struct #route_ty;
-        impl<Cx> ::concord_core::internal::RoutePart<Cx, super::endpoints::#name> for #route_ty
-        where
-            Cx: ::concord_core::prelude::ClientContext,
-        {
+        impl ::concord_core::internal::RoutePart<super::#cx_ty, super::endpoints::#name> for #route_ty {
             fn apply(
                     ep: &super::endpoints::#name,
-                    vars: &Cx::Vars,
-                    auth: &Cx::AuthVars,
+                    vars: &super::#vars_ty,
+                    auth: &super::#auth_vars_ty,
                     route: &mut ::concord_core::prelude::RouteParts
                 )
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
@@ -394,13 +494,14 @@ fn emit_endpoint_parts(ep: &EndpointIr) -> TokenStream2 {
         }
 
         pub struct #policy_ty;
-        impl<Cx> ::concord_core::internal::PolicyPart<Cx, super::endpoints::#name> for #policy_ty
-        where
-            Cx: ::concord_core::prelude::ClientContext,
-        {
-            fn apply(ep: &super::endpoints::#name, vars: &Cx::Vars, auth: &Cx::AuthVars, policy: &mut ::concord_core::prelude::Policy)
+        impl ::concord_core::internal::PolicyPart<super::#cx_ty, super::endpoints::#name> for #policy_ty {
+            fn apply(ep: &super::endpoints::#name, vars: &super::#vars_ty, auth: &super::#auth_vars_ty, policy: &mut ::concord_core::prelude::Policy)
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
+                let ctx = ::concord_core::prelude::ErrorContext {
+                    endpoint: ep.name(),
+                    method: ::http::Method::#method,
+                };
                 #policy_apply
                 ::core::result::Result::Ok(())
             }
@@ -411,8 +512,11 @@ fn emit_endpoint_parts(ep: &EndpointIr) -> TokenStream2 {
     }
 }
 
-fn emit_endpoints(ir: &Ir) -> TokenStream2 {
-    let endpoint_defs = ir.endpoints.iter().map(|ep| emit_endpoint_def(ir, ep));
+fn emit_endpoints(ir: &Ir, cx_ty: &Ident) -> TokenStream2 {
+    let endpoint_defs = ir
+        .endpoints
+        .iter()
+        .map(|ep| emit_endpoint_def(ir, ep, cx_ty));
     quote! {
         pub mod endpoints {
             use super::*;
@@ -421,7 +525,12 @@ fn emit_endpoints(ir: &Ir) -> TokenStream2 {
     }
 }
 
-fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
+fn emit_client_wrapper(
+    ir: &Ir,
+    vars_ty: &Ident,
+    auth_vars_ty: &Ident,
+    cx_ty: &Ident,
+) -> TokenStream2 {
     use quote::quote;
 
     let client_ty = &ir.client_name;
@@ -513,12 +622,14 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
             quote! {
             #[inline]
             pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
-                *self.inner.auth_vars().#f.write().unwrap() = ::core::option::Option::Some(v.into());
+                let mut __g = self.inner.auth_vars().write().unwrap();
+                __g.#f = ::core::option::Option::Some(v.into());
                 self
             }
             #[inline]
             pub fn #clear_name(&self) -> &Self {
-                *self.inner.auth_vars().#f.write().unwrap() = ::core::option::Option::None;
+                let mut __g = self.inner.auth_vars().write().unwrap();
+                __g.#f = ::core::option::Option::None;
                 self
             }
         }
@@ -526,7 +637,8 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
             quote! {
             #[inline]
             pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
-                *self.inner.auth_vars().#f.write().unwrap() = v.into();
+               let mut __g = self.inner.auth_vars().write().unwrap();
+                __g.#f = v.into();
                 self
             }
         }
@@ -536,14 +648,14 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
     quote! {
         #[derive(Clone)]
         pub struct #client_ty<T: ::concord_core::prelude::Transport = ::concord_core::prelude::ReqwestTransport> {
-            inner: ::concord_core::prelude::ApiClient<Cx, T>,
+            inner: ::concord_core::prelude::ApiClient<#cx_ty, T>,
         }
         impl #client_ty<::concord_core::prelude::ReqwestTransport> {
             #[inline]
             pub fn new( #( #ctor_args ),* ) -> Self {
-                let vars = Vars::new( #( #new_pass ),* );
-                let auth_vars = AuthVars::new( #( #new_auth_pass ),* );
-               Self { inner: ::concord_core::prelude::ApiClient::<Cx, ::concord_core::prelude::ReqwestTransport>::new(vars, auth_vars) }
+               let vars = #vars_ty::new( #( #new_pass ),* );
+                let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
+                Self { inner: ::concord_core::prelude::ApiClient::<#cx_ty, ::concord_core::prelude::ReqwestTransport>::new(vars, auth_vars) }
             }
 
 
@@ -552,9 +664,9 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
                 #( #ctor_args, )*
                 transport: T2
             ) -> #client_ty<T2> {
-                let vars = Vars::new( #( #new_pass ),* );
-                let auth_vars = AuthVars::new( #( #new_auth_pass ),* );
-                #client_ty { inner: ::concord_core::prelude::ApiClient::<Cx, T2>::with_transport(vars, auth_vars, transport) }
+                let vars = #vars_ty::new( #( #new_pass ),* );
+                let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
+                #client_ty { inner: ::concord_core::prelude::ApiClient::<#cx_ty, T2>::with_transport(vars, auth_vars, transport) }
             }
 
 
@@ -577,9 +689,9 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
             #[inline]
             pub fn with_pagination_caps(mut self, caps: ::concord_core::prelude::Caps) -> Self { self.inner.set_pagination_caps(caps); self }
             #[inline]
-            pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, Cx, E, T>
+            pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E, T>
             where
-                E: ::concord_core::prelude::Endpoint<Cx>,
+                E: ::concord_core::prelude::Endpoint<#cx_ty>,
             {
                 self.inner.request(ep)
             }
@@ -587,7 +699,7 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
     }
 }
 
-fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr) -> TokenStream2 {
+fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
     let name = &ep.name;
     let method = &ep.method;
 
@@ -776,7 +888,7 @@ fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr) -> TokenStream2 {
 
         #body_impl
 
-        impl ::concord_core::prelude::Endpoint<super::Cx> for #name {
+        impl ::concord_core::prelude::Endpoint<super::#cx_ty> for #name {
             const METHOD: ::http::Method = ::http::Method::#method;
             type Route = #route_ty;
             type Policy = #policy_ty;
@@ -801,10 +913,15 @@ fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> To
         #[allow(unused_variables)]
         let cx = vars;
         #[allow(unused_variables)]
-        let auth = auth;
-        #[allow(unused_variables)]
         let ep = ep;
+        #[allow(unused_variables)]
+        let auth = auth;
     });
+
+    if policy_uses_auth(policy) {
+        // AuthVars is a single RwLock<AuthInner>; lock exactly once per request build.
+        ops.push(quote! { let auth = auth.read().unwrap(); });
+    }
     ops.extend(emit_policy_ops(policy, PolicyKeyKind::Header, ctx));
     ops.extend(emit_policy_ops(policy, PolicyKeyKind::Query, ctx));
     if let Some(t) = &policy.timeout {
@@ -897,7 +1014,10 @@ fn emit_bind_op(
                 quote! {
                     if let ::core::option::Option::Some(__v) = #value_expr.as_ref() {
                         let __hv = ::http::HeaderValue::from_str(&__v.to_string())
-                            .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(concat!("header:", #ks)))?;
+                            .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam {
+                                ctx: ctx.clone(),
+                                param: concat!("header:", #ks),
+                            })?;
                         policy.insert_header(#name, __hv);
                     } else {
                         policy.remove_header(#name);
@@ -906,7 +1026,10 @@ fn emit_bind_op(
             } else {
                 quote! {
                     let __hv = ::http::HeaderValue::from_str(&#value_expr.to_string())
-                        .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(concat!("header:", #ks)))?;
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam {
+                            ctx: ctx.clone(),
+                            param: concat!("header:", #ks),
+                        })?;
                     policy.insert_header(#name, __hv);
                 }
             }
@@ -954,17 +1077,30 @@ fn emit_set_op(
                 let build = emit_fmt_build_string(fmt);
                 let insert = quote! {
                     let __hv = ::http::HeaderValue::from_str(&__fmt_s)
-                        .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(#err))?;
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam { ctx: ctx.clone(), param: #err })?;
                     policy.insert_header(#name, __hv);
                 };
 
                 if fmt.require_all {
                     let checks = fmt.pieces.iter().filter_map(|p| {
-                        let FmtResolvedPiece::Var { source, field, optional: true } = p else { return None; };
+                        let FmtResolvedPiece::Var {
+                            source,
+                            field,
+                            optional: true,
+                        } = p
+                        else {
+                            return None;
+                        };
                         match source {
-                            FmtVarSource::Cx => Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } }),
-                            FmtVarSource::Ep => Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } }),
-                            FmtVarSource::Auth => Some(quote! { if auth.#field.read().unwrap().is_none() { __fmt_ok = false; } }),
+                            FmtVarSource::Cx => {
+                                Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } })
+                            }
+                            FmtVarSource::Ep => {
+                                Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } })
+                            }
+                            FmtVarSource::Auth => {
+                                Some(quote! { if auth.#field.is_none() { __fmt_ok = false; } })
+                            }
                         }
                     });
                     return quote! {
@@ -990,10 +1126,9 @@ fn emit_set_op(
                 return if let Some(OptionalRefKind::Auth) = conditional {
                     quote! {
                         {
-                            let __g = auth.#fld.read().unwrap();
-                            if let ::core::option::Option::Some(__v) = __g.as_ref() {
+                            if let ::core::option::Option::Some(__v) = auth.#fld.as_ref() {
                                 let __hv = ::http::HeaderValue::from_str(__v.expose())
-                                    .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(#err))?;
+                                    .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam { ctx: ctx.clone(), param: #err })?;
                                 policy.insert_header(#name, __hv);
                             } else {
                                 policy.remove_header(#name);
@@ -1003,9 +1138,8 @@ fn emit_set_op(
                 } else {
                     quote! {
                         {
-                            let __g = auth.#fld.read().unwrap();
-                            let __hv = ::http::HeaderValue::from_str(__g.expose())
-                                .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(#err))?;
+                            let __hv = ::http::HeaderValue::from_str(auth.#fld.expose())
+                               .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam { ctx: ctx.clone(), param: #err })?;
                             policy.insert_header(#name, __hv);
                         }
                     }
@@ -1024,7 +1158,10 @@ fn emit_set_op(
                 return quote! {
                     if let ::core::option::Option::Some(__v) = #as_ref_expr {
                         let __hv = ::http::HeaderValue::from_str(&__v.to_string())
-                            .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam(concat!("header:", #ks)))?;
+                            .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam {
+                                ctx: ctx.clone(),
+                                param: concat!("header:", #ks),
+                            })?;
                         policy.insert_header(#name, __hv);
                     } else {
                         policy.remove_header(#name);
@@ -1055,11 +1192,24 @@ fn emit_set_op(
                 };
                 if fmt.require_all {
                     let checks = fmt.pieces.iter().filter_map(|p| {
-                        let FmtResolvedPiece::Var { source, field, optional: true } = p else { return None; };
+                        let FmtResolvedPiece::Var {
+                            source,
+                            field,
+                            optional: true,
+                        } = p
+                        else {
+                            return None;
+                        };
                         match source {
-                            FmtVarSource::Cx => Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } }),
-                            FmtVarSource::Ep => Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } }),
-                            FmtVarSource::Auth => Some(quote! { if auth.#field.read().unwrap().is_none() { __fmt_ok = false; } }),
+                            FmtVarSource::Cx => {
+                                Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } })
+                            }
+                            FmtVarSource::Ep => {
+                                Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } })
+                            }
+                            FmtVarSource::Auth => {
+                                Some(quote! { if auth.#field.is_none() { __fmt_ok = false; } })
+                            }
                         }
                     });
                     return quote! {
@@ -1087,9 +1237,8 @@ fn emit_set_op(
                 return if let Some(OptionalRefKind::Auth) = conditional {
                     quote! {
                         {
-                            let __g = auth.#fld.read().unwrap();
-                            if let ::core::option::Option::Some(__v) = __g.as_ref() {
-                                let __s: ::std::string::String = __v.expose().to_owned();
+                           if let ::core::option::Option::Some(__v) = auth.#fld.as_ref() {
+                                let __s = __v.expose();
                                 #setter
                             } else {
                                 policy.remove_query(#lit);
@@ -1099,8 +1248,7 @@ fn emit_set_op(
                 } else {
                     quote! {
                     {
-                        let __g = auth.#fld.read().unwrap();
-                        let __s: ::std::string::String = __g.expose().to_owned();
+                        let __s = auth.#fld.expose();
                         #setter
                     }
                     }
@@ -1175,15 +1323,13 @@ fn emit_fmt_build_string(fmt: &FmtResolved) -> proc_macro2::TokenStream {
                 FmtVarSource::Auth => {
                     if *optional {
                         ops.push(quote! {
-                            let __g = auth.#field.read().unwrap();
-                            if let ::core::option::Option::Some(__v) = __g.as_ref() {
+                           if let ::core::option::Option::Some(__v) = auth.#field.as_ref() {
                                 __fmt_s.push_str(__v.expose());
                             }
                         });
                     } else {
                         ops.push(quote! {
-                            let __g = auth.#field.read().unwrap();
-                            __fmt_s.push_str(__g.expose());
+                            __fmt_s.push_str(auth.#field.expose());
                         });
                     }
                 }
@@ -1206,7 +1352,7 @@ fn emit_value_expr(v: &ValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
             _ => quote! { &vars.#f },
         },
         ValueKind::EpField(f) => quote! { &ep.#f },
-        ValueKind::AuthField(f) => quote! { auth.#f.read().unwrap().expose().to_owned() },
+        ValueKind::AuthField(f) => quote! { auth.#f.expose() },
         ValueKind::OtherExpr(e) => quote! { (#e) },
         ValueKind::Fmt(fmt) => {
             let build = emit_fmt_build_string(fmt);
@@ -1365,10 +1511,27 @@ fn find_query_key_for_ep_field<'a>(ep: &'a EndpointIr, field: &Ident) -> Option<
     })
 }
 
-fn emit_paginate_part(ep: &EndpointIr, paginate_ty: &Ident) -> TokenStream2 {
+fn emit_paginate_part(
+    ep: &EndpointIr,
+    paginate_ty: &Ident,
+    cx_ty: &Ident,
+    vars_ty: &Ident,
+) -> TokenStream2 {
     let name = &ep.name;
+
     let Some(p) = &ep.paginate else {
-        return quote! {};
+        return quote! {
+            pub struct #paginate_ty;
+            impl ::concord_core::internal::PaginationPart<super::#cx_ty, super::endpoints::#name> for #paginate_ty {
+                type Ctrl = ::concord_core::internal::NoController;
+                fn controller(
+                    _vars: &super::#vars_ty,
+                    _ep: &super::endpoints::#name
+                ) -> ::core::result::Result<Self::Ctrl, ::concord_core::prelude::ApiClientError> {
+                    ::core::result::Result::Ok(::concord_core::internal::NoController)
+                }
+            }
+        };
     };
 
     let ctrl_ty = &p.ctrl_ty;
@@ -1377,14 +1540,17 @@ fn emit_paginate_part(ep: &EndpointIr, paginate_ty: &Ident) -> TokenStream2 {
         .last()
         .map(|s| s.ident.to_string())
         .unwrap_or_default();
+
     let is_cursor = ctrl_last == "CursorPagination";
     let is_offset_limit = ctrl_last == "OffsetLimitPagination";
     let is_paged = ctrl_last == "PagedPagination";
 
+    // Auto key-hints (query key inference from ep field binds).
     let auto_key_assigns = p.assigns.iter().filter_map(|(k, v)| {
         let ValueKind::EpField(f) = v else {
             return None;
         };
+
         let key_res = find_query_key_for_ep_field(ep, f)?;
         let (_ks, _sp, key_ts) = emit_key_string(key_res, PolicyKeyKind::Query);
         let k_str = k.to_string();
@@ -1413,10 +1579,11 @@ fn emit_paginate_part(ep: &EndpointIr, paginate_ty: &Ident) -> TokenStream2 {
                 return Some(quote! { ctrl.per_page_key = ::std::borrow::Cow::from(#key_ts); });
             }
         }
+
         None
     });
 
-    // Typed controller init: assign fields directly (no ControllerBuild / ControllerValue / hints).
+    // Typed controller init: assign fields directly (no ControllerBuild/ControllerValue).
     let assigns = p.assigns.iter().map(|(k, v)| {
         let val = match v {
             ValueKind::EpField(f) => quote! { ep.#f.clone() },
@@ -1435,17 +1602,18 @@ fn emit_paginate_part(ep: &EndpointIr, paginate_ty: &Ident) -> TokenStream2 {
                 quote! { { #build } }
             }
         };
+
         quote! { ctrl.#k = #val; }
     });
 
     quote! {
         pub struct #paginate_ty;
 
-        impl ::concord_core::internal::PaginationPart<super::Cx, super::endpoints::#name> for #paginate_ty {
+        impl ::concord_core::internal::PaginationPart<super::#cx_ty, super::endpoints::#name> for #paginate_ty {
             type Ctrl = #ctrl_ty;
 
             fn controller(
-                vars: &super::Vars,
+                vars: &super::#vars_ty,
                 ep: &super::endpoints::#name
             ) -> ::core::result::Result<Self::Ctrl, ::concord_core::prelude::ApiClientError> {
                 #[allow(unused_variables)]
@@ -1496,9 +1664,7 @@ fn emit_fmt_require_all_guard(fmt: &FmtResolved) -> TokenStream2 {
         match source {
             FmtVarSource::Cx => Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } }),
             FmtVarSource::Ep => Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } }),
-            FmtVarSource::Auth => {
-                Some(quote! { if auth.#field.read().unwrap().is_none() { __fmt_ok = false; } })
-            }
+            FmtVarSource::Auth => Some(quote! { if auth.#field.is_none() { __fmt_ok = false; } }),
         }
     });
 

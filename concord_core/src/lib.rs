@@ -30,7 +30,7 @@ pub mod prelude {
     pub use crate::codec::{NoContent, text::Text};
     pub use crate::debug::{DebugLevel, DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::endpoint::Endpoint;
-    pub use crate::error::{ApiClientError, FxError};
+    pub use crate::error::{ApiClientError, ErrorContext, FxError};
     pub use crate::pagination::PaginatedEndpoint;
     pub use crate::pagination::{
         Caps, CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,

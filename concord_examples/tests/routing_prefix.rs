@@ -42,7 +42,7 @@ async fn prefix_default_and_override_and_order() {
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
     let api = ApiPrefixDefault::new_with_transport(transport);
 
-    let _ = api.request(endpoints::Ping::new()).await.unwrap();
+    let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
     let host0 = recorded.lock().unwrap()[0]
         .url
         .host_str()
@@ -56,6 +56,7 @@ async fn prefix_default_and_override_and_order() {
 
     let _ = api
         .request(endpoints::Ping::new().region(Region::NA))
+        .execute()
         .await
         .unwrap();
     let host1 = recorded.lock().unwrap()[0]
@@ -84,7 +85,7 @@ async fn prefix_optional_label_omitted_without_double_dot() {
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
     let api = ApiPrefixOpt::new_with_transport(transport);
 
-    let _ = api.request(endpoints::Ping::new()).await.unwrap();
+    let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
     let host0 = recorded.lock().unwrap()[0]
         .url
         .host_str()
@@ -98,6 +99,7 @@ async fn prefix_optional_label_omitted_without_double_dot() {
 
     let _ = api
         .request(endpoints::Ping::new().sub("x".to_string()))
+        .execute()
         .await
         .unwrap();
     let host1 = recorded.lock().unwrap()[0]
@@ -129,18 +131,16 @@ async fn prefix_host_label_validation_errors() {
 
         let err = api
             .request(endpoints::Ping::new().region(Region::BadDot))
+            .execute()
             .await
             .unwrap_err();
         match err {
-            ApiClientError::InEndpoint { source, .. } => match *source {
-                ApiClientError::InvalidHostLabel { reason, .. } => {
-                    assert!(matches!(
-                        reason,
-                        concord_core::error::HostLabelInvalidReason::ContainsDot
-                    ));
-                }
-                other => panic!("unexpected inner error: {other:?}"),
-            },
+            ApiClientError::InvalidHostLabel { reason, .. } => {
+                assert!(matches!(
+                    reason,
+                    concord_core::error::HostLabelInvalidReason::ContainsDot
+                ));
+            }
             other => panic!("unexpected error: {other:?}"),
         }
     }
@@ -152,18 +152,16 @@ async fn prefix_host_label_validation_errors() {
 
         let err = api
             .request(endpoints::Ping::new().region(Region::BadDashStart))
+            .execute()
             .await
             .unwrap_err();
         match err {
-            ApiClientError::InEndpoint { source, .. } => match *source {
-                ApiClientError::InvalidHostLabel { reason, .. } => {
-                    assert!(matches!(
-                        reason,
-                        concord_core::error::HostLabelInvalidReason::StartsOrEndsDash
-                    ));
-                }
-                other => panic!("unexpected inner error: {other:?}"),
-            },
+            ApiClientError::InvalidHostLabel { reason, .. } => {
+                assert!(matches!(
+                    reason,
+                    concord_core::error::HostLabelInvalidReason::StartsOrEndsDash
+                ));
+            }
             other => panic!("unexpected error: {other:?}"),
         }
     }
@@ -175,18 +173,16 @@ async fn prefix_host_label_validation_errors() {
 
         let err = api
             .request(endpoints::Ping::new().region(Region::BadUnderscore))
+            .execute()
             .await
             .unwrap_err();
         match err {
-            ApiClientError::InEndpoint { source, .. } => match *source {
-                ApiClientError::InvalidHostLabel { reason, .. } => {
-                    assert!(matches!(
-                        reason,
-                        concord_core::error::HostLabelInvalidReason::InvalidByte(_)
-                    ));
-                }
-                other => panic!("unexpected inner error: {other:?}"),
-            },
+            ApiClientError::InvalidHostLabel { reason, .. } => {
+                assert!(matches!(
+                    reason,
+                    concord_core::error::HostLabelInvalidReason::InvalidByte(_)
+                ));
+            }
             other => panic!("unexpected error: {other:?}"),
         }
     }
