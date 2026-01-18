@@ -1,8 +1,6 @@
-mod common;
-
-use common::*;
 use concord_core::prelude::*;
 use concord_macros::api;
+use concord_test_support::*;
 use http::header::AUTHORIZATION;
 
 #[tokio::test]
@@ -20,28 +18,25 @@ async fn vars_default_and_setter_affect_emitted_header() {
 
     use api_vars_default::*;
 
-    let (transport, recorded) = MockTransport::new(vec![
-        MockReply::ok_json(json_bytes(&())),
-        MockReply::ok_json(json_bytes(&())),
-    ]);
+    let (transport, h) = mock()
+        .replies([
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+        ])
+        .build();
 
     let mut api = ApiVarsDefault::new_with_transport(transport);
-
     let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
     api.set_user_agent("ua2".to_string());
     let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
 
-    let reqs = recorded.lock().unwrap();
+    let reqs = h.recorded();
     assert_eq!(reqs.len(), 2);
 
-    assert_eq!(
-        reqs[0].headers.get("x-ua").unwrap().to_str().unwrap(),
-        "ua1"
-    );
-    assert_eq!(
-        reqs[1].headers.get("x-ua").unwrap().to_str().unwrap(),
-        "ua2"
-    );
+    assert_request(&reqs[0]).header("x-ua", "ua1");
+    assert_request(&reqs[1]).header("x-ua", "ua2");
+
+    h.finish();
 }
 
 #[tokio::test]
@@ -59,28 +54,25 @@ async fn vars_required_ctor_arg_and_setter_affect_emitted_header() {
 
     use api_vars_req::*;
 
-    let (transport, recorded) = MockTransport::new(vec![
-        MockReply::ok_json(json_bytes(&())),
-        MockReply::ok_json(json_bytes(&())),
-    ]);
+    let (transport, h) = mock()
+        .replies([
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+        ])
+        .build();
 
     let mut api = ApiVarsReq::new_with_transport("t1".to_string(), transport);
-
     let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
     api.set_tenant("t2".to_string());
     let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
 
-    let reqs = recorded.lock().unwrap();
+    let reqs = h.recorded();
     assert_eq!(reqs.len(), 2);
 
-    assert_eq!(
-        reqs[0].headers.get("x-tenant").unwrap().to_str().unwrap(),
-        "t1"
-    );
-    assert_eq!(
-        reqs[1].headers.get("x-tenant").unwrap().to_str().unwrap(),
-        "t2"
-    );
+    assert_request(&reqs[0]).header("x-tenant", "t1");
+    assert_request(&reqs[1]).header("x-tenant", "t2");
+
+    h.finish();
 }
 
 #[tokio::test]
@@ -95,57 +87,41 @@ async fn auth_vars_required_secret_and_setter_affect_emitted_header() {
             vars {
                 token2: String = "default".to_string()
             }
-
             headers {
                 "authorization" = auth.token
             }
         }
 
         prefix {cx.token2}{
-           GET Ping "" -> Json<()>;
+            GET Ping "" -> Json<()>;
         }
-
     }
 
     use api_auth_vars::*;
 
-    let (transport, recorded) = MockTransport::new(vec![
-        MockReply::ok_json(json_bytes(&())),
-        MockReply::ok_json(json_bytes(&())),
-    ]);
+    let (transport, h) = mock()
+        .replies([
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+        ])
+        .build();
 
-    // Pas de vars, 1 auth_var requise => new_with_transport(token, transport)
     let api = ApiAuthVars::new_with_transport("tok1".to_string(), transport);
-
     let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
     api.set_token("tok2");
     let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
 
-    let reqs = recorded.lock().unwrap();
+    let reqs = h.recorded();
     assert_eq!(reqs.len(), 2);
 
-    assert_eq!(
-        reqs[0]
-            .headers
-            .get(AUTHORIZATION)
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "tok1"
-    );
-    assert_eq!(
-        reqs[1]
-            .headers
-            .get(AUTHORIZATION)
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "tok2"
-    );
+    assert_request(&reqs[0]).header(AUTHORIZATION, "tok1");
+    assert_request(&reqs[1]).header(AUTHORIZATION, "tok2");
+
+    h.finish();
 }
 
 #[tokio::test]
-async fn auth_vars_invalid_header_value_is_reported_as_invalid_param() {
+async fn auth_vars_invalid_header_value_reported_as_invalid_param_and_request_not_sent() {
     api! {
         client ApiAuthBad {
             scheme: https,
@@ -162,25 +138,24 @@ async fn auth_vars_invalid_header_value_is_reported_as_invalid_param() {
 
     use api_auth_bad::*;
 
-    // Même si la requête ne doit pas partir, on met une reply pour éviter un panic
-    // si jamais le build passe (le test échouerait via assert).
-    let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
+    let (transport, h) = mock()
+
+        .build();
 
     let api = ApiAuthBad::new_with_transport("a\nb".to_string(), transport);
-    let err = api
-        .request(endpoints::Ping::new())
-        .execute()
-        .await
-        .unwrap_err();
+    let err = api.request(endpoints::Ping::new()).execute().await.unwrap_err();
 
-    // idéalement : erreur produite avant envoi
-    assert_eq!(recorded.lock().unwrap().len(), 0);
+    h.assert_recorded_len(0);
 
     match err {
-        ApiClientError::InvalidParam { ctx, param } => {
+        ApiClientError::InvalidParam { param, .. } => {
             assert!(param.contains("header"));
             assert!(param.contains("authorization"));
         }
         other => panic!("unexpected error: {other:?}"),
     }
+
+    // reply remains unused because request never sent: this is intentional, so do not finish().
+    // Consume the handle without triggering drop-panic:
+    drop(h);
 }

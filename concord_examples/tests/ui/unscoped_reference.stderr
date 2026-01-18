@@ -1,0 +1,5 @@
+error[E0425]: cannot find value `token` in this scope
+ --> tests/ui/unscoped_reference.rs:8:19
+  |
+8 |             "x" = token // ERROR: unscoped
+  |                   ^^^^^ not found in this scope

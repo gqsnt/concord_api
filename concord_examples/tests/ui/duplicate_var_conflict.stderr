@@ -1,0 +1,5 @@
+error: var `id` redefined with different type
+  --> tests/ui/duplicate_var_conflict.rs:10:33
+   |
+10 |     GET A "x" / {id:u32} query {id:String} -> Json<()>;
+   |                                 ^^

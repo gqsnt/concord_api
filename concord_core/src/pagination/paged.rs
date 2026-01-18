@@ -34,7 +34,7 @@ impl Default for PagedPagination {
             per_page_key: Cow::from("per_page"),
             page: 1,
             per_page: 20,
-            stop_on_short_page: false,
+            stop_on_short_page: true,
         }
     }
 }

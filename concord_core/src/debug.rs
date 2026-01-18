@@ -1,6 +1,7 @@
 use crate::codec::{self, Format};
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
+use http::header::{HeaderName, HeaderValue};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u8)]
@@ -105,7 +106,7 @@ impl DebugSink for StderrDebugSink {
     fn request_headers(&self, dbg: DebugLevel, headers: &HeaderMap) {
         eprintln!("[client_api:{}] request headers:", dbg);
         for (k, v) in headers.iter() {
-            let vs = v.to_str().unwrap_or("<non-utf8>");
+            let vs = header_value_for_debug(k, v);
             eprintln!("  {}: {}", k, vs);
         }
     }
@@ -134,7 +135,7 @@ impl DebugSink for StderrDebugSink {
     fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap) {
         eprintln!("[client_api:{}] response headers:", dbg);
         for (k, v) in headers.iter() {
-            let vs = v.to_str().unwrap_or("<non-utf8>");
+            let vs = header_value_for_debug(k, v);
             eprintln!("  {}: {}", k, vs);
         }
     }
@@ -156,5 +157,51 @@ impl DebugSink for StderrDebugSink {
     ) {
         let preview = crate::error::body_as_text(headers, body, full_len);
         eprintln!("[client_api:{}] response body preview: {}", dbg, preview);
+    }
+
+
+}
+
+fn is_sensitive_header_name(name: &HeaderName) -> bool {
+    // HeaderName::as_str() is normalized to lowercase.
+    let n = name.as_str();
+    matches!(n, "authorization" | "proxy-authorization" | "cookie" | "set-cookie")
+        // Common vendor patterns
+        || n.contains("token")
+        || n.contains("secret")
+        || n.contains("api-key")
+        || n.contains("apikey")
+        || n.ends_with("-key")
+}
+
+fn header_value_for_debug(name: &HeaderName, value: &HeaderValue) -> String {
+    if is_sensitive_header_name(name) {
+        "<redacted>".to_string()
+    } else {
+        value.to_str().unwrap_or("<non-utf8>").to_string()
+    }
+}
+
+
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use http::header::{ACCEPT, AUTHORIZATION, COOKIE};
+
+    #[test]
+    fn redacts_sensitive_headers_by_name() {
+        assert!(is_sensitive_header_name(&AUTHORIZATION));
+        assert!(is_sensitive_header_name(&COOKIE));
+        assert!(is_sensitive_header_name(&HeaderName::from_static("x-riot-token")));
+        assert!(is_sensitive_header_name(&HeaderName::from_static("x-api-key")));
+        assert!(!is_sensitive_header_name(&ACCEPT));
+
+        let secret = HeaderValue::from_static("s3cr3t");
+        assert_eq!(header_value_for_debug(&AUTHORIZATION, &secret), "<redacted>");
+        assert_eq!(
+            header_value_for_debug(&ACCEPT, &HeaderValue::from_static("application/json")),
+            "application/json"
+        );
     }
 }

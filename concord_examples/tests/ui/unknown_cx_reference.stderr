@@ -1,0 +1,5 @@
+error: unknown client var `cx.missing`
+ --> tests/ui/unknown_cx_reference.rs:8:22
+  |
+8 |             "x" = cx.missing // ERROR: unknown cx var
+  |                      ^^^^^^^

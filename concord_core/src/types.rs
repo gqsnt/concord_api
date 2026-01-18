@@ -103,6 +103,19 @@ impl HostParts {
                         reason: HostLabelInvalidReason::ContainsScheme,
                     });
                 }
+                // Reject URL delimiter injection in the authority component.
+                // Examples: "good.com@evil.com" (userinfo), "host?x=y", "host#frag", "host\\path".
+                for (ch, b) in [('@', b'@'), ('?', b'?'), ('#', b'#'), ('\\', b'\\')] {
+                    if h.contains(ch) {
+                        return Err(ApiClientError::InvalidHostLabel {
+                            ctx,
+                            label: host.clone(),
+                            index: 0,
+                            placeholder: None,
+                            reason: HostLabelInvalidReason::InvalidByte(b),
+                        });
+                    }
+                }
                 if h.chars().any(|c| c.is_whitespace()) {
                     return Err(ApiClientError::InvalidHostLabel {
                         ctx,
@@ -148,17 +161,6 @@ impl HostParts {
                             index,
                             placeholder,
                             reason: HostLabelInvalidReason::ContainsDot,
-                        });
-                    }
-                    if s.bytes()
-                        .any(|b| matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 0x0B | 0x0C))
-                    {
-                        return Err(ApiClientError::InvalidHostLabel {
-                            ctx,
-                            label: raw.as_ref().to_string(),
-                            index,
-                            placeholder,
-                            reason: HostLabelInvalidReason::InvalidByte(b' '),
                         });
                     }
                     if s.contains('/') {
@@ -399,20 +401,38 @@ mod test {
         assert_eq!(p.as_str(), "/%20a%20");
     }
 
-    // #[test]
-    // fn test_host_parts_absolute_rejects_push_label() {
-    //     let mut h = HostParts::default();
-    //     h.set_absolute("api.example.net");
-    //     h.push_label_static("v1");
-    //     let err = h.validate("TestEndpoint").unwrap_err();
-    //     match err {
-    //         ApiClientError::InvalidHostLabel { reason, .. } => {
-    //             assert!(matches!(
-    //                 reason,
-    //                 HostLabelInvalidReason::AbsoluteModePushLabel
-    //             ));
-    //         }
-    //         other => panic!("unexpected error: {other:?}"),
-    //     }
-    // }
+    #[test]
+    fn test_host_parts_absolute_rejects_push_label() {
+        let mut h = HostParts::default();
+        h.set_absolute("api.example.net");
+        h.push_label_static("v1");
+        let ctx = ErrorContext {
+            endpoint: "TestEndpoint",
+            method: http::Method::GET,
+        };
+        let err = h.validate(ctx).unwrap_err();
+        match err {
+            ApiClientError::InvalidHostLabel { reason, .. } => {
+                assert!(matches!(reason, HostLabelInvalidReason::AbsoluteModePushLabel));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_host_parts_absolute_rejects_at_userinfo_injection() {
+        let mut h = HostParts::default();
+        h.set_absolute("good.example.com@evil.example.com");
+        let ctx = ErrorContext {
+            endpoint: "TestEndpoint",
+            method: http::Method::GET,
+        };
+        let err = h.validate(ctx).unwrap_err();
+        match err {
+            ApiClientError::InvalidHostLabel { reason, .. } => {
+                assert!(matches!(reason, HostLabelInvalidReason::InvalidByte(b'@')));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
 }

@@ -20,3 +20,4 @@ url = "2.5.7"
 
 [dev-dependencies]
 trybuild = "1"
+concord_test_support = { path = "../concord_test_support" }

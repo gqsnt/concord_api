@@ -14,6 +14,7 @@ base64.workspace = true
 thiserror.workspace = true
 url.workspace = true
 urlencoding.workspace = true
+tokio.workspace = true
 
 
 [features]

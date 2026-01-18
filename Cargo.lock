@@ -198,6 +198,7 @@ dependencies = [
  "bytes",
  "concord_core",
  "concord_macros",
+ "concord_test_support",
  "dotenvy",
  "http",
  "reqwest",
@@ -215,6 +216,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "concord_test_support"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "concord_core",
+ "http",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

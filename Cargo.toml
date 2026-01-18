@@ -1,5 +1,5 @@
 [workspace]
-members = ["concord_core", "concord_macros", "concord_examples"]
+members = ["concord_core", "concord_macros", "concord_examples", "concord_test_support"]
 default-members = ["concord_core", "concord_macros"]
 resolver = "3"
 

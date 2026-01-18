@@ -332,7 +332,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let content_length = resp.content_length;
 
         if !status.is_success() {
-            let full_len = resp.content_length.map(|n| n as usize);
+            let full_len = resp.content_length.and_then(|n| usize::try_from(n).ok());
             let preview_bytes = read_body_preview(resp.body.as_mut(), 8 * 1024)
                 .await
                 .map_err(|e| ApiClientError::Transport {

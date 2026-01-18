@@ -22,6 +22,7 @@ pub struct OffsetLimitPagination {
     pub offset: u64,
     /// Page size / limit (must be > 0).
     pub limit: u64,
+    pub stop_on_short_page: bool,
 }
 
 impl Default for OffsetLimitPagination {
@@ -32,6 +33,7 @@ impl Default for OffsetLimitPagination {
             limit_key: Cow::from("limit"),
             offset: 0,
             limit: 20,
+            stop_on_short_page: true,
         }
     }
 }
@@ -87,6 +89,11 @@ where
         if matches!(self.stop, Stop::OnEmpty) && resp.value.len() == 0 {
             return Ok(Control::Stop);
         }
+
+        if self.stop_on_short_page && (resp.value.len() as u64) < st.limit {
+            return Ok(Control::Stop);
+        }
+
         st.offset = st.offset.checked_add(st.limit).ok_or_else(|| {
             let ctx = ErrorContext {
                 endpoint: std::any::type_name::<E>(),
@@ -97,6 +104,7 @@ where
                 msg: "offset/limit: offset overflow".into(),
             }
         })?;
+
         Ok(Control::Continue)
     }
 
