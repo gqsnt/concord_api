@@ -5,7 +5,9 @@ use concord_core::prelude::*;
 use concord_macros::api;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
-pub struct Item { id: String }
+pub struct Item {
+    id: String,
+}
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Page {
@@ -15,12 +17,18 @@ pub struct Page {
 impl PageItems for Page {
     type Item = Item;
     type IntoIter = std::vec::IntoIter<Item>;
-    fn len(&self) -> usize { self.items.len() }
-    fn inner_into_iter(self) -> Self::IntoIter { self.items.into_iter() }
+    fn len(&self) -> usize {
+        self.items.len()
+    }
+    fn inner_into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
+    }
 }
 impl HasNextCursor for Page {
     type Cursor = String;
-    fn next_cursor(&self) -> Option<&Self::Cursor> { self.next.as_ref() }
+    fn next_cursor(&self) -> Option<&Self::Cursor> {
+        self.next.as_ref()
+    }
 }
 
 #[tokio::test]
@@ -44,8 +52,14 @@ async fn cursor_pagination_keys_flow_and_first_cursor_omitted() {
     }
     use api_cursor::*;
 
-    let p1 = Page { items: vec![Item{ id: "1".into() }], next: Some("c1".into()) };
-    let p2 = Page { items: vec![Item{ id: "2".into() }], next: None };
+    let p1 = Page {
+        items: vec![Item { id: "1".into() }],
+        next: Some("c1".into()),
+    };
+    let p2 = Page {
+        items: vec![Item { id: "2".into() }],
+        next: None,
+    };
 
     let (transport, recorded) = MockTransport::new(vec![
         MockReply::ok_json(json_bytes(&p1)),
@@ -53,7 +67,11 @@ async fn cursor_pagination_keys_flow_and_first_cursor_omitted() {
     ]);
 
     let api = ApiCursor::new_with_transport(transport);
-    let out = api.request(endpoints::List::new()).paginate().await.unwrap();
+    let out = api
+        .request(endpoints::List::new())
+        .paginate()
+        .await
+        .unwrap();
     assert_eq!(out.len(), 2);
 
     let reqs = recorded.lock().unwrap();
@@ -61,24 +79,28 @@ async fn cursor_pagination_keys_flow_and_first_cursor_omitted() {
 
     // page 0: pageSize present, pageCursor absent
     {
-        let q0: Vec<(String,String)> = reqs[0].url.query_pairs()
-            .map(|(k,v)| (k.to_string(), v.to_string()))
+        let q0: Vec<(String, String)> = reqs[0]
+            .url
+            .query_pairs()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        assert!(q0.iter().any(|(k,v)| k=="pageSize" && v=="2"));
-        assert!(!q0.iter().any(|(k,_)| k=="pageCursor"));
-        assert!(!q0.iter().any(|(k,_)| k=="per_page"));
-        assert!(!q0.iter().any(|(k,_)| k=="cursor"));
+        assert!(q0.iter().any(|(k, v)| k == "pageSize" && v == "2"));
+        assert!(!q0.iter().any(|(k, _)| k == "pageCursor"));
+        assert!(!q0.iter().any(|(k, _)| k == "per_page"));
+        assert!(!q0.iter().any(|(k, _)| k == "cursor"));
     }
 
     // page 1: pageCursor=c1 present
     {
-        let q1: Vec<(String,String)> = reqs[1].url.query_pairs()
-            .map(|(k,v)| (k.to_string(), v.to_string()))
+        let q1: Vec<(String, String)> = reqs[1]
+            .url
+            .query_pairs()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        assert!(q1.iter().any(|(k,v)| k=="pageSize" && v=="2"));
-        assert!(q1.iter().any(|(k,v)| k=="pageCursor" && v=="c1"));
-        assert!(!q1.iter().any(|(k,_)| k=="per_page"));
-        assert!(!q1.iter().any(|(k,_)| k=="cursor"));
+        assert!(q1.iter().any(|(k, v)| k == "pageSize" && v == "2"));
+        assert!(q1.iter().any(|(k, v)| k == "pageCursor" && v == "c1"));
+        assert!(!q1.iter().any(|(k, _)| k == "per_page"));
+        assert!(!q1.iter().any(|(k, _)| k == "cursor"));
     }
 }
 
@@ -104,7 +126,10 @@ async fn cursor_loop_detection_and_max_pages() {
     use api_cursor_loop::*;
 
     // loop: next cursor always "same"
-    let p = Page { items: vec![Item{ id: "1".into() }], next: Some("same".into()) };
+    let p = Page {
+        items: vec![Item { id: "1".into() }],
+        next: Some("same".into()),
+    };
 
     // 3 replies are enough to detect loop at page 1 (same key repeated)
     let (transport, _recorded) = MockTransport::new(vec![
@@ -128,7 +153,10 @@ async fn cursor_loop_detection_and_max_pages() {
     }
 
     // max_pages hit
-    let p2 = Page { items: vec![Item{ id: "1".into() }], next: Some("c".into()) };
+    let p2 = Page {
+        items: vec![Item { id: "1".into() }],
+        next: Some("c".into()),
+    };
     let (transport, _recorded) = MockTransport::new(vec![
         MockReply::ok_json(json_bytes(&p2)),
         MockReply::ok_json(json_bytes(&p2)),

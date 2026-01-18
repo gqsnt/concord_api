@@ -3,8 +3,8 @@ use crate::codec::{Encodes, NoContent};
 use crate::error::ApiClientError;
 use crate::pagination::PaginationPart;
 use crate::policy::Policy;
-use crate::types::RouteParts;
 use crate::transport::DecodedResponse;
+use crate::types::RouteParts;
 use http::Method;
 use std::marker::PhantomData;
 
@@ -14,7 +14,7 @@ pub trait RoutePart<Cx: ClientContext, E>: Send + Sync + 'static {
         ep: &E,
         vars: &Cx::Vars,
         auth: &Cx::AuthVars,
-        route: &mut RouteParts
+        route: &mut RouteParts,
     ) -> Result<(), ApiClientError>;
 }
 
@@ -24,13 +24,18 @@ pub trait PolicyPart<Cx: ClientContext, E>: Send + Sync + 'static {
         ep: &E,
         vars: &Cx::Vars,
         auth: &Cx::AuthVars,
-        policy: &mut Policy
+        policy: &mut Policy,
     ) -> Result<(), ApiClientError>;
 }
 
 pub struct NoRoute;
 impl<Cx: ClientContext, E> RoutePart<Cx, E> for NoRoute {
-    fn apply(_: &E, _: &Cx::Vars, _: &Cx::AuthVars, _: &mut RouteParts) -> Result<(), ApiClientError> {
+    fn apply(
+        _: &E,
+        _: &Cx::Vars,
+        _: &Cx::AuthVars,
+        _: &mut RouteParts,
+    ) -> Result<(), ApiClientError> {
         Ok(())
     }
 }
@@ -62,7 +67,12 @@ where
     A: RoutePart<Cx, E>,
     B: RoutePart<Cx, E>,
 {
-    fn apply(ep: &E, vars: &Cx::Vars, auth: &Cx::AuthVars, route: &mut RouteParts) -> Result<(), ApiClientError> {
+    fn apply(
+        ep: &E,
+        vars: &Cx::Vars,
+        auth: &Cx::AuthVars,
+        route: &mut RouteParts,
+    ) -> Result<(), ApiClientError> {
         A::apply(ep, vars, auth, route)?;
         B::apply(ep, vars, auth, route)?;
         Ok(())
@@ -74,7 +84,12 @@ where
     A: PolicyPart<Cx, E>,
     B: PolicyPart<Cx, E>,
 {
-    fn apply(ep: &E, vars: &Cx::Vars, auth: &Cx::AuthVars, policy: &mut Policy) -> Result<(), ApiClientError> {
+    fn apply(
+        ep: &E,
+        vars: &Cx::Vars,
+        auth: &Cx::AuthVars,
+        policy: &mut Policy,
+    ) -> Result<(), ApiClientError> {
         A::apply(ep, vars, auth, policy)?;
         B::apply(ep, vars, auth, policy)?;
         Ok(())
@@ -151,9 +166,21 @@ where
     fn map_response(
         resp: DecodedResponse<Self::Decoded>,
     ) -> Result<DecodedResponse<Self::Output>, crate::error::FxError> {
-        let DecodedResponse { meta, url, status, headers, value } = resp;
+        let DecodedResponse {
+            meta,
+            url,
+            status,
+            headers,
+            value,
+        } = resp;
         let out = M::map(value)?;
-        Ok(DecodedResponse { meta, url, status, headers, value: out })
+        Ok(DecodedResponse {
+            meta,
+            url,
+            status,
+            headers,
+            value: out,
+        })
     }
 }
 
@@ -181,7 +208,6 @@ where
 /// Endpoint : uniquement des types (composables).
 pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
     const METHOD: Method;
-
 
     type Route: RoutePart<Cx, Self>;
     type Policy: PolicyPart<Cx, Self>;

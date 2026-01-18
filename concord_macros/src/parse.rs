@@ -1,9 +1,9 @@
 // concord_macros/src/parse.rs
 use crate::ast::*;
 use crate::kw;
-use syn::parse::{Parse, ParseStream};
-use syn::{braced, bracketed, token, Expr, Ident, LitStr, Path, Result, Token, Type};
 use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
+use syn::parse::{Parse, ParseStream};
+use syn::{Expr, Ident, LitStr, Path, Result, Token, Type, braced, bracketed, token};
 
 impl Parse for ApiFile {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -38,22 +38,32 @@ impl Parse for ClientDef {
                 scheme = Some(match v.to_string().as_str() {
                     "http" => SchemeLit::Http,
                     "https" => SchemeLit::Https,
-                    _ => return Err(syn::Error::new(v.span(), "scheme must be `http` or `https`")),
+                    _ => {
+                        return Err(syn::Error::new(
+                            v.span(),
+                            "scheme must be `http` or `https`",
+                        ));
+                    }
                 });
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::vars) {
                 if vars.is_some() {
-                    return Err(syn::Error::new(name.span(), "duplicate `vars {}` in client"));
+                    return Err(syn::Error::new(
+                        name.span(),
+                        "duplicate `vars {}` in client",
+                    ));
                 }
                 vars = Some(content.parse::<VarsBlockTaggedVars>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::auth_vars) {
                 if auth_vars.is_some() {
-                    return Err(syn::Error::new(name.span(), "duplicate `auth_vars {}` in client"));
+                    return Err(syn::Error::new(
+                        name.span(),
+                        "duplicate `auth_vars {}` in client",
+                    ));
                 }
                 auth_vars = Some(content.parse::<VarsBlockTaggedAuthVars>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
-
             } else if content.peek(kw::host) {
                 content.parse::<kw::host>()?;
                 content.parse::<Token![:]>()?;
@@ -72,11 +82,15 @@ impl Parse for ClientDef {
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else {
                 let tt: proc_macro2::TokenTree = content.parse()?;
-                return Err(syn::Error::new(tt.span(), "unexpected token in client block"));
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "unexpected token in client block",
+                ));
             }
         }
 
-        let scheme = scheme.ok_or_else(|| syn::Error::new(name.span(), "missing `scheme:` in client"))?;
+        let scheme =
+            scheme.ok_or_else(|| syn::Error::new(name.span(), "missing `scheme:` in client"))?;
         let host = host.ok_or_else(|| syn::Error::new(name.span(), "missing `host:` in client"))?;
 
         Ok(Self {
@@ -116,13 +130,14 @@ fn parse_vars_block(input: ParseStream<'_>) -> Result<VarsBlock> {
         }
         if !content.is_empty() {
             let tt: TokenTree = content.parse()?;
-            return Err(syn::Error::new(tt.span(), "expected `,` between vars declarations"));
+            return Err(syn::Error::new(
+                tt.span(),
+                "expected `,` between vars declarations",
+            ));
         }
     }
     Ok(VarsBlock { decls })
 }
-
-
 
 impl Parse for Item {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -254,7 +269,10 @@ impl Parse for EndpointDef {
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else {
                 let tt: proc_macro2::TokenTree = input.parse()?;
-                return Err(syn::Error::new(tt.span(), "unexpected token in endpoint; expected headers/query/timeout/paginate/body or `->`"));
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "unexpected token in endpoint; expected headers/query/timeout/paginate/body or `->`",
+                ));
             }
         }
 
@@ -301,10 +319,16 @@ impl Parse for PaginateSpec {
                 if content.peek(Token![,]) {
                     content.parse::<Token![,]>()?;
                     if content.is_empty() {
-                        return Err(syn::Error::new(content.span(), "trailing `,` not allowed in paginate block"));
+                        return Err(syn::Error::new(
+                            content.span(),
+                            "trailing `,` not allowed in paginate block",
+                        ));
                     }
                 } else {
-                    return Err(syn::Error::new(content.span(), "expected `,` between paginate assignments"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "expected `,` between paginate assignments",
+                    ));
                 }
             }
             let key: Ident = content.parse()?;
@@ -366,12 +390,15 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
 
         // 1.2: `+=` is query-only. Forbid in `headers {}` with a direct diagnostic.
         if kind == PolicyBlockKind::Headers
-            && let PolicyStmt::Set { op: SetOp::Push, .. } = &stmt {
-                return Err(syn::Error::new(
-                    stmt_span(&stmt),
-                    "`+=` is not allowed in `headers {}` blocks (query-only operator)",
-                ));
-            }
+            && let PolicyStmt::Set {
+                op: SetOp::Push, ..
+            } = &stmt
+        {
+            return Err(syn::Error::new(
+                stmt_span(&stmt),
+                "`+=` is not allowed in `headers {}` blocks (query-only operator)",
+            ));
+        }
 
         stmts.push(stmt);
 
@@ -383,7 +410,10 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
         }
         if !content.is_empty() {
             let tt: TokenTree = content.parse()?;
-            return Err(syn::Error::new(tt.span(), "expected `,` between policy statements"));
+            return Err(syn::Error::new(
+                tt.span(),
+                "expected `,` between policy statements",
+            ));
         }
     }
     Ok(PolicyBlock { stmts })
@@ -434,7 +464,11 @@ impl Parse for PolicyStmt {
             };
             return Ok(PolicyStmt::BindShort {
                 ident_key: ident.clone(),
-                decl: VarDeclShort { optional, ty, default },
+                decl: VarDeclShort {
+                    optional,
+                    ty,
+                    default,
+                },
             });
         }
 
@@ -599,9 +633,18 @@ fn parse_fmt_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
                         inner.parse::<Token![.]>()?;
                         let name: Ident = inner.parse()?;
                         if !inner.is_empty() {
-                            return Err(syn::Error::new(inner.span(), "unexpected tokens in fmt ref"));
+                            return Err(syn::Error::new(
+                                inner.span(),
+                                "unexpected tokens in fmt ref",
+                            ));
                         }
-                        let scope = if base == "cx" { RefScope::Cx } else if base == "ep" { RefScope::Ep } else { RefScope::Auth };
+                        let scope = if base == "cx" {
+                            RefScope::Cx
+                        } else if base == "ep" {
+                            RefScope::Ep
+                        } else {
+                            RefScope::Auth
+                        };
                         pieces.push(FmtPiece::Ref(ScopedRef { scope, ident: name }));
                     } else {
                         // fallthrough to decl
@@ -618,15 +661,20 @@ fn parse_fmt_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
             }
         } else {
             let tt: TokenTree = content.parse()?;
-            return Err(syn::Error::new(tt.span(), "expected string literal or `{var:Ty}` in fmt[...]"));
+            return Err(syn::Error::new(
+                tt.span(),
+                "expected string literal or `{var:Ty}` in fmt[...]",
+            ));
         }
         let _ = content.parse::<Option<Token![,]>>()?;
     }
 
-    Ok(FmtSpec { span, require_all, pieces })
+    Ok(FmtSpec {
+        span,
+        require_all,
+        pieces,
+    })
 }
-
-
 
 fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue> {
     if input.peek(kw::fmt) {
@@ -635,7 +683,6 @@ fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue>
 
     Ok(PolicyValue::Expr(input.parse::<syn::Expr>()?))
 }
-
 
 fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
     if input.peek(kw::fmt) {
@@ -660,9 +707,18 @@ fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
                     content.parse::<Token![.]>()?;
                     let name: Ident = content.parse()?;
                     if !content.is_empty() {
-                        return Err(syn::Error::new(content.span(), "unexpected tokens in route ref"));
+                        return Err(syn::Error::new(
+                            content.span(),
+                            "unexpected tokens in route ref",
+                        ));
                     }
-                    let scope = if base == "cx" { RefScope::Cx } else if base == "ep" { RefScope::Ep } else { RefScope::Auth };
+                    let scope = if base == "cx" {
+                        RefScope::Cx
+                    } else if base == "ep" {
+                        RefScope::Ep
+                    } else {
+                        RefScope::Auth
+                    };
                     return Ok(RouteAtom::Ref(ScopedRef { scope, ident: name }));
                 }
             }
@@ -672,7 +728,10 @@ fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
         return Ok(RouteAtom::Var(d));
     }
     let tt: proc_macro2::TokenTree = input.parse()?;
-    Err(syn::Error::new(tt.span(), "expected string literal or `{var:Ty}` in route"))
+    Err(syn::Error::new(
+        tt.span(),
+        "expected string literal or `{var:Ty}` in route",
+    ))
 }
 
 fn parse_route_expr_slash(input: ParseStream<'_>) -> Result<RouteExpr> {

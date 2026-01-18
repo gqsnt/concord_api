@@ -58,7 +58,10 @@ impl HostParts {
             HostSpec::Absolute { .. } => {
                 // Ne pas ignorer silencieusement : on mémorise l'intention et validate() échouera.
                 if self.absolute_push_attempt.is_none() {
-                    self.absolute_push_attempt = Some(HostLabel { value: value.into(), source });
+                    self.absolute_push_attempt = Some(HostLabel {
+                        value: value.into(),
+                        source,
+                    });
                 }
             }
         }
@@ -402,7 +405,10 @@ mod test {
         let err = h.validate("TestEndpoint").unwrap_err();
         match err {
             ApiClientError::InvalidHostLabel { reason, .. } => {
-                assert!(matches!(reason, HostLabelInvalidReason::AbsoluteModePushLabel));
+                assert!(matches!(
+                    reason,
+                    HostLabelInvalidReason::AbsoluteModePushLabel
+                ));
             }
             other => panic!("unexpected error: {other:?}"),
         }

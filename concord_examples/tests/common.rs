@@ -110,10 +110,7 @@ impl concord_core::prelude::Transport for MockTransport {
                 timeout: req.timeout,
             });
 
-            let reply = replies
-                .lock()
-                .unwrap()
-                .remove(0);
+            let reply = replies.lock().unwrap().remove(0);
 
             Ok(TransportResponse {
                 meta: req.meta,

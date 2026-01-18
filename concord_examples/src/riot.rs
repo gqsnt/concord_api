@@ -235,7 +235,6 @@ impl core::fmt::Display for LeagueQueue {
     }
 }
 
-
 pub mod models {
     use super::*;
     use serde_json::Value;
@@ -459,10 +458,7 @@ pub mod models {
     pub struct RunesReforgedDto(pub Value);
 }
 
-
 pub async fn test_riot() -> Result<(), ApiClientError> {
-
-
     dotenvy::dotenv().ok();
     let api_key = dotenvy::var("RIOT_API_KEY").expect("RIOT_API_KEY missing");
 

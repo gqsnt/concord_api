@@ -14,7 +14,6 @@ use http::header::CONTENT_TYPE;
 use http::uri::Scheme;
 use std::sync::Arc;
 
-
 pub trait ClientContext: Sized {
     type Vars: Clone + Send + Sync + 'static;
     type AuthVars: Clone + Send + Sync + 'static;
@@ -31,7 +30,7 @@ pub trait ClientContext: Sized {
 }
 
 #[derive(Clone)]
-pub struct ApiClient<Cx: ClientContext, T: Transport+ Clone = ReqwestTransport> {
+pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = ReqwestTransport> {
     transport: T,
     vars: Cx::Vars,
     auth_vars: Cx::AuthVars,
@@ -43,11 +42,14 @@ impl<Cx: ClientContext> ApiClient<Cx, ReqwestTransport> {
     pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
         Self::with_reqwest_client(vars, auth_vars, reqwest::Client::new())
     }
-    pub fn with_reqwest_client(vars: Cx::Vars, auth_vars: Cx::AuthVars, client: reqwest::Client) -> Self {
+    pub fn with_reqwest_client(
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        client: reqwest::Client,
+    ) -> Self {
         Self::with_transport(vars, auth_vars, ReqwestTransport::new(client))
     }
 }
-
 
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     pub fn with_transport(vars: Cx::Vars, auth_vars: Cx::AuthVars, transport: T) -> Self {
@@ -151,7 +153,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         self
     }
 
-
     #[inline]
     pub fn request<E>(&self, ep: E) -> PendingRequest<'_, Cx, E, T>
     where
@@ -180,7 +181,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let url_str = built.url.as_str().to_string();
 
         if dbg_verbose {
-            self.debug_sink.request_start(dbg, &E::METHOD, &url_str, ep.name(), built.meta.page_index);
+            self.debug_sink.request_start(
+                dbg,
+                &E::METHOD,
+                &url_str,
+                ep.name(),
+                built.meta.page_index,
+            );
         }
 
         if dbg_vv {
@@ -197,7 +204,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .await
             .map_err(|e| ApiClientError::in_endpoint(ep.name(), e))?;
         if dbg_verbose {
-            self.debug_sink.response_status(dbg, resp.status, &url_str, true);
+            self.debug_sink
+                .response_status(dbg, resp.status, &url_str, true);
         }
         if dbg_vv {
             const MAX_CHARS: usize = 32 * 1024;
@@ -373,9 +381,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             headers: resp.headers,
             value: decoded,
         };
-        <E::Response as ResponseSpec>::map_response(decoded_resp).map_err(|e| ApiClientError::Transform {
-            endpoint,
-            source: e,
+        <E::Response as ResponseSpec>::map_response(decoded_resp).map_err(|e| {
+            ApiClientError::Transform {
+                endpoint,
+                source: e,
+            }
         })
     }
 }
@@ -418,7 +428,10 @@ async fn read_body_preview(
     Ok(buf.freeze())
 }
 
-async fn read_body_all(body: &mut dyn TransportBody, content_length: Option<u64>) -> Result<Bytes, TransportError> {
+async fn read_body_all(
+    body: &mut dyn TransportBody,
+    content_length: Option<u64>,
+) -> Result<Bytes, TransportError> {
     const MAX_PREALLOC: usize = 512 * 1024;
     let mut cap = 8 * 1024;
     if let Some(n) = content_length {
@@ -435,9 +448,7 @@ async fn read_body_all(body: &mut dyn TransportBody, content_length: Option<u64>
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::{
-        ContentType, Encodes, Format, FormatType, NoContent, text::Text,
-    };
+    use crate::codec::{ContentType, Encodes, Format, FormatType, NoContent, text::Text};
     use crate::endpoint::{NoPolicy, NoRoute};
     use crate::pagination::NoPagination;
     use std::convert::Infallible;

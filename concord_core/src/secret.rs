@@ -35,4 +35,3 @@ impl<T: Into<String>> From<T> for SecretString {
         Self::new(v)
     }
 }
-

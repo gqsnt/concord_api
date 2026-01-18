@@ -92,11 +92,19 @@ async fn auth_vars_required_secret_and_setter_affect_emitted_header() {
             auth_vars {
                 token: String
             }
+            vars {
+                token2: String = "default".to_string()
+            }
+
             headers {
                 "authorization" = auth.token
             }
         }
-        GET Ping "" -> Json<()>;
+
+        prefix {cx.token2}{
+           GET Ping "" -> Json<()>;
+        }
+
     }
 
     use api_auth_vars::*;
@@ -117,11 +125,21 @@ async fn auth_vars_required_secret_and_setter_affect_emitted_header() {
     assert_eq!(reqs.len(), 2);
 
     assert_eq!(
-        reqs[0].headers.get(AUTHORIZATION).unwrap().to_str().unwrap(),
+        reqs[0]
+            .headers
+            .get(AUTHORIZATION)
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "tok1"
     );
     assert_eq!(
-        reqs[1].headers.get(AUTHORIZATION).unwrap().to_str().unwrap(),
+        reqs[1]
+            .headers
+            .get(AUTHORIZATION)
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "tok2"
     );
 }

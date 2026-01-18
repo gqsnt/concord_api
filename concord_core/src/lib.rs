@@ -5,11 +5,11 @@ mod endpoint;
 pub mod error;
 mod pagination;
 mod policy;
+mod request;
+mod secret;
 mod timeout;
 pub mod transport;
 mod types;
-mod request;
-mod secret;
 
 pub mod internal {
     #[doc(hidden)]
@@ -19,9 +19,8 @@ pub mod internal {
     };
     #[doc(hidden)]
     pub use crate::pagination::{
-        Control, Controller, CursorPagination, HasNextCursor,
-        NoController, NoPagination, OffsetLimitPagination, PagedPagination, PaginationPart,
-        ProgressKey,
+        Control, Controller, CursorPagination, HasNextCursor, NoController, NoPagination,
+        OffsetLimitPagination, PagedPagination, PaginationPart, ProgressKey,
     };
 }
 pub mod prelude {
@@ -32,15 +31,14 @@ pub mod prelude {
     pub use crate::debug::{DebugLevel, DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::endpoint::Endpoint;
     pub use crate::error::{ApiClientError, FxError};
-    pub use crate::secret::SecretString;
+    pub use crate::pagination::PaginatedEndpoint;
     pub use crate::pagination::{
-        Caps,
-        CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
+        Caps, CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
         ProgressKey, Stop,
     };
-    pub use crate::request::{PendingRequest, PaginatedRequest};
-    pub use crate::pagination::PaginatedEndpoint;
     pub use crate::policy::{Policy, PolicyLayer, PolicyPatch};
+    pub use crate::request::{PaginatedRequest, PendingRequest};
+    pub use crate::secret::SecretString;
     pub use crate::timeout::TimeoutOverride;
     pub use crate::transport::{DecodedResponse, RequestMeta};
     pub use crate::transport::{ReqwestTransport, Transport};

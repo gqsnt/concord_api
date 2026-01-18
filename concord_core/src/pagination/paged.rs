@@ -1,9 +1,7 @@
 use crate::client::ClientContext;
 use crate::endpoint::{Endpoint, ResponseSpec};
 use crate::error::ApiClientError;
-use crate::pagination::{
-    Control, Controller, PageItems, ProgressKey, Stop,
-};
+use crate::pagination::{Control, Controller, PageItems, ProgressKey, Stop};
 use crate::policy::PolicyPatch;
 use crate::transport::DecodedResponse;
 use std::borrow::Cow;
@@ -54,8 +52,6 @@ where
     <E::Response as ResponseSpec>::Output: PageItems,
 {
     type State = PagedState;
-
-
 
     fn init(&self, _ep: &E) -> Result<Self::State, ApiClientError> {
         if self.per_page == 0 {
@@ -109,5 +105,3 @@ where
         Some(ProgressKey::U64(st.page))
     }
 }
-
-

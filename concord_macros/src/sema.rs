@@ -2,8 +2,8 @@
 use crate::ast::*;
 use crate::emit_helpers;
 use proc_macro2::Span;
-use std::collections::{BTreeMap};
-use syn::{spanned::Spanned, Expr, Ident, LitStr, Result, Type};
+use std::collections::BTreeMap;
+use syn::{Expr, Ident, LitStr, Result, Type, spanned::Spanned};
 
 #[derive(Debug)]
 pub struct Ir {
@@ -12,7 +12,7 @@ pub struct Ir {
     pub scheme: SchemeLit,
     pub domain: LitStr,
 
-    pub client_vars: Vec<VarInfo>, // stable order
+    pub client_vars: Vec<VarInfo>,      // stable order
     pub client_auth_vars: Vec<VarInfo>, // stable order
     pub client_policy: PolicyBlocksResolved,
 
@@ -74,14 +74,8 @@ pub enum PrefixPiece {
 #[derive(Debug, Clone)]
 pub enum PathPiece {
     Static(String),
-    Var {
-        field: Ident,
-        optional: bool,
-    },
-    CxVar {
-        field: Ident,
-        optional: bool,
-    },
+    Var { field: Ident, optional: bool },
+    CxVar { field: Ident, optional: bool },
     Fmt(FmtResolved),
 }
 
@@ -94,7 +88,9 @@ pub struct PolicyBlocksResolved {
 
 #[derive(Debug, Clone)]
 pub enum PolicyOp {
-    Remove { key: KeyResolved },
+    Remove {
+        key: KeyResolved,
+    },
     Set {
         key: KeyResolved,
         value: ValueKind,
@@ -160,7 +156,13 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
     let mut client_vars_map: BTreeMap<String, VarInfo> = BTreeMap::new();
     if let Some(vb) = &ast.client.vars {
         for d in &vb.decls {
-            upsert_var(&mut client_vars_map, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
+            upsert_var(
+                &mut client_vars_map,
+                &d.rust,
+                d.optional,
+                &d.ty,
+                d.default.as_ref(),
+            )?;
         }
     }
     collect_client_binds(&ast.client.policy, &mut client_vars_map)?;
@@ -169,7 +171,13 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
     let mut auth_vars_map: BTreeMap<String, VarInfo> = BTreeMap::new();
     if let Some(vb) = &ast.client.auth_vars {
         for d in &vb.decls {
-            upsert_var(&mut auth_vars_map, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
+            upsert_var(
+                &mut auth_vars_map,
+                &d.rust,
+                d.optional,
+                &d.ty,
+                d.default.as_ref(),
+            )?;
         }
     }
 
@@ -225,10 +233,22 @@ fn collect_client_binds(policy: &PolicyBlocks, out: &mut BTreeMap<String, VarInf
         for stmt in &blk.stmts {
             match stmt {
                 PolicyStmt::Bind { decl, .. } => {
-                    upsert_var(out, &decl.rust, decl.optional, &decl.ty, decl.default.as_ref())?;
+                    upsert_var(
+                        out,
+                        &decl.rust,
+                        decl.optional,
+                        &decl.ty,
+                        decl.default.as_ref(),
+                    )?;
                 }
                 PolicyStmt::BindShort { ident_key, decl } => {
-                    upsert_var(out, ident_key, decl.optional, &decl.ty, decl.default.as_ref())?;
+                    upsert_var(
+                        out,
+                        ident_key,
+                        decl.optional,
+                        &decl.ty,
+                        decl.default.as_ref(),
+                    )?;
                 }
                 _ => {}
             }
@@ -239,41 +259,40 @@ fn collect_client_binds(policy: &PolicyBlocks, out: &mut BTreeMap<String, VarInf
     for blk in policy.headers.iter().chain(policy.query.iter()) {
         for stmt in &blk.stmts {
             if let PolicyStmt::Set { value, .. } = stmt
-                && let crate::ast::PolicyValue::Fmt(fmt) = value {
-                    for p in &fmt.pieces {
-                        if let crate::ast::FmtPiece::Var(d) = p {
-                            upsert_var(out, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
-                        }
+                && let crate::ast::PolicyValue::Fmt(fmt) = value
+            {
+                for p in &fmt.pieces {
+                    if let crate::ast::FmtPiece::Var(d) = p {
+                        upsert_var(out, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
                     }
                 }
+            }
         }
     }
 
     Ok(())
 }
 
-
 fn collect_policy_fmt_decls(policy: &crate::ast::PolicyBlocks, out: &mut Vec<VarInfo>) {
     for blk in policy.headers.iter().chain(policy.query.iter()) {
         for stmt in &blk.stmts {
             if let crate::ast::PolicyStmt::Set { value, .. } = stmt
-                && let crate::ast::PolicyValue::Fmt(fmt) = value {
-                    for p in &fmt.pieces {
-                        if let crate::ast::FmtPiece::Var(d) = p {
-                            out.push(VarInfo {
-                                rust: d.rust.clone(),
-                                optional: d.optional,
-                                ty: d.ty.clone(),
-                                default: d.default.clone(),
-                            });
-                        }
+                && let crate::ast::PolicyValue::Fmt(fmt) = value
+            {
+                for p in &fmt.pieces {
+                    if let crate::ast::FmtPiece::Var(d) = p {
+                        out.push(VarInfo {
+                            rust: d.rust.clone(),
+                            optional: d.optional,
+                            ty: d.ty.clone(),
+                            default: d.default.clone(),
+                        });
                     }
                 }
+            }
         }
     }
 }
-
-
 
 fn upsert_var(
     out: &mut BTreeMap<String, VarInfo>,
@@ -298,7 +317,10 @@ fn upsert_var(
             ));
         }
         // default compatibility: allow same tokens or missing
-        if prev.default.is_some() && default.is_some() && prev.default.as_ref().unwrap() != default.unwrap() {
+        if prev.default.is_some()
+            && default.is_some()
+            && prev.default.as_ref().unwrap() != default.unwrap()
+        {
             return Err(syn::Error::new(
                 rust.span(),
                 format!("var `{}` redefined with different default", k),
@@ -350,7 +372,14 @@ fn walk_items(
                 });
 
                 ancestry.push(id);
-                walk_items(&ld.items, ancestry, client_vars,auth_vars, layers, endpoints)?;
+                walk_items(
+                    &ld.items,
+                    ancestry,
+                    client_vars,
+                    auth_vars,
+                    layers,
+                    endpoints,
+                )?;
                 ancestry.pop();
             }
             Item::Endpoint(ed) => {
@@ -384,7 +413,9 @@ fn varinfo_from_decl(d: &TemplateVarDecl) -> VarInfo {
     }
 }
 
-fn analyze_layer_route_and_decls(ld: &LayerDef) -> Result<(Vec<PrefixPiece>, Vec<PathPiece>, Vec<VarInfo>)> {
+fn analyze_layer_route_and_decls(
+    ld: &LayerDef,
+) -> Result<(Vec<PrefixPiece>, Vec<PathPiece>, Vec<VarInfo>)> {
     let mut decls: Vec<VarInfo> = Vec::new();
     let mut prefix_pieces: Vec<PrefixPiece> = Vec::new();
     let mut path_pieces: Vec<PathPiece> = Vec::new();
@@ -399,7 +430,10 @@ fn analyze_layer_route_and_decls(ld: &LayerDef) -> Result<(Vec<PrefixPiece>, Vec
                         for label in lit.value().split('.') {
                             let label = label.trim();
                             if label.is_empty() {
-                                return Err(syn::Error::new(lit.span(), "prefix label must not be empty"));
+                                return Err(syn::Error::new(
+                                    lit.span(),
+                                    "prefix label must not be empty",
+                                ));
                             }
                             prefix_pieces.push(PrefixPiece::Static(label.to_string()));
                         }
@@ -420,13 +454,22 @@ fn analyze_layer_route_and_decls(ld: &LayerDef) -> Result<(Vec<PrefixPiece>, Vec
                     RouteAtom::Ref(r) => {
                         match r.scope {
                             RefScope::Cx => {
-                                prefix_pieces.push(PrefixPiece::CxVar { field: r.ident.clone(), optional: false /* resolved later */ });
+                                prefix_pieces.push(PrefixPiece::CxVar {
+                                    field: r.ident.clone(),
+                                    optional: false, /* resolved later */
+                                });
                             }
                             RefScope::Ep => {
-                                return Err(syn::Error::new(r.ident.span(), "{ep.*} is not allowed in layer prefix route"));
+                                return Err(syn::Error::new(
+                                    r.ident.span(),
+                                    "{ep.*} is not allowed in layer prefix route",
+                                ));
                             }
                             RefScope::Auth => {
-                                return Err(syn::Error::new(r.ident.span(), "{auth.*} is not allowed in prefix route (headers/query only)"));
+                                return Err(syn::Error::new(
+                                    r.ident.span(),
+                                    "{auth.*} is not allowed in prefix route (headers/query only)",
+                                ));
                             }
                         }
                     }
@@ -455,13 +498,22 @@ fn analyze_layer_route_and_decls(ld: &LayerDef) -> Result<(Vec<PrefixPiece>, Vec
                     RouteAtom::Ref(r) => {
                         match r.scope {
                             RefScope::Cx => {
-                                path_pieces.push(PathPiece::CxVar { field: r.ident.clone(), optional: false /* resolved later */ });
+                                path_pieces.push(PathPiece::CxVar {
+                                    field: r.ident.clone(),
+                                    optional: false, /* resolved later */
+                                });
                             }
                             RefScope::Ep => {
-                                return Err(syn::Error::new(r.ident.span(), "{ep.*} is not allowed in layer path route"));
+                                return Err(syn::Error::new(
+                                    r.ident.span(),
+                                    "{ep.*} is not allowed in layer path route",
+                                ));
                             }
                             RefScope::Auth => {
-                                return Err(syn::Error::new(r.ident.span(), "{auth.*} is not allowed in path/prefix (headers/query only)"));
+                                return Err(syn::Error::new(
+                                    r.ident.span(),
+                                    "{auth.*} is not allowed in path/prefix (headers/query only)",
+                                ));
                             }
                         }
                     }
@@ -494,7 +546,6 @@ fn analyze_layer_route_and_decls(ld: &LayerDef) -> Result<(Vec<PrefixPiece>, Vec
     Ok((prefix_pieces, path_pieces, decls))
 }
 
-
 fn analyze_endpoint(
     ed: &EndpointDef,
     ancestry: &[usize],
@@ -510,13 +561,7 @@ fn analyze_endpoint(
 
     for &lid in ancestry {
         for v in &layers[lid].decls {
-            upsert_var(
-                &mut ep_vars,
-                &v.rust,
-                v.optional,
-                &v.ty,
-                v.default.as_ref(),
-            )?;
+            upsert_var(&mut ep_vars, &v.rust, v.optional, &v.ty, v.default.as_ref())?;
         }
     }
 
@@ -533,13 +578,7 @@ fn analyze_endpoint(
 
             RouteAtom::Var(d) => {
                 // Route placeholder declares a variable.
-                upsert_var(
-                    &mut ep_vars,
-                    &d.rust,
-                    d.optional,
-                    &d.ty,
-                    d.default.as_ref(),
-                )?;
+                upsert_var(&mut ep_vars, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
 
                 route_pieces.push(PathPiece::Var {
                     field: d.rust.clone(),
@@ -549,34 +588,40 @@ fn analyze_endpoint(
 
             RouteAtom::Fmt(spec) => {
                 // fmt[...] inside a route declares vars too.
-                let (resolved, fmt_decls) = resolve_route_fmt_spec(spec, Some(client_vars), Some(&ep_vars))?;
+                let (resolved, fmt_decls) =
+                    resolve_route_fmt_spec(spec, Some(client_vars), Some(&ep_vars))?;
 
                 for v in fmt_decls {
-                    upsert_var(
-                        &mut ep_vars,
-                        &v.rust,
-                        v.optional,
-                        &v.ty,
-                        v.default.as_ref(),
-                    )?;
+                    upsert_var(&mut ep_vars, &v.rust, v.optional, &v.ty, v.default.as_ref())?;
                 }
                 route_pieces.push(PathPiece::Fmt(resolved));
             }
-            RouteAtom::Ref(r) => {
-                match r.scope {
-                    RefScope::Cx => {
-                        let v = client_vars.get(&r.ident.to_string())
-                            .ok_or_else(|| syn::Error::new(r.ident.span(), format!("unknown client var `cx.{}`", r.ident)))?;
-                        route_pieces.push(PathPiece::CxVar { field: r.ident.clone(), optional: v.optional });
-                    }
-                    RefScope::Ep => {
-                        return Err(syn::Error::new(r.ident.span(), "{ep.*} is not allowed in endpoint route; declare a placeholder `{wire:Ty}`"));
-                    }
-                    RefScope::Auth => {
-                        return Err(syn::Error::new(r.ident.span(), "{auth.*} is not allowed in path/prefix (headers/query only)"));
-                    }
+            RouteAtom::Ref(r) => match r.scope {
+                RefScope::Cx => {
+                    let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                        syn::Error::new(
+                            r.ident.span(),
+                            format!("unknown client var `cx.{}`", r.ident),
+                        )
+                    })?;
+                    route_pieces.push(PathPiece::CxVar {
+                        field: r.ident.clone(),
+                        optional: v.optional,
+                    });
                 }
-            }
+                RefScope::Ep => {
+                    return Err(syn::Error::new(
+                        r.ident.span(),
+                        "{ep.*} is not allowed in endpoint route; declare a placeholder `{wire:Ty}`",
+                    ));
+                }
+                RefScope::Auth => {
+                    return Err(syn::Error::new(
+                        r.ident.span(),
+                        "{auth.*} is not allowed in path/prefix (headers/query only)",
+                    ));
+                }
+            },
         }
     }
 
@@ -614,13 +659,7 @@ fn analyze_endpoint(
         let mut fmt_decls: Vec<VarInfo> = Vec::new();
         collect_policy_fmt_decls(&ed.policy, &mut fmt_decls);
         for v in fmt_decls {
-            upsert_var(
-                &mut ep_vars,
-                &v.rust,
-                v.optional,
-                &v.ty,
-                v.default.as_ref(),
-            )?;
+            upsert_var(&mut ep_vars, &v.rust, v.optional, &v.ty, v.default.as_ref())?;
         }
     }
 
@@ -672,7 +711,13 @@ fn resolve_paginate(
 ) -> Result<PaginateResolved> {
     let mut assigns = Vec::new();
     for a in &p.assigns {
-        let vk = resolve_value_kind(&a.value, client_vars, auth_vars, Some(ep_vars), a.value.span())?;
+        let vk = resolve_value_kind(
+            &a.value,
+            client_vars,
+            auth_vars,
+            Some(ep_vars),
+            a.value.span(),
+        )?;
         // rule: forbid `cx.*` and `auth.*` in pagination (controller config must not depend on runtime vars/secrets)
         if matches!(vk, ValueKind::CxField(_) | ValueKind::AuthField(_)) {
             return Err(syn::Error::new(
@@ -698,20 +743,43 @@ fn resolve_policy_blocks(
     let mut out = PolicyBlocksResolved::default();
 
     if let Some(h) = &policy.headers {
-        out.headers = resolve_policy_block(h, PolicyKeyKind::Header, owner, client_vars, auth_vars, endpoint_vars)?;
+        out.headers = resolve_policy_block(
+            h,
+            PolicyKeyKind::Header,
+            owner,
+            client_vars,
+            auth_vars,
+            endpoint_vars,
+        )?;
     }
     if let Some(q) = &policy.query {
-        out.query = resolve_policy_block(q, PolicyKeyKind::Query, owner, client_vars, auth_vars, endpoint_vars)?;
+        out.query = resolve_policy_block(
+            q,
+            PolicyKeyKind::Query,
+            owner,
+            client_vars,
+            auth_vars,
+            endpoint_vars,
+        )?;
     }
     if let Some(t) = &policy.timeout {
         // timeout expr must not contain nested cx/ep; allow `cx.x` or `ep.y` only as root
-        if emit_helpers::contains_cx_or_ep(t) && emit_helpers::is_cx_field(t).is_none() && emit_helpers::is_ep_field(t).is_none() {
+        if emit_helpers::contains_cx_or_ep(t)
+            && emit_helpers::is_cx_field(t).is_none()
+            && emit_helpers::is_ep_field(t).is_none()
+        {
             return Err(syn::Error::new(
                 t.span(),
                 "timeout expression cannot contain nested `cx`/`ep`; use a plain `cx.x`, `ep.y`, or a pure expression without them",
             ));
         }
-        out.timeout = Some(resolve_value_kind(t, client_vars, auth_vars, endpoint_vars, t.span())?);
+        out.timeout = Some(resolve_value_kind(
+            t,
+            client_vars,
+            auth_vars,
+            endpoint_vars,
+            t.span(),
+        )?);
     }
 
     Ok(out)
@@ -736,9 +804,19 @@ fn resolve_policy_block(
             }
             PolicyStmt::Set { key, value, op } => {
                 if kind == PolicyKeyKind::Header && *op == SetOp::Push {
-                    return Err(syn::Error::new(value.span(), "`+=` is not allowed in headers; only in query"));
+                    return Err(syn::Error::new(
+                        value.span(),
+                        "`+=` is not allowed in headers; only in query",
+                    ));
                 }
-                let vk = resolve_policy_value_kind(value, owner, client_vars, auth_vars, endpoint_vars, value.span())?;
+                let vk = resolve_policy_value_kind(
+                    value,
+                    owner,
+                    client_vars,
+                    auth_vars,
+                    endpoint_vars,
+                    value.span(),
+                )?;
 
                 // Optional-ref conditional set/remove for pure cx/ep refs
                 let cond = match &vk {
@@ -746,20 +824,34 @@ fn resolve_policy_block(
                         let v = client_vars.get(&id.to_string()).ok_or_else(|| {
                             syn::Error::new(id.span(), format!("unknown client var `cx.{}`", id))
                         })?;
-                        if v.optional { Some(OptionalRefKind::Cx) } else { None }
+                        if v.optional {
+                            Some(OptionalRefKind::Cx)
+                        } else {
+                            None
+                        }
                     }
                     ValueKind::EpField(id) => {
-                        let ep = endpoint_vars.ok_or_else(|| syn::Error::new(id.span(), "ep.* is not allowed here"))?;
+                        let ep = endpoint_vars.ok_or_else(|| {
+                            syn::Error::new(id.span(), "ep.* is not allowed here")
+                        })?;
                         let v = ep.get(&id.to_string()).ok_or_else(|| {
                             syn::Error::new(id.span(), format!("unknown endpoint var `ep.{}`", id))
                         })?;
-                        if v.optional { Some(OptionalRefKind::Ep) } else { None }
+                        if v.optional {
+                            Some(OptionalRefKind::Ep)
+                        } else {
+                            None
+                        }
                     }
                     ValueKind::AuthField(id) => {
                         let v = auth_vars.get(&id.to_string()).ok_or_else(|| {
                             syn::Error::new(id.span(), format!("unknown auth var `auth.{}`", id))
                         })?;
-                        if v.optional { Some(OptionalRefKind::Auth) } else { None }
+                        if v.optional {
+                            Some(OptionalRefKind::Auth)
+                        } else {
+                            None
+                        }
                     }
                     _ => None,
                 };
@@ -800,17 +892,18 @@ fn resolve_policy_block(
     if owner == PolicyOwner::Client {
         for op in &ops {
             if let PolicyOp::Set { value, .. } = op
-                && matches!(value, ValueKind::EpField(_)) {
-                    let sp = blk
-                        .stmts
-                        .first()
-                        .map(policy_stmt_span)
-                        .unwrap_or_else(Span::call_site);
-                    return Err(syn::Error::new(
-                        sp,
-                        "`ep.*` is not allowed in client policy",
-                    ));
-                }
+                && matches!(value, ValueKind::EpField(_))
+            {
+                let sp = blk
+                    .stmts
+                    .first()
+                    .map(policy_stmt_span)
+                    .unwrap_or_else(Span::call_site);
+                return Err(syn::Error::new(
+                    sp,
+                    "`ep.*` is not allowed in client policy",
+                ));
+            }
         }
     }
 
@@ -820,18 +913,28 @@ fn resolve_policy_block(
             match value {
                 ValueKind::CxField(id) => {
                     if !client_vars.contains_key(&id.to_string()) {
-                        return Err(syn::Error::new(id.span(), format!("unknown client var `cx.{}`", id)));
+                        return Err(syn::Error::new(
+                            id.span(),
+                            format!("unknown client var `cx.{}`", id),
+                        ));
                     }
                 }
                 ValueKind::AuthField(id) => {
                     if !auth_vars.contains_key(&id.to_string()) {
-                        return Err(syn::Error::new(id.span(), format!("unknown auth var `auth.{}`", id)));
+                        return Err(syn::Error::new(
+                            id.span(),
+                            format!("unknown auth var `auth.{}`", id),
+                        ));
                     }
                 }
                 ValueKind::EpField(id) => {
-                    let ep = endpoint_vars.ok_or_else(|| syn::Error::new(id.span(), "`ep.*` is not allowed here"))?;
+                    let ep = endpoint_vars
+                        .ok_or_else(|| syn::Error::new(id.span(), "`ep.*` is not allowed here"))?;
                     if !ep.contains_key(&id.to_string()) {
-                        return Err(syn::Error::new(id.span(), format!("unknown endpoint var `ep.{}`", id)));
+                        return Err(syn::Error::new(
+                            id.span(),
+                            format!("unknown endpoint var `ep.{}`", id),
+                        ));
                     }
                 }
                 ValueKind::OtherExpr(e) => {
@@ -861,13 +964,15 @@ fn key_spec_span(k: &KeySpec) -> Span {
 fn policy_stmt_span(s: &PolicyStmt) -> Span {
     match s {
         PolicyStmt::Remove { key } => key_spec_span(key),
-        PolicyStmt::Set { key: _, value, op: _ } => value.span(),
+        PolicyStmt::Set {
+            key: _,
+            value,
+            op: _,
+        } => value.span(),
         PolicyStmt::Bind { key: _, decl } => decl.rust.span(),
         PolicyStmt::BindShort { ident_key, decl: _ } => ident_key.span(),
     }
 }
-
-
 
 fn resolve_key(k: &KeySpec) -> KeyResolved {
     match k {
@@ -884,9 +989,10 @@ fn resolve_value_kind(
     _span: Span,
 ) -> Result<ValueKind> {
     if let Expr::Lit(l) = expr
-        && let syn::Lit::Str(s) = &l.lit {
-            return Ok(ValueKind::LitStr(s.clone()));
-        }
+        && let syn::Lit::Str(s) = &l.lit
+    {
+        return Ok(ValueKind::LitStr(s.clone()));
+    }
 
     if let Some(id) = emit_helpers::is_cx_field(expr) {
         // validate later at block-level
@@ -904,7 +1010,6 @@ fn resolve_value_kind(
 
     Ok(ValueKind::OtherExpr(expr.clone()))
 }
-
 
 fn resolve_route_fmt_spec(
     spec: &FmtSpec,
@@ -925,27 +1030,50 @@ fn resolve_route_fmt_spec(
                     ty: d.ty.clone(),
                     default: d.default.clone(),
                 });
-                pieces.push(FmtResolvedPiece::Var { source: FmtVarSource::Ep, field: d.rust.clone(), optional: d.optional });
+                pieces.push(FmtResolvedPiece::Var {
+                    source: FmtVarSource::Ep,
+                    field: d.rust.clone(),
+                    optional: d.optional,
+                });
             }
-            FmtPiece::Ref(r) => {
-                match r.scope {
-                    RefScope::Cx => {
-                        let cv = client_vars
-                            .and_then(|m| m.get(&r.ident.to_string()))
-                            .ok_or_else(|| syn::Error::new(r.ident.span(), format!("unknown client var `cx.{}`", r.ident)))?;
-                        pieces.push(FmtResolvedPiece::Var { source: FmtVarSource::Cx, field: r.ident.clone(), optional: cv.optional });
-                    }
-                    RefScope::Ep => {
-                        let ev = ep_vars
-                            .and_then(|m| m.get(&r.ident.to_string()))
-                            .ok_or_else(|| syn::Error::new(r.ident.span(), format!("unknown endpoint var `ep.{}`", r.ident)))?;
-                        pieces.push(FmtResolvedPiece::Var { source: FmtVarSource::Ep, field: r.ident.clone(), optional: ev.optional });
-                    }
-                    RefScope::Auth => {
-                        return Err(syn::Error::new(r.ident.span(), "{auth.*} is not allowed in routes (headers/query only)"));
-                    }
+            FmtPiece::Ref(r) => match r.scope {
+                RefScope::Cx => {
+                    let cv = client_vars
+                        .and_then(|m| m.get(&r.ident.to_string()))
+                        .ok_or_else(|| {
+                            syn::Error::new(
+                                r.ident.span(),
+                                format!("unknown client var `cx.{}`", r.ident),
+                            )
+                        })?;
+                    pieces.push(FmtResolvedPiece::Var {
+                        source: FmtVarSource::Cx,
+                        field: r.ident.clone(),
+                        optional: cv.optional,
+                    });
                 }
-            }
+                RefScope::Ep => {
+                    let ev = ep_vars
+                        .and_then(|m| m.get(&r.ident.to_string()))
+                        .ok_or_else(|| {
+                            syn::Error::new(
+                                r.ident.span(),
+                                format!("unknown endpoint var `ep.{}`", r.ident),
+                            )
+                        })?;
+                    pieces.push(FmtResolvedPiece::Var {
+                        source: FmtVarSource::Ep,
+                        field: r.ident.clone(),
+                        optional: ev.optional,
+                    });
+                }
+                RefScope::Auth => {
+                    return Err(syn::Error::new(
+                        r.ident.span(),
+                        "{auth.*} is not allowed in routes (headers/query only)",
+                    ));
+                }
+            },
         }
     }
 
@@ -967,7 +1095,9 @@ fn resolve_policy_value_kind(
     span: proc_macro2::Span,
 ) -> Result<ValueKind> {
     match v {
-        crate::ast::PolicyValue::Expr(e) => resolve_value_kind(e, client_vars, auth_vars, endpoint_vars, span),
+        crate::ast::PolicyValue::Expr(e) => {
+            resolve_value_kind(e, client_vars, auth_vars, endpoint_vars, span)
+        }
         crate::ast::PolicyValue::Fmt(fmt) => {
             let mut pieces: Vec<FmtResolvedPiece> = Vec::new();
             let mut has_optional = false;
@@ -982,13 +1112,21 @@ fn resolve_policy_value_kind(
                         match owner {
                             PolicyOwner::Client => {
                                 if !client_vars.contains_key(&d.rust.to_string()) {
-                                    return Err(syn::Error::new(d.rust.span(), format!("unknown client var `{}`", d.rust)));
+                                    return Err(syn::Error::new(
+                                        d.rust.span(),
+                                        format!("unknown client var `{}`", d.rust),
+                                    ));
                                 }
                             }
                             PolicyOwner::Endpoint => {
-                                let ep = endpoint_vars.ok_or_else(|| syn::Error::new(d.rust.span(), "ep vars not available"))?;
+                                let ep = endpoint_vars.ok_or_else(|| {
+                                    syn::Error::new(d.rust.span(), "ep vars not available")
+                                })?;
                                 if !ep.contains_key(&d.rust.to_string()) {
-                                    return Err(syn::Error::new(d.rust.span(), format!("unknown endpoint var `{}`", d.rust)));
+                                    return Err(syn::Error::new(
+                                        d.rust.span(),
+                                        format!("unknown endpoint var `{}`", d.rust),
+                                    ));
                                 }
                             }
                             PolicyOwner::Layer => {
@@ -1007,34 +1145,61 @@ fn resolve_policy_value_kind(
                             optional: d.optional,
                         });
                     }
-                    crate::ast::FmtPiece::Ref(r) => {
-                        match r.scope {
-                            RefScope::Cx => {
-                                let v = client_vars.get(&r.ident.to_string())
-                                    .ok_or_else(|| syn::Error::new(r.ident.span(), format!("unknown client var `cx.{}`", r.ident)))?;
-                                has_optional |= v.optional;
-                                pieces.push(FmtResolvedPiece::Var { source: FmtVarSource::Cx, field: r.ident.clone(), optional: v.optional });
-                            }
-                            RefScope::Ep => {
-                                let ep = endpoint_vars.ok_or_else(|| syn::Error::new(r.ident.span(), "`ep.*` is not allowed here"))?;
-                                let v = ep.get(&r.ident.to_string())
-                                    .ok_or_else(|| syn::Error::new(r.ident.span(), format!("unknown endpoint var `ep.{}`", r.ident)))?;
-                                has_optional |= v.optional;
-                                pieces.push(FmtResolvedPiece::Var { source: FmtVarSource::Ep, field: r.ident.clone(), optional: v.optional });
-                            }
-                            RefScope::Auth => {
-                                let v = auth_vars.get(&r.ident.to_string())
-                                    .ok_or_else(|| syn::Error::new(r.ident.span(), format!("unknown auth var `auth.{}`", r.ident)))?;
-                                has_optional |= v.optional;
-                                pieces.push(FmtResolvedPiece::Var { source: FmtVarSource::Auth, field: r.ident.clone(), optional: v.optional });
-                            }
+                    crate::ast::FmtPiece::Ref(r) => match r.scope {
+                        RefScope::Cx => {
+                            let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                syn::Error::new(
+                                    r.ident.span(),
+                                    format!("unknown client var `cx.{}`", r.ident),
+                                )
+                            })?;
+                            has_optional |= v.optional;
+                            pieces.push(FmtResolvedPiece::Var {
+                                source: FmtVarSource::Cx,
+                                field: r.ident.clone(),
+                                optional: v.optional,
+                            });
                         }
-                    }
+                        RefScope::Ep => {
+                            let ep = endpoint_vars.ok_or_else(|| {
+                                syn::Error::new(r.ident.span(), "`ep.*` is not allowed here")
+                            })?;
+                            let v = ep.get(&r.ident.to_string()).ok_or_else(|| {
+                                syn::Error::new(
+                                    r.ident.span(),
+                                    format!("unknown endpoint var `ep.{}`", r.ident),
+                                )
+                            })?;
+                            has_optional |= v.optional;
+                            pieces.push(FmtResolvedPiece::Var {
+                                source: FmtVarSource::Ep,
+                                field: r.ident.clone(),
+                                optional: v.optional,
+                            });
+                        }
+                        RefScope::Auth => {
+                            let v = auth_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                syn::Error::new(
+                                    r.ident.span(),
+                                    format!("unknown auth var `auth.{}`", r.ident),
+                                )
+                            })?;
+                            has_optional |= v.optional;
+                            pieces.push(FmtResolvedPiece::Var {
+                                source: FmtVarSource::Auth,
+                                field: r.ident.clone(),
+                                optional: v.optional,
+                            });
+                        }
+                    },
                 }
             }
 
             if !fmt.require_all && has_optional {
-                return Err(syn::Error::new(span, "fmt[...] forbids optional placeholders; use fmt?[...]"));
+                return Err(syn::Error::new(
+                    span,
+                    "fmt[...] forbids optional placeholders; use fmt?[...]",
+                ));
             }
 
             Ok(ValueKind::Fmt(FmtResolved {
@@ -1044,7 +1209,6 @@ fn resolve_policy_value_kind(
         }
     }
 }
-
 
 impl syn::parse::Parse for TemplateVarDecl {
     fn parse(input: syn::parse::ParseStream<'_>) -> Result<Self> {
@@ -1082,7 +1246,11 @@ pub struct FmtResolved {
 #[derive(Debug, Clone)]
 pub enum FmtResolvedPiece {
     Lit(syn::LitStr),
-    Var { source: FmtVarSource, field: syn::Ident, optional: bool },
+    Var {
+        source: FmtVarSource,
+        field: syn::Ident,
+        optional: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

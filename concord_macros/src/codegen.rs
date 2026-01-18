@@ -1,10 +1,9 @@
+use crate::ast::SetOp;
 use crate::emit_helpers;
 use crate::sema::*;
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use quote::{quote};
+use quote::quote;
 use syn::{Ident, LitStr};
-use crate::ast::SetOp;
-
 
 pub fn emit(ir: Ir) -> TokenStream2 {
     let mod_name = ir.mod_name.clone();
@@ -115,7 +114,11 @@ fn emit_client_vars(vars: &[VarInfo]) -> TokenStream2 {
     }
 }
 
-fn emit_client_context(scheme: &TokenStream2, domain: &LitStr, policy: &PolicyBlocksResolved) -> TokenStream2 {
+fn emit_client_context(
+    scheme: &TokenStream2,
+    domain: &LitStr,
+    policy: &PolicyBlocksResolved,
+) -> TokenStream2 {
     let base_policy = emit_policy_fn_base(policy);
 
     quote! {
@@ -140,8 +143,16 @@ fn emit_client_context(scheme: &TokenStream2, domain: &LitStr, policy: &PolicyBl
 
 fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
     let mut ops = Vec::new();
-    ops.extend(emit_policy_ops(policy, PolicyKeyKind::Header, PolicyEmitCtx::ClientBase));
-    ops.extend(emit_policy_ops(policy, PolicyKeyKind::Query, PolicyEmitCtx::ClientBase));
+    ops.extend(emit_policy_ops(
+        policy,
+        PolicyKeyKind::Header,
+        PolicyEmitCtx::ClientBase,
+    ));
+    ops.extend(emit_policy_ops(
+        policy,
+        PolicyKeyKind::Query,
+        PolicyEmitCtx::ClientBase,
+    ));
     if let Some(t) = &policy.timeout {
         let ex = emit_value_expr(t, PolicyEmitCtx::ClientBase);
         ops.push(quote! { policy.set_timeout(#ex); });
@@ -168,7 +179,10 @@ fn emit_client_auth_vars(vars: &[VarInfo]) -> TokenStream2 {
             quote! { pub #name: ::std::sync::Arc<::std::sync::RwLock<::concord_core::prelude::SecretString>> }
         }
     });
-    let required: Vec<&VarInfo> = vars.iter().filter(|v| !v.optional && v.default.is_none()).collect();
+    let required: Vec<&VarInfo> = vars
+        .iter()
+        .filter(|v| !v.optional && v.default.is_none())
+        .collect();
     let new_args = required.iter().map(|v| {
         let name = &v.rust;
         let ty = &v.ty;
@@ -364,10 +378,16 @@ fn emit_endpoint_parts(ep: &EndpointIr) -> TokenStream2 {
         where
             Cx: ::concord_core::prelude::ClientContext,
         {
-            fn apply(ep: &super::endpoints::#name, vars: &Cx::Vars, route: &mut ::concord_core::prelude::RouteParts)
+            fn apply(
+                    ep: &super::endpoints::#name,
+                    vars: &Cx::Vars,
+                    auth: &Cx::AuthVars,
+                    route: &mut ::concord_core::prelude::RouteParts
+                )
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
                 let _ = vars;
+                let _ = auth;
                 #route_apply
                 ::core::result::Result::Ok(())
             }
@@ -390,8 +410,6 @@ fn emit_endpoint_parts(ep: &EndpointIr) -> TokenStream2 {
         #map_impl
     }
 }
-
-
 
 fn emit_endpoints(ir: &Ir) -> TokenStream2 {
     let endpoint_defs = ir.endpoints.iter().map(|ep| emit_endpoint_def(ir, ep));
@@ -431,7 +449,6 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
             quote! { #f }
         })
         .collect();
-    let new_args = new_args.as_slice();
     let new_pass = new_pass.as_slice();
 
     let required_auth: Vec<&VarInfo> = ir
@@ -454,6 +471,10 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
             quote! { #f }
         })
         .collect();
+
+    let mut ctor_args: Vec<TokenStream2> = Vec::new();
+    ctor_args.extend(new_args.iter().cloned());
+    ctor_args.extend(new_auth_args.iter().cloned());
 
     let var_setters = ir.client_vars.iter().map(|v| {
         let f = &v.rust;
@@ -514,21 +535,21 @@ fn emit_client_wrapper(ir: &Ir) -> TokenStream2 {
 
     quote! {
         #[derive(Clone)]
-        pub struct #client_ty<T: ::concord_core::prelude::Transport = ::std::sync::Arc<::concord_core::prelude::ReqwestTransport>> {
+        pub struct #client_ty<T: ::concord_core::prelude::Transport = ::concord_core::prelude::ReqwestTransport> {
             inner: ::concord_core::prelude::ApiClient<Cx, T>,
         }
-        impl #client_ty<::std::sync::Arc<::concord_core::prelude::ReqwestTransport>> {
+        impl #client_ty<::concord_core::prelude::ReqwestTransport> {
             #[inline]
-            pub fn new( #( #new_args ),*, #( #new_auth_args ),* ) -> Self {
+            pub fn new( #( #ctor_args ),* ) -> Self {
                 let vars = Vars::new( #( #new_pass ),* );
                 let auth_vars = AuthVars::new( #( #new_auth_pass ),* );
-               Self { inner: ::concord_core::prelude::ApiClient::<Cx, ::std::sync::Arc<::concord_core::prelude::ReqwestTransport>>::new(vars, auth_vars) }
+               Self { inner: ::concord_core::prelude::ApiClient::<Cx, ::concord_core::prelude::ReqwestTransport>::new(vars, auth_vars) }
             }
 
 
             #[inline]
             pub fn new_with_transport<T2: ::concord_core::prelude::Transport>(
-                #( #new_args, )* #( #new_auth_args, )*
+                #( #ctor_args, )*
                 transport: T2
             ) -> #client_ty<T2> {
                 let vars = Vars::new( #( #new_pass ),* );
@@ -595,7 +616,6 @@ fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr) -> TokenStream2 {
         }
     }
 
-
     // ctor args: required vars (non-optional, no default) + body
     let required_vars: Vec<&VarInfo> = ep
         .vars
@@ -603,12 +623,11 @@ fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr) -> TokenStream2 {
         .filter(|v| !v.optional && v.default.is_none())
         .collect();
 
-    let _new_args  = required_vars.iter().map(|v| {
+    let _new_args = required_vars.iter().map(|v| {
         let f = &v.rust;
         let ty = &v.ty;
         quote! { #f: #ty }
     });
-
 
     let init_fields = ep.vars.iter().map(|v| {
         let f = &v.rust;
@@ -676,7 +695,8 @@ fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr) -> TokenStream2 {
     route_chain.extend(path_parts);
     route_chain.push(endpoint_route_part);
 
-    let route_ty = emit_helpers::nested_chain(&route_chain, quote! { ::concord_core::internal::NoRoute });
+    let route_ty =
+        emit_helpers::nested_chain(&route_chain, quote! { ::concord_core::internal::NoRoute });
 
     // policy chain: strict nesting order outer->inner, then endpoint
     let mut policy_chain = Vec::new();
@@ -690,7 +710,8 @@ fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr) -> TokenStream2 {
     policy_chain.push(quote! {
         super::__internal::__LayerEndpoint<super::__internal::#ep_pol_ident>
     });
-    let policy_ty = emit_helpers::nested_chain(&policy_chain, quote! { ::concord_core::internal::NoPolicy });
+    let policy_ty =
+        emit_helpers::nested_chain(&policy_chain, quote! { ::concord_core::internal::NoPolicy });
 
     // pagination part
     let pagination_ty = if ep.paginate.is_some() {
@@ -707,7 +728,6 @@ fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr) -> TokenStream2 {
     } else {
         quote! { ::concord_core::internal::NoBody }
     };
-
 
     // response spec
     let dec_enc = &ep.response.enc;
@@ -727,15 +747,15 @@ fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr) -> TokenStream2 {
         let ty = &body.ty;
         let b_ident = emit_helpers::ident(&format!("__Body_{name}"), Span::call_site());
         quote! {
-        pub struct #b_ident;
-        impl ::concord_core::internal::BodyPart<#name> for #b_ident {
-            type Body = #ty;
-            type Enc = #enc;
-            fn body(ep: &#name) -> ::core::option::Option<&Self::Body> {
-                ::core::option::Option::Some(&ep.body)
+            pub struct #b_ident;
+            impl ::concord_core::internal::BodyPart<#name> for #b_ident {
+                type Body = #ty;
+                type Enc = #enc;
+                fn body(ep: &#name) -> ::core::option::Option<&Self::Body> {
+                    ::core::option::Option::Some(&ep.body)
+                }
             }
         }
-    }
     } else {
         quote! {}
     };
@@ -794,7 +814,11 @@ fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> To
     quote! { #( #ops )* }
 }
 
-fn emit_policy_ops(policy: &PolicyBlocksResolved, kind: PolicyKeyKind, ctx: PolicyEmitCtx) -> Vec<TokenStream2> {
+fn emit_policy_ops(
+    policy: &PolicyBlocksResolved,
+    kind: PolicyKeyKind,
+    ctx: PolicyEmitCtx,
+) -> Vec<TokenStream2> {
     let ops = match kind {
         PolicyKeyKind::Header => &policy.headers,
         PolicyKeyKind::Query => &policy.query,
@@ -803,7 +827,12 @@ fn emit_policy_ops(policy: &PolicyBlocksResolved, kind: PolicyKeyKind, ctx: Poli
     ops.iter()
         .map(|op| match op {
             PolicyOp::Remove { key } => emit_remove_op(key, kind, ctx),
-            PolicyOp::Bind { key, field, optional, kind: _ } => emit_bind_op(key, kind, field, *optional, ctx),
+            PolicyOp::Bind {
+                key,
+                field,
+                optional,
+                kind: _,
+            } => emit_bind_op(key, kind, field, *optional, ctx),
             PolicyOp::Set {
                 key,
                 value,
@@ -847,7 +876,13 @@ fn emit_remove_op(key: &KeyResolved, kind: PolicyKeyKind, _ctx: PolicyEmitCtx) -
     }
 }
 
-fn emit_bind_op(key: &KeyResolved, kind: PolicyKeyKind, field: &Ident, optional: bool, ctx: PolicyEmitCtx) -> TokenStream2 {
+fn emit_bind_op(
+    key: &KeyResolved,
+    kind: PolicyKeyKind,
+    field: &Ident,
+    optional: bool,
+    ctx: PolicyEmitCtx,
+) -> TokenStream2 {
     match kind {
         PolicyKeyKind::Header => {
             let (ks, sp, _) = emit_key_string(key, kind);
@@ -1015,7 +1050,7 @@ fn emit_set_op(
             if let ValueKind::Fmt(fmt) = value {
                 let build = emit_fmt_build_string(fmt);
                 let setter = match op {
-                    SetOp::Set  => quote! { policy.set_query(#lit, __fmt_s); },
+                    SetOp::Set => quote! { policy.set_query(#lit, __fmt_s); },
                     SetOp::Push => quote! { policy.push_query(#lit, __fmt_s); },
                 };
                 if fmt.require_all {
@@ -1063,12 +1098,12 @@ fn emit_set_op(
                     }
                 } else {
                     quote! {
-                        {
-                            let __g = auth.#fld.read().unwrap();
-                            let __s: ::std::string::String = __g.expose().to_owned();
-                            #setter
-                        }
-                        }
+                    {
+                        let __g = auth.#fld.read().unwrap();
+                        let __s: ::std::string::String = __g.expose().to_owned();
+                        #setter
+                    }
+                    }
                 };
             }
             if let Some(_ref_kind) = conditional {
@@ -1102,8 +1137,6 @@ fn emit_set_op(
     }
 }
 
-
-
 fn emit_fmt_build_string(fmt: &FmtResolved) -> proc_macro2::TokenStream {
     let mut ops: Vec<proc_macro2::TokenStream> = Vec::new();
 
@@ -1112,47 +1145,49 @@ fn emit_fmt_build_string(fmt: &FmtResolved) -> proc_macro2::TokenStream {
             FmtResolvedPiece::Lit(s) => {
                 ops.push(quote! { __fmt_s.push_str(#s); });
             }
-            FmtResolvedPiece::Var { source, field, optional } => {
-                match source {
-                    FmtVarSource::Cx => {
-                        if *optional {
-                            ops.push(quote! {
+            FmtResolvedPiece::Var {
+                source,
+                field,
+                optional,
+            } => match source {
+                FmtVarSource::Cx => {
+                    if *optional {
+                        ops.push(quote! {
                             if let ::core::option::Option::Some(__v) = vars.#field.as_ref() {
                                 __fmt_s.push_str(&__v.to_string());
                             }
                         });
-                        } else {
-                            ops.push(quote! { __fmt_s.push_str(&vars.#field.to_string()); });
-                        }
-                    }
-                    FmtVarSource::Ep => {
-                        if *optional {
-                            ops.push(quote! {
-                                if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
-                                    __fmt_s.push_str(&__v.to_string());
-                                }
-                            });
-                        } else {
-                            ops.push(quote! { __fmt_s.push_str(&ep.#field.to_string()); });
-                        }
-                    }
-                    FmtVarSource::Auth => {
-                        if *optional {
-                            ops.push(quote! {
-                                let __g = auth.#field.read().unwrap();
-                                if let ::core::option::Option::Some(__v) = __g.as_ref() {
-                                    __fmt_s.push_str(__v.expose());
-                                }
-                            });
-                        } else {
-                            ops.push(quote! {
-                                let __g = auth.#field.read().unwrap();
-                                __fmt_s.push_str(__g.expose());
-                            });
-                        }
+                    } else {
+                        ops.push(quote! { __fmt_s.push_str(&vars.#field.to_string()); });
                     }
                 }
-            }
+                FmtVarSource::Ep => {
+                    if *optional {
+                        ops.push(quote! {
+                            if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
+                                __fmt_s.push_str(&__v.to_string());
+                            }
+                        });
+                    } else {
+                        ops.push(quote! { __fmt_s.push_str(&ep.#field.to_string()); });
+                    }
+                }
+                FmtVarSource::Auth => {
+                    if *optional {
+                        ops.push(quote! {
+                            let __g = auth.#field.read().unwrap();
+                            if let ::core::option::Option::Some(__v) = __g.as_ref() {
+                                __fmt_s.push_str(__v.expose());
+                            }
+                        });
+                    } else {
+                        ops.push(quote! {
+                            let __g = auth.#field.read().unwrap();
+                            __fmt_s.push_str(__g.expose());
+                        });
+                    }
+                }
+            },
         }
     }
 
@@ -1191,7 +1226,11 @@ fn emit_prefix_route_apply(pieces: &[PrefixPiece]) -> TokenStream2 {
                 let lit = LitStr::new(s, Span::call_site());
                 ops.push(quote! { route.host_mut().push_label_static(#lit); });
             }
-            PrefixPiece::Var { wire, field, optional } => {
+            PrefixPiece::Var {
+                wire,
+                field,
+                optional,
+            } => {
                 let wire_lit = LitStr::new(wire, Span::call_site());
                 if *optional {
                     ops.push(quote! {
@@ -1268,7 +1307,9 @@ fn emit_path_route_apply(pieces: &[PathPiece]) -> TokenStream2 {
                         }
                     });
                 } else {
-                    ops.push(quote! { route.path_mut().push_segment_encoded(&ep.#field.to_string()); });
+                    ops.push(
+                        quote! { route.path_mut().push_segment_encoded(&ep.#field.to_string()); },
+                    );
                 }
             }
             PathPiece::CxVar { field, optional } => {
@@ -1279,7 +1320,9 @@ fn emit_path_route_apply(pieces: &[PathPiece]) -> TokenStream2 {
                         }
                     });
                 } else {
-                    ops.push(quote! { route.path_mut().push_segment_encoded(&vars.#field.to_string()); });
+                    ops.push(
+                        quote! { route.path_mut().push_segment_encoded(&vars.#field.to_string()); },
+                    );
                 }
             }
             PathPiece::Fmt(fmt) => {
@@ -1339,7 +1382,9 @@ fn emit_paginate_part(ep: &EndpointIr, paginate_ty: &Ident) -> TokenStream2 {
     let is_paged = ctrl_last == "PagedPagination";
 
     let auto_key_assigns = p.assigns.iter().filter_map(|(k, v)| {
-        let ValueKind::EpField(f) = v else { return None; };
+        let ValueKind::EpField(f) = v else {
+            return None;
+        };
         let key_res = find_query_key_for_ep_field(ep, f)?;
         let (_ks, _sp, key_ts) = emit_key_string(key_res, PolicyKeyKind::Query);
         let k_str = k.to_string();
@@ -1424,7 +1469,6 @@ fn emit_map_part(ep: &EndpointIr, map_ty: &Ident) -> TokenStream2 {
     let out_ty = &m.out_ty;
     let body = &m.body;
 
-
     quote! {
         pub struct #map_ty;
 
@@ -1439,14 +1483,22 @@ fn emit_map_part(ep: &EndpointIr, map_ty: &Ident) -> TokenStream2 {
     }
 }
 
-
 fn emit_fmt_require_all_guard(fmt: &FmtResolved) -> TokenStream2 {
     let checks = fmt.pieces.iter().filter_map(|p| {
-        let FmtResolvedPiece::Var { source, field, optional: true } = p else { return None; };
+        let FmtResolvedPiece::Var {
+            source,
+            field,
+            optional: true,
+        } = p
+        else {
+            return None;
+        };
         match source {
             FmtVarSource::Cx => Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } }),
             FmtVarSource::Ep => Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } }),
-            FmtVarSource::Auth => Some(quote! { if auth.#field.read().unwrap().is_none() { __fmt_ok = false; } }),
+            FmtVarSource::Auth => {
+                Some(quote! { if auth.#field.read().unwrap().is_none() { __fmt_ok = false; } })
+            }
         }
     });
 
@@ -1456,5 +1508,3 @@ fn emit_fmt_require_all_guard(fmt: &FmtResolved) -> TokenStream2 {
         __fmt_ok
     }
 }
-
-

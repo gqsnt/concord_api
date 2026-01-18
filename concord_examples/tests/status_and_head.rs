@@ -23,8 +23,9 @@ async fn status_204_requires_no_content_response_spec() {
 
     // A with 204 => error
     {
-        let (transport, _recorded) = MockTransport::new(vec![MockReply::status(StatusCode::NO_CONTENT)]);
-        let api = ApiNoContent::new_with_transport( transport);
+        let (transport, _recorded) =
+            MockTransport::new(vec![MockReply::status(StatusCode::NO_CONTENT)]);
+        let api = ApiNoContent::new_with_transport(transport);
 
         let err = api.request(endpoints::A::new()).await.unwrap_err();
         match err {
@@ -40,8 +41,9 @@ async fn status_204_requires_no_content_response_spec() {
 
     // B with 204 => ok
     {
-        let (transport, _recorded) = MockTransport::new(vec![MockReply::status(StatusCode::NO_CONTENT)]);
-        let api = ApiNoContent::new_with_transport( transport);
+        let (transport, _recorded) =
+            MockTransport::new(vec![MockReply::status(StatusCode::NO_CONTENT)]);
+        let api = ApiNoContent::new_with_transport(transport);
 
         let _ = api.request(endpoints::B::new()).await.unwrap();
     }
@@ -63,7 +65,7 @@ async fn head_requires_no_content_response_spec() {
     // A => error HeadRequiresNoContent
     {
         let (transport, _recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api = ApiHead::new_with_transport( transport);
+        let api = ApiHead::new_with_transport(transport);
 
         let err = api.request(endpoints::A::new()).await.unwrap_err();
         match err {
@@ -78,7 +80,7 @@ async fn head_requires_no_content_response_spec() {
     // B => ok
     {
         let (transport, _recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api = ApiHead::new_with_transport( transport);
+        let api = ApiHead::new_with_transport(transport);
 
         let _ = api.request(endpoints::B::new()).await.unwrap();
     }

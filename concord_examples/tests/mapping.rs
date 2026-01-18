@@ -5,7 +5,9 @@ use concord_core::prelude::*;
 use concord_macros::api;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
-pub struct Item { id: String }
+pub struct Item {
+    id: String,
+}
 
 #[tokio::test]
 async fn map_closure_variant() {

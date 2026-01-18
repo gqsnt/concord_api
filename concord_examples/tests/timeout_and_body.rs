@@ -58,29 +58,41 @@ async fn content_type_injection_only_when_missing_and_body_present() {
     // A => inject application/json
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api = ApiBody::new_with_transport( transport);
+        let api = ApiBody::new_with_transport(transport);
 
-        let _ = api.request(endpoints::A::new(NewObj { id: "1".into() })).await.unwrap();
+        let _ = api
+            .request(endpoints::A::new(NewObj { id: "1".into() }))
+            .await
+            .unwrap();
         let req = &recorded.lock().unwrap()[0];
-        assert_eq!(req.headers.get(CONTENT_TYPE).unwrap().to_str().unwrap(), "application/json");
+        assert_eq!(
+            req.headers.get(CONTENT_TYPE).unwrap().to_str().unwrap(),
+            "application/json"
+        );
         assert!(req.body.is_some());
     }
 
     // B => keep text/plain
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api =  ApiBody::new_with_transport( transport);
+        let api = ApiBody::new_with_transport(transport);
 
-        let _ = api.request(endpoints::B::new(NewObj { id: "1".into() })).await.unwrap();
+        let _ = api
+            .request(endpoints::B::new(NewObj { id: "1".into() }))
+            .await
+            .unwrap();
         let req = &recorded.lock().unwrap()[0];
-        assert_eq!(req.headers.get(CONTENT_TYPE).unwrap().to_str().unwrap(), "text/plain");
+        assert_eq!(
+            req.headers.get(CONTENT_TYPE).unwrap().to_str().unwrap(),
+            "text/plain"
+        );
         assert!(req.body.is_some());
     }
 
     // C => no Content-Type injected
     {
         let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
-        let api =  ApiBody::new_with_transport( transport);
+        let api = ApiBody::new_with_transport(transport);
 
         let _ = api.request(endpoints::C::new()).await.unwrap();
         let req = &recorded.lock().unwrap()[0];
@@ -88,8 +100,6 @@ async fn content_type_injection_only_when_missing_and_body_present() {
         assert!(req.body.is_none());
     }
 }
-
-
 
 #[tokio::test]
 async fn timeout_endpoint_allows_no_comma_before_arrow() {

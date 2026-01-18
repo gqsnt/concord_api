@@ -1,9 +1,7 @@
 use crate::client::ClientContext;
 use crate::endpoint::{Endpoint, ResponseSpec};
 use crate::error::ApiClientError;
-use crate::pagination::{
-    Control, Controller, PageItems, ProgressKey, Stop,
-};
+use crate::pagination::{Control, Controller, PageItems, ProgressKey, Stop};
 use crate::policy::PolicyPatch;
 use crate::transport::DecodedResponse;
 use std::borrow::Cow;
@@ -52,8 +50,6 @@ where
 {
     type State = OffsetLimitState;
 
-
-
     fn init(&self, _ep: &E) -> Result<Self::State, ApiClientError> {
         if self.limit == 0 {
             return Err(ApiClientError::Pagination("offset/limit: limit=0".into()));
@@ -95,5 +91,3 @@ where
         Some(ProgressKey::U64(st.offset))
     }
 }
-
-

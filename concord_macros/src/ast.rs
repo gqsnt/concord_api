@@ -1,6 +1,6 @@
 use proc_macro2::Span;
-use syn::{Expr, Ident, LitStr, Path, Type};
 use syn::spanned::Spanned;
+use syn::{Expr, Ident, LitStr, Path, Type};
 
 #[derive(Debug)]
 pub struct ApiFile {
@@ -40,7 +40,6 @@ pub enum LayerKind {
     Prefix,
     Path,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct RouteExpr {
@@ -88,7 +87,6 @@ pub struct EndpointDef {
 
     pub response: CodecSpec,
     pub map: Option<MapSpec>,
-
 }
 
 #[derive(Debug)]
@@ -102,7 +100,6 @@ pub struct PaginateAssign {
     pub key: Ident,
     pub value: Expr,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct MapSpec {
@@ -124,10 +121,22 @@ pub struct PolicyBlock {
 
 #[derive(Debug)]
 pub enum PolicyStmt {
-    Remove { key: KeySpec },
-    Set { key: KeySpec, value: PolicyValue, op: SetOp },
-    Bind { key: KeySpec, decl: VarDeclNoWire },
-    BindShort { ident_key: Ident, decl: VarDeclShort },
+    Remove {
+        key: KeySpec,
+    },
+    Set {
+        key: KeySpec,
+        value: PolicyValue,
+        op: SetOp,
+    },
+    Bind {
+        key: KeySpec,
+        decl: VarDeclNoWire,
+    },
+    BindShort {
+        ident_key: Ident,
+        decl: VarDeclShort,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,10 +184,6 @@ pub struct CodecSpec {
     pub enc: Path,
     pub ty: Type,
 }
-
-
-
-
 
 #[derive(Debug)]
 pub enum PolicyValue {

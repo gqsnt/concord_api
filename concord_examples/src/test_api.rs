@@ -106,19 +106,18 @@ pub async fn test_api() -> Result<(), ApiClientError> {
     println!("GET /posts/1/comments => {} comments", comments.len());
 
     let created = client
-        .request(client::endpoints::CreatePost::new(
-            models::NewPost {
-                title: "foo".to_string(),
-                body: "bar".to_string(),
-                user_id: 10,
-            },
-        ))
+        .request(client::endpoints::CreatePost::new(models::NewPost {
+            title: "foo".to_string(),
+            body: "bar".to_string(),
+            user_id: 10,
+        }))
         .await?;
-    println!("POST /posts => id={} user_id={}", created.id, created.user_id);
+    println!(
+        "POST /posts => id={} user_id={}",
+        created.id, created.user_id
+    );
 
-    let user = client
-        .request(client::endpoints::GetUser::new(1))
-        .await?;
+    let user = client.request(client::endpoints::GetUser::new(1)).await?;
     println!("GET /users/1 => username={}", user.username);
 
     let titles = client

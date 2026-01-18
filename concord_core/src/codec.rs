@@ -24,7 +24,9 @@ pub trait FormatType {
 }
 
 pub(crate) fn format_bytes_for_debug(format: Format, bytes: &[u8], max_chars: usize) -> String {
-    if max_chars == 0 { return String::new(); }
+    if max_chars == 0 {
+        return String::new();
+    }
     match format {
         Format::Text => {
             // Worst case UTF-8 expansion for lossy preview: cap by ~4 bytes per char.
@@ -56,7 +58,9 @@ pub(crate) fn format_debug_body<F: FormatType>(bytes: &Bytes, max_chars: usize) 
 }
 
 pub(crate) fn truncate_for_debug(s: &str, max_chars: usize) -> String {
-    if max_chars == 0 { return String::new(); }
+    if max_chars == 0 {
+        return String::new();
+    }
     let mut it = s.chars();
     let mut out = String::new();
     for _ in 0..max_chars {

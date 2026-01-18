@@ -3,7 +3,7 @@ use crate::debug::DebugLevel;
 use crate::endpoint::{Endpoint, ResponseSpec};
 use crate::error::ApiClientError;
 use crate::pagination::{
-    Caps, Control, Controller, PageItems, PaginationPart, ProgressKey, PaginatedEndpoint,
+    Caps, Control, Controller, PageItems, PaginatedEndpoint, PaginationPart, ProgressKey,
 };
 use crate::policy::PolicyPatch;
 use crate::timeout::TimeoutOverride;
@@ -11,7 +11,6 @@ use crate::transport::{DecodedResponse, RequestMeta};
 use core::future::IntoFuture;
 use std::collections::HashSet;
 use std::time::Duration;
-
 
 /// Options runtime partagées entre requête simple et pagination.
 #[derive(Clone, Copy, Debug)]
@@ -40,13 +39,13 @@ fn apply_timeout_override(p: &mut PolicyPatch<'_>, t: TimeoutOverride) {
 
 fn is_idempotent(m: &http::Method) -> bool {
     matches!(
-    *m,
-    http::Method::GET
-      | http::Method::HEAD
-      | http::Method::PUT
-      | http::Method::DELETE
-      | http::Method::OPTIONS
-  )
+        *m,
+        http::Method::GET
+            | http::Method::HEAD
+            | http::Method::PUT
+            | http::Method::DELETE
+            | http::Method::OPTIONS
+    )
 }
 
 pub struct PendingRequest<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> {
@@ -55,7 +54,9 @@ pub struct PendingRequest<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::tran
     opts: RequestOptions,
 }
 
-impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> PendingRequest<'a, Cx, E, T> {
+impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
+    PendingRequest<'a, Cx, E, T>
+{
     #[inline]
     pub(crate) fn new(client: &'a ApiClient<Cx, T>, ep: E) -> Self {
         Self {
@@ -100,7 +101,9 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> Pen
         Ok(self.execute_decoded().await?.value)
     }
 
-    pub async fn execute_decoded(self) -> Result<DecodedResponse<<E::Response as ResponseSpec>::Output>, ApiClientError> {
+    pub async fn execute_decoded(
+        self,
+    ) -> Result<DecodedResponse<<E::Response as ResponseSpec>::Output>, ApiClientError> {
         let dbg = self.opts.debug_level.unwrap_or(self.client.debug_level());
         let timeout_override = self.opts.timeout_override;
         let meta = RequestMeta {
@@ -136,19 +139,23 @@ where
     T: crate::transport::Transport,
 {
     type Output = Result<<E::Response as ResponseSpec>::Output, ApiClientError>;
-    type IntoFuture = std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
+    type IntoFuture =
+        std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move { self.execute().await })
     }
 }
 
-pub struct PaginatedRequest<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> {
+pub struct PaginatedRequest<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
+{
     pending: PendingRequest<'a, Cx, E, T>,
     caps: Caps,
 }
 
-impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> PaginatedRequest<'a, Cx, E, T> {
+impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
+    PaginatedRequest<'a, Cx, E, T>
+{
     #[inline]
     pub(crate) fn new(pending: PendingRequest<'a, Cx, E, T>) -> Self {
         let caps = pending.client.pagination_caps();
@@ -182,38 +189,50 @@ where
     <E::Pagination as PaginationPart<Cx, E>>::Ctrl: Controller<Cx, E>,
     T: crate::transport::Transport,
 {
-    type Output = Result<
-        Vec<<<E::Response as ResponseSpec>::Output as PageItems>::Item>,
-        ApiClientError,
-    >;
-    type IntoFuture = std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
+    type Output =
+        Result<Vec<<<E::Response as ResponseSpec>::Output as PageItems>::Item>, ApiClientError>;
+    type IntoFuture =
+        std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send + 'a>>;
 
     fn into_future(mut self) -> Self::IntoFuture {
         Box::pin(async move {
-            let ctrl = <E::Pagination as PaginationPart<Cx, E>>::controller(self.pending.client.vars(), &self.pending.ep)?;
+            let ctrl = <E::Pagination as PaginationPart<Cx, E>>::controller(
+                self.pending.client.vars(),
+                &self.pending.ep,
+            )?;
             let mut st = ctrl.init(&self.pending.ep)?;
-            let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops { Some(HashSet::new()) } else { None };
-            let mut out: Vec<<<E::Response as ResponseSpec>::Output as PageItems>::Item> = Vec::new();
+            let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
+                Some(HashSet::new())
+            } else {
+                None
+            };
+            let mut out: Vec<<<E::Response as ResponseSpec>::Output as PageItems>::Item> =
+                Vec::new();
             let mut items_count: u64 = 0;
 
-            let dbg = self.pending.opts.debug_level.unwrap_or(self.pending.client.debug_level());
+            let dbg = self
+                .pending
+                .opts
+                .debug_level
+                .unwrap_or(self.pending.client.debug_level());
             let timeout_override = self.pending.opts.timeout_override;
             let attempt = self.pending.opts.attempt;
 
             for page_index in 0..self.caps.max_pages {
                 if let Some(seen) = seen.as_mut()
                     && let Some(k) = ctrl.progress_key(&st, &self.pending.ep)
-                        && !seen.insert(k.clone()) {
-                            return Err(ApiClientError::Pagination(
-                                format!(
-                                    "loop detected (endpoint={} page_index={} key={:?})",
-                                    self.pending.ep.name(),
-                                    page_index,
-                                    k
-                                )
-                                    .into(),
-                            ));
-                        }
+                    && !seen.insert(k.clone())
+                {
+                    return Err(ApiClientError::Pagination(
+                        format!(
+                            "loop detected (endpoint={} page_index={} key={:?})",
+                            self.pending.ep.name(),
+                            page_index,
+                            k
+                        )
+                        .into(),
+                    ));
+                }
 
                 let meta = RequestMeta {
                     endpoint: self.pending.ep.name(),
@@ -248,13 +267,17 @@ where
                                 self.caps.max_items,
                                 new_total
                             )
-                                .into(),
+                            .into(),
                         ));
                     }
                     items_count = new_total;
                 }
 
-                out.extend(<<E::Response as ResponseSpec>::Output as PageItems>::inner_into_iter(resp.value));
+                out.extend(
+                    <<E::Response as ResponseSpec>::Output as PageItems>::inner_into_iter(
+                        resp.value,
+                    ),
+                );
                 match control {
                     Control::Continue => continue,
                     Control::Stop => return Ok(out),
@@ -268,7 +291,7 @@ where
                     self.caps.max_pages,
                     items_count
                 )
-                    .into(),
+                .into(),
             ))
         })
     }

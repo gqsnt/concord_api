@@ -1,6 +1,6 @@
 // concord_macros/src/emit_helpers.rs
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use quote::{quote};
+use quote::quote;
 use syn::{Ident, LitStr};
 
 pub fn to_snake(name: &str) -> String {
@@ -86,9 +86,10 @@ pub fn is_cx_field(expr: &syn::Expr) -> Option<syn::Ident> {
         syn::Expr::Field(f) => {
             if let syn::Expr::Path(p) = &*f.base
                 && tokens_eq_path_ident(&p.path, "cx")
-                    && let syn::Member::Named(id) = &f.member {
-                        return Some(id.clone());
-                    }
+                && let syn::Member::Named(id) = &f.member
+            {
+                return Some(id.clone());
+            }
             None
         }
         _ => None,
@@ -100,7 +101,8 @@ pub fn is_auth_field(expr: &syn::Expr) -> Option<syn::Ident> {
         syn::Expr::Field(f) => {
             if let syn::Expr::Path(p) = &*f.base
                 && tokens_eq_path_ident(&p.path, "auth")
-                && let syn::Member::Named(id) = &f.member {
+                && let syn::Member::Named(id) = &f.member
+            {
                 return Some(id.clone());
             }
             None
@@ -114,9 +116,10 @@ pub fn is_ep_field(expr: &syn::Expr) -> Option<syn::Ident> {
         syn::Expr::Field(f) => {
             if let syn::Expr::Path(p) = &*f.base
                 && tokens_eq_path_ident(&p.path, "ep")
-                    && let syn::Member::Named(id) = &f.member {
-                        return Some(id.clone());
-                    }
+                && let syn::Member::Named(id) = &f.member
+            {
+                return Some(id.clone());
+            }
             None
         }
         _ => None,

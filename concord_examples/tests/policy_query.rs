@@ -45,7 +45,11 @@ async fn query_set_remove_push_override_and_tostring() {
     assert!(!qp.iter().any(|(k, _)| k == "sdk"));
 
     // dup overridden by endpoint set
-    let dups: Vec<String> = qp.iter().filter(|(k, _)| k == "dup").map(|(_, v)| v.clone()).collect();
+    let dups: Vec<String> = qp
+        .iter()
+        .filter(|(k, _)| k == "dup")
+        .map(|(_, v)| v.clone())
+        .collect();
     assert_eq!(dups, vec!["e1".to_string()]);
 
     assert!(qp.iter().any(|(k, v)| k == "n" && v == "12"));

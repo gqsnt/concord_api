@@ -37,7 +37,6 @@ impl core::fmt::Display for DebugLevel {
     }
 }
 
-
 pub trait DebugSink: Send + Sync + 'static {
     fn request_start(
         &self,
@@ -59,13 +58,20 @@ pub trait DebugSink: Send + Sync + 'static {
 #[derive(Default)]
 pub struct NoopDebugSink;
 impl DebugSink for NoopDebugSink {
-    #[inline] fn request_start(&self, _: DebugLevel, _: &Method, _: &str, _: &'static str, _: u32) {}
-    #[inline] fn request_headers(&self, _: DebugLevel, _: &HeaderMap) {}
-    #[inline] fn request_body(&self, _: DebugLevel, _: usize, _: &str) {}
-    #[inline] fn response_status(&self, _: DebugLevel, _: StatusCode, _: &str, _: bool) {}
-    #[inline] fn response_headers(&self, _: DebugLevel, _: &HeaderMap) {}
-    #[inline] fn response_body(&self, _: DebugLevel, _: usize, _: &str) {}
-    #[inline] fn response_body_preview(&self, _: DebugLevel, _: &str) {}
+    #[inline]
+    fn request_start(&self, _: DebugLevel, _: &Method, _: &str, _: &'static str, _: u32) {}
+    #[inline]
+    fn request_headers(&self, _: DebugLevel, _: &HeaderMap) {}
+    #[inline]
+    fn request_body(&self, _: DebugLevel, _: usize, _: &str) {}
+    #[inline]
+    fn response_status(&self, _: DebugLevel, _: StatusCode, _: &str, _: bool) {}
+    #[inline]
+    fn response_headers(&self, _: DebugLevel, _: &HeaderMap) {}
+    #[inline]
+    fn response_body(&self, _: DebugLevel, _: usize, _: &str) {}
+    #[inline]
+    fn response_body_preview(&self, _: DebugLevel, _: &str) {}
 }
 
 /// Reproduit le comportement actuel (stderr).
@@ -106,7 +112,12 @@ impl DebugSink for StderrDebugSink {
         if ok {
             eprintln!("[client_api:{}] <- {} {} (ok)", dbg, status.as_u16(), url);
         } else {
-            eprintln!("[client_api:{}] <- {} {} (error)", dbg, status.as_u16(), url);
+            eprintln!(
+                "[client_api:{}] <- {} {} (error)",
+                dbg,
+                status.as_u16(),
+                url
+            );
         }
     }
     fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap) {

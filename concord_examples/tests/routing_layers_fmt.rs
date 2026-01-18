@@ -26,7 +26,10 @@ async fn prefix_layer_fmt_adds_one_host_label() {
     let (transport, recorded) = MockTransport::new(vec![MockReply::ok_json(json_bytes(&()))]);
     let api = ApiPrefixLayerFmt::new_with_transport(transport);
 
-    let _ = api.request(endpoints::One::new("42".to_string())).await.unwrap();
+    let _ = api
+        .request(endpoints::One::new("42".to_string()))
+        .await
+        .unwrap();
 
     let req = &recorded.lock().unwrap()[0];
     assert_eq!(req.url.host_str().unwrap(), "api.t42.example.com");
@@ -89,7 +92,10 @@ async fn path_layer_fmt_builds_single_segment_and_encodes() {
     let api = ApiPathLayerFmt::new_with_transport(transport);
 
     // v contains '/', must remain a single segment => %2F
-    let _ = api.request(endpoints::One::new("a/b".to_string())).await.unwrap();
+    let _ = api
+        .request(endpoints::One::new("a/b".to_string()))
+        .await
+        .unwrap();
 
     let req = &recorded.lock().unwrap()[0];
     assert_eq!(req.url.path(), "/v1/pa%2Fb/x");

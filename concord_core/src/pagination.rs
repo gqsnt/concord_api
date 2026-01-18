@@ -25,12 +25,8 @@ pub enum ProgressKey {
     Bytes(Vec<u8>),
 }
 
-
-
 pub trait Controller<Cx: ClientContext, E: Endpoint<Cx>>: Send + Sync + 'static {
     type State: Send + Sync + 'static;
-
-
 
     fn init(&self, ep: &E) -> Result<Self::State, ApiClientError>;
 
@@ -161,4 +157,3 @@ where
     <E::Pagination as PaginationPart<Cx, E>>::Ctrl: Controller<Cx, E>,
 {
 }
-

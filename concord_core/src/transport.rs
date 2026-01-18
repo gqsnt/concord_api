@@ -1,12 +1,13 @@
-use http::{HeaderMap, Method, StatusCode};
-use std::time::Duration;
-use url::Url;
 use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode};
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
+use url::Url;
 
 use std::error::Error;
 use std::fmt;
+
 #[derive(Clone, Debug)]
 pub struct RequestMeta {
     pub endpoint: &'static str,
@@ -91,13 +92,12 @@ pub struct TransportResponse {
 /// Contract:
 /// - Must honor `BuiltRequest` fields (url/headers/body/timeout) as appropriate.
 /// - Must not leak a concrete HTTP client type in its public surface.
-pub trait Transport: Send +Clone+ Sync + 'static {
+pub trait Transport: Send + Clone + Sync + 'static {
     fn send(
         &self,
         req: BuiltRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>;
 }
-
 
 #[derive(Clone)]
 pub struct ReqwestTransport {
@@ -135,7 +135,13 @@ impl Transport for ReqwestTransport {
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
         let client = self.client.clone();
         Box::pin(async move {
-            let BuiltRequest { meta, url, headers, body, timeout } = req;
+            let BuiltRequest {
+                meta,
+                url,
+                headers,
+                body,
+                timeout,
+            } = req;
             // reqwest needs an owned Url; we keep a copy for returning meta.
             let url_for_resp = url.clone();
             let method = meta.method.clone();
