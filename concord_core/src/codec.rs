@@ -53,8 +53,11 @@ pub(crate) fn format_bytes_for_debug(format: Format, bytes: &[u8], max_chars: us
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn format_debug_body<F: FormatType>(bytes: &Bytes, max_chars: usize) -> String {
+#[cfg(test)]
+pub(crate) fn format_debug_body<F>(bytes: &Bytes, max_chars: usize) -> String
+where
+    F: FormatType,
+{
     format_bytes_for_debug(F::FORMAT_TYPE, bytes.as_ref(), max_chars)
 }
 

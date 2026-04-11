@@ -469,75 +469,23 @@ async fn read_body_all(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::{
-        ContentType, Encodes, Format, FormatType, NoContent, format_debug_body, text::Text,
-    };
-    use crate::endpoint::{NoPolicy, NoRoute};
-    use crate::pagination::NoPagination;
-    use std::convert::Infallible;
-
-    struct TestCx;
-    impl ClientContext for TestCx {
-        type Vars = ();
-        type AuthVars = ();
-        const SCHEME: Scheme = Scheme::HTTPS;
-        const DOMAIN: &'static str = "example.com";
-
-        fn base_policy(
-            _vars: &Self::Vars,
-            _auth: &Self::AuthVars,
-            _ctx: &ErrorContext,
-        ) -> Result<Policy, ApiClientError> {
-            Ok(Policy::new())
-        }
-    }
+    use crate::codec::{Format, FormatType, NoContent, format_debug_body, text::Text};
 
     struct BinaryEncoding;
-    impl ContentType for BinaryEncoding {
-        const CONTENT_TYPE: &'static str = "application/octet-stream";
-    }
     impl FormatType for BinaryEncoding {
         const FORMAT_TYPE: Format = Format::Binary;
-    }
-    impl Encodes<Vec<u8>> for BinaryEncoding {
-        type Error = Infallible;
-        fn encode(output: &Vec<u8>) -> Result<Bytes, Self::Error> {
-            Ok(Bytes::copy_from_slice(output.as_slice()))
-        }
-    }
-
-    struct Ep {
-        body: Vec<u8>,
-    }
-
-    struct EpBody;
-    impl BodyPart<Ep> for EpBody {
-        type Body = Vec<u8>;
-        type Enc = BinaryEncoding;
-        fn body(ep: &Ep) -> Option<&Self::Body> {
-            Some(&ep.body)
-        }
-    }
-
-    impl Endpoint<TestCx> for Ep {
-        const METHOD: http::Method = http::Method::POST;
-        type Route = NoRoute;
-        type Policy = NoPolicy;
-        type Pagination = NoPagination;
-        type Body = EpBody;
-        type Response = crate::endpoint::Decoded<Text, String>;
     }
 
     #[test]
     fn debug_preview_uses_request_encoder_and_response_decoder_formats() {
         // Request: binary => base64
         let req = Bytes::from_static(&[0x00, 0x01, 0x02]);
-        let req_s = format_debug_body(&req, 1024);
+        let req_s = format_debug_body::<BinaryEncoding>(&req, 1024);
         assert_eq!(req_s, "AAEC");
 
         // Response: text => UTF-8
         let resp = Bytes::from_static(b"hello");
-        let resp_s = format_debug_body(&resp, 1024);
+        let resp_s = format_debug_body::<Text>(&resp, 1024);
         assert_eq!(resp_s, "hello");
 
         // sanity: NoContentEncoding is text-format (empty)

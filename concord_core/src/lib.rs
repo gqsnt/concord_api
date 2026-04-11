@@ -10,7 +10,6 @@ mod secret;
 mod timeout;
 pub mod transport;
 mod types;
-mod auth;
 
 pub mod internal {
     #[doc(hidden)]
@@ -44,8 +43,4 @@ pub mod prelude {
     pub use crate::transport::{DecodedResponse, RequestMeta};
     pub use crate::transport::{ReqwestTransport, Transport};
     pub use crate::types::{HostLabelSource, HostParts as HostMap, HostSpec, RouteParts, UrlPath};
-    pub use crate::auth::{
-        AuthChain, AuthId, AuthOpResolved, AuthOpTemplate, AuthRuntime, AuthSlot, Authenticator,
-        EffectiveAuth, SecretBytes, SecretProvider, TokenBundle, TokenFlow, ValueFmt, ValueTemplate,
-    };
 }

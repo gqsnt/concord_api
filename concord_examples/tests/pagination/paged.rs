@@ -25,7 +25,7 @@ api! {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn paged__page_increments__stops_on_short_page() {
+async fn paged_page_increments_stops_on_short_page() {
     use api_paged::*;
 
     let (transport, h) = mock()
@@ -78,7 +78,7 @@ async fn paged__page_increments__stops_on_short_page() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn paged__max_items_truncates_and_limits_requests() {
+async fn paged_max_items_truncates_and_limits_requests() {
     use api_paged::*;
 
     let (transport, h) = mock()
@@ -121,7 +121,7 @@ async fn paged__max_items_truncates_and_limits_requests() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn paged__max_pages_errors() {
+async fn paged_max_pages_errors() {
     use api_paged::*;
 
     // Provide exactly 2 replies: correct behavior is to error before sending page 3.

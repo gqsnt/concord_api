@@ -50,7 +50,7 @@ api! {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn pagination_cursor__keys_flow__first_cursor_omitted() {
+async fn pagination_cursor_keys_flow_first_cursor_omitted() {
     use api_cursor::*;
 
     let p1 = Page {
@@ -108,7 +108,7 @@ async fn pagination_cursor__keys_flow__first_cursor_omitted() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn pagination_cursor__loop_detection__and__max_pages() {
+async fn pagination_cursor_loop_detection_and_max_pages() {
     use api_cursor::*;
 
     // loop detected: next cursor repeats

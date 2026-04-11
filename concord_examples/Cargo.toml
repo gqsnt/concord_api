@@ -10,12 +10,11 @@ concord_macros = { path = "../concord_macros" }
 http.workspace = true
 serde.workspace = true
 reqwest = { workspace = true, features = ["default"] }
-tokio = {workspace = true, features = ["rt-multi-thread", "macros"]}
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde_json.workspace = true
 dotenvy.workspace = true
-bytes = "1.11.0"
-url = "2.5.7"
-
+bytes.workspace = true
+url.workspace = true
 
 
 [dev-dependencies]

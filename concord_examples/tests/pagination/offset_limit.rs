@@ -22,7 +22,7 @@ api! {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn offset_limit__offset_increments__stops_on_short_page() {
+async fn offset_limit_offset_increments_stops_on_short_page() {
     use api_offset_limit::*;
 
     let (transport, h) = mock()
@@ -75,7 +75,7 @@ async fn offset_limit__offset_increments__stops_on_short_page() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn offset_limit__max_items_truncates_and_limits_requests() {
+async fn offset_limit_max_items_truncates_and_limits_requests() {
     use api_offset_limit::*;
 
     let (transport, h) = mock()
@@ -119,7 +119,7 @@ async fn offset_limit__max_items_truncates_and_limits_requests() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn offset_limit__max_pages_errors() {
+async fn offset_limit_max_pages_errors() {
     use api_offset_limit::*;
 
     // Provide exactly 2 replies: correct behavior is to error before sending page 3.
