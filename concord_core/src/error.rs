@@ -74,6 +74,12 @@ pub enum ApiClientError {
         msg: Cow<'static, str>,
     },
 
+    #[error("{ctx}: auth: {source}")]
+    Auth {
+        ctx: ErrorContext,
+        source: crate::auth::AuthError,
+    },
+
     #[error("{ctx}: policy violation: {msg}")]
     PolicyViolation {
         ctx: ErrorContext,

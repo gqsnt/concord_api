@@ -1,16 +1,17 @@
+pub mod auth;
 mod auth_provider;
-mod client;
 mod cache;
+mod client;
 mod codec;
 mod debug;
 mod endpoint;
-mod inflight;
 pub mod error;
+mod inflight;
 mod pagination;
 mod policy;
 mod rate_limit;
-mod response_classify;
 mod request;
+mod response_classify;
 mod retry;
 mod runtime_hooks;
 mod runtime_state;
@@ -20,6 +21,11 @@ pub mod transport;
 mod types;
 
 pub mod internal {
+    #[doc(hidden)]
+    pub use crate::auth::{
+        AuthChain, AuthController, AuthPart, AuthResponseAction, NoAuth, NoAuthController,
+        NoAuthState,
+    };
     #[doc(hidden)]
     pub use crate::endpoint::{
         BodyPart, Chain, Decoded, Mapped, MappedResp, NoBody, NoPolicy, NoRoute, PolicyPart,
@@ -32,11 +38,28 @@ pub mod internal {
     };
 }
 pub mod prelude {
+    pub use crate::auth::{
+        AccessToken, ApiKey, AuthAppliedPart, AuthApplyContext, AuthAttempt, AuthBuildContext,
+        AuthChain, AuthChallengeContext, AuthChallengeDecision, AuthController, AuthError,
+        AuthErrorKind, AuthFuture, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse,
+        AuthIdentity, AuthInternalPolicy, AuthMode, AuthPart,
+        AuthPrepareContext as EndpointAuthPrepareContext, AuthProvenance, AuthRequirementId,
+        AuthResponseAction,
+        AuthResponseContext as EndpointAuthResponseContext, AuthRetryReason, AuthStepPolicy,
+        AuthUsage, AuthUsageId, BasicAuth, BasicCredential, BearerAuth, CertificateAuth,
+        ClientCertificate, CredentialContext, CredentialId, CredentialLease, CredentialMaterial,
+        CredentialProvider, CredentialRefreshReason, CredentialSlot, HeaderAuth, InvalidateReason,
+        NoAuth, NoAuthController, NoAuthState, QueryAuth, SecretCredential, StaticApiKeyProvider,
+        StaticBasicProvider, StaticBearerProvider, TransportAuth, UseCredential,
+        UseCredentialState,
+    };
+    #[cfg(feature = "json")]
+    pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::auth_provider::{
         AuthMeta, AuthPrepareContext, AuthProvider, AuthResponseContext, NoopAuthProvider,
     };
-    pub use crate::client::{ApiClient, ClientContext};
     pub use crate::cache::{CacheKey, CacheStore, NoopCacheStore, default_cache_key};
+    pub use crate::client::{ApiClient, ClientContext};
     #[cfg(feature = "json")]
     pub use crate::codec::json::Json;
     pub use crate::codec::{NoContent, text::Text};
@@ -52,10 +75,10 @@ pub mod prelude {
         ProgressKey, Stop,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicyPatch};
-    pub use crate::request::{PaginatedRequest, PendingRequest};
     pub use crate::rate_limit::{
         NoopRateLimiter, RateLimitContext, RateLimitPermit, RateLimitResponseContext, RateLimiter,
     };
+    pub use crate::request::{PaginatedRequest, PendingRequest};
     pub use crate::retry::{NoRetryPolicy, RetryContext, RetryDecision, RetryOutcome, RetryPolicy};
     pub use crate::runtime_hooks::{
         HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext, RuntimeHooks,

@@ -10,14 +10,18 @@ api! {
         secret {
             api_key: String
         }
+        auth {
+            credential riot_api_key: ApiKey(secret.api_key)
+        }
         headers {
             "user-agent" = "ClientApiRiotExample/1.0",
-            "X-Riot-Token" = secret.api_key,
             "x-client-trace" = false
         }
     }
 
     scope platform {
+        use_auth HeaderAuth("X-Riot-Token", riot_api_key)
+
         params {
             platform: PlatformRoute
         }

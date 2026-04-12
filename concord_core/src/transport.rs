@@ -1,3 +1,4 @@
+use crate::auth::RequestExtensions;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 use std::future::Future;
@@ -24,6 +25,7 @@ pub struct BuiltRequest {
     pub headers: HeaderMap,
     pub body: Option<bytes::Bytes>,
     pub timeout: Option<Duration>,
+    pub extensions: RequestExtensions,
 }
 
 #[derive(Clone, Debug)]
@@ -223,6 +225,7 @@ impl Transport for ReqwestTransport {
                 headers,
                 body,
                 timeout,
+                extensions: _,
             } = req;
             // reqwest needs an owned Url; we keep a copy for returning meta.
             let url_for_resp = url.clone();

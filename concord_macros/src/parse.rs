@@ -3,7 +3,9 @@ use crate::ast::*;
 use crate::kw;
 use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
 use syn::parse::{Parse, ParseStream};
-use syn::{Expr, Ident, LitStr, Path, Result, Token, Type, braced, bracketed, token};
+use syn::{
+    Expr, Ident, LitStr, Path, Result, Token, Type, braced, bracketed, parenthesized, token,
+};
 
 impl Parse for ApiFile {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -28,6 +30,8 @@ impl Parse for ClientDef {
         let mut host: Option<LitStr> = None;
         let mut vars: Option<VarsBlock> = None;
         let mut auth_vars: Option<VarsBlock> = None;
+        let mut auth: Option<AuthBlock> = None;
+        let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut policy = PolicyBlocks::default();
 
         while !content.is_empty() {
@@ -73,6 +77,15 @@ impl Parse for ClientDef {
                 }
                 auth_vars = Some(content.parse::<VarsBlockTaggedSecret>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::auth) {
+                if auth.is_some() {
+                    return Err(syn::Error::new(name.span(), "duplicate `auth {}` in client"));
+                }
+                auth = Some(content.parse::<AuthBlockTagged>()?.0);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::use_auth) {
+                auth_uses.push(content.parse::<AuthUseDecl>()?);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::host) {
                 content.parse::<kw::host>()?;
                 content.parse::<Token![:]>()?;
@@ -105,6 +118,8 @@ impl Parse for ClientDef {
         Ok(Self {
             vars,
             auth_vars,
+            auth,
+            auth_uses,
             name,
             scheme,
             host,
@@ -134,6 +149,281 @@ impl Parse for VarsBlockTaggedSecret {
         Ok(Self(parse_vars_block(input)?))
     }
 }
+
+struct AuthBlockTagged(AuthBlock);
+
+impl Parse for AuthBlockTagged {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        input.parse::<kw::auth>()?;
+        let content;
+        braced!(content in input);
+        let mut credentials = Vec::new();
+        while !content.is_empty() {
+            credentials.push(content.parse::<AuthCredentialDecl>()?);
+            let _ = content.parse::<Option<Token![,]>>()?;
+        }
+        Ok(Self(AuthBlock { credentials }))
+    }
+}
+
+impl Parse for AuthCredentialDecl {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        input.parse::<kw::credential>()?;
+        let name: Ident = input.parse()?;
+        input.parse::<Token![:]>()?;
+
+        let kind_name: Ident = input.parse()?;
+        let kind = match kind_name.to_string().as_str() {
+            "ApiKey" => {
+                let content;
+                parenthesized!(content in input);
+                let secret = parse_secret_ref(&content)?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(content.span(), "unexpected ApiKey arguments"));
+                }
+                AuthCredentialKind::ApiKey { secret }
+            }
+            "BearerToken" | "AccessToken" => {
+                let content;
+                parenthesized!(content in input);
+                let secret = parse_secret_ref(&content)?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected bearer token arguments",
+                    ));
+                }
+                AuthCredentialKind::StaticBearer { secret }
+            }
+            "Basic" => {
+                let content;
+                parenthesized!(content in input);
+                let username = parse_secret_ref(&content)?;
+                content.parse::<Token![,]>()?;
+                let password = parse_secret_ref(&content)?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(content.span(), "unexpected Basic arguments"));
+                }
+                AuthCredentialKind::Basic { username, password }
+            }
+            "OAuth2ClientCredentials" => {
+                parse_oauth2_client_credentials(input, kind_name.span())?.into()
+            }
+            "Custom" => {
+                let provider_ty = parse_angle_type(input, kind_name.span(), "custom provider")?;
+                let content;
+                parenthesized!(content in input);
+                let provider: Expr = content.parse()?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected Custom provider arguments",
+                    ));
+                }
+                AuthCredentialKind::Custom {
+                    provider_ty,
+                    provider,
+                }
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    kind_name.span(),
+                    "unknown auth credential kind; expected ApiKey, BearerToken, AccessToken, Basic, OAuth2ClientCredentials, or Custom<T>",
+                ));
+            }
+        };
+
+        Ok(Self { name, kind })
+    }
+}
+
+struct OAuth2ClientCredentialsFields {
+    token_url: LitStr,
+    client_id: SecretRef,
+    client_secret: SecretRef,
+    scope: Option<LitStr>,
+}
+
+fn parse_oauth2_client_credentials(
+    input: ParseStream<'_>,
+    span: Span,
+) -> Result<OAuth2ClientCredentialsFields> {
+    let content;
+    braced!(content in input);
+
+    let mut token_url: Option<LitStr> = None;
+    let mut client_id: Option<SecretRef> = None;
+    let mut client_secret: Option<SecretRef> = None;
+    let mut scope: Option<LitStr> = None;
+
+    while !content.is_empty() {
+        let key: Ident = content.parse()?;
+        content.parse::<Token![:]>()?;
+        match key.to_string().as_str() {
+            "token_url" => set_once_lit(&mut token_url, key.span(), content.parse()?)?,
+            "client_id" => set_once_secret_ref(&mut client_id, key.span(), parse_secret_ref(&content)?)?,
+            "client_secret" => {
+                set_once_secret_ref(&mut client_secret, key.span(), parse_secret_ref(&content)?)?
+            }
+            "scope" => set_once_lit(&mut scope, key.span(), content.parse()?)?,
+            _ => {
+                return Err(syn::Error::new(
+                    key.span(),
+                    "unknown OAuth2ClientCredentials field; expected token_url, client_id, client_secret, or scope",
+                ));
+            }
+        }
+
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        } else if !content.is_empty() {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "expected `,` between OAuth2ClientCredentials fields",
+            ));
+        }
+    }
+
+    Ok(OAuth2ClientCredentialsFields {
+        token_url: token_url
+            .ok_or_else(|| syn::Error::new(span, "OAuth2ClientCredentials missing `token_url`"))?,
+        client_id: client_id
+            .ok_or_else(|| syn::Error::new(span, "OAuth2ClientCredentials missing `client_id`"))?,
+        client_secret: client_secret.ok_or_else(|| {
+            syn::Error::new(span, "OAuth2ClientCredentials missing `client_secret`")
+        })?,
+        scope,
+    })
+}
+
+impl From<OAuth2ClientCredentialsFields> for AuthCredentialKind {
+    fn from(v: OAuth2ClientCredentialsFields) -> Self {
+        AuthCredentialKind::OAuth2ClientCredentials {
+            token_url: v.token_url,
+            client_id: v.client_id,
+            client_secret: v.client_secret,
+            scope: v.scope,
+        }
+    }
+}
+
+fn set_once_lit(out: &mut Option<LitStr>, span: Span, value: LitStr) -> Result<()> {
+    if out.is_some() {
+        return Err(syn::Error::new(span, "duplicate auth field"));
+    }
+    *out = Some(value);
+    Ok(())
+}
+
+fn set_once_secret_ref(out: &mut Option<SecretRef>, span: Span, value: SecretRef) -> Result<()> {
+    if out.is_some() {
+        return Err(syn::Error::new(span, "duplicate auth field"));
+    }
+    *out = Some(value);
+    Ok(())
+}
+
+fn parse_secret_ref(input: ParseStream<'_>) -> Result<SecretRef> {
+    let ns: Ident = input.parse()?;
+    if ns != "secret" && ns != "auth" {
+        return Err(syn::Error::new(
+            ns.span(),
+            "auth credentials must reference secrets as `secret.name`",
+        ));
+    }
+    input.parse::<Token![.]>()?;
+    let ident: Ident = input.parse()?;
+    Ok(SecretRef { ident })
+}
+
+fn parse_angle_type(input: ParseStream<'_>, span: Span, label: &'static str) -> Result<Type> {
+    if !input.peek(Token![<]) {
+        return Err(syn::Error::new(
+            span,
+            format!("expected `{label}` type parameter, e.g. Custom<MyProvider>(...)"),
+        ));
+    }
+    input.parse::<Token![<]>()?;
+    let ty: Type = input.parse()?;
+    input.parse::<Token![>]>()?;
+    Ok(ty)
+}
+
+impl Parse for AuthUseDecl {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        input.parse::<kw::use_auth>()?;
+        let usage: Ident = input.parse()?;
+
+        let kind = match usage.to_string().as_str() {
+            "BearerAuth" => {
+                let content;
+                parenthesized!(content in input);
+                let credential: Ident = content.parse()?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(content.span(), "unexpected BearerAuth arguments"));
+                }
+                AuthUseKind::Bearer { credential }
+            }
+            "HeaderAuth" => {
+                let content;
+                parenthesized!(content in input);
+                let header: LitStr = content.parse()?;
+                content.parse::<Token![,]>()?;
+                let credential: Ident = content.parse()?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(content.span(), "unexpected HeaderAuth arguments"));
+                }
+                AuthUseKind::Header { header, credential }
+            }
+            "QueryAuth" => {
+                let content;
+                parenthesized!(content in input);
+                let key: LitStr = content.parse()?;
+                content.parse::<Token![,]>()?;
+                let credential: Ident = content.parse()?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(content.span(), "unexpected QueryAuth arguments"));
+                }
+                AuthUseKind::Query { key, credential }
+            }
+            "BasicAuth" => {
+                let content;
+                parenthesized!(content in input);
+                let credential: Ident = content.parse()?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(content.span(), "unexpected BasicAuth arguments"));
+                }
+                AuthUseKind::Basic { credential }
+            }
+            "Custom" => {
+                let usage_ty = parse_angle_type(input, usage.span(), "custom auth usage")?;
+                let content;
+                parenthesized!(content in input);
+                let usage: Expr = content.parse()?;
+                content.parse::<Token![,]>()?;
+                let credential: Ident = content.parse()?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(content.span(), "unexpected Custom auth usage arguments"));
+                }
+                AuthUseKind::Custom {
+                    usage_ty,
+                    usage,
+                    credential,
+                }
+            }
+            _ => {
+                return Err(syn::Error::new(
+                    usage.span(),
+                    "unknown auth usage; expected BearerAuth, HeaderAuth, QueryAuth, BasicAuth, or Custom<T>",
+                ));
+            }
+        };
+
+        Ok(Self { kind })
+    }
+}
+
 fn parse_vars_block(input: ParseStream<'_>) -> Result<VarsBlock> {
     let content;
     braced!(content in input);
@@ -203,6 +493,7 @@ impl Parse for LayerDefTaggedPrefix {
         braced!(content in input);
 
         let mut policy = PolicyBlocks::default();
+        let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut items = Vec::new();
 
         while !content.is_empty() {
@@ -217,7 +508,10 @@ impl Parse for LayerDefTaggedPrefix {
                 content.parse::<Token![:]>()?;
                 policy.timeout = Some(content.parse::<Expr>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::prefix) || content.peek(kw::path) {
+            } else if content.peek(kw::use_auth) {
+                auth_uses.push(content.parse::<AuthUseDecl>()?);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope) {
                 items.push(content.parse::<Item>()?);
             } else {
                 // endpoint
@@ -230,6 +524,7 @@ impl Parse for LayerDefTaggedPrefix {
             route,
             params: Vec::new(),
             policy,
+            auth_uses,
             items,
         }))
     }
@@ -243,6 +538,7 @@ impl Parse for LayerDefTaggedPath {
         braced!(content in input);
 
         let mut policy = PolicyBlocks::default();
+        let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut items = Vec::new();
 
         while !content.is_empty() {
@@ -257,7 +553,10 @@ impl Parse for LayerDefTaggedPath {
                 content.parse::<Token![:]>()?;
                 policy.timeout = Some(content.parse::<Expr>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::prefix) || content.peek(kw::path) {
+            } else if content.peek(kw::use_auth) {
+                auth_uses.push(content.parse::<AuthUseDecl>()?);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope) {
                 items.push(content.parse::<Item>()?);
             } else {
                 items.push(Item::Endpoint(content.parse::<EndpointDef>()?));
@@ -269,6 +568,7 @@ impl Parse for LayerDefTaggedPath {
             route,
             params: Vec::new(),
             policy,
+            auth_uses,
             items,
         }))
     }
@@ -284,6 +584,7 @@ impl Parse for LayerDefTaggedScope {
 
         let mut params: Vec<VarDeclNoWire> = Vec::new();
         let mut policy = PolicyBlocks::default();
+        let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut host_route: Option<RouteExpr> = None;
         let mut path_route: Option<RouteExpr> = None;
         let mut items = Vec::new();
@@ -321,6 +622,9 @@ impl Parse for LayerDefTaggedScope {
                 let t = content.parse::<Expr>()?;
                 policy.timeout = Some(normalize_policy_expr(t));
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::use_auth) {
+                auth_uses.push(content.parse::<AuthUseDecl>()?);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::scope) || content.peek(kw::prefix) || content.peek(kw::path)
             {
                 items.push(content.parse::<Item>()?);
@@ -337,11 +641,13 @@ impl Parse for LayerDefTaggedScope {
                 route: host,
                 params,
                 policy,
+                auth_uses,
                 items: vec![Item::Layer(LayerDef {
                     kind: LayerKind::Path,
                     route: path,
                     params: Vec::new(),
                     policy: PolicyBlocks::default(),
+                    auth_uses: Vec::new(),
                     items,
                 })],
             },
@@ -350,6 +656,7 @@ impl Parse for LayerDefTaggedScope {
                 route: host,
                 params,
                 policy,
+                auth_uses,
                 items,
             },
             (None, Some(path)) => LayerDef {
@@ -357,6 +664,7 @@ impl Parse for LayerDefTaggedScope {
                 route: path,
                 params,
                 policy,
+                auth_uses,
                 items,
             },
             (None, None) => LayerDef {
@@ -364,6 +672,7 @@ impl Parse for LayerDefTaggedScope {
                 route: RouteExpr { atoms: Vec::new() },
                 params,
                 policy,
+                auth_uses,
                 items,
             },
         };
@@ -383,6 +692,7 @@ impl Parse for EndpointDef {
             let mut params: Vec<VarDeclNoWire> = Vec::new();
             let mut route = RouteExpr { atoms: Vec::new() };
             let mut policy = PolicyBlocks::default();
+            let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
             let mut paginate: Option<PaginateSpec> = None;
             let mut body: Option<CodecSpec> = None;
             let mut response: Option<CodecSpec> = None;
@@ -419,6 +729,9 @@ impl Parse for EndpointDef {
                     content.parse::<Token![:]>()?;
                     let t = parse_expr_until_comma_or_endpoint_arrow(&content)?;
                     policy.timeout = Some(normalize_policy_expr(t));
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(kw::use_auth) {
+                    auth_uses.push(content.parse::<AuthUseDecl>()?);
                     let _ = content.parse::<Option<Token![,]>>()?;
                 } else if content.peek(kw::paginate) {
                     if paginate.is_some() {
@@ -466,6 +779,7 @@ impl Parse for EndpointDef {
                 route,
                 params,
                 policy,
+                auth_uses,
                 paginate,
                 body,
                 response,
@@ -476,6 +790,7 @@ impl Parse for EndpointDef {
         let route: RouteExpr = parse_route_expr_slash(input)?;
         let params: Vec<VarDeclNoWire> = Vec::new();
         let mut policy = PolicyBlocks::default();
+        let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut paginate: Option<PaginateSpec> = None;
         let mut body: Option<CodecSpec> = None;
 
@@ -491,6 +806,9 @@ impl Parse for EndpointDef {
                 input.parse::<kw::timeout>()?;
                 input.parse::<Token![:]>()?;
                 policy.timeout = Some(normalize_policy_expr(parse_expr_until_comma_or_endpoint_arrow(input)?));
+                let _ = input.parse::<Option<Token![,]>>()?;
+            } else if input.peek(kw::use_auth) {
+                auth_uses.push(input.parse::<AuthUseDecl>()?);
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::paginate) {
                 if paginate.is_some() {
@@ -509,7 +827,7 @@ impl Parse for EndpointDef {
                 let tt: proc_macro2::TokenTree = input.parse()?;
                 return Err(syn::Error::new(
                     tt.span(),
-                    "unexpected token in endpoint; expected headers/query/timeout/paginate/body or `->`",
+                    "unexpected token in endpoint; expected use_auth/headers/query/timeout/paginate/body or `->`",
                 ));
             }
         }
@@ -535,6 +853,7 @@ impl Parse for EndpointDef {
             route,
             params,
             policy,
+            auth_uses,
             paginate,
             body,
             response,

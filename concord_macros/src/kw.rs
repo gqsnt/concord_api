@@ -4,6 +4,7 @@ syn::custom_keyword!(scheme);
 syn::custom_keyword!(host);
 syn::custom_keyword!(vars);
 syn::custom_keyword!(auth_vars);
+syn::custom_keyword!(auth);
 syn::custom_keyword!(secret);
 syn::custom_keyword!(headers);
 syn::custom_keyword!(query);
@@ -13,6 +14,8 @@ syn::custom_keyword!(prefix);
 syn::custom_keyword!(path);
 syn::custom_keyword!(scope);
 syn::custom_keyword!(params);
+syn::custom_keyword!(credential);
+syn::custom_keyword!(use_auth);
 
 syn::custom_keyword!(paginate);
 syn::custom_keyword!(body);

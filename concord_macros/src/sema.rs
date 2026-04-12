@@ -14,6 +14,7 @@ pub struct Ir {
 
     pub client_vars: Vec<VarInfo>,      // stable order
     pub client_auth_vars: Vec<VarInfo>, // stable order
+    pub client_auth_credentials: Vec<AuthCredentialIr>,
     pub client_policy: PolicyBlocksResolved,
 
     pub layers: Vec<LayerIr>,
@@ -34,6 +35,7 @@ pub struct LayerIr {
     pub prefix_pieces: Vec<PrefixPiece>, // if Prefix
     pub path_pieces: Vec<PathPiece>,     // if Path
     pub policy: PolicyBlocksResolved,
+    pub auth_uses: Vec<AuthUseIr>,
     pub decls: Vec<VarInfo>, // endpoint vars declared by this layer (placeholders + binds)
 }
 
@@ -50,9 +52,51 @@ pub struct EndpointIr {
     pub response: CodecSpec,
 
     pub policy: PolicyBlocksResolved,
+    pub auth_uses: Vec<AuthUseIr>,
 
     pub paginate: Option<PaginateResolved>,
     pub map: Option<MapResolved>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthCredentialIr {
+    pub name: Ident,
+    pub kind: AuthCredentialKindIr,
+}
+
+#[derive(Debug, Clone)]
+pub enum AuthCredentialKindIr {
+    ApiKey { secret: Ident },
+    StaticBearer { secret: Ident },
+    Basic { username: Ident, password: Ident },
+    OAuth2ClientCredentials {
+        token_url: LitStr,
+        client_id: Ident,
+        client_secret: Ident,
+        scope: Option<LitStr>,
+    },
+    Custom {
+        provider_ty: Type,
+        provider: Expr,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthUseIr {
+    pub kind: AuthUseKindIr,
+}
+
+#[derive(Debug, Clone)]
+pub enum AuthUseKindIr {
+    Bearer { credential: Ident },
+    Header { header: LitStr, credential: Ident },
+    Query { key: LitStr, credential: Ident },
+    Basic { credential: Ident },
+    Custom {
+        usage_ty: Type,
+        usage: Expr,
+        credential: Ident,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -184,6 +228,14 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
         }
     }
 
+    let client_auth_credentials =
+        analyze_auth_credentials(ast.client.auth.as_ref(), &auth_vars_map)?;
+    let auth_credential_map: BTreeMap<String, AuthCredentialIr> = client_auth_credentials
+        .iter()
+        .map(|c| (c.name.to_string(), c.clone()))
+        .collect();
+    let client_auth_uses = resolve_auth_uses(&ast.client.auth_uses, &auth_credential_map)?;
+
     // validate client policy + resolve
     let client_policy = resolve_policy_blocks(
         &ast.client.policy,
@@ -206,6 +258,8 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
         &mut ancestry,
         &client_vars_map,
         &auth_vars_map,
+        &auth_credential_map,
+        &client_auth_uses,
         &mut layers,
         &mut endpoints,
     )?;
@@ -217,6 +271,7 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
         domain: ast.client.host,
         client_vars,
         client_auth_vars,
+        client_auth_credentials,
         client_policy,
         layers,
         endpoints,
@@ -344,11 +399,202 @@ fn upsert_var(
     Ok(())
 }
 
+fn analyze_auth_credentials(
+    block: Option<&AuthBlock>,
+    auth_vars: &BTreeMap<String, VarInfo>,
+) -> Result<Vec<AuthCredentialIr>> {
+    let Some(block) = block else {
+        return Ok(Vec::new());
+    };
+
+    let mut seen: BTreeMap<String, Span> = BTreeMap::new();
+    let mut out = Vec::new();
+    for decl in &block.credentials {
+        let name_key = decl.name.to_string();
+        if seen.contains_key(&name_key) {
+            return Err(syn::Error::new(
+                decl.name.span(),
+                format!("duplicate auth credential `{}`", decl.name),
+            ));
+        }
+        seen.insert(name_key, decl.name.span());
+
+        let kind = match &decl.kind {
+            AuthCredentialKind::ApiKey { secret } => {
+                validate_required_secret(secret, auth_vars)?;
+                AuthCredentialKindIr::ApiKey {
+                    secret: secret.ident.clone(),
+                }
+            }
+            AuthCredentialKind::StaticBearer { secret } => {
+                validate_required_secret(secret, auth_vars)?;
+                AuthCredentialKindIr::StaticBearer {
+                    secret: secret.ident.clone(),
+                }
+            }
+            AuthCredentialKind::Basic { username, password } => {
+                validate_required_secret(username, auth_vars)?;
+                validate_required_secret(password, auth_vars)?;
+                AuthCredentialKindIr::Basic {
+                    username: username.ident.clone(),
+                    password: password.ident.clone(),
+                }
+            }
+            AuthCredentialKind::OAuth2ClientCredentials {
+                token_url,
+                client_id,
+                client_secret,
+                scope,
+            } => {
+                validate_required_secret(client_id, auth_vars)?;
+                validate_required_secret(client_secret, auth_vars)?;
+                AuthCredentialKindIr::OAuth2ClientCredentials {
+                    token_url: token_url.clone(),
+                    client_id: client_id.ident.clone(),
+                    client_secret: client_secret.ident.clone(),
+                    scope: scope.clone(),
+                }
+            }
+            AuthCredentialKind::Custom {
+                provider_ty,
+                provider,
+            } => AuthCredentialKindIr::Custom {
+                provider_ty: provider_ty.clone(),
+                provider: provider.clone(),
+            },
+        };
+
+        out.push(AuthCredentialIr {
+            name: decl.name.clone(),
+            kind,
+        });
+    }
+
+    Ok(out)
+}
+
+fn validate_required_secret(
+    secret: &SecretRef,
+    auth_vars: &BTreeMap<String, VarInfo>,
+) -> Result<()> {
+    let Some(info) = auth_vars.get(&secret.ident.to_string()) else {
+        return Err(syn::Error::new(
+            secret.ident.span(),
+            format!("unknown secret `secret.{}` in auth credential", secret.ident),
+        ));
+    };
+    if info.optional {
+        return Err(syn::Error::new(
+            secret.ident.span(),
+            format!(
+                "auth credential secret `secret.{}` must be required; optional secrets are not supported yet",
+                secret.ident
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_auth_uses(
+    uses: &[AuthUseDecl],
+    credentials: &BTreeMap<String, AuthCredentialIr>,
+) -> Result<Vec<AuthUseIr>> {
+    uses.iter()
+        .map(|u| {
+            let credential = auth_use_credential_ident(u);
+            let cred = credentials.get(&credential.to_string()).ok_or_else(|| {
+                syn::Error::new(
+                    credential.span(),
+                    format!("unknown auth credential `{credential}`"),
+                )
+            })?;
+            validate_auth_usage_compatibility(u, cred)?;
+
+            let kind = match &u.kind {
+                AuthUseKind::Bearer { credential } => AuthUseKindIr::Bearer {
+                    credential: credential.clone(),
+                },
+                AuthUseKind::Header { header, credential } => AuthUseKindIr::Header {
+                    header: header.clone(),
+                    credential: credential.clone(),
+                },
+                AuthUseKind::Query { key, credential } => AuthUseKindIr::Query {
+                    key: key.clone(),
+                    credential: credential.clone(),
+                },
+                AuthUseKind::Basic { credential } => AuthUseKindIr::Basic {
+                    credential: credential.clone(),
+                },
+                AuthUseKind::Custom {
+                    usage_ty,
+                    usage,
+                    credential,
+                } => AuthUseKindIr::Custom {
+                    usage_ty: usage_ty.clone(),
+                    usage: usage.clone(),
+                    credential: credential.clone(),
+                },
+            };
+            Ok(AuthUseIr { kind })
+        })
+        .collect()
+}
+
+fn auth_use_credential_ident(u: &AuthUseDecl) -> &Ident {
+    match &u.kind {
+        AuthUseKind::Bearer { credential }
+        | AuthUseKind::Header { credential, .. }
+        | AuthUseKind::Query { credential, .. }
+        | AuthUseKind::Basic { credential }
+        | AuthUseKind::Custom { credential, .. } => credential,
+    }
+}
+
+fn validate_auth_usage_compatibility(u: &AuthUseDecl, cred: &AuthCredentialIr) -> Result<()> {
+    match (&u.kind, &cred.kind) {
+        (AuthUseKind::Custom { .. }, _) | (_, AuthCredentialKindIr::Custom { .. }) => Ok(()),
+        (
+            AuthUseKind::Bearer { .. },
+            AuthCredentialKindIr::StaticBearer { .. }
+            | AuthCredentialKindIr::OAuth2ClientCredentials { .. },
+        ) => Ok(()),
+        (
+            AuthUseKind::Header { .. } | AuthUseKind::Query { .. },
+            AuthCredentialKindIr::ApiKey { .. }
+            | AuthCredentialKindIr::StaticBearer { .. }
+            | AuthCredentialKindIr::OAuth2ClientCredentials { .. },
+        ) => Ok(()),
+        (AuthUseKind::Basic { .. }, AuthCredentialKindIr::Basic { .. }) => Ok(()),
+        (AuthUseKind::Bearer { credential }, _) => Err(syn::Error::new(
+            credential.span(),
+            format!(
+                "BearerAuth requires an access-token credential; `{}` is not compatible",
+                cred.name
+            ),
+        )),
+        (AuthUseKind::Header { credential, .. } | AuthUseKind::Query { credential, .. }, _) => {
+            Err(syn::Error::new(
+                credential.span(),
+                format!(
+                    "header/query auth requires a secret credential; `{}` is not compatible",
+                    cred.name
+                ),
+            ))
+        }
+        (AuthUseKind::Basic { credential }, _) => Err(syn::Error::new(
+            credential.span(),
+            format!("BasicAuth requires a Basic credential; `{}` is not compatible", cred.name),
+        )),
+    }
+}
+
 fn walk_items(
     items: &[Item],
     ancestry: &mut Vec<usize>,
     client_vars: &BTreeMap<String, VarInfo>,
     auth_vars: &BTreeMap<String, VarInfo>,
+    auth_credentials: &BTreeMap<String, AuthCredentialIr>,
+    client_auth_uses: &[AuthUseIr],
     layers: &mut Vec<LayerIr>,
     endpoints: &mut Vec<EndpointIr>,
 ) -> Result<()> {
@@ -364,12 +610,14 @@ fn walk_items(
                     auth_vars,
                     None, // endpoint vars not known at layer-level alone (validated per endpoint)
                 )?;
+                let auth_uses = resolve_auth_uses(&ld.auth_uses, auth_credentials)?;
 
                 layers.push(LayerIr {
                     kind: ld.kind,
                     prefix_pieces,
                     path_pieces,
                     policy,
+                    auth_uses,
                     decls,
                 });
 
@@ -379,13 +627,23 @@ fn walk_items(
                     ancestry,
                     client_vars,
                     auth_vars,
+                    auth_credentials,
+                    client_auth_uses,
                     layers,
                     endpoints,
                 )?;
                 ancestry.pop();
             }
             Item::Endpoint(ed) => {
-                let endpoint_ir = analyze_endpoint(ed, ancestry, client_vars, auth_vars, layers)?;
+                let endpoint_ir = analyze_endpoint(
+                    ed,
+                    ancestry,
+                    client_vars,
+                    auth_vars,
+                    auth_credentials,
+                    client_auth_uses,
+                    layers,
+                )?;
                 endpoints.push(endpoint_ir);
             }
         }
@@ -560,6 +818,8 @@ fn analyze_endpoint(
     ancestry: &[usize],
     client_vars: &std::collections::BTreeMap<String, VarInfo>,
     auth_vars: &std::collections::BTreeMap<String, VarInfo>,
+    auth_credentials: &std::collections::BTreeMap<String, AuthCredentialIr>,
+    client_auth_uses: &[AuthUseIr],
     layers: &[LayerIr],
 ) -> syn::Result<EndpointIr> {
     use std::collections::BTreeMap;
@@ -694,6 +954,11 @@ fn analyze_endpoint(
         auth_vars,
         Some(&ep_vars),
     )?;
+    let mut auth_uses = client_auth_uses.to_vec();
+    for &lid in ancestry {
+        auth_uses.extend(layers[lid].auth_uses.iter().cloned());
+    }
+    auth_uses.extend(resolve_auth_uses(&ed.auth_uses, auth_credentials)?);
 
     // 6) Resolve paginate, if any.
     let paginate = match &ed.paginate {
@@ -721,6 +986,7 @@ fn analyze_endpoint(
         response: ed.response.clone(),
 
         policy,
+        auth_uses,
         paginate,
         map,
     })

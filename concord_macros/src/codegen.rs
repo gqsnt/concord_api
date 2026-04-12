@@ -57,17 +57,21 @@ pub fn emit(ir: Ir) -> TokenStream2 {
     let vars_ty = client_prefixed_ident(&ir.client_name, "Vars");
     let auth_inner_ty = client_prefixed_ident(&ir.client_name, "AuthInner");
     let auth_vars_ty = client_prefixed_ident(&ir.client_name, "AuthVars");
+    let auth_state_ty = client_prefixed_ident(&ir.client_name, "AuthState");
     let cx_ty = client_prefixed_ident(&ir.client_name, "Cx");
 
     let vars_struct = emit_client_vars(&ir.client_vars, &vars_ty);
     let auth_vars_struct =
         emit_client_auth_vars(&ir.client_auth_vars, &auth_inner_ty, &auth_vars_ty);
+    let auth_state_struct = emit_client_auth_state(&ir, &auth_state_ty, &cx_ty);
     let cx_struct = emit_client_context(
         &scheme,
         &domain,
+        &ir,
         &ir.client_policy,
         &vars_ty,
         &auth_vars_ty,
+        &auth_state_ty,
         &cx_ty,
     );
     let client_wrapper = emit_client_wrapper(&ir, &vars_ty, &auth_vars_ty, &cx_ty);
@@ -80,6 +84,7 @@ pub fn emit(ir: Ir) -> TokenStream2 {
 
             #vars_struct
             #auth_vars_struct
+            #auth_state_struct
             #cx_struct
 
             #client_wrapper
@@ -171,15 +176,178 @@ fn emit_client_vars(vars: &[VarInfo], vars_ty: &Ident) -> TokenStream2 {
     }
 }
 
+fn emit_client_auth_state(ir: &Ir, auth_state_ty: &Ident, cx_ty: &Ident) -> TokenStream2 {
+    if ir.client_auth_credentials.is_empty() {
+        return quote! {};
+    }
+
+    let fields = ir.client_auth_credentials.iter().map(|c| {
+        let name = &c.name;
+        let provider_ty = emit_auth_provider_ty(&c.kind);
+        quote! {
+            pub(crate) #name: ::std::sync::Arc<::concord_core::prelude::CredentialSlot<#cx_ty, #provider_ty>>
+        }
+    });
+
+    quote! {
+        #[derive(Clone)]
+        pub struct #auth_state_ty {
+            #( #fields, )*
+        }
+    }
+}
+
+fn emit_client_auth_state_init(ir: &Ir, auth_state_ty: &Ident) -> (TokenStream2, TokenStream2) {
+    if ir.client_auth_credentials.is_empty() {
+        return (
+            quote! { ::concord_core::prelude::NoAuthState },
+            quote! {
+                let _ = vars;
+                let _ = auth;
+                ::concord_core::prelude::NoAuthState
+            },
+        );
+    }
+
+    let client_ns = LitStr::new(&ir.client_name.to_string(), ir.client_name.span());
+    let init_fields = ir.client_auth_credentials.iter().map(|c| {
+        let name = &c.name;
+        let provider = emit_auth_provider_init(&client_ns, c);
+        quote! {
+            #name: ::std::sync::Arc::new(::concord_core::prelude::CredentialSlot::new(#provider))
+        }
+    });
+    let auth_bind = if ir.client_auth_vars.is_empty() {
+        quote! { let _ = auth; }
+    } else {
+        quote! {
+            let auth = auth.read().unwrap();
+            #[allow(unused_variables)]
+            let secret = &auth;
+        }
+    };
+
+    (
+        quote! { #auth_state_ty },
+        quote! {
+            let _ = vars;
+            #auth_bind
+            #auth_state_ty {
+                #( #init_fields, )*
+            }
+        },
+    )
+}
+
+fn emit_auth_provider_ty(kind: &AuthCredentialKindIr) -> TokenStream2 {
+    match kind {
+        AuthCredentialKindIr::ApiKey { .. } => {
+            quote! { ::concord_core::prelude::StaticApiKeyProvider }
+        }
+        AuthCredentialKindIr::StaticBearer { .. } => {
+            quote! { ::concord_core::prelude::StaticBearerProvider }
+        }
+        AuthCredentialKindIr::Basic { .. } => {
+            quote! { ::concord_core::prelude::StaticBasicProvider }
+        }
+        AuthCredentialKindIr::OAuth2ClientCredentials { .. } => {
+            quote! { ::concord_core::prelude::OAuth2ClientCredentialsProvider }
+        }
+        AuthCredentialKindIr::Custom { provider_ty, .. } => quote! { #provider_ty },
+    }
+}
+
+fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) -> TokenStream2 {
+    let name = &credential.name;
+    let name_lit = LitStr::new(&name.to_string(), name.span());
+    let credential_id =
+        quote! { ::concord_core::prelude::CredentialId::new(#client_ns, #name_lit) };
+
+    match &credential.kind {
+        AuthCredentialKindIr::ApiKey { secret } => quote! {
+            ::concord_core::prelude::StaticApiKeyProvider::new(
+                #credential_id,
+                ::concord_core::prelude::ApiKey::new(auth.#secret.clone()),
+            )
+        },
+        AuthCredentialKindIr::StaticBearer { secret } => quote! {
+            ::concord_core::prelude::StaticBearerProvider::new(
+                #credential_id,
+                ::concord_core::prelude::AccessToken::new(auth.#secret.clone()),
+            )
+        },
+        AuthCredentialKindIr::Basic { username, password } => quote! {
+            ::concord_core::prelude::StaticBasicProvider::new(
+                #credential_id,
+                ::concord_core::prelude::BasicCredential::new(
+                    auth.#username.expose().to_string(),
+                    auth.#password.clone(),
+                ),
+            )
+        },
+        AuthCredentialKindIr::OAuth2ClientCredentials {
+            token_url,
+            client_id,
+            client_secret,
+            scope,
+        } => {
+            let provider = quote! {
+                ::concord_core::prelude::OAuth2ClientCredentialsProvider::new(
+                    #credential_id,
+                    #token_url.parse().expect("valid OAuth2ClientCredentials token_url"),
+                    auth.#client_id.clone(),
+                    auth.#client_secret.clone(),
+                )
+            };
+            if let Some(scope) = scope {
+                quote! { #provider.scope(#scope) }
+            } else {
+                provider
+            }
+        }
+        AuthCredentialKindIr::Custom { provider, .. } => quote! { #provider },
+    }
+}
+
+fn auth_credential_secret_names(ir: &Ir) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for c in &ir.client_auth_credentials {
+        match &c.kind {
+            AuthCredentialKindIr::ApiKey { secret }
+            | AuthCredentialKindIr::StaticBearer { secret } => {
+                out.insert(secret.to_string());
+            }
+            AuthCredentialKindIr::Basic { username, password } => {
+                out.insert(username.to_string());
+                out.insert(password.to_string());
+            }
+            AuthCredentialKindIr::OAuth2ClientCredentials {
+                client_id,
+                client_secret,
+                ..
+            } => {
+                out.insert(client_id.to_string());
+                out.insert(client_secret.to_string());
+            }
+            AuthCredentialKindIr::Custom { .. } => {}
+        }
+    }
+    out
+}
+
 fn emit_client_context(
     scheme: &TokenStream2,
     domain: &LitStr,
+    ir: &Ir,
     policy: &PolicyBlocksResolved,
     vars_ty: &Ident,
     auth_vars_ty: &Ident,
+    auth_state_ty: &Ident,
     cx_ty: &Ident,
 ) -> TokenStream2 {
     let base_policy = emit_policy_fn_base(policy);
+    let (auth_state_assoc_ty, init_auth_state) =
+        emit_client_auth_state_init(ir, auth_state_ty);
 
     quote! {
         #[derive(Clone)]
@@ -188,8 +356,16 @@ fn emit_client_context(
         impl ::concord_core::prelude::ClientContext for #cx_ty {
             type Vars = #vars_ty;
             type AuthVars = #auth_vars_ty;
+            type AuthState = #auth_state_assoc_ty;
             const SCHEME: ::http::uri::Scheme = #scheme;
             const DOMAIN: &'static str = #domain;
+
+            fn init_auth_state(
+                vars: &Self::Vars,
+                auth: &Self::AuthVars,
+            ) -> Self::AuthState {
+                #init_auth_state
+            }
 
             fn base_policy(
                 vars: &Self::Vars,
@@ -412,6 +588,8 @@ fn emit_endpoint_parts(
     let map_ty = emit_helpers::ident(&format!("__Map_{name}"), Span::call_site());
     let map_impl = emit_map_part(ep, &map_ty);
 
+    let auth_impl = emit_auth_parts(ir, ep, cx_ty);
+
     quote! {
         pub struct #route_ty;
         impl ::concord_core::internal::RoutePart<super::#cx_ty, super::endpoints::#name> for #route_ty {
@@ -444,8 +622,139 @@ fn emit_endpoint_parts(
             }
         }
 
+        #auth_impl
         #paginate_impl
         #map_impl
+    }
+}
+
+fn auth_use_part_ident(ep_name: &Ident, index: usize) -> Ident {
+    emit_helpers::ident(&format!("__Auth_{ep_name}_{index}"), Span::call_site())
+}
+
+fn emit_endpoint_auth_ty(ep: &EndpointIr) -> TokenStream2 {
+    if ep.auth_uses.is_empty() {
+        return quote! { ::concord_core::internal::NoAuth };
+    }
+
+    let mut iter = (0..ep.auth_uses.len()).rev();
+    let last = iter.next().unwrap();
+    let last_ident = auth_use_part_ident(&ep.name, last);
+    let mut out = quote! { super::__internal::#last_ident };
+    for idx in iter {
+        let ident = auth_use_part_ident(&ep.name, idx);
+        out = quote! { ::concord_core::internal::AuthChain<super::__internal::#ident, #out> };
+    }
+    out
+}
+
+fn emit_auth_parts(ir: &Ir, ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
+    let parts = ep
+        .auth_uses
+        .iter()
+        .enumerate()
+        .map(|(idx, auth_use)| emit_auth_part(ir, ep, cx_ty, idx, auth_use));
+
+    quote! {
+        #( #parts )*
+    }
+}
+
+fn emit_auth_part(
+    ir: &Ir,
+    ep: &EndpointIr,
+    cx_ty: &Ident,
+    idx: usize,
+    auth_use: &AuthUseIr,
+) -> TokenStream2 {
+    let ep_name = &ep.name;
+    let part_ty = auth_use_part_ident(ep_name, idx);
+    let credential = auth_use_credential_ident_ir(auth_use);
+    let credential_ir = ir
+        .client_auth_credentials
+        .iter()
+        .find(|c| c.name == *credential)
+        .expect("auth use was validated by sema");
+    let provider_ty = emit_auth_provider_ty(&credential_ir.kind);
+    let usage_ty = emit_auth_usage_ty(auth_use);
+    let usage_expr = emit_auth_usage_expr(ep, cx_ty, auth_use);
+
+    quote! {
+        pub struct #part_ty;
+
+        impl ::concord_core::internal::AuthPart<super::#cx_ty, super::endpoints::#ep_name> for #part_ty {
+            type Ctrl = ::concord_core::prelude::UseCredential<super::#cx_ty, #provider_ty, #usage_ty>;
+
+            fn controller(
+                ctx: ::concord_core::prelude::AuthBuildContext<'_, super::#cx_ty>,
+                ep: &super::endpoints::#ep_name,
+            ) -> ::core::result::Result<Self::Ctrl, ::concord_core::prelude::ApiClientError> {
+                #usage_expr
+                ::core::result::Result::Ok(::concord_core::prelude::UseCredential::new(
+                    ctx.auth_state.#credential.clone(),
+                    __usage,
+                ))
+            }
+        }
+    }
+}
+
+fn emit_auth_usage_ty(auth_use: &AuthUseIr) -> TokenStream2 {
+    match &auth_use.kind {
+        AuthUseKindIr::Bearer { .. } => quote! { ::concord_core::prelude::BearerAuth },
+        AuthUseKindIr::Header { .. } => quote! { ::concord_core::prelude::HeaderAuth },
+        AuthUseKindIr::Query { .. } => quote! { ::concord_core::prelude::QueryAuth },
+        AuthUseKindIr::Basic { .. } => quote! { ::concord_core::prelude::BasicAuth },
+        AuthUseKindIr::Custom { usage_ty, .. } => quote! { #usage_ty },
+    }
+}
+
+fn emit_auth_usage_expr(ep: &EndpointIr, cx_ty: &Ident, auth_use: &AuthUseIr) -> TokenStream2 {
+    let ep_name = &ep.name;
+    match &auth_use.kind {
+        AuthUseKindIr::Bearer { .. } => quote! {
+            let _ = ep;
+            let __usage = ::concord_core::prelude::BearerAuth::new();
+        },
+        AuthUseKindIr::Header { header, .. } => {
+            let param = LitStr::new(&format!("auth header:{}", header.value()), header.span());
+            quote! {
+                let __usage = ::concord_core::prelude::HeaderAuth::new(
+                    ::http::header::HeaderName::from_bytes(#header.as_bytes())
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam {
+                            ctx: ::concord_core::prelude::ErrorContext {
+                                endpoint: <super::endpoints::#ep_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::name(ep),
+                                method: <super::endpoints::#ep_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::METHOD,
+                            },
+                            param: #param,
+                        })?
+                );
+            }
+        }
+        AuthUseKindIr::Query { key, .. } => quote! {
+            let _ = ep;
+            let __usage = ::concord_core::prelude::QueryAuth::new(#key);
+        },
+        AuthUseKindIr::Basic { .. } => quote! {
+            let _ = ep;
+            let __usage = ::concord_core::prelude::BasicAuth::new();
+        },
+        AuthUseKindIr::Custom {
+            usage_ty, usage, ..
+        } => quote! {
+            let _ = ep;
+            let __usage: #usage_ty = (#usage);
+        },
+    }
+}
+
+fn auth_use_credential_ident_ir(auth_use: &AuthUseIr) -> &Ident {
+    match &auth_use.kind {
+        AuthUseKindIr::Bearer { credential }
+        | AuthUseKindIr::Header { credential, .. }
+        | AuthUseKindIr::Query { credential, .. }
+        | AuthUseKindIr::Basic { credential }
+        | AuthUseKindIr::Custom { credential, .. } => credential,
     }
 }
 
@@ -551,12 +860,36 @@ fn emit_client_wrapper(
         }
     });
 
+    let credential_secret_names = auth_credential_secret_names(ir);
     let auth_setters = ir.client_auth_vars.iter().map(|v| {
         let f = &v.rust;
         let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
+        let rebuild_auth_state = credential_secret_names.contains(&f.to_string());
         if v.optional {
             let clear_name = emit_helpers::ident(&format!("clear_{f}"), f.span());
-            quote! {
+            if rebuild_auth_state {
+                quote! {
+            #[inline]
+            pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> &mut Self {
+                {
+                    let mut __g = self.inner.auth_vars().write().unwrap();
+                    __g.#f = ::core::option::Option::Some(v.into());
+                }
+                self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
+                self
+            }
+            #[inline]
+            pub fn #clear_name(&mut self) -> &mut Self {
+                {
+                    let mut __g = self.inner.auth_vars().write().unwrap();
+                    __g.#f = ::core::option::Option::None;
+                }
+                self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
+                self
+            }
+        }
+            } else {
+                quote! {
             #[inline]
             pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
                 let mut __g = self.inner.auth_vars().write().unwrap();
@@ -570,8 +903,22 @@ fn emit_client_wrapper(
                 self
             }
         }
+            }
         } else {
-            quote! {
+            if rebuild_auth_state {
+                quote! {
+            #[inline]
+            pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> &mut Self {
+                {
+                    let mut __g = self.inner.auth_vars().write().unwrap();
+                    __g.#f = v.into();
+                }
+                self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
+                self
+            }
+        }
+            } else {
+                quote! {
             #[inline]
             pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
                let mut __g = self.inner.auth_vars().write().unwrap();
@@ -579,6 +926,7 @@ fn emit_client_wrapper(
                 self
             }
         }
+            }
         }
     });
 
@@ -722,6 +1070,7 @@ fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
     let policy_ident = emit_helpers::ident(&format!("__Policy_{name}"), Span::call_site());
     let route_ty = quote! { super::__internal::#route_ident };
     let policy_ty = quote! { super::__internal::#policy_ident };
+    let auth_ty = emit_endpoint_auth_ty(ep);
 
     // pagination part
     let pagination_ty = if ep.paginate.is_some() {
@@ -790,6 +1139,7 @@ fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
             const METHOD: ::http::Method = ::http::Method::#method;
             type Route = #route_ty;
             type Policy = #policy_ty;
+            type Auth = #auth_ty;
             type Pagination = #pagination_ty;
             type Body = #body_ty;
             type Response = #response_ty;

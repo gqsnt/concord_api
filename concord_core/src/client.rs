@@ -1,7 +1,12 @@
+use crate::auth::{
+    AuthBuildContext, AuthController, AuthError, AuthErrorKind, AuthHttpExecutor, AuthHttpRequest,
+    AuthHttpResponse, AuthMode, AuthPart, AuthPrepareContext as EndpointAuthPrepareContext,
+    AuthResponseAction, AuthResponseContext as EndpointAuthResponseContext,
+};
+use crate::auth_provider::{AuthMeta, AuthPrepareContext, AuthProvider, AuthResponseContext};
+use crate::cache::CacheStore;
 use crate::codec::FormatType;
 use crate::codec::{ContentType, Decodes, Encodes};
-use crate::cache::CacheStore;
-use crate::auth_provider::{AuthMeta, AuthPrepareContext, AuthProvider, AuthResponseContext};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::endpoint::{BodyPart, Endpoint, PolicyPart, ResponseSpec, RoutePart};
 use crate::error::{ApiClientError, ErrorContext};
@@ -10,8 +15,8 @@ use crate::pagination::Caps;
 use crate::policy::{Policy, PolicyLayer, PolicyPatch};
 use crate::rate_limit::{RateLimitContext, RateLimitResponseContext, RateLimiter};
 use crate::request::PendingRequest;
-use crate::retry::{RetryContext, RetryDecision, RetryOutcome, RetryPolicy};
 use crate::response_classify::{ResponseClass, classify_status};
+use crate::retry::{RetryContext, RetryDecision, RetryOutcome, RetryPolicy};
 use crate::runtime_hooks::{
     HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
 };
@@ -27,11 +32,14 @@ use http::header::CONTENT_TYPE;
 use http::uri::Scheme;
 use std::sync::Arc;
 
-pub trait ClientContext: Sized {
+pub trait ClientContext: Sized + Send + Sync + 'static {
     type Vars: Clone + Send + Sync + 'static;
     type AuthVars: Clone + Send + Sync + 'static;
+    type AuthState: Clone + Send + Sync + 'static;
     const SCHEME: Scheme;
     const DOMAIN: &'static str;
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState;
 
     fn base_route(_vars: &Self::Vars, _auth: &Self::AuthVars) -> RouteParts {
         RouteParts::new()
@@ -51,6 +59,7 @@ pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = ReqwestTransport>
     transport: T,
     vars: Cx::Vars,
     auth_vars: Cx::AuthVars,
+    auth_state: Cx::AuthState,
     debug_level: DebugLevel,
     pagination_caps: Caps,
     debug_sink: Arc<dyn DebugSink>,
@@ -71,10 +80,12 @@ impl<Cx: ClientContext> ApiClient<Cx, ReqwestTransport> {
 
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     pub fn with_transport(vars: Cx::Vars, auth_vars: Cx::AuthVars, transport: T) -> Self {
+        let auth_state = Cx::init_auth_state(&vars, &auth_vars);
         Self {
             transport,
             vars,
             auth_vars,
+            auth_state,
             debug_level: DebugLevel::default(),
             pagination_caps: Caps::default(),
             debug_sink: Arc::new(StderrDebugSink),
@@ -117,6 +128,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     #[inline]
     pub fn update_auth_vars(&mut self, f: impl FnOnce(&mut Cx::AuthVars)) {
         f(&mut self.auth_vars);
+    }
+
+    #[inline]
+    pub fn auth_state(&self) -> &Cx::AuthState {
+        &self.auth_state
+    }
+
+    #[inline]
+    pub fn set_auth_state(&mut self, auth_state: Cx::AuthState) {
+        self.auth_state = auth_state;
     }
 
     #[inline]
@@ -305,13 +326,39 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let ctx = Self::ctx_for::<E>(ep);
         let base_attempt = meta.attempt;
         let max_retries = self.runtime_state.retry_policy().max_retries();
-        let mut retry_index: u32 = 0;
+        let auth_ctrl = <E::Auth as AuthPart<Cx, E>>::controller(
+            AuthBuildContext {
+                vars: self.vars(),
+                auth: self.auth_vars(),
+                auth_state: self.auth_state(),
+            },
+            ep,
+        )?;
+        let mut endpoint_auth_state = auth_ctrl.init(ep)?;
+        let mut attempt_index: u32 = 0;
+        let mut transport_retry_index: u32 = 0;
 
         loop {
             let mut attempt_meta = meta.clone();
-            attempt_meta.attempt = base_attempt.saturating_add(retry_index);
+            attempt_meta.attempt = base_attempt.saturating_add(attempt_index);
 
             let mut built = self.build_request::<E, F>(ep, attempt_meta, &patch_policy)?;
+            let auth_http = ClientAuthHttpExecutor { client: self };
+            let auth_request_meta = built.meta.clone();
+            let auth_attempt = auth_ctrl
+                .prepare(
+                    &mut endpoint_auth_state,
+                    EndpointAuthPrepareContext {
+                        ep,
+                        vars: self.vars(),
+                        auth: self.auth_vars(),
+                        auth_state: self.auth_state(),
+                        executor: &auth_http,
+                        meta: &auth_request_meta,
+                        request: &mut built,
+                    },
+                )
+                .await?;
             let auth_url = built.url.as_str().to_owned();
             let auth_method = built.meta.method.clone();
             let auth_meta = AuthMeta {
@@ -385,40 +432,93 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .await?;
             let inflight_key = self.runtime_state.inflight_policy().key_for(&built);
 
-            let attempt_result = async {
-                let resp = self
-                    .send_and_classify_with_inflight(
-                        built,
-                        inflight_key,
-                        dbg,
-                        dbg_verbose,
-                        dbg_vv,
-                        &url_str,
-                        &ctx,
-                    )
-                    .await?;
-                if let Some(key) = cache_key {
-                    self.runtime_state.cache_store().put(key, resp.clone()).await;
-                }
-                if dbg_verbose {
-                    self.debug_sink
-                        .response_status(dbg, resp.status, &url_str, true);
-                }
-                if dbg_vv {
-                    const MAX_CHARS: usize = 32 * 1024;
-                    let fmt = <<E::Response as ResponseSpec>::Dec as FormatType>::FORMAT_TYPE;
-                    self.debug_sink.response_headers(dbg, &resp.headers);
-                    self.debug_sink
-                        .response_body(dbg, &resp.body, fmt, MAX_CHARS);
-                }
-                Self::decode_built_response::<E>(resp, ctx.clone())
-            }
-            .await;
+            let send_result = self
+                .send_and_classify_with_inflight(
+                    built,
+                    inflight_key,
+                    dbg,
+                    dbg_verbose,
+                    dbg_vv,
+                    &url_str,
+                    &ctx,
+                )
+                .await;
 
-            match attempt_result {
-                Ok(decoded) => return Ok(decoded),
+            match send_result {
+                Ok(resp) => {
+                    let auth_action = auth_ctrl
+                        .on_response(
+                            &mut endpoint_auth_state,
+                            EndpointAuthResponseContext {
+                                ep,
+                                vars: self.vars(),
+                                auth: self.auth_vars(),
+                                auth_state: self.auth_state(),
+                                executor: &auth_http,
+                                meta: &resp.meta,
+                                status: resp.status,
+                                headers: &resp.headers,
+                                attempt: &auth_attempt,
+                            },
+                        )
+                        .await?;
+                    if matches!(auth_action, AuthResponseAction::Retry { .. }) {
+                        attempt_index = attempt_index.saturating_add(1);
+                        continue;
+                    }
+                    if let Some(key) = cache_key {
+                        self.runtime_state
+                            .cache_store()
+                            .put(key, resp.clone())
+                            .await;
+                    }
+                    if dbg_verbose {
+                        self.debug_sink
+                            .response_status(dbg, resp.status, &url_str, true);
+                    }
+                    if dbg_vv {
+                        const MAX_CHARS: usize = 32 * 1024;
+                        let fmt = <<E::Response as ResponseSpec>::Dec as FormatType>::FORMAT_TYPE;
+                        self.debug_sink.response_headers(dbg, &resp.headers);
+                        self.debug_sink
+                            .response_body(dbg, &resp.body, fmt, MAX_CHARS);
+                    }
+                    return Self::decode_built_response::<E>(resp, ctx.clone());
+                }
                 Err(err) => {
-                    if retry_index >= max_retries {
+                    if let ApiClientError::HttpStatus {
+                        status, headers, ..
+                    } = &err
+                    {
+                        let response_meta = RequestMeta {
+                            endpoint: ep.name(),
+                            method: E::METHOD.clone(),
+                            idempotent: meta.idempotent,
+                            attempt: base_attempt.saturating_add(attempt_index),
+                            page_index: meta.page_index,
+                        };
+                        let auth_action = auth_ctrl
+                            .on_response(
+                                &mut endpoint_auth_state,
+                                EndpointAuthResponseContext {
+                                    ep,
+                                    vars: self.vars(),
+                                    auth: self.auth_vars(),
+                                    auth_state: self.auth_state(),
+                                    executor: &auth_http,
+                                    meta: &response_meta,
+                                    status: *status,
+                                    headers,
+                                    attempt: &auth_attempt,
+                                },
+                            )
+                            .await?;
+                        if matches!(auth_action, AuthResponseAction::Retry { .. }) {
+                            attempt_index = attempt_index.saturating_add(1);
+                            continue;
+                        }
+                    }
+                    if transport_retry_index >= max_retries {
                         return Err(err);
                     }
                     let outcome = Self::retry_outcome_from_error(&err);
@@ -426,7 +526,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         endpoint: ep.name(),
                         method: &E::METHOD,
                         url: &url_str,
-                        attempt: base_attempt.saturating_add(retry_index),
+                        attempt: base_attempt.saturating_add(attempt_index),
                         page_index: meta.page_index,
                         idempotent: meta.idempotent,
                         outcome,
@@ -436,7 +536,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     {
                         return Err(err);
                     }
-                    retry_index = retry_index.saturating_add(1);
+                    transport_retry_index = transport_retry_index.saturating_add(1);
+                    attempt_index = attempt_index.saturating_add(1);
                 }
             }
         }
@@ -520,6 +621,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             headers,
             body: body_bytes,
             timeout,
+            extensions: Default::default(),
         })
     }
 
@@ -621,7 +723,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
-                    self.debug_sink.response_status(dbg, resp.status, url_str, false);
+                    self.debug_sink
+                        .response_status(dbg, resp.status, url_str, false);
                     self.debug_sink.response_headers(dbg, &resp.headers);
                 }
                 Err(ApiClientError::HttpStatus {
@@ -659,7 +762,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
         if let Some(key) = inflight_key {
-            let join = self.runtime_state.inflight_registry().join_or_lead(key).await;
+            let join = self
+                .runtime_state
+                .inflight_registry()
+                .join_or_lead(key)
+                .await;
             if join.is_leader() {
                 let result = self
                     .send_and_classify_once(built, dbg, dbg_verbose, dbg_vv, url_str, ctx)
@@ -749,6 +856,55 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             ApiClientError::Transform { .. } => RetryOutcome::Transform,
             _ => RetryOutcome::Other,
         }
+    }
+}
+
+struct ClientAuthHttpExecutor<'a, Cx: ClientContext, T: Transport> {
+    client: &'a ApiClient<Cx, T>,
+}
+
+impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx, T> {
+    fn send<'a>(
+        &'a self,
+        req: AuthHttpRequest,
+    ) -> crate::auth::AuthFuture<'a, Result<AuthHttpResponse, AuthError>> {
+        Box::pin(async move {
+            if !matches!(req.mode, AuthMode::SkipAuth) {
+                return Err(AuthError::new(
+                    AuthErrorKind::UnsupportedScheme,
+                    "internal auth requests currently support SkipAuth only",
+                ));
+            }
+
+            let meta = RequestMeta {
+                endpoint: "<auth>",
+                method: req.method,
+                idempotent: false,
+                attempt: 0,
+                page_index: 0,
+            };
+            let built = BuiltRequest {
+                meta,
+                url: req.url,
+                headers: req.headers,
+                body: req.body,
+                timeout: req.policy.timeout,
+                extensions: Default::default(),
+            };
+            let mut resp = self.client.transport.send(built).await.map_err(|source| {
+                AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
+            })?;
+            let body = read_body_all(resp.body.as_mut(), resp.content_length)
+                .await
+                .map_err(|source| {
+                    AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
+                })?;
+            Ok(AuthHttpResponse {
+                status: resp.status,
+                headers: resp.headers,
+                body,
+            })
+        })
     }
 }
 

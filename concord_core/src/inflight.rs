@@ -17,15 +17,20 @@ impl RequestKey {
 }
 
 pub fn default_request_key(req: &BuiltRequest) -> RequestKey {
-    let mut s = format!("{} {}", req.meta.method, req.url);
+    let mut s = format!("{} {}", req.meta.method, sanitized_url_for_key(&req.url));
     let mut headers: Vec<(String, String)> = req
         .headers
         .iter()
         .map(|(k, v)| {
-            (
-                k.as_str().to_ascii_lowercase(),
-                v.to_str().unwrap_or("<non-utf8>").to_string(),
-            )
+            let value = if is_sensitive_name(k.as_str()) {
+                format!(
+                    "<sensitive:{}>",
+                    hash_value(v.to_str().unwrap_or("<non-utf8>"))
+                )
+            } else {
+                v.to_str().unwrap_or("<non-utf8>").to_string()
+            };
+            (k.as_str().to_ascii_lowercase(), value)
         })
         .collect();
     headers.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
@@ -41,7 +46,63 @@ pub fn default_request_key(req: &BuiltRequest) -> RequestKey {
         s.push_str("|body=");
         s.push_str(&format!("{:x}", hasher.finish()));
     }
+    if !req.extensions.auth_identities.is_empty() {
+        s.push_str("|auth=");
+        for identity in &req.extensions.auth_identities {
+            s.push_str(identity);
+            s.push(';');
+        }
+    }
     RequestKey::new(s)
+}
+
+fn sanitized_url_for_key(url: &url::Url) -> String {
+    if url.query().is_none() {
+        return url.to_string();
+    }
+    let mut out = url.clone();
+    out.query_pairs_mut().clear();
+    {
+        let mut pairs = out.query_pairs_mut();
+        for (k, v) in url.query_pairs() {
+            if is_sensitive_name(&k) {
+                pairs.append_pair(&k, &format!("<sensitive:{}>", hash_value(&v)));
+            } else {
+                pairs.append_pair(&k, &v);
+            }
+        }
+    }
+    out.to_string()
+}
+
+fn is_sensitive_name(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    matches!(
+        n.as_str(),
+        "authorization"
+            | "proxy-authorization"
+            | "cookie"
+            | "set-cookie"
+            | "access_token"
+            | "refresh_token"
+            | "api_key"
+            | "apikey"
+            | "key"
+            | "token"
+            | "secret"
+            | "password"
+    ) || n.contains("token")
+        || n.contains("secret")
+        || n.contains("api-key")
+        || n.contains("apikey")
+        || n.ends_with("_key")
+        || n.ends_with("-key")
+}
+
+fn hash_value(value: &str) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
 }
 
 pub trait InflightPolicy: Send + Sync + 'static {
@@ -185,7 +246,12 @@ impl InflightRegistry {
         }
     }
 
-    async fn complete(&self, key: &RequestKey, entry: &Arc<InflightEntry>, result: SharedSendResult) {
+    async fn complete(
+        &self,
+        key: &RequestKey,
+        entry: &Arc<InflightEntry>,
+        result: SharedSendResult,
+    ) {
         {
             let mut out = entry.result.lock().await;
             *out = Some(result);
@@ -215,4 +281,3 @@ impl JoinHandle {
         registry.complete(&self.key, &self.entry, result).await;
     }
 }
-

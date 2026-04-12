@@ -16,11 +16,64 @@ pub struct ClientDef {
     pub policy: PolicyBlocks,
     pub vars: Option<VarsBlock>,
     pub auth_vars: Option<VarsBlock>,
+    pub auth: Option<AuthBlock>,
+    pub auth_uses: Vec<AuthUseDecl>,
 }
 
 #[derive(Debug)]
 pub struct VarsBlock {
     pub decls: Vec<VarDeclNoWire>,
+}
+
+#[derive(Debug)]
+pub struct AuthBlock {
+    pub credentials: Vec<AuthCredentialDecl>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthCredentialDecl {
+    pub name: Ident,
+    pub kind: AuthCredentialKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum AuthCredentialKind {
+    ApiKey { secret: SecretRef },
+    StaticBearer { secret: SecretRef },
+    Basic { username: SecretRef, password: SecretRef },
+    OAuth2ClientCredentials {
+        token_url: LitStr,
+        client_id: SecretRef,
+        client_secret: SecretRef,
+        scope: Option<LitStr>,
+    },
+    Custom {
+        provider_ty: Type,
+        provider: Expr,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct SecretRef {
+    pub ident: Ident,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthUseDecl {
+    pub kind: AuthUseKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum AuthUseKind {
+    Bearer { credential: Ident },
+    Header { header: LitStr, credential: Ident },
+    Query { key: LitStr, credential: Ident },
+    Basic { credential: Ident },
+    Custom {
+        usage_ty: Type,
+        usage: Expr,
+        credential: Ident,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -72,6 +125,7 @@ pub struct LayerDef {
     pub route: RouteExpr,
     pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
+    pub auth_uses: Vec<AuthUseDecl>,
     pub items: Vec<Item>,
 }
 
@@ -83,6 +137,7 @@ pub struct EndpointDef {
     pub params: Vec<VarDeclNoWire>,
 
     pub policy: PolicyBlocks,
+    pub auth_uses: Vec<AuthUseDecl>,
 
     pub paginate: Option<PaginateSpec>,
     pub body: Option<CodecSpec>,

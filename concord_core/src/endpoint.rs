@@ -1,3 +1,4 @@
+use crate::auth::AuthPart;
 use crate::client::ClientContext;
 use crate::codec::{Encodes, NoContent};
 use crate::error::ApiClientError;
@@ -211,6 +212,7 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
 
     type Route: RoutePart<Cx, Self>;
     type Policy: PolicyPart<Cx, Self>;
+    type Auth: AuthPart<Cx, Self>;
     type Pagination: PaginationPart<Cx, Self>;
     type Body: BodyPart<Self>;
     type Response: ResponseSpec;
