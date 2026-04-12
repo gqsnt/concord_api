@@ -1,4 +1,4 @@
-// Path: ".\\concord_examples\\src\\riot.rs" (replace BOTH api! blocks + update test_riot())
+// Path: ".\\concord_examples\\src\\riot.rs" (DSL migrated to evolution-style scope/params/host/path)
 use concord_core::prelude::*;
 use concord_macros::api;
 use serde::{Deserialize, Serialize};
@@ -7,111 +7,254 @@ api! {
     client RiotClient {
         scheme: https,
         host: "riotgames.com",
-        auth_vars {
-            api_key:String
+        secret {
+            api_key: String
         }
         headers {
-            "user-agent" as user_agent: String = "ClientApiRiotExample/1.0".to_string(),
-            "X-Riot-Token" = auth.api_key,
-            "x-client-trace" as client_trace: bool = false
+            "user-agent" = "ClientApiRiotExample/1.0",
+            "X-Riot-Token" = secret.api_key,
+            "x-client-trace" = false
         }
     }
 
-    // PLATFORM ROUTING: {platform}.api.riotgames.com
-   prefix {platform:PlatformRoute} . "api"{
-        path "lol" {
-            path "summoner/v4/summoners" {
-                GET GetSummonerByPuuid "by-puuid" / {puuid:String} -> Json<models::SummonerDto>;
-                GET GetSummonerById {summoner_id:String} -> Json<models::SummonerDto>;
-                GET GetSummonerByName "by-name" / {summoner_name:String} -> Json<models::SummonerDto>;
+    scope platform {
+        params {
+            platform: PlatformRoute
+        }
+        host[platform, "api"]
+        path["lol"]
+
+        scope summoner_v4 {
+            path["summoner", "v4", "summoners"]
+
+            GET GetSummonerByPuuid {
+                params { puuid: String }
+                path["by-puuid", puuid]
+                -> Json<models::SummonerDto>;
             }
 
-            path "champion-mastery/v4" {
-                path "champion-masteries" {
-                    GET GetChampionMasteriesBySummoner "by-summoner" / {summoner_id:String}
-                        -> Json<Vec<models::ChampionMasteryDto>>;
-
-                    GET GetChampionMasteryByChampion "by-summoner" / {summoner_id:String} / "by-champion" / {champion_id:i64}
-                        -> Json<models::ChampionMasteryDto>;
-                }
-
-                path "scores" {
-                    GET GetChampionMasteryScore "by-summoner" / {summoner_id:String} -> Json<i32>;
-                }
+            GET GetSummonerById {
+                params { summoner_id: String }
+                path[summoner_id]
+                -> Json<models::SummonerDto>;
             }
 
-            path "league/v4" {
-                path "challengerleagues" {
-                    GET GetChallengerLeagueByQueue "by-queue" / {queue:LeagueQueue} -> Json<models::LeagueListDto>;
-                }
-
-                path "grandmasterleagues" {
-                    GET GetGrandmasterLeagueByQueue "by-queue" / {queue:LeagueQueue}-> Json<models::LeagueListDto>;
-                }
-
-                path "masterleagues" {
-                    GET GetMasterLeagueByQueue "by-queue" / {queue:LeagueQueue} -> Json<models::LeagueListDto>;
-                }
-
-                path "leagues" {
-                    GET GetLeagueById  {league_id:String} -> Json<models::LeagueListDto>;
-                }
-
-                path "entries" {
-                    GET GetLeagueEntriesBySummoner "by-summoner" / {summoner_id:String}
-                        -> Json<Vec<models::LeagueEntryDto>>;
-
-                    GET GetLeagueEntries {queue:String} / {tier:String} / {division:String}
-                        query { page?: u32 }
-                        -> Json<Vec<models::LeagueEntryDto>>;
-                }
+            GET GetSummonerByName {
+                params { summoner_name: String }
+                path["by-name", summoner_name]
+                -> Json<models::SummonerDto>;
             }
+        }
 
-            path "spectator/v4" {
-                path "featured-games" {
-                    GET GetFeaturedGames "" -> Json<models::FeaturedGamesDto>;
+        scope champion_mastery_v4 {
+            path["champion-mastery", "v4"]
+
+            scope champion_masteries {
+                path["champion-masteries"]
+
+                GET GetChampionMasteriesBySummoner {
+                    params { summoner_id: String }
+                    path["by-summoner", summoner_id]
+                    -> Json<Vec<models::ChampionMasteryDto>>;
                 }
 
-                path "active-games/by-summoner" {
-                    GET GetCurrentGameInfoBySummoner  {summoner_id:String} -> Json<models::CurrentGameInfoDto>;
+                GET GetChampionMasteryByChampion {
+                    params {
+                        summoner_id: String,
+                        champion_id: i64
+                    }
+                    path["by-summoner", summoner_id, "by-champion", champion_id]
+                    -> Json<models::ChampionMasteryDto>;
                 }
             }
 
-            path "status/v4" {
-                GET GetPlatformData "platform-data" -> Json<models::PlatformDataDto>;
+            scope scores {
+                path["scores"]
+
+                GET GetChampionMasteryScore {
+                    params { summoner_id: String }
+                    path["by-summoner", summoner_id]
+                    -> Json<i32>;
+                }
+            }
+        }
+
+        scope league_v4 {
+            path["league", "v4"]
+
+            scope challengerleagues {
+                path["challengerleagues"]
+
+                GET GetChallengerLeagueByQueue {
+                    params { queue: LeagueQueue }
+                    path["by-queue", queue]
+                    -> Json<models::LeagueListDto>;
+                }
+            }
+
+            scope grandmasterleagues {
+                path["grandmasterleagues"]
+
+                GET GetGrandmasterLeagueByQueue {
+                    params { queue: LeagueQueue }
+                    path["by-queue", queue]
+                    -> Json<models::LeagueListDto>;
+                }
+            }
+
+            scope masterleagues {
+                path["masterleagues"]
+
+                GET GetMasterLeagueByQueue {
+                    params { queue: LeagueQueue }
+                    path["by-queue", queue]
+                    -> Json<models::LeagueListDto>;
+                }
+            }
+
+            scope leagues {
+                path["leagues"]
+
+                GET GetLeagueById {
+                    params { league_id: String }
+                    path[league_id]
+                    -> Json<models::LeagueListDto>;
+                }
+            }
+
+            scope entries {
+                path["entries"]
+
+                GET GetLeagueEntriesBySummoner {
+                    params { summoner_id: String }
+                    path["by-summoner", summoner_id]
+                    -> Json<Vec<models::LeagueEntryDto>>;
+                }
+
+                GET GetLeagueEntries {
+                    params {
+                        queue: String,
+                        tier: String,
+                        division: String,
+                        page?: u32
+                    }
+                    path[queue, tier, division]
+                    query {
+                        page = page
+                    }
+                    -> Json<Vec<models::LeagueEntryDto>>;
+                }
+            }
+        }
+
+        scope spectator_v4 {
+            path["spectator", "v4"]
+
+            scope featured_games {
+                path["featured-games"]
+
+                GET GetFeaturedGames {
+                    -> Json<models::FeaturedGamesDto>;
+                }
+            }
+
+            scope active_games_by_summoner {
+                path["active-games", "by-summoner"]
+
+                GET GetCurrentGameInfoBySummoner {
+                    params { summoner_id: String }
+                    path[summoner_id]
+                    -> Json<models::CurrentGameInfoDto>;
+                }
+            }
+        }
+
+        scope status_v4 {
+            path["status", "v4"]
+
+            GET GetPlatformData {
+                path["platform-data"]
+                -> Json<models::PlatformDataDto>;
             }
         }
     }
 
-    // REGIONAL ROUTING: {region}.api.riotgames.com
-    prefix {region:RegionalRoute} . "api" {
-        path "riot/account/v1/accounts" {
-            GET GetAccountByRiotId "by-riot-id" / {game_name:String} / {tag_line:String} -> Json<models::AccountDto>;
-            GET GetAccountByPuuid "by-puuid" / {puuid:String} -> Json<models::AccountDto>;
+    scope regional {
+        params {
+            region: RegionalRoute
+        }
+        host[region, "api"]
+
+        scope account_v1_accounts {
+            path["riot", "account", "v1", "accounts"]
+
+            GET GetAccountByRiotId {
+                params {
+                    game_name: String,
+                    tag_line: String
+                }
+                path["by-riot-id", game_name, tag_line]
+                -> Json<models::AccountDto>;
+            }
+
+            GET GetAccountByPuuid {
+                params { puuid: String }
+                path["by-puuid", puuid]
+                -> Json<models::AccountDto>;
+            }
         }
 
-        path "riot/account/v1/active-shards" {
-            GET GetActiveShardByGameAndPuuid "by-game" / {game:String} / "by-puuid" / {puuid:String}
+        scope account_v1_active_shards {
+            path["riot", "account", "v1", "active-shards"]
+
+            GET GetActiveShardByGameAndPuuid {
+                params {
+                    game: String,
+                    puuid: String
+                }
+                path["by-game", game, "by-puuid", puuid]
                 -> Json<models::ActiveShardDto>;
+            }
         }
 
-        path "lol/match/v5/matches" {
-            GET GetMatchIdsByPuuid "by-puuid" / {puuid:String} / "ids"
-                query {
+        scope match_v5_matches {
+            path["lol", "match", "v5", "matches"]
+
+            GET GetMatchIdsByPuuid {
+                params {
+                    puuid: String,
                     queue?: u16,
-                    "startTime" as start_time?: i64,
-                    "endTime" as end_time?: i64,
+                    start_time?: i64,
+                    end_time?: i64,
                     start: u64 = 0,
                     count: u64 = 20
                 }
+                path["by-puuid", puuid, "ids"]
+                query {
+                    queue = queue,
+                    "startTime" = start_time,
+                    "endTime" = end_time,
+                    start = start,
+                    count = count
+                }
                 paginate OffsetLimitPagination {
-                    offset = ep.start,
-                    limit  = ep.count
+                    offset = start,
+                    limit = count
                 }
                 -> Json<Vec<String>>;
+            }
 
-            GET GetMatch {match_id:String} -> Json<models::MatchDto>;
-            GET GetTimeline {match_id:String} / "timeline" -> Json<models::TimelineDto>;
+            GET GetMatch {
+                params { match_id: String }
+                path[match_id]
+                -> Json<models::MatchDto>;
+            }
+
+            GET GetTimeline {
+                params { match_id: String }
+                path[match_id, "timeline"]
+                -> Json<models::TimelineDto>;
+            }
         }
     }
 }
@@ -121,38 +264,85 @@ api! {
         scheme: https,
         host: "leagueoflegends.com",
         headers {
-            "user-agent" as user_agent: String = "ClientApiDDragonExample/1.0".to_string()
+            "user-agent" = "ClientApiDDragonExample/1.0"
         }
     }
 
-    // ddragon.leagueoflegends.com
-    prefix "ddragon" {
-        path "api" {
-            GET GetVersions "versions.json" -> Json<Vec<String>>;
-            // NOTE: pass region including ".json" (ex: "euw.json")
-            GET GetRealmByRegion "realms" / {region:String} -> Json<models::RealmDto>;
+    scope ddragon {
+        host["ddragon"]
+
+        scope api_root {
+            path["api"]
+
+            GET GetVersions {
+                path["versions.json"]
+                -> Json<Vec<String>>;
+            }
+
+            GET GetRealmByRegion {
+                params { region: String }
+                path["realms", region]
+                -> Json<models::RealmDto>;
+            }
         }
 
-        path "cdn" {
-            GET GetLanguages "languages.json" -> Json<Vec<String>>;
+        scope cdn_root {
+            path["cdn"]
+
+            GET GetLanguages {
+                path["languages.json"]
+                -> Json<Vec<String>>;
+            }
         }
-        path "cdn" / {version:String} {
-            path "data" / {locale:String="en_US".to_string()} {
-                path "champion" {
-                    GET GetChampionList "champion.json" -> Json<models::ChampionListDto>;
-                    GET GetChampionFull "championFull.json" -> Json<serde_json::Value>;
-                    // NOTE: pass champion including ".json" (ex: "Aatrox.json")
-                    GET GetChampionDetail {champion:String} -> Json<models::ChampionDetailDto>;
+
+        scope cdn_versioned {
+            params { version: String }
+            path["cdn", version]
+
+            scope data_localized {
+                params {
+                    locale: String = "en_US".to_string()
+                }
+                path["data", locale]
+
+                scope champion {
+                    path["champion"]
+
+                    GET GetChampionList {
+                        path["champion.json"]
+                        -> Json<models::ChampionListDto>;
+                    }
+
+                    GET GetChampionFull {
+                        path["championFull.json"]
+                        -> Json<serde_json::Value>;
+                    }
+
+                    GET GetChampionDetail {
+                        params { champion: String }
+                        path[champion]
+                        -> Json<models::ChampionDetailDto>;
+                    }
                 }
 
-                GET GetSummonerSpells "summoner.json" -> Json<models::SummonerSpellListDto>;
-                GET GetItems "item.json" -> Json<models::ItemListDto>;
-                GET GetRunesReforged "runesReforged.json" -> Json<models::RunesReforgedDto>;
+                GET GetSummonerSpells {
+                    path["summoner.json"]
+                    -> Json<models::SummonerSpellListDto>;
+                }
+
+                GET GetItems {
+                    path["item.json"]
+                    -> Json<models::ItemListDto>;
+                }
+
+                GET GetRunesReforged {
+                    path["runesReforged.json"]
+                    -> Json<models::RunesReforgedDto>;
+                }
             }
         }
     }
 }
-
 /// Platform routing values (LoL).
 /// Ex: euw1.api.riotgames.com
 #[derive(Clone, Copy, Debug)]

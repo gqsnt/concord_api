@@ -8,17 +8,22 @@ api! {
         host: "example.com",
     }
 
-    // Use custom keys to detect accidental injection of "offset"/"limit".
-    GET List "x"
-    query {
-        "start" as start: u64 = 0,
-        "count" as count: u64 = 2
+    GET List {
+        path["x"]
+        params {
+            start: u64 = 0,
+            count: u64 = 2
+        }
+        query {
+            "start" = start,
+            "count" = count
+        }
+        paginate OffsetLimitPagination {
+            offset = start,
+            limit = count
+        }
+        -> Json<Vec<String>>;
     }
-    paginate OffsetLimitPagination {
-        offset = ep.start,
-        limit  = ep.count
-    }
-    -> Json<Vec<String>>;
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -29,7 +34,7 @@ async fn offset_limit_offset_increments_stops_on_short_page() {
         .replies([
             MockReply::ok_json(json_bytes(&vec!["a".to_string(), "b".to_string()])),
             MockReply::ok_json(json_bytes(&vec!["c".to_string(), "d".to_string()])),
-            MockReply::ok_json(json_bytes(&vec!["e".to_string()])), // short page => stop
+            MockReply::ok_json(json_bytes(&vec!["e".to_string()])),
         ])
         .build();
 
@@ -87,7 +92,6 @@ async fn offset_limit_max_items_truncates_and_limits_requests() {
 
     let api = ApiOffsetLimit::new_with_transport(transport);
 
-    // New behavior: hitting max_items returns an error (no truncation).
     let err = api
         .request(endpoints::List::new())
         .paginate()
@@ -101,7 +105,6 @@ async fn offset_limit_max_items_truncates_and_limits_requests() {
         other => panic!("unexpected error: {other:?}"),
     }
 
-    // Still only 2 requests were sent (the 2 replies we provided).
     h.assert_recorded_len(2);
     let reqs = h.recorded();
 
@@ -122,7 +125,6 @@ async fn offset_limit_max_items_truncates_and_limits_requests() {
 async fn offset_limit_max_pages_errors() {
     use api_offset_limit::*;
 
-    // Provide exactly 2 replies: correct behavior is to error before sending page 3.
     let (transport, h) = mock()
         .replies([
             MockReply::ok_json(json_bytes(&vec!["a".to_string(), "b".to_string()])),

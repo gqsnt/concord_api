@@ -216,7 +216,7 @@ impl HostParts {
 struct HostPartsDisplay<'a>(&'a [HostLabel]);
 impl<'a> std::fmt::Display for HostPartsDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (i, seg) in self.0.iter().rev().enumerate() {
+        for (i, seg) in self.0.iter().enumerate() {
             if i > 0 {
                 write!(f, ".")?;
             }
@@ -316,11 +316,6 @@ impl UrlPath {
         if seg.is_empty() || seg == "/" {
             return;
         }
-        // segment semantics: ignore leading/trailing slashes coming from formatting
-        let seg = seg.trim_matches('/');
-        if seg.is_empty() {
-            return;
-        }
         let enc = Self::percent_encode_path_segment(seg);
         self.push_raw(&enc);
     }
@@ -377,7 +372,7 @@ mod test {
         let mut h = HostParts::default();
         h.push_label_static("v1");
         h.push_label_static("api");
-        assert_eq!(h.join("example.com"), "api.v1.example.com");
+        assert_eq!(h.join("example.com"), "v1.api.example.com");
     }
     #[test]
     fn test_url_path_push() {

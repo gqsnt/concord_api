@@ -9,11 +9,17 @@ async fn vars_default_and_setter_affect_emitted_header() {
         client ApiVarsDefault {
             scheme: https,
             host: "example.com",
+            vars {
+                user_agent: String = "ua1".to_string()
+            }
             headers {
-                "x-ua" as user_agent: String = "ua1".to_string()
+                "x-ua" = vars.user_agent
             }
         }
-        GET Ping "" -> Json<()>;
+
+        GET Ping {
+            -> Json<()>;
+        }
     }
 
     use api_vars_default::*;
@@ -45,11 +51,17 @@ async fn vars_required_ctor_arg_and_setter_affect_emitted_header() {
         client ApiVarsReq {
             scheme: https,
             host: "example.com",
+            vars {
+                tenant: String
+            }
             headers {
-                "x-tenant" as tenant: String
+                "x-tenant" = vars.tenant
             }
         }
-        GET Ping "" -> Json<()>;
+
+        GET Ping {
+            -> Json<()>;
+        }
     }
 
     use api_vars_req::*;
@@ -76,28 +88,32 @@ async fn vars_required_ctor_arg_and_setter_affect_emitted_header() {
 }
 
 #[tokio::test]
-async fn auth_vars_required_secret_and_setter_affect_emitted_header() {
+async fn secret_required_and_setter_affect_emitted_header() {
     api! {
-        client ApiAuthVars {
+        client ApiSecret {
             scheme: https,
             host: "example.com",
-            auth_vars {
+            secret {
                 token: String
             }
             vars {
                 token2: String = "default".to_string()
             }
             headers {
-                "authorization" = auth.token
+                "authorization" = secret.token
             }
         }
 
-        prefix {cx.token2}{
-            GET Ping "" -> Json<()>;
+        scope token2_scope {
+            host[vars.token2]
+
+            GET Ping {
+                -> Json<()>;
+            }
         }
     }
 
-    use api_auth_vars::*;
+    use api_secret::*;
 
     let (transport, h) = mock()
         .replies([
@@ -106,7 +122,7 @@ async fn auth_vars_required_secret_and_setter_affect_emitted_header() {
         ])
         .build();
 
-    let api = ApiAuthVars::new_with_transport("tok1".to_string(), transport);
+    let api = ApiSecret::new_with_transport("tok1".to_string(), transport);
     let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
     api.set_token("tok2");
     let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
@@ -121,29 +137,34 @@ async fn auth_vars_required_secret_and_setter_affect_emitted_header() {
 }
 
 #[tokio::test]
-async fn auth_vars_invalid_header_value_reported_as_invalid_param_and_request_not_sent() {
+async fn secret_invalid_header_value_reported_as_invalid_param_and_request_not_sent() {
     api! {
-        client ApiAuthBad {
+        client ApiSecretBad {
             scheme: https,
             host: "example.com",
-            auth_vars {
+            secret {
                 token: String
             }
             headers {
-                "authorization" = auth.token
+                "authorization" = secret.token
             }
         }
-        GET Ping "" -> Json<()>;
+
+        GET Ping {
+            -> Json<()>;
+        }
     }
 
-    use api_auth_bad::*;
+    use api_secret_bad::*;
 
-    let (transport, h) = mock()
+    let (transport, h) = mock().build();
 
-        .build();
-
-    let api = ApiAuthBad::new_with_transport("a\nb".to_string(), transport);
-    let err = api.request(endpoints::Ping::new()).execute().await.unwrap_err();
+    let api = ApiSecretBad::new_with_transport("a\nb".to_string(), transport);
+    let err = api
+        .request(endpoints::Ping::new())
+        .execute()
+        .await
+        .unwrap_err();
 
     h.assert_recorded_len(0);
 
@@ -155,7 +176,5 @@ async fn auth_vars_invalid_header_value_reported_as_invalid_param_and_request_no
         other => panic!("unexpected error: {other:?}"),
     }
 
-    // reply remains unused because request never sent: this is intentional, so do not finish().
-    // Consume the handle without triggering drop-panic:
     drop(h);
 }

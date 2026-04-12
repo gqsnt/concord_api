@@ -6,7 +6,13 @@ api! {
         host: "example.com",
     }
 
-    GET One "x" / {id} -> Json<()>;
+    GET One {
+        params {
+            id
+        }
+        path["x", id]
+        -> Json<()>;
+    }
 }
 
 fn main() {}

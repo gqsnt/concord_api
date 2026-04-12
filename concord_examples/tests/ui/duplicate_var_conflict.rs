@@ -6,8 +6,14 @@ api! {
         host: "example.com",
     }
 
-    // same rust field name, different types => must fail
-    GET A "x" / {id:u32} query {id:String} -> Json<()>;
+    GET A {
+        params {
+            id: u32,
+            id: String
+        }
+        path["x", id]
+        -> Json<()>;
+    }
 }
 
 fn main() {}

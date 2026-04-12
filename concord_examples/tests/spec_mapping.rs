@@ -15,19 +15,19 @@ async fn mapping_closure_variant_maps_ids() {
             host: "example.com",
         }
 
-        GET Ids "ids"
-        -> Json<Vec<Item>> | Vec<String>  => {
-            r.into_iter().map(|x| x.id).collect::<Vec<_>>()
-        };
+        GET Ids {
+            path["ids"]
+            -> Json<Vec<Item>> | Vec<String> => {
+                r.into_iter().map(|x| x.id).collect::<Vec<_>>()
+            };
+        }
     }
 
     use api_map::*;
 
     let reply = vec![Item { id: "a".into() }, Item { id: "b".into() }];
 
-    let (transport, h) = mock()
-        .reply(MockReply::ok_json(json_bytes(&reply)))
-        .build();
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&reply))).build();
 
     let api = ApiMap::new_with_transport(transport);
     let out: Vec<String> = api.request(endpoints::Ids::new()).execute().await.unwrap();

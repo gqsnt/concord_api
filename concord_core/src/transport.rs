@@ -44,32 +44,114 @@ pub struct DecodedResponse<T> {
     pub value: T,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransportErrorKind {
+    Timeout,
+    Connect,
+    Tls,
+    Dns,
+    Io,
+    Request,
+    Other,
+}
+
 #[derive(Debug)]
-pub struct TransportError(crate::error::FxError);
+pub struct TransportError {
+    kind: TransportErrorKind,
+    source: crate::error::FxError,
+}
 
 impl TransportError {
     #[inline]
     pub fn new(e: impl Error + Send + Sync + 'static) -> Self {
-        Self(Box::new(e))
+        let source: crate::error::FxError = Box::new(e);
+        let kind = if source.downcast_ref::<std::io::Error>().is_some() {
+            TransportErrorKind::Io
+        } else {
+            TransportErrorKind::Other
+        };
+        Self { kind, source }
+    }
+
+    #[inline]
+    pub fn with_kind(kind: TransportErrorKind, e: impl Error + Send + Sync + 'static) -> Self {
+        Self {
+            kind,
+            source: Box::new(e),
+        }
+    }
+
+    #[inline]
+    pub fn kind(&self) -> TransportErrorKind {
+        self.kind
+    }
+
+    #[inline]
+    pub fn source_error(&self) -> &(dyn Error + Send + Sync + 'static) {
+        &*self.source
     }
 }
 
 impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.source)
     }
 }
 
 impl Error for TransportError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
-        Some(&*self.0)
+        Some(&*self.source)
     }
 }
 
 impl From<reqwest::Error> for TransportError {
     fn from(e: reqwest::Error) -> Self {
-        Self::new(e)
+        Self {
+            kind: classify_reqwest_error(&e),
+            source: Box::new(e),
+        }
     }
+}
+
+fn classify_reqwest_error(err: &reqwest::Error) -> TransportErrorKind {
+    if err.is_timeout() {
+        return TransportErrorKind::Timeout;
+    }
+    if err.is_connect() {
+        let msg = err.to_string().to_ascii_lowercase();
+        if msg.contains("dns")
+            || msg.contains("name or service not known")
+            || msg.contains("failed to lookup address information")
+            || msg.contains("no such host")
+        {
+            return TransportErrorKind::Dns;
+        }
+        if msg.contains("tls")
+            || msg.contains("ssl")
+            || msg.contains("certificate")
+            || msg.contains("handshake")
+        {
+            return TransportErrorKind::Tls;
+        }
+        return TransportErrorKind::Connect;
+    }
+    let mut current: Option<&(dyn Error + 'static)> = err.source();
+    while let Some(cause) = current {
+        if let Some(ioe) = cause.downcast_ref::<std::io::Error>() {
+            if matches!(
+                ioe.kind(),
+                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+            ) {
+                return TransportErrorKind::Timeout;
+            }
+            return TransportErrorKind::Io;
+        }
+        current = cause.source();
+    }
+    if err.is_request() {
+        return TransportErrorKind::Request;
+    }
+    TransportErrorKind::Other
 }
 
 pub trait TransportBody: Send + 'static {

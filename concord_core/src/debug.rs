@@ -55,13 +55,6 @@ pub trait DebugSink: Send + Sync + 'static {
     fn response_status(&self, dbg: DebugLevel, status: StatusCode, url: &str, ok: bool);
     fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap);
     fn response_body(&self, dbg: DebugLevel, body: &Bytes, format: Format, max_chars: usize);
-    fn response_body_preview(
-        &self,
-        dbg: DebugLevel,
-        headers: &HeaderMap,
-        body: &Bytes,
-        full_len: Option<usize>,
-    );
 }
 
 #[derive(Default)]
@@ -79,8 +72,6 @@ impl DebugSink for NoopDebugSink {
     fn response_headers(&self, _: DebugLevel, _: &HeaderMap) {}
     #[inline]
     fn response_body(&self, _: DebugLevel, _: &Bytes, _: Format, _: usize) {}
-    #[inline]
-    fn response_body_preview(&self, _: DebugLevel, _: &HeaderMap, _: &Bytes, _: Option<usize>) {}
 }
 
 /// Reproduit le comportement actuel (stderr).
@@ -148,18 +139,6 @@ impl DebugSink for StderrDebugSink {
             preview
         );
     }
-    fn response_body_preview(
-        &self,
-        dbg: DebugLevel,
-        headers: &HeaderMap,
-        body: &Bytes,
-        full_len: Option<usize>,
-    ) {
-        let preview = crate::error::body_as_text(headers, body, full_len);
-        eprintln!("[client_api:{}] response body preview: {}", dbg, preview);
-    }
-
-
 }
 
 fn is_sensitive_header_name(name: &HeaderName) -> bool {

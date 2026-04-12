@@ -1,5 +1,3 @@
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD_NO_PAD as B64;
 use http::{HeaderMap, StatusCode};
 use std::borrow::Cow;
 use std::error::Error;
@@ -46,15 +44,10 @@ pub enum ApiClientError {
         ctx: ErrorContext,
         status: StatusCode,
         headers: HeaderMap,
-        body: String,
     },
 
     #[error("{ctx}: decode error: {source}")]
-    Decode {
-        ctx: ErrorContext,
-        source: FxError,
-        body: String,
-    },
+    Decode { ctx: ErrorContext, source: FxError },
 
     #[error("{ctx}: HEAD response requires NoContentEncoding")]
     HeadRequiresNoContent { ctx: ErrorContext },
@@ -124,40 +117,5 @@ impl ApiClientError {
             ctx,
             source: error.into(),
         }
-    }
-}
-
-pub fn body_as_text(headers: &HeaderMap, body: &bytes::Bytes, full_len: Option<usize>) -> String {
-    const MAX: usize = 8 * 1024;
-    let ct = headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    let slice = if body.len() > MAX {
-        &body[..MAX]
-    } else {
-        &body[..]
-    };
-    let total_len = full_len.unwrap_or(body.len());
-    if ct.starts_with("application/json") || ct.starts_with("text/") {
-        match std::str::from_utf8(slice) {
-            Ok(s) => {
-                if total_len > slice.len() {
-                    format!("{}...", s)
-                } else {
-                    s.to_owned()
-                }
-            }
-            Err(_) => format!("<non-utf8-text; {} bytes>", slice.len()),
-        }
-    } else {
-        let b64 = B64.encode(slice);
-        format!(
-            "<non-text; {} bytes; base64:{}{}>",
-            total_len,
-            &b64[..b64.len().min(1024)],
-            if b64.len() > 1024 { "..." } else { "" }
-        )
     }
 }

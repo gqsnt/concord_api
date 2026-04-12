@@ -82,15 +82,6 @@ pub fn ident(s: &str, span: Span) -> Ident {
     Ident::new(s, span)
 }
 
-pub fn nested_chain(types: &[TokenStream2], tail: TokenStream2) -> TokenStream2 {
-    // Chain<A, Chain<B, Chain<C, tail>>>
-    let mut acc = tail;
-    for ty in types.iter().rev() {
-        acc = quote! { ::concord_core::internal::Chain<#ty, #acc> };
-    }
-    acc
-}
-
 pub fn tokens_eq_path_ident(path: &syn::Path, s: &str) -> bool {
     path.segments.len() == 1 && path.segments[0].ident == s
 }

@@ -1,0 +1,559 @@
+use concord_core::prelude::*;
+use concord_macros::api;
+use concord_test_support::*;
+
+#[derive(Clone, Debug)]
+enum Region {
+    EUW,
+    NA,
+    BadDot,
+    BadDashStart,
+    BadUnderscore,
+}
+
+impl core::fmt::Display for Region {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Region::EUW => f.write_str("euw1"),
+            Region::NA => f.write_str("na1"),
+            Region::BadDot => f.write_str("bad.name"),
+            Region::BadDashStart => f.write_str("-bad"),
+            Region::BadUnderscore => f.write_str("bad_name"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn scope_host_default_and_override_and_order() {
+    api! {
+        client ApiPrefixDefault {
+            scheme: https,
+            host: "example.com",
+        }
+
+        scope platform {
+            params {
+                region: Region = Region::EUW
+            }
+            host[region, "api"]
+
+            GET Ping {
+                -> Json<()>;
+            }
+        }
+    }
+
+    use api_prefix_default::*;
+
+    {
+        let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+        let api = ApiPrefixDefault::new_with_transport(transport);
+        let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
+
+        let reqs = h.recorded();
+        assert_request(&reqs[0]).host("euw1.api.example.com");
+
+        h.finish();
+    }
+
+    {
+        let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+        let api = ApiPrefixDefault::new_with_transport(transport);
+        let _ = api
+            .request(endpoints::Ping::new().region(Region::NA))
+            .execute()
+            .await
+            .unwrap();
+
+        let reqs = h.recorded();
+        assert_request(&reqs[0]).host("na1.api.example.com");
+
+        h.finish();
+    }
+}
+
+#[tokio::test]
+async fn scope_host_optional_label_omitted_without_double_dot() {
+    api! {
+        client ApiPrefixOpt {
+            scheme: https,
+            host: "example.com",
+        }
+
+        scope tenant {
+            params {
+                sub?: String
+            }
+            host[sub, "api"]
+
+            GET Ping {
+                -> Json<()>;
+            }
+        }
+    }
+
+    use api_prefix_opt::*;
+
+    {
+        let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+        let api = ApiPrefixOpt::new_with_transport(transport);
+        let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
+
+        let reqs = h.recorded();
+        assert_request(&reqs[0]).host("api.example.com");
+
+        h.finish();
+    }
+
+    {
+        let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+        let api = ApiPrefixOpt::new_with_transport(transport);
+        let _ = api
+            .request(endpoints::Ping::new().sub("x".to_string()))
+            .execute()
+            .await
+            .unwrap();
+
+        let reqs = h.recorded();
+        assert_request(&reqs[0]).host("x.api.example.com");
+
+        h.finish();
+    }
+}
+
+#[tokio::test]
+async fn scope_host_label_validation_errors() {
+    api! {
+        client ApiPrefixInvalid {
+            scheme: https,
+            host: "example.com",
+        }
+
+        scope platform {
+            params {
+                region: Region = Region::EUW
+            }
+            host[region, "api"]
+
+            GET Ping {
+                -> Json<()>;
+            }
+        }
+    }
+
+    use api_prefix_invalid::*;
+
+    {
+        let (transport, h) = mock().build();
+
+        let api = ApiPrefixInvalid::new_with_transport(transport);
+        let err = api
+            .request(endpoints::Ping::new().region(Region::BadDot))
+            .execute()
+            .await
+            .unwrap_err();
+
+        h.assert_recorded_len(0);
+
+        match err {
+            ApiClientError::InvalidHostLabel { reason, .. } => {
+                assert!(matches!(
+                    reason,
+                    concord_core::error::HostLabelInvalidReason::ContainsDot
+                ));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        h.finish();
+    }
+
+    {
+        let (transport, h) = mock().build();
+
+        let api = ApiPrefixInvalid::new_with_transport(transport);
+        let err = api
+            .request(endpoints::Ping::new().region(Region::BadDashStart))
+            .execute()
+            .await
+            .unwrap_err();
+
+        h.assert_recorded_len(0);
+
+        match err {
+            ApiClientError::InvalidHostLabel { reason, .. } => {
+                assert!(matches!(
+                    reason,
+                    concord_core::error::HostLabelInvalidReason::StartsOrEndsDash
+                ));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        h.finish();
+    }
+
+    {
+        let (transport, h) = mock().build();
+
+        let api = ApiPrefixInvalid::new_with_transport(transport);
+        let err = api
+            .request(endpoints::Ping::new().region(Region::BadUnderscore))
+            .execute()
+            .await
+            .unwrap_err();
+
+        h.assert_recorded_len(0);
+
+        match err {
+            ApiClientError::InvalidHostLabel { reason, .. } => {
+                assert!(matches!(
+                    reason,
+                    concord_core::error::HostLabelInvalidReason::InvalidByte(_)
+                ));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+
+        h.finish();
+    }
+}
+
+#[tokio::test]
+async fn scope_path_concat_percent_encoding() {
+    api! {
+        client ApiPath {
+            scheme: https,
+            host: "example.com",
+        }
+
+        scope lol {
+            path["lol"]
+
+            GET GetMatch {
+                params {
+                    match_id: String
+                }
+                path["matches", match_id]
+                -> Json<()>;
+            }
+        }
+    }
+
+    use api_path::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+    let api = ApiPath::new_with_transport(transport);
+
+    let _ = api
+        .request(endpoints::GetMatch::new("a/b".to_string()))
+        .execute()
+        .await
+        .unwrap();
+
+    let reqs = h.recorded();
+    assert_request(&reqs[0]).path("/lol/matches/a%2Fb");
+
+    h.finish();
+}
+
+#[tokio::test]
+async fn scope_path_part_builds_single_segment_and_encodes() {
+    api! {
+        client ApiPathFmt {
+            scheme: https,
+            host: "example.com",
+        }
+
+        GET One {
+            params {
+                v: String
+            }
+            path["x", part["p", v]]
+            -> Json<()>;
+        }
+    }
+
+    use api_path_fmt::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+    let api = ApiPathFmt::new_with_transport(transport);
+
+    let _ = api
+        .request(endpoints::One::new("a/b".to_string()))
+        .execute()
+        .await
+        .unwrap();
+
+    let reqs = h.recorded();
+    assert_request(&reqs[0]).path("/x/pa%2Fb");
+
+    h.finish();
+}
+
+#[tokio::test]
+async fn scope_path_part_optional_omits_segment_when_missing() {
+    api! {
+        client ApiPathFmtOpt {
+            scheme: https,
+            host: "example.com",
+        }
+
+        GET One {
+            params {
+                v?: String
+            }
+            path["x", part["p", v], "y"]
+            -> Json<()>;
+        }
+    }
+
+    use api_path_fmt_opt::*;
+
+    let (transport, h) = mock()
+        .replies([
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+        ])
+        .build();
+
+    let api = ApiPathFmtOpt::new_with_transport(transport);
+
+    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
+    let _ = api
+        .request(endpoints::One::new().v("z".to_string()))
+        .execute()
+        .await
+        .unwrap();
+
+    let reqs = h.recorded();
+    assert_request(&reqs[0]).path("/x/y");
+    assert_request(&reqs[1]).path("/x/pz/y");
+
+    h.finish();
+}
+
+#[tokio::test]
+async fn scope_path_optional_item_omitted_no_double_slash() {
+    api! {
+        client ApiOptSeg {
+            scheme: https,
+            host: "example.com",
+        }
+
+        GET One {
+            params {
+                opt?: String
+            }
+            path["x", opt, "y"]
+            -> Json<()>;
+        }
+    }
+
+    use api_opt_seg::*;
+
+    {
+        let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+        let api = ApiOptSeg::new_with_transport(transport);
+        let _ = api.request(endpoints::One::new()).execute().await.unwrap();
+
+        let reqs = h.recorded();
+        assert_request(&reqs[0]).path("/x/y");
+
+        h.finish();
+    }
+
+    {
+        let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+        let api = ApiOptSeg::new_with_transport(transport);
+        let _ = api
+            .request(endpoints::One::new().opt("z".to_string()))
+            .execute()
+            .await
+            .unwrap();
+
+        let reqs = h.recorded();
+        assert_request(&reqs[0]).path("/x/z/y");
+
+        h.finish();
+    }
+}
+
+#[tokio::test]
+async fn scope_host_part_adds_one_label() {
+    api! {
+        client ApiPrefixLayerFmt {
+            scheme: https,
+            host: "example.com",
+        }
+
+        scope layer {
+            params {
+                id: String
+            }
+            host["api", part["t", id]]
+
+            GET One {
+                path["x"]
+                -> Json<()>;
+            }
+        }
+    }
+
+    use api_prefix_layer_fmt::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+    let api = ApiPrefixLayerFmt::new_with_transport(transport);
+    let _ = api
+        .request(endpoints::One::new("42".to_string()))
+        .execute()
+        .await
+        .unwrap();
+
+    let reqs = h.recorded();
+    assert_request(&reqs[0])
+        .host("api.t42.example.com")
+        .path("/x");
+
+    h.finish();
+}
+
+#[tokio::test]
+async fn scope_host_part_optional_omits_label_when_missing() {
+    api! {
+        client ApiPrefixLayerFmtOpt {
+            scheme: https,
+            host: "example.com",
+        }
+
+        scope layer {
+            params {
+                id?: String
+            }
+            host["api", part["t", id]]
+
+            GET One {
+                path["x"]
+                -> Json<()>;
+            }
+        }
+    }
+
+    use api_prefix_layer_fmt_opt::*;
+
+    let (transport, h) = mock()
+        .replies([
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+        ])
+        .build();
+
+    let api = ApiPrefixLayerFmtOpt::new_with_transport(transport);
+
+    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
+    let _ = api
+        .request(endpoints::One::new().id("z".to_string()))
+        .execute()
+        .await
+        .unwrap();
+
+    let reqs = h.recorded();
+    assert_request(&reqs[0]).host("api.example.com");
+    assert_request(&reqs[1]).host("api.tz.example.com");
+
+    h.finish();
+}
+
+#[tokio::test]
+async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
+    api! {
+        client ApiPathLayerFmt {
+            scheme: https,
+            host: "example.com",
+        }
+
+        scope layer {
+            params {
+                v: String
+            }
+            path["v1", part["p", v]]
+
+            GET One {
+                path["x"]
+                -> Json<()>;
+            }
+        }
+    }
+
+    use api_path_layer_fmt::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+
+    let api = ApiPathLayerFmt::new_with_transport(transport);
+
+    let _ = api
+        .request(endpoints::One::new("a/b".to_string()))
+        .execute()
+        .await
+        .unwrap();
+
+    let reqs = h.recorded();
+    assert_request(&reqs[0]).path("/v1/pa%2Fb/x");
+
+    h.finish();
+}
+
+#[tokio::test]
+async fn scope_path_part_in_layer_optional_omits_segment_no_double_slash() {
+    api! {
+        client ApiPathLayerFmtOpt {
+            scheme: https,
+            host: "example.com",
+        }
+
+        scope layer {
+            params {
+                v?: String
+            }
+            path["v1", part["p", v], "z"]
+
+            GET One {
+                path["x"]
+                -> Json<()>;
+            }
+        }
+    }
+
+    use api_path_layer_fmt_opt::*;
+
+    let (transport, h) = mock()
+        .replies([
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+        ])
+        .build();
+
+    let api = ApiPathLayerFmtOpt::new_with_transport(transport);
+
+    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
+    let _ = api
+        .request(endpoints::One::new().v("k".to_string()))
+        .execute()
+        .await
+        .unwrap();
+
+    let reqs = h.recorded();
+    assert_request(&reqs[0]).path("/v1/z/x");
+    assert_request(&reqs[1]).path("/v1/pk/z/x");
+
+    h.finish();
+}

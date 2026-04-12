@@ -30,7 +30,6 @@ pub struct VarInfo {
 
 #[derive(Debug)]
 pub struct LayerIr {
-    pub id: usize,
     pub kind: LayerKind,
     pub prefix_pieces: Vec<PrefixPiece>, // if Prefix
     pub path_pieces: Vec<PathPiece>,     // if Path
@@ -68,6 +67,9 @@ pub enum PrefixPiece {
         field: Ident,
         optional: bool,
     },
+    EpVar {
+        field: Ident,
+    },
     Fmt(FmtResolved),
 }
 
@@ -76,6 +78,7 @@ pub enum PathPiece {
     Static(String),
     Var { field: Ident, optional: bool },
     CxVar { field: Ident, optional: bool },
+    EpVar { field: Ident },
     Fmt(FmtResolved),
 }
 
@@ -363,7 +366,6 @@ fn walk_items(
                 )?;
 
                 layers.push(LayerIr {
-                    id,
                     kind: ld.kind,
                     prefix_pieces,
                     path_pieces,
@@ -416,7 +418,16 @@ fn varinfo_from_decl(d: &TemplateVarDecl) -> VarInfo {
 fn analyze_layer_route_and_decls(
     ld: &LayerDef,
 ) -> Result<(Vec<PrefixPiece>, Vec<PathPiece>, Vec<VarInfo>)> {
-    let mut decls: Vec<VarInfo> = Vec::new();
+    let mut decls: Vec<VarInfo> = ld
+        .params
+        .iter()
+        .map(|d| VarInfo {
+            rust: d.rust.clone(),
+            optional: d.optional,
+            ty: d.ty.clone(),
+            default: d.default.clone(),
+        })
+        .collect();
     let mut prefix_pieces: Vec<PrefixPiece> = Vec::new();
     let mut path_pieces: Vec<PathPiece> = Vec::new();
 
@@ -460,10 +471,9 @@ fn analyze_layer_route_and_decls(
                                 });
                             }
                             RefScope::Ep => {
-                                return Err(syn::Error::new(
-                                    r.ident.span(),
-                                    "{ep.*} is not allowed in layer prefix route",
-                                ));
+                                prefix_pieces.push(PrefixPiece::EpVar {
+                                    field: r.ident.clone(),
+                                });
                             }
                             RefScope::Auth => {
                                 return Err(syn::Error::new(
@@ -504,10 +514,9 @@ fn analyze_layer_route_and_decls(
                                 });
                             }
                             RefScope::Ep => {
-                                return Err(syn::Error::new(
-                                    r.ident.span(),
-                                    "{ep.*} is not allowed in layer path route",
-                                ));
+                                path_pieces.push(PathPiece::EpVar {
+                                    field: r.ident.clone(),
+                                });
                             }
                             RefScope::Auth => {
                                 return Err(syn::Error::new(
@@ -564,6 +573,15 @@ fn analyze_endpoint(
             upsert_var(&mut ep_vars, &v.rust, v.optional, &v.ty, v.default.as_ref())?;
         }
     }
+    for d in &ed.params {
+        upsert_var(
+            &mut ep_vars,
+            &d.rust,
+            d.optional,
+            &d.ty,
+            d.default.as_ref(),
+        )?;
+    }
 
     // 2) Build endpoint route pieces and collect vars declared in the route.
     let mut route_pieces: Vec<PathPiece> = Vec::new();
@@ -610,10 +628,15 @@ fn analyze_endpoint(
                     });
                 }
                 RefScope::Ep => {
-                    return Err(syn::Error::new(
-                        r.ident.span(),
-                        "{ep.*} is not allowed in endpoint route; declare a placeholder `{wire:Ty}`",
-                    ));
+                    let _v = ep_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                        syn::Error::new(
+                            r.ident.span(),
+                            format!("unknown endpoint var `ep.{}`", r.ident),
+                        )
+                    })?;
+                    route_pieces.push(PathPiece::EpVar {
+                        field: r.ident.clone(),
+                    });
                 }
                 RefScope::Auth => {
                     return Err(syn::Error::new(
@@ -1053,18 +1076,16 @@ fn resolve_route_fmt_spec(
                     });
                 }
                 RefScope::Ep => {
-                    let ev = ep_vars
-                        .and_then(|m| m.get(&r.ident.to_string()))
-                        .ok_or_else(|| {
-                            syn::Error::new(
-                                r.ident.span(),
-                                format!("unknown endpoint var `ep.{}`", r.ident),
-                            )
-                        })?;
+                    let ev_opt = ep_vars.and_then(|m| m.get(&r.ident.to_string()));
+                    let optional = if let Some(ev) = ev_opt {
+                        ev.optional
+                    } else {
+                        false
+                    };
                     pieces.push(FmtResolvedPiece::Var {
                         source: FmtVarSource::Ep,
                         field: r.ident.clone(),
-                        optional: ev.optional,
+                        optional,
                     });
                 }
                 RefScope::Auth => {

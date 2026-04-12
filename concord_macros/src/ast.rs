@@ -70,6 +70,7 @@ pub struct ScopedRef {
 pub struct LayerDef {
     pub kind: LayerKind,
     pub route: RouteExpr,
+    pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
     pub items: Vec<Item>,
 }
@@ -79,6 +80,7 @@ pub struct EndpointDef {
     pub method: Ident, // "GET", "POST", ...
     pub name: Ident,
     pub route: RouteExpr,
+    pub params: Vec<VarDeclNoWire>,
 
     pub policy: PolicyBlocks,
 

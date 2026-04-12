@@ -1,13 +1,25 @@
 use crate::codec::FormatType;
 use crate::codec::{ContentType, Decodes, Encodes};
+use crate::cache::CacheStore;
+use crate::auth_provider::{AuthMeta, AuthPrepareContext, AuthProvider, AuthResponseContext};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::endpoint::{BodyPart, Endpoint, PolicyPart, ResponseSpec, RoutePart};
 use crate::error::{ApiClientError, ErrorContext};
+use crate::inflight::{InflightPolicy, RequestKey, SharedSendError, SharedSendResult};
 use crate::pagination::Caps;
 use crate::policy::{Policy, PolicyLayer, PolicyPatch};
+use crate::rate_limit::{RateLimitContext, RateLimitResponseContext, RateLimiter};
 use crate::request::PendingRequest;
+use crate::retry::{RetryContext, RetryDecision, RetryOutcome, RetryPolicy};
+use crate::response_classify::{ResponseClass, classify_status};
+use crate::runtime_hooks::{
+    HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
+};
+use crate::runtime_state::ClientRuntimeState;
 use crate::transport::{BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta};
-use crate::transport::{ReqwestTransport, Transport, TransportBody, TransportError};
+use crate::transport::{
+    ReqwestTransport, Transport, TransportBody, TransportError, TransportResponse,
+};
 use crate::types::RouteParts;
 use bytes::Bytes;
 use http::StatusCode;
@@ -42,6 +54,7 @@ pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = ReqwestTransport>
     debug_level: DebugLevel,
     pagination_caps: Caps,
     debug_sink: Arc<dyn DebugSink>,
+    runtime_state: Arc<ClientRuntimeState>,
 }
 impl<Cx: ClientContext> ApiClient<Cx, ReqwestTransport> {
     pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
@@ -65,6 +78,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             debug_level: DebugLevel::default(),
             pagination_caps: Caps::default(),
             debug_sink: Arc::new(StderrDebugSink),
+            runtime_state: Arc::new(ClientRuntimeState::default()),
         }
     }
 
@@ -137,6 +151,107 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
+    pub fn runtime_hooks(&self) -> &Arc<dyn RuntimeHooks> {
+        self.runtime_state.hooks()
+    }
+
+    #[inline]
+    pub fn set_runtime_hooks(&mut self, hooks: Arc<dyn RuntimeHooks>) {
+        Arc::make_mut(&mut self.runtime_state).set_hooks(hooks);
+    }
+
+    #[inline]
+    pub fn with_runtime_hooks(mut self, hooks: Arc<dyn RuntimeHooks>) -> Self {
+        Arc::make_mut(&mut self.runtime_state).set_hooks(hooks);
+        self
+    }
+
+    #[inline]
+    pub fn retry_policy(&self) -> &Arc<dyn RetryPolicy> {
+        self.runtime_state.retry_policy()
+    }
+
+    #[inline]
+    pub fn set_retry_policy(&mut self, retry_policy: Arc<dyn RetryPolicy>) {
+        Arc::make_mut(&mut self.runtime_state).set_retry_policy(retry_policy);
+    }
+
+    #[inline]
+    pub fn with_retry_policy(mut self, retry_policy: Arc<dyn RetryPolicy>) -> Self {
+        Arc::make_mut(&mut self.runtime_state).set_retry_policy(retry_policy);
+        self
+    }
+
+    #[inline]
+    pub fn rate_limiter(&self) -> &Arc<dyn RateLimiter> {
+        self.runtime_state.rate_limiter()
+    }
+
+    #[inline]
+    pub fn set_rate_limiter(&mut self, rate_limiter: Arc<dyn RateLimiter>) {
+        Arc::make_mut(&mut self.runtime_state).set_rate_limiter(rate_limiter);
+    }
+
+    #[inline]
+    pub fn with_rate_limiter(mut self, rate_limiter: Arc<dyn RateLimiter>) -> Self {
+        Arc::make_mut(&mut self.runtime_state).set_rate_limiter(rate_limiter);
+        self
+    }
+
+    #[inline]
+    pub fn cache_store(&self) -> &Arc<dyn CacheStore> {
+        self.runtime_state.cache_store()
+    }
+
+    #[inline]
+    pub fn set_cache_store(&mut self, cache_store: Arc<dyn CacheStore>) {
+        Arc::make_mut(&mut self.runtime_state).set_cache_store(cache_store);
+    }
+
+    #[inline]
+    pub fn with_cache_store(mut self, cache_store: Arc<dyn CacheStore>) -> Self {
+        Arc::make_mut(&mut self.runtime_state).set_cache_store(cache_store);
+        self
+    }
+
+    #[inline]
+    pub fn auth_provider(&self) -> &Arc<dyn AuthProvider> {
+        self.runtime_state.auth_provider()
+    }
+
+    #[inline]
+    pub fn set_auth_provider(&mut self, auth_provider: Arc<dyn AuthProvider>) {
+        Arc::make_mut(&mut self.runtime_state).set_auth_provider(auth_provider);
+    }
+
+    #[inline]
+    pub fn with_auth_provider(mut self, auth_provider: Arc<dyn AuthProvider>) -> Self {
+        Arc::make_mut(&mut self.runtime_state).set_auth_provider(auth_provider);
+        self
+    }
+
+    #[inline]
+    pub fn inflight_policy(&self) -> &Arc<dyn InflightPolicy> {
+        self.runtime_state.inflight_policy()
+    }
+
+    #[inline]
+    pub fn set_inflight_policy(&mut self, inflight_policy: Arc<dyn InflightPolicy>) {
+        Arc::make_mut(&mut self.runtime_state).set_inflight_policy(inflight_policy);
+    }
+
+    #[inline]
+    pub fn with_inflight_policy(mut self, inflight_policy: Arc<dyn InflightPolicy>) -> Self {
+        Arc::make_mut(&mut self.runtime_state).set_inflight_policy(inflight_policy);
+        self
+    }
+
+    #[inline]
+    pub fn runtime_state(&self) -> &Arc<ClientRuntimeState> {
+        &self.runtime_state
+    }
+
+    #[inline]
     pub fn pagination_caps(&self) -> Caps {
         self.pagination_caps
     }
@@ -183,50 +298,148 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     ) -> Result<DecodedResponse<<E::Response as ResponseSpec>::Output>, ApiClientError>
     where
         E: Endpoint<Cx>,
-        F: for<'a> FnOnce(&mut PolicyPatch<'a>) -> Result<(), ApiClientError>,
+        F: for<'a> Fn(&mut PolicyPatch<'a>) -> Result<(), ApiClientError>,
     {
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
         let ctx = Self::ctx_for::<E>(ep);
+        let base_attempt = meta.attempt;
+        let max_retries = self.runtime_state.retry_policy().max_retries();
+        let mut retry_index: u32 = 0;
 
-        let built = self.build_request::<E, F>(ep, meta, patch_policy)?;
-        let url_str = built.url.as_str().to_string();
+        loop {
+            let mut attempt_meta = meta.clone();
+            attempt_meta.attempt = base_attempt.saturating_add(retry_index);
 
-        if dbg_verbose {
-            self.debug_sink.request_start(
-                dbg,
-                &E::METHOD,
-                &url_str,
-                ep.name(),
-                built.meta.page_index,
-            );
-        }
+            let mut built = self.build_request::<E, F>(ep, attempt_meta, &patch_policy)?;
+            let auth_url = built.url.as_str().to_owned();
+            let auth_method = built.meta.method.clone();
+            let auth_meta = AuthMeta {
+                endpoint: built.meta.endpoint,
+                method: &auth_method,
+                url: &auth_url,
+                attempt: built.meta.attempt,
+                page_index: built.meta.page_index,
+                idempotent: built.meta.idempotent,
+            };
+            self.runtime_state
+                .auth_provider()
+                .prepare_request(AuthPrepareContext {
+                    meta: auth_meta,
+                    request: &mut built,
+                })
+                .await?;
+            let url_str = built.url.as_str().to_string();
+            let cache_key = self.runtime_state.cache_store().key_for(&built);
+            if let Some(key) = cache_key.as_ref()
+                && let Some(cached) = self.runtime_state.cache_store().get(key).await
+            {
+                return Self::decode_built_response::<E>(cached, ctx.clone());
+            }
 
-        if dbg_vv {
-            self.debug_sink.request_headers(dbg, &built.headers);
-            if let Some(body) = built.body.as_ref() {
-                const MAX_CHARS: usize = 32 * 1024;
-                let fmt = <<E::Body as BodyPart<E>>::Enc as FormatType>::FORMAT_TYPE;
-                self.debug_sink.request_body(dbg, body, fmt, MAX_CHARS);
+            if dbg_verbose {
+                self.debug_sink.request_start(
+                    dbg,
+                    &E::METHOD,
+                    &url_str,
+                    ep.name(),
+                    built.meta.page_index,
+                );
+            }
+
+            if dbg_vv {
+                self.debug_sink.request_headers(dbg, &built.headers);
+                if let Some(body) = built.body.as_ref() {
+                    const MAX_CHARS: usize = 32 * 1024;
+                    let fmt = <<E::Body as BodyPart<E>>::Enc as FormatType>::FORMAT_TYPE;
+                    self.debug_sink.request_body(dbg, body, fmt, MAX_CHARS);
+                }
+            }
+            let pre_send_meta = HookMeta {
+                endpoint: built.meta.endpoint,
+                method: &built.meta.method,
+                url: &url_str,
+                attempt: built.meta.attempt,
+                page_index: built.meta.page_index,
+                idempotent: built.meta.idempotent,
+            };
+            let rate_limit_meta = RateLimitContext {
+                endpoint: built.meta.endpoint,
+                method: &built.meta.method,
+                url: &url_str,
+                attempt: built.meta.attempt,
+                page_index: built.meta.page_index,
+                idempotent: built.meta.idempotent,
+            };
+            let _permit = self
+                .runtime_state
+                .rate_limiter()
+                .acquire(rate_limit_meta)
+                .await?;
+            self.runtime_state
+                .hooks()
+                .pre_send(PreSendHookContext {
+                    meta: pre_send_meta,
+                    headers: &built.headers,
+                })
+                .await?;
+            let inflight_key = self.runtime_state.inflight_policy().key_for(&built);
+
+            let attempt_result = async {
+                let resp = self
+                    .send_and_classify_with_inflight(
+                        built,
+                        inflight_key,
+                        dbg,
+                        dbg_verbose,
+                        dbg_vv,
+                        &url_str,
+                        &ctx,
+                    )
+                    .await?;
+                if let Some(key) = cache_key {
+                    self.runtime_state.cache_store().put(key, resp.clone()).await;
+                }
+                if dbg_verbose {
+                    self.debug_sink
+                        .response_status(dbg, resp.status, &url_str, true);
+                }
+                if dbg_vv {
+                    const MAX_CHARS: usize = 32 * 1024;
+                    let fmt = <<E::Response as ResponseSpec>::Dec as FormatType>::FORMAT_TYPE;
+                    self.debug_sink.response_headers(dbg, &resp.headers);
+                    self.debug_sink
+                        .response_body(dbg, &resp.body, fmt, MAX_CHARS);
+                }
+                Self::decode_built_response::<E>(resp, ctx.clone())
+            }
+            .await;
+
+            match attempt_result {
+                Ok(decoded) => return Ok(decoded),
+                Err(err) => {
+                    if retry_index >= max_retries {
+                        return Err(err);
+                    }
+                    let outcome = Self::retry_outcome_from_error(&err);
+                    let retry_ctx = RetryContext {
+                        endpoint: ep.name(),
+                        method: &E::METHOD,
+                        url: &url_str,
+                        attempt: base_attempt.saturating_add(retry_index),
+                        page_index: meta.page_index,
+                        idempotent: meta.idempotent,
+                        outcome,
+                    };
+                    if self.runtime_state.retry_policy().should_retry(&retry_ctx)
+                        != RetryDecision::Retry
+                    {
+                        return Err(err);
+                    }
+                    retry_index = retry_index.saturating_add(1);
+                }
             }
         }
-        // 2) Send
-        let resp = self
-            .send_built_request(built, dbg, dbg_verbose, dbg_vv, &url_str, &ctx)
-            .await?;
-        if dbg_verbose {
-            self.debug_sink
-                .response_status(dbg, resp.status, &url_str, true);
-        }
-        if dbg_vv {
-            const MAX_CHARS: usize = 32 * 1024;
-            let fmt = <<E::Response as ResponseSpec>::Dec as FormatType>::FORMAT_TYPE;
-            self.debug_sink.response_headers(dbg, &resp.headers);
-            self.debug_sink
-                .response_body(dbg, &resp.body, fmt, MAX_CHARS);
-        }
-
-        Self::decode_built_response::<E>(resp, ctx)
     }
 }
 
@@ -235,11 +448,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         ep: &E,
         meta: RequestMeta,
-        patch_policy: F,
+        patch_policy: &F,
     ) -> Result<BuiltRequest, ApiClientError>
     where
         E: Endpoint<Cx>,
-        F: for<'a> FnOnce(&mut PolicyPatch<'a>) -> Result<(), ApiClientError>,
+        F: for<'a> Fn(&mut PolicyPatch<'a>) -> Result<(), ApiClientError>,
     {
         let ctx = Self::ctx_for::<E>(ep);
         // Route = base + endpoint route part
@@ -313,62 +526,175 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn send_built_request(
         &self,
         built: BuiltRequest,
+        ctx: &ErrorContext,
+    ) -> Result<TransportResponse, ApiClientError> {
+        let endpoint = built.meta.endpoint;
+        let method = built.meta.method.clone();
+        let attempt = built.meta.attempt;
+        let page_index = built.meta.page_index;
+        let idempotent = built.meta.idempotent;
+        let url = built.url.as_str().to_owned();
+
+        match self.transport.send(built).await {
+            Ok(resp) => Ok(resp),
+            Err(e) => {
+                let hook_meta = HookMeta {
+                    endpoint,
+                    method: &method,
+                    url: &url,
+                    attempt,
+                    page_index,
+                    idempotent,
+                };
+                self.runtime_state
+                    .hooks()
+                    .transport_error(TransportErrorHookContext {
+                        meta: hook_meta,
+                        error: &e,
+                    })
+                    .await;
+                Err(ApiClientError::Transport {
+                    ctx: ctx.clone(),
+                    source: e,
+                })
+            }
+        }
+    }
+
+    async fn classify_transport_response(
+        &self,
+        mut resp: TransportResponse,
+        dbg: DebugLevel,
+        dbg_verbose: bool,
+        _dbg_vv: bool,
+        url_str: &str,
+        ctx: &ErrorContext,
+    ) -> Result<BuiltResponse, ApiClientError> {
+        let hook_meta = HookMeta {
+            endpoint: resp.meta.endpoint,
+            method: &resp.meta.method,
+            url: resp.url.as_str(),
+            attempt: resp.meta.attempt,
+            page_index: resp.meta.page_index,
+            idempotent: resp.meta.idempotent,
+        };
+        self.runtime_state
+            .hooks()
+            .post_response(PostResponseHookContext {
+                meta: hook_meta,
+                status: resp.status,
+                headers: &resp.headers,
+            })
+            .await;
+        let auth_meta = AuthMeta {
+            endpoint: resp.meta.endpoint,
+            method: &resp.meta.method,
+            url: resp.url.as_str(),
+            attempt: resp.meta.attempt,
+            page_index: resp.meta.page_index,
+            idempotent: resp.meta.idempotent,
+        };
+        self.runtime_state
+            .auth_provider()
+            .on_response(AuthResponseContext {
+                meta: auth_meta,
+                status: resp.status,
+                headers: &resp.headers,
+            })
+            .await;
+        let rate_limit_meta = RateLimitContext {
+            endpoint: resp.meta.endpoint,
+            method: &resp.meta.method,
+            url: resp.url.as_str(),
+            attempt: resp.meta.attempt,
+            page_index: resp.meta.page_index,
+            idempotent: resp.meta.idempotent,
+        };
+        self.runtime_state
+            .rate_limiter()
+            .on_response(RateLimitResponseContext {
+                meta: rate_limit_meta,
+                status: resp.status,
+                headers: &resp.headers,
+            })
+            .await;
+        match classify_status(resp.status) {
+            ResponseClass::HttpStatusError => {
+                if dbg_verbose {
+                    self.debug_sink.response_status(dbg, resp.status, url_str, false);
+                    self.debug_sink.response_headers(dbg, &resp.headers);
+                }
+                Err(ApiClientError::HttpStatus {
+                    ctx: ctx.clone(),
+                    status: resp.status,
+                    headers: resp.headers,
+                })
+            }
+            ResponseClass::Success => {
+                let bytes = read_body_all(resp.body.as_mut(), resp.content_length)
+                    .await
+                    .map_err(|e| ApiClientError::Transport {
+                        ctx: ctx.clone(),
+                        source: e,
+                    })?;
+                Ok(BuiltResponse {
+                    meta: resp.meta,
+                    url: resp.url,
+                    status: resp.status,
+                    headers: resp.headers,
+                    body: bytes,
+                })
+            }
+        }
+    }
+
+    async fn send_and_classify_with_inflight(
+        &self,
+        built: BuiltRequest,
+        inflight_key: Option<RequestKey>,
         dbg: DebugLevel,
         dbg_verbose: bool,
         dbg_vv: bool,
         url_str: &str,
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let mut resp = self
-            .transport
-            .send(built)
-            .await
-            .map_err(|e| ApiClientError::Transport {
-                ctx: ctx.clone(),
-                source: e,
-            })?;
-        let status = resp.status;
-        let resp_headers = resp.headers;
-        let content_length = resp.content_length;
-
-        if !status.is_success() {
-            let full_len = resp.content_length.and_then(|n| usize::try_from(n).ok());
-            let preview_bytes = read_body_preview(resp.body.as_mut(), 8 * 1024)
+        if let Some(key) = inflight_key {
+            let join = self.runtime_state.inflight_registry().join_or_lead(key).await;
+            if join.is_leader() {
+                let result = self
+                    .send_and_classify_once(built, dbg, dbg_verbose, dbg_vv, url_str, ctx)
+                    .await;
+                let shared = match &result {
+                    Ok(resp) => SharedSendResult::Ok(resp.clone()),
+                    Err(err) => SharedSendResult::Err(SharedSendError::from_api_error(err)),
+                };
+                join.complete(self.runtime_state.inflight_registry(), shared)
+                    .await;
+                result
+            } else {
+                match join.wait().await {
+                    SharedSendResult::Ok(resp) => Ok(resp),
+                    SharedSendResult::Err(err) => Err(err.into_api_error(ctx.clone())),
+                }
+            }
+        } else {
+            self.send_and_classify_once(built, dbg, dbg_verbose, dbg_vv, url_str, ctx)
                 .await
-                .map_err(|e| ApiClientError::Transport {
-                    ctx: ctx.clone(),
-                    source: e,
-                })?;
-            let preview = crate::error::body_as_text(&resp_headers, &preview_bytes, full_len);
-            if dbg_verbose {
-                self.debug_sink.response_status(dbg, status, url_str, false);
-            }
-            if dbg_vv {
-                self.debug_sink.response_headers(dbg, &resp_headers);
-                self.debug_sink
-                    .response_body_preview(dbg, &resp_headers, &preview_bytes, full_len);
-            }
-            return Err(ApiClientError::HttpStatus {
-                ctx: ctx.clone(),
-                status,
-                headers: resp_headers,
-                body: preview,
-            });
         }
+    }
 
-        let bytes = read_body_all(resp.body.as_mut(), content_length)
+    async fn send_and_classify_once(
+        &self,
+        built: BuiltRequest,
+        dbg: DebugLevel,
+        dbg_verbose: bool,
+        dbg_vv: bool,
+        url_str: &str,
+        ctx: &ErrorContext,
+    ) -> Result<BuiltResponse, ApiClientError> {
+        let transport_resp = self.send_built_request(built, ctx).await?;
+        self.classify_transport_response(transport_resp, dbg, dbg_verbose, dbg_vv, url_str, ctx)
             .await
-            .map_err(|e| ApiClientError::Transport {
-                ctx: ctx.clone(),
-                source: e,
-            })?;
-        Ok(BuiltResponse {
-            meta: resp.meta,
-            url: resp.url,
-            status,
-            headers: resp_headers,
-            body: bytes,
-        })
     }
 
     fn decode_built_response<E>(
@@ -391,7 +717,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         ) && !E::response_is_no_content()
         {
             return Err(ApiClientError::NoContentStatusRequiresNoContent {
-                ctx,
+                ctx: ctx.clone(),
                 status: resp.status,
             });
         }
@@ -402,7 +728,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         .map_err(|e| ApiClientError::Decode {
             ctx: ctx.clone(),
             source: e.into(),
-            body: crate::error::body_as_text(&resp.headers, &resp.body, Some(resp.body.len())),
         })?;
 
         let decoded_resp = DecodedResponse {
@@ -415,28 +740,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         <E::Response as ResponseSpec>::map_response(decoded_resp)
             .map_err(|e| ApiClientError::Transform { ctx, source: e })
     }
-}
 
-async fn read_body_preview(
-    body: &mut dyn TransportBody,
-    max: usize,
-) -> Result<Bytes, TransportError> {
-    let mut buf = bytes::BytesMut::with_capacity(max.min(8 * 1024));
-    while buf.len() < max {
-        match body.next_chunk().await? {
-            Some(chunk) => {
-                let remaining = max - buf.len();
-                if chunk.len() <= remaining {
-                    buf.extend_from_slice(&chunk);
-                } else {
-                    buf.extend_from_slice(&chunk[..remaining]);
-                    break;
-                }
-            }
-            None => break,
+    fn retry_outcome_from_error(err: &ApiClientError) -> RetryOutcome<'_> {
+        match err {
+            ApiClientError::Transport { source, .. } => RetryOutcome::Transport(source),
+            ApiClientError::HttpStatus { status, .. } => RetryOutcome::HttpStatus(*status),
+            ApiClientError::Decode { .. } => RetryOutcome::Decode,
+            ApiClientError::Transform { .. } => RetryOutcome::Transform,
+            _ => RetryOutcome::Other,
         }
     }
-    Ok(buf.freeze())
 }
 
 async fn read_body_all(

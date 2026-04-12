@@ -37,16 +37,22 @@ api! {
         host: "example.com",
     }
 
-    GET List "x"
-    query {
-        "pageCursor" as page_cursor?: String,
-        "pageSize"   as page_size: u64 = 2
+    GET List {
+        path["x"]
+        params {
+            page_cursor?: String,
+            page_size: u64 = 2
+        }
+        query {
+            "pageCursor" = page_cursor,
+            "pageSize" = page_size
+        }
+        paginate CursorPagination {
+            cursor = page_cursor,
+            per_page = page_size
+        }
+        -> Json<Page>;
     }
-    paginate CursorPagination {
-        cursor   = ep.page_cursor,
-        per_page = ep.page_size
-    }
-    -> Json<Page>;
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -82,7 +88,6 @@ async fn pagination_cursor_keys_flow_first_cursor_omitted() {
     h.assert_recorded_len(2);
     let reqs = h.recorded();
 
-    // page 0: pageSize present, pageCursor absent
     assert_request(&reqs[0])
         .page_index(0)
         .query_has("pageSize", "2")
@@ -93,7 +98,6 @@ async fn pagination_cursor_keys_flow_first_cursor_omitted() {
         .query_absent("offset")
         .query_absent("limit");
 
-    // page 1: pageCursor=c1 present
     assert_request(&reqs[1])
         .page_index(1)
         .query_has("pageSize", "2")
@@ -111,7 +115,6 @@ async fn pagination_cursor_keys_flow_first_cursor_omitted() {
 async fn pagination_cursor_loop_detection_and_max_pages() {
     use api_cursor::*;
 
-    // loop detected: next cursor repeats
     {
         let p = Page {
             items: vec![Item { id: "1".into() }],
@@ -154,14 +157,12 @@ async fn pagination_cursor_loop_detection_and_max_pages() {
         h.finish();
     }
 
-    // max_pages reached
     {
         let p = Page {
             items: vec![Item { id: "1".into() }],
             next: Some("c".into()),
         };
 
-        // Provide exactly 2 replies: correct behavior is to error before sending page 3.
         let (transport, h) = mock()
             .replies([
                 MockReply::ok_json(json_bytes(&p)),
@@ -187,8 +188,12 @@ async fn pagination_cursor_loop_detection_and_max_pages() {
 
         h.assert_recorded_len(2);
         let reqs = h.recorded();
-        assert_request(&reqs[0]).page_index(0).query_absent("pageCursor");
-        assert_request(&reqs[1]).page_index(1).query_has("pageCursor", "c");
+        assert_request(&reqs[0])
+            .page_index(0)
+            .query_absent("pageCursor");
+        assert_request(&reqs[1])
+            .page_index(1)
+            .query_has("pageCursor", "c");
 
         h.finish();
     }

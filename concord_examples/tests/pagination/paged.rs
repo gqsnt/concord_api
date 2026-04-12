@@ -8,20 +8,24 @@ api! {
         host: "example.com",
     }
 
-    // Use custom keys "p"/"sz" to detect accidental injection of "page"/"per_page".
-    GET List "x"
-    query {
-        "p"  as page: u32 = 1,
-        "sz" as page_size: u32 = 2
+    GET List {
+        path["x"]
+        params {
+            page: u32 = 1,
+            page_size: u32 = 2
+        }
+        query {
+            "p" = page,
+            "sz" = page_size
+        }
+        paginate PagedPagination {
+            page_key = "p".into(),
+            per_page_key = "sz".into(),
+            page = page as u64,
+            per_page = page_size as u64
+        }
+        -> Json<Vec<String>>;
     }
-    paginate PagedPagination {
-        // Ensure the controller uses the endpoint wire keys (p/sz), not the defaults (page/per_page).
-        page_key     = "p".into(),
-        per_page_key = "sz".into(),
-        page     = ep.page as u64,
-        per_page = ep.page_size as u64
-    }
-    -> Json<Vec<String>>;
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -32,7 +36,7 @@ async fn paged_page_increments_stops_on_short_page() {
         .replies([
             MockReply::ok_json(json_bytes(&vec!["a".to_string(), "b".to_string()])),
             MockReply::ok_json(json_bytes(&vec!["c".to_string(), "d".to_string()])),
-            MockReply::ok_json(json_bytes(&vec!["e".to_string()])), // short page => stop
+            MockReply::ok_json(json_bytes(&vec!["e".to_string()])),
         ])
         .build();
 
@@ -90,7 +94,6 @@ async fn paged_max_items_truncates_and_limits_requests() {
 
     let api = ApiPaged::new_with_transport(transport);
 
-    // New behavior: hitting max_items returns an error (no truncation).
     let err = api
         .request(endpoints::List::new())
         .paginate()
@@ -124,7 +127,6 @@ async fn paged_max_items_truncates_and_limits_requests() {
 async fn paged_max_pages_errors() {
     use api_paged::*;
 
-    // Provide exactly 2 replies: correct behavior is to error before sending page 3.
     let (transport, h) = mock()
         .replies([
             MockReply::ok_json(json_bytes(&vec!["a".to_string(), "b".to_string()])),

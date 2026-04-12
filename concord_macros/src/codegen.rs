@@ -42,6 +42,13 @@ fn policy_uses_auth(policy: &PolicyBlocksResolved) -> bool {
             .is_some_and(value_uses_auth)
 }
 
+fn ep_optionals(ep: &EndpointIr) -> std::collections::BTreeMap<String, bool> {
+    ep.vars
+        .iter()
+        .map(|v| (v.rust.to_string(), v.optional))
+        .collect()
+}
+
 pub fn emit(ir: Ir) -> TokenStream2 {
     let mod_name = ir.mod_name.clone();
     let scheme = emit_scheme(ir.scheme);
@@ -327,135 +334,21 @@ fn emit_client_auth_vars(
 }
 
 fn emit_internal(ir: &Ir, vars_ty: &Ident, auth_vars_ty: &Ident, cx_ty: &Ident) -> TokenStream2 {
-    let wrappers = quote! {
-        pub struct __LayerPrefix<P>(::core::marker::PhantomData<P>);
-        pub struct __LayerEndpoint<P>(::core::marker::PhantomData<P>);
-
-        impl<P> __LayerPrefix<P> { const LAYER: ::concord_core::prelude::PolicyLayer = ::concord_core::prelude::PolicyLayer::PrefixPath; }
-        impl<P> __LayerEndpoint<P> { const LAYER: ::concord_core::prelude::PolicyLayer = ::concord_core::prelude::PolicyLayer::Endpoint; }
-
-        impl<Cx, E, P> ::concord_core::internal::PolicyPart<Cx, E> for __LayerPrefix<P>
-        where
-            Cx: ::concord_core::prelude::ClientContext,
-            P: ::concord_core::internal::PolicyPart<Cx, E>,
-        {
-           fn apply(ep: &E, vars: &Cx::Vars, auth: &Cx::AuthVars, policy: &mut ::concord_core::prelude::Policy)
-                -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
-            {
-                let prev = policy.layer();
-                policy.set_layer(Self::LAYER);
-                let r = P::apply(ep, vars, auth, policy);
-                policy.set_layer(prev);
-                r
-            }
-        }
-
-        impl<Cx, E, P> ::concord_core::internal::PolicyPart<Cx, E> for __LayerEndpoint<P>
-        where
-            Cx: ::concord_core::prelude::ClientContext,
-            P: ::concord_core::internal::PolicyPart<Cx, E>,
-        {
-            fn apply(ep: &E, vars: &Cx::Vars, auth: &Cx::AuthVars, policy: &mut ::concord_core::prelude::Policy)
-                -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
-            {
-                let prev = policy.layer();
-                policy.set_layer(Self::LAYER);
-                let r = P::apply(ep, vars, auth, policy);
-                policy.set_layer(prev);
-                r
-            }
-        }
-    };
-
-    let layer_route_policy = ir
-        .layers
-        .iter()
-        .map(|l| emit_layer_parts(ir, l, vars_ty, auth_vars_ty, cx_ty));
     let endpoint_parts = ir
         .endpoints
         .iter()
-        .map(|ep| emit_endpoint_parts(ep, vars_ty, auth_vars_ty, cx_ty));
+        .map(|ep| emit_endpoint_parts(ir, ep, vars_ty, auth_vars_ty, cx_ty));
 
     quote! {
         mod __internal {
             use super::*;
-            #wrappers
-            #( #layer_route_policy )*
             #( #endpoint_parts )*
         }
     }
 }
 
-fn emit_layer_parts(
-    ir: &Ir,
-    layer: &LayerIr,
-    vars_ty: &Ident,
-    auth_vars_ty: &Ident,
-    cx_ty: &Ident,
-) -> TokenStream2 {
-    let id = layer.id;
-    let route_ty = emit_helpers::ident(&format!("__Route_L{id}"), Span::call_site());
-    let policy_ty = emit_helpers::ident(&format!("__Policy_L{id}"), Span::call_site());
-
-    let route_apply = match layer.kind {
-        crate::ast::LayerKind::Prefix => emit_prefix_route_apply(&layer.prefix_pieces),
-        crate::ast::LayerKind::Path => emit_path_route_apply(&layer.path_pieces),
-    };
-
-    let policy_apply = emit_policy_apply_fn(&layer.policy, PolicyEmitCtx::Layer);
-
-    let mut route_impls: Vec<TokenStream2> = Vec::new();
-    let mut policy_impls: Vec<TokenStream2> = Vec::new();
-
-    for ep in &ir.endpoints {
-        if !ep.ancestry.contains(&id) {
-            continue;
-        }
-        let ep_name = &ep.name;
-
-        route_impls.push(quote! {
-            impl ::concord_core::internal::RoutePart<super::#cx_ty, super::endpoints::#ep_name> for #route_ty {
-                fn apply(
-                    ep: &super::endpoints::#ep_name,
-                    vars: &super::#vars_ty,
-                    auth: &super::#auth_vars_ty,
-                    route: &mut ::concord_core::prelude::RouteParts
-                ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
-                    let _ = auth;
-                    #route_apply
-                    ::core::result::Result::Ok(())
-                }
-            }
-        });
-
-        policy_impls.push(quote! {
-            impl ::concord_core::internal::PolicyPart<super::#cx_ty, super::endpoints::#ep_name> for #policy_ty {
-                fn apply(
-                    ep: &super::endpoints::#ep_name,
-                    vars: &super::#vars_ty,
-                    auth: &super::#auth_vars_ty,
-                    policy: &mut ::concord_core::prelude::Policy
-                ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
-                    let ctx = ::concord_core::prelude::ErrorContext {
-                        endpoint: ep.name(),
-                        method: <super::endpoints::#ep_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::METHOD.clone(),
-                    };
-                    #policy_apply
-                    ::core::result::Result::Ok(())
-                }
-            }
-        });
-    }
-
-    quote! {
-        pub struct #route_ty;
-        pub struct #policy_ty;
-        #( #route_impls )*
-        #( #policy_impls )*
-    }
-}
-
 fn emit_endpoint_parts(
+    ir: &Ir,
     ep: &EndpointIr,
     vars_ty: &Ident,
     auth_vars_ty: &Ident,
@@ -466,8 +359,52 @@ fn emit_endpoint_parts(
     let route_ty = emit_helpers::ident(&format!("__Route_{name}"), Span::call_site());
     let policy_ty = emit_helpers::ident(&format!("__Policy_{name}"), Span::call_site());
 
-    let route_apply = emit_path_route_apply(&ep.route_pieces);
-    let policy_apply = emit_policy_apply_fn(&ep.policy, PolicyEmitCtx::Endpoint);
+    let ep_opt = ep_optionals(ep);
+
+    let mut prefix_layer_route_ops: Vec<TokenStream2> = Vec::new();
+    let mut path_layer_route_ops: Vec<TokenStream2> = Vec::new();
+    let mut layer_policy_ops: Vec<TokenStream2> = Vec::new();
+    for &lid in &ep.ancestry {
+        let layer = &ir.layers[lid];
+        let layer_route = match layer.kind {
+            crate::ast::LayerKind::Prefix => {
+                emit_prefix_route_apply(&layer.prefix_pieces, Some(&ep_opt))
+            }
+            crate::ast::LayerKind::Path => emit_path_route_apply(&layer.path_pieces, Some(&ep_opt)),
+        };
+        match layer.kind {
+            crate::ast::LayerKind::Prefix => prefix_layer_route_ops.push(layer_route),
+            crate::ast::LayerKind::Path => path_layer_route_ops.push(layer_route),
+        }
+
+        let layer_policy_apply = emit_policy_apply_fn(&layer.policy, PolicyEmitCtx::Layer);
+        layer_policy_ops.push(quote! {
+            {
+                let __prev = policy.layer();
+                policy.set_layer(::concord_core::prelude::PolicyLayer::PrefixPath);
+                #layer_policy_apply
+                policy.set_layer(__prev);
+            }
+        });
+    }
+
+    let endpoint_route_apply = emit_path_route_apply(&ep.route_pieces, Some(&ep_opt));
+    let route_apply = quote! {
+        #( #prefix_layer_route_ops )*
+        #( #path_layer_route_ops )*
+        #endpoint_route_apply
+    };
+
+    let endpoint_policy_apply = emit_policy_apply_fn(&ep.policy, PolicyEmitCtx::Endpoint);
+    let policy_apply = quote! {
+        #( #layer_policy_ops )*
+        {
+            let __prev = policy.layer();
+            policy.set_layer(::concord_core::prelude::PolicyLayer::Endpoint);
+            #endpoint_policy_apply
+            policy.set_layer(__prev);
+        }
+    };
 
     let paginate_ty = emit_helpers::ident(&format!("__Pag_{name}"), Span::call_site());
     let paginate_impl = emit_paginate_part(ep, &paginate_ty, cx_ty, vars_ty);
@@ -516,7 +453,7 @@ fn emit_endpoints(ir: &Ir, cx_ty: &Ident) -> TokenStream2 {
     let endpoint_defs = ir
         .endpoints
         .iter()
-        .map(|ep| emit_endpoint_def(ir, ep, cx_ty));
+        .map(|ep| emit_endpoint_def(ep, cx_ty));
     quote! {
         pub mod endpoints {
             use super::*;
@@ -699,7 +636,7 @@ fn emit_client_wrapper(
     }
 }
 
-fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
+fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
     let name = &ep.name;
     let method = &ep.method;
 
@@ -781,49 +718,10 @@ fn emit_endpoint_def(ir: &Ir, ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
         init_parts.push(quote! { body });
     }
 
-    // route chain ordering:
-    // - prefix route parts applied inner->outer for correct HostParts reversal semantics
-    // - path route parts applied outer->inner
-    let mut prefix_parts: Vec<TokenStream2> = Vec::new();
-    let mut path_parts: Vec<TokenStream2> = Vec::new();
-    for &lid in &ep.ancestry {
-        let l = &ir.layers[lid];
-        let r_ident = emit_helpers::ident(&format!("__Route_L{lid}"), Span::call_site());
-        let r_path = quote! { super::__internal::#r_ident };
-        match l.kind {
-            crate::ast::LayerKind::Prefix => prefix_parts.push(r_path),
-            crate::ast::LayerKind::Path => path_parts.push(r_path),
-        }
-    }
-    // prefix should be inner->outer => reverse
-    prefix_parts.reverse();
-    let endpoint_route_part = {
-        let r_ident = emit_helpers::ident(&format!("__Route_{name}"), Span::call_site());
-        quote! { super::__internal::#r_ident }
-    };
-
-    let mut route_chain = Vec::new();
-    route_chain.extend(prefix_parts);
-    route_chain.extend(path_parts);
-    route_chain.push(endpoint_route_part);
-
-    let route_ty =
-        emit_helpers::nested_chain(&route_chain, quote! { ::concord_core::internal::NoRoute });
-
-    // policy chain: strict nesting order outer->inner, then endpoint
-    let mut policy_chain = Vec::new();
-    for &lid in &ep.ancestry {
-        let p_ident = emit_helpers::ident(&format!("__Policy_L{lid}"), Span::call_site());
-        policy_chain.push(quote! {
-            super::__internal::__LayerPrefix<super::__internal::#p_ident>
-        });
-    }
-    let ep_pol_ident = emit_helpers::ident(&format!("__Policy_{name}"), Span::call_site());
-    policy_chain.push(quote! {
-        super::__internal::__LayerEndpoint<super::__internal::#ep_pol_ident>
-    });
-    let policy_ty =
-        emit_helpers::nested_chain(&policy_chain, quote! { ::concord_core::internal::NoPolicy });
+    let route_ident = emit_helpers::ident(&format!("__Route_{name}"), Span::call_site());
+    let policy_ident = emit_helpers::ident(&format!("__Policy_{name}"), Span::call_site());
+    let route_ty = quote! { super::__internal::#route_ident };
+    let policy_ty = quote! { super::__internal::#policy_ident };
 
     // pagination part
     let pagination_ty = if ep.paginate.is_some() {
@@ -1344,6 +1242,69 @@ fn emit_fmt_build_string(fmt: &FmtResolved) -> proc_macro2::TokenStream {
     }
 }
 
+fn emit_fmt_build_string_with_ep_optionals(
+    fmt: &FmtResolved,
+    ep_optionals: Option<&std::collections::BTreeMap<String, bool>>,
+) -> proc_macro2::TokenStream {
+    let mut ops: Vec<proc_macro2::TokenStream> = Vec::new();
+    for p in &fmt.pieces {
+        match p {
+            FmtResolvedPiece::Lit(s) => {
+                ops.push(quote! { __fmt_s.push_str(#s); });
+            }
+            FmtResolvedPiece::Var {
+                source,
+                field,
+                optional,
+            } => match source {
+                FmtVarSource::Cx => {
+                    if *optional {
+                        ops.push(quote! {
+                            if let ::core::option::Option::Some(__v) = vars.#field.as_ref() {
+                                __fmt_s.push_str(&__v.to_string());
+                            }
+                        });
+                    } else {
+                        ops.push(quote! { __fmt_s.push_str(&vars.#field.to_string()); });
+                    }
+                }
+                FmtVarSource::Ep => {
+                    let is_optional = ep_optionals
+                        .and_then(|m| m.get(&field.to_string()).copied())
+                        .unwrap_or(*optional);
+                    if is_optional {
+                        ops.push(quote! {
+                            if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
+                                __fmt_s.push_str(&__v.to_string());
+                            }
+                        });
+                    } else {
+                        ops.push(quote! { __fmt_s.push_str(&ep.#field.to_string()); });
+                    }
+                }
+                FmtVarSource::Auth => {
+                    if *optional {
+                        ops.push(quote! {
+                           if let ::core::option::Option::Some(__v) = auth.#field.as_ref() {
+                                __fmt_s.push_str(__v.expose());
+                            }
+                        });
+                    } else {
+                        ops.push(quote! {
+                            __fmt_s.push_str(auth.#field.expose());
+                        });
+                    }
+                }
+            },
+        }
+    }
+    quote! {
+        let mut __fmt_s = ::std::string::String::new();
+        #( #ops )*
+        __fmt_s
+    }
+}
+
 fn emit_value_expr(v: &ValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
     match v {
         ValueKind::LitStr(s) => quote! { #s },
@@ -1361,12 +1322,13 @@ fn emit_value_expr(v: &ValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
     }
 }
 
-fn emit_prefix_route_apply(pieces: &[PrefixPiece]) -> TokenStream2 {
-    // HostParts joins labels in reverse insertion order.
-    // To preserve the textual order `a.b.c` => `a.b.c.domain`,
-    // insert labels in reverse textual order: `c`, `b`, `a`.
+fn emit_prefix_route_apply(
+    pieces: &[PrefixPiece],
+    ep_optionals: Option<&std::collections::BTreeMap<String, bool>>,
+) -> TokenStream2 {
+    // HostParts joins labels in natural insertion order.
     let mut ops = Vec::new();
-    for p in pieces.iter().rev() {
+    for p in pieces {
         match p {
             PrefixPiece::Static(s) => {
                 let lit = LitStr::new(s, Span::call_site());
@@ -1404,11 +1366,28 @@ fn emit_prefix_route_apply(pieces: &[PrefixPiece]) -> TokenStream2 {
                     });
                 }
             }
+            PrefixPiece::EpVar { field } => {
+                let is_optional = ep_optionals
+                    .and_then(|m| m.get(&field.to_string()).copied())
+                    .unwrap_or(false);
+                let wire_lit = LitStr::new(&format!("ep.{}", field), Span::call_site());
+                if is_optional {
+                    ops.push(quote! {
+                        if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
+                            route.host_mut().push_label(__v.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
+                        }
+                    });
+                } else {
+                    ops.push(quote! {
+                        route.host_mut().push_label(ep.#field.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
+                    });
+                }
+            }
             PrefixPiece::Fmt(fmt) => {
-                let build = emit_fmt_build_string(fmt);
+                let build = emit_fmt_build_string_with_ep_optionals(fmt, ep_optionals);
 
                 if fmt.require_all {
-                    let guard = emit_fmt_require_all_guard(fmt);
+                    let guard = emit_fmt_require_all_guard_with_ep_optionals(fmt, ep_optionals);
                     ops.push(quote! {
                         {
                             if { #guard } {
@@ -1437,7 +1416,10 @@ fn emit_prefix_route_apply(pieces: &[PrefixPiece]) -> TokenStream2 {
     quote! { #( #ops )* }
 }
 
-fn emit_path_route_apply(pieces: &[PathPiece]) -> TokenStream2 {
+fn emit_path_route_apply(
+    pieces: &[PathPiece],
+    ep_optionals: Option<&std::collections::BTreeMap<String, bool>>,
+) -> TokenStream2 {
     let mut ops = Vec::new();
     for p in pieces {
         match p {
@@ -1471,11 +1453,27 @@ fn emit_path_route_apply(pieces: &[PathPiece]) -> TokenStream2 {
                     );
                 }
             }
+            PathPiece::EpVar { field } => {
+                let is_optional = ep_optionals
+                    .and_then(|m| m.get(&field.to_string()).copied())
+                    .unwrap_or(false);
+                if is_optional {
+                    ops.push(quote! {
+                        if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
+                            route.path_mut().push_segment_encoded(&__v.to_string());
+                        }
+                    });
+                } else {
+                    ops.push(
+                        quote! { route.path_mut().push_segment_encoded(&ep.#field.to_string()); },
+                    );
+                }
+            }
             PathPiece::Fmt(fmt) => {
-                let build = emit_fmt_build_string(fmt);
+                let build = emit_fmt_build_string_with_ep_optionals(fmt, ep_optionals);
 
                 if fmt.require_all {
-                    let guard = emit_fmt_require_all_guard(fmt);
+                    let guard = emit_fmt_require_all_guard_with_ep_optionals(fmt, ep_optionals);
                     ops.push(quote! {
                         {
                             if { #guard } {
@@ -1499,12 +1497,17 @@ fn emit_path_route_apply(pieces: &[PathPiece]) -> TokenStream2 {
 }
 
 fn find_query_key_for_ep_field<'a>(ep: &'a EndpointIr, field: &Ident) -> Option<&'a KeyResolved> {
-    // Take the last bind (closest to the endpoint) if multiple exist.
+    // Take the last matching query op (closest to the endpoint) if multiple exist.
     ep.policy.query.iter().rev().find_map(|op| match op {
         PolicyOp::Bind {
             key,
             kind: PolicyKeyKind::Query,
             field: f,
+            ..
+        } if f == field => Some(key),
+        PolicyOp::Set {
+            key,
+            value: ValueKind::EpField(f),
             ..
         } if f == field => Some(key),
         _ => None,
@@ -1651,16 +1654,28 @@ fn emit_map_part(ep: &EndpointIr, map_ty: &Ident) -> TokenStream2 {
     }
 }
 
-fn emit_fmt_require_all_guard(fmt: &FmtResolved) -> TokenStream2 {
+fn emit_fmt_require_all_guard_with_ep_optionals(
+    fmt: &FmtResolved,
+    ep_optionals: Option<&std::collections::BTreeMap<String, bool>>,
+) -> TokenStream2 {
     let checks = fmt.pieces.iter().filter_map(|p| {
         let FmtResolvedPiece::Var {
             source,
             field,
-            optional: true,
+            optional,
         } = p
         else {
             return None;
         };
+        let effective_optional = match source {
+            FmtVarSource::Ep => ep_optionals
+                .and_then(|m| m.get(&field.to_string()).copied())
+                .unwrap_or(*optional),
+            _ => *optional,
+        };
+        if !effective_optional {
+            return None;
+        }
         match source {
             FmtVarSource::Cx => Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } }),
             FmtVarSource::Ep => Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } }),

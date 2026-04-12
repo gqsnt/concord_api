@@ -1,11 +1,11 @@
 use concord_macros::api;
 
 api! {
-    client UiUnknownCx {
+    client UiUnknownVars {
         scheme: https,
         host: "example.com",
         headers {
-            "x" = cx.missing // ERROR: unknown cx var
+            "x" = vars.missing // ERROR: unknown vars entry
         }
     }
 }

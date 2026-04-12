@@ -44,41 +44,83 @@ api! {
     client Client {
         scheme: https,
         host: "typicode.com",
-        vars{
-            prefix_: String = "jsonplaceholder.typicode.com".to_string()
+        vars {
+            subdomain: String = "jsonplaceholder".to_string(),
+            client_trace: bool
         }
 
         headers {
-            "user-agent" as user_agent: String = "ClientApiExample/1.0".to_string(),
-            "x-client-trace" as client_trace: bool
+            "user-agent" = "ClientApiExample/1.0",
+            "x-client-trace" = vars.client_trace
         }
     }
 
-    prefix {cx.prefix_} {
-        path "posts" {
-            GET GetPosts ""
-                query { "userId" as user_id?: u32 }
+    scope jsonplaceholder {
+        host[vars.subdomain]
+
+        scope posts {
+            path["posts"]
+
+            GET GetPosts {
+                params {
+                    user_id?: u32,
+                    x_debug: bool = true
+                }
+                query {
+                    "userId" = user_id
+                }
                 headers {
-                    x_debug: bool = true,
-                    "x-debug" = format!("test:{}", ep.x_debug)
+                    "x-debug" = part["test:", x_debug]
                 }
                 -> Json<Vec<models::Post>>;
+            }
 
-            GET GetPost {id:i32} -> Json<models::Post>;
+            GET GetPost {
+                params {
+                    id: i32
+                }
+                path[id]
+                -> Json<models::Post>;
+            }
 
-            GET GetPostComments {post_id:i32}/"comments" -> Json<Vec<models::Comment>>;
+            GET GetPostComments {
+                params {
+                    post_id: i32
+                }
+                path[post_id, "comments"]
+                -> Json<Vec<models::Comment>>;
+            }
 
-            POST CreatePost "" body Json<models::NewPost> -> Json<models::Post>;
+            POST CreatePost {
+                body Json<models::NewPost>
+                -> Json<models::Post>;
+            }
         }
 
-        path "users" {
-            GET GetUser {id:i32} -> Json<models::User>;
+        scope users {
+            path["users"]
 
-            GET GetUserPosts {id:i32}/"posts"
-                query { "userId" as user_id?: u32 }
+            GET GetUser {
+                params {
+                    id: i32
+                }
+                path[id]
+                -> Json<models::User>;
+            }
+
+            GET GetUserPosts {
+                params {
+                    id: i32,
+                    user_id?: u32
+                }
+                path[id, "posts"]
+                query {
+                    "userId" = user_id
+                }
                 -> Json<Vec<models::Post>> | Vec<String> => {
                     IntoIterator::into_iter(r).map(|p| p.title).collect()
                 };
+            }
         }
     }
 }

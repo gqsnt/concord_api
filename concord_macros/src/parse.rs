@@ -64,6 +64,15 @@ impl Parse for ClientDef {
                 }
                 auth_vars = Some(content.parse::<VarsBlockTaggedAuthVars>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::secret) {
+                if auth_vars.is_some() {
+                    return Err(syn::Error::new(
+                        name.span(),
+                        "duplicate `secret {}`/`auth_vars {}` in client",
+                    ));
+                }
+                auth_vars = Some(content.parse::<VarsBlockTaggedSecret>()?.0);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::host) {
                 content.parse::<kw::host>()?;
                 content.parse::<Token![:]>()?;
@@ -106,6 +115,7 @@ impl Parse for ClientDef {
 
 struct VarsBlockTaggedVars(VarsBlock);
 struct VarsBlockTaggedAuthVars(VarsBlock);
+struct VarsBlockTaggedSecret(VarsBlock);
 impl Parse for VarsBlockTaggedVars {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::vars>()?;
@@ -115,6 +125,12 @@ impl Parse for VarsBlockTaggedVars {
 impl Parse for VarsBlockTaggedAuthVars {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::auth_vars>()?;
+        Ok(Self(parse_vars_block(input)?))
+    }
+}
+impl Parse for VarsBlockTaggedSecret {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        input.parse::<kw::secret>()?;
         Ok(Self(parse_vars_block(input)?))
     }
 }
@@ -139,12 +155,36 @@ fn parse_vars_block(input: ParseStream<'_>) -> Result<VarsBlock> {
     Ok(VarsBlock { decls })
 }
 
+fn parse_params_block(input: ParseStream<'_>) -> Result<Vec<VarDeclNoWire>> {
+    input.parse::<kw::params>()?;
+    let content;
+    braced!(content in input);
+    let mut decls = Vec::new();
+    while !content.is_empty() {
+        decls.push(content.parse::<VarDeclNoWire>()?);
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+            continue;
+        }
+        if !content.is_empty() {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "expected `,` between params declarations",
+            ));
+        }
+    }
+    Ok(decls)
+}
+
 impl Parse for Item {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(kw::prefix) {
             Ok(Item::Layer(input.parse::<LayerDefTaggedPrefix>()?.0))
         } else if input.peek(kw::path) {
             Ok(Item::Layer(input.parse::<LayerDefTaggedPath>()?.0))
+        } else if input.peek(kw::scope) {
+            Ok(Item::Layer(input.parse::<LayerDefTaggedScope>()?.0))
         } else {
             Ok(Item::Endpoint(input.parse::<EndpointDef>()?))
         }
@@ -153,6 +193,7 @@ impl Parse for Item {
 
 struct LayerDefTaggedPrefix(LayerDef);
 struct LayerDefTaggedPath(LayerDef);
+struct LayerDefTaggedScope(LayerDef);
 
 impl Parse for LayerDefTaggedPrefix {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -187,6 +228,7 @@ impl Parse for LayerDefTaggedPrefix {
         Ok(Self(LayerDef {
             kind: LayerKind::Prefix,
             route,
+            params: Vec::new(),
             policy,
             items,
         }))
@@ -225,9 +267,108 @@ impl Parse for LayerDefTaggedPath {
         Ok(Self(LayerDef {
             kind: LayerKind::Path,
             route,
+            params: Vec::new(),
             policy,
             items,
         }))
+    }
+}
+
+impl Parse for LayerDefTaggedScope {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        input.parse::<kw::scope>()?;
+        let _name: Ident = input.parse()?;
+
+        let content;
+        braced!(content in input);
+
+        let mut params: Vec<VarDeclNoWire> = Vec::new();
+        let mut policy = PolicyBlocks::default();
+        let mut host_route: Option<RouteExpr> = None;
+        let mut path_route: Option<RouteExpr> = None;
+        let mut items = Vec::new();
+
+        while !content.is_empty() {
+            if content.peek(kw::params) {
+                if !params.is_empty() {
+                    return Err(syn::Error::new(content.span(), "duplicate `params {}` in scope"));
+                }
+                params = parse_params_block(&content)?;
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::host) {
+                if host_route.is_some() {
+                    return Err(syn::Error::new(content.span(), "duplicate `host[...]` in scope"));
+                }
+                content.parse::<kw::host>()?;
+                host_route = Some(parse_route_expr_bracket(&content)?);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::path) {
+                if path_route.is_some() {
+                    return Err(syn::Error::new(content.span(), "duplicate `path[...]` in scope"));
+                }
+                content.parse::<kw::path>()?;
+                path_route = Some(parse_route_expr_bracket(&content)?);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::headers) {
+                policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::query) {
+                policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::timeout) {
+                content.parse::<kw::timeout>()?;
+                content.parse::<Token![:]>()?;
+                let t = content.parse::<Expr>()?;
+                policy.timeout = Some(normalize_policy_expr(t));
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::scope) || content.peek(kw::prefix) || content.peek(kw::path)
+            {
+                items.push(content.parse::<Item>()?);
+            } else {
+                items.push(Item::Endpoint(content.parse::<EndpointDef>()?));
+            }
+        }
+
+        // Legacy IR only supports one route-kind per layer.
+        // Normalize `scope` into one or two nested legacy layers.
+        let outer = match (host_route, path_route) {
+            (Some(host), Some(path)) => LayerDef {
+                kind: LayerKind::Prefix,
+                route: host,
+                params,
+                policy,
+                items: vec![Item::Layer(LayerDef {
+                    kind: LayerKind::Path,
+                    route: path,
+                    params: Vec::new(),
+                    policy: PolicyBlocks::default(),
+                    items,
+                })],
+            },
+            (Some(host), None) => LayerDef {
+                kind: LayerKind::Prefix,
+                route: host,
+                params,
+                policy,
+                items,
+            },
+            (None, Some(path)) => LayerDef {
+                kind: LayerKind::Path,
+                route: path,
+                params,
+                policy,
+                items,
+            },
+            (None, None) => LayerDef {
+                kind: LayerKind::Path,
+                route: RouteExpr { atoms: Vec::new() },
+                params,
+                policy,
+                items,
+            },
+        };
+
+        Ok(Self(outer))
     }
 }
 
@@ -235,8 +376,105 @@ impl Parse for EndpointDef {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let method: Ident = input.parse()?;
         let name: Ident = input.parse()?;
-        let route: RouteExpr = parse_route_expr_slash(input)?;
+        if input.peek(token::Brace) {
+            let content;
+            braced!(content in input);
 
+            let mut params: Vec<VarDeclNoWire> = Vec::new();
+            let mut route = RouteExpr { atoms: Vec::new() };
+            let mut policy = PolicyBlocks::default();
+            let mut paginate: Option<PaginateSpec> = None;
+            let mut body: Option<CodecSpec> = None;
+            let mut response: Option<CodecSpec> = None;
+            let mut map: Option<MapSpec> = None;
+
+            while !content.is_empty() {
+                if content.peek(kw::params) {
+                    if !params.is_empty() {
+                        return Err(syn::Error::new(
+                            content.span(),
+                            "duplicate `params {}` in endpoint",
+                        ));
+                    }
+                    params = parse_params_block(&content)?;
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(kw::path) {
+                    if !route.atoms.is_empty() {
+                        return Err(syn::Error::new(
+                            content.span(),
+                            "duplicate `path[...]` in endpoint",
+                        ));
+                    }
+                    content.parse::<kw::path>()?;
+                    route = parse_route_expr_bracket(&content)?;
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(kw::headers) {
+                    policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(kw::query) {
+                    policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(kw::timeout) {
+                    content.parse::<kw::timeout>()?;
+                    content.parse::<Token![:]>()?;
+                    let t = parse_expr_until_comma_or_endpoint_arrow(&content)?;
+                    policy.timeout = Some(normalize_policy_expr(t));
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(kw::paginate) {
+                    if paginate.is_some() {
+                        return Err(syn::Error::new(name.span(), "duplicate `paginate`"));
+                    }
+                    paginate = Some(content.parse::<PaginateSpec>()?);
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(kw::body) {
+                    if body.is_some() {
+                        return Err(syn::Error::new(name.span(), "duplicate `body`"));
+                    }
+                    content.parse::<kw::body>()?;
+                    body = Some(content.parse::<CodecSpec>()?);
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(Token![->]) {
+                    content.parse::<Token![->]>()?;
+                    response = Some(content.parse::<CodecSpec>()?);
+                    map = if content.peek(Token![|]) {
+                        content.parse::<Token![|]>()?;
+                        let out_ty: Type = content.parse()?;
+                        content.parse::<Token![=>]>()?;
+                        let body: Expr = content.parse()?;
+                        Some(MapSpec { out_ty, body })
+                    } else {
+                        None
+                    };
+                    let _ = content.parse::<Option<token::Semi>>()?;
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else {
+                    let tt: proc_macro2::TokenTree = content.parse()?;
+                    return Err(syn::Error::new(
+                        tt.span(),
+                        "unexpected token in endpoint block",
+                    ));
+                }
+            }
+
+            let response = response.ok_or_else(|| {
+                syn::Error::new(name.span(), "endpoint block is missing `-> <Codec>`")
+            })?;
+
+            return Ok(Self {
+                method,
+                name,
+                route,
+                params,
+                policy,
+                paginate,
+                body,
+                response,
+                map,
+            });
+        }
+
+        let route: RouteExpr = parse_route_expr_slash(input)?;
+        let params: Vec<VarDeclNoWire> = Vec::new();
         let mut policy = PolicyBlocks::default();
         let mut paginate: Option<PaginateSpec> = None;
         let mut body: Option<CodecSpec> = None;
@@ -252,7 +490,7 @@ impl Parse for EndpointDef {
             } else if input.peek(kw::timeout) {
                 input.parse::<kw::timeout>()?;
                 input.parse::<Token![:]>()?;
-                policy.timeout = Some(parse_expr_until_comma_or_endpoint_arrow(input)?);
+                policy.timeout = Some(normalize_policy_expr(parse_expr_until_comma_or_endpoint_arrow(input)?));
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::paginate) {
                 if paginate.is_some() {
@@ -295,6 +533,7 @@ impl Parse for EndpointDef {
             method,
             name,
             route,
+            params,
             policy,
             paginate,
             body,
@@ -333,7 +572,7 @@ impl Parse for PaginateSpec {
             }
             let key: Ident = content.parse()?;
             content.parse::<Token![=]>()?;
-            let value: Expr = content.parse()?;
+            let value: Expr = normalize_policy_expr(content.parse()?);
             assigns.push(PaginateAssign { key, value });
             first = false;
         }
@@ -676,20 +915,96 @@ fn parse_fmt_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
     })
 }
 
+fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
+    let part_kw: kw::part = input.parse()?;
+    let span = part_kw.span;
+    let require_all = true;
+
+    let content;
+    bracketed!(content in input);
+
+    let mut pieces: Vec<FmtPiece> = Vec::new();
+    while !content.is_empty() {
+        if content.peek(LitStr) {
+            pieces.push(FmtPiece::Lit(content.parse::<LitStr>()?));
+        } else if content.peek(token::Brace) {
+            let inner;
+            braced!(inner in content);
+            if inner.peek(Ident) && inner.peek2(Token![.]) {
+                let fork = inner.fork();
+                let base: Ident = fork.parse()?;
+                if (base == "cx" || base == "ep" || base == "auth") && fork.peek(Token![.]) {
+                    let _dot: Token![.] = fork.parse()?;
+                    let _name: Ident = fork.parse()?;
+                    if fork.is_empty() {
+                        let base: Ident = inner.parse()?;
+                        inner.parse::<Token![.]>()?;
+                        let name: Ident = inner.parse()?;
+                        let scope = if base == "cx" {
+                            RefScope::Cx
+                        } else if base == "auth" {
+                            RefScope::Auth
+                        } else {
+                            RefScope::Ep
+                        };
+                        pieces.push(FmtPiece::Ref(ScopedRef { scope, ident: name }));
+                    } else {
+                        let d: TemplateVarDecl = inner.parse()?;
+                        pieces.push(FmtPiece::Var(d));
+                    }
+                } else {
+                    let d: TemplateVarDecl = inner.parse()?;
+                    pieces.push(FmtPiece::Var(d));
+                }
+            } else {
+                let d: TemplateVarDecl = inner.parse()?;
+                pieces.push(FmtPiece::Var(d));
+            }
+        } else if content.peek(Ident) {
+            let sr = parse_scoped_ref_from_ident(&content)?;
+            pieces.push(FmtPiece::Ref(sr));
+        } else {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "expected string literal, identifier, or `{var:Ty}` in part[...]",
+            ));
+        }
+        let _ = content.parse::<Option<Token![,]>>()?;
+    }
+
+    Ok(FmtSpec {
+        span,
+        require_all,
+        pieces,
+    })
+}
+
 fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue> {
     if input.peek(kw::fmt) {
         return Ok(PolicyValue::Fmt(parse_fmt_spec(input)?));
     }
+    if input.peek(kw::part) {
+        return Ok(PolicyValue::Fmt(parse_part_spec(input)?));
+    }
 
-    Ok(PolicyValue::Expr(input.parse::<syn::Expr>()?))
+    let expr: syn::Expr = input.parse()?;
+    Ok(PolicyValue::Expr(normalize_policy_expr(expr)))
 }
 
 fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
     if input.peek(kw::fmt) {
         return Ok(RouteAtom::Fmt(parse_fmt_spec(input)?));
     }
+    if input.peek(kw::part) {
+        return Ok(RouteAtom::Fmt(parse_part_spec(input)?));
+    }
     if input.peek(LitStr) {
         return Ok(RouteAtom::Static(input.parse::<LitStr>()?));
+    }
+    if input.peek(Ident) {
+        let sr = parse_scoped_ref_from_ident(input)?;
+        return Ok(RouteAtom::Ref(sr));
     }
     if input.peek(token::Brace) {
         let content;
@@ -752,6 +1067,120 @@ fn parse_route_expr_dot(input: ParseStream<'_>) -> Result<RouteExpr> {
         atoms.push(parse_route_atom(input)?);
     }
     Ok(RouteExpr { atoms })
+}
+
+fn parse_route_expr_bracket(input: ParseStream<'_>) -> Result<RouteExpr> {
+    let content;
+    bracketed!(content in input);
+    let mut atoms: Vec<RouteAtom> = Vec::new();
+    while !content.is_empty() {
+        atoms.push(parse_route_atom(&content)?);
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+            continue;
+        }
+        if !content.is_empty() {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "expected `,` between route items",
+            ));
+        }
+    }
+    Ok(RouteExpr { atoms })
+}
+
+fn parse_scoped_ref_from_ident(input: ParseStream<'_>) -> Result<ScopedRef> {
+    let first: Ident = input.parse()?;
+    if input.peek(Token![.]) {
+        input.parse::<Token![.]>()?;
+        let second: Ident = input.parse()?;
+        if first == "vars" || first == "cx" {
+            Ok(ScopedRef {
+                scope: RefScope::Cx,
+                ident: second,
+            })
+        } else if first == "secret" || first == "auth" {
+            Ok(ScopedRef {
+                scope: RefScope::Auth,
+                ident: second,
+            })
+        } else {
+            Ok(ScopedRef {
+                scope: RefScope::Ep,
+                ident: second,
+            })
+        }
+    } else {
+        Ok(ScopedRef {
+            scope: RefScope::Ep,
+            ident: first,
+        })
+    }
+}
+
+fn normalize_policy_expr(expr: Expr) -> Expr {
+    match expr {
+        Expr::Path(p) => {
+            if p.qself.is_none() && p.path.segments.len() == 1 {
+                let seg = &p.path.segments[0];
+                let id = &seg.ident;
+                if (*id != "vars")
+                    && (*id != "secret")
+                    && (*id != "cx")
+                    && (*id != "auth")
+                    && (*id != "ep")
+                    && id.to_string().chars().next().is_some_and(|c| c.is_ascii_lowercase())
+                {
+                    return syn::parse_quote!(ep.#id);
+                }
+            }
+            Expr::Path(p)
+        }
+        Expr::Field(mut f) => {
+            if let Expr::Path(base_path) = &*f.base
+                && base_path.qself.is_none()
+                && base_path.path.segments.len() == 1
+            {
+                let b = &base_path.path.segments[0].ident;
+                let nb: Ident = if *b == "vars" {
+                    Ident::new("cx", b.span())
+                } else if *b == "secret" {
+                    Ident::new("auth", b.span())
+                } else if *b == "cx" || *b == "ep" || *b == "auth" {
+                    b.clone()
+                } else {
+                    Ident::new("ep", b.span())
+                };
+                f.base = Box::new(syn::parse_quote!(#nb));
+            } else {
+                f.base = Box::new(normalize_policy_expr(*f.base));
+            }
+            Expr::Field(f)
+        }
+        Expr::Cast(mut c) => {
+            c.expr = Box::new(normalize_policy_expr(*c.expr));
+            Expr::Cast(c)
+        }
+        Expr::Paren(mut p) => {
+            p.expr = Box::new(normalize_policy_expr(*p.expr));
+            Expr::Paren(p)
+        }
+        Expr::Reference(mut r) => {
+            r.expr = Box::new(normalize_policy_expr(*r.expr));
+            Expr::Reference(r)
+        }
+        Expr::Unary(mut u) => {
+            u.expr = Box::new(normalize_policy_expr(*u.expr));
+            Expr::Unary(u)
+        }
+        Expr::Binary(mut b) => {
+            b.left = Box::new(normalize_policy_expr(*b.left));
+            b.right = Box::new(normalize_policy_expr(*b.right));
+            Expr::Binary(b)
+        }
+        other => other,
+    }
 }
 
 fn parse_expr_until_comma_or_endpoint_arrow(input: ParseStream<'_>) -> Result<Expr> {
