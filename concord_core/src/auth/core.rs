@@ -299,6 +299,7 @@ impl AuthAttempt {
 pub struct AuthAppliedPart {
     pub credential_id: CredentialId,
     pub usage_id: AuthUsageId,
+    pub step_id: Option<String>,
     pub generation: Option<u64>,
     pub identity: AuthIdentity,
     pub provenance: AuthProvenance,

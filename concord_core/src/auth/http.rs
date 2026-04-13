@@ -2,6 +2,7 @@ use super::errors::AuthError;
 use super::future::AuthFuture;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
+use std::fmt;
 use std::time::Duration;
 use url::Url;
 
@@ -39,11 +40,34 @@ impl AuthRequirementId {
     pub const fn new(namespace: &'static str, name: &'static str) -> Self {
         Self { namespace, name }
     }
+
+    #[inline]
+    pub fn namespace(&self) -> &'static str {
+        self.namespace
+    }
+
+    #[inline]
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+
+    #[inline]
+    pub fn safe_fragment(&self) -> String {
+        format!("{}:{}", self.namespace, self.name)
+    }
+}
+
+impl fmt::Display for AuthRequirementId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}", self.namespace, self.name)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AuthInternalPolicy {
     pub timeout: Option<Duration>,
+    pub max_transport_retries: u32,
+    pub use_rate_limiter: bool,
 }
 
 pub trait AuthHttpExecutor: Send + Sync {

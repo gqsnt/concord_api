@@ -78,6 +78,7 @@ pub struct UseCredential<Cx: ClientContext, P: CredentialProvider<Cx>, U> {
     usage: U,
     policy: AuthStepPolicy,
     provenance: AuthProvenance,
+    step_id: Option<String>,
 }
 
 impl<Cx: ClientContext, P: CredentialProvider<Cx>, U> UseCredential<Cx, P, U> {
@@ -88,6 +89,7 @@ impl<Cx: ClientContext, P: CredentialProvider<Cx>, U> UseCredential<Cx, P, U> {
             usage,
             policy: AuthStepPolicy::default(),
             provenance: AuthProvenance::default(),
+            step_id: None,
         }
     }
 
@@ -100,6 +102,12 @@ impl<Cx: ClientContext, P: CredentialProvider<Cx>, U> UseCredential<Cx, P, U> {
     #[inline]
     pub fn with_provenance(mut self, provenance: AuthProvenance) -> Self {
         self.provenance = provenance;
+        self
+    }
+
+    #[inline]
+    pub fn with_step_id(mut self, step_id: impl Into<String>) -> Self {
+        self.step_id = Some(step_id.into());
         self
     }
 }
@@ -162,6 +170,7 @@ where
             let applied = AuthAppliedPart {
                 credential_id,
                 usage_id: self.usage.name(),
+                step_id: self.step_id.clone(),
                 generation: Some(lease.generation),
                 identity,
                 provenance: self.provenance.clone(),
@@ -180,12 +189,18 @@ where
         Box::pin(async move {
             let usage_id = self.usage.name();
             let credential_id = self.slot.id();
-            let Some(applied) = ctx
-                .attempt
-                .applied
-                .iter()
-                .find(|part| part.credential_id == credential_id && part.usage_id == usage_id)
-            else {
+            let applied = if let Some(step_id) = self.step_id.as_deref() {
+                ctx.attempt.applied.iter().find(|part| {
+                    part.credential_id == credential_id && part.step_id.as_deref() == Some(step_id)
+                })
+            } else {
+                ctx.attempt
+                    .applied
+                    .iter()
+                    .find(|part| part.credential_id == credential_id && part.usage_id == usage_id)
+            };
+
+            let Some(applied) = applied else {
                 return Ok(AuthResponseAction::Continue);
             };
 

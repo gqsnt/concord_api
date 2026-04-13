@@ -1,4 +1,4 @@
-use crate::auth::RequestExtensions;
+use crate::auth::{RequestExtensions, TransportAuth};
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 use std::future::Future;
@@ -225,8 +225,18 @@ impl Transport for ReqwestTransport {
                 headers,
                 body,
                 timeout,
-                extensions: _,
+                extensions,
             } = req;
+            if let Some(TransportAuth::ClientCertificate { identity_id }) =
+                extensions.transport_auth
+            {
+                return Err(TransportError::with_kind(
+                    TransportErrorKind::Request,
+                    std::io::Error::other(format!(
+                        "ReqwestTransport does not support per-request client certificate identity `{identity_id}`"
+                    )),
+                ));
+            }
             // reqwest needs an owned Url; we keep a copy for returning meta.
             let url_for_resp = url.clone();
             let method = meta.method.clone();

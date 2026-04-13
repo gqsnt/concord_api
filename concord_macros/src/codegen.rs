@@ -36,10 +36,7 @@ fn policy_uses_auth(policy: &PolicyBlocksResolved) -> bool {
     };
     policy.headers.iter().any(ops_use)
         || policy.query.iter().any(ops_use)
-        || policy
-            .timeout
-            .as_ref()
-            .is_some_and(value_uses_auth)
+        || policy.timeout.as_ref().is_some_and(value_uses_auth)
 }
 
 fn ep_optionals(ep: &EndpointIr) -> std::collections::BTreeMap<String, bool> {
@@ -309,8 +306,9 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
     }
 }
 
-fn auth_credential_secret_names(ir: &Ir) -> std::collections::BTreeSet<String> {
+fn auth_credential_secret_names(ir: &Ir) -> (std::collections::BTreeSet<String>, bool) {
     let mut out = std::collections::BTreeSet::new();
+    let mut has_custom = false;
     for c in &ir.client_auth_credentials {
         match &c.kind {
             AuthCredentialKindIr::ApiKey { secret }
@@ -329,10 +327,12 @@ fn auth_credential_secret_names(ir: &Ir) -> std::collections::BTreeSet<String> {
                 out.insert(client_id.to_string());
                 out.insert(client_secret.to_string());
             }
-            AuthCredentialKindIr::Custom { .. } => {}
+            AuthCredentialKindIr::Custom { .. } => {
+                has_custom = true;
+            }
         }
     }
-    out
+    (out, has_custom)
 }
 
 fn emit_client_context(
@@ -346,8 +346,7 @@ fn emit_client_context(
     cx_ty: &Ident,
 ) -> TokenStream2 {
     let base_policy = emit_policy_fn_base(policy);
-    let (auth_state_assoc_ty, init_auth_state) =
-        emit_client_auth_state_init(ir, auth_state_ty);
+    let (auth_state_assoc_ty, init_auth_state) = emit_client_auth_state_init(ir, auth_state_ty);
 
     quote! {
         #[derive(Clone)]
@@ -678,6 +677,17 @@ fn emit_auth_part(
     let provider_ty = emit_auth_provider_ty(&credential_ir.kind);
     let usage_ty = emit_auth_usage_ty(auth_use);
     let usage_expr = emit_auth_usage_expr(ep, cx_ty, auth_use);
+    let step_id = LitStr::new(
+        &format!("{}:{}:{}", ep_name, idx, credential),
+        Span::call_site(),
+    );
+    let provenance_layer = match auth_use.provenance {
+        AuthUseProvenanceIr::Client => LitStr::new("client", Span::call_site()),
+        AuthUseProvenanceIr::Scope(scope_id) => {
+            LitStr::new(&format!("scope:{scope_id}"), Span::call_site())
+        }
+        AuthUseProvenanceIr::Endpoint => LitStr::new("endpoint", Span::call_site()),
+    };
 
     quote! {
         pub struct #part_ty;
@@ -693,7 +703,9 @@ fn emit_auth_part(
                 ::core::result::Result::Ok(::concord_core::prelude::UseCredential::new(
                     ctx.auth_state.#credential.clone(),
                     __usage,
-                ))
+                )
+                .with_step_id(#step_id)
+                .with_provenance(::concord_core::prelude::AuthProvenance::new(#provenance_layer)))
             }
         }
     }
@@ -705,6 +717,7 @@ fn emit_auth_usage_ty(auth_use: &AuthUseIr) -> TokenStream2 {
         AuthUseKindIr::Header { .. } => quote! { ::concord_core::prelude::HeaderAuth },
         AuthUseKindIr::Query { .. } => quote! { ::concord_core::prelude::QueryAuth },
         AuthUseKindIr::Basic { .. } => quote! { ::concord_core::prelude::BasicAuth },
+        AuthUseKindIr::Certificate { .. } => quote! { ::concord_core::prelude::CertificateAuth },
         AuthUseKindIr::Custom { usage_ty, .. } => quote! { #usage_ty },
     }
 }
@@ -739,6 +752,10 @@ fn emit_auth_usage_expr(ep: &EndpointIr, cx_ty: &Ident, auth_use: &AuthUseIr) ->
             let _ = ep;
             let __usage = ::concord_core::prelude::BasicAuth::new();
         },
+        AuthUseKindIr::Certificate { .. } => quote! {
+            let _ = ep;
+            let __usage = ::concord_core::prelude::CertificateAuth::new();
+        },
         AuthUseKindIr::Custom {
             usage_ty, usage, ..
         } => quote! {
@@ -754,15 +771,13 @@ fn auth_use_credential_ident_ir(auth_use: &AuthUseIr) -> &Ident {
         | AuthUseKindIr::Header { credential, .. }
         | AuthUseKindIr::Query { credential, .. }
         | AuthUseKindIr::Basic { credential }
+        | AuthUseKindIr::Certificate { credential }
         | AuthUseKindIr::Custom { credential, .. } => credential,
     }
 }
 
 fn emit_endpoints(ir: &Ir, cx_ty: &Ident) -> TokenStream2 {
-    let endpoint_defs = ir
-        .endpoints
-        .iter()
-        .map(|ep| emit_endpoint_def(ep, cx_ty));
+    let endpoint_defs = ir.endpoints.iter().map(|ep| emit_endpoint_def(ep, cx_ty));
     quote! {
         pub mod endpoints {
             use super::*;
@@ -860,11 +875,12 @@ fn emit_client_wrapper(
         }
     });
 
-    let credential_secret_names = auth_credential_secret_names(ir);
+    let (credential_secret_names, has_custom_credentials) = auth_credential_secret_names(ir);
     let auth_setters = ir.client_auth_vars.iter().map(|v| {
         let f = &v.rust;
         let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
-        let rebuild_auth_state = credential_secret_names.contains(&f.to_string());
+        let rebuild_auth_state =
+            has_custom_credentials || credential_secret_names.contains(&f.to_string());
         if v.optional {
             let clear_name = emit_helpers::ident(&format!("clear_{f}"), f.span());
             if rebuild_auth_state {

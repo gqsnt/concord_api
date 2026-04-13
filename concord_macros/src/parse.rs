@@ -79,7 +79,10 @@ impl Parse for ClientDef {
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::auth) {
                 if auth.is_some() {
-                    return Err(syn::Error::new(name.span(), "duplicate `auth {}` in client"));
+                    return Err(syn::Error::new(
+                        name.span(),
+                        "duplicate `auth {}` in client",
+                    ));
                 }
                 auth = Some(content.parse::<AuthBlockTagged>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
@@ -179,7 +182,10 @@ impl Parse for AuthCredentialDecl {
                 parenthesized!(content in input);
                 let secret = parse_secret_ref(&content)?;
                 if !content.is_empty() {
-                    return Err(syn::Error::new(content.span(), "unexpected ApiKey arguments"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected ApiKey arguments",
+                    ));
                 }
                 AuthCredentialKind::ApiKey { secret }
             }
@@ -202,7 +208,10 @@ impl Parse for AuthCredentialDecl {
                 content.parse::<Token![,]>()?;
                 let password = parse_secret_ref(&content)?;
                 if !content.is_empty() {
-                    return Err(syn::Error::new(content.span(), "unexpected Basic arguments"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected Basic arguments",
+                    ));
                 }
                 AuthCredentialKind::Basic { username, password }
             }
@@ -261,7 +270,9 @@ fn parse_oauth2_client_credentials(
         content.parse::<Token![:]>()?;
         match key.to_string().as_str() {
             "token_url" => set_once_lit(&mut token_url, key.span(), content.parse()?)?,
-            "client_id" => set_once_secret_ref(&mut client_id, key.span(), parse_secret_ref(&content)?)?,
+            "client_id" => {
+                set_once_secret_ref(&mut client_id, key.span(), parse_secret_ref(&content)?)?
+            }
             "client_secret" => {
                 set_once_secret_ref(&mut client_secret, key.span(), parse_secret_ref(&content)?)?
             }
@@ -361,7 +372,10 @@ impl Parse for AuthUseDecl {
                 parenthesized!(content in input);
                 let credential: Ident = content.parse()?;
                 if !content.is_empty() {
-                    return Err(syn::Error::new(content.span(), "unexpected BearerAuth arguments"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected BearerAuth arguments",
+                    ));
                 }
                 AuthUseKind::Bearer { credential }
             }
@@ -372,7 +386,10 @@ impl Parse for AuthUseDecl {
                 content.parse::<Token![,]>()?;
                 let credential: Ident = content.parse()?;
                 if !content.is_empty() {
-                    return Err(syn::Error::new(content.span(), "unexpected HeaderAuth arguments"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected HeaderAuth arguments",
+                    ));
                 }
                 AuthUseKind::Header { header, credential }
             }
@@ -383,7 +400,10 @@ impl Parse for AuthUseDecl {
                 content.parse::<Token![,]>()?;
                 let credential: Ident = content.parse()?;
                 if !content.is_empty() {
-                    return Err(syn::Error::new(content.span(), "unexpected QueryAuth arguments"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected QueryAuth arguments",
+                    ));
                 }
                 AuthUseKind::Query { key, credential }
             }
@@ -392,9 +412,24 @@ impl Parse for AuthUseDecl {
                 parenthesized!(content in input);
                 let credential: Ident = content.parse()?;
                 if !content.is_empty() {
-                    return Err(syn::Error::new(content.span(), "unexpected BasicAuth arguments"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected BasicAuth arguments",
+                    ));
                 }
                 AuthUseKind::Basic { credential }
+            }
+            "CertificateAuth" => {
+                let content;
+                parenthesized!(content in input);
+                let credential: Ident = content.parse()?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected CertificateAuth arguments",
+                    ));
+                }
+                AuthUseKind::Certificate { credential }
             }
             "Custom" => {
                 let usage_ty = parse_angle_type(input, usage.span(), "custom auth usage")?;
@@ -404,7 +439,10 @@ impl Parse for AuthUseDecl {
                 content.parse::<Token![,]>()?;
                 let credential: Ident = content.parse()?;
                 if !content.is_empty() {
-                    return Err(syn::Error::new(content.span(), "unexpected Custom auth usage arguments"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected Custom auth usage arguments",
+                    ));
                 }
                 AuthUseKind::Custom {
                     usage_ty,
@@ -415,7 +453,7 @@ impl Parse for AuthUseDecl {
             _ => {
                 return Err(syn::Error::new(
                     usage.span(),
-                    "unknown auth usage; expected BearerAuth, HeaderAuth, QueryAuth, BasicAuth, or Custom<T>",
+                    "unknown auth usage; expected BearerAuth, HeaderAuth, QueryAuth, BasicAuth, CertificateAuth, or Custom<T>",
                 ));
             }
         };
@@ -511,7 +549,8 @@ impl Parse for LayerDefTaggedPrefix {
             } else if content.peek(kw::use_auth) {
                 auth_uses.push(content.parse::<AuthUseDecl>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope) {
+            } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope)
+            {
                 items.push(content.parse::<Item>()?);
             } else {
                 // endpoint
@@ -556,7 +595,8 @@ impl Parse for LayerDefTaggedPath {
             } else if content.peek(kw::use_auth) {
                 auth_uses.push(content.parse::<AuthUseDecl>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope) {
+            } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope)
+            {
                 items.push(content.parse::<Item>()?);
             } else {
                 items.push(Item::Endpoint(content.parse::<EndpointDef>()?));
@@ -592,20 +632,29 @@ impl Parse for LayerDefTaggedScope {
         while !content.is_empty() {
             if content.peek(kw::params) {
                 if !params.is_empty() {
-                    return Err(syn::Error::new(content.span(), "duplicate `params {}` in scope"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "duplicate `params {}` in scope",
+                    ));
                 }
                 params = parse_params_block(&content)?;
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::host) {
                 if host_route.is_some() {
-                    return Err(syn::Error::new(content.span(), "duplicate `host[...]` in scope"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "duplicate `host[...]` in scope",
+                    ));
                 }
                 content.parse::<kw::host>()?;
                 host_route = Some(parse_route_expr_bracket(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::path) {
                 if path_route.is_some() {
-                    return Err(syn::Error::new(content.span(), "duplicate `path[...]` in scope"));
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "duplicate `path[...]` in scope",
+                    ));
                 }
                 content.parse::<kw::path>()?;
                 path_route = Some(parse_route_expr_bracket(&content)?);
@@ -805,7 +854,9 @@ impl Parse for EndpointDef {
             } else if input.peek(kw::timeout) {
                 input.parse::<kw::timeout>()?;
                 input.parse::<Token![:]>()?;
-                policy.timeout = Some(normalize_policy_expr(parse_expr_until_comma_or_endpoint_arrow(input)?));
+                policy.timeout = Some(normalize_policy_expr(
+                    parse_expr_until_comma_or_endpoint_arrow(input)?,
+                ));
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::use_auth) {
                 auth_uses.push(input.parse::<AuthUseDecl>()?);
@@ -1449,7 +1500,11 @@ fn normalize_policy_expr(expr: Expr) -> Expr {
                     && (*id != "cx")
                     && (*id != "auth")
                     && (*id != "ep")
-                    && id.to_string().chars().next().is_some_and(|c| c.is_ascii_lowercase())
+                    && id
+                        .to_string()
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c.is_ascii_lowercase())
                 {
                     return syn::parse_quote!(ep.#id);
                 }

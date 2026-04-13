@@ -1,4 +1,3 @@
-use crate::auth_provider::{AuthProvider, NoopAuthProvider};
 use crate::cache::{CacheStore, NoopCacheStore};
 use crate::inflight::{InflightPolicy, InflightRegistry, NoopInflightPolicy};
 use crate::rate_limit::{NoopRateLimiter, RateLimiter};
@@ -9,24 +8,24 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct ClientRuntimeState {
     hooks: Arc<dyn RuntimeHooks>,
-    auth_provider: Arc<dyn AuthProvider>,
     cache_store: Arc<dyn CacheStore>,
     inflight_policy: Arc<dyn InflightPolicy>,
     inflight_registry: Arc<InflightRegistry>,
     rate_limiter: Arc<dyn RateLimiter>,
     retry_policy: Arc<dyn RetryPolicy>,
+    max_auth_retries: u32,
 }
 
 impl Default for ClientRuntimeState {
     fn default() -> Self {
         Self {
             hooks: Arc::new(NoopRuntimeHooks),
-            auth_provider: Arc::new(NoopAuthProvider),
             cache_store: Arc::new(NoopCacheStore),
             inflight_policy: Arc::new(NoopInflightPolicy),
             inflight_registry: Arc::new(InflightRegistry::default()),
             rate_limiter: Arc::new(NoopRateLimiter),
             retry_policy: Arc::new(NoRetryPolicy),
+            max_auth_retries: 8,
         }
     }
 }
@@ -40,16 +39,6 @@ impl ClientRuntimeState {
     #[inline]
     pub fn set_hooks(&mut self, hooks: Arc<dyn RuntimeHooks>) {
         self.hooks = hooks;
-    }
-
-    #[inline]
-    pub fn auth_provider(&self) -> &Arc<dyn AuthProvider> {
-        &self.auth_provider
-    }
-
-    #[inline]
-    pub fn set_auth_provider(&mut self, auth_provider: Arc<dyn AuthProvider>) {
-        self.auth_provider = auth_provider;
     }
 
     #[inline]
@@ -70,6 +59,16 @@ impl ClientRuntimeState {
     #[inline]
     pub fn set_retry_policy(&mut self, retry_policy: Arc<dyn RetryPolicy>) {
         self.retry_policy = retry_policy;
+    }
+
+    #[inline]
+    pub fn max_auth_retries(&self) -> u32 {
+        self.max_auth_retries
+    }
+
+    #[inline]
+    pub fn set_max_auth_retries(&mut self, max_auth_retries: u32) {
+        self.max_auth_retries = max_auth_retries;
     }
 
     #[inline]

@@ -281,7 +281,9 @@ where
                 _ => None,
             }
         };
-        self.provider.invalidate(ctx, current.as_ref(), reason).await
+        self.provider
+            .invalidate(ctx, current.as_ref(), reason)
+            .await
     }
 
     async fn commit_slot_result(
@@ -305,7 +307,7 @@ where
                 *state = CredentialSlotState::Failed {
                     generation: previous_generation,
                     error: error.clone(),
-                    retry_after: None,
+                    retry_after: error.retry_after().map(|wait| Instant::now() + wait),
                 };
                 notify.notify_waiters();
                 Err(error)

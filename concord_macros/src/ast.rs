@@ -38,9 +38,16 @@ pub struct AuthCredentialDecl {
 
 #[derive(Debug, Clone)]
 pub enum AuthCredentialKind {
-    ApiKey { secret: SecretRef },
-    StaticBearer { secret: SecretRef },
-    Basic { username: SecretRef, password: SecretRef },
+    ApiKey {
+        secret: SecretRef,
+    },
+    StaticBearer {
+        secret: SecretRef,
+    },
+    Basic {
+        username: SecretRef,
+        password: SecretRef,
+    },
     OAuth2ClientCredentials {
         token_url: LitStr,
         client_id: SecretRef,
@@ -65,10 +72,23 @@ pub struct AuthUseDecl {
 
 #[derive(Debug, Clone)]
 pub enum AuthUseKind {
-    Bearer { credential: Ident },
-    Header { header: LitStr, credential: Ident },
-    Query { key: LitStr, credential: Ident },
-    Basic { credential: Ident },
+    Bearer {
+        credential: Ident,
+    },
+    Header {
+        header: LitStr,
+        credential: Ident,
+    },
+    Query {
+        key: LitStr,
+        credential: Ident,
+    },
+    Basic {
+        credential: Ident,
+    },
+    Certificate {
+        credential: Ident,
+    },
     Custom {
         usage_ty: Type,
         usage: Expr,

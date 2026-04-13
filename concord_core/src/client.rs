@@ -1,9 +1,8 @@
 use crate::auth::{
     AuthBuildContext, AuthController, AuthError, AuthErrorKind, AuthHttpExecutor, AuthHttpRequest,
     AuthHttpResponse, AuthMode, AuthPart, AuthPrepareContext as EndpointAuthPrepareContext,
-    AuthResponseAction, AuthResponseContext as EndpointAuthResponseContext,
+    AuthRequirementId, AuthResponseAction, AuthResponseContext as EndpointAuthResponseContext,
 };
-use crate::auth_provider::{AuthMeta, AuthPrepareContext, AuthProvider, AuthResponseContext};
 use crate::cache::CacheStore;
 use crate::codec::FormatType;
 use crate::codec::{ContentType, Decodes, Encodes};
@@ -30,7 +29,9 @@ use bytes::Bytes;
 use http::StatusCode;
 use http::header::CONTENT_TYPE;
 use http::uri::Scheme;
+use std::cell::RefCell;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 pub trait ClientContext: Sized + Send + Sync + 'static {
     type Vars: Clone + Send + Sync + 'static;
@@ -40,6 +41,22 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
     const DOMAIN: &'static str;
 
     fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState;
+
+    fn apply_internal_auth<'a>(
+        _requirement: &'a AuthRequirementId,
+        _request: &'a mut BuiltRequest,
+        _vars: &'a Self::Vars,
+        _auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn AuthHttpExecutor,
+    ) -> crate::auth::AuthFuture<'a, Result<(), AuthError>> {
+        Box::pin(async {
+            Err(AuthError::new(
+                AuthErrorKind::UnsupportedScheme,
+                "internal auth requirement is not supported by this client context",
+            ))
+        })
+    }
 
     fn base_route(_vars: &Self::Vars, _auth: &Self::AuthVars) -> RouteParts {
         RouteParts::new()
@@ -59,7 +76,7 @@ pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = ReqwestTransport>
     transport: T,
     vars: Cx::Vars,
     auth_vars: Cx::AuthVars,
-    auth_state: Cx::AuthState,
+    auth_state: Arc<RwLock<Arc<Cx::AuthState>>>,
     debug_level: DebugLevel,
     pagination_caps: Caps,
     debug_sink: Arc<dyn DebugSink>,
@@ -85,7 +102,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             transport,
             vars,
             auth_vars,
-            auth_state,
+            auth_state: Arc::new(RwLock::new(Arc::new(auth_state))),
             debug_level: DebugLevel::default(),
             pagination_caps: Caps::default(),
             debug_sink: Arc::new(StderrDebugSink),
@@ -131,13 +148,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
-    pub fn auth_state(&self) -> &Cx::AuthState {
-        &self.auth_state
+    pub fn auth_state(&self) -> Arc<Cx::AuthState> {
+        self.auth_state
+            .read()
+            .expect("auth_state lock poisoned")
+            .clone()
     }
 
     #[inline]
     pub fn set_auth_state(&mut self, auth_state: Cx::AuthState) {
-        self.auth_state = auth_state;
+        *self.auth_state.write().expect("auth_state lock poisoned") = Arc::new(auth_state);
     }
 
     #[inline]
@@ -204,6 +224,22 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
+    pub fn max_auth_retries(&self) -> u32 {
+        self.runtime_state.max_auth_retries()
+    }
+
+    #[inline]
+    pub fn set_max_auth_retries(&mut self, max_auth_retries: u32) {
+        Arc::make_mut(&mut self.runtime_state).set_max_auth_retries(max_auth_retries);
+    }
+
+    #[inline]
+    pub fn with_max_auth_retries(mut self, max_auth_retries: u32) -> Self {
+        Arc::make_mut(&mut self.runtime_state).set_max_auth_retries(max_auth_retries);
+        self
+    }
+
+    #[inline]
     pub fn rate_limiter(&self) -> &Arc<dyn RateLimiter> {
         self.runtime_state.rate_limiter()
     }
@@ -232,22 +268,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     #[inline]
     pub fn with_cache_store(mut self, cache_store: Arc<dyn CacheStore>) -> Self {
         Arc::make_mut(&mut self.runtime_state).set_cache_store(cache_store);
-        self
-    }
-
-    #[inline]
-    pub fn auth_provider(&self) -> &Arc<dyn AuthProvider> {
-        self.runtime_state.auth_provider()
-    }
-
-    #[inline]
-    pub fn set_auth_provider(&mut self, auth_provider: Arc<dyn AuthProvider>) {
-        Arc::make_mut(&mut self.runtime_state).set_auth_provider(auth_provider);
-    }
-
-    #[inline]
-    pub fn with_auth_provider(mut self, auth_provider: Arc<dyn AuthProvider>) -> Self {
-        Arc::make_mut(&mut self.runtime_state).set_auth_provider(auth_provider);
         self
     }
 
@@ -326,17 +346,20 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let ctx = Self::ctx_for::<E>(ep);
         let base_attempt = meta.attempt;
         let max_retries = self.runtime_state.retry_policy().max_retries();
+        let max_auth_retries = self.runtime_state.max_auth_retries();
+        let auth_state_snapshot = self.auth_state();
         let auth_ctrl = <E::Auth as AuthPart<Cx, E>>::controller(
             AuthBuildContext {
                 vars: self.vars(),
                 auth: self.auth_vars(),
-                auth_state: self.auth_state(),
+                auth_state: auth_state_snapshot.as_ref(),
             },
             ep,
         )?;
         let mut endpoint_auth_state = auth_ctrl.init(ep)?;
         let mut attempt_index: u32 = 0;
         let mut transport_retry_index: u32 = 0;
+        let mut auth_retry_index: u32 = 0;
 
         loop {
             let mut attempt_meta = meta.clone();
@@ -352,29 +375,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         ep,
                         vars: self.vars(),
                         auth: self.auth_vars(),
-                        auth_state: self.auth_state(),
+                        auth_state: auth_state_snapshot.as_ref(),
                         executor: &auth_http,
                         meta: &auth_request_meta,
                         request: &mut built,
                     },
                 )
-                .await?;
-            let auth_url = built.url.as_str().to_owned();
-            let auth_method = built.meta.method.clone();
-            let auth_meta = AuthMeta {
-                endpoint: built.meta.endpoint,
-                method: &auth_method,
-                url: &auth_url,
-                attempt: built.meta.attempt,
-                page_index: built.meta.page_index,
-                idempotent: built.meta.idempotent,
-            };
-            self.runtime_state
-                .auth_provider()
-                .prepare_request(AuthPrepareContext {
-                    meta: auth_meta,
-                    request: &mut built,
-                })
                 .await?;
             let url_str = built.url.as_str().to_string();
             let cache_key = self.runtime_state.cache_store().key_for(&built);
@@ -453,7 +459,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                                 ep,
                                 vars: self.vars(),
                                 auth: self.auth_vars(),
-                                auth_state: self.auth_state(),
+                                auth_state: auth_state_snapshot.as_ref(),
                                 executor: &auth_http,
                                 meta: &resp.meta,
                                 status: resp.status,
@@ -463,6 +469,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         )
                         .await?;
                     if matches!(auth_action, AuthResponseAction::Retry { .. }) {
+                        if auth_retry_index >= max_auth_retries {
+                            return Err(ApiClientError::Auth {
+                                ctx: ctx.clone(),
+                                source: AuthError::new(
+                                    AuthErrorKind::ProviderRejected,
+                                    format!(
+                                        "auth retry budget exhausted (max_auth_retries={max_auth_retries})"
+                                    ),
+                                ),
+                            });
+                        }
+                        auth_retry_index = auth_retry_index.saturating_add(1);
                         attempt_index = attempt_index.saturating_add(1);
                         continue;
                     }
@@ -504,7 +522,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                                     ep,
                                     vars: self.vars(),
                                     auth: self.auth_vars(),
-                                    auth_state: self.auth_state(),
+                                    auth_state: auth_state_snapshot.as_ref(),
                                     executor: &auth_http,
                                     meta: &response_meta,
                                     status: *status,
@@ -514,6 +532,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             )
                             .await?;
                         if matches!(auth_action, AuthResponseAction::Retry { .. }) {
+                            if auth_retry_index >= max_auth_retries {
+                                return Err(err);
+                            }
+                            auth_retry_index = auth_retry_index.saturating_add(1);
                             attempt_index = attempt_index.saturating_add(1);
                             continue;
                         }
@@ -688,22 +710,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 headers: &resp.headers,
             })
             .await;
-        let auth_meta = AuthMeta {
-            endpoint: resp.meta.endpoint,
-            method: &resp.meta.method,
-            url: resp.url.as_str(),
-            attempt: resp.meta.attempt,
-            page_index: resp.meta.page_index,
-            idempotent: resp.meta.idempotent,
-        };
-        self.runtime_state
-            .auth_provider()
-            .on_response(AuthResponseContext {
-                meta: auth_meta,
-                status: resp.status,
-                headers: &resp.headers,
-            })
-            .await;
         let rate_limit_meta = RateLimitContext {
             endpoint: resp.meta.endpoint,
             method: &resp.meta.method,
@@ -863,47 +869,177 @@ struct ClientAuthHttpExecutor<'a, Cx: ClientContext, T: Transport> {
     client: &'a ApiClient<Cx, T>,
 }
 
+tokio::task_local! {
+    static AUTH_INTERNAL_STACK: RefCell<Vec<String>>;
+}
+
+async fn with_auth_internal_stack<T>(fut: impl std::future::Future<Output = T>) -> T {
+    if AUTH_INTERNAL_STACK.try_with(|_| ()).is_ok() {
+        fut.await
+    } else {
+        AUTH_INTERNAL_STACK
+            .scope(RefCell::new(Vec::new()), fut)
+            .await
+    }
+}
+
 impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx, T> {
     fn send<'a>(
         &'a self,
         req: AuthHttpRequest,
     ) -> crate::auth::AuthFuture<'a, Result<AuthHttpResponse, AuthError>> {
         Box::pin(async move {
-            if !matches!(req.mode, AuthMode::SkipAuth) {
-                return Err(AuthError::new(
-                    AuthErrorKind::UnsupportedScheme,
-                    "internal auth requests currently support SkipAuth only",
-                ));
-            }
+            with_auth_internal_stack(async {
+                let AuthHttpRequest {
+                    method,
+                    url,
+                    headers,
+                    body,
+                    mode,
+                    policy,
+                } = req;
 
-            let meta = RequestMeta {
-                endpoint: "<auth>",
-                method: req.method,
-                idempotent: false,
-                attempt: 0,
-                page_index: 0,
-            };
-            let built = BuiltRequest {
-                meta,
-                url: req.url,
-                headers: req.headers,
-                body: req.body,
-                timeout: req.policy.timeout,
-                extensions: Default::default(),
-            };
-            let mut resp = self.client.transport.send(built).await.map_err(|source| {
-                AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
-            })?;
-            let body = read_body_all(resp.body.as_mut(), resp.content_length)
-                .await
-                .map_err(|source| {
-                    AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
-                })?;
-            Ok(AuthHttpResponse {
-                status: resp.status,
-                headers: resp.headers,
-                body,
+                let mut base_request = BuiltRequest {
+                    meta: RequestMeta {
+                        endpoint: "<auth>",
+                        method,
+                        idempotent: false,
+                        attempt: 0,
+                        page_index: 0,
+                    },
+                    url,
+                    headers,
+                    body,
+                    timeout: policy.timeout,
+                    extensions: Default::default(),
+                };
+
+                match mode {
+                    AuthMode::SkipAuth => {}
+                    AuthMode::UseAuth(requirement) => {
+                        let requirement_key = requirement.safe_fragment();
+                        let recursive = AUTH_INTERNAL_STACK.with(|stack| {
+                            stack.borrow().iter().any(|item| item == &requirement_key)
+                        });
+                        if recursive {
+                            return Err(AuthError::new(
+                                AuthErrorKind::RecursionDetected,
+                                format!("internal auth recursion detected for requirement `{requirement}`"),
+                            ));
+                        }
+
+                        AUTH_INTERNAL_STACK.with(|stack| stack.borrow_mut().push(requirement_key));
+                        let auth_state_snapshot = self.client.auth_state();
+                        let applied = Cx::apply_internal_auth(
+                            &requirement,
+                            &mut base_request,
+                            self.client.vars(),
+                            self.client.auth_vars(),
+                            auth_state_snapshot.as_ref(),
+                            self,
+                        )
+                        .await;
+                        AUTH_INTERNAL_STACK.with(|stack| {
+                            let _ = stack.borrow_mut().pop();
+                        });
+                        applied?;
+                    }
+                }
+
+                let auth_url = base_request.url.as_str().to_string();
+                let mut attempt: u32 = 0;
+                loop {
+                    let mut built = base_request.clone();
+                    built.meta.attempt = attempt;
+
+                    if policy.use_rate_limiter {
+                        let _permit = self
+                            .client
+                            .runtime_state
+                            .rate_limiter()
+                            .acquire(RateLimitContext {
+                                endpoint: "<auth>",
+                                method: &built.meta.method,
+                                url: &auth_url,
+                                attempt,
+                                page_index: 0,
+                                idempotent: built.meta.idempotent,
+                            })
+                            .await
+                            .map_err(|source| {
+                                AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
+                            })?;
+                        let resp = self.client.transport.send(built).await;
+                        let mut resp = match resp {
+                            Ok(resp) => resp,
+                            Err(source) => {
+                                if attempt >= policy.max_transport_retries {
+                                    return Err(AuthError::new(
+                                        AuthErrorKind::AcquireFailed,
+                                        source.to_string(),
+                                    ));
+                                }
+                                attempt = attempt.saturating_add(1);
+                                continue;
+                            }
+                        };
+                        let body = match read_body_all(resp.body.as_mut(), resp.content_length).await {
+                            Ok(body) => body,
+                            Err(source) => {
+                                if attempt >= policy.max_transport_retries {
+                                    return Err(AuthError::new(
+                                        AuthErrorKind::AcquireFailed,
+                                        source.to_string(),
+                                    ));
+                                }
+                                attempt = attempt.saturating_add(1);
+                                continue;
+                            }
+                        };
+                        return Ok(AuthHttpResponse {
+                            status: resp.status,
+                            headers: resp.headers,
+                            body,
+                        });
+                    }
+
+                    let resp = self.client.transport.send(built).await;
+                    let mut resp = match resp {
+                        Ok(resp) => resp,
+                        Err(source) => {
+                            if attempt >= policy.max_transport_retries {
+                                return Err(AuthError::new(
+                                    AuthErrorKind::AcquireFailed,
+                                    source.to_string(),
+                                ));
+                            }
+                            attempt = attempt.saturating_add(1);
+                            continue;
+                        }
+                    };
+
+                    let body = match read_body_all(resp.body.as_mut(), resp.content_length).await {
+                        Ok(body) => body,
+                        Err(source) => {
+                            if attempt >= policy.max_transport_retries {
+                                return Err(AuthError::new(
+                                    AuthErrorKind::AcquireFailed,
+                                    source.to_string(),
+                                ));
+                            }
+                            attempt = attempt.saturating_add(1);
+                            continue;
+                        }
+                    };
+
+                    return Ok(AuthHttpResponse {
+                        status: resp.status,
+                        headers: resp.headers,
+                        body,
+                    });
+                }
             })
+            .await
         })
     }
 }

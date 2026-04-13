@@ -122,16 +122,59 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for DslLoginProvider {
                 ));
             }
 
-            let token: DslLoginTokenResponse =
-                serde_json::from_slice(&resp.body).map_err(|e| {
-                    AuthError::new(
-                        AuthErrorKind::AcquireFailed,
-                        format!("login response decode failed: {e}"),
-                    )
-                })?;
+            let token: DslLoginTokenResponse = serde_json::from_slice(&resp.body).map_err(|e| {
+                AuthError::new(
+                    AuthErrorKind::AcquireFailed,
+                    format!("login response decode failed: {e}"),
+                )
+            })?;
 
             Ok(AccessToken::new(token.access_token))
         })
+    }
+}
+
+#[derive(Clone)]
+pub struct DslCapturedApiKeyProvider {
+    token: SecretString,
+}
+
+impl DslCapturedApiKeyProvider {
+    fn new(token: SecretString) -> Self {
+        Self { token }
+    }
+}
+
+impl<Cx: ClientContext> CredentialProvider<Cx> for DslCapturedApiKeyProvider {
+    type Credential = ApiKey;
+
+    fn id(&self) -> CredentialId {
+        CredentialId::new("dsl", "captured-api-key")
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        _ctx: CredentialContext<'a, Cx>,
+    ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
+        Box::pin(async move { Ok(ApiKey::new(self.token.clone())) })
+    }
+}
+
+#[derive(Clone)]
+pub struct DslCertificateProvider;
+
+impl<Cx: ClientContext> CredentialProvider<Cx> for DslCertificateProvider {
+    type Credential = ClientCertificate;
+
+    fn id(&self) -> CredentialId {
+        CredentialId::new("dsl", "certificate")
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        _ctx: CredentialContext<'a, Cx>,
+    ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
+        Box::pin(async move { Ok(ClientCertificate::new("dsl-cert-identity")) })
     }
 }
 
@@ -249,11 +292,8 @@ async fn custom_provider_macro_can_login_with_internal_request_against_current_a
             MockReply::ok_json(json_bytes(&())),
         ])
         .build();
-    let api = ApiDslCustomLogin::new_with_transport(
-        "pw".to_string(),
-        "alice".to_string(),
-        transport,
-    );
+    let api =
+        ApiDslCustomLogin::new_with_transport("pw".to_string(), "alice".to_string(), transport);
 
     api.request(endpoints::Ping::new()).execute().await.unwrap();
 
@@ -345,11 +385,8 @@ async fn oauth2_client_credentials_dsl_uses_internal_token_request_then_bearer_a
             MockReply::ok_json(json_bytes(&())),
         ])
         .build();
-    let api = ApiDslOAuth::new_with_transport(
-        "client".to_string(),
-        "secret".to_string(),
-        transport,
-    );
+    let api =
+        ApiDslOAuth::new_with_transport("client".to_string(), "secret".to_string(), transport);
 
     api.request(endpoints::Ping::new()).execute().await.unwrap();
 
@@ -366,5 +403,128 @@ async fn oauth2_client_credentials_dsl_uses_internal_token_request_then_bearer_a
     );
     assert_request(&reqs[1]).header(AUTHORIZATION, "Bearer oauth-token");
 
+    h.finish();
+}
+
+#[tokio::test]
+async fn secret_setter_rebuild_updates_all_client_clones() {
+    api! {
+        client ApiDslCloneRebuild {
+            scheme: https,
+            host: "example.com",
+            secret {
+                api_key: String
+            }
+            auth {
+                credential api_key: ApiKey(secret.api_key)
+            }
+        }
+
+        scope protected {
+            use_auth HeaderAuth("X-Api-Key", api_key)
+            GET Ping {
+                -> Json<()>;
+            }
+        }
+    }
+
+    use api_dsl_clone_rebuild::*;
+
+    let (transport, h) = mock()
+        .replies([
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+        ])
+        .build();
+    let mut api = ApiDslCloneRebuild::new_with_transport("tok1".to_string(), transport);
+    let clone = api.clone();
+
+    api.request(endpoints::Ping::new()).execute().await.unwrap();
+    clone
+        .request(endpoints::Ping::new())
+        .execute()
+        .await
+        .unwrap();
+    api.set_api_key("tok2");
+    clone
+        .request(endpoints::Ping::new())
+        .execute()
+        .await
+        .unwrap();
+
+    let reqs = h.recorded();
+    assert_eq!(reqs.len(), 3);
+    assert_request(&reqs[0]).header("x-api-key", "tok1");
+    assert_request(&reqs[1]).header("x-api-key", "tok1");
+    assert_request(&reqs[2]).header("x-api-key", "tok2");
+    h.finish();
+}
+
+#[tokio::test]
+async fn custom_provider_secret_update_rebuilds_state() {
+    api! {
+        client ApiDslCustomRebuild {
+            scheme: https,
+            host: "example.com",
+            secret {
+                api_key: String
+            }
+            auth {
+                credential captured: Custom<DslCapturedApiKeyProvider>(
+                    DslCapturedApiKeyProvider::new(secret.api_key.clone())
+                )
+            }
+        }
+
+        GET Ping {
+            use_auth HeaderAuth("X-Api-Key", captured)
+            -> Json<()>;
+        }
+    }
+
+    use api_dsl_custom_rebuild::*;
+
+    let (transport, h) = mock()
+        .replies([
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+        ])
+        .build();
+    let mut api = ApiDslCustomRebuild::new_with_transport("tok1".to_string(), transport);
+
+    api.request(endpoints::Ping::new()).execute().await.unwrap();
+    api.set_api_key("tok2");
+    api.request(endpoints::Ping::new()).execute().await.unwrap();
+
+    let reqs = h.recorded();
+    assert_eq!(reqs.len(), 2);
+    assert_request(&reqs[0]).header("x-api-key", "tok1");
+    assert_request(&reqs[1]).header("x-api-key", "tok2");
+    h.finish();
+}
+
+#[tokio::test]
+async fn certificate_auth_macro_usage_is_supported() {
+    api! {
+        client ApiDslCertificate {
+            scheme: https,
+            host: "example.com",
+            auth {
+                credential cert: Custom<DslCertificateProvider>(DslCertificateProvider)
+            }
+        }
+
+        GET Ping {
+            use_auth CertificateAuth(cert)
+            -> Json<()>;
+        }
+    }
+
+    use api_dsl_certificate::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+    let api = ApiDslCertificate::new_with_transport(transport);
+    api.request(endpoints::Ping::new()).execute().await.unwrap();
     h.finish();
 }

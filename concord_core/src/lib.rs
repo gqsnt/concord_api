@@ -1,5 +1,4 @@
 pub mod auth;
-mod auth_provider;
 mod cache;
 mod client;
 mod codec;
@@ -55,9 +54,6 @@ pub mod prelude {
     };
     #[cfg(feature = "json")]
     pub use crate::auth::OAuth2ClientCredentialsProvider;
-    pub use crate::auth_provider::{
-        AuthMeta, AuthPrepareContext, AuthProvider, AuthResponseContext, NoopAuthProvider,
-    };
     pub use crate::cache::{CacheKey, CacheStore, NoopCacheStore, default_cache_key};
     pub use crate::client::{ApiClient, ClientContext};
     #[cfg(feature = "json")]
