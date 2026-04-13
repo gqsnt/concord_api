@@ -53,6 +53,16 @@ api! {
             "user-agent" = "ClientApiExample/1.0",
             "x-client-trace" = vars.client_trace
         }
+        retry {
+            profile read {
+                attempts 2
+                methods [GET, HEAD]
+                on status[429, 500, 502, 503, 504]
+                retry_after honor
+                backoff none
+            }
+            default read
+        }
     }
 
     scope jsonplaceholder {

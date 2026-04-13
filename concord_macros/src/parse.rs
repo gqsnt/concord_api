@@ -4,7 +4,7 @@ use crate::kw;
 use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
 use syn::parse::{Parse, ParseStream};
 use syn::{
-    Expr, Ident, LitStr, Path, Result, Token, Type, braced, bracketed, parenthesized, token,
+    Expr, Ident, LitInt, LitStr, Path, Result, Token, Type, braced, bracketed, parenthesized, token,
 };
 
 impl Parse for ApiFile {
@@ -32,6 +32,8 @@ impl Parse for ClientDef {
         let mut auth_vars: Option<VarsBlock> = None;
         let mut auth: Option<AuthBlock> = None;
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
+        let mut retry_profiles: Option<RetryProfilesBlock> = None;
+        let mut retry: Option<RetrySpec> = None;
         let mut policy = PolicyBlocks::default();
 
         while !content.is_empty() {
@@ -89,6 +91,28 @@ impl Parse for ClientDef {
             } else if content.peek(kw::use_auth) {
                 auth_uses.push(content.parse::<AuthUseDecl>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::retry) {
+                match parse_retry_decl(&content)? {
+                    RetryDecl::Profiles(block) => {
+                        if retry_profiles.is_some() {
+                            return Err(syn::Error::new(
+                                name.span(),
+                                "duplicate retry profile block in client",
+                            ));
+                        }
+                        retry_profiles = Some(block);
+                    }
+                    RetryDecl::Spec(spec) => {
+                        if retry.is_some() {
+                            return Err(syn::Error::new(
+                                name.span(),
+                                "duplicate client retry policy",
+                            ));
+                        }
+                        retry = Some(spec);
+                    }
+                }
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::host) {
                 content.parse::<kw::host>()?;
                 content.parse::<Token![:]>()?;
@@ -127,6 +151,8 @@ impl Parse for ClientDef {
             scheme,
             host,
             policy,
+            retry_profiles,
+            retry,
         })
     }
 }
@@ -538,6 +564,222 @@ fn parse_params_block(input: ParseStream<'_>) -> Result<Vec<VarDeclNoWire>> {
     Ok(decls)
 }
 
+enum RetryDecl {
+    Profiles(RetryProfilesBlock),
+    Spec(RetrySpec),
+}
+
+fn parse_retry_decl(input: ParseStream<'_>) -> Result<RetryDecl> {
+    input.parse::<kw::retry>()?;
+
+    if input.peek(kw::off) {
+        input.parse::<kw::off>()?;
+        return Ok(RetryDecl::Spec(RetrySpec::Off));
+    }
+
+    if input.peek(token::Brace) {
+        let content;
+        braced!(content in input);
+        if content.peek(kw::profile) || content.peek(kw::default) {
+            return Ok(RetryDecl::Profiles(parse_retry_profiles_body(&content)?));
+        }
+        return Ok(RetryDecl::Spec(RetrySpec::Patch(parse_retry_patch_body(
+            &content,
+        )?)));
+    }
+
+    Ok(RetryDecl::Spec(RetrySpec::Profile(input.parse()?)))
+}
+
+fn parse_retry_profiles_body(input: ParseStream<'_>) -> Result<RetryProfilesBlock> {
+    let mut profiles = Vec::new();
+    let mut default: Option<Ident> = None;
+
+    while !input.is_empty() {
+        if input.peek(kw::profile) {
+            input.parse::<kw::profile>()?;
+            let name: Ident = input.parse()?;
+            let extends = if input.peek(kw::extends) {
+                input.parse::<kw::extends>()?;
+                Some(input.parse()?)
+            } else {
+                None
+            };
+            let content;
+            braced!(content in input);
+            profiles.push(RetryProfileDef {
+                name,
+                extends,
+                patch: parse_retry_patch_body(&content)?,
+            });
+        } else if input.peek(kw::default) {
+            if default.is_some() {
+                return Err(syn::Error::new(input.span(), "duplicate retry default"));
+            }
+            input.parse::<kw::default>()?;
+            default = Some(input.parse()?);
+        } else {
+            let tt: TokenTree = input.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "unexpected token in retry profile block",
+            ));
+        }
+        let _ = input.parse::<Option<Token![,]>>()?;
+    }
+
+    Ok(RetryProfilesBlock { profiles, default })
+}
+
+fn parse_retry_patch_body(input: ParseStream<'_>) -> Result<RetryPatch> {
+    let mut patch = RetryPatch::default();
+
+    while !input.is_empty() {
+        if input.peek(kw::attempts) {
+            input.parse::<kw::attempts>()?;
+            set_retry_patch_field(
+                &mut patch.attempts,
+                input.parse::<LitInt>()?,
+                input.span(),
+                "attempts",
+            )?;
+        } else if input.peek(kw::methods) {
+            input.parse::<kw::methods>()?;
+            let methods = parse_ident_list(input)?;
+            set_retry_patch_field(&mut patch.methods, methods, input.span(), "methods")?;
+        } else if input.peek(kw::on) {
+            input.parse::<kw::on>()?;
+            if input.peek(kw::status) {
+                input.parse::<kw::status>()?;
+                let statuses = parse_lit_int_list(input)?;
+                set_retry_patch_field(&mut patch.statuses, statuses, input.span(), "status")?;
+            } else if input.peek(kw::transport) {
+                input.parse::<kw::transport>()?;
+                let transport_errors = parse_ident_list(input)?;
+                set_retry_patch_field(
+                    &mut patch.transport_errors,
+                    transport_errors,
+                    input.span(),
+                    "transport",
+                )?;
+            } else {
+                let tt: TokenTree = input.parse()?;
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "expected `status[...]` or `transport[...]` after `on`",
+                ));
+            }
+        } else if input.peek(kw::backoff) {
+            input.parse::<kw::backoff>()?;
+            if input.peek(kw::none) {
+                input.parse::<kw::none>()?;
+                set_retry_patch_field(
+                    &mut patch.backoff,
+                    RetryBackoffSpec::None,
+                    input.span(),
+                    "backoff",
+                )?;
+            } else {
+                let tt: TokenTree = input.parse()?;
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "expected `none` after `backoff`",
+                ));
+            }
+        } else if input.peek(kw::retry_after) {
+            input.parse::<kw::retry_after>()?;
+            if input.peek(kw::honor) {
+                input.parse::<kw::honor>()?;
+                set_retry_patch_field(
+                    &mut patch.respect_retry_after,
+                    true,
+                    input.span(),
+                    "retry_after",
+                )?;
+            } else {
+                let tt: TokenTree = input.parse()?;
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "expected `honor` after `retry_after`",
+                ));
+            }
+        } else if input.peek(kw::idempotency) {
+            input.parse::<kw::idempotency>()?;
+            if input.peek(kw::header) {
+                input.parse::<kw::header>()?;
+                let content;
+                parenthesized!(content in input);
+                let header: LitStr = content.parse()?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected idempotency header arguments",
+                    ));
+                }
+                set_retry_patch_field(
+                    &mut patch.idempotency,
+                    RetryIdempotencySpec::Header(header),
+                    input.span(),
+                    "idempotency",
+                )?;
+            } else {
+                let tt: TokenTree = input.parse()?;
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "expected `header(\"...\")` after `idempotency`",
+                ));
+            }
+        } else {
+            let tt: TokenTree = input.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "unexpected token in retry policy block",
+            ));
+        }
+        let _ = input.parse::<Option<Token![,]>>()?;
+    }
+
+    Ok(patch)
+}
+
+fn set_retry_patch_field<T>(
+    out: &mut Option<T>,
+    value: T,
+    span: Span,
+    field: &'static str,
+) -> Result<()> {
+    if out.is_some() {
+        return Err(syn::Error::new(
+            span,
+            format!("duplicate retry `{field}` field"),
+        ));
+    }
+    *out = Some(value);
+    Ok(())
+}
+
+fn parse_ident_list(input: ParseStream<'_>) -> Result<Vec<Ident>> {
+    let content;
+    bracketed!(content in input);
+    let mut out = Vec::new();
+    while !content.is_empty() {
+        out.push(content.parse()?);
+        let _ = content.parse::<Option<Token![,]>>()?;
+    }
+    Ok(out)
+}
+
+fn parse_lit_int_list(input: ParseStream<'_>) -> Result<Vec<LitInt>> {
+    let content;
+    bracketed!(content in input);
+    let mut out = Vec::new();
+    while !content.is_empty() {
+        out.push(content.parse()?);
+        let _ = content.parse::<Option<Token![,]>>()?;
+    }
+    Ok(out)
+}
+
 impl Parse for Item {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(kw::prefix) {
@@ -565,6 +807,7 @@ impl Parse for LayerDefTaggedPrefix {
 
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
+        let mut retry: Option<RetrySpec> = None;
         let mut items = Vec::new();
 
         while !content.is_empty() {
@@ -581,6 +824,25 @@ impl Parse for LayerDefTaggedPrefix {
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::use_auth) {
                 auth_uses.push(content.parse::<AuthUseDecl>()?);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::retry) {
+                match parse_retry_decl(&content)? {
+                    RetryDecl::Spec(spec) => {
+                        if retry.is_some() {
+                            return Err(syn::Error::new(
+                                content.span(),
+                                "duplicate retry policy in prefix layer",
+                            ));
+                        }
+                        retry = Some(spec);
+                    }
+                    RetryDecl::Profiles(_) => {
+                        return Err(syn::Error::new(
+                            content.span(),
+                            "retry profiles are only allowed in client blocks",
+                        ));
+                    }
+                }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope)
             {
@@ -597,6 +859,7 @@ impl Parse for LayerDefTaggedPrefix {
             params: Vec::new(),
             policy,
             auth_uses,
+            retry,
             items,
         }))
     }
@@ -611,6 +874,7 @@ impl Parse for LayerDefTaggedPath {
 
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
+        let mut retry: Option<RetrySpec> = None;
         let mut items = Vec::new();
 
         while !content.is_empty() {
@@ -628,6 +892,25 @@ impl Parse for LayerDefTaggedPath {
             } else if content.peek(kw::use_auth) {
                 auth_uses.push(content.parse::<AuthUseDecl>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::retry) {
+                match parse_retry_decl(&content)? {
+                    RetryDecl::Spec(spec) => {
+                        if retry.is_some() {
+                            return Err(syn::Error::new(
+                                content.span(),
+                                "duplicate retry policy in path layer",
+                            ));
+                        }
+                        retry = Some(spec);
+                    }
+                    RetryDecl::Profiles(_) => {
+                        return Err(syn::Error::new(
+                            content.span(),
+                            "retry profiles are only allowed in client blocks",
+                        ));
+                    }
+                }
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope)
             {
                 items.push(content.parse::<Item>()?);
@@ -642,6 +925,7 @@ impl Parse for LayerDefTaggedPath {
             params: Vec::new(),
             policy,
             auth_uses,
+            retry,
             items,
         }))
     }
@@ -658,6 +942,7 @@ impl Parse for LayerDefTaggedScope {
         let mut params: Vec<VarDeclNoWire> = Vec::new();
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
+        let mut retry: Option<RetrySpec> = None;
         let mut host_route: Option<RouteExpr> = None;
         let mut path_route: Option<RouteExpr> = None;
         let mut items = Vec::new();
@@ -707,6 +992,25 @@ impl Parse for LayerDefTaggedScope {
             } else if content.peek(kw::use_auth) {
                 auth_uses.push(content.parse::<AuthUseDecl>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::retry) {
+                match parse_retry_decl(&content)? {
+                    RetryDecl::Spec(spec) => {
+                        if retry.is_some() {
+                            return Err(syn::Error::new(
+                                content.span(),
+                                "duplicate retry policy in scope",
+                            ));
+                        }
+                        retry = Some(spec);
+                    }
+                    RetryDecl::Profiles(_) => {
+                        return Err(syn::Error::new(
+                            content.span(),
+                            "retry profiles are only allowed in client blocks",
+                        ));
+                    }
+                }
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::scope) || content.peek(kw::prefix) || content.peek(kw::path)
             {
                 items.push(content.parse::<Item>()?);
@@ -724,12 +1028,14 @@ impl Parse for LayerDefTaggedScope {
                 params,
                 policy,
                 auth_uses,
+                retry,
                 items: vec![Item::Layer(LayerDef {
                     kind: LayerKind::Path,
                     route: path,
                     params: Vec::new(),
                     policy: PolicyBlocks::default(),
                     auth_uses: Vec::new(),
+                    retry: None,
                     items,
                 })],
             },
@@ -739,6 +1045,7 @@ impl Parse for LayerDefTaggedScope {
                 params,
                 policy,
                 auth_uses,
+                retry,
                 items,
             },
             (None, Some(path)) => LayerDef {
@@ -747,6 +1054,7 @@ impl Parse for LayerDefTaggedScope {
                 params,
                 policy,
                 auth_uses,
+                retry,
                 items,
             },
             (None, None) => LayerDef {
@@ -755,6 +1063,7 @@ impl Parse for LayerDefTaggedScope {
                 params,
                 policy,
                 auth_uses,
+                retry,
                 items,
             },
         };
@@ -775,6 +1084,7 @@ impl Parse for EndpointDef {
             let mut route = RouteExpr { atoms: Vec::new() };
             let mut policy = PolicyBlocks::default();
             let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
+            let mut retry: Option<RetrySpec> = None;
             let mut paginate: Option<PaginateSpec> = None;
             let mut body: Option<CodecSpec> = None;
             let mut response: Option<CodecSpec> = None;
@@ -814,6 +1124,25 @@ impl Parse for EndpointDef {
                     let _ = content.parse::<Option<Token![,]>>()?;
                 } else if content.peek(kw::use_auth) {
                     auth_uses.push(content.parse::<AuthUseDecl>()?);
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(kw::retry) {
+                    match parse_retry_decl(&content)? {
+                        RetryDecl::Spec(spec) => {
+                            if retry.is_some() {
+                                return Err(syn::Error::new(
+                                    name.span(),
+                                    "duplicate retry policy in endpoint",
+                                ));
+                            }
+                            retry = Some(spec);
+                        }
+                        RetryDecl::Profiles(_) => {
+                            return Err(syn::Error::new(
+                                name.span(),
+                                "retry profiles are only allowed in client blocks",
+                            ));
+                        }
+                    }
                     let _ = content.parse::<Option<Token![,]>>()?;
                 } else if content.peek(kw::paginate) {
                     if paginate.is_some() {
@@ -862,6 +1191,7 @@ impl Parse for EndpointDef {
                 params,
                 policy,
                 auth_uses,
+                retry,
                 paginate,
                 body,
                 response,
@@ -873,6 +1203,7 @@ impl Parse for EndpointDef {
         let params: Vec<VarDeclNoWire> = Vec::new();
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
+        let mut retry: Option<RetrySpec> = None;
         let mut paginate: Option<PaginateSpec> = None;
         let mut body: Option<CodecSpec> = None;
 
@@ -893,6 +1224,25 @@ impl Parse for EndpointDef {
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::use_auth) {
                 auth_uses.push(input.parse::<AuthUseDecl>()?);
+                let _ = input.parse::<Option<Token![,]>>()?;
+            } else if input.peek(kw::retry) {
+                match parse_retry_decl(input)? {
+                    RetryDecl::Spec(spec) => {
+                        if retry.is_some() {
+                            return Err(syn::Error::new(
+                                name.span(),
+                                "duplicate retry policy in endpoint",
+                            ));
+                        }
+                        retry = Some(spec);
+                    }
+                    RetryDecl::Profiles(_) => {
+                        return Err(syn::Error::new(
+                            name.span(),
+                            "retry profiles are only allowed in client blocks",
+                        ));
+                    }
+                }
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::paginate) {
                 if paginate.is_some() {
@@ -938,6 +1288,7 @@ impl Parse for EndpointDef {
             params,
             policy,
             auth_uses,
+            retry,
             paginate,
             body,
             response,

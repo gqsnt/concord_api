@@ -17,6 +17,16 @@ api! {
             "user-agent" = "ClientApiRiotExample/1.0",
             "x-client-trace" = false
         }
+        retry {
+            profile read {
+                attempts 2
+                methods [GET]
+                on status[429, 500, 502, 503, 504]
+                retry_after honor
+                backoff none
+            }
+            default read
+        }
     }
 
     scope platform {
@@ -269,6 +279,16 @@ api! {
         host: "leagueoflegends.com",
         headers {
             "user-agent" = "ClientApiDDragonExample/1.0"
+        }
+        retry {
+            profile read {
+                attempts 2
+                methods [GET]
+                on status[429, 500, 502, 503, 504]
+                retry_after honor
+                backoff none
+            }
+            default read
         }
     }
 

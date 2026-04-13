@@ -75,7 +75,10 @@ pub mod prelude {
         NoopRateLimiter, RateLimitContext, RateLimitPermit, RateLimitResponseContext, RateLimiter,
     };
     pub use crate::request::{PaginatedRequest, PendingRequest};
-    pub use crate::retry::{NoRetryPolicy, RetryContext, RetryDecision, RetryOutcome, RetryPolicy};
+    pub use crate::retry::{
+        ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,
+        RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy, RetrySetting,
+    };
     pub use crate::runtime_hooks::{
         HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext, RuntimeHooks,
         TransportErrorHookContext,

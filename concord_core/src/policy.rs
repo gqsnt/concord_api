@@ -1,4 +1,5 @@
 use crate::error::{ApiClientError, ErrorContext};
+use crate::retry::{RetryConfig, RetrySetting};
 use core::time::Duration;
 use http::header::{ACCEPT, CONTENT_TYPE, HeaderName};
 use http::{HeaderMap, HeaderValue};
@@ -20,6 +21,7 @@ pub struct Policy {
     headers: HeaderMap,
     query: Vec<(String, String)>,
     timeout: Option<Duration>,
+    retry: RetrySetting,
     // Current layer used for provenance decisions (not exposed in into_parts()).
     layer: PolicyLayer,
 
@@ -34,6 +36,7 @@ impl Policy {
             headers: HeaderMap::new(),
             query: Vec::new(),
             timeout: None,
+            retry: RetrySetting::Inherit,
             layer: PolicyLayer::Client,
             accept_explicit_by_endpoint: false,
             accept_explicit_by_runtime: false,
@@ -63,6 +66,24 @@ impl Policy {
     #[inline]
     pub fn clear_timeout(&mut self) {
         self.timeout = None;
+    }
+
+    #[inline]
+    pub fn retry(&self) -> Option<&RetryConfig> {
+        match &self.retry {
+            RetrySetting::Config(config) => Some(config),
+            RetrySetting::Inherit | RetrySetting::Off => None,
+        }
+    }
+
+    #[inline]
+    pub fn set_retry(&mut self, retry: RetryConfig) {
+        self.retry = RetrySetting::Config(retry);
+    }
+
+    #[inline]
+    pub fn clear_retry(&mut self) {
+        self.retry = RetrySetting::Off;
     }
 
     pub fn headers(&self) -> &HeaderMap {
@@ -124,8 +145,15 @@ impl Policy {
         self.query.retain(|(k, _)| k != key);
     }
 
-    pub fn into_parts(self) -> (HeaderMap, Vec<(String, String)>, Option<Duration>) {
-        (self.headers, self.query, self.timeout)
+    pub fn into_parts(
+        self,
+    ) -> (
+        HeaderMap,
+        Vec<(String, String)>,
+        Option<Duration>,
+        RetrySetting,
+    ) {
+        (self.headers, self.query, self.timeout, self.retry)
     }
 }
 
@@ -176,6 +204,11 @@ impl<'a> PolicyPatch<'a> {
     #[inline]
     pub fn set_timeout_override(&mut self, t: Option<Duration>) {
         self.inner.timeout = t;
+    }
+
+    #[inline]
+    pub fn set_retry_override(&mut self, retry: Option<RetryConfig>) {
+        self.inner.retry = retry.map_or(RetrySetting::Off, RetrySetting::Config);
     }
 
     #[inline]

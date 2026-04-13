@@ -1,6 +1,6 @@
 use proc_macro2::Span;
 use syn::spanned::Spanned;
-use syn::{Expr, Ident, LitStr, Path, Type};
+use syn::{Expr, Ident, LitInt, LitStr, Path, Type};
 
 #[derive(Debug)]
 pub struct ApiFile {
@@ -18,6 +18,8 @@ pub struct ClientDef {
     pub auth_vars: Option<VarsBlock>,
     pub auth: Option<AuthBlock>,
     pub auth_uses: Vec<AuthUseDecl>,
+    pub retry_profiles: Option<RetryProfilesBlock>,
+    pub retry: Option<RetrySpec>,
 }
 
 #[derive(Debug)]
@@ -148,6 +150,7 @@ pub struct LayerDef {
     pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
     pub auth_uses: Vec<AuthUseDecl>,
+    pub retry: Option<RetrySpec>,
     pub items: Vec<Item>,
 }
 
@@ -160,12 +163,54 @@ pub struct EndpointDef {
 
     pub policy: PolicyBlocks,
     pub auth_uses: Vec<AuthUseDecl>,
+    pub retry: Option<RetrySpec>,
 
     pub paginate: Option<PaginateSpec>,
     pub body: Option<CodecSpec>,
 
     pub response: CodecSpec,
     pub map: Option<MapSpec>,
+}
+
+#[derive(Debug)]
+pub struct RetryProfilesBlock {
+    pub profiles: Vec<RetryProfileDef>,
+    pub default: Option<Ident>,
+}
+
+#[derive(Debug)]
+pub struct RetryProfileDef {
+    pub name: Ident,
+    pub extends: Option<Ident>,
+    pub patch: RetryPatch,
+}
+
+#[derive(Debug, Clone)]
+pub enum RetrySpec {
+    Profile(Ident),
+    Patch(RetryPatch),
+    Off,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RetryPatch {
+    pub attempts: Option<LitInt>,
+    pub methods: Option<Vec<Ident>>,
+    pub statuses: Option<Vec<LitInt>>,
+    pub transport_errors: Option<Vec<Ident>>,
+    pub backoff: Option<RetryBackoffSpec>,
+    pub respect_retry_after: Option<bool>,
+    pub idempotency: Option<RetryIdempotencySpec>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RetryBackoffSpec {
+    None,
+}
+
+#[derive(Debug, Clone)]
+pub enum RetryIdempotencySpec {
+    Header(LitStr),
 }
 
 #[derive(Debug)]

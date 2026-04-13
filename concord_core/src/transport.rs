@@ -1,4 +1,5 @@
 use crate::auth::{RequestExtensions, TransportAuth};
+use crate::retry::RetrySetting;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 use std::future::Future;
@@ -25,6 +26,7 @@ pub struct BuiltRequest {
     pub headers: HeaderMap,
     pub body: Option<bytes::Bytes>,
     pub timeout: Option<Duration>,
+    pub retry: RetrySetting,
     pub extensions: RequestExtensions,
 }
 
@@ -225,6 +227,7 @@ impl Transport for ReqwestTransport {
                 headers,
                 body,
                 timeout,
+                retry: _,
                 extensions,
             } = req;
             if let Some(TransportAuth::ClientCertificate { identity_id }) =

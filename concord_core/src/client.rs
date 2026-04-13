@@ -15,7 +15,7 @@ use crate::policy::{Policy, PolicyLayer, PolicyPatch};
 use crate::rate_limit::{RateLimitContext, RateLimitResponseContext, RateLimiter};
 use crate::request::PendingRequest;
 use crate::response_classify::{ResponseClass, classify_status};
-use crate::retry::{RetryContext, RetryDecision, RetryOutcome, RetryPolicy};
+use crate::retry::{RetryContext, RetryDecision, RetryOutcome, RetryPolicy, RetrySetting};
 use crate::runtime_hooks::{
     HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
 };
@@ -345,7 +345,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let dbg_vv = dbg.is_very_verbose();
         let ctx = Self::ctx_for::<E>(ep);
         let base_attempt = meta.attempt;
-        let max_retries = self.runtime_state.retry_policy().max_retries();
         let max_auth_retries = self.runtime_state.max_auth_retries();
         let auth_state_snapshot = self.auth_state();
         let auth_ctrl = <E::Auth as AuthPart<Cx, E>>::controller(
@@ -438,6 +437,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .await?;
             let inflight_key = self.runtime_state.inflight_policy().key_for(&built);
 
+            let retry_config = built.retry.clone();
+            let retry_request_headers = built.headers.clone();
             let send_result = self
                 .send_and_classify_with_inflight(
                     built,
@@ -540,23 +541,27 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             continue;
                         }
                     }
-                    if transport_retry_index >= max_retries {
-                        return Err(err);
-                    }
                     let outcome = Self::retry_outcome_from_error(&err);
+                    let response_headers = Self::retry_response_headers_from_error(&err);
                     let retry_ctx = RetryContext {
                         endpoint: ep.name(),
                         method: &E::METHOD,
                         url: &url_str,
                         attempt: base_attempt.saturating_add(attempt_index),
+                        retry_count: transport_retry_index,
                         page_index: meta.page_index,
                         idempotent: meta.idempotent,
+                        request_headers: &retry_request_headers,
+                        response_headers,
                         outcome,
                     };
-                    if self.runtime_state.retry_policy().should_retry(&retry_ctx)
-                        != RetryDecision::Retry
-                    {
+                    let Some(delay) =
+                        self.retry_delay(&retry_config, &retry_ctx, transport_retry_index)
+                    else {
                         return Err(err);
+                    };
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
                     }
                     transport_retry_index = transport_retry_index.saturating_add(1);
                     attempt_index = attempt_index.saturating_add(1);
@@ -602,7 +607,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
 
         // Compute parts after patch (Content-Type may have been added/removed there).
-        let (mut headers, query, timeout) = policy.into_parts();
+        let (mut headers, query, timeout, retry) = policy.into_parts();
 
         // URL
         route.host().validate(ctx.clone())?;
@@ -643,6 +648,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             headers,
             body: body_bytes,
             timeout,
+            retry,
             extensions: Default::default(),
         })
     }
@@ -863,6 +869,40 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             _ => RetryOutcome::Other,
         }
     }
+
+    fn retry_response_headers_from_error(err: &ApiClientError) -> Option<&http::HeaderMap> {
+        match err {
+            ApiClientError::HttpStatus { headers, .. } => Some(headers),
+            _ => None,
+        }
+    }
+
+    fn retry_delay(
+        &self,
+        config: &RetrySetting,
+        ctx: &RetryContext<'_>,
+        retry_count: u32,
+    ) -> Option<std::time::Duration> {
+        let decision = if let RetrySetting::Config(config) = config {
+            if retry_count >= config.max_retries() {
+                return None;
+            }
+            config.decide(ctx)
+        } else if matches!(config, RetrySetting::Inherit) {
+            if retry_count >= self.runtime_state.retry_policy().max_retries() {
+                return None;
+            }
+            self.runtime_state.retry_policy().should_retry(ctx)
+        } else {
+            return None;
+        };
+
+        match decision {
+            RetryDecision::Stop => None,
+            RetryDecision::Retry => Some(std::time::Duration::ZERO),
+            RetryDecision::RetryAfter(delay) => Some(delay),
+        }
+    }
 }
 
 struct ClientAuthHttpExecutor<'a, Cx: ClientContext, T: Transport> {
@@ -911,6 +951,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     headers,
                     body,
                     timeout: policy.timeout,
+                    retry: RetrySetting::Inherit,
                     extensions: Default::default(),
                 };
 
