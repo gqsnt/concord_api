@@ -16,6 +16,7 @@ syn::custom_keyword!(scope);
 syn::custom_keyword!(params);
 syn::custom_keyword!(credential);
 syn::custom_keyword!(use_auth);
+syn::custom_keyword!(one_of);
 
 syn::custom_keyword!(paginate);
 syn::custom_keyword!(body);

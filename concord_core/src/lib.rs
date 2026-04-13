@@ -23,7 +23,7 @@ pub mod internal {
     #[doc(hidden)]
     pub use crate::auth::{
         AuthChain, AuthController, AuthPart, AuthResponseAction, NoAuth, NoAuthController,
-        NoAuthState,
+        NoAuthState, OneOfAuth, OneOfAuthController, OneOfAuthState,
     };
     #[doc(hidden)]
     pub use crate::endpoint::{
@@ -37,23 +37,23 @@ pub mod internal {
     };
 }
 pub mod prelude {
+    #[cfg(feature = "json")]
+    pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::auth::{
         AccessToken, ApiKey, AuthAppliedPart, AuthApplyContext, AuthAttempt, AuthBuildContext,
         AuthChain, AuthChallengeContext, AuthChallengeDecision, AuthController, AuthError,
         AuthErrorKind, AuthFuture, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse,
         AuthIdentity, AuthInternalPolicy, AuthMode, AuthPart,
         AuthPrepareContext as EndpointAuthPrepareContext, AuthProvenance, AuthRequirementId,
-        AuthResponseAction,
-        AuthResponseContext as EndpointAuthResponseContext, AuthRetryReason, AuthStepPolicy,
-        AuthUsage, AuthUsageId, BasicAuth, BasicCredential, BearerAuth, CertificateAuth,
-        ClientCertificate, CredentialContext, CredentialId, CredentialLease, CredentialMaterial,
-        CredentialProvider, CredentialRefreshReason, CredentialSlot, HeaderAuth, InvalidateReason,
-        NoAuth, NoAuthController, NoAuthState, QueryAuth, SecretCredential, StaticApiKeyProvider,
+        AuthResponseAction, AuthResponseContext as EndpointAuthResponseContext, AuthRetryReason,
+        AuthStepPolicy, AuthUsage, AuthUsageId, BasicAuth, BasicCredential, BearerAuth,
+        CertificateAuth, ClientCertificate, CredentialContext, CredentialId, CredentialLease,
+        CredentialMaterial, CredentialProvider, CredentialRefreshReason, CredentialSlot,
+        HeaderAuth, InvalidateReason, NoAuth, NoAuthController, NoAuthState, OneOfAuth,
+        OneOfAuthController, OneOfAuthState, QueryAuth, SecretCredential, StaticApiKeyProvider,
         StaticBasicProvider, StaticBearerProvider, TransportAuth, UseCredential,
         UseCredentialState,
     };
-    #[cfg(feature = "json")]
-    pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::cache::{CacheKey, CacheStore, NoopCacheStore, default_cache_key};
     pub use crate::client::{ApiClient, ClientContext};
     #[cfg(feature = "json")]

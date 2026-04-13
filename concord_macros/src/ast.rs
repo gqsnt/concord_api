@@ -66,8 +66,10 @@ pub struct SecretRef {
 }
 
 #[derive(Debug, Clone)]
-pub struct AuthUseDecl {
-    pub kind: AuthUseKind,
+pub enum AuthUseDecl {
+    Single(AuthUseKind),
+    AllOf(Vec<AuthUseKind>),
+    OneOf(Vec<AuthUseKind>),
 }
 
 #[derive(Debug, Clone)]

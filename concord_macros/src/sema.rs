@@ -35,7 +35,7 @@ pub struct LayerIr {
     pub prefix_pieces: Vec<PrefixPiece>, // if Prefix
     pub path_pieces: Vec<PathPiece>,     // if Path
     pub policy: PolicyBlocksResolved,
-    pub auth_uses: Vec<AuthUseIr>,
+    pub auth_uses: Vec<AuthUsePlanIr>,
     pub decls: Vec<VarInfo>, // endpoint vars declared by this layer (placeholders + binds)
 }
 
@@ -52,7 +52,7 @@ pub struct EndpointIr {
     pub response: CodecSpec,
 
     pub policy: PolicyBlocksResolved,
-    pub auth_uses: Vec<AuthUseIr>,
+    pub auth_uses: Vec<AuthUsePlanIr>,
 
     pub paginate: Option<PaginateResolved>,
     pub map: Option<MapResolved>,
@@ -92,6 +92,12 @@ pub enum AuthCredentialKindIr {
 pub struct AuthUseIr {
     pub kind: AuthUseKindIr,
     pub provenance: AuthUseProvenanceIr,
+}
+
+#[derive(Debug, Clone)]
+pub enum AuthUsePlanIr {
+    Use(AuthUseIr),
+    OneOf(Vec<AuthUseIr>),
 }
 
 #[derive(Debug, Clone)]
@@ -534,53 +540,91 @@ fn resolve_auth_uses(
     uses: &[AuthUseDecl],
     credentials: &BTreeMap<String, AuthCredentialIr>,
     provenance: AuthUseProvenanceIr,
-) -> Result<Vec<AuthUseIr>> {
-    uses.iter()
-        .map(|u| {
-            let credential = auth_use_credential_ident(u);
-            let cred = credentials.get(&credential.to_string()).ok_or_else(|| {
-                syn::Error::new(
-                    credential.span(),
-                    format!("unknown auth credential `{credential}`"),
-                )
-            })?;
-            validate_auth_usage_compatibility(u, cred)?;
-
-            let kind = match &u.kind {
-                AuthUseKind::Bearer { credential } => AuthUseKindIr::Bearer {
-                    credential: credential.clone(),
-                },
-                AuthUseKind::Header { header, credential } => AuthUseKindIr::Header {
-                    header: header.clone(),
-                    credential: credential.clone(),
-                },
-                AuthUseKind::Query { key, credential } => AuthUseKindIr::Query {
-                    key: key.clone(),
-                    credential: credential.clone(),
-                },
-                AuthUseKind::Basic { credential } => AuthUseKindIr::Basic {
-                    credential: credential.clone(),
-                },
-                AuthUseKind::Certificate { credential } => AuthUseKindIr::Certificate {
-                    credential: credential.clone(),
-                },
-                AuthUseKind::Custom {
-                    usage_ty,
-                    usage,
-                    credential,
-                } => AuthUseKindIr::Custom {
-                    usage_ty: usage_ty.clone(),
-                    usage: usage.clone(),
-                    credential: credential.clone(),
-                },
-            };
-            Ok(AuthUseIr { kind, provenance })
-        })
-        .collect()
+) -> Result<Vec<AuthUsePlanIr>> {
+    let mut out = Vec::new();
+    for u in uses {
+        match u {
+            AuthUseDecl::Single(kind) => {
+                out.push(AuthUsePlanIr::Use(resolve_auth_use_kind(
+                    kind,
+                    credentials,
+                    provenance,
+                )?));
+            }
+            AuthUseDecl::AllOf(kinds) => {
+                for kind in kinds {
+                    out.push(AuthUsePlanIr::Use(resolve_auth_use_kind(
+                        kind,
+                        credentials,
+                        provenance,
+                    )?));
+                }
+            }
+            AuthUseDecl::OneOf(kinds) => {
+                if kinds.len() < 2 {
+                    return Err(syn::Error::new(
+                        Span::call_site(),
+                        "use_auth one_of[...] requires at least two auth usages",
+                    ));
+                }
+                let mut alts = Vec::new();
+                for kind in kinds {
+                    alts.push(resolve_auth_use_kind(kind, credentials, provenance)?);
+                }
+                out.push(AuthUsePlanIr::OneOf(alts));
+            }
+        }
+    }
+    Ok(out)
 }
 
-fn auth_use_credential_ident(u: &AuthUseDecl) -> &Ident {
-    match &u.kind {
+fn resolve_auth_use_kind(
+    kind: &AuthUseKind,
+    credentials: &BTreeMap<String, AuthCredentialIr>,
+    provenance: AuthUseProvenanceIr,
+) -> Result<AuthUseIr> {
+    let credential = auth_use_credential_ident(kind);
+    let cred = credentials.get(&credential.to_string()).ok_or_else(|| {
+        syn::Error::new(
+            credential.span(),
+            format!("unknown auth credential `{credential}`"),
+        )
+    })?;
+    validate_auth_usage_compatibility(kind, cred)?;
+
+    let kind = match kind {
+        AuthUseKind::Bearer { credential } => AuthUseKindIr::Bearer {
+            credential: credential.clone(),
+        },
+        AuthUseKind::Header { header, credential } => AuthUseKindIr::Header {
+            header: header.clone(),
+            credential: credential.clone(),
+        },
+        AuthUseKind::Query { key, credential } => AuthUseKindIr::Query {
+            key: key.clone(),
+            credential: credential.clone(),
+        },
+        AuthUseKind::Basic { credential } => AuthUseKindIr::Basic {
+            credential: credential.clone(),
+        },
+        AuthUseKind::Certificate { credential } => AuthUseKindIr::Certificate {
+            credential: credential.clone(),
+        },
+        AuthUseKind::Custom {
+            usage_ty,
+            usage,
+            credential,
+        } => AuthUseKindIr::Custom {
+            usage_ty: usage_ty.clone(),
+            usage: usage.clone(),
+            credential: credential.clone(),
+        },
+    };
+    Ok(AuthUseIr { kind, provenance })
+}
+
+fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
+    match u {
         AuthUseKind::Bearer { credential }
         | AuthUseKind::Header { credential, .. }
         | AuthUseKind::Query { credential, .. }
@@ -590,8 +634,8 @@ fn auth_use_credential_ident(u: &AuthUseDecl) -> &Ident {
     }
 }
 
-fn validate_auth_usage_compatibility(u: &AuthUseDecl, cred: &AuthCredentialIr) -> Result<()> {
-    match (&u.kind, &cred.kind) {
+fn validate_auth_usage_compatibility(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<()> {
+    match (u, &cred.kind) {
         (AuthUseKind::Custom { .. }, _) | (_, AuthCredentialKindIr::Custom { .. }) => Ok(()),
         (
             AuthUseKind::Bearer { .. },
@@ -644,7 +688,7 @@ fn walk_items(
     client_vars: &BTreeMap<String, VarInfo>,
     auth_vars: &BTreeMap<String, VarInfo>,
     auth_credentials: &BTreeMap<String, AuthCredentialIr>,
-    client_auth_uses: &[AuthUseIr],
+    client_auth_uses: &[AuthUsePlanIr],
     layers: &mut Vec<LayerIr>,
     endpoints: &mut Vec<EndpointIr>,
 ) -> Result<()> {
@@ -873,7 +917,7 @@ fn analyze_endpoint(
     client_vars: &std::collections::BTreeMap<String, VarInfo>,
     auth_vars: &std::collections::BTreeMap<String, VarInfo>,
     auth_credentials: &std::collections::BTreeMap<String, AuthCredentialIr>,
-    client_auth_uses: &[AuthUseIr],
+    client_auth_uses: &[AuthUsePlanIr],
     layers: &[LayerIr],
 ) -> syn::Result<EndpointIr> {
     use std::collections::BTreeMap;

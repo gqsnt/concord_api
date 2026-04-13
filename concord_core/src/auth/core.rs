@@ -163,6 +163,196 @@ where
     }
 }
 
+pub struct OneOfAuth<A, B>(PhantomData<(A, B)>);
+
+impl<A, B> Default for OneOfAuth<A, B> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<A, B> OneOfAuth<A, B> {
+    #[inline]
+    pub fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+pub struct OneOfAuthController<A, B> {
+    first: A,
+    second: B,
+}
+
+enum OneOfActiveBranch {
+    First,
+    Second,
+}
+
+pub struct OneOfAuthState<A, B> {
+    first: A,
+    second: B,
+    active: OneOfActiveBranch,
+    fallback_used: bool,
+}
+
+impl<Cx, E, A, B> AuthPart<Cx, E> for OneOfAuth<A, B>
+where
+    Cx: ClientContext,
+    E: Endpoint<Cx>,
+    A: AuthPart<Cx, E>,
+    B: AuthPart<Cx, E>,
+{
+    type Ctrl = OneOfAuthController<A::Ctrl, B::Ctrl>;
+
+    fn controller(ctx: AuthBuildContext<'_, Cx>, ep: &E) -> Result<Self::Ctrl, ApiClientError> {
+        Ok(OneOfAuthController {
+            first: A::controller(ctx, ep)?,
+            second: B::controller(ctx, ep)?,
+        })
+    }
+}
+
+impl<Cx, E, A, B> AuthController<Cx, E> for OneOfAuthController<A, B>
+where
+    Cx: ClientContext,
+    E: Endpoint<Cx>,
+    A: AuthController<Cx, E>,
+    B: AuthController<Cx, E>,
+{
+    type State = OneOfAuthState<A::State, B::State>;
+
+    fn init(&self, ep: &E) -> Result<Self::State, ApiClientError> {
+        Ok(OneOfAuthState {
+            first: self.first.init(ep)?,
+            second: self.second.init(ep)?,
+            active: OneOfActiveBranch::First,
+            fallback_used: false,
+        })
+    }
+
+    fn prepare<'a>(
+        &'a self,
+        state: &'a mut Self::State,
+        ctx: AuthPrepareContext<'a, Cx, E>,
+    ) -> AuthFuture<'a, Result<AuthAttempt, ApiClientError>> {
+        Box::pin(async move {
+            let AuthPrepareContext {
+                ep,
+                vars,
+                auth,
+                auth_state,
+                executor,
+                meta,
+                request,
+            } = ctx;
+
+            match state.active {
+                OneOfActiveBranch::First => {
+                    self.first
+                        .prepare(
+                            &mut state.first,
+                            AuthPrepareContext {
+                                ep,
+                                vars,
+                                auth,
+                                auth_state,
+                                executor,
+                                meta,
+                                request,
+                            },
+                        )
+                        .await
+                }
+                OneOfActiveBranch::Second => {
+                    self.second
+                        .prepare(
+                            &mut state.second,
+                            AuthPrepareContext {
+                                ep,
+                                vars,
+                                auth,
+                                auth_state,
+                                executor,
+                                meta,
+                                request,
+                            },
+                        )
+                        .await
+                }
+            }
+        })
+    }
+
+    fn on_response<'a>(
+        &'a self,
+        state: &'a mut Self::State,
+        ctx: AuthResponseContext<'a, Cx, E>,
+    ) -> AuthFuture<'a, Result<AuthResponseAction, ApiClientError>> {
+        Box::pin(async move {
+            let AuthResponseContext {
+                ep,
+                vars,
+                auth,
+                auth_state,
+                executor,
+                meta,
+                status,
+                headers,
+                attempt,
+            } = ctx;
+
+            match state.active {
+                OneOfActiveBranch::First => {
+                    let action = self
+                        .first
+                        .on_response(
+                            &mut state.first,
+                            AuthResponseContext {
+                                ep,
+                                vars,
+                                auth,
+                                auth_state,
+                                executor,
+                                meta,
+                                status,
+                                headers,
+                                attempt,
+                            },
+                        )
+                        .await?;
+                    if let AuthResponseAction::Retry { reason } = action {
+                        if !state.fallback_used {
+                            state.fallback_used = true;
+                            state.active = OneOfActiveBranch::Second;
+                            return Ok(AuthResponseAction::Retry { reason });
+                        }
+                        return Ok(AuthResponseAction::Retry { reason });
+                    }
+                    Ok(action)
+                }
+                OneOfActiveBranch::Second => {
+                    self.second
+                        .on_response(
+                            &mut state.second,
+                            AuthResponseContext {
+                                ep,
+                                vars,
+                                auth,
+                                auth_state,
+                                executor,
+                                meta,
+                                status,
+                                headers,
+                                attempt,
+                            },
+                        )
+                        .await
+                }
+            }
+        })
+    }
+}
+
 impl<Cx, E, A, B> AuthController<Cx, E> for AuthChainController<A, B>
 where
     Cx: ClientContext,

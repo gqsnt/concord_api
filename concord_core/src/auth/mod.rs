@@ -10,9 +10,9 @@ mod usage;
 mod util;
 
 pub use core::{
-    AuthAppliedPart, AuthAttempt, AuthBuildContext, AuthChain, AuthChainController,
-    AuthController, AuthPart, AuthPrepareContext, AuthResponseAction, AuthResponseContext,
-    AuthRetryReason, NoAuth, NoAuthController, NoAuthState,
+    AuthAppliedPart, AuthAttempt, AuthBuildContext, AuthChain, AuthChainController, AuthController,
+    AuthPart, AuthPrepareContext, AuthResponseAction, AuthResponseContext, AuthRetryReason, NoAuth,
+    NoAuthController, NoAuthState, OneOfAuth, OneOfAuthController, OneOfAuthState,
 };
 pub use credentials::{
     AuthStepPolicy, CredentialContext, CredentialLease, CredentialMaterial, CredentialProvider,
@@ -26,9 +26,9 @@ pub use http::{
 };
 pub use ids::{AuthIdentity, AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential, ClientCertificate};
-pub use providers::{StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider};
 #[cfg(feature = "json")]
 pub use providers::OAuth2ClientCredentialsProvider;
+pub use providers::{StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider};
 pub use usage::{
     AuthApplyContext, AuthChallengeContext, AuthChallengeDecision, AuthUsage, BasicAuth,
     BearerAuth, CertificateAuth, HeaderAuth, QueryAuth, UseCredential, UseCredentialState,

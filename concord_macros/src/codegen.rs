@@ -631,43 +631,98 @@ fn auth_use_part_ident(ep_name: &Ident, index: usize) -> Ident {
     emit_helpers::ident(&format!("__Auth_{ep_name}_{index}"), Span::call_site())
 }
 
+fn auth_one_of_alt_part_ident(ep_name: &Ident, index: usize, alt_index: usize) -> Ident {
+    emit_helpers::ident(
+        &format!("__Auth_{ep_name}_{index}_Alt_{alt_index}"),
+        Span::call_site(),
+    )
+}
+
+fn emit_endpoint_auth_item_ty(ep: &EndpointIr, index: usize, plan: &AuthUsePlanIr) -> TokenStream2 {
+    match plan {
+        AuthUsePlanIr::Use(_) => {
+            let ident = auth_use_part_ident(&ep.name, index);
+            quote! { super::__internal::#ident }
+        }
+        AuthUsePlanIr::OneOf(alts) => {
+            let mut iter = (0..alts.len()).rev();
+            let last = iter
+                .next()
+                .expect("one_of must contain at least one alternative");
+            let last_ident = auth_one_of_alt_part_ident(&ep.name, index, last);
+            let mut out = quote! { super::__internal::#last_ident };
+            for alt in iter {
+                let ident = auth_one_of_alt_part_ident(&ep.name, index, alt);
+                out =
+                    quote! { ::concord_core::internal::OneOfAuth<super::__internal::#ident, #out> };
+            }
+            out
+        }
+    }
+}
+
 fn emit_endpoint_auth_ty(ep: &EndpointIr) -> TokenStream2 {
     if ep.auth_uses.is_empty() {
         return quote! { ::concord_core::internal::NoAuth };
     }
 
-    let mut iter = (0..ep.auth_uses.len()).rev();
-    let last = iter.next().unwrap();
-    let last_ident = auth_use_part_ident(&ep.name, last);
-    let mut out = quote! { super::__internal::#last_ident };
-    for idx in iter {
-        let ident = auth_use_part_ident(&ep.name, idx);
-        out = quote! { ::concord_core::internal::AuthChain<super::__internal::#ident, #out> };
+    let item_types: Vec<TokenStream2> = ep
+        .auth_uses
+        .iter()
+        .enumerate()
+        .map(|(idx, plan)| emit_endpoint_auth_item_ty(ep, idx, plan))
+        .collect();
+
+    let mut iter = item_types.into_iter().rev();
+    let mut out = iter.next().expect("non-empty auth item types");
+    for item in iter {
+        out = quote! { ::concord_core::internal::AuthChain<#item, #out> };
     }
     out
 }
 
 fn emit_auth_parts(ir: &Ir, ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
-    let parts = ep
-        .auth_uses
-        .iter()
-        .enumerate()
-        .map(|(idx, auth_use)| emit_auth_part(ir, ep, cx_ty, idx, auth_use));
+    let mut parts = Vec::new();
+    for (idx, plan) in ep.auth_uses.iter().enumerate() {
+        match plan {
+            AuthUsePlanIr::Use(auth_use) => {
+                let part_ty = auth_use_part_ident(&ep.name, idx);
+                parts.push(emit_auth_part_for_ident(
+                    ir, ep, cx_ty, &part_ty, idx, None, auth_use,
+                ));
+            }
+            AuthUsePlanIr::OneOf(alts) => {
+                for (alt_idx, auth_use) in alts.iter().enumerate() {
+                    let part_ty = auth_one_of_alt_part_ident(&ep.name, idx, alt_idx);
+                    parts.push(emit_auth_part_for_ident(
+                        ir,
+                        ep,
+                        cx_ty,
+                        &part_ty,
+                        idx,
+                        Some(alt_idx),
+                        auth_use,
+                    ));
+                }
+            }
+        }
+    }
 
     quote! {
         #( #parts )*
     }
 }
 
-fn emit_auth_part(
+fn emit_auth_part_for_ident(
     ir: &Ir,
     ep: &EndpointIr,
     cx_ty: &Ident,
+    part_ty: &Ident,
     idx: usize,
+    alt_idx: Option<usize>,
     auth_use: &AuthUseIr,
 ) -> TokenStream2 {
     let ep_name = &ep.name;
-    let part_ty = auth_use_part_ident(ep_name, idx);
     let credential = auth_use_credential_ident_ir(auth_use);
     let credential_ir = ir
         .client_auth_credentials
@@ -677,10 +732,17 @@ fn emit_auth_part(
     let provider_ty = emit_auth_provider_ty(&credential_ir.kind);
     let usage_ty = emit_auth_usage_ty(auth_use);
     let usage_expr = emit_auth_usage_expr(ep, cx_ty, auth_use);
-    let step_id = LitStr::new(
-        &format!("{}:{}:{}", ep_name, idx, credential),
-        Span::call_site(),
-    );
+    let step_id = if let Some(alt) = alt_idx {
+        LitStr::new(
+            &format!("{}:{}:alt{}:{}", ep_name, idx, alt, credential),
+            Span::call_site(),
+        )
+    } else {
+        LitStr::new(
+            &format!("{}:{}:{}", ep_name, idx, credential),
+            Span::call_site(),
+        )
+    };
     let provenance_layer = match auth_use.provenance {
         AuthUseProvenanceIr::Client => LitStr::new("client", Span::call_site()),
         AuthUseProvenanceIr::Scope(scope_id) => {

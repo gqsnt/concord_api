@@ -1148,6 +1148,105 @@ async fn certificate_auth_reaches_transport_extension() {
 }
 
 #[derive(Clone)]
+struct OneOfCtx;
+
+#[derive(Clone)]
+struct OneOfState {
+    bearer: Arc<CredentialSlot<OneOfCtx, StaticBearerProvider>>,
+    fallback: Arc<CredentialSlot<OneOfCtx, StaticApiKeyProvider>>,
+}
+
+impl ClientContext for OneOfCtx {
+    type Vars = ();
+    type AuthVars = ();
+    type AuthState = OneOfState;
+
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {
+        Self::AuthState {
+            bearer: Arc::new(CredentialSlot::new(StaticBearerProvider::new(
+                CredentialId::new("one-of", "bearer"),
+                AccessToken::new("bad-token"),
+            ))),
+            fallback: Arc::new(CredentialSlot::new(StaticApiKeyProvider::new(
+                CredentialId::new("one-of", "fallback"),
+                ApiKey::new("fallback-key"),
+            ))),
+        }
+    }
+}
+
+struct OneOfBearerPart;
+struct OneOfHeaderPart;
+
+impl AuthPart<OneOfCtx, OneOfPing> for OneOfBearerPart {
+    type Ctrl = UseCredential<OneOfCtx, StaticBearerProvider, BearerAuth>;
+
+    fn controller(
+        ctx: AuthBuildContext<'_, OneOfCtx>,
+        _ep: &OneOfPing,
+    ) -> Result<Self::Ctrl, ApiClientError> {
+        Ok(UseCredential::new(
+            ctx.auth_state.bearer.clone(),
+            BearerAuth::new(),
+        ))
+    }
+}
+
+impl AuthPart<OneOfCtx, OneOfPing> for OneOfHeaderPart {
+    type Ctrl = UseCredential<OneOfCtx, StaticApiKeyProvider, HeaderAuth>;
+
+    fn controller(
+        ctx: AuthBuildContext<'_, OneOfCtx>,
+        _ep: &OneOfPing,
+    ) -> Result<Self::Ctrl, ApiClientError> {
+        Ok(UseCredential::new(
+            ctx.auth_state.fallback.clone(),
+            HeaderAuth::from_static("x-fallback-key"),
+        ))
+    }
+}
+
+struct OneOfPing;
+
+impl Endpoint<OneOfCtx> for OneOfPing {
+    const METHOD: http::Method = http::Method::GET;
+
+    type Route = concord_core::internal::NoRoute;
+    type Policy = concord_core::internal::NoPolicy;
+    type Auth = concord_core::internal::OneOfAuth<OneOfBearerPart, OneOfHeaderPart>;
+    type Pagination = concord_core::internal::NoPagination;
+    type Body = concord_core::internal::NoBody;
+    type Response = concord_core::internal::Decoded<Json, ()>;
+}
+
+#[tokio::test]
+async fn one_of_auth_falls_back_to_next_branch_after_rejection() {
+    let unauthorized = MockReply::status(http::StatusCode::UNAUTHORIZED).with_header(
+        WWW_AUTHENTICATE,
+        http::HeaderValue::from_static("Bearer error=\"invalid_token\""),
+    );
+    let (transport, h) = mock()
+        .replies([unauthorized, MockReply::ok_json(json_bytes(&()))])
+        .build();
+    let api = ApiClient::<OneOfCtx, _>::with_transport((), (), transport);
+
+    api.request(OneOfPing).execute().await.unwrap();
+
+    let reqs = h.recorded();
+    assert_eq!(reqs.len(), 2);
+    assert_request(&reqs[0])
+        .header(AUTHORIZATION, "Bearer bad-token")
+        .header_absent("x-fallback-key");
+    assert_request(&reqs[1])
+        .header("x-fallback-key", "fallback-key")
+        .header_absent(AUTHORIZATION);
+    h.finish();
+}
+
+#[derive(Clone)]
 struct DuplicateUsageCx;
 
 #[derive(Clone)]

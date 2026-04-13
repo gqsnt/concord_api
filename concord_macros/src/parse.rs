@@ -364,102 +364,135 @@ fn parse_angle_type(input: ParseStream<'_>, span: Span, label: &'static str) -> 
 impl Parse for AuthUseDecl {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::use_auth>()?;
-        let usage: Ident = input.parse()?;
 
-        let kind = match usage.to_string().as_str() {
-            "BearerAuth" => {
-                let content;
-                parenthesized!(content in input);
-                let credential: Ident = content.parse()?;
-                if !content.is_empty() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "unexpected BearerAuth arguments",
-                    ));
-                }
-                AuthUseKind::Bearer { credential }
-            }
-            "HeaderAuth" => {
-                let content;
-                parenthesized!(content in input);
-                let header: LitStr = content.parse()?;
-                content.parse::<Token![,]>()?;
-                let credential: Ident = content.parse()?;
-                if !content.is_empty() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "unexpected HeaderAuth arguments",
-                    ));
-                }
-                AuthUseKind::Header { header, credential }
-            }
-            "QueryAuth" => {
-                let content;
-                parenthesized!(content in input);
-                let key: LitStr = content.parse()?;
-                content.parse::<Token![,]>()?;
-                let credential: Ident = content.parse()?;
-                if !content.is_empty() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "unexpected QueryAuth arguments",
-                    ));
-                }
-                AuthUseKind::Query { key, credential }
-            }
-            "BasicAuth" => {
-                let content;
-                parenthesized!(content in input);
-                let credential: Ident = content.parse()?;
-                if !content.is_empty() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "unexpected BasicAuth arguments",
-                    ));
-                }
-                AuthUseKind::Basic { credential }
-            }
-            "CertificateAuth" => {
-                let content;
-                parenthesized!(content in input);
-                let credential: Ident = content.parse()?;
-                if !content.is_empty() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "unexpected CertificateAuth arguments",
-                    ));
-                }
-                AuthUseKind::Certificate { credential }
-            }
-            "Custom" => {
-                let usage_ty = parse_angle_type(input, usage.span(), "custom auth usage")?;
-                let content;
-                parenthesized!(content in input);
-                let usage: Expr = content.parse()?;
-                content.parse::<Token![,]>()?;
-                let credential: Ident = content.parse()?;
-                if !content.is_empty() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "unexpected Custom auth usage arguments",
-                    ));
-                }
-                AuthUseKind::Custom {
-                    usage_ty,
-                    usage,
-                    credential,
-                }
-            }
-            _ => {
+        if input.peek(kw::one_of) {
+            input.parse::<kw::one_of>()?;
+            return Ok(AuthUseDecl::OneOf(parse_auth_use_kinds_list(input)?));
+        }
+
+        if input.peek(token::Bracket) {
+            return Ok(AuthUseDecl::AllOf(parse_auth_use_kinds_list(input)?));
+        }
+
+        Ok(AuthUseDecl::Single(parse_auth_use_kind(input)?))
+    }
+}
+
+fn parse_auth_use_kinds_list(input: ParseStream<'_>) -> Result<Vec<AuthUseKind>> {
+    let content;
+    bracketed!(content in input);
+    let mut out = Vec::new();
+    while !content.is_empty() {
+        out.push(parse_auth_use_kind(&content)?);
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        } else if !content.is_empty() {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "expected `,` between auth usages",
+            ));
+        }
+    }
+    Ok(out)
+}
+
+fn parse_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
+    let usage: Ident = input.parse()?;
+
+    let kind = match usage.to_string().as_str() {
+        "BearerAuth" => {
+            let content;
+            parenthesized!(content in input);
+            let credential: Ident = content.parse()?;
+            if !content.is_empty() {
                 return Err(syn::Error::new(
-                    usage.span(),
-                    "unknown auth usage; expected BearerAuth, HeaderAuth, QueryAuth, BasicAuth, CertificateAuth, or Custom<T>",
+                    content.span(),
+                    "unexpected BearerAuth arguments",
                 ));
             }
-        };
+            AuthUseKind::Bearer { credential }
+        }
+        "HeaderAuth" => {
+            let content;
+            parenthesized!(content in input);
+            let header: LitStr = content.parse()?;
+            content.parse::<Token![,]>()?;
+            let credential: Ident = content.parse()?;
+            if !content.is_empty() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "unexpected HeaderAuth arguments",
+                ));
+            }
+            AuthUseKind::Header { header, credential }
+        }
+        "QueryAuth" => {
+            let content;
+            parenthesized!(content in input);
+            let key: LitStr = content.parse()?;
+            content.parse::<Token![,]>()?;
+            let credential: Ident = content.parse()?;
+            if !content.is_empty() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "unexpected QueryAuth arguments",
+                ));
+            }
+            AuthUseKind::Query { key, credential }
+        }
+        "BasicAuth" => {
+            let content;
+            parenthesized!(content in input);
+            let credential: Ident = content.parse()?;
+            if !content.is_empty() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "unexpected BasicAuth arguments",
+                ));
+            }
+            AuthUseKind::Basic { credential }
+        }
+        "CertificateAuth" => {
+            let content;
+            parenthesized!(content in input);
+            let credential: Ident = content.parse()?;
+            if !content.is_empty() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "unexpected CertificateAuth arguments",
+                ));
+            }
+            AuthUseKind::Certificate { credential }
+        }
+        "Custom" => {
+            let usage_ty = parse_angle_type(input, usage.span(), "custom auth usage")?;
+            let content;
+            parenthesized!(content in input);
+            let usage: Expr = content.parse()?;
+            content.parse::<Token![,]>()?;
+            let credential: Ident = content.parse()?;
+            if !content.is_empty() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "unexpected Custom auth usage arguments",
+                ));
+            }
+            AuthUseKind::Custom {
+                usage_ty,
+                usage,
+                credential,
+            }
+        }
+        _ => {
+            return Err(syn::Error::new(
+                usage.span(),
+                "unknown auth usage; expected BearerAuth, HeaderAuth, QueryAuth, BasicAuth, CertificateAuth, or Custom<T>",
+            ));
+        }
+    };
 
-        Ok(Self { kind })
-    }
+    Ok(kind)
 }
 
 fn parse_vars_block(input: ParseStream<'_>) -> Result<VarsBlock> {

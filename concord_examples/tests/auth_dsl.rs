@@ -259,6 +259,93 @@ async fn custom_bearer_usage_macro_formats_token_before_applying_it() {
 }
 
 #[tokio::test]
+async fn auth_list_applies_all_steps_in_order() {
+    api! {
+        client ApiDslAuthList {
+            scheme: https,
+            host: "example.com",
+            secret {
+                api_key: String
+            }
+            auth {
+                credential token: Custom<DslStaticTokenProvider>(DslStaticTokenProvider)
+                credential api_key: ApiKey(secret.api_key)
+            }
+        }
+
+        GET Ping {
+            use_auth [
+                BearerAuth(token),
+                HeaderAuth("X-Api-Key", api_key)
+            ]
+            -> Json<()>;
+        }
+    }
+
+    use api_dsl_auth_list::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+    let api = ApiDslAuthList::new_with_transport("list-key".to_string(), transport);
+
+    api.request(endpoints::Ping::new()).execute().await.unwrap();
+
+    let reqs = h.recorded();
+    assert_eq!(reqs.len(), 1);
+    assert_request(&reqs[0])
+        .header(AUTHORIZATION, "Bearer macro-token")
+        .header("x-api-key", "list-key");
+    h.finish();
+}
+
+#[tokio::test]
+async fn auth_one_of_falls_back_to_next_usage_after_unauthorized() {
+    api! {
+        client ApiDslOneOf {
+            scheme: https,
+            host: "example.com",
+            secret {
+                fallback_key: String
+            }
+            auth {
+                credential token: Custom<DslStaticTokenProvider>(DslStaticTokenProvider)
+                credential fallback: ApiKey(secret.fallback_key)
+            }
+        }
+
+        GET Ping {
+            use_auth one_of [
+                BearerAuth(token),
+                HeaderAuth("X-Fallback-Key", fallback)
+            ]
+            -> Json<()>;
+        }
+    }
+
+    use api_dsl_one_of::*;
+
+    let unauthorized = MockReply::status(http::StatusCode::UNAUTHORIZED).with_header(
+        http::header::WWW_AUTHENTICATE,
+        http::HeaderValue::from_static("Bearer error=\"invalid_token\""),
+    );
+    let (transport, h) = mock()
+        .replies([unauthorized, MockReply::ok_json(json_bytes(&()))])
+        .build();
+    let api = ApiDslOneOf::new_with_transport("fallback-secret".to_string(), transport);
+
+    api.request(endpoints::Ping::new()).execute().await.unwrap();
+
+    let reqs = h.recorded();
+    assert_eq!(reqs.len(), 2);
+    assert_request(&reqs[0])
+        .header(AUTHORIZATION, "Bearer macro-token")
+        .header_absent("x-fallback-key");
+    assert_request(&reqs[1])
+        .header("x-fallback-key", "fallback-secret")
+        .header_absent(AUTHORIZATION);
+    h.finish();
+}
+
+#[tokio::test]
 async fn custom_provider_macro_can_login_with_internal_request_against_current_api() {
     api! {
         client ApiDslCustomLogin {
