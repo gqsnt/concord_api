@@ -1,4 +1,5 @@
 use crate::auth::{RequestExtensions, TransportAuth};
+use crate::rate_limit::RateLimitPlan;
 use crate::retry::RetrySetting;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
@@ -27,6 +28,7 @@ pub struct BuiltRequest {
     pub body: Option<bytes::Bytes>,
     pub timeout: Option<Duration>,
     pub retry: RetrySetting,
+    pub rate_limit: RateLimitPlan,
     pub extensions: RequestExtensions,
 }
 
@@ -37,6 +39,7 @@ pub struct BuiltResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: bytes::Bytes,
+    pub rate_limit: RateLimitPlan,
 }
 
 #[derive(Clone, Debug)]
@@ -170,6 +173,7 @@ pub struct TransportResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub content_length: Option<u64>,
+    pub rate_limit: RateLimitPlan,
     pub body: Box<dyn TransportBody>,
 }
 
@@ -228,6 +232,7 @@ impl Transport for ReqwestTransport {
                 body,
                 timeout,
                 retry: _,
+                rate_limit,
                 extensions,
             } = req;
             if let Some(TransportAuth::ClientCertificate { identity_id }) =
@@ -260,6 +265,7 @@ impl Transport for ReqwestTransport {
                 status,
                 headers,
                 content_length,
+                rate_limit,
                 body: Box::new(ReqwestBody { resp }),
             })
         })

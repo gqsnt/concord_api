@@ -20,6 +20,7 @@ pub struct ClientDef {
     pub auth_uses: Vec<AuthUseDecl>,
     pub retry_profiles: Option<RetryProfilesBlock>,
     pub retry: Option<RetrySpec>,
+    pub rate_limit: Option<RateLimitProfilesBlock>,
 }
 
 #[derive(Debug)]
@@ -151,6 +152,8 @@ pub struct LayerDef {
     pub policy: PolicyBlocks,
     pub auth_uses: Vec<AuthUseDecl>,
     pub retry: Option<RetrySpec>,
+    pub rate_limit: Option<RateLimitSpec>,
+    pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
     pub items: Vec<Item>,
 }
 
@@ -164,6 +167,7 @@ pub struct EndpointDef {
     pub policy: PolicyBlocks,
     pub auth_uses: Vec<AuthUseDecl>,
     pub retry: Option<RetrySpec>,
+    pub rate_limit: Option<RateLimitSpec>,
 
     pub paginate: Option<PaginateSpec>,
     pub body: Option<CodecSpec>,
@@ -211,6 +215,67 @@ pub enum RetryBackoffSpec {
 #[derive(Debug, Clone)]
 pub enum RetryIdempotencySpec {
     Header(LitStr),
+}
+
+#[derive(Debug)]
+pub struct RateLimitProfilesBlock {
+    pub profiles: Vec<RateLimitProfileDef>,
+    pub default: Vec<Ident>,
+    pub response_policy: Option<Path>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RateLimitProfileDef {
+    pub name: Ident,
+    pub extends: Option<Ident>,
+    pub plan: RateLimitPlanSpec,
+}
+
+#[derive(Debug, Clone)]
+pub enum RateLimitSpec {
+    Profiles { only: bool, profiles: Vec<Ident> },
+    Inline { only: bool, plan: RateLimitPlanSpec },
+    Off,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RateLimitPlanSpec {
+    pub buckets: Vec<RateLimitBucketSpec>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RateLimitBucketSpec {
+    pub kind: Ident,
+    pub key: Vec<RateLimitKeySpec>,
+    pub windows: Vec<RateLimitWindowSpec>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RateLimitKeySpec {
+    RouteHost,
+    Endpoint,
+    Method,
+    Named(Ident),
+    Static(LitStr),
+}
+
+#[derive(Debug, Clone)]
+pub struct RateLimitWindowSpec {
+    pub max: LitInt,
+    pub every: LitInt,
+    pub unit: RateLimitDurationUnit,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum RateLimitDurationUnit {
+    Seconds,
+    Minutes,
+}
+
+#[derive(Debug, Clone)]
+pub struct RateLimitKeyBindingSpec {
+    pub name: Ident,
+    pub value: Ident,
 }
 
 #[derive(Debug)]

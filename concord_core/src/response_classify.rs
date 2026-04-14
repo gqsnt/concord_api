@@ -14,4 +14,3 @@ pub fn classify_status(status: StatusCode) -> ResponseClass {
         ResponseClass::HttpStatusError
     }
 }
-

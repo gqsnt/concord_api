@@ -408,7 +408,10 @@ mod test {
         let err = h.validate(ctx).unwrap_err();
         match err {
             ApiClientError::InvalidHostLabel { reason, .. } => {
-                assert!(matches!(reason, HostLabelInvalidReason::AbsoluteModePushLabel));
+                assert!(matches!(
+                    reason,
+                    HostLabelInvalidReason::AbsoluteModePushLabel
+                ));
             }
             other => panic!("unexpected error: {other:?}"),
         }

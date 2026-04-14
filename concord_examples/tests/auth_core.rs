@@ -1123,6 +1123,7 @@ impl concord_core::prelude::Transport for CapturingTransport {
                     h
                 },
                 content_length: Some(body.len() as u64),
+                rate_limit: req.rate_limit,
                 body: Box::new(StaticBody { chunk: Some(body) }),
             })
         })

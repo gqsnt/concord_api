@@ -58,14 +58,20 @@ impl<'a> RequestAssert<'a> {
 
     pub fn body_present(self) -> Self {
         if self.req.body.is_none() {
-            panic!("expected body present, but body=None\nurl: {}", self.req.url);
+            panic!(
+                "expected body present, but body=None\nurl: {}",
+                self.req.url
+            );
         }
         self
     }
 
     pub fn body_absent(self) -> Self {
         if self.req.body.is_some() {
-            panic!("expected body absent, but body=Some(..)\nurl: {}", self.req.url);
+            panic!(
+                "expected body absent, but body=Some(..)\nurl: {}",
+                self.req.url
+            );
         }
         self
     }

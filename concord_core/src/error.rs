@@ -44,6 +44,7 @@ pub enum ApiClientError {
         ctx: ErrorContext,
         status: StatusCode,
         headers: HeaderMap,
+        rate_limit: Option<crate::rate_limit::RateLimitResponseAction>,
     },
 
     #[error("{ctx}: decode error: {source}")]

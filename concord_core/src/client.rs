@@ -12,7 +12,9 @@ use crate::error::{ApiClientError, ErrorContext};
 use crate::inflight::{InflightPolicy, RequestKey, SharedSendError, SharedSendResult};
 use crate::pagination::Caps;
 use crate::policy::{Policy, PolicyLayer, PolicyPatch};
-use crate::rate_limit::{RateLimitContext, RateLimitResponseContext, RateLimiter};
+use crate::rate_limit::{
+    RateLimitContext, RateLimitPlan, RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
+};
 use crate::request::PendingRequest;
 use crate::response_classify::{ResponseClass, classify_status};
 use crate::retry::{RetryContext, RetryDecision, RetryOutcome, RetryPolicy, RetrySetting};
@@ -32,6 +34,7 @@ use http::uri::Scheme;
 use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::time::Duration;
 
 pub trait ClientContext: Sized + Send + Sync + 'static {
     type Vars: Clone + Send + Sync + 'static;
@@ -407,34 +410,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     self.debug_sink.request_body(dbg, body, fmt, MAX_CHARS);
                 }
             }
-            let pre_send_meta = HookMeta {
-                endpoint: built.meta.endpoint,
-                method: &built.meta.method,
-                url: &url_str,
-                attempt: built.meta.attempt,
-                page_index: built.meta.page_index,
-                idempotent: built.meta.idempotent,
-            };
-            let rate_limit_meta = RateLimitContext {
-                endpoint: built.meta.endpoint,
-                method: &built.meta.method,
-                url: &url_str,
-                attempt: built.meta.attempt,
-                page_index: built.meta.page_index,
-                idempotent: built.meta.idempotent,
-            };
-            let _permit = self
-                .runtime_state
-                .rate_limiter()
-                .acquire(rate_limit_meta)
-                .await?;
-            self.runtime_state
-                .hooks()
-                .pre_send(PreSendHookContext {
-                    meta: pre_send_meta,
-                    headers: &built.headers,
-                })
-                .await?;
             let inflight_key = self.runtime_state.inflight_policy().key_for(&built);
 
             let retry_config = built.retry.clone();
@@ -555,11 +530,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         response_headers,
                         outcome,
                     };
-                    let Some(delay) =
+                    let Some(mut delay) =
                         self.retry_delay(&retry_config, &retry_ctx, transport_retry_index)
                     else {
                         return Err(err);
                     };
+                    if Self::rate_limit_action_from_error(&err)
+                        .is_some_and(|action| action.delay_handled_by_rate_limiter())
+                    {
+                        delay = Duration::ZERO;
+                    }
                     if !delay.is_zero() {
                         tokio::time::sleep(delay).await;
                     }
@@ -607,7 +587,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
 
         // Compute parts after patch (Content-Type may have been added/removed there).
-        let (mut headers, query, timeout, retry) = policy.into_parts();
+        let (mut headers, query, timeout, retry, rate_limit) = policy.into_parts();
 
         // URL
         route.host().validate(ctx.clone())?;
@@ -649,6 +629,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             body: body_bytes,
             timeout,
             retry,
+            rate_limit,
             extensions: Default::default(),
         })
     }
@@ -720,18 +701,21 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             endpoint: resp.meta.endpoint,
             method: &resp.meta.method,
             url: resp.url.as_str(),
+            url_host: resp.url.host_str(),
             attempt: resp.meta.attempt,
             page_index: resp.meta.page_index,
             idempotent: resp.meta.idempotent,
+            plan: &resp.rate_limit,
         };
-        self.runtime_state
+        let rate_limit_action = self
+            .runtime_state
             .rate_limiter()
             .on_response(RateLimitResponseContext {
                 meta: rate_limit_meta,
                 status: resp.status,
                 headers: &resp.headers,
             })
-            .await;
+            .await?;
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
@@ -743,6 +727,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     ctx: ctx.clone(),
                     status: resp.status,
                     headers: resp.headers,
+                    rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
+                        .then_some(rate_limit_action),
                 })
             }
             ResponseClass::Success => {
@@ -758,6 +744,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     status: resp.status,
                     headers: resp.headers,
                     body: bytes,
+                    rate_limit: resp.rate_limit,
                 })
             }
         }
@@ -811,6 +798,36 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         url_str: &str,
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
+        let rate_limit_meta = RateLimitContext {
+            endpoint: built.meta.endpoint,
+            method: &built.meta.method,
+            url: built.url.as_str(),
+            url_host: built.url.host_str(),
+            attempt: built.meta.attempt,
+            page_index: built.meta.page_index,
+            idempotent: built.meta.idempotent,
+            plan: &built.rate_limit,
+        };
+        let _permit = self
+            .runtime_state
+            .rate_limiter()
+            .acquire(rate_limit_meta)
+            .await?;
+        let pre_send_meta = HookMeta {
+            endpoint: built.meta.endpoint,
+            method: &built.meta.method,
+            url: built.url.as_str(),
+            attempt: built.meta.attempt,
+            page_index: built.meta.page_index,
+            idempotent: built.meta.idempotent,
+        };
+        self.runtime_state
+            .hooks()
+            .pre_send(PreSendHookContext {
+                meta: pre_send_meta,
+                headers: &built.headers,
+            })
+            .await?;
         let transport_resp = self.send_built_request(built, ctx).await?;
         self.classify_transport_response(transport_resp, dbg, dbg_verbose, dbg_vv, url_str, ctx)
             .await
@@ -867,6 +884,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             ApiClientError::Decode { .. } => RetryOutcome::Decode,
             ApiClientError::Transform { .. } => RetryOutcome::Transform,
             _ => RetryOutcome::Other,
+        }
+    }
+
+    fn rate_limit_action_from_error(err: &ApiClientError) -> Option<&RateLimitResponseAction> {
+        match err {
+            ApiClientError::HttpStatus { rate_limit, .. } => rate_limit.as_ref(),
+            _ => None,
         }
     }
 
@@ -952,6 +976,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     body,
                     timeout: policy.timeout,
                     retry: RetrySetting::Inherit,
+                    rate_limit: RateLimitPlan::new(),
                     extensions: Default::default(),
                 };
 
@@ -1002,9 +1027,11 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                 endpoint: "<auth>",
                                 method: &built.meta.method,
                                 url: &auth_url,
+                                url_host: built.url.host_str(),
                                 attempt,
                                 page_index: 0,
                                 idempotent: built.meta.idempotent,
+                                plan: &built.rate_limit,
                             })
                             .await
                             .map_err(|source| {

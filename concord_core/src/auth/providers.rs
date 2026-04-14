@@ -161,7 +161,11 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
     ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
         Box::pin(async move {
             let mut headers = HeaderMap::new();
-            let raw = format!("{}:{}", self.client_id.expose(), self.client_secret.expose());
+            let raw = format!(
+                "{}:{}",
+                self.client_id.expose(),
+                self.client_secret.expose()
+            );
             let basic = format!("Basic {}", BASE64_STANDARD.encode(raw));
             headers.insert(
                 AUTHORIZATION,

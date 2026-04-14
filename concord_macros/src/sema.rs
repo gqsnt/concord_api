@@ -16,6 +16,7 @@ pub struct Ir {
     pub client_auth_vars: Vec<VarInfo>, // stable order
     pub client_auth_credentials: Vec<AuthCredentialIr>,
     pub client_policy: PolicyBlocksResolved,
+    pub rate_limit_response_policy: Option<syn::Path>,
 
     pub layers: Vec<LayerIr>,
     pub endpoints: Vec<EndpointIr>,
@@ -36,6 +37,7 @@ pub struct LayerIr {
     pub path_pieces: Vec<PathPiece>,     // if Path
     pub policy: PolicyBlocksResolved,
     pub auth_uses: Vec<AuthUsePlanIr>,
+    pub rate_limit_keys: Vec<RateLimitKeyBindingResolved>,
     pub decls: Vec<VarInfo>, // endpoint vars declared by this layer (placeholders + binds)
 }
 
@@ -166,6 +168,7 @@ pub struct PolicyBlocksResolved {
     pub query: Vec<PolicyOp>,
     pub timeout: Option<ValueKind>,
     pub retry: Option<RetryResolved>,
+    pub rate_limit: Option<RateLimitResolved>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +176,48 @@ pub enum RetryResolved {
     Set(RetryConfigResolved),
     Patch(RetryPatchResolved),
     Clear,
+}
+
+#[derive(Debug, Clone)]
+pub enum RateLimitResolved {
+    Add(RateLimitPlanResolved),
+    Replace(RateLimitPlanResolved),
+    Clear,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RateLimitPlanResolved {
+    pub buckets: Vec<RateLimitBucketResolved>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RateLimitBucketResolved {
+    pub kind: String,
+    pub name: String,
+    pub key: Vec<RateLimitKeyResolved>,
+    pub windows: Vec<RateLimitWindowResolved>,
+}
+
+#[derive(Debug, Clone)]
+pub enum RateLimitKeyResolved {
+    RouteHost,
+    Endpoint,
+    Method,
+    Named { name: String },
+    EpField { name: String, field: Ident },
+    Static { name: String, value: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct RateLimitWindowResolved {
+    pub max: u32,
+    pub per_secs: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct RateLimitKeyBindingResolved {
+    pub name: String,
+    pub field: Ident,
 }
 
 #[derive(Debug, Clone)]
@@ -330,6 +375,7 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
     )?;
 
     let retry_profiles = resolve_retry_profiles(ast.client.retry_profiles.as_ref())?;
+    let rate_limit_profiles = resolve_rate_limit_profiles(ast.client.rate_limit.as_ref())?;
 
     // validate client policy + resolve
     let mut client_policy = resolve_policy_blocks(
@@ -346,6 +392,12 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
             .as_ref()
             .and_then(|block| block.default.as_ref()),
         &retry_profiles,
+    )?;
+    client_policy.rate_limit = resolve_client_rate_limit(
+        ast.client.rate_limit.as_ref(),
+        &rate_limit_profiles,
+        &BTreeMap::new(),
+        None,
     )?;
 
     let client_vars: Vec<VarInfo> = client_vars_map.values().cloned().collect();
@@ -364,6 +416,7 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
         &auth_credential_map,
         &client_auth_uses,
         &retry_profiles,
+        &rate_limit_profiles,
         &mut layers,
         &mut endpoints,
     )?;
@@ -377,6 +430,11 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
         client_auth_vars,
         client_auth_credentials,
         client_policy,
+        rate_limit_response_policy: ast
+            .client
+            .rate_limit
+            .as_ref()
+            .and_then(|block| block.response_policy.clone()),
         layers,
         endpoints,
     })
@@ -1040,6 +1098,311 @@ fn resolve_retry_idempotency(spec: &RetryIdempotencySpec) -> Result<RetryIdempot
     }
 }
 
+fn resolve_rate_limit_profiles(
+    block: Option<&RateLimitProfilesBlock>,
+) -> Result<BTreeMap<String, RateLimitPlanResolved>> {
+    let Some(block) = block else {
+        return Ok(BTreeMap::new());
+    };
+
+    let mut raw: BTreeMap<String, &RateLimitProfileDef> = BTreeMap::new();
+    for profile in &block.profiles {
+        let key = profile.name.to_string();
+        if raw.insert(key.clone(), profile).is_some() {
+            return Err(syn::Error::new(
+                profile.name.span(),
+                format!("duplicate rate_limit profile `{key}`"),
+            ));
+        }
+    }
+
+    let mut resolved = BTreeMap::new();
+    let mut stack = Vec::new();
+    for profile in &block.profiles {
+        resolve_rate_limit_profile(&profile.name, &raw, &mut resolved, &mut stack)?;
+    }
+    for default in &block.default {
+        if !resolved.contains_key(&default.to_string()) {
+            return Err(syn::Error::new(
+                default.span(),
+                format!("unknown default rate_limit profile `{default}`"),
+            ));
+        }
+    }
+
+    Ok(resolved)
+}
+
+fn resolve_rate_limit_profile(
+    name: &Ident,
+    raw: &BTreeMap<String, &RateLimitProfileDef>,
+    resolved: &mut BTreeMap<String, RateLimitPlanResolved>,
+    stack: &mut Vec<String>,
+) -> Result<RateLimitPlanResolved> {
+    let key = name.to_string();
+    if let Some(plan) = resolved.get(&key) {
+        return Ok(plan.clone());
+    }
+    if stack.iter().any(|item| item == &key) {
+        return Err(syn::Error::new(
+            name.span(),
+            format!("rate_limit profile inheritance cycle involving `{key}`"),
+        ));
+    }
+
+    let Some(profile) = raw.get(&key) else {
+        return Err(syn::Error::new(
+            name.span(),
+            format!("unknown rate_limit profile `{key}`"),
+        ));
+    };
+
+    stack.push(key.clone());
+    let mut plan = if let Some(base) = &profile.extends {
+        resolve_rate_limit_profile(base, raw, resolved, stack)?
+    } else {
+        RateLimitPlanResolved::default()
+    };
+    let mut own = resolve_rate_limit_plan_spec(&profile.plan, &key)?;
+    plan.buckets.append(&mut own.buckets);
+    stack.pop();
+
+    resolved.insert(key, plan.clone());
+    Ok(plan)
+}
+
+fn resolve_client_rate_limit(
+    block: Option<&RateLimitProfilesBlock>,
+    profiles: &BTreeMap<String, RateLimitPlanResolved>,
+    visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
+    endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
+) -> Result<Option<RateLimitResolved>> {
+    let Some(block) = block else {
+        return Ok(None);
+    };
+    if block.default.is_empty() {
+        return Ok(None);
+    }
+    let plan = combine_rate_limit_profiles(&block.default, profiles)?;
+    Ok(Some(RateLimitResolved::Add(materialize_rate_limit_plan(
+        plan,
+        visible_keys,
+        endpoint_vars,
+    )?)))
+}
+
+fn resolve_rate_limit_spec(
+    spec: Option<&RateLimitSpec>,
+    profiles: &BTreeMap<String, RateLimitPlanResolved>,
+    visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
+    endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
+) -> Result<Option<RateLimitResolved>> {
+    let Some(spec) = spec else {
+        return Ok(None);
+    };
+    match spec {
+        RateLimitSpec::Off => Ok(Some(RateLimitResolved::Clear)),
+        RateLimitSpec::Profiles {
+            only,
+            profiles: names,
+        } => {
+            let plan = combine_rate_limit_profiles(names, profiles)?;
+            let plan = materialize_rate_limit_plan(plan, visible_keys, endpoint_vars)?;
+            if *only {
+                Ok(Some(RateLimitResolved::Replace(plan)))
+            } else {
+                Ok(Some(RateLimitResolved::Add(plan)))
+            }
+        }
+        RateLimitSpec::Inline { only, plan } => {
+            let plan = resolve_rate_limit_plan_spec(plan, "inline")?;
+            let plan = materialize_rate_limit_plan(plan, visible_keys, endpoint_vars)?;
+            if *only {
+                Ok(Some(RateLimitResolved::Replace(plan)))
+            } else {
+                Ok(Some(RateLimitResolved::Add(plan)))
+            }
+        }
+    }
+}
+
+fn combine_rate_limit_profiles(
+    names: &[Ident],
+    profiles: &BTreeMap<String, RateLimitPlanResolved>,
+) -> Result<RateLimitPlanResolved> {
+    let mut out = RateLimitPlanResolved::default();
+    for name in names {
+        let Some(plan) = profiles.get(&name.to_string()) else {
+            return Err(syn::Error::new(
+                name.span(),
+                format!("unknown rate_limit profile `{name}`"),
+            ));
+        };
+        out.buckets.extend(plan.buckets.clone());
+    }
+    Ok(out)
+}
+
+fn resolve_rate_limit_plan_spec(
+    plan: &RateLimitPlanSpec,
+    default_bucket_name: &str,
+) -> Result<RateLimitPlanResolved> {
+    let mut out = RateLimitPlanResolved::default();
+    for (idx, bucket) in plan.buckets.iter().enumerate() {
+        if bucket.windows.is_empty() {
+            return Err(syn::Error::new(
+                bucket.kind.span(),
+                "rate_limit bucket must contain at least one `limit`",
+            ));
+        }
+        let mut windows = Vec::new();
+        for window in &bucket.windows {
+            let max = window.max.base10_parse::<u32>()?;
+            if max == 0 {
+                return Err(syn::Error::new(
+                    window.max.span(),
+                    "rate_limit max must be greater than zero",
+                ));
+            }
+            let amount = window.every.base10_parse::<u64>()?;
+            if amount == 0 {
+                return Err(syn::Error::new(
+                    window.every.span(),
+                    "rate_limit duration must be greater than zero",
+                ));
+            }
+            let multiplier = match window.unit {
+                RateLimitDurationUnit::Seconds => 1,
+                RateLimitDurationUnit::Minutes => 60,
+            };
+            windows.push(RateLimitWindowResolved {
+                max,
+                per_secs: amount.saturating_mul(multiplier),
+            });
+        }
+        out.buckets.push(RateLimitBucketResolved {
+            kind: bucket.kind.to_string(),
+            name: format!("{default_bucket_name}_{idx}"),
+            key: bucket.key.iter().map(resolve_rate_limit_key_spec).collect(),
+            windows,
+        });
+    }
+    Ok(out)
+}
+
+fn resolve_rate_limit_key_spec(spec: &RateLimitKeySpec) -> RateLimitKeyResolved {
+    match spec {
+        RateLimitKeySpec::RouteHost => RateLimitKeyResolved::RouteHost,
+        RateLimitKeySpec::Endpoint => RateLimitKeyResolved::Endpoint,
+        RateLimitKeySpec::Method => RateLimitKeyResolved::Method,
+        RateLimitKeySpec::Named(name) => RateLimitKeyResolved::Named {
+            name: name.to_string(),
+        },
+        RateLimitKeySpec::Static(value) => RateLimitKeyResolved::Static {
+            name: "static".to_string(),
+            value: value.value(),
+        },
+    }
+}
+
+fn materialize_rate_limit_plan(
+    mut plan: RateLimitPlanResolved,
+    visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
+    endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
+) -> Result<RateLimitPlanResolved> {
+    for bucket in &mut plan.buckets {
+        for key in &mut bucket.key {
+            let RateLimitKeyResolved::Named { name } = key else {
+                continue;
+            };
+            if let Some(binding) = visible_keys.get(name) {
+                *key = RateLimitKeyResolved::EpField {
+                    name: name.clone(),
+                    field: binding.field.clone(),
+                };
+                continue;
+            }
+            let Some(vars) = endpoint_vars else {
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    format!("rate_limit key `{name}` requires endpoint/scope params"),
+                ));
+            };
+            let Some(var) = vars.get(name) else {
+                return Err(syn::Error::new(
+                    Span::call_site(),
+                    format!("unknown rate_limit key `{name}`"),
+                ));
+            };
+            if var.optional {
+                return Err(syn::Error::new(
+                    var.rust.span(),
+                    format!("rate_limit key `{name}` cannot use optional param"),
+                ));
+            }
+            *key = RateLimitKeyResolved::EpField {
+                name: name.clone(),
+                field: var.rust.clone(),
+            };
+        }
+    }
+    Ok(plan)
+}
+
+fn resolve_rate_limit_key_bindings(
+    bindings: &[RateLimitKeyBindingSpec],
+    decls: &[VarInfo],
+) -> Result<Vec<RateLimitKeyBindingResolved>> {
+    let decl_map: BTreeMap<String, &VarInfo> = decls
+        .iter()
+        .map(|decl| (decl.rust.to_string(), decl))
+        .collect();
+    let mut seen = BTreeMap::new();
+    let mut out = Vec::new();
+    for binding in bindings {
+        let name = binding.name.to_string();
+        if seen.insert(name.clone(), binding.name.span()).is_some() {
+            return Err(syn::Error::new(
+                binding.name.span(),
+                format!("duplicate rate_limit key `{name}`"),
+            ));
+        }
+        let Some(target) = decl_map.get(&binding.value.to_string()) else {
+            return Err(syn::Error::new(
+                binding.value.span(),
+                format!(
+                    "unknown scope param `{}` in rate_limit key binding",
+                    binding.value
+                ),
+            ));
+        };
+        if target.optional {
+            return Err(syn::Error::new(
+                binding.value.span(),
+                "rate_limit key binding cannot target an optional param",
+            ));
+        }
+        out.push(RateLimitKeyBindingResolved {
+            name,
+            field: binding.value.clone(),
+        });
+    }
+    Ok(out)
+}
+
+fn rate_limit_key_bindings_for_ancestry(
+    ancestry: &[usize],
+    layers: &[LayerIr],
+) -> BTreeMap<String, RateLimitKeyBindingResolved> {
+    let mut out = BTreeMap::new();
+    for &lid in ancestry {
+        for binding in &layers[lid].rate_limit_keys {
+            out.insert(binding.name.clone(), binding.clone());
+        }
+    }
+    out
+}
+
 fn walk_items(
     items: &[Item],
     ancestry: &mut Vec<usize>,
@@ -1048,6 +1411,7 @@ fn walk_items(
     auth_credentials: &BTreeMap<String, AuthCredentialIr>,
     client_auth_uses: &[AuthUsePlanIr],
     retry_profiles: &BTreeMap<String, RetryConfigResolved>,
+    rate_limit_profiles: &BTreeMap<String, RateLimitPlanResolved>,
     layers: &mut Vec<LayerIr>,
     endpoints: &mut Vec<EndpointIr>,
 ) -> Result<()> {
@@ -1056,6 +1420,7 @@ fn walk_items(
             Item::Layer(ld) => {
                 let id = layers.len();
                 let (prefix_pieces, path_pieces, decls) = analyze_layer_route_and_decls(ld)?;
+                let key_bindings = resolve_rate_limit_key_bindings(&ld.rate_limit_keys, &decls)?;
                 let mut policy = resolve_policy_blocks(
                     &ld.policy,
                     PolicyOwner::Layer,
@@ -1064,6 +1429,16 @@ fn walk_items(
                     None, // endpoint vars not known at layer-level alone (validated per endpoint)
                 )?;
                 policy.retry = resolve_retry_spec(ld.retry.as_ref(), retry_profiles)?;
+                let mut visible_keys = rate_limit_key_bindings_for_ancestry(ancestry, layers);
+                for binding in &key_bindings {
+                    visible_keys.insert(binding.name.clone(), binding.clone());
+                }
+                policy.rate_limit = resolve_rate_limit_spec(
+                    ld.rate_limit.as_ref(),
+                    rate_limit_profiles,
+                    &visible_keys,
+                    None,
+                )?;
                 let auth_uses = resolve_auth_uses(
                     &ld.auth_uses,
                     auth_credentials,
@@ -1076,6 +1451,7 @@ fn walk_items(
                     path_pieces,
                     policy,
                     auth_uses,
+                    rate_limit_keys: key_bindings,
                     decls,
                 });
 
@@ -1088,6 +1464,7 @@ fn walk_items(
                     auth_credentials,
                     client_auth_uses,
                     retry_profiles,
+                    rate_limit_profiles,
                     layers,
                     endpoints,
                 )?;
@@ -1102,6 +1479,7 @@ fn walk_items(
                     auth_credentials,
                     client_auth_uses,
                     retry_profiles,
+                    rate_limit_profiles,
                     layers,
                 )?;
                 endpoints.push(endpoint_ir);
@@ -1281,6 +1659,7 @@ fn analyze_endpoint(
     auth_credentials: &std::collections::BTreeMap<String, AuthCredentialIr>,
     client_auth_uses: &[AuthUsePlanIr],
     retry_profiles: &BTreeMap<String, RetryConfigResolved>,
+    rate_limit_profiles: &BTreeMap<String, RateLimitPlanResolved>,
     layers: &[LayerIr],
 ) -> syn::Result<EndpointIr> {
     use std::collections::BTreeMap;
@@ -1410,6 +1789,13 @@ fn analyze_endpoint(
         Some(&ep_vars),
     )?;
     policy.retry = resolve_retry_spec(ed.retry.as_ref(), retry_profiles)?;
+    let visible_keys = rate_limit_key_bindings_for_ancestry(ancestry, layers);
+    policy.rate_limit = resolve_rate_limit_spec(
+        ed.rate_limit.as_ref(),
+        rate_limit_profiles,
+        &visible_keys,
+        Some(&ep_vars),
+    )?;
     let mut auth_uses = client_auth_uses.to_vec();
     for &lid in ancestry {
         auth_uses.extend(layers[lid].auth_uses.iter().cloned());

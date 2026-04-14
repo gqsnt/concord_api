@@ -3,6 +3,38 @@ use concord_core::prelude::*;
 use concord_macros::api;
 use serde::{Deserialize, Serialize};
 
+#[derive(Default)]
+pub struct RiotRateLimitHeaders;
+
+impl RateLimitResponsePolicy for RiotRateLimitHeaders {
+    fn observe(&self, ctx: &RateLimitResponseContext<'_>) -> RateLimitObservation {
+        if ctx.status != http::StatusCode::TOO_MANY_REQUESTS {
+            return RateLimitObservation::continue_();
+        }
+
+        let target = ctx
+            .headers
+            .get(http::header::HeaderName::from_static("x-rate-limit-type"))
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.trim().to_ascii_lowercase())
+            .map(|value| match value.as_str() {
+                "application" | "app" => {
+                    RateLimitTarget::bucket_kind("application", RateLimitTarget::Host)
+                }
+                "method" => RateLimitTarget::bucket_kind("method", RateLimitTarget::Endpoint),
+                "service" => RateLimitTarget::bucket_kind("service", RateLimitTarget::Host),
+                _ => RateLimitTarget::current_plan_or_endpoint(),
+            })
+            .unwrap_or_else(RateLimitTarget::current_plan_or_endpoint);
+
+        let mut observation = RateLimitObservation::limited().with_target(target);
+        if let Some(delay) = parse_retry_after(ctx.headers) {
+            observation = observation.with_delay(delay);
+        }
+        observation
+    }
+}
+
 api! {
     client RiotClient {
         scheme: https,
@@ -27,6 +59,74 @@ api! {
             }
             default read
         }
+        rate_limit {
+            response custom RiotRateLimitHeaders
+
+            profile app {
+                bucket application by [route.host] {
+                    limit 500 every 10 seconds
+                    limit 30000 every 10 minutes
+                }
+            }
+
+            profile summoner_by_puuid {
+                bucket method by [route.host, endpoint] {
+                    limit 1600 every 1 minute
+                }
+            }
+
+            profile league_queue_slow {
+                bucket method by [route.host, endpoint] {
+                    limit 30 every 10 seconds
+                    limit 500 every 10 minutes
+                }
+            }
+
+            profile league_by_id {
+                bucket method by [route.host, endpoint] {
+                    limit 500 every 10 seconds
+                }
+            }
+
+            profile league_entries {
+                bucket method by [route.host, endpoint] {
+                    limit 50 every 10 seconds
+                }
+            }
+
+            profile clash_team_or_by_team {
+                bucket method by [route.host, endpoint] {
+                    limit 200 every 1 minute
+                }
+            }
+
+            profile clash_tournament_lookup {
+                bucket method by [route.host, endpoint] {
+                    limit 10 every 1 minute
+                }
+            }
+
+            profile account_standard_method {
+                bucket method by [route.host, endpoint] {
+                    limit 1000 every 1 minute
+                }
+            }
+
+            profile riot_high_volume_method {
+                bucket method by [route.host, endpoint] {
+                    limit 20000 every 10 seconds
+                    limit 1200000 every 10 minutes
+                }
+            }
+
+            profile match_v5_method {
+                bucket method by [route.host, endpoint] {
+                    limit 2000 every 10 seconds
+                }
+            }
+
+            default app
+        }
     }
 
     scope platform {
@@ -38,12 +138,23 @@ api! {
         host[platform, "api"]
         path["lol"]
 
+        scope champion_v3 {
+            path["platform", "v3"]
+
+            GET GetChampionRotations {
+                path["champion-rotations"]
+                rate_limit league_queue_slow
+                -> Json<models::ChampionRotationsDto>;
+            }
+        }
+
         scope summoner_v4 {
             path["summoner", "v4", "summoners"]
 
             GET GetSummonerByPuuid {
                 params { puuid: String }
                 path["by-puuid", puuid]
+                rate_limit summoner_by_puuid
                 -> Json<models::SummonerDto>;
             }
 
@@ -69,6 +180,7 @@ api! {
                 GET GetChampionMasteriesBySummoner {
                     params { summoner_id: String }
                     path["by-summoner", summoner_id]
+                    rate_limit riot_high_volume_method
                     -> Json<Vec<models::ChampionMasteryDto>>;
                 }
 
@@ -78,7 +190,38 @@ api! {
                         champion_id: i64
                     }
                     path["by-summoner", summoner_id, "by-champion", champion_id]
+                    rate_limit riot_high_volume_method
                     -> Json<models::ChampionMasteryDto>;
+                }
+
+                GET GetChampionMasteriesByPuuid {
+                    params { encrypted_puuid: String }
+                    path["by-puuid", encrypted_puuid]
+                    rate_limit riot_high_volume_method
+                    -> Json<Vec<models::ChampionMasteryDto>>;
+                }
+
+                GET GetChampionMasteryByPuuidAndChampion {
+                    params {
+                        encrypted_puuid: String,
+                        champion_id: i64
+                    }
+                    path["by-puuid", encrypted_puuid, "by-champion", champion_id]
+                    rate_limit riot_high_volume_method
+                    -> Json<models::ChampionMasteryDto>;
+                }
+
+                GET GetTopChampionMasteriesByPuuid {
+                    params {
+                        encrypted_puuid: String,
+                        count?: u32
+                    }
+                    path["by-puuid", encrypted_puuid, "top"]
+                    query {
+                        count = count
+                    }
+                    rate_limit riot_high_volume_method
+                    -> Json<Vec<models::ChampionMasteryDto>>;
                 }
             }
 
@@ -88,6 +231,14 @@ api! {
                 GET GetChampionMasteryScore {
                     params { summoner_id: String }
                     path["by-summoner", summoner_id]
+                    rate_limit riot_high_volume_method
+                    -> Json<i32>;
+                }
+
+                GET GetChampionMasteryScoreByPuuid {
+                    params { encrypted_puuid: String }
+                    path["by-puuid", encrypted_puuid]
+                    rate_limit riot_high_volume_method
                     -> Json<i32>;
                 }
             }
@@ -102,6 +253,7 @@ api! {
                 GET GetChallengerLeagueByQueue {
                     params { queue: LeagueQueue }
                     path["by-queue", queue]
+                    rate_limit league_queue_slow
                     -> Json<models::LeagueListDto>;
                 }
             }
@@ -112,6 +264,7 @@ api! {
                 GET GetGrandmasterLeagueByQueue {
                     params { queue: LeagueQueue }
                     path["by-queue", queue]
+                    rate_limit league_queue_slow
                     -> Json<models::LeagueListDto>;
                 }
             }
@@ -122,6 +275,7 @@ api! {
                 GET GetMasterLeagueByQueue {
                     params { queue: LeagueQueue }
                     path["by-queue", queue]
+                    rate_limit league_queue_slow
                     -> Json<models::LeagueListDto>;
                 }
             }
@@ -132,6 +286,7 @@ api! {
                 GET GetLeagueById {
                     params { league_id: String }
                     path[league_id]
+                    rate_limit league_by_id
                     -> Json<models::LeagueListDto>;
                 }
             }
@@ -142,6 +297,14 @@ api! {
                 GET GetLeagueEntriesBySummoner {
                     params { summoner_id: String }
                     path["by-summoner", summoner_id]
+                    rate_limit riot_high_volume_method
+                    -> Json<Vec<models::LeagueEntryDto>>;
+                }
+
+                GET GetLeagueEntriesByPuuid {
+                    params { encrypted_puuid: String }
+                    path["by-puuid", encrypted_puuid]
+                    rate_limit riot_high_volume_method
                     -> Json<Vec<models::LeagueEntryDto>>;
                 }
 
@@ -156,8 +319,117 @@ api! {
                     query {
                         page = page
                     }
+                    rate_limit league_entries
                     -> Json<Vec<models::LeagueEntryDto>>;
                 }
+            }
+        }
+
+        scope league_exp_v4 {
+            path["league-exp", "v4", "entries"]
+
+            GET GetLeagueExpEntries {
+                params {
+                    queue: String,
+                    tier: String,
+                    division: String,
+                    page?: u32
+                }
+                path[queue, tier, division]
+                query {
+                    page = page
+                }
+                rate_limit league_entries
+                -> Json<Vec<models::LeagueEntryDto>>;
+            }
+        }
+
+        scope clash_v1 {
+            path["clash", "v1"]
+
+            GET GetClashTeam {
+                params { team_id: String }
+                path["teams", team_id]
+                rate_limit clash_team_or_by_team
+                -> Json<models::ClashTeamDto>;
+            }
+
+            GET GetClashTournament {
+                params { tournament_id: i64 }
+                path["tournaments", tournament_id]
+                rate_limit clash_tournament_lookup
+                -> Json<models::ClashTournamentDto>;
+            }
+
+            GET GetClashTournamentByTeam {
+                params { team_id: String }
+                path["tournaments", "by-team", team_id]
+                rate_limit clash_team_or_by_team
+                -> Json<models::ClashTournamentDto>;
+            }
+
+            GET GetClashTournaments {
+                path["tournaments"]
+                rate_limit clash_tournament_lookup
+                -> Json<Vec<models::ClashTournamentDto>>;
+            }
+
+            GET GetClashPlayersByPuuid {
+                params { puuid: String }
+                path["players", "by-puuid", puuid]
+                rate_limit riot_high_volume_method
+                -> Json<Vec<models::ClashPlayerDto>>;
+            }
+        }
+
+        scope challenges_v1 {
+            path["challenges", "v1"]
+
+            GET GetChallengePercentiles {
+                path["challenges", "percentiles"]
+                rate_limit riot_high_volume_method
+                -> Json<serde_json::Value>;
+            }
+
+            GET GetChallengeLeaderboardsByLevel {
+                params {
+                    challenge_id: i64,
+                    level: String,
+                    limit?: u32
+                }
+                path["challenges", challenge_id, "leaderboards", "by-level", level]
+                query {
+                    limit = limit
+                }
+                rate_limit riot_high_volume_method
+                -> Json<serde_json::Value>;
+            }
+
+            GET GetChallengePercentilesByChallenge {
+                params { challenge_id: i64 }
+                path["challenges", challenge_id, "percentiles"]
+                rate_limit riot_high_volume_method
+                -> Json<serde_json::Value>;
+            }
+
+            GET GetChallengeConfig {
+                params { challenge_id: i64 }
+                path["challenges", challenge_id, "config"]
+                rate_limit riot_high_volume_method
+                -> Json<serde_json::Value>;
+            }
+
+            GET GetChallengePlayerData {
+                params { puuid: String }
+                path["player-data", puuid]
+                rate_limit riot_high_volume_method
+                -> Json<serde_json::Value>;
+            }
+
+            GET GetChallengeConfigs {
+                path["challenges", "config"]
+                rate_limit riot_high_volume_method
+                -> Json<serde_json::Value>;
             }
         }
 
@@ -183,11 +455,23 @@ api! {
             }
         }
 
+        scope spectator_v5 {
+            path["spectator", "v5", "active-games"]
+
+            GET GetSpectatorV5ActiveGameBySummoner {
+                params { encrypted_puuid: String }
+                path["by-summoner", encrypted_puuid]
+                rate_limit riot_high_volume_method
+                -> Json<models::CurrentGameInfoDto>;
+            }
+        }
+
         scope status_v4 {
             path["status", "v4"]
 
             GET GetPlatformData {
                 path["platform-data"]
+                rate_limit riot_high_volume_method
                 -> Json<models::PlatformDataDto>;
             }
         }
@@ -208,13 +492,29 @@ api! {
                     tag_line: String
                 }
                 path["by-riot-id", game_name, tag_line]
+                rate_limit [account_standard_method, riot_high_volume_method]
                 -> Json<models::AccountDto>;
             }
 
             GET GetAccountByPuuid {
                 params { puuid: String }
                 path["by-puuid", puuid]
+                rate_limit [account_standard_method, riot_high_volume_method]
                 -> Json<models::AccountDto>;
+            }
+        }
+
+        scope account_v1_region {
+            path["riot", "account", "v1", "region"]
+
+            GET GetAccountRegionByGameAndPuuid {
+                params {
+                    game: String,
+                    puuid: String
+                }
+                path["by-game", game, "by-puuid", puuid]
+                rate_limit riot_high_volume_method
+                -> Json<models::AccountRegionDto>;
             }
         }
 
@@ -227,6 +527,7 @@ api! {
                     puuid: String
                 }
                 path["by-game", game, "by-puuid", puuid]
+                rate_limit riot_high_volume_method
                 -> Json<models::ActiveShardDto>;
             }
         }
@@ -255,19 +556,76 @@ api! {
                     offset = start,
                     limit = count
                 }
+                rate_limit match_v5_method
                 -> Json<Vec<String>>;
             }
 
             GET GetMatch {
                 params { match_id: String }
                 path[match_id]
+                rate_limit match_v5_method
                 -> Json<models::MatchDto>;
             }
 
             GET GetTimeline {
                 params { match_id: String }
                 path[match_id, "timeline"]
+                rate_limit match_v5_method
                 -> Json<models::TimelineDto>;
+            }
+
+            GET GetMatchReplaysByPuuid {
+                params { puuid: String }
+                path["by-puuid", puuid, "replays"]
+                rate_limit riot_high_volume_method
+                -> Json<serde_json::Value>;
+            }
+        }
+
+        scope tournament_stub_v5 {
+            path["lol", "tournament-stub", "v5"]
+
+            POST CreateTournamentStubCodes {
+                params {
+                    tournament_id: i64,
+                    count?: u32
+                }
+                path["codes"]
+                query {
+                    "tournamentId" = tournament_id,
+                    count = count
+                }
+                body Json<serde_json::Value>
+                rate_limit riot_high_volume_method
+                -> Json<Vec<String>>;
+            }
+
+            GET GetTournamentStubLobbyEventsByCode {
+                params { tournament_code: String }
+                path["lobby-events", "by-code", tournament_code]
+                rate_limit riot_high_volume_method
+                -> Json<serde_json::Value>;
+            }
+
+            GET GetTournamentStubCode {
+                params { tournament_code: String }
+                path["codes", tournament_code]
+                rate_limit riot_high_volume_method
+                -> Json<serde_json::Value>;
+            }
+
+            POST RegisterTournamentStubProvider {
+                path["providers"]
+                body Json<serde_json::Value>
+                rate_limit riot_high_volume_method
+                -> Json<i32>;
+            }
+
+            POST RegisterTournamentStubTournament {
+                path["tournaments"]
+                body Json<serde_json::Value>
+                rate_limit riot_high_volume_method
+                -> Json<i32>;
             }
         }
     }
@@ -367,6 +725,8 @@ api! {
         }
     }
 }
+
+pub use self::riot_client::{RiotClient, endpoints as riot_endpoints};
 /// Platform routing values (LoL).
 /// Ex: euw1.api.riotgames.com
 #[derive(Clone, Copy, Debug)]
@@ -476,6 +836,23 @@ pub mod models {
         pub active_shard: String,
     }
 
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct AccountRegionDto {
+        #[serde(flatten)]
+        pub raw: Value,
+    }
+
+    // ---------------------------
+    // CHAMPION-V3
+    // ---------------------------
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ChampionRotationsDto {
+        pub free_champion_ids: Vec<i64>,
+        pub free_champion_ids_for_new_players: Vec<i64>,
+        pub max_new_player_level: i64,
+    }
+
     // ---------------------------
     // SUMMONER-V4 (platform routing)
     // ---------------------------
@@ -505,7 +882,12 @@ pub mod models {
         pub champion_points_until_next_level: i64,
         pub chest_granted: bool,
         pub tokens_earned: i32,
-        pub summoner_id: String, // encryptedSummonerId
+        #[serde(default)]
+        pub summoner_id: Option<String>, // legacy encryptedSummonerId shape
+        #[serde(default)]
+        pub puuid: Option<String>,
+        #[serde(flatten)]
+        pub extra: HashMap<String, Value>,
     }
 
     // ---------------------------
@@ -563,6 +945,27 @@ pub mod models {
         pub name: String,
         pub queue: String,
         pub entries: Vec<LeagueItemDto>,
+    }
+
+    // ---------------------------
+    // CLASH-V1
+    // ---------------------------
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ClashTeamDto {
+        #[serde(flatten)]
+        pub raw: Value,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ClashTournamentDto {
+        #[serde(flatten)]
+        pub raw: Value,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ClashPlayerDto {
+        #[serde(flatten)]
+        pub raw: Value,
     }
 
     // ---------------------------

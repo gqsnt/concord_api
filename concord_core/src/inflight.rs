@@ -141,6 +141,7 @@ pub enum SharedSendError {
     HttpStatus {
         status: StatusCode,
         headers: HeaderMap,
+        rate_limit: Option<crate::rate_limit::RateLimitResponseAction>,
     },
     Other {
         message: String,
@@ -155,10 +156,14 @@ impl SharedSendError {
                 message: source.to_string(),
             },
             ApiClientError::HttpStatus {
-                status, headers, ..
+                status,
+                headers,
+                rate_limit,
+                ..
             } => SharedSendError::HttpStatus {
                 status: *status,
                 headers: headers.clone(),
+                rate_limit: rate_limit.clone(),
             },
             _ => SharedSendError::Other {
                 message: err.to_string(),
@@ -175,10 +180,15 @@ impl SharedSendError {
                     source: TransportError::with_kind(kind, io),
                 }
             }
-            SharedSendError::HttpStatus { status, headers } => ApiClientError::HttpStatus {
+            SharedSendError::HttpStatus {
+                status,
+                headers,
+                rate_limit,
+            } => ApiClientError::HttpStatus {
                 ctx,
                 status,
                 headers,
+                rate_limit,
             },
             SharedSendError::Other { message } => {
                 let io = std::io::Error::other(message);

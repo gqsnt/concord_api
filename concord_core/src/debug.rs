@@ -1,7 +1,7 @@
 use crate::codec::{self, Format};
 use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode};
 use http::header::{HeaderName, HeaderValue};
+use http::{HeaderMap, Method, StatusCode};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u8)]
@@ -161,8 +161,6 @@ fn header_value_for_debug(name: &HeaderName, value: &HeaderValue) -> String {
     }
 }
 
-
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -172,12 +170,19 @@ mod test {
     fn redacts_sensitive_headers_by_name() {
         assert!(is_sensitive_header_name(&AUTHORIZATION));
         assert!(is_sensitive_header_name(&COOKIE));
-        assert!(is_sensitive_header_name(&HeaderName::from_static("x-riot-token")));
-        assert!(is_sensitive_header_name(&HeaderName::from_static("x-api-key")));
+        assert!(is_sensitive_header_name(&HeaderName::from_static(
+            "x-riot-token"
+        )));
+        assert!(is_sensitive_header_name(&HeaderName::from_static(
+            "x-api-key"
+        )));
         assert!(!is_sensitive_header_name(&ACCEPT));
 
         let secret = HeaderValue::from_static("s3cr3t");
-        assert_eq!(header_value_for_debug(&AUTHORIZATION, &secret), "<redacted>");
+        assert_eq!(
+            header_value_for_debug(&AUTHORIZATION, &secret),
+            "<redacted>"
+        );
         assert_eq!(
             header_value_for_debug(&ACCEPT, &HeaderValue::from_static("application/json")),
             "application/json"

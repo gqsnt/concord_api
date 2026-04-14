@@ -34,6 +34,7 @@ impl Parse for ClientDef {
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut retry_profiles: Option<RetryProfilesBlock> = None;
         let mut retry: Option<RetrySpec> = None;
+        let mut rate_limit: Option<RateLimitProfilesBlock> = None;
         let mut policy = PolicyBlocks::default();
 
         while !content.is_empty() {
@@ -113,6 +114,15 @@ impl Parse for ClientDef {
                     }
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::rate_limit) {
+                if rate_limit.is_some() {
+                    return Err(syn::Error::new(
+                        name.span(),
+                        "duplicate rate_limit block in client",
+                    ));
+                }
+                rate_limit = Some(parse_rate_limit_profiles_decl(&content)?);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::host) {
                 content.parse::<kw::host>()?;
                 content.parse::<Token![:]>()?;
@@ -153,6 +163,7 @@ impl Parse for ClientDef {
             policy,
             retry_profiles,
             retry,
+            rate_limit,
         })
     }
 }
@@ -780,6 +791,223 @@ fn parse_lit_int_list(input: ParseStream<'_>) -> Result<Vec<LitInt>> {
     Ok(out)
 }
 
+fn parse_rate_limit_profiles_decl(input: ParseStream<'_>) -> Result<RateLimitProfilesBlock> {
+    input.parse::<kw::rate_limit>()?;
+    let content;
+    braced!(content in input);
+
+    let mut profiles = Vec::new();
+    let mut default = Vec::new();
+    let mut response_policy = None;
+
+    while !content.is_empty() {
+        if content.peek(kw::response) {
+            if response_policy.is_some() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "duplicate rate_limit response policy",
+                ));
+            }
+            content.parse::<kw::response>()?;
+            let _ = content.parse::<Option<kw::custom>>()?;
+            response_policy = Some(content.parse::<Path>()?);
+        } else if content.peek(kw::profile) {
+            content.parse::<kw::profile>()?;
+            let name: Ident = content.parse()?;
+            let extends = if content.peek(kw::extends) {
+                content.parse::<kw::extends>()?;
+                Some(content.parse()?)
+            } else {
+                None
+            };
+            let body;
+            braced!(body in content);
+            profiles.push(RateLimitProfileDef {
+                name,
+                extends,
+                plan: parse_rate_limit_plan_body(&body)?,
+            });
+        } else if content.peek(kw::default) {
+            if !default.is_empty() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "duplicate rate_limit default",
+                ));
+            }
+            content.parse::<kw::default>()?;
+            default = parse_rate_limit_profile_list(&content)?;
+        } else {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "unexpected token in rate_limit block",
+            ));
+        }
+        let _ = content.parse::<Option<Token![,]>>()?;
+    }
+
+    Ok(RateLimitProfilesBlock {
+        profiles,
+        default,
+        response_policy,
+    })
+}
+
+fn parse_rate_limit_spec(input: ParseStream<'_>) -> Result<RateLimitSpec> {
+    input.parse::<kw::rate_limit>()?;
+
+    if input.peek(kw::off) {
+        input.parse::<kw::off>()?;
+        return Ok(RateLimitSpec::Off);
+    }
+
+    let only = if input.peek(kw::only) {
+        input.parse::<kw::only>()?;
+        true
+    } else {
+        false
+    };
+
+    if input.peek(token::Brace) {
+        let content;
+        braced!(content in input);
+        return Ok(RateLimitSpec::Inline {
+            only,
+            plan: parse_rate_limit_plan_body(&content)?,
+        });
+    }
+
+    Ok(RateLimitSpec::Profiles {
+        only,
+        profiles: parse_rate_limit_profile_list(input)?,
+    })
+}
+
+fn parse_rate_limit_key_binding(input: ParseStream<'_>) -> Result<RateLimitKeyBindingSpec> {
+    input.parse::<kw::rate_limit>()?;
+    input.parse::<kw::key>()?;
+    let name: Ident = input.parse()?;
+    input.parse::<Token![=]>()?;
+    let value: Ident = input.parse()?;
+    Ok(RateLimitKeyBindingSpec { name, value })
+}
+
+fn parse_rate_limit_profile_list(input: ParseStream<'_>) -> Result<Vec<Ident>> {
+    if input.peek(token::Bracket) {
+        return parse_ident_list(input);
+    }
+
+    Ok(vec![input.parse()?])
+}
+
+fn parse_rate_limit_plan_body(input: ParseStream<'_>) -> Result<RateLimitPlanSpec> {
+    let mut plan = RateLimitPlanSpec::default();
+
+    while !input.is_empty() {
+        if input.peek(kw::bucket) {
+            plan.buckets.push(parse_rate_limit_bucket(input)?);
+        } else {
+            let tt: TokenTree = input.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "unexpected token in rate_limit plan; expected `bucket`",
+            ));
+        }
+        let _ = input.parse::<Option<Token![,]>>()?;
+    }
+
+    Ok(plan)
+}
+
+fn parse_rate_limit_bucket(input: ParseStream<'_>) -> Result<RateLimitBucketSpec> {
+    input.parse::<kw::bucket>()?;
+    let kind: Ident = input.parse()?;
+    input.parse::<kw::by>()?;
+    let key = parse_rate_limit_key_list(input)?;
+    let content;
+    braced!(content in input);
+
+    let mut windows = Vec::new();
+    while !content.is_empty() {
+        if content.peek(kw::limit) {
+            content.parse::<kw::limit>()?;
+            let max: LitInt = content.parse()?;
+            content.parse::<kw::every>()?;
+            let every: LitInt = content.parse()?;
+            let unit = parse_rate_limit_duration_unit(&content)?;
+            windows.push(RateLimitWindowSpec { max, every, unit });
+        } else {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "unexpected token in rate_limit bucket; expected `limit`",
+            ));
+        }
+        let _ = content.parse::<Option<Token![,]>>()?;
+    }
+
+    Ok(RateLimitBucketSpec { kind, key, windows })
+}
+
+fn parse_rate_limit_key_list(input: ParseStream<'_>) -> Result<Vec<RateLimitKeySpec>> {
+    let content;
+    bracketed!(content in input);
+    let mut out = Vec::new();
+    while !content.is_empty() {
+        out.push(parse_rate_limit_key_spec(&content)?);
+        let _ = content.parse::<Option<Token![,]>>()?;
+    }
+    Ok(out)
+}
+
+fn parse_rate_limit_key_spec(input: ParseStream<'_>) -> Result<RateLimitKeySpec> {
+    if input.peek(LitStr) {
+        return Ok(RateLimitKeySpec::Static(input.parse()?));
+    }
+
+    let first: Ident = input.parse()?;
+    let first_s = first.to_string();
+    if first_s == "route" && input.peek(Token![.]) {
+        input.parse::<Token![.]>()?;
+        let second: Ident = input.parse()?;
+        if second == "host" {
+            return Ok(RateLimitKeySpec::RouteHost);
+        }
+        return Err(syn::Error::new(
+            second.span(),
+            "unknown rate_limit route key; expected `route.host`",
+        ));
+    }
+
+    match first_s.as_str() {
+        "endpoint" => Ok(RateLimitKeySpec::Endpoint),
+        "method" => Ok(RateLimitKeySpec::Method),
+        _ => Ok(RateLimitKeySpec::Named(first)),
+    }
+}
+
+fn parse_rate_limit_duration_unit(input: ParseStream<'_>) -> Result<RateLimitDurationUnit> {
+    if input.peek(kw::second) {
+        input.parse::<kw::second>()?;
+        Ok(RateLimitDurationUnit::Seconds)
+    } else if input.peek(kw::seconds) {
+        input.parse::<kw::seconds>()?;
+        Ok(RateLimitDurationUnit::Seconds)
+    } else if input.peek(kw::minute) {
+        input.parse::<kw::minute>()?;
+        Ok(RateLimitDurationUnit::Minutes)
+    } else if input.peek(kw::minutes) {
+        input.parse::<kw::minutes>()?;
+        Ok(RateLimitDurationUnit::Minutes)
+    } else {
+        let tt: TokenTree = input.parse()?;
+        Err(syn::Error::new(
+            tt.span(),
+            "expected rate_limit duration unit `second(s)` or `minute(s)`",
+        ))
+    }
+}
+
 impl Parse for Item {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(kw::prefix) {
@@ -808,6 +1036,7 @@ impl Parse for LayerDefTaggedPrefix {
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut retry: Option<RetrySpec> = None;
+        let mut rate_limit: Option<RateLimitSpec> = None;
         let mut items = Vec::new();
 
         while !content.is_empty() {
@@ -844,6 +1073,15 @@ impl Parse for LayerDefTaggedPrefix {
                     }
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::rate_limit) {
+                if rate_limit.is_some() {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "duplicate rate_limit policy in prefix layer",
+                    ));
+                }
+                rate_limit = Some(parse_rate_limit_spec(&content)?);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope)
             {
                 items.push(content.parse::<Item>()?);
@@ -860,6 +1098,8 @@ impl Parse for LayerDefTaggedPrefix {
             policy,
             auth_uses,
             retry,
+            rate_limit,
+            rate_limit_keys: Vec::new(),
             items,
         }))
     }
@@ -875,6 +1115,7 @@ impl Parse for LayerDefTaggedPath {
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut retry: Option<RetrySpec> = None;
+        let mut rate_limit: Option<RateLimitSpec> = None;
         let mut items = Vec::new();
 
         while !content.is_empty() {
@@ -911,6 +1152,15 @@ impl Parse for LayerDefTaggedPath {
                     }
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::rate_limit) {
+                if rate_limit.is_some() {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "duplicate rate_limit policy in path layer",
+                    ));
+                }
+                rate_limit = Some(parse_rate_limit_spec(&content)?);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope)
             {
                 items.push(content.parse::<Item>()?);
@@ -926,6 +1176,8 @@ impl Parse for LayerDefTaggedPath {
             policy,
             auth_uses,
             retry,
+            rate_limit,
+            rate_limit_keys: Vec::new(),
             items,
         }))
     }
@@ -943,6 +1195,8 @@ impl Parse for LayerDefTaggedScope {
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut retry: Option<RetrySpec> = None;
+        let mut rate_limit: Option<RateLimitSpec> = None;
+        let mut rate_limit_keys = Vec::new();
         let mut host_route: Option<RouteExpr> = None;
         let mut path_route: Option<RouteExpr> = None;
         let mut items = Vec::new();
@@ -1011,6 +1265,21 @@ impl Parse for LayerDefTaggedScope {
                     }
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::rate_limit) {
+                let fork = content.fork();
+                fork.parse::<kw::rate_limit>()?;
+                if fork.peek(kw::key) {
+                    rate_limit_keys.push(parse_rate_limit_key_binding(&content)?);
+                } else {
+                    if rate_limit.is_some() {
+                        return Err(syn::Error::new(
+                            content.span(),
+                            "duplicate rate_limit policy in scope",
+                        ));
+                    }
+                    rate_limit = Some(parse_rate_limit_spec(&content)?);
+                }
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::scope) || content.peek(kw::prefix) || content.peek(kw::path)
             {
                 items.push(content.parse::<Item>()?);
@@ -1029,6 +1298,8 @@ impl Parse for LayerDefTaggedScope {
                 policy,
                 auth_uses,
                 retry,
+                rate_limit,
+                rate_limit_keys,
                 items: vec![Item::Layer(LayerDef {
                     kind: LayerKind::Path,
                     route: path,
@@ -1036,6 +1307,8 @@ impl Parse for LayerDefTaggedScope {
                     policy: PolicyBlocks::default(),
                     auth_uses: Vec::new(),
                     retry: None,
+                    rate_limit: None,
+                    rate_limit_keys: Vec::new(),
                     items,
                 })],
             },
@@ -1046,6 +1319,8 @@ impl Parse for LayerDefTaggedScope {
                 policy,
                 auth_uses,
                 retry,
+                rate_limit,
+                rate_limit_keys,
                 items,
             },
             (None, Some(path)) => LayerDef {
@@ -1055,6 +1330,8 @@ impl Parse for LayerDefTaggedScope {
                 policy,
                 auth_uses,
                 retry,
+                rate_limit,
+                rate_limit_keys,
                 items,
             },
             (None, None) => LayerDef {
@@ -1064,6 +1341,8 @@ impl Parse for LayerDefTaggedScope {
                 policy,
                 auth_uses,
                 retry,
+                rate_limit,
+                rate_limit_keys,
                 items,
             },
         };
@@ -1085,6 +1364,7 @@ impl Parse for EndpointDef {
             let mut policy = PolicyBlocks::default();
             let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
             let mut retry: Option<RetrySpec> = None;
+            let mut rate_limit: Option<RateLimitSpec> = None;
             let mut paginate: Option<PaginateSpec> = None;
             let mut body: Option<CodecSpec> = None;
             let mut response: Option<CodecSpec> = None;
@@ -1144,6 +1424,15 @@ impl Parse for EndpointDef {
                         }
                     }
                     let _ = content.parse::<Option<Token![,]>>()?;
+                } else if content.peek(kw::rate_limit) {
+                    if rate_limit.is_some() {
+                        return Err(syn::Error::new(
+                            name.span(),
+                            "duplicate rate_limit policy in endpoint",
+                        ));
+                    }
+                    rate_limit = Some(parse_rate_limit_spec(&content)?);
+                    let _ = content.parse::<Option<Token![,]>>()?;
                 } else if content.peek(kw::paginate) {
                     if paginate.is_some() {
                         return Err(syn::Error::new(name.span(), "duplicate `paginate`"));
@@ -1192,6 +1481,7 @@ impl Parse for EndpointDef {
                 policy,
                 auth_uses,
                 retry,
+                rate_limit,
                 paginate,
                 body,
                 response,
@@ -1204,6 +1494,7 @@ impl Parse for EndpointDef {
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut retry: Option<RetrySpec> = None;
+        let mut rate_limit: Option<RateLimitSpec> = None;
         let mut paginate: Option<PaginateSpec> = None;
         let mut body: Option<CodecSpec> = None;
 
@@ -1243,6 +1534,15 @@ impl Parse for EndpointDef {
                         ));
                     }
                 }
+                let _ = input.parse::<Option<Token![,]>>()?;
+            } else if input.peek(kw::rate_limit) {
+                if rate_limit.is_some() {
+                    return Err(syn::Error::new(
+                        name.span(),
+                        "duplicate rate_limit policy in endpoint",
+                    ));
+                }
+                rate_limit = Some(parse_rate_limit_spec(input)?);
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::paginate) {
                 if paginate.is_some() {
@@ -1289,6 +1589,7 @@ impl Parse for EndpointDef {
             policy,
             auth_uses,
             retry,
+            rate_limit,
             paginate,
             body,
             response,

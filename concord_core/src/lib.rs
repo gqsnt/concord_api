@@ -72,7 +72,11 @@ pub mod prelude {
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicyPatch};
     pub use crate::rate_limit::{
-        NoopRateLimiter, RateLimitContext, RateLimitPermit, RateLimitResponseContext, RateLimiter,
+        DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
+        RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitKey, RateLimitKeyPart,
+        RateLimitKeyValue, RateLimitObservation, RateLimitPermit, RateLimitPlan,
+        RateLimitResponseAction, RateLimitResponseContext, RateLimitResponsePolicy,
+        RateLimitSetting, RateLimitTarget, RateLimitWindow, RateLimiter, parse_retry_after,
     };
     pub use crate::request::{PaginatedRequest, PendingRequest};
     pub use crate::retry::{

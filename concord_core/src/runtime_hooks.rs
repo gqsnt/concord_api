@@ -47,10 +47,7 @@ pub trait RuntimeHooks: Send + Sync + 'static {
         Box::pin(async {})
     }
 
-    fn transport_error<'a>(
-        &'a self,
-        _ctx: TransportErrorHookContext<'a>,
-    ) -> HookFuture<'a, ()> {
+    fn transport_error<'a>(&'a self, _ctx: TransportErrorHookContext<'a>) -> HookFuture<'a, ()> {
         Box::pin(async {})
     }
 }
@@ -59,4 +56,3 @@ pub trait RuntimeHooks: Send + Sync + 'static {
 pub struct NoopRuntimeHooks;
 
 impl RuntimeHooks for NoopRuntimeHooks {}
-

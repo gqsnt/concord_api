@@ -1,6 +1,6 @@
 use crate::cache::{CacheStore, NoopCacheStore};
 use crate::inflight::{InflightPolicy, InflightRegistry, NoopInflightPolicy};
-use crate::rate_limit::{NoopRateLimiter, RateLimiter};
+use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
 use crate::runtime_hooks::{NoopRuntimeHooks, RuntimeHooks};
 use std::sync::Arc;
@@ -23,7 +23,7 @@ impl Default for ClientRuntimeState {
             cache_store: Arc::new(NoopCacheStore),
             inflight_policy: Arc::new(NoopInflightPolicy),
             inflight_registry: Arc::new(InflightRegistry::default()),
-            rate_limiter: Arc::new(NoopRateLimiter),
+            rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
             max_auth_retries: 8,
         }

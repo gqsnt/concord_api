@@ -1,4 +1,5 @@
 use crate::error::{ApiClientError, ErrorContext};
+use crate::rate_limit::RateLimitPlan;
 use crate::retry::{RetryConfig, RetrySetting};
 use core::time::Duration;
 use http::header::{ACCEPT, CONTENT_TYPE, HeaderName};
@@ -22,6 +23,7 @@ pub struct Policy {
     query: Vec<(String, String)>,
     timeout: Option<Duration>,
     retry: RetrySetting,
+    rate_limit: RateLimitPlan,
     // Current layer used for provenance decisions (not exposed in into_parts()).
     layer: PolicyLayer,
 
@@ -37,6 +39,7 @@ impl Policy {
             query: Vec::new(),
             timeout: None,
             retry: RetrySetting::Inherit,
+            rate_limit: RateLimitPlan::new(),
             layer: PolicyLayer::Client,
             accept_explicit_by_endpoint: false,
             accept_explicit_by_runtime: false,
@@ -84,6 +87,26 @@ impl Policy {
     #[inline]
     pub fn clear_retry(&mut self) {
         self.retry = RetrySetting::Off;
+    }
+
+    #[inline]
+    pub fn rate_limit(&self) -> &RateLimitPlan {
+        &self.rate_limit
+    }
+
+    #[inline]
+    pub fn add_rate_limit(&mut self, plan: RateLimitPlan) {
+        self.rate_limit.extend(plan);
+    }
+
+    #[inline]
+    pub fn replace_rate_limit(&mut self, plan: RateLimitPlan) {
+        self.rate_limit = plan;
+    }
+
+    #[inline]
+    pub fn clear_rate_limit(&mut self) {
+        self.rate_limit = RateLimitPlan::new();
     }
 
     pub fn headers(&self) -> &HeaderMap {
@@ -152,8 +175,15 @@ impl Policy {
         Vec<(String, String)>,
         Option<Duration>,
         RetrySetting,
+        RateLimitPlan,
     ) {
-        (self.headers, self.query, self.timeout, self.retry)
+        (
+            self.headers,
+            self.query,
+            self.timeout,
+            self.retry,
+            self.rate_limit,
+        )
     }
 }
 
@@ -209,6 +239,21 @@ impl<'a> PolicyPatch<'a> {
     #[inline]
     pub fn set_retry_override(&mut self, retry: Option<RetryConfig>) {
         self.inner.retry = retry.map_or(RetrySetting::Off, RetrySetting::Config);
+    }
+
+    #[inline]
+    pub fn add_rate_limit(&mut self, plan: RateLimitPlan) {
+        self.inner.add_rate_limit(plan);
+    }
+
+    #[inline]
+    pub fn replace_rate_limit(&mut self, plan: RateLimitPlan) {
+        self.inner.replace_rate_limit(plan);
+    }
+
+    #[inline]
+    pub fn clear_rate_limit(&mut self) {
+        self.inner.clear_rate_limit();
     }
 
     #[inline]

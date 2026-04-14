@@ -396,6 +396,9 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
     if let Some(retry) = emit_retry_op(&policy.retry) {
         ops.push(retry);
     }
+    if let Some(rate_limit) = emit_rate_limit_op(&policy.rate_limit, PolicyEmitCtx::ClientBase) {
+        ops.push(rate_limit);
+    }
 
     let lock_auth = if policy_uses_auth(policy) {
         quote! { let auth = auth.read().unwrap(); }
@@ -941,6 +944,16 @@ fn emit_client_wrapper(
     });
 
     let (credential_secret_names, has_custom_credentials) = auth_credential_secret_names(ir);
+    let configure_rate_limiter = if let Some(policy) = &ir.rate_limit_response_policy {
+        quote! {
+            __inner.set_rate_limiter(::std::sync::Arc::new(
+                ::concord_core::prelude::GovernorRateLimiter::new()
+                    .with_response_policy(::std::sync::Arc::new(#policy::default()))
+            ));
+        }
+    } else {
+        quote! {}
+    };
     let auth_setters = ir.client_auth_vars.iter().map(|v| {
         let f = &v.rust;
         let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
@@ -1021,7 +1034,9 @@ fn emit_client_wrapper(
             pub fn new( #( #ctor_args ),* ) -> Self {
                let vars = #vars_ty::new( #( #new_pass ),* );
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
-                Self { inner: ::concord_core::prelude::ApiClient::<#cx_ty, ::concord_core::prelude::ReqwestTransport>::new(vars, auth_vars) }
+                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, ::concord_core::prelude::ReqwestTransport>::new(vars, auth_vars);
+                #configure_rate_limiter
+                Self { inner: __inner }
             }
 
 
@@ -1032,7 +1047,9 @@ fn emit_client_wrapper(
             ) -> #client_ty<T2> {
                 let vars = #vars_ty::new( #( #new_pass ),* );
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
-                #client_ty { inner: ::concord_core::prelude::ApiClient::<#cx_ty, T2>::with_transport(vars, auth_vars, transport) }
+                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, T2>::with_transport(vars, auth_vars, transport);
+                #configure_rate_limiter
+                #client_ty { inner: __inner }
             }
 
 
@@ -1054,6 +1071,18 @@ fn emit_client_wrapper(
             pub fn set_pagination_caps(&mut self, caps: ::concord_core::prelude::Caps) { self.inner.set_pagination_caps(caps); }
             #[inline]
             pub fn with_pagination_caps(mut self, caps: ::concord_core::prelude::Caps) -> Self { self.inner.set_pagination_caps(caps); self }
+            #[inline]
+            pub fn set_rate_limiter(&mut self, limiter: ::std::sync::Arc<dyn ::concord_core::prelude::RateLimiter>) { self.inner.set_rate_limiter(limiter); }
+            #[inline]
+            pub fn with_rate_limiter(mut self, limiter: ::std::sync::Arc<dyn ::concord_core::prelude::RateLimiter>) -> Self { self.inner.set_rate_limiter(limiter); self }
+            #[inline]
+            pub fn set_cache_store(&mut self, store: ::std::sync::Arc<dyn ::concord_core::prelude::CacheStore>) { self.inner.set_cache_store(store); }
+            #[inline]
+            pub fn with_cache_store(mut self, store: ::std::sync::Arc<dyn ::concord_core::prelude::CacheStore>) -> Self { self.inner.set_cache_store(store); self }
+            #[inline]
+            pub fn set_inflight_policy(&mut self, policy: ::std::sync::Arc<dyn ::concord_core::prelude::InflightPolicy>) { self.inner.set_inflight_policy(policy); }
+            #[inline]
+            pub fn with_inflight_policy(mut self, policy: ::std::sync::Arc<dyn ::concord_core::prelude::InflightPolicy>) -> Self { self.inner.set_inflight_policy(policy); self }
             #[inline]
             pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E, T>
             where
@@ -1260,6 +1289,9 @@ fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> To
     if let Some(retry) = emit_retry_op(&policy.retry) {
         ops.push(retry);
     }
+    if let Some(rate_limit) = emit_rate_limit_op(&policy.rate_limit, ctx) {
+        ops.push(rate_limit);
+    }
     quote! { #( #ops )* }
 }
 
@@ -1369,6 +1401,99 @@ fn emit_retry_idempotency(idempotency: &RetryIdempotencyResolved) -> TokenStream
             let name = emit_helpers::emit_header_name(&header.value(), header.span());
             quote! { ::concord_core::prelude::RetryIdempotency::Header(#name) }
         }
+    }
+}
+
+fn emit_rate_limit_op(
+    rate_limit: &Option<RateLimitResolved>,
+    ctx: PolicyEmitCtx,
+) -> Option<TokenStream2> {
+    let rate_limit = rate_limit.as_ref()?;
+    Some(match rate_limit {
+        RateLimitResolved::Clear => quote! {
+            policy.clear_rate_limit();
+        },
+        RateLimitResolved::Add(plan) => {
+            let plan = emit_rate_limit_plan(plan, ctx);
+            quote! {
+                policy.add_rate_limit(#plan);
+            }
+        }
+        RateLimitResolved::Replace(plan) => {
+            let plan = emit_rate_limit_plan(plan, ctx);
+            quote! {
+                policy.replace_rate_limit(#plan);
+            }
+        }
+    })
+}
+
+fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> TokenStream2 {
+    let buckets = plan.buckets.iter().map(|bucket| {
+        let kind = LitStr::new(&bucket.kind, Span::call_site());
+        let name = LitStr::new(&bucket.name, Span::call_site());
+        let key = emit_rate_limit_key(&bucket.key, ctx);
+        let windows = bucket.windows.iter().map(|window| {
+            let max = window.max;
+            let per_secs = window.per_secs;
+            quote! {
+                ::concord_core::prelude::RateLimitWindow::new(
+                    ::std::num::NonZeroU32::new(#max).expect("validated non-zero rate limit max"),
+                    ::std::time::Duration::from_secs(#per_secs),
+                )
+            }
+        });
+        quote! {
+            ::concord_core::prelude::RateLimitBucketUse::new(#kind, #name, #key)
+                .with_windows(::std::vec![ #( #windows ),* ])
+        }
+    });
+    quote! {
+        ::concord_core::prelude::RateLimitPlan::from_buckets(::std::vec![ #( #buckets ),* ])
+    }
+}
+
+fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> TokenStream2 {
+    let parts = keys.iter().map(|key| match key {
+        RateLimitKeyResolved::RouteHost => {
+            quote! { ::concord_core::prelude::RateLimitKeyPart::url_host() }
+        }
+        RateLimitKeyResolved::Endpoint => {
+            quote! { ::concord_core::prelude::RateLimitKeyPart::endpoint() }
+        }
+        RateLimitKeyResolved::Method => {
+            quote! { ::concord_core::prelude::RateLimitKeyPart::method() }
+        }
+        RateLimitKeyResolved::Named { name } => {
+            let name = LitStr::new(name, Span::call_site());
+            quote! {
+                compile_error!(concat!("unresolved rate_limit key `", #name, "`"))
+            }
+        }
+        RateLimitKeyResolved::EpField { name, field } => {
+            let name = LitStr::new(name, field.span());
+            match ctx {
+                PolicyEmitCtx::ClientBase => quote! {
+                    compile_error!("endpoint/scope rate_limit key cannot be used in client base policy")
+                },
+                PolicyEmitCtx::Layer | PolicyEmitCtx::Endpoint => quote! {
+                    ::concord_core::prelude::RateLimitKeyPart::static_value(
+                        #name,
+                        ::std::string::ToString::to_string(&ep.#field),
+                    )
+                },
+            }
+        }
+        RateLimitKeyResolved::Static { name, value } => {
+            let name = LitStr::new(name, Span::call_site());
+            let value = LitStr::new(value, Span::call_site());
+            quote! {
+                ::concord_core::prelude::RateLimitKeyPart::static_value(#name, #value)
+            }
+        }
+    });
+    quote! {
+        ::concord_core::prelude::RateLimitKey::new(::std::vec![ #( #parts ),* ])
     }
 }
 

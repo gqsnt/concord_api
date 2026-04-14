@@ -96,9 +96,17 @@ pub struct MockBuilder {
     replies: Vec<MockReply>,
 }
 
+impl Default for MockBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MockBuilder {
     pub fn new() -> Self {
-        Self { replies: Vec::new() }
+        Self {
+            replies: Vec::new(),
+        }
     }
 
     pub fn reply(mut self, r: MockReply) -> Self {
@@ -216,6 +224,7 @@ impl concord_core::prelude::Transport for MockTransport {
                 status: reply.status,
                 headers: reply.headers,
                 content_length: Some(reply.body.len() as u64),
+                rate_limit: req.rate_limit,
                 body: Box::new(OneShotBody {
                     chunk: Some(reply.body),
                 }),

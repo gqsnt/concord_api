@@ -123,8 +123,9 @@ impl RetryConfig {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum RetryIdempotency {
+    #[default]
     SafeMethodsOnly,
     Header(HeaderName),
 }
@@ -141,14 +142,9 @@ impl RetryIdempotency {
     }
 }
 
-impl Default for RetryIdempotency {
-    fn default() -> Self {
-        Self::SafeMethodsOnly
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum RetryBackoff {
+    #[default]
     None,
     Fixed(Duration),
     Exponential {
@@ -169,12 +165,6 @@ impl RetryBackoff {
                 Some(delay.min(*max))
             }
         }
-    }
-}
-
-impl Default for RetryBackoff {
-    fn default() -> Self {
-        Self::None
     }
 }
 

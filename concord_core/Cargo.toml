@@ -15,12 +15,15 @@ thiserror.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 tokio.workspace = true
+governor = { workspace = true, optional = true }
 
 
 [features]
+default = ["rate-limit-governor"]
 json = ["dep:serde", "dep:serde_json", "reqwest/json"]
 gzip = ["reqwest/gzip"]
 brotli = ["reqwest/brotli"]
 deflate = ["reqwest/deflate"]
 cookies = ["reqwest/cookies"]
 multipart = ["reqwest/multipart"]
+rate-limit-governor = ["dep:governor"]
