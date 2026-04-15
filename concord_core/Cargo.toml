@@ -16,6 +16,10 @@ url.workspace = true
 urlencoding.workspace = true
 tokio.workspace = true
 governor = { workspace = true, optional = true }
+moka = { workspace = true, default-features = false, features = [
+    "sync",
+], optional = true }
+http-cache-semantics = { workspace = true, default-features = false, optional = true }
 
 
 [features]
@@ -27,3 +31,4 @@ deflate = ["reqwest/deflate"]
 cookies = ["reqwest/cookies"]
 multipart = ["reqwest/multipart"]
 rate-limit-governor = ["dep:governor"]
+cache-moka = ["dep:moka", "dep:http-cache-semantics"]

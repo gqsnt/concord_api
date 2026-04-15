@@ -54,7 +54,13 @@ pub mod prelude {
         StaticBasicProvider, StaticBearerProvider, TransportAuth, UseCredential,
         UseCredentialState,
     };
-    pub use crate::cache::{CacheKey, CacheStore, NoopCacheStore, default_cache_key};
+    pub use crate::cache::{
+        CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,
+        CacheKey, CacheMode, CachePrimaryKey, CacheRevalidation, CacheSetting, CacheSkipReason,
+        CacheStore, NoopCacheStore, default_cache_key,
+    };
+    #[cfg(feature = "cache-moka")]
+    pub use crate::cache::{MokaCacheConfig, MokaCacheStore};
     pub use crate::client::{ApiClient, ClientContext};
     #[cfg(feature = "json")]
     pub use crate::codec::json::Json;
@@ -70,7 +76,7 @@ pub mod prelude {
         Caps, CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
         ProgressKey, Stop,
     };
-    pub use crate::policy::{Policy, PolicyLayer, PolicyPatch};
+    pub use crate::policy::{Policy, PolicyLayer, PolicyParts, PolicyPatch};
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
         RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitKey, RateLimitKeyPart,

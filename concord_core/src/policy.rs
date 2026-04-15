@@ -1,9 +1,19 @@
+use crate::cache::{CacheConfig, CacheSetting};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::rate_limit::RateLimitPlan;
 use crate::retry::{RetryConfig, RetrySetting};
 use core::time::Duration;
 use http::header::{ACCEPT, CONTENT_TYPE, HeaderName};
 use http::{HeaderMap, HeaderValue};
+
+pub type PolicyParts = (
+    HeaderMap,
+    Vec<(String, String)>,
+    Option<Duration>,
+    CacheSetting,
+    RetrySetting,
+    RateLimitPlan,
+);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u8)]
@@ -22,6 +32,7 @@ pub struct Policy {
     headers: HeaderMap,
     query: Vec<(String, String)>,
     timeout: Option<Duration>,
+    cache: CacheSetting,
     retry: RetrySetting,
     rate_limit: RateLimitPlan,
     // Current layer used for provenance decisions (not exposed in into_parts()).
@@ -38,6 +49,7 @@ impl Policy {
             headers: HeaderMap::new(),
             query: Vec::new(),
             timeout: None,
+            cache: CacheSetting::Inherit,
             retry: RetrySetting::Inherit,
             rate_limit: RateLimitPlan::new(),
             layer: PolicyLayer::Client,
@@ -69,6 +81,24 @@ impl Policy {
     #[inline]
     pub fn clear_timeout(&mut self) {
         self.timeout = None;
+    }
+
+    #[inline]
+    pub fn cache(&self) -> Option<&CacheConfig> {
+        match &self.cache {
+            CacheSetting::Config(config) => Some(config),
+            CacheSetting::Inherit | CacheSetting::Off => None,
+        }
+    }
+
+    #[inline]
+    pub fn set_cache(&mut self, cache: CacheConfig) {
+        self.cache = CacheSetting::Config(cache);
+    }
+
+    #[inline]
+    pub fn clear_cache(&mut self) {
+        self.cache = CacheSetting::Off;
     }
 
     #[inline]
@@ -168,19 +198,12 @@ impl Policy {
         self.query.retain(|(k, _)| k != key);
     }
 
-    pub fn into_parts(
-        self,
-    ) -> (
-        HeaderMap,
-        Vec<(String, String)>,
-        Option<Duration>,
-        RetrySetting,
-        RateLimitPlan,
-    ) {
+    pub fn into_parts(self) -> PolicyParts {
         (
             self.headers,
             self.query,
             self.timeout,
+            self.cache,
             self.retry,
             self.rate_limit,
         )
@@ -234,6 +257,11 @@ impl<'a> PolicyPatch<'a> {
     #[inline]
     pub fn set_timeout_override(&mut self, t: Option<Duration>) {
         self.inner.timeout = t;
+    }
+
+    #[inline]
+    pub fn set_cache_override(&mut self, cache: Option<CacheConfig>) {
+        self.inner.cache = cache.map_or(CacheSetting::Off, CacheSetting::Config);
     }
 
     #[inline]

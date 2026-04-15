@@ -21,6 +21,8 @@ url = "2.5.8"
 
 dotenvy = "0.15.7"
 governor = "0.10.4"
+moka = { version = "0.12.15", default-features = false }
+http-cache-semantics = { version = "3.0.0", default-features = false }
 
 
 [profile.release]

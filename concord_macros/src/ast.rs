@@ -1,6 +1,6 @@
 use proc_macro2::Span;
 use syn::spanned::Spanned;
-use syn::{Expr, Ident, LitInt, LitStr, Path, Type};
+use syn::{Expr, Ident, LitBool, LitInt, LitStr, Path, Type};
 
 #[derive(Debug)]
 pub struct ApiFile {
@@ -18,6 +18,8 @@ pub struct ClientDef {
     pub auth_vars: Option<VarsBlock>,
     pub auth: Option<AuthBlock>,
     pub auth_uses: Vec<AuthUseDecl>,
+    pub cache_profiles: Option<CacheProfilesBlock>,
+    pub cache: Option<CacheSpec>,
     pub retry_profiles: Option<RetryProfilesBlock>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitProfilesBlock>,
@@ -151,6 +153,7 @@ pub struct LayerDef {
     pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
     pub auth_uses: Vec<AuthUseDecl>,
+    pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -166,6 +169,7 @@ pub struct EndpointDef {
 
     pub policy: PolicyBlocks,
     pub auth_uses: Vec<AuthUseDecl>,
+    pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
 
@@ -174,6 +178,62 @@ pub struct EndpointDef {
 
     pub response: CodecSpec,
     pub map: Option<MapSpec>,
+}
+
+#[derive(Debug)]
+pub struct CacheProfilesBlock {
+    pub profiles: Vec<CacheProfileDef>,
+    pub default: Option<Ident>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheProfileDef {
+    pub name: Ident,
+    pub extends: Option<Ident>,
+    pub patch: CachePatch,
+}
+
+#[derive(Debug, Clone)]
+pub enum CacheSpec {
+    Profile { only: bool, profile: Ident },
+    Patch { only: bool, patch: CachePatch },
+    Off,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CachePatch {
+    pub http: Option<Span>,
+    pub ttl: Option<CacheDurationSpec>,
+    pub capacity: Option<CacheCapacitySpec>,
+    pub max_body: Option<CacheSizeSpec>,
+    pub revalidate: Option<Span>,
+    pub shared: Option<LitBool>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheDurationSpec {
+    pub amount: LitInt,
+    pub unit: RateLimitDurationUnit,
+}
+
+#[derive(Debug, Clone)]
+pub enum CacheCapacitySpec {
+    Entries { amount: LitInt },
+    Bytes(CacheSizeSpec),
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheSizeSpec {
+    pub amount: LitInt,
+    pub unit: CacheSizeUnit,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CacheSizeUnit {
+    Bytes,
+    KiB,
+    MiB,
+    GiB,
 }
 
 #[derive(Debug)]

@@ -1,4 +1,5 @@
 use crate::auth::{RequestExtensions, TransportAuth};
+use crate::cache::{CacheRevalidation, CacheSetting};
 use crate::rate_limit::RateLimitPlan;
 use crate::retry::RetrySetting;
 use bytes::Bytes;
@@ -29,6 +30,8 @@ pub struct BuiltRequest {
     pub timeout: Option<Duration>,
     pub retry: RetrySetting,
     pub rate_limit: RateLimitPlan,
+    pub cache: CacheSetting,
+    pub cache_revalidation: Option<CacheRevalidation>,
     pub extensions: RequestExtensions,
 }
 
@@ -233,6 +236,8 @@ impl Transport for ReqwestTransport {
                 timeout,
                 retry: _,
                 rate_limit,
+                cache: _,
+                cache_revalidation: _,
                 extensions,
             } = req;
             if let Some(TransportAuth::ClientCertificate { identity_id }) =

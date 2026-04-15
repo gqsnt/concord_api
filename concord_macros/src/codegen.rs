@@ -393,6 +393,9 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
         let ex = emit_value_expr(t, PolicyEmitCtx::ClientBase);
         ops.push(quote! { policy.set_timeout(#ex); });
     }
+    if let Some(cache) = emit_cache_op(&policy.cache) {
+        ops.push(cache);
+    }
     if let Some(retry) = emit_retry_op(&policy.retry) {
         ops.push(retry);
     }
@@ -954,6 +957,37 @@ fn emit_client_wrapper(
     } else {
         quote! {}
     };
+    let configure_cache_store = if ir.cache_store_enabled {
+        let configure_cache_store_body = if let Some(config) = &ir.cache_store_config {
+            let config = emit_cache_config(config);
+            quote! {
+                let __cache_config = #config;
+                __inner.set_cache_store(::std::sync::Arc::new(
+                    ::concord_core::prelude::MokaCacheStore::new(
+                        ::concord_core::prelude::MokaCacheConfig::from_cache_config(&__cache_config)
+                    )
+                ));
+            }
+        } else {
+            quote! {
+                __inner.set_cache_store(::std::sync::Arc::new(
+                    ::concord_core::prelude::MokaCacheStore::default()
+                ));
+            }
+        };
+        quote! {
+            #[cfg(not(feature = "cache-moka"))]
+            compile_error!(
+                "cache default backend requires a `cache-moka` crate feature that enables `concord_core/cache-moka`"
+            );
+            #[cfg(feature = "cache-moka")]
+            {
+                #configure_cache_store_body
+            }
+        }
+    } else {
+        quote! {}
+    };
     let auth_setters = ir.client_auth_vars.iter().map(|v| {
         let f = &v.rust;
         let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
@@ -1036,6 +1070,7 @@ fn emit_client_wrapper(
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
                 let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, ::concord_core::prelude::ReqwestTransport>::new(vars, auth_vars);
                 #configure_rate_limiter
+                #configure_cache_store
                 Self { inner: __inner }
             }
 
@@ -1049,6 +1084,7 @@ fn emit_client_wrapper(
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
                 let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, T2>::with_transport(vars, auth_vars, transport);
                 #configure_rate_limiter
+                #configure_cache_store
                 #client_ty { inner: __inner }
             }
 
@@ -1286,6 +1322,9 @@ fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> To
         let ex = emit_value_expr(t, ctx);
         ops.push(quote! { policy.set_timeout(#ex); });
     }
+    if let Some(cache) = emit_cache_op(&policy.cache) {
+        ops.push(cache);
+    }
     if let Some(retry) = emit_retry_op(&policy.retry) {
         ops.push(retry);
     }
@@ -1293,6 +1332,117 @@ fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> To
         ops.push(rate_limit);
     }
     quote! { #( #ops )* }
+}
+
+fn emit_cache_op(cache: &Option<CacheResolved>) -> Option<TokenStream2> {
+    let cache = cache.as_ref()?;
+    Some(match cache {
+        CacheResolved::Clear => quote! {
+            policy.clear_cache();
+        },
+        CacheResolved::Set(config) => {
+            let config = emit_cache_config(config);
+            quote! {
+                policy.set_cache(#config);
+            }
+        }
+        CacheResolved::Patch(patch) => {
+            let ops = emit_cache_patch_ops(patch);
+            quote! {
+                let mut __cache = policy.cache().cloned().unwrap_or_default();
+                #( #ops )*
+                policy.set_cache(__cache);
+            }
+        }
+    })
+}
+
+fn emit_cache_config(config: &CacheConfigResolved) -> TokenStream2 {
+    let mut ops = Vec::new();
+    if config.http {
+        ops.push(quote! {
+            __cache = __cache.with_http();
+        });
+    }
+    if let Some(ttl_secs) = config.default_ttl_secs {
+        ops.push(quote! {
+            __cache = __cache.with_default_ttl(::std::time::Duration::from_secs(#ttl_secs));
+        });
+    }
+    if let Some(capacity) = config.capacity {
+        let op = emit_cache_capacity_op(capacity);
+        ops.push(op);
+    }
+    if let Some(max_body_bytes) = config.max_body_bytes {
+        ops.push(quote! {
+            __cache = __cache.with_max_body_bytes(
+                ::core::convert::TryFrom::try_from(#max_body_bytes)
+                    .expect("validated cache max_body fits usize")
+            );
+        });
+    }
+    if let Some(revalidate) = config.revalidate {
+        ops.push(quote! {
+            __cache = __cache.with_revalidate(#revalidate);
+        });
+    }
+    if let Some(shared) = config.shared {
+        ops.push(quote! {
+            __cache = __cache.with_shared(#shared);
+        });
+    }
+    quote! {{
+        let mut __cache = ::concord_core::prelude::CacheConfig::new();
+        #( #ops )*
+        __cache
+    }}
+}
+
+fn emit_cache_patch_ops(patch: &CacheConfigPatchResolved) -> Vec<TokenStream2> {
+    let mut ops = Vec::new();
+    if patch.http == Some(true) {
+        ops.push(quote! {
+            __cache = __cache.with_http();
+        });
+    }
+    if let Some(ttl_secs) = patch.default_ttl_secs {
+        ops.push(quote! {
+            __cache = __cache.with_default_ttl(::std::time::Duration::from_secs(#ttl_secs));
+        });
+    }
+    if let Some(capacity) = patch.capacity {
+        ops.push(emit_cache_capacity_op(capacity));
+    }
+    if let Some(max_body_bytes) = patch.max_body_bytes {
+        ops.push(quote! {
+            __cache = __cache.with_max_body_bytes(
+                ::core::convert::TryFrom::try_from(#max_body_bytes)
+                    .expect("validated cache max_body fits usize")
+            );
+        });
+    }
+    if let Some(revalidate) = patch.revalidate {
+        ops.push(quote! {
+            __cache = __cache.with_revalidate(#revalidate);
+        });
+    }
+    if let Some(shared) = patch.shared {
+        ops.push(quote! {
+            __cache = __cache.with_shared(#shared);
+        });
+    }
+    ops
+}
+
+fn emit_cache_capacity_op(capacity: CacheCapacityResolved) -> TokenStream2 {
+    match capacity {
+        CacheCapacityResolved::Entries(entries) => quote! {
+            __cache = __cache.with_capacity_entries(#entries);
+        },
+        CacheCapacityResolved::Bytes(bytes) => quote! {
+            __cache = __cache.with_capacity_bytes(#bytes);
+        },
+    }
 }
 
 fn emit_retry_op(retry: &Option<RetryResolved>) -> Option<TokenStream2> {

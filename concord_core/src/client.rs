@@ -3,7 +3,7 @@ use crate::auth::{
     AuthHttpResponse, AuthMode, AuthPart, AuthPrepareContext as EndpointAuthPrepareContext,
     AuthRequirementId, AuthResponseAction, AuthResponseContext as EndpointAuthResponseContext,
 };
-use crate::cache::CacheStore;
+use crate::cache::{CacheAfter, CacheBefore, CacheStore};
 use crate::codec::FormatType;
 use crate::codec::{ContentType, Decodes, Encodes};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
@@ -385,12 +385,25 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 )
                 .await?;
             let url_str = built.url.as_str().to_string();
-            let cache_key = self.runtime_state.cache_store().key_for(&built);
-            if let Some(key) = cache_key.as_ref()
-                && let Some(cached) = self.runtime_state.cache_store().get(key).await
+            let cache_revalidation = match self
+                .runtime_state
+                .cache_store()
+                .before_request(&built)
+                .await
             {
-                return Self::decode_built_response::<E>(cached, ctx.clone());
-            }
+                CacheBefore::Hit(cached) => {
+                    return Self::decode_built_response::<E>(cached, ctx.clone());
+                }
+                CacheBefore::Revalidate {
+                    request_headers,
+                    cached,
+                } => {
+                    built.headers = request_headers;
+                    built.cache_revalidation = Some(cached.clone());
+                    Some(cached)
+                }
+                CacheBefore::Miss | CacheBefore::Bypass => None,
+            };
 
             if dbg_verbose {
                 self.debug_sink.request_start(
@@ -414,6 +427,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
             let retry_config = built.retry.clone();
             let retry_request_headers = built.headers.clone();
+            let built_for_cache = built.clone();
             let send_result = self
                 .send_and_classify_with_inflight(
                     built,
@@ -460,12 +474,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         attempt_index = attempt_index.saturating_add(1);
                         continue;
                     }
-                    if let Some(key) = cache_key {
-                        self.runtime_state
-                            .cache_store()
-                            .put(key, resp.clone())
-                            .await;
-                    }
+                    let cache_after = self
+                        .runtime_state
+                        .cache_store()
+                        .after_response(&built_for_cache, &resp, cache_revalidation.clone())
+                        .await;
+                    let resp = match cache_after {
+                        CacheAfter::Updated(updated) => updated,
+                        _ => resp,
+                    };
                     if dbg_verbose {
                         self.debug_sink
                             .response_status(dbg, resp.status, &url_str, true);
@@ -533,6 +550,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     let Some(mut delay) =
                         self.retry_delay(&retry_config, &retry_ctx, transport_retry_index)
                     else {
+                        if let Some(cached) = self
+                            .runtime_state
+                            .cache_store()
+                            .after_error(&built_for_cache, &err, cache_revalidation.clone())
+                            .await
+                        {
+                            return Self::decode_built_response::<E>(cached, ctx.clone());
+                        }
                         return Err(err);
                     };
                     if Self::rate_limit_action_from_error(&err)
@@ -587,7 +612,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
 
         // Compute parts after patch (Content-Type may have been added/removed there).
-        let (mut headers, query, timeout, retry, rate_limit) = policy.into_parts();
+        let (mut headers, query, timeout, cache, retry, rate_limit) = policy.into_parts();
 
         // URL
         route.host().validate(ctx.clone())?;
@@ -628,8 +653,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             headers,
             body: body_bytes,
             timeout,
+            cache,
             retry,
             rate_limit,
+            cache_revalidation: None,
             extensions: Default::default(),
         })
     }
@@ -798,6 +825,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         url_str: &str,
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
+        let has_cache_revalidation = built.cache_revalidation.is_some();
         let rate_limit_meta = RateLimitContext {
             endpoint: built.meta.endpoint,
             method: &built.meta.method,
@@ -829,6 +857,50 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             })
             .await?;
         let transport_resp = self.send_built_request(built, ctx).await?;
+        if transport_resp.status == http::StatusCode::NOT_MODIFIED && has_cache_revalidation {
+            let hook_meta = HookMeta {
+                endpoint: transport_resp.meta.endpoint,
+                method: &transport_resp.meta.method,
+                url: transport_resp.url.as_str(),
+                attempt: transport_resp.meta.attempt,
+                page_index: transport_resp.meta.page_index,
+                idempotent: transport_resp.meta.idempotent,
+            };
+            self.runtime_state
+                .hooks()
+                .post_response(PostResponseHookContext {
+                    meta: hook_meta,
+                    status: transport_resp.status,
+                    headers: &transport_resp.headers,
+                })
+                .await;
+            let rate_limit_meta = RateLimitContext {
+                endpoint: transport_resp.meta.endpoint,
+                method: &transport_resp.meta.method,
+                url: transport_resp.url.as_str(),
+                url_host: transport_resp.url.host_str(),
+                attempt: transport_resp.meta.attempt,
+                page_index: transport_resp.meta.page_index,
+                idempotent: transport_resp.meta.idempotent,
+                plan: &transport_resp.rate_limit,
+            };
+            self.runtime_state
+                .rate_limiter()
+                .on_response(RateLimitResponseContext {
+                    meta: rate_limit_meta,
+                    status: transport_resp.status,
+                    headers: &transport_resp.headers,
+                })
+                .await?;
+            return Ok(BuiltResponse {
+                meta: transport_resp.meta.clone(),
+                url: transport_resp.url.clone(),
+                status: transport_resp.status,
+                headers: transport_resp.headers.clone(),
+                body: Bytes::new(),
+                rate_limit: transport_resp.rate_limit.clone(),
+            });
+        }
         self.classify_transport_response(transport_resp, dbg, dbg_verbose, dbg_vv, url_str, ctx)
             .await
     }
@@ -975,8 +1047,10 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     headers,
                     body,
                     timeout: policy.timeout,
+                    cache: crate::cache::CacheSetting::Off,
                     retry: RetrySetting::Inherit,
                     rate_limit: RateLimitPlan::new(),
+                    cache_revalidation: None,
                     extensions: Default::default(),
                 };
 
