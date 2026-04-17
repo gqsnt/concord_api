@@ -168,18 +168,6 @@ GET One {
 
 `One::new()` builds `/x/y`. `One::new().v("z".to_string())` builds `/x/pz/y`.
 
-## `fmt[...]` values
-
-`fmt[...]` is an advanced template form. It can include string pieces and declared placeholders.
-
-```rust
-path[fmt["tenant-", {tenant: String}]]
-```
-
-Use `part[...]` when you already declared the values in `params`, `vars`, or `secret`. Use `fmt[...]` when the template itself introduces a placeholder.
-
-`fmt?[...]` permits optional placeholders and omits the formatted value when an optional piece is missing.
-
 ## Endpoint shape
 
 Most endpoint definitions use the block form.

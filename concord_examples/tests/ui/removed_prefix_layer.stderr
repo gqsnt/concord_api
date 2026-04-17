@@ -1,0 +1,5 @@
+error: `prefix ... {}` layers were removed in v2; use `scope name { host[...] ... }`
+ --> tests/ui/removed_prefix_layer.rs:9:5
+  |
+9 |     prefix api {
+  |     ^^^^^^

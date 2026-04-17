@@ -2042,7 +2042,7 @@ fn analyze_layer_route_and_decls(
                             RefScope::Auth => {
                                 return Err(syn::Error::new(
                                     r.ident.span(),
-                                    "{auth.*} is not allowed in prefix route (headers/query only)",
+                                    "{secret.*} is not allowed in prefix route (headers/query only)",
                                 ));
                             }
                         }
@@ -2085,7 +2085,7 @@ fn analyze_layer_route_and_decls(
                             RefScope::Auth => {
                                 return Err(syn::Error::new(
                                     r.ident.span(),
-                                    "{auth.*} is not allowed in path/prefix (headers/query only)",
+                                    "{secret.*} is not allowed in path/prefix (headers/query only)",
                                 ));
                             }
                         }
@@ -2168,7 +2168,7 @@ fn analyze_endpoint(
             }
 
             RouteAtom::Fmt(spec) => {
-                // fmt[...] inside a route declares vars too.
+                // part[...] inside a route can declare vars too.
                 let (resolved, fmt_decls) =
                     resolve_route_fmt_spec(spec, Some(client_vars), Some(&ep_vars))?;
 
@@ -2182,7 +2182,7 @@ fn analyze_endpoint(
                     let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
                         syn::Error::new(
                             r.ident.span(),
-                            format!("unknown client var `cx.{}`", r.ident),
+                            format!("unknown client var `vars.{}`", r.ident),
                         )
                     })?;
                     route_pieces.push(PathPiece::CxVar {
@@ -2204,7 +2204,7 @@ fn analyze_endpoint(
                 RefScope::Auth => {
                     return Err(syn::Error::new(
                         r.ident.span(),
-                        "{auth.*} is not allowed in path/prefix (headers/query only)",
+                        "{secret.*} is not allowed in path/prefix (headers/query only)",
                     ));
                 }
             },
@@ -2240,7 +2240,7 @@ fn analyze_endpoint(
         }
     }
 
-    // 4) Collect any vars introduced by policy fmt[...] inside headers/query.
+    // 4) Collect any vars introduced by policy part[...] inside headers/query.
     {
         let mut fmt_decls: Vec<VarInfo> = Vec::new();
         collect_policy_fmt_decls(&ed.policy, &mut fmt_decls);
@@ -2346,11 +2346,11 @@ fn resolve_paginate(
             Some(ep_vars),
             a.value.span(),
         )?;
-        // rule: forbid `cx.*` and `auth.*` in pagination (controller config must not depend on runtime vars/secrets)
+        // rule: forbid `vars.*` and `secret.*` in pagination (controller config must not depend on runtime vars/secrets)
         if matches!(vk, ValueKind::CxField(_) | ValueKind::AuthField(_)) {
             return Err(syn::Error::new(
                 a.value.span(),
-                "paginate assignments must not reference `cx.*` or `auth.*`; use `ep.*` or constants",
+                "paginate assignments must not reference `vars.*` or `secret.*`; use `ep.*` or constants",
             ));
         }
         assigns.push((a.key.clone(), vk));
@@ -2391,14 +2391,14 @@ fn resolve_policy_blocks(
         )?;
     }
     if let Some(t) = &policy.timeout {
-        // timeout expr must not contain nested cx/ep; allow `cx.x` or `ep.y` only as root
+        // timeout expr must not contain nested vars/ep; allow `vars.x` or `ep.y` only as root
         if emit_helpers::contains_cx_or_ep(t)
             && emit_helpers::is_cx_field(t).is_none()
             && emit_helpers::is_ep_field(t).is_none()
         {
             return Err(syn::Error::new(
                 t.span(),
-                "timeout expression cannot contain nested `cx`/`ep`; use a plain `cx.x`, `ep.y`, or a pure expression without them",
+                "timeout expression cannot contain nested `vars`/`ep`; use a plain `vars.x`, `ep.y`, or a pure expression without them",
             ));
         }
         out.timeout = Some(resolve_value_kind(
@@ -2446,11 +2446,11 @@ fn resolve_policy_block(
                     value.span(),
                 )?;
 
-                // Optional-ref conditional set/remove for pure cx/ep refs
+                // Optional-ref conditional set/remove for pure vars/ep refs
                 let cond = match &vk {
                     ValueKind::CxField(id) => {
                         let v = client_vars.get(&id.to_string()).ok_or_else(|| {
-                            syn::Error::new(id.span(), format!("unknown client var `cx.{}`", id))
+                            syn::Error::new(id.span(), format!("unknown client var `vars.{}`", id))
                         })?;
                         if v.optional {
                             Some(OptionalRefKind::Cx)
@@ -2473,7 +2473,10 @@ fn resolve_policy_block(
                     }
                     ValueKind::AuthField(id) => {
                         let v = auth_vars.get(&id.to_string()).ok_or_else(|| {
-                            syn::Error::new(id.span(), format!("unknown auth var `auth.{}`", id))
+                            syn::Error::new(
+                                id.span(),
+                                format!("unknown secret var `secret.{}`", id),
+                            )
                         })?;
                         if v.optional {
                             Some(OptionalRefKind::Auth)
@@ -2535,7 +2538,7 @@ fn resolve_policy_block(
         }
     }
 
-    // validate cx/ep existence
+    // validate vars/ep existence
     for op in &ops {
         if let PolicyOp::Set { value, .. } = op {
             match value {
@@ -2543,7 +2546,7 @@ fn resolve_policy_block(
                     if !client_vars.contains_key(&id.to_string()) {
                         return Err(syn::Error::new(
                             id.span(),
-                            format!("unknown client var `cx.{}`", id),
+                            format!("unknown client var `vars.{}`", id),
                         ));
                     }
                 }
@@ -2551,7 +2554,7 @@ fn resolve_policy_block(
                     if !auth_vars.contains_key(&id.to_string()) {
                         return Err(syn::Error::new(
                             id.span(),
-                            format!("unknown auth var `auth.{}`", id),
+                            format!("unknown secret var `secret.{}`", id),
                         ));
                     }
                 }
@@ -2569,7 +2572,7 @@ fn resolve_policy_block(
                     if emit_helpers::contains_cx_or_ep(e) {
                         return Err(syn::Error::new(
                             e.span(),
-                            "nested `cx`/`ep` usage is not supported; use plain `cx.x`, `ep.y`, or a pure expression without them",
+                            "nested `vars`/`ep` usage is not supported; use plain `vars.x`, `ep.y`, or a pure expression without them",
                         ));
                     }
                 }
@@ -2671,7 +2674,7 @@ fn resolve_route_fmt_spec(
                         .ok_or_else(|| {
                             syn::Error::new(
                                 r.ident.span(),
-                                format!("unknown client var `cx.{}`", r.ident),
+                                format!("unknown client var `vars.{}`", r.ident),
                             )
                         })?;
                     pieces.push(FmtResolvedPiece::Var {
@@ -2696,7 +2699,7 @@ fn resolve_route_fmt_spec(
                 RefScope::Auth => {
                     return Err(syn::Error::new(
                         r.ident.span(),
-                        "{auth.*} is not allowed in routes (headers/query only)",
+                        "{secret.*} is not allowed in routes (headers/query only)",
                     ));
                 }
             },
@@ -2776,7 +2779,7 @@ fn resolve_policy_value_kind(
                             let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
                                 syn::Error::new(
                                     r.ident.span(),
-                                    format!("unknown client var `cx.{}`", r.ident),
+                                    format!("unknown client var `vars.{}`", r.ident),
                                 )
                             })?;
                             has_optional |= v.optional;
@@ -2807,7 +2810,7 @@ fn resolve_policy_value_kind(
                             let v = auth_vars.get(&r.ident.to_string()).ok_or_else(|| {
                                 syn::Error::new(
                                     r.ident.span(),
-                                    format!("unknown auth var `auth.{}`", r.ident),
+                                    format!("unknown secret var `secret.{}`", r.ident),
                                 )
                             })?;
                             has_optional |= v.optional;
@@ -2824,7 +2827,7 @@ fn resolve_policy_value_kind(
             if !fmt.require_all && has_optional {
                 return Err(syn::Error::new(
                     span,
-                    "fmt[...] forbids optional placeholders; use fmt?[...]",
+                    "optional placeholders are not allowed in this template context",
                 ));
             }
 

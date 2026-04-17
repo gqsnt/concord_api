@@ -126,7 +126,7 @@ This reads from the endpoint value named `user_id`.
 
 ## Values in routes
 
-Route values can be static strings, references, `part[...]` templates, or advanced `fmt[...]` templates.
+Route values can be static strings, references, or `part[...]` templates.
 
 ```rust
 path["users", user_id]

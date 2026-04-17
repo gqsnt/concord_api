@@ -66,19 +66,15 @@ impl Parse for ClientDef {
                 vars = Some(content.parse::<VarsBlockTaggedVars>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::auth_vars) {
-                if auth_vars.is_some() {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "duplicate `auth_vars {}` in client",
-                    ));
-                }
-                auth_vars = Some(content.parse::<VarsBlockTaggedAuthVars>()?.0);
-                let _ = content.parse::<Option<Token![,]>>()?;
+                return Err(syn::Error::new(
+                    content.span(),
+                    "`auth_vars {}` was removed in v2; use `secret {}`",
+                ));
             } else if content.peek(kw::secret) {
                 if auth_vars.is_some() {
                     return Err(syn::Error::new(
                         name.span(),
-                        "duplicate `secret {}`/`auth_vars {}` in client",
+                        "duplicate `secret {}` in client",
                     ));
                 }
                 auth_vars = Some(content.parse::<VarsBlockTaggedSecret>()?.0);
@@ -196,17 +192,10 @@ impl Parse for ClientDef {
 }
 
 struct VarsBlockTaggedVars(VarsBlock);
-struct VarsBlockTaggedAuthVars(VarsBlock);
 struct VarsBlockTaggedSecret(VarsBlock);
 impl Parse for VarsBlockTaggedVars {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::vars>()?;
-        Ok(Self(parse_vars_block(input)?))
-    }
-}
-impl Parse for VarsBlockTaggedAuthVars {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        input.parse::<kw::auth_vars>()?;
         Ok(Self(parse_vars_block(input)?))
     }
 }
@@ -413,7 +402,13 @@ fn set_once_secret_ref(out: &mut Option<SecretRef>, span: Span, value: SecretRef
 
 fn parse_secret_ref(input: ParseStream<'_>) -> Result<SecretRef> {
     let ns: Ident = input.parse()?;
-    if ns != "secret" && ns != "auth" {
+    if ns == "auth" {
+        return Err(syn::Error::new(
+            ns.span(),
+            "`auth.*` was removed in v2; use `secret.*`",
+        ));
+    }
+    if ns != "secret" {
         return Err(syn::Error::new(
             ns.span(),
             "auth credentials must reference secrets as `secret.name`",
@@ -1280,9 +1275,15 @@ fn parse_rate_limit_duration_unit(input: ParseStream<'_>) -> Result<RateLimitDur
 impl Parse for Item {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(kw::prefix) {
-            Ok(Item::Layer(input.parse::<LayerDefTaggedPrefix>()?.0))
+            Err(syn::Error::new(
+                input.span(),
+                "`prefix ... {}` layers were removed in v2; use `scope name { host[...] ... }`",
+            ))
         } else if input.peek(kw::path) {
-            Ok(Item::Layer(input.parse::<LayerDefTaggedPath>()?.0))
+            Err(syn::Error::new(
+                input.span(),
+                "`path ... {}` layers were removed in v2; use `scope name { path[...] ... }`",
+            ))
         } else if input.peek(kw::scope) {
             Ok(Item::Layer(input.parse::<LayerDefTaggedScope>()?.0))
         } else {
@@ -1291,204 +1292,7 @@ impl Parse for Item {
     }
 }
 
-struct LayerDefTaggedPrefix(LayerDef);
-struct LayerDefTaggedPath(LayerDef);
 struct LayerDefTaggedScope(LayerDef);
-
-impl Parse for LayerDefTaggedPrefix {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        input.parse::<kw::prefix>()?;
-        let route: RouteExpr = parse_route_expr_dot(input)?;
-        let content;
-        braced!(content in input);
-
-        let mut policy = PolicyBlocks::default();
-        let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
-        let mut cache: Option<CacheSpec> = None;
-        let mut retry: Option<RetrySpec> = None;
-        let mut rate_limit: Option<RateLimitSpec> = None;
-        let mut items = Vec::new();
-
-        while !content.is_empty() {
-            if content.peek(kw::headers) {
-                policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::query) {
-                policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::timeout) {
-                content.parse::<kw::timeout>()?;
-                content.parse::<Token![:]>()?;
-                policy.timeout = Some(content.parse::<Expr>()?);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::use_auth) {
-                auth_uses.push(content.parse::<AuthUseDecl>()?);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::cache) {
-                if cache.is_some() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "duplicate cache policy in prefix layer",
-                    ));
-                }
-                match parse_cache_decl(&content)? {
-                    CacheDecl::Spec(spec) => cache = Some(spec),
-                    CacheDecl::Profiles(_) => {
-                        return Err(syn::Error::new(
-                            content.span(),
-                            "cache profiles are only allowed in client blocks",
-                        ));
-                    }
-                }
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::retry) {
-                match parse_retry_decl(&content)? {
-                    RetryDecl::Spec(spec) => {
-                        if retry.is_some() {
-                            return Err(syn::Error::new(
-                                content.span(),
-                                "duplicate retry policy in prefix layer",
-                            ));
-                        }
-                        retry = Some(spec);
-                    }
-                    RetryDecl::Profiles(_) => {
-                        return Err(syn::Error::new(
-                            content.span(),
-                            "retry profiles are only allowed in client blocks",
-                        ));
-                    }
-                }
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::rate_limit) {
-                if rate_limit.is_some() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "duplicate rate_limit policy in prefix layer",
-                    ));
-                }
-                rate_limit = Some(parse_rate_limit_spec(&content)?);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope)
-            {
-                items.push(content.parse::<Item>()?);
-            } else {
-                // endpoint
-                items.push(Item::Endpoint(content.parse::<EndpointDef>()?));
-            }
-        }
-
-        Ok(Self(LayerDef {
-            kind: LayerKind::Prefix,
-            route,
-            params: Vec::new(),
-            policy,
-            auth_uses,
-            cache,
-            retry,
-            rate_limit,
-            rate_limit_keys: Vec::new(),
-            items,
-        }))
-    }
-}
-
-impl Parse for LayerDefTaggedPath {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        input.parse::<kw::path>()?;
-        let route: RouteExpr = parse_route_expr_slash(input)?;
-        let content;
-        braced!(content in input);
-
-        let mut policy = PolicyBlocks::default();
-        let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
-        let mut cache: Option<CacheSpec> = None;
-        let mut retry: Option<RetrySpec> = None;
-        let mut rate_limit: Option<RateLimitSpec> = None;
-        let mut items = Vec::new();
-
-        while !content.is_empty() {
-            if content.peek(kw::headers) {
-                policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::query) {
-                policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::timeout) {
-                content.parse::<kw::timeout>()?;
-                content.parse::<Token![:]>()?;
-                policy.timeout = Some(content.parse::<Expr>()?);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::use_auth) {
-                auth_uses.push(content.parse::<AuthUseDecl>()?);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::cache) {
-                if cache.is_some() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "duplicate cache policy in path layer",
-                    ));
-                }
-                match parse_cache_decl(&content)? {
-                    CacheDecl::Spec(spec) => cache = Some(spec),
-                    CacheDecl::Profiles(_) => {
-                        return Err(syn::Error::new(
-                            content.span(),
-                            "cache profiles are only allowed in client blocks",
-                        ));
-                    }
-                }
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::retry) {
-                match parse_retry_decl(&content)? {
-                    RetryDecl::Spec(spec) => {
-                        if retry.is_some() {
-                            return Err(syn::Error::new(
-                                content.span(),
-                                "duplicate retry policy in path layer",
-                            ));
-                        }
-                        retry = Some(spec);
-                    }
-                    RetryDecl::Profiles(_) => {
-                        return Err(syn::Error::new(
-                            content.span(),
-                            "retry profiles are only allowed in client blocks",
-                        ));
-                    }
-                }
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::rate_limit) {
-                if rate_limit.is_some() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "duplicate rate_limit policy in path layer",
-                    ));
-                }
-                rate_limit = Some(parse_rate_limit_spec(&content)?);
-                let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::prefix) || content.peek(kw::path) || content.peek(kw::scope)
-            {
-                items.push(content.parse::<Item>()?);
-            } else {
-                items.push(Item::Endpoint(content.parse::<EndpointDef>()?));
-            }
-        }
-
-        Ok(Self(LayerDef {
-            kind: LayerKind::Path,
-            route,
-            params: Vec::new(),
-            policy,
-            auth_uses,
-            cache,
-            retry,
-            rate_limit,
-            rate_limit_keys: Vec::new(),
-            items,
-        }))
-    }
-}
 
 impl Parse for LayerDefTaggedScope {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -1605,16 +1409,20 @@ impl Parse for LayerDefTaggedScope {
                     rate_limit = Some(parse_rate_limit_spec(&content)?);
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::scope) || content.peek(kw::prefix) || content.peek(kw::path)
-            {
+            } else if content.peek(kw::scope) {
                 items.push(content.parse::<Item>()?);
+            } else if content.peek(kw::prefix) {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "`prefix ... {}` layers were removed in v2; use nested `scope` with `host[...]`",
+                ));
             } else {
                 items.push(Item::Endpoint(content.parse::<EndpointDef>()?));
             }
         }
 
-        // Legacy IR only supports one route-kind per layer.
-        // Normalize `scope` into one or two nested legacy layers.
+        // Internal IR currently stores one route-kind per layer.
+        // Normalize `scope` into one or two nested internal layers.
         let outer = match (host_route, path_route) {
             (Some(host), Some(path)) => LayerDef {
                 kind: LayerKind::Prefix,
@@ -2283,77 +2091,6 @@ impl Parse for CodecSpec {
     }
 }
 
-fn parse_fmt_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
-    let fmt_kw: kw::fmt = input.parse()?;
-    let span = fmt_kw.span;
-    let require_all = input.parse::<Option<Token![?]>>()?.is_some();
-
-    let content;
-    bracketed!(content in input);
-
-    let mut pieces: Vec<FmtPiece> = Vec::new();
-    while !content.is_empty() {
-        if content.peek(LitStr) {
-            pieces.push(FmtPiece::Lit(content.parse::<LitStr>()?));
-        } else if content.peek(token::Brace) {
-            let inner;
-            braced!(inner in content);
-            // Prefer {cx.x}/{ep.y}/{auth.z} refs.
-            if inner.peek(Ident) && inner.peek2(Token![.]) {
-                let fork = inner.fork();
-                let base: Ident = fork.parse()?;
-                if (base == "cx" || base == "ep" || base == "auth") && fork.peek(Token![.]) {
-                    let _dot: Token![.] = fork.parse()?;
-                    let _name: Ident = fork.parse()?;
-                    if fork.is_empty() {
-                        // Commit on real stream.
-                        let base: Ident = inner.parse()?;
-                        inner.parse::<Token![.]>()?;
-                        let name: Ident = inner.parse()?;
-                        if !inner.is_empty() {
-                            return Err(syn::Error::new(
-                                inner.span(),
-                                "unexpected tokens in fmt ref",
-                            ));
-                        }
-                        let scope = if base == "cx" {
-                            RefScope::Cx
-                        } else if base == "ep" {
-                            RefScope::Ep
-                        } else {
-                            RefScope::Auth
-                        };
-                        pieces.push(FmtPiece::Ref(ScopedRef { scope, ident: name }));
-                    } else {
-                        // fallthrough to decl
-                        let d: TemplateVarDecl = inner.parse()?;
-                        pieces.push(FmtPiece::Var(d));
-                    }
-                } else {
-                    let d: TemplateVarDecl = inner.parse()?;
-                    pieces.push(FmtPiece::Var(d));
-                }
-            } else {
-                let d: TemplateVarDecl = inner.parse()?;
-                pieces.push(FmtPiece::Var(d));
-            }
-        } else {
-            let tt: TokenTree = content.parse()?;
-            return Err(syn::Error::new(
-                tt.span(),
-                "expected string literal or `{var:Ty}` in fmt[...]",
-            ));
-        }
-        let _ = content.parse::<Option<Token![,]>>()?;
-    }
-
-    Ok(FmtSpec {
-        span,
-        require_all,
-        pieces,
-    })
-}
-
 fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
     let part_kw: kw::part = input.parse()?;
     let span = part_kw.span;
@@ -2372,20 +2109,20 @@ fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
             if inner.peek(Ident) && inner.peek2(Token![.]) {
                 let fork = inner.fork();
                 let base: Ident = fork.parse()?;
-                if (base == "cx" || base == "ep" || base == "auth") && fork.peek(Token![.]) {
+                if (base == "vars"
+                    || base == "ep"
+                    || base == "secret"
+                    || base == "cx"
+                    || base == "auth")
+                    && fork.peek(Token![.])
+                {
                     let _dot: Token![.] = fork.parse()?;
                     let _name: Ident = fork.parse()?;
                     if fork.is_empty() {
                         let base: Ident = inner.parse()?;
                         inner.parse::<Token![.]>()?;
                         let name: Ident = inner.parse()?;
-                        let scope = if base == "cx" {
-                            RefScope::Cx
-                        } else if base == "auth" {
-                            RefScope::Auth
-                        } else {
-                            RefScope::Ep
-                        };
+                        let scope = resolve_scoped_ref_base(&base)?;
                         pieces.push(FmtPiece::Ref(ScopedRef { scope, ident: name }));
                     } else {
                         let d: TemplateVarDecl = inner.parse()?;
@@ -2421,19 +2158,26 @@ fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
 
 fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue> {
     if input.peek(kw::fmt) {
-        return Ok(PolicyValue::Fmt(parse_fmt_spec(input)?));
+        return Err(syn::Error::new(
+            input.span(),
+            "`fmt[...]` and `fmt?[...]` were removed in v2; use `part[...]`",
+        ));
     }
     if input.peek(kw::part) {
         return Ok(PolicyValue::Fmt(parse_part_spec(input)?));
     }
 
     let expr: syn::Expr = input.parse()?;
+    reject_legacy_policy_scope_aliases(&expr)?;
     Ok(PolicyValue::Expr(normalize_policy_expr(expr)))
 }
 
 fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
     if input.peek(kw::fmt) {
-        return Ok(RouteAtom::Fmt(parse_fmt_spec(input)?));
+        return Err(syn::Error::new(
+            input.span(),
+            "`fmt[...]` and `fmt?[...]` were removed in v2; use `part[...]`",
+        ));
     }
     if input.peek(kw::part) {
         return Ok(RouteAtom::Fmt(parse_part_spec(input)?));
@@ -2448,11 +2192,17 @@ fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
     if input.peek(token::Brace) {
         let content;
         braced!(content in input);
-        // Prefer {cx.x}/{ep.y}/{auth.z} refs.
+        // Prefer {vars.x}/{ep.y}/{secret.z} refs.
         if content.peek(Ident) && content.peek2(Token![.]) {
             let fork = content.fork();
             let base: Ident = fork.parse()?;
-            if (base == "cx" || base == "ep" || base == "auth") && fork.peek(Token![.]) {
+            if (base == "vars"
+                || base == "ep"
+                || base == "secret"
+                || base == "cx"
+                || base == "auth")
+                && fork.peek(Token![.])
+            {
                 let _dot: Token![.] = fork.parse()?;
                 let _name: Ident = fork.parse()?;
                 if fork.is_empty() {
@@ -2466,13 +2216,7 @@ fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
                             "unexpected tokens in route ref",
                         ));
                     }
-                    let scope = if base == "cx" {
-                        RefScope::Cx
-                    } else if base == "ep" {
-                        RefScope::Ep
-                    } else {
-                        RefScope::Auth
-                    };
+                    let scope = resolve_scoped_ref_base(&base)?;
                     return Ok(RouteAtom::Ref(ScopedRef { scope, ident: name }));
                 }
             }
@@ -2493,16 +2237,6 @@ fn parse_route_expr_slash(input: ParseStream<'_>) -> Result<RouteExpr> {
     atoms.push(parse_route_atom(input)?);
     while input.peek(Token![/]) {
         input.parse::<Token![/]>()?;
-        atoms.push(parse_route_atom(input)?);
-    }
-    Ok(RouteExpr { atoms })
-}
-
-fn parse_route_expr_dot(input: ParseStream<'_>) -> Result<RouteExpr> {
-    let mut atoms: Vec<RouteAtom> = Vec::new();
-    atoms.push(parse_route_atom(input)?);
-    while input.peek(Token![.]) {
-        input.parse::<Token![.]>()?;
         atoms.push(parse_route_atom(input)?);
     }
     Ok(RouteExpr { atoms })
@@ -2529,32 +2263,148 @@ fn parse_route_expr_bracket(input: ParseStream<'_>) -> Result<RouteExpr> {
     Ok(RouteExpr { atoms })
 }
 
+fn resolve_scoped_ref_base(base: &Ident) -> Result<RefScope> {
+    if *base == "vars" {
+        return Ok(RefScope::Cx);
+    }
+    if *base == "secret" {
+        return Ok(RefScope::Auth);
+    }
+    if *base == "ep" {
+        return Ok(RefScope::Ep);
+    }
+    if *base == "cx" {
+        return Err(syn::Error::new(
+            base.span(),
+            "`cx.*` was removed in v2; use `vars.*`",
+        ));
+    }
+    if *base == "auth" {
+        return Err(syn::Error::new(
+            base.span(),
+            "`auth.*` was removed in v2; use `secret.*`",
+        ));
+    }
+    Err(syn::Error::new(
+        base.span(),
+        "unknown scoped reference prefix; expected `vars.`, `ep.`, or `secret.`",
+    ))
+}
+
 fn parse_scoped_ref_from_ident(input: ParseStream<'_>) -> Result<ScopedRef> {
     let first: Ident = input.parse()?;
     if input.peek(Token![.]) {
         input.parse::<Token![.]>()?;
         let second: Ident = input.parse()?;
-        if first == "vars" || first == "cx" {
-            Ok(ScopedRef {
-                scope: RefScope::Cx,
-                ident: second,
-            })
-        } else if first == "secret" || first == "auth" {
-            Ok(ScopedRef {
-                scope: RefScope::Auth,
-                ident: second,
-            })
-        } else {
-            Ok(ScopedRef {
-                scope: RefScope::Ep,
-                ident: second,
-            })
-        }
+        let scope = resolve_scoped_ref_base(&first)?;
+        Ok(ScopedRef {
+            scope,
+            ident: second,
+        })
     } else {
         Ok(ScopedRef {
             scope: RefScope::Ep,
             ident: first,
         })
+    }
+}
+
+fn reject_legacy_policy_scope_aliases(expr: &Expr) -> Result<()> {
+    match expr {
+        Expr::Path(p) => {
+            if p.qself.is_none() && p.path.segments.len() == 1 {
+                let base = &p.path.segments[0].ident;
+                if *base == "cx" {
+                    return Err(syn::Error::new(
+                        base.span(),
+                        "`cx` alias was removed in v2; use `vars.<name>`",
+                    ));
+                }
+                if *base == "auth" {
+                    return Err(syn::Error::new(
+                        base.span(),
+                        "`auth` alias was removed in v2; use `secret.<name>`",
+                    ));
+                }
+            }
+            Ok(())
+        }
+        Expr::Field(f) => {
+            if let Expr::Path(base_path) = &*f.base
+                && base_path.qself.is_none()
+                && base_path.path.segments.len() == 1
+            {
+                let base = &base_path.path.segments[0].ident;
+                if *base == "cx" {
+                    return Err(syn::Error::new(
+                        base.span(),
+                        "`cx.*` was removed in v2; use `vars.*`",
+                    ));
+                }
+                if *base == "auth" {
+                    return Err(syn::Error::new(
+                        base.span(),
+                        "`auth.*` was removed in v2; use `secret.*`",
+                    ));
+                }
+            }
+            reject_legacy_policy_scope_aliases(&f.base)
+        }
+        Expr::Paren(p) => reject_legacy_policy_scope_aliases(&p.expr),
+        Expr::Reference(r) => reject_legacy_policy_scope_aliases(&r.expr),
+        Expr::Unary(u) => reject_legacy_policy_scope_aliases(&u.expr),
+        Expr::Binary(b) => {
+            reject_legacy_policy_scope_aliases(&b.left)?;
+            reject_legacy_policy_scope_aliases(&b.right)
+        }
+        Expr::Cast(c) => reject_legacy_policy_scope_aliases(&c.expr),
+        Expr::Call(c) => {
+            reject_legacy_policy_scope_aliases(&c.func)?;
+            for arg in &c.args {
+                reject_legacy_policy_scope_aliases(arg)?;
+            }
+            Ok(())
+        }
+        Expr::MethodCall(m) => {
+            reject_legacy_policy_scope_aliases(&m.receiver)?;
+            for arg in &m.args {
+                reject_legacy_policy_scope_aliases(arg)?;
+            }
+            Ok(())
+        }
+        Expr::Index(i) => {
+            reject_legacy_policy_scope_aliases(&i.expr)?;
+            reject_legacy_policy_scope_aliases(&i.index)
+        }
+        Expr::Array(a) => {
+            for elem in &a.elems {
+                reject_legacy_policy_scope_aliases(elem)?;
+            }
+            Ok(())
+        }
+        Expr::Tuple(t) => {
+            for elem in &t.elems {
+                reject_legacy_policy_scope_aliases(elem)?;
+            }
+            Ok(())
+        }
+        Expr::Assign(a) => {
+            reject_legacy_policy_scope_aliases(&a.left)?;
+            reject_legacy_policy_scope_aliases(&a.right)
+        }
+        Expr::If(i) => {
+            reject_legacy_policy_scope_aliases(&i.cond)?;
+            for stmt in &i.then_branch.stmts {
+                if let syn::Stmt::Expr(e, _) = stmt {
+                    reject_legacy_policy_scope_aliases(e)?;
+                }
+            }
+            if let Some((_, else_expr)) = &i.else_branch {
+                reject_legacy_policy_scope_aliases(else_expr)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 
