@@ -282,6 +282,18 @@ impl Parse for AuthCredentialDecl {
             "OAuth2ClientCredentials" => {
                 parse_oauth2_client_credentials(input, kind_name.span())?.into()
             }
+            "Endpoint" => {
+                let content;
+                parenthesized!(content in input);
+                let endpoint: Ident = content.parse()?;
+                if !content.is_empty() {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "unexpected Endpoint arguments",
+                    ));
+                }
+                AuthCredentialKind::Endpoint { endpoint }
+            }
             "Custom" => {
                 let provider_ty = parse_angle_type(input, kind_name.span(), "custom provider")?;
                 let content;
@@ -301,7 +313,7 @@ impl Parse for AuthCredentialDecl {
             _ => {
                 return Err(syn::Error::new(
                     kind_name.span(),
-                    "unknown auth credential kind; expected ApiKey, BearerToken, AccessToken, Basic, OAuth2ClientCredentials, or Custom<T>",
+                    "unknown auth credential kind; expected ApiKey, BearerToken, AccessToken, Basic, OAuth2ClientCredentials, Endpoint, or Custom<T>",
                 ));
             }
         };

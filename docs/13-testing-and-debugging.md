@@ -77,6 +77,13 @@ One-of auth tests script an unauthorized response first, then assert the fallbac
 
 OAuth2 and custom provider tests assert internal auth HTTP requests before the original API request.
 
+Endpoint-backed manual credential tests should cover the full lifecycle:
+
+- missing credential before acquire (`AuthErrorKind::MissingCredential`)
+- explicit acquire through `acquire_auth_*`
+- clone visibility for acquired/cleared state
+- `401` invalidation without forced auth retry
+
 ## Assert retry
 
 Retry tests inspect recorded request count and attempt metadata.
@@ -173,7 +180,7 @@ fn ui() {
 }
 ```
 
-Use compile-fail tests for macro diagnostics: missing placeholder types, duplicate variables, invalid references, unsupported policy syntax, or cache feature requirements.
+Use compile-fail tests for macro diagnostics: missing placeholder types, duplicate variables, invalid references (including unknown auth endpoints), recursive endpoint-backed credential dependencies, endpoint output types that do not satisfy credential material bounds, unsupported policy syntax, or cache feature requirements.
 
 ## Debugging generated behavior
 
@@ -196,7 +203,9 @@ Run focused tests while developing one concept.
 
 ```powershell
 cargo test -p concord_examples --test spec_policy_blocks
+cargo test -p concord_examples --test auth_core
 cargo test -p concord_examples --test auth_dsl
+cargo test -p concord_examples --test ui
 cargo test -p concord_examples --test retry_dsl
 cargo test -p concord_examples --test rate_limit_dsl
 cargo test -p concord_examples --test cache_dsl

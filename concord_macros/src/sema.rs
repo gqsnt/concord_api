@@ -86,6 +86,10 @@ pub enum AuthCredentialKindIr {
         client_secret: Ident,
         scope: Option<LitStr>,
     },
+    Endpoint {
+        endpoint: Ident,
+        output_ty: Type,
+    },
     Custom {
         provider_ty: Type,
         provider: Expr,
@@ -398,8 +402,12 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
         }
     }
 
-    let client_auth_credentials =
-        analyze_auth_credentials(ast.client.auth.as_ref(), &auth_vars_map)?;
+    let endpoint_output_map = collect_endpoint_output_types(&ast.items)?;
+    let client_auth_credentials = analyze_auth_credentials(
+        ast.client.auth.as_ref(),
+        &auth_vars_map,
+        &endpoint_output_map,
+    )?;
     let auth_credential_map: BTreeMap<String, AuthCredentialIr> = client_auth_credentials
         .iter()
         .map(|c| (c.name.to_string(), c.clone()))
@@ -630,6 +638,7 @@ fn upsert_var(
 fn analyze_auth_credentials(
     block: Option<&AuthBlock>,
     auth_vars: &BTreeMap<String, VarInfo>,
+    endpoint_outputs: &BTreeMap<String, Type>,
 ) -> Result<Vec<AuthCredentialIr>> {
     let Some(block) = block else {
         return Ok(Vec::new());
@@ -681,6 +690,18 @@ fn analyze_auth_credentials(
                     client_id: client_id.ident.clone(),
                     client_secret: client_secret.ident.clone(),
                     scope: scope.clone(),
+                }
+            }
+            AuthCredentialKind::Endpoint { endpoint } => {
+                let output_ty = endpoint_outputs.get(&endpoint.to_string()).ok_or_else(|| {
+                    syn::Error::new(
+                        endpoint.span(),
+                        format!("unknown auth endpoint `{}` in credential source", endpoint),
+                    )
+                })?;
+                AuthCredentialKindIr::Endpoint {
+                    endpoint: endpoint.clone(),
+                    output_ty: output_ty.clone(),
                 }
             }
             AuthCredentialKind::Custom {
@@ -824,29 +845,94 @@ fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
     }
 }
 
+fn auth_use_credential_ident_ir(u: &AuthUseIr) -> &Ident {
+    match &u.kind {
+        AuthUseKindIr::Bearer { credential }
+        | AuthUseKindIr::Header { credential, .. }
+        | AuthUseKindIr::Query { credential, .. }
+        | AuthUseKindIr::Basic { credential }
+        | AuthUseKindIr::Certificate { credential }
+        | AuthUseKindIr::Custom { credential, .. } => credential,
+    }
+}
+
+fn auth_plan_references_credential(plans: &[AuthUsePlanIr], target: &Ident) -> bool {
+    let target = target.to_string();
+    plans.iter().any(|plan| match plan {
+        AuthUsePlanIr::Use(auth_use) => {
+            auth_use_credential_ident_ir(auth_use).to_string() == target
+        }
+        AuthUsePlanIr::OneOf(uses) => uses
+            .iter()
+            .any(|auth_use| auth_use_credential_ident_ir(auth_use).to_string() == target),
+    })
+}
+
 fn validate_auth_usage_compatibility(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<()> {
-    match (u, &cred.kind) {
-        (AuthUseKind::Custom { .. }, _) | (_, AuthCredentialKindIr::Custom { .. }) => Ok(()),
-        (
-            AuthUseKind::Bearer { .. },
-            AuthCredentialKindIr::StaticBearer { .. }
-            | AuthCredentialKindIr::OAuth2ClientCredentials { .. },
-        ) => Ok(()),
-        (
-            AuthUseKind::Header { .. } | AuthUseKind::Query { .. },
-            AuthCredentialKindIr::ApiKey { .. }
-            | AuthCredentialKindIr::StaticBearer { .. }
-            | AuthCredentialKindIr::OAuth2ClientCredentials { .. },
-        ) => Ok(()),
-        (AuthUseKind::Basic { .. }, AuthCredentialKindIr::Basic { .. }) => Ok(()),
-        (AuthUseKind::Bearer { credential }, _) => Err(syn::Error::new(
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum MaterialShape {
+        AccessToken,
+        SecretValue,
+        Basic,
+        Certificate,
+        Unknown,
+    }
+
+    fn shape_from_type(ty: &Type) -> MaterialShape {
+        let Type::Path(type_path) = ty else {
+            return MaterialShape::Unknown;
+        };
+        let Some(segment) = type_path.path.segments.last() else {
+            return MaterialShape::Unknown;
+        };
+        match segment.ident.to_string().as_str() {
+            "AccessToken" => MaterialShape::AccessToken,
+            "ApiKey" => MaterialShape::SecretValue,
+            "BasicCredential" => MaterialShape::Basic,
+            "ClientCertificate" => MaterialShape::Certificate,
+            _ => MaterialShape::Unknown,
+        }
+    }
+
+    let shape = match &cred.kind {
+        AuthCredentialKindIr::ApiKey { .. } => MaterialShape::SecretValue,
+        AuthCredentialKindIr::StaticBearer { .. }
+        | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => MaterialShape::AccessToken,
+        AuthCredentialKindIr::Basic { .. } => MaterialShape::Basic,
+        AuthCredentialKindIr::Endpoint { output_ty, .. } => shape_from_type(output_ty),
+        AuthCredentialKindIr::Custom { .. } => MaterialShape::Unknown,
+    };
+
+    let compatible = match u {
+        AuthUseKind::Custom { .. } => true,
+        AuthUseKind::Bearer { .. } => {
+            matches!(shape, MaterialShape::AccessToken | MaterialShape::Unknown)
+        }
+        AuthUseKind::Header { .. } | AuthUseKind::Query { .. } => {
+            matches!(
+                shape,
+                MaterialShape::SecretValue | MaterialShape::AccessToken | MaterialShape::Unknown
+            )
+        }
+        AuthUseKind::Basic { .. } => matches!(shape, MaterialShape::Basic | MaterialShape::Unknown),
+        AuthUseKind::Certificate { .. } => {
+            matches!(shape, MaterialShape::Certificate | MaterialShape::Unknown)
+        }
+    };
+
+    if compatible {
+        return Ok(());
+    }
+
+    match u {
+        AuthUseKind::Bearer { credential } => Err(syn::Error::new(
             credential.span(),
             format!(
                 "BearerAuth requires an access-token credential; `{}` is not compatible",
                 cred.name
             ),
         )),
-        (AuthUseKind::Header { credential, .. } | AuthUseKind::Query { credential, .. }, _) => {
+        AuthUseKind::Header { credential, .. } | AuthUseKind::Query { credential, .. } => {
             Err(syn::Error::new(
                 credential.span(),
                 format!(
@@ -855,20 +941,21 @@ fn validate_auth_usage_compatibility(u: &AuthUseKind, cred: &AuthCredentialIr) -
                 ),
             ))
         }
-        (AuthUseKind::Basic { credential }, _) => Err(syn::Error::new(
+        AuthUseKind::Basic { credential } => Err(syn::Error::new(
             credential.span(),
             format!(
                 "BasicAuth requires a Basic credential; `{}` is not compatible",
                 cred.name
             ),
         )),
-        (AuthUseKind::Certificate { credential }, _) => Err(syn::Error::new(
+        AuthUseKind::Certificate { credential } => Err(syn::Error::new(
             credential.span(),
             format!(
                 "CertificateAuth requires a client-certificate credential; `{}` is not compatible",
                 cred.name
             ),
         )),
+        AuthUseKind::Custom { .. } => Ok(()),
     }
 }
 
@@ -1815,6 +1902,39 @@ fn varinfo_from_decl(d: &TemplateVarDecl) -> VarInfo {
     }
 }
 
+fn collect_endpoint_output_types(items: &[Item]) -> Result<BTreeMap<String, Type>> {
+    let mut out = BTreeMap::new();
+    collect_endpoint_output_types_into(items, &mut out)?;
+    Ok(out)
+}
+
+fn collect_endpoint_output_types_into(
+    items: &[Item],
+    out: &mut BTreeMap<String, Type>,
+) -> Result<()> {
+    for item in items {
+        match item {
+            Item::Layer(layer) => collect_endpoint_output_types_into(&layer.items, out)?,
+            Item::Endpoint(endpoint) => {
+                let key = endpoint.name.to_string();
+                if out.contains_key(&key) {
+                    return Err(syn::Error::new(
+                        endpoint.name.span(),
+                        format!("duplicate endpoint `{}`", endpoint.name),
+                    ));
+                }
+                let output_ty = endpoint
+                    .map
+                    .as_ref()
+                    .map(|m| m.out_ty.clone())
+                    .unwrap_or_else(|| endpoint.response.ty.clone());
+                out.insert(key, output_ty);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn analyze_layer_route_and_decls(
     ld: &LayerDef,
 ) -> Result<(Vec<PrefixPiece>, Vec<PathPiece>, Vec<VarInfo>)> {
@@ -2111,6 +2231,23 @@ fn analyze_endpoint(
         auth_credentials,
         AuthUseProvenanceIr::Endpoint,
     )?);
+    for credential in auth_credentials.values() {
+        let AuthCredentialKindIr::Endpoint { endpoint, .. } = &credential.kind else {
+            continue;
+        };
+        if endpoint != &ed.name {
+            continue;
+        }
+        if auth_plan_references_credential(&auth_uses, &credential.name) {
+            return Err(syn::Error::new(
+                ed.name.span(),
+                format!(
+                    "credential `{}` cannot acquire via endpoint `{}` because the endpoint uses that credential",
+                    credential.name, ed.name
+                ),
+            ));
+        }
+    }
 
     // 6) Resolve paginate, if any.
     let paginate = match &ed.paginate {

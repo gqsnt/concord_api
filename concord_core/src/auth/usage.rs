@@ -215,15 +215,70 @@ where
                 applied,
             });
 
-            let retry_reason = if challenge == AuthChallengeDecision::RejectCredential {
-                Some(AuthRetryReason::ChallengeRejected)
-            } else if ctx.status == StatusCode::UNAUTHORIZED && self.policy.retry_on_unauthorized {
-                Some(AuthRetryReason::Unauthorized)
-            } else if ctx.status == StatusCode::FORBIDDEN && self.policy.retry_on_forbidden {
-                Some(AuthRetryReason::Forbidden)
+            enum ResponseSignal {
+                ChallengeRejected,
+                Unauthorized,
+                Forbidden,
+            }
+
+            let signal = if challenge == AuthChallengeDecision::RejectCredential {
+                Some(ResponseSignal::ChallengeRejected)
+            } else if ctx.status == StatusCode::UNAUTHORIZED {
+                Some(ResponseSignal::Unauthorized)
+            } else if ctx.status == StatusCode::FORBIDDEN {
+                Some(ResponseSignal::Forbidden)
             } else {
                 None
             };
+
+            let Some(signal) = signal else {
+                return Ok(AuthResponseAction::Continue);
+            };
+
+            let (invalidate, retry_reason) = match signal {
+                ResponseSignal::ChallengeRejected => (
+                    self.policy.invalidate_on_challenge_rejection,
+                    self.policy
+                        .retry_on_challenge_rejection
+                        .then_some(AuthRetryReason::ChallengeRejected),
+                ),
+                ResponseSignal::Unauthorized => (
+                    self.policy.invalidate_on_unauthorized,
+                    self.policy
+                        .retry_on_unauthorized
+                        .then_some(AuthRetryReason::Unauthorized),
+                ),
+                ResponseSignal::Forbidden => (
+                    self.policy.invalidate_on_forbidden,
+                    self.policy
+                        .retry_on_forbidden
+                        .then_some(AuthRetryReason::Forbidden),
+                ),
+            };
+
+            if invalidate {
+                let invalidate_reason = match signal {
+                    ResponseSignal::ChallengeRejected | ResponseSignal::Unauthorized => {
+                        InvalidateReason::Unauthorized
+                    }
+                    ResponseSignal::Forbidden => InvalidateReason::Forbidden,
+                };
+                let credential_ctx = CredentialContext {
+                    vars: ctx.vars,
+                    auth: ctx.auth,
+                    auth_state: ctx.auth_state,
+                    executor: ctx.executor,
+                    credential_id: credential_id.clone(),
+                    reason: CredentialRefreshReason::Rejected,
+                };
+                self.slot
+                    .invalidate_generation(credential_ctx, applied.generation, invalidate_reason)
+                    .await
+                    .map_err(|source| ApiClientError::Auth {
+                        ctx: ctx.error_context(),
+                        source,
+                    })?;
+            }
 
             let Some(reason) = retry_reason else {
                 return Ok(AuthResponseAction::Continue);
@@ -234,27 +289,6 @@ where
             }
 
             state.auth_retries = state.auth_retries.saturating_add(1);
-            let invalidate_reason = match reason {
-                AuthRetryReason::Unauthorized | AuthRetryReason::ChallengeRejected => {
-                    InvalidateReason::Unauthorized
-                }
-                AuthRetryReason::Forbidden => InvalidateReason::Forbidden,
-            };
-            let credential_ctx = CredentialContext {
-                vars: ctx.vars,
-                auth: ctx.auth,
-                auth_state: ctx.auth_state,
-                executor: ctx.executor,
-                credential_id: credential_id.clone(),
-                reason: CredentialRefreshReason::Rejected,
-            };
-            self.slot
-                .invalidate_generation(credential_ctx, applied.generation, invalidate_reason)
-                .await
-                .map_err(|source| ApiClientError::Auth {
-                    ctx: ctx.error_context(),
-                    source,
-                })?;
             Ok(AuthResponseAction::Retry { reason })
         })
     }

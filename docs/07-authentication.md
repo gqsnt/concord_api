@@ -64,9 +64,60 @@ Supported credential forms include:
 - `AccessToken(secret.name)`
 - `Basic(secret.username, secret.password)`
 - `OAuth2ClientCredentials { ... }`
+- `Endpoint(LoginEndpoint)`
 - `Custom<ProviderType>(provider_expr)`
 
 Credential names are local identifiers referenced by `use_auth`.
+
+## Endpoint-backed manual credentials
+
+Use `Endpoint(...)` when a credential must be acquired explicitly from an API endpoint response.
+
+```rust
+POST LoginForSession {
+    path["login"]
+    body Json<LoginRequest>
+    -> Json<LoginResponse> | AccessToken => {
+        AccessToken::new(r.access_token)
+    };
+}
+
+client Api {
+    scheme: https,
+    host: "example.com",
+    auth {
+        credential session: Endpoint(LoginForSession)
+    }
+}
+
+GET Me {
+    use_auth BearerAuth(session)
+    -> Json<User>;
+}
+```
+
+Endpoint-backed credentials are manual by default:
+
+1. Concord does not auto-call the login endpoint.
+2. Using the credential before acquisition fails with `AuthErrorKind::MissingCredential`.
+3. The generated client exposes async lifecycle helpers.
+
+```rust
+api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
+api.set_auth_session_value(AccessToken::new("seed")).await;
+let has = api.has_auth_session().await;
+api.clear_auth_session().await;
+```
+
+Typical runtime error before acquisition:
+
+```text
+missing credential `session`; call `client.acquire_auth_session(...)` first
+```
+
+The login endpoint output type (after optional response mapping) must implement `CredentialMaterial`.
+The login endpoint can itself use `use_auth` when explicit upstream auth is required.
+See `concord_examples/src/auth_session.rs` for a complete end-to-end example.
 
 ## Applying auth
 
@@ -284,6 +335,8 @@ The exact transport behavior depends on the transport and certificate integratio
 Auth runs before cache lookup, so authenticated cache keys can include the auth identity.
 
 Auth response handling happens before cache storage. This prevents Concord from storing a response that will trigger an auth retry.
+
+Auth invalidation and auth retry are now independent decisions. This matters for manual endpoint-backed credentials: a `401` can invalidate local auth state without forcing an automatic retry.
 
 Auth retries are capped by the runtime max auth retry budget in the core client. The generated wrapper uses the core default; expose or configure the lower-level `ApiClient` directly if an integration needs to tune that budget.
 

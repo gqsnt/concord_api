@@ -250,6 +250,9 @@ fn emit_auth_provider_ty(kind: &AuthCredentialKindIr) -> TokenStream2 {
         AuthCredentialKindIr::OAuth2ClientCredentials { .. } => {
             quote! { ::concord_core::prelude::OAuth2ClientCredentialsProvider }
         }
+        AuthCredentialKindIr::Endpoint { output_ty, .. } => {
+            quote! { ::concord_core::prelude::ManualCredentialProvider<#output_ty> }
+        }
         AuthCredentialKindIr::Custom { provider_ty, .. } => quote! { #provider_ty },
     }
 }
@@ -302,6 +305,14 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
                 provider
             }
         }
+        AuthCredentialKindIr::Endpoint { .. } => {
+            let acquire_name = emit_helpers::ident(&format!("acquire_auth_{name}"), name.span());
+            let hint = LitStr::new(&format!("client.{acquire_name}(...)"), Span::call_site());
+            quote! {
+                ::concord_core::prelude::ManualCredentialProvider::new(#credential_id)
+                    .with_missing_hint(#hint)
+            }
+        }
         AuthCredentialKindIr::Custom { provider, .. } => quote! { #provider },
     }
 }
@@ -327,6 +338,7 @@ fn auth_credential_secret_names(ir: &Ir) -> (std::collections::BTreeSet<String>,
                 out.insert(client_id.to_string());
                 out.insert(client_secret.to_string());
             }
+            AuthCredentialKindIr::Endpoint { .. } => {}
             AuthCredentialKindIr::Custom { .. } => {
                 has_custom = true;
             }
@@ -759,6 +771,24 @@ fn emit_auth_part_for_ident(
         }
         AuthUseProvenanceIr::Endpoint => LitStr::new("endpoint", Span::call_site()),
     };
+    let manual_policy = match &credential_ir.kind {
+        AuthCredentialKindIr::Endpoint { .. } => Some(quote! {
+            ::concord_core::prelude::AuthStepPolicy {
+                retry_on_unauthorized: false,
+                retry_on_forbidden: false,
+                retry_on_challenge_rejection: false,
+                invalidate_on_unauthorized: true,
+                invalidate_on_forbidden: true,
+                invalidate_on_challenge_rejection: true,
+                ..::concord_core::prelude::AuthStepPolicy::default()
+            }
+        }),
+        _ => None,
+    };
+    let manual_policy_chain = manual_policy
+        .as_ref()
+        .map(|policy| quote! { .with_policy(#policy) })
+        .unwrap_or_else(|| quote! {});
 
     quote! {
         pub struct #part_ty;
@@ -775,6 +805,7 @@ fn emit_auth_part_for_ident(
                     ctx.auth_state.#credential.clone(),
                     __usage,
                 )
+                #manual_policy_chain
                 .with_step_id(#step_id)
                 .with_provenance(::concord_core::prelude::AuthProvenance::new(#provenance_layer)))
             }
@@ -1057,6 +1088,50 @@ fn emit_client_wrapper(
             }
         }
     });
+    let credential_lifecycle_methods = ir.client_auth_credentials.iter().filter_map(|credential| {
+        let name = &credential.name;
+        let AuthCredentialKindIr::Endpoint {
+            endpoint,
+            output_ty,
+        } = &credential.kind
+        else {
+            return None;
+        };
+        let acquire_name = emit_helpers::ident(&format!("acquire_auth_{name}"), name.span());
+        let set_name = emit_helpers::ident(&format!("set_auth_{name}_value"), name.span());
+        let clear_name = emit_helpers::ident(&format!("clear_auth_{name}"), name.span());
+        let has_name = emit_helpers::ident(&format!("has_auth_{name}"), name.span());
+        Some(quote! {
+            #[inline]
+            pub async fn #acquire_name(
+                &self,
+                ep: endpoints::#endpoint,
+            ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
+                let value: #output_ty = self.request(ep).execute().await?;
+                let __auth_state = self.inner.auth_state();
+                __auth_state.#name.set_manual(value).await;
+                Ok(())
+            }
+
+            #[inline]
+            pub async fn #set_name(&self, value: #output_ty) {
+                let __auth_state = self.inner.auth_state();
+                __auth_state.#name.set_manual(value).await;
+            }
+
+            #[inline]
+            pub async fn #clear_name(&self) {
+                let __auth_state = self.inner.auth_state();
+                __auth_state.#name.clear_manual().await;
+            }
+
+            #[inline]
+            pub async fn #has_name(&self) -> bool {
+                let __auth_state = self.inner.auth_state();
+                __auth_state.#name.has_value().await
+            }
+        })
+    });
 
     quote! {
         #[derive(Clone)]
@@ -1094,6 +1169,7 @@ fn emit_client_wrapper(
         impl<T: ::concord_core::prelude::Transport> #client_ty<T> {
             #( #var_setters )*
             #( #auth_setters )*
+            #( #credential_lifecycle_methods )*
 
             #[inline]
             pub fn debug_level(&self) -> ::concord_core::prelude::DebugLevel { self.inner.debug_level() }

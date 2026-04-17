@@ -121,7 +121,7 @@ A normal request follows this order:
 9. Send through transport.
 10. Classify response status and read the body.
 11. Run post-response hooks.
-12. Let auth inspect the response and retry when needed.
+12. Let auth inspect the response, then invalidate and/or retry per auth policy.
 13. Update cache after auth accepts the response.
 14. Decode and map the response.
 
@@ -142,6 +142,19 @@ clone.request(endpoints::Ping::new()).execute().await?;
 ```
 
 The cloned request uses the updated secret.
+
+Endpoint-backed manual credentials share state the same way:
+
+```rust
+let api = protected_api::ProtectedApi::new();
+let clone = api.clone();
+
+api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
+assert!(clone.has_auth_session().await);
+
+clone.clear_auth_session().await;
+assert!(!api.has_auth_session().await);
+```
 
 ## Debug output
 

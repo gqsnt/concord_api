@@ -1396,3 +1396,118 @@ async fn duplicate_usage_ids_do_not_misattribute_applied_part() {
     assert_request(&reqs[1]).header(AUTHORIZATION, "Bearer b:good");
     h.finish();
 }
+
+#[derive(Clone)]
+struct ManualSessionCx;
+
+#[derive(Clone)]
+struct ManualSessionState {
+    session: Arc<CredentialSlot<ManualSessionCx, ManualCredentialProvider<AccessToken>>>,
+}
+
+impl ClientContext for ManualSessionCx {
+    type Vars = ();
+    type AuthVars = ();
+    type AuthState = ManualSessionState;
+
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {
+        Self::AuthState {
+            session: Arc::new(CredentialSlot::new(ManualCredentialProvider::new(
+                CredentialId::new("manual-session", "session"),
+            ))),
+        }
+    }
+}
+
+struct ManualSessionAuthPart;
+
+impl AuthPart<ManualSessionCx, ManualSessionPing> for ManualSessionAuthPart {
+    type Ctrl = UseCredential<ManualSessionCx, ManualCredentialProvider<AccessToken>, BearerAuth>;
+
+    fn controller(
+        ctx: AuthBuildContext<'_, ManualSessionCx>,
+        _ep: &ManualSessionPing,
+    ) -> Result<Self::Ctrl, ApiClientError> {
+        Ok(
+            UseCredential::new(ctx.auth_state.session.clone(), BearerAuth::new()).with_policy(
+                AuthStepPolicy {
+                    retry_on_unauthorized: false,
+                    retry_on_challenge_rejection: false,
+                    invalidate_on_unauthorized: true,
+                    invalidate_on_challenge_rejection: true,
+                    ..AuthStepPolicy::default()
+                },
+            ),
+        )
+    }
+}
+
+struct ManualSessionPing;
+
+impl Endpoint<ManualSessionCx> for ManualSessionPing {
+    const METHOD: http::Method = http::Method::GET;
+
+    type Route = concord_core::internal::NoRoute;
+    type Policy = concord_core::internal::NoPolicy;
+    type Auth = ManualSessionAuthPart;
+    type Pagination = concord_core::internal::NoPagination;
+    type Body = concord_core::internal::NoBody;
+    type Response = concord_core::internal::Decoded<Json, ()>;
+}
+
+#[tokio::test]
+async fn manual_credential_can_invalidate_without_auto_retry() {
+    let unauthorized = MockReply::status(http::StatusCode::UNAUTHORIZED).with_header(
+        WWW_AUTHENTICATE,
+        http::HeaderValue::from_static("Bearer error=\"invalid_token\""),
+    );
+    let (transport, h) = mock().reply(unauthorized).build();
+    let api = ApiClient::<ManualSessionCx, _>::with_transport((), (), transport);
+
+    let auth_state = api.auth_state();
+    auth_state
+        .session
+        .set_manual(AccessToken::new("manual-seed"))
+        .await;
+    assert!(auth_state.session.has_value().await);
+
+    let err = api
+        .request(ManualSessionPing)
+        .execute()
+        .await
+        .expect_err("manual credential request should surface 401 without auth retry");
+    match err {
+        ApiClientError::HttpStatus { status, .. } => {
+            assert_eq!(status, http::StatusCode::UNAUTHORIZED)
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+    assert!(
+        !auth_state.session.has_value().await,
+        "401 rejection must invalidate manual credential state"
+    );
+
+    let err = api
+        .request(ManualSessionPing)
+        .execute()
+        .await
+        .expect_err("after invalidation, slot should report missing credential");
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::MissingCredential);
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    let reqs = h.recorded();
+    assert_eq!(
+        reqs.len(),
+        1,
+        "no auth retry and no second send after missing"
+    );
+    assert_request(&reqs[0]).header(AUTHORIZATION, "Bearer manual-seed");
+    h.finish();
+}

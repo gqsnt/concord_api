@@ -94,6 +94,10 @@ pub struct AuthStepPolicy {
     pub retry_on_unauthorized: bool,
     pub max_auth_retries: u8,
     pub retry_on_forbidden: bool,
+    pub retry_on_challenge_rejection: bool,
+    pub invalidate_on_unauthorized: bool,
+    pub invalidate_on_forbidden: bool,
+    pub invalidate_on_challenge_rejection: bool,
 }
 
 impl Default for AuthStepPolicy {
@@ -103,6 +107,10 @@ impl Default for AuthStepPolicy {
             retry_on_unauthorized: true,
             max_auth_retries: 1,
             retry_on_forbidden: false,
+            retry_on_challenge_rejection: true,
+            invalidate_on_unauthorized: true,
+            invalidate_on_forbidden: false,
+            invalidate_on_challenge_rejection: true,
         }
     }
 }
@@ -121,6 +129,7 @@ enum CredentialSlotState<T> {
     },
     Refreshing {
         notify: Arc<Notify>,
+        generation: u64,
     },
     Failed {
         generation: u64,
@@ -198,6 +207,7 @@ where
                             .unwrap_or(CredentialRefreshReason::ExpiringSoon);
                         *state = CredentialSlotState::Refreshing {
                             notify: notify.clone(),
+                            generation,
                         };
                         SlotAction::Refresh {
                             current,
@@ -221,6 +231,7 @@ where
                         let generation = *generation;
                         *state = CredentialSlotState::Refreshing {
                             notify: notify.clone(),
+                            generation,
                         };
                         SlotAction::Acquire { generation, notify }
                     }
@@ -228,6 +239,7 @@ where
                         let notify = Arc::new(Notify::new());
                         *state = CredentialSlotState::Refreshing {
                             notify: notify.clone(),
+                            generation: 0,
                         };
                         SlotAction::Acquire {
                             generation: 0,
@@ -286,6 +298,53 @@ where
             .await
     }
 
+    pub async fn set_manual(&self, value: P::Credential) {
+        let notify = {
+            let mut state = self.state.lock().await;
+            let generation = next_generation(&*state);
+            let notify = match &*state {
+                CredentialSlotState::Refreshing { notify, .. } => Some(notify.clone()),
+                _ => None,
+            };
+            *state = CredentialSlotState::Valid { value, generation };
+            notify
+        };
+        if let Some(notify) = notify {
+            notify.notify_waiters();
+        }
+    }
+
+    pub async fn clear_manual(&self) {
+        let notify = {
+            let mut state = self.state.lock().await;
+            let notify = match &*state {
+                CredentialSlotState::Refreshing { notify, .. } => Some(notify.clone()),
+                _ => None,
+            };
+            *state = CredentialSlotState::Empty;
+            notify
+        };
+        if let Some(notify) = notify {
+            notify.notify_waiters();
+        }
+    }
+
+    pub async fn has_value(&self) -> bool {
+        let state = self.state.lock().await;
+        matches!(*state, CredentialSlotState::Valid { .. })
+    }
+
+    pub async fn get_cached(&self) -> Option<CredentialLease<P::Credential>> {
+        let state = self.state.lock().await;
+        match &*state {
+            CredentialSlotState::Valid { value, generation } => Some(CredentialLease {
+                value: value.clone(),
+                generation: *generation,
+            }),
+            _ => None,
+        }
+    }
+
     async fn commit_slot_result(
         &self,
         previous_generation: u64,
@@ -330,4 +389,13 @@ fn credential_refresh_reason<T: CredentialMaterial>(
             None
         }
     })
+}
+
+fn next_generation<T>(state: &CredentialSlotState<T>) -> u64 {
+    match state {
+        CredentialSlotState::Empty => 1,
+        CredentialSlotState::Valid { generation, .. }
+        | CredentialSlotState::Refreshing { generation, .. }
+        | CredentialSlotState::Failed { generation, .. } => generation.saturating_add(1),
+    }
 }

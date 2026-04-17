@@ -103,7 +103,7 @@ The runtime request pipeline is intentionally ordered:
 7. Acquire rate-limit permits.
 8. Send through transport.
 9. Classify the response and handle retries.
-10. Let auth inspect responses and retry auth when needed.
+10. Let auth inspect responses and decide invalidation and retry.
 11. Update cache after accepted responses.
 12. Decode the body and apply endpoint mapping.
 
@@ -114,5 +114,6 @@ This ordering matters. A fresh cache hit skips inflight coordination, rate-limit
 The examples are the best executable reference:
 
 - `concord_examples/src/test_api.rs` shows a small JSONPlaceholder-style API.
+- `concord_examples/src/auth_session.rs` shows endpoint-backed manual session auth (`Endpoint(...)` + `acquire_auth_*`).
 - `concord_examples/src/riot.rs` shows a large nested real-world API with auth, host routing, rate-limit profiles, and pagination.
 - `concord_examples/tests/*` covers behavior for routing, headers, query, auth, retry, rate limit, cache, pagination, response mapping, body handling, and status constraints.

@@ -1,12 +1,11 @@
-use super::credentials::{CredentialContext, CredentialProvider};
-use super::errors::AuthError;
+use super::credentials::{CredentialContext, CredentialMaterial, CredentialProvider};
+use super::errors::{AuthError, AuthErrorKind};
 use super::future::AuthFuture;
 use super::ids::CredentialId;
 use super::materials::{AccessToken, ApiKey, BasicCredential};
 use crate::client::ClientContext;
+use std::marker::PhantomData;
 
-#[cfg(feature = "json")]
-use super::errors::AuthErrorKind;
 #[cfg(feature = "json")]
 use super::http::{AuthHttpRequest, AuthInternalPolicy, AuthMode};
 #[cfg(feature = "json")]
@@ -109,6 +108,59 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for StaticBasicProvider {
         _ctx: CredentialContext<'a, Cx>,
     ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
         Box::pin(async move { Ok(self.credential.clone()) })
+    }
+}
+
+#[derive(Clone)]
+pub struct ManualCredentialProvider<M: CredentialMaterial> {
+    id: CredentialId,
+    missing_hint: Option<&'static str>,
+    _material: PhantomData<fn() -> M>,
+}
+
+impl<M: CredentialMaterial> ManualCredentialProvider<M> {
+    #[inline]
+    pub fn new(id: CredentialId) -> Self {
+        Self {
+            id,
+            missing_hint: None,
+            _material: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn with_missing_hint(mut self, hint: &'static str) -> Self {
+        self.missing_hint = Some(hint);
+        self
+    }
+}
+
+impl<Cx, M> CredentialProvider<Cx> for ManualCredentialProvider<M>
+where
+    Cx: ClientContext,
+    M: CredentialMaterial,
+{
+    type Credential = M;
+
+    fn id(&self) -> CredentialId {
+        self.id.clone()
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        ctx: CredentialContext<'a, Cx>,
+    ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
+        Box::pin(async move {
+            let message = if let Some(hint) = self.missing_hint {
+                format!(
+                    "missing credential `{}`; call `{hint}` first",
+                    ctx.credential_id.name()
+                )
+            } else {
+                format!("missing credential `{}`", ctx.credential_id.name())
+            };
+            Err(AuthError::new(AuthErrorKind::MissingCredential, message))
+        })
     }
 }
 

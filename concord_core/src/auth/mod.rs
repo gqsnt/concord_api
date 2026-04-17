@@ -28,7 +28,9 @@ pub use ids::{AuthIdentity, AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential, ClientCertificate};
 #[cfg(feature = "json")]
 pub use providers::OAuth2ClientCredentialsProvider;
-pub use providers::{StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider};
+pub use providers::{
+    ManualCredentialProvider, StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider,
+};
 pub use usage::{
     AuthApplyContext, AuthChallengeContext, AuthChallengeDecision, AuthUsage, BasicAuth,
     BearerAuth, CertificateAuth, HeaderAuth, QueryAuth, UseCredential, UseCredentialState,

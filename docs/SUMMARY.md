@@ -15,3 +15,5 @@
 - [12. Runtime Client](12-runtime-client.md)
 - [13. Testing and Debugging](13-testing-and-debugging.md)
 - [14. Customization and Extension Points](14-customization.md)
+- [15. Authentication Evolution](15-auth-evolution.md)
+- [16. Authentication System Blueprint](16-auth-system-blueprint.md)

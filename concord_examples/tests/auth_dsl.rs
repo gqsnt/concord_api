@@ -1,7 +1,7 @@
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
-use http::header::{AUTHORIZATION, CONTENT_TYPE};
+use http::header::{AUTHORIZATION, CONTENT_TYPE, WWW_AUTHENTICATE};
 
 #[derive(Clone)]
 pub struct DslStaticTokenProvider;
@@ -176,6 +176,16 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for DslCertificateProvider {
     ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
         Box::pin(async move { Ok(ClientCertificate::new("dsl-cert-identity")) })
     }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct DslSessionLoginRequest {
+    username: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct DslSessionLoginResponse {
+    access_token: String,
 }
 
 #[tokio::test]
@@ -588,6 +598,195 @@ async fn custom_provider_secret_update_rebuilds_state() {
     assert_eq!(reqs.len(), 2);
     assert_request(&reqs[0]).header("x-api-key", "tok1");
     assert_request(&reqs[1]).header("x-api-key", "tok2");
+    h.finish();
+}
+
+#[tokio::test]
+async fn endpoint_backed_manual_credential_requires_explicit_acquire_and_shares_lifecycle() {
+    api! {
+        client ApiDslEndpointManual {
+            scheme: https,
+            host: "example.com",
+            auth {
+                credential session: Endpoint(LoginForSession)
+            }
+        }
+
+        POST LoginForSession {
+            path["login"]
+            body Json<DslSessionLoginRequest>
+            -> Json<DslSessionLoginResponse> | AccessToken => {
+                AccessToken::new(r.access_token)
+            };
+        }
+
+        GET Protected {
+            path["protected"]
+            use_auth BearerAuth(session)
+            -> Json<()>;
+        }
+    }
+
+    use api_dsl_endpoint_manual::*;
+
+    let token_body = json_bytes(&DslSessionLoginResponse {
+        access_token: "session-token".to_string(),
+    });
+    let (transport, h) = mock()
+        .replies([
+            MockReply::ok_json(token_body),
+            MockReply::ok_json(json_bytes(&())),
+            MockReply::ok_json(json_bytes(&())),
+        ])
+        .build();
+    let api = ApiDslEndpointManual::new_with_transport(transport);
+
+    let err = api
+        .request(endpoints::Protected::new())
+        .execute()
+        .await
+        .expect_err("manual credential must fail before acquisition");
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::MissingCredential);
+            assert!(source.message.contains("acquire_auth_session"));
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+    assert_eq!(
+        h.recorded().len(),
+        0,
+        "missing credential should fail before transport"
+    );
+
+    api.acquire_auth_session(endpoints::LoginForSession::new(DslSessionLoginRequest {
+        username: "alice".to_string(),
+    }))
+    .await
+    .unwrap();
+    assert!(api.has_auth_session().await);
+
+    api.request(endpoints::Protected::new())
+        .execute()
+        .await
+        .unwrap();
+    let clone = api.clone();
+    clone
+        .request(endpoints::Protected::new())
+        .execute()
+        .await
+        .unwrap();
+    assert!(clone.has_auth_session().await);
+
+    api.clear_auth_session().await;
+    assert!(!clone.has_auth_session().await);
+
+    let err = clone
+        .request(endpoints::Protected::new())
+        .execute()
+        .await
+        .expect_err("cleared credential must fail");
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::MissingCredential);
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    let reqs = h.recorded();
+    assert_eq!(reqs.len(), 3);
+    assert_request(&reqs[0]).path("/login");
+    assert_eq!(
+        std::str::from_utf8(reqs[0].body.as_ref().expect("login body")).unwrap(),
+        "{\"username\":\"alice\"}"
+    );
+    assert_request(&reqs[1]).header(AUTHORIZATION, "Bearer session-token");
+    assert_request(&reqs[2]).header(AUTHORIZATION, "Bearer session-token");
+    h.finish();
+}
+
+#[tokio::test]
+async fn endpoint_backed_manual_credential_401_invalidates_without_auto_retry_and_login_can_use_auth()
+ {
+    api! {
+        client ApiDslEndpointManualInvalidation {
+            scheme: https,
+            host: "example.com",
+            secret {
+                upstream_key: String
+            }
+            auth {
+                credential upstream: ApiKey(secret.upstream_key)
+                credential session: Endpoint(LoginForSession)
+            }
+        }
+
+        POST LoginForSession {
+            path["login"]
+            use_auth HeaderAuth("X-Upstream-Key", upstream)
+            -> Json<DslSessionLoginResponse> | AccessToken => {
+                AccessToken::new(r.access_token)
+            };
+        }
+
+        GET Protected {
+            path["protected"]
+            use_auth BearerAuth(session)
+            -> Json<()>;
+        }
+    }
+
+    use api_dsl_endpoint_manual_invalidation::*;
+
+    let unauthorized = MockReply::status(http::StatusCode::UNAUTHORIZED).with_header(
+        WWW_AUTHENTICATE,
+        http::HeaderValue::from_static("Bearer error=\"invalid_token\""),
+    );
+    let token_body = json_bytes(&DslSessionLoginResponse {
+        access_token: "session-token".to_string(),
+    });
+    let (transport, h) = mock()
+        .replies([MockReply::ok_json(token_body), unauthorized])
+        .build();
+    let api = ApiDslEndpointManualInvalidation::new_with_transport("up-key".to_string(), transport);
+
+    api.acquire_auth_session(endpoints::LoginForSession::new())
+        .await
+        .unwrap();
+    assert!(api.has_auth_session().await);
+
+    let err = api
+        .request(endpoints::Protected::new())
+        .execute()
+        .await
+        .expect_err("401 should bubble without auth auto-retry for manual endpoint credentials");
+    match err {
+        ApiClientError::HttpStatus { status, .. } => {
+            assert_eq!(status, http::StatusCode::UNAUTHORIZED)
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+    assert!(
+        !api.has_auth_session().await,
+        "401 rejection should invalidate manual credential"
+    );
+
+    let err = api
+        .request(endpoints::Protected::new())
+        .execute()
+        .await
+        .expect_err("after invalidation, missing credential should fail before send");
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::MissingCredential);
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    let reqs = h.recorded();
+    assert_eq!(reqs.len(), 2, "no auth retry should be attempted");
+    assert_request(&reqs[0]).header("x-upstream-key", "up-key");
+    assert_request(&reqs[1]).header(AUTHORIZATION, "Bearer session-token");
     h.finish();
 }
 

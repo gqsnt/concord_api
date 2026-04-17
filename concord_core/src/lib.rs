@@ -49,10 +49,10 @@ pub mod prelude {
         AuthStepPolicy, AuthUsage, AuthUsageId, BasicAuth, BasicCredential, BearerAuth,
         CertificateAuth, ClientCertificate, CredentialContext, CredentialId, CredentialLease,
         CredentialMaterial, CredentialProvider, CredentialRefreshReason, CredentialSlot,
-        HeaderAuth, InvalidateReason, NoAuth, NoAuthController, NoAuthState, OneOfAuth,
-        OneOfAuthController, OneOfAuthState, QueryAuth, SecretCredential, StaticApiKeyProvider,
-        StaticBasicProvider, StaticBearerProvider, TransportAuth, UseCredential,
-        UseCredentialState,
+        HeaderAuth, InvalidateReason, ManualCredentialProvider, NoAuth, NoAuthController,
+        NoAuthState, OneOfAuth, OneOfAuthController, OneOfAuthState, QueryAuth, SecretCredential,
+        StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider, TransportAuth,
+        UseCredential, UseCredentialState,
     };
     pub use crate::cache::{
         CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,

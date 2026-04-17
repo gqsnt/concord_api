@@ -118,6 +118,8 @@ Use these only for low-level endpoints that implement `Endpoint` by hand. For ma
 
 Implement `CredentialProvider<Cx>` when the client must obtain credentials from somewhere other than static secrets.
 
+For simple login endpoints declared in the DSL, prefer `credential x: Endpoint(LoginEndpoint)` first. It reuses endpoint response mapping and generates explicit lifecycle helpers (`acquire_auth_*`, `set_auth_*_value`, `has_auth_*`, `clear_auth_*`) without custom provider code.
+
 ```rust
 #[derive(Clone)]
 pub struct StaticTokenProvider;
@@ -193,6 +195,8 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for StaticTokenProvider {
 ## Custom Auth Provider With Internal HTTP
 
 A provider can call `ctx.executor.send(...)` to perform login, refresh, or discovery requests with the same transport stack.
+
+Use this pattern when auth acquisition cannot be modeled as a normal DSL endpoint, or when acquisition must use provider-level `AuthMode` controls (`SkipAuth` or explicit internal `UseAuth` requirements).
 
 ```rust
 #[derive(Clone)]

@@ -59,6 +59,9 @@ pub enum AuthCredentialKind {
         client_secret: SecretRef,
         scope: Option<LitStr>,
     },
+    Endpoint {
+        endpoint: Ident,
+    },
     Custom {
         provider_ty: Type,
         provider: Expr,

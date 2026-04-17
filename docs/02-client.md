@@ -91,6 +91,17 @@ api.set_api_key("rotated-key");
 
 Use `secret` values for credentials only. Use `vars` for ordinary configuration.
 
+For endpoint-backed manual credentials, generated clients also expose async lifecycle helpers:
+
+```rust
+api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
+api.set_auth_session_value(AccessToken::new("seed")).await;
+let has = api.has_auth_session().await;
+api.clear_auth_session().await;
+```
+
+`acquire_auth_*` performs network I/O. `set/has/clear` only manipulate shared credential state.
+
 ## Global policy blocks
 
 A client can define default headers, query parameters, timeout, retry profiles, rate-limit profiles, cache profiles, and authentication.

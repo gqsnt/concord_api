@@ -23,6 +23,8 @@ For focused topics:
 - [Pagination](11-pagination.md)
 - [Testing and Debugging](13-testing-and-debugging.md)
 - [Customization and Extension Points](14-customization.md)
+- [Authentication Evolution](15-auth-evolution.md)
+- [Authentication System Blueprint](16-auth-system-blueprint.md)
 
 Most examples assume these imports:
 
