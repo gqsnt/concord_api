@@ -175,6 +175,7 @@ pub struct EndpointDef {
     pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
+    pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
 
     pub paginate: Option<PaginateSpec>,
     pub body: Option<CodecSpec>,
@@ -317,6 +318,7 @@ pub struct RateLimitPlanSpec {
 pub struct RateLimitBucketSpec {
     pub kind: Ident,
     pub key: Vec<RateLimitKeySpec>,
+    pub cost: Option<LitInt>,
     pub windows: Vec<RateLimitWindowSpec>,
 }
 

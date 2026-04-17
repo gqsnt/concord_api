@@ -519,6 +519,14 @@ let api = rate_limit_dsl_api::RateLimitDslApi::new()
     .with_rate_limiter(Arc::new(RecordingLimiter::default()));
 ```
 
+For the built-in governor limiter, window memory can be tuned:
+
+```rust
+let limiter = GovernorRateLimiter::new()
+    .with_max_window_entries(4096)
+    .with_window_idle_ttl(core::time::Duration::from_secs(15 * 60));
+```
+
 `acquire` runs before transport. Return a `RateLimitPermit` when the request is allowed. Return an `ApiClientError` to fail the request before transport.
 
 `on_response` runs after a response and can store cooldown state or return a limited action.
@@ -562,6 +570,8 @@ impl RateLimitResponsePolicy for HeaderScopePolicy {
     }
 }
 ```
+
+`parse_retry_after` supports both delta-seconds and HTTP-date forms.
 
 Reference it from the DSL.
 

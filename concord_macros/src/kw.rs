@@ -38,6 +38,7 @@ syn::custom_keyword!(custom);
 syn::custom_keyword!(bucket);
 syn::custom_keyword!(by);
 syn::custom_keyword!(key);
+syn::custom_keyword!(cost);
 syn::custom_keyword!(limit);
 syn::custom_keyword!(every);
 syn::custom_keyword!(second);

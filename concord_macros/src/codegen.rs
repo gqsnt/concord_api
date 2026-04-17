@@ -1682,6 +1682,7 @@ fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> Tok
         let kind = LitStr::new(&bucket.kind, Span::call_site());
         let name = LitStr::new(&bucket.name, Span::call_site());
         let key = emit_rate_limit_key(&bucket.key, ctx);
+        let cost = bucket.cost;
         let windows = bucket.windows.iter().map(|window| {
             let max = window.max;
             let per_secs = window.per_secs;
@@ -1694,6 +1695,7 @@ fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> Tok
         });
         quote! {
             ::concord_core::prelude::RateLimitBucketUse::new(#kind, #name, #key)
+                .with_cost(::std::num::NonZeroU32::new(#cost).expect("validated non-zero rate limit cost"))
                 .with_windows(::std::vec![ #( #windows ),* ])
         }
     });
@@ -1713,7 +1715,7 @@ fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> Tok
         RateLimitKeyResolved::Method => {
             quote! { ::concord_core::prelude::RateLimitKeyPart::method() }
         }
-        RateLimitKeyResolved::Named { name } => {
+        RateLimitKeyResolved::Named { name, .. } => {
             let name = LitStr::new(name, Span::call_site());
             quote! {
                 compile_error!(concat!("unresolved rate_limit key `", #name, "`"))

@@ -3,6 +3,7 @@ use http::StatusCode;
 use http::header::RETRY_AFTER;
 use std::borrow::Cow;
 use std::time::Duration;
+use std::time::SystemTime;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum RateLimitResponseAction {
@@ -170,6 +171,42 @@ impl RateLimitResponsePolicy for DefaultRateLimitResponsePolicy {
 
 pub fn parse_retry_after(headers: &http::HeaderMap) -> Option<Duration> {
     let raw = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
-    let seconds = raw.parse::<u64>().ok()?;
-    Some(Duration::from_secs(seconds))
+    if let Ok(seconds) = raw.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+
+    let when = httpdate::parse_http_date(raw).ok()?;
+    match when.duration_since(SystemTime::now()) {
+        Ok(delay) => Some(delay),
+        Err(_) => Some(Duration::ZERO),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::HeaderMap;
+    use http::HeaderValue;
+    use std::time::Duration;
+    use std::time::SystemTime;
+
+    #[test]
+    fn retry_after_parses_delta_seconds() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("5"));
+        assert_eq!(parse_retry_after(&headers), Some(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn retry_after_parses_http_date() {
+        let mut headers = HeaderMap::new();
+        let when = SystemTime::now() + Duration::from_secs(3);
+        let value = httpdate::fmt_http_date(when);
+        headers.insert(
+            RETRY_AFTER,
+            HeaderValue::from_str(&value).expect("valid retry-after header value"),
+        );
+        let delay = parse_retry_after(&headers).expect("retry-after delay");
+        assert!(delay <= Duration::from_secs(3));
+    }
 }

@@ -14,6 +14,7 @@ base64.workspace = true
 thiserror.workspace = true
 url.workspace = true
 urlencoding.workspace = true
+httpdate.workspace = true
 tokio.workspace = true
 governor = { workspace = true, optional = true }
 moka = { workspace = true, default-features = false, features = [

@@ -243,6 +243,7 @@ pub struct RateLimitBucketResolved {
     pub kind: String,
     pub name: String,
     pub key: Vec<RateLimitKeyResolved>,
+    pub cost: u32,
     pub windows: Vec<RateLimitWindowResolved>,
 }
 
@@ -251,7 +252,7 @@ pub enum RateLimitKeyResolved {
     RouteHost,
     Endpoint,
     Method,
-    Named { name: String },
+    Named { name: String, span: Span },
     EpField { name: String, field: Ident },
     Static { name: String, value: String },
 }
@@ -485,7 +486,9 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
 
     let cache_store_enabled = policy_uses_cache(&client_policy)
         || layers.iter().any(|layer| policy_uses_cache(&layer.policy))
-        || endpoints.iter().any(|endpoint| policy_uses_cache(&endpoint.policy));
+        || endpoints
+            .iter()
+            .any(|endpoint| policy_uses_cache(&endpoint.policy));
     let cache_store_config = match &client_policy.cache {
         Some(CacheResolved::Set(config)) => Some(config.clone()),
         Some(CacheResolved::Patch(patch)) => Some(cache_config_from_patch(patch)),
@@ -1649,6 +1652,7 @@ fn resolve_rate_limit_plan_spec(
     plan: &RateLimitPlanSpec,
     default_bucket_name: &str,
 ) -> Result<RateLimitPlanResolved> {
+    const NANOS_PER_SECOND: u128 = 1_000_000_000;
     let mut out = RateLimitPlanResolved::default();
     for (idx, bucket) in plan.buckets.iter().enumerate() {
         if bucket.windows.is_empty() {
@@ -1657,6 +1661,18 @@ fn resolve_rate_limit_plan_spec(
                 "rate_limit bucket must contain at least one `limit`",
             ));
         }
+        let cost = if let Some(cost_lit) = &bucket.cost {
+            let cost = cost_lit.base10_parse::<u32>()?;
+            if cost == 0 {
+                return Err(syn::Error::new(
+                    cost_lit.span(),
+                    "rate_limit bucket cost must be greater than zero",
+                ));
+            }
+            cost
+        } else {
+            1
+        };
         let mut windows = Vec::new();
         for window in &bucket.windows {
             let max = window.max.base10_parse::<u32>()?;
@@ -1677,15 +1693,27 @@ fn resolve_rate_limit_plan_spec(
                 RateLimitDurationUnit::Seconds => 1,
                 RateLimitDurationUnit::Minutes => 60,
             };
-            windows.push(RateLimitWindowResolved {
-                max,
-                per_secs: amount.saturating_mul(multiplier),
-            });
+            let per_secs = amount.checked_mul(multiplier).ok_or_else(|| {
+                syn::Error::new(window.every.span(), "rate_limit duration is too large")
+            })?;
+            let per_nanos = (per_secs as u128)
+                .checked_mul(NANOS_PER_SECOND)
+                .ok_or_else(|| {
+                    syn::Error::new(window.every.span(), "rate_limit duration is too large")
+                })?;
+            if max as u128 > per_nanos {
+                return Err(syn::Error::new(
+                    window.max.span(),
+                    "rate_limit window is too small for max; reduce `limit` or increase `every`",
+                ));
+            }
+            windows.push(RateLimitWindowResolved { max, per_secs });
         }
         out.buckets.push(RateLimitBucketResolved {
             kind: bucket.kind.to_string(),
             name: format!("{default_bucket_name}_{idx}"),
             key: bucket.key.iter().map(resolve_rate_limit_key_spec).collect(),
+            cost,
             windows,
         });
     }
@@ -1699,6 +1727,7 @@ fn resolve_rate_limit_key_spec(spec: &RateLimitKeySpec) -> RateLimitKeyResolved 
         RateLimitKeySpec::Method => RateLimitKeyResolved::Method,
         RateLimitKeySpec::Named(name) => RateLimitKeyResolved::Named {
             name: name.to_string(),
+            span: name.span(),
         },
         RateLimitKeySpec::Static(value) => RateLimitKeyResolved::Static {
             name: "static".to_string(),
@@ -1714,7 +1743,7 @@ fn materialize_rate_limit_plan(
 ) -> Result<RateLimitPlanResolved> {
     for bucket in &mut plan.buckets {
         for key in &mut bucket.key {
-            let RateLimitKeyResolved::Named { name } = key else {
+            let RateLimitKeyResolved::Named { name, span } = key else {
                 continue;
             };
             if let Some(binding) = visible_keys.get(name) {
@@ -1726,13 +1755,13 @@ fn materialize_rate_limit_plan(
             }
             let Some(vars) = endpoint_vars else {
                 return Err(syn::Error::new(
-                    Span::call_site(),
+                    *span,
                     format!("rate_limit key `{name}` requires endpoint/scope params"),
                 ));
             };
             let Some(var) = vars.get(name) else {
                 return Err(syn::Error::new(
-                    Span::call_site(),
+                    *span,
                     format!("unknown rate_limit key `{name}`"),
                 ));
             };
@@ -2230,7 +2259,13 @@ fn analyze_endpoint(
     )?;
     policy.retry = resolve_retry_spec(ed.retry.as_ref(), retry_profiles)?;
     policy.cache = resolve_cache_spec(ed.cache.as_ref(), cache_profiles)?;
-    let visible_keys = rate_limit_key_bindings_for_ancestry(ancestry, layers);
+    let endpoint_decls = ep_vars.values().cloned().collect::<Vec<_>>();
+    let endpoint_key_bindings =
+        resolve_rate_limit_key_bindings(&ed.rate_limit_keys, &endpoint_decls)?;
+    let mut visible_keys = rate_limit_key_bindings_for_ancestry(ancestry, layers);
+    for binding in endpoint_key_bindings {
+        visible_keys.insert(binding.name.clone(), binding);
+    }
     policy.rate_limit = resolve_rate_limit_spec(
         ed.rate_limit.as_ref(),
         rate_limit_profiles,

@@ -180,7 +180,7 @@ fn ui() {
 }
 ```
 
-Use compile-fail tests for macro diagnostics: missing placeholder types, duplicate variables, invalid references (including unknown auth endpoints), recursive endpoint-backed credential dependencies, endpoint output types that do not satisfy credential material bounds, unsupported policy syntax, or cache feature requirements.
+Use compile-fail tests for macro diagnostics: missing placeholder types, duplicate variables, invalid references (including unknown auth endpoints or unknown rate-limit keys), recursive endpoint-backed credential dependencies, endpoint output types that do not satisfy credential material bounds, unsupported policy syntax, impossible rate-limit windows, invalid bucket cost, or cache feature requirements.
 
 ## Debugging generated behavior
 

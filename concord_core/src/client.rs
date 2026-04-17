@@ -502,9 +502,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         Some(CacheAfter::Updated(updated)) => Some(updated.clone()),
                         _ => None,
                     };
-                    if was_revalidation_304
-                        && maybe_updated.is_none()
-                        && !used_revalidation_refetch
+                    if was_revalidation_304 && maybe_updated.is_none() && !used_revalidation_refetch
                     {
                         used_revalidation_refetch = true;
                         force_cache_refresh_for_next_attempt = true;
@@ -643,7 +641,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
 
         // Compute parts after patch (Content-Type may have been added/removed there).
-        let (mut headers, query, timeout, cache, retry, rate_limit) = policy.into_parts();
+        let (mut headers, query, timeout, cache, retry, mut rate_limit) = policy.into_parts();
+        rate_limit.canonicalize();
 
         // URL
         route.host().validate(ctx.clone())?;

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::time::Duration;
 
@@ -36,6 +37,18 @@ impl RateLimitPlan {
     #[inline]
     pub fn extend(&mut self, other: RateLimitPlan) {
         self.buckets.extend(other.buckets);
+    }
+
+    #[inline]
+    pub fn canonicalize(&mut self) {
+        let mut seen: HashSet<RateLimitBucketUse> = HashSet::with_capacity(self.buckets.len());
+        self.buckets.retain(|bucket| seen.insert(bucket.clone()));
+    }
+
+    #[inline]
+    pub fn canonicalized(mut self) -> Self {
+        self.canonicalize();
+        self
     }
 }
 

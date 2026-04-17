@@ -1,0 +1,5 @@
+error: expected integer literal
+  --> tests/ui/rate_limit_bucket_cost_non_integer.rs:12:22
+   |
+12 |                 cost true // ERROR: expected integer literal
+   |                      ^^^^

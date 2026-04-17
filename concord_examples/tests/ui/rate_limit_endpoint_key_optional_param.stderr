@@ -1,0 +1,5 @@
+error: rate_limit key binding cannot target an optional param
+  --> tests/ui/rate_limit_endpoint_key_optional_param.rs:18:33
+   |
+18 |         rate_limit key region = region // ERROR: optional param
+   |                                 ^^^^^^

@@ -1181,9 +1181,19 @@ fn parse_rate_limit_bucket(input: ParseStream<'_>) -> Result<RateLimitBucketSpec
     let content;
     braced!(content in input);
 
+    let mut cost = None;
     let mut windows = Vec::new();
     while !content.is_empty() {
-        if content.peek(kw::limit) {
+        if content.peek(kw::cost) {
+            if cost.is_some() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "duplicate rate_limit bucket cost",
+                ));
+            }
+            content.parse::<kw::cost>()?;
+            cost = Some(content.parse::<LitInt>()?);
+        } else if content.peek(kw::limit) {
             content.parse::<kw::limit>()?;
             let max: LitInt = content.parse()?;
             content.parse::<kw::every>()?;
@@ -1194,13 +1204,18 @@ fn parse_rate_limit_bucket(input: ParseStream<'_>) -> Result<RateLimitBucketSpec
             let tt: TokenTree = content.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "unexpected token in rate_limit bucket; expected `limit`",
+                "unexpected token in rate_limit bucket; expected `cost` or `limit`",
             ));
         }
         let _ = content.parse::<Option<Token![,]>>()?;
     }
 
-    Ok(RateLimitBucketSpec { kind, key, windows })
+    Ok(RateLimitBucketSpec {
+        kind,
+        key,
+        cost,
+        windows,
+    })
 }
 
 fn parse_rate_limit_key_list(input: ParseStream<'_>) -> Result<Vec<RateLimitKeySpec>> {
@@ -1681,6 +1696,7 @@ impl Parse for EndpointDef {
             let mut cache: Option<CacheSpec> = None;
             let mut retry: Option<RetrySpec> = None;
             let mut rate_limit: Option<RateLimitSpec> = None;
+            let mut rate_limit_keys = Vec::new();
             let mut paginate: Option<PaginateSpec> = None;
             let mut body: Option<CodecSpec> = None;
             let mut response: Option<CodecSpec> = None;
@@ -1758,13 +1774,19 @@ impl Parse for EndpointDef {
                     }
                     let _ = content.parse::<Option<Token![,]>>()?;
                 } else if content.peek(kw::rate_limit) {
-                    if rate_limit.is_some() {
-                        return Err(syn::Error::new(
-                            name.span(),
-                            "duplicate rate_limit policy in endpoint",
-                        ));
+                    let fork = content.fork();
+                    fork.parse::<kw::rate_limit>()?;
+                    if fork.peek(kw::key) {
+                        rate_limit_keys.push(parse_rate_limit_key_binding(&content)?);
+                    } else {
+                        if rate_limit.is_some() {
+                            return Err(syn::Error::new(
+                                name.span(),
+                                "duplicate rate_limit policy in endpoint",
+                            ));
+                        }
+                        rate_limit = Some(parse_rate_limit_spec(&content)?);
                     }
-                    rate_limit = Some(parse_rate_limit_spec(&content)?);
                     let _ = content.parse::<Option<Token![,]>>()?;
                 } else if content.peek(kw::paginate) {
                     if paginate.is_some() {
@@ -1816,6 +1838,7 @@ impl Parse for EndpointDef {
                 cache,
                 retry,
                 rate_limit,
+                rate_limit_keys,
                 paginate,
                 body,
                 response,
@@ -1830,6 +1853,7 @@ impl Parse for EndpointDef {
         let mut cache: Option<CacheSpec> = None;
         let mut retry: Option<RetrySpec> = None;
         let mut rate_limit: Option<RateLimitSpec> = None;
+        let mut rate_limit_keys = Vec::new();
         let mut paginate: Option<PaginateSpec> = None;
         let mut body: Option<CodecSpec> = None;
 
@@ -1888,13 +1912,19 @@ impl Parse for EndpointDef {
                 }
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::rate_limit) {
-                if rate_limit.is_some() {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "duplicate rate_limit policy in endpoint",
-                    ));
+                let fork = input.fork();
+                fork.parse::<kw::rate_limit>()?;
+                if fork.peek(kw::key) {
+                    rate_limit_keys.push(parse_rate_limit_key_binding(input)?);
+                } else {
+                    if rate_limit.is_some() {
+                        return Err(syn::Error::new(
+                            name.span(),
+                            "duplicate rate_limit policy in endpoint",
+                        ));
+                    }
+                    rate_limit = Some(parse_rate_limit_spec(input)?);
                 }
-                rate_limit = Some(parse_rate_limit_spec(input)?);
                 let _ = input.parse::<Option<Token![,]>>()?;
             } else if input.peek(kw::paginate) {
                 if paginate.is_some() {
@@ -1943,6 +1973,7 @@ impl Parse for EndpointDef {
             cache,
             retry,
             rate_limit,
+            rate_limit_keys,
             paginate,
             body,
             response,

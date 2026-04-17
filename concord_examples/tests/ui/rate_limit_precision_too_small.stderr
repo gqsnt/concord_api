@@ -1,0 +1,5 @@
+error: rate_limit window is too small for max; reduce `limit` or increase `every`
+  --> tests/ui/rate_limit_precision_too_small.rs:12:23
+   |
+12 |                 limit 2000000001 every 1 second // ERROR: sub-nanosecond cell period
+   |                       ^^^^^^^^^^

@@ -6,6 +6,7 @@ Rate-limit policy describes the buckets a request belongs to. The runtime rate l
 rate_limit {
     profile app {
         bucket application by [route.host] {
+            cost 1
             limit 500 every 10 seconds
             limit 30000 every 10 minutes
         }
@@ -13,6 +14,7 @@ rate_limit {
 
     profile method_read {
         bucket method by [route.host, endpoint] {
+            cost 1
             limit 30 every 10 seconds
             limit 500 every 10 minutes
         }
@@ -61,6 +63,8 @@ GET Ping {
 
 In the tested behavior, `Ping` receives both the inherited `app` bucket and the endpoint `method_read` bucket.
 
+When multiple layers or profiles accidentally emit exact duplicate buckets, the runtime canonicalizes the final request plan and keeps one copy.
+
 ## Turning rate limits off
 
 Use `rate_limit off` to clear inherited rate-limit profiles.
@@ -73,6 +77,8 @@ GET NoLimit {
 ```
 
 The resulting request has an empty rate-limit plan.
+
+`rate_limit off` clears proactive bucket acquisition only. A response policy can still produce a reactive cooldown target (for example endpoint fallback) after a limited response.
 
 ## Multiple profiles
 
@@ -123,6 +129,7 @@ A bucket is identified by a kind and a key.
 
 ```rust
 bucket method by [route.host, endpoint] {
+    cost 1
     limit 30 every 10 seconds
 }
 ```
@@ -134,6 +141,19 @@ Supported key parts include:
 - `method` for the HTTP method.
 - A string literal for a static component.
 - A named key declared with `rate_limit key`.
+
+## Bucket cost
+
+Use `cost` when one request should consume more than one permit.
+
+```rust
+bucket method by [route.host, endpoint] {
+    cost 3
+    limit 30 every 10 seconds
+}
+```
+
+`cost` defaults to `1`.
 
 ## Scope key binding
 
@@ -163,6 +183,16 @@ profile regional_method {
 ```
 
 At runtime, the bucket key contains the actual `platform` value, such as `euw1`.
+
+The same key binding syntax is available inside endpoint blocks:
+
+```rust
+GET ByRegion {
+    rate_limit key region = platform
+    rate_limit regional_method
+    -> Json<()>;
+}
+```
 
 ## Profile inheritance
 
@@ -227,6 +257,8 @@ impl RateLimitResponsePolicy for RiotRateLimitHeaders {
 ```
 
 The response policy can choose which bucket receives a cooldown. If the named bucket is missing from the current request plan, the runtime falls back to an endpoint-level cooldown so the next request still observes the delay.
+
+`parse_retry_after` supports both delta-seconds and HTTP-date header forms.
 
 ## Runtime limiter
 

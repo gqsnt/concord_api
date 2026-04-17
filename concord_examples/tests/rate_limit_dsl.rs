@@ -567,3 +567,132 @@ async fn cache_hits_do_not_consume_rate_limit_permits() {
     assert_eq!(h.recorded_len(), 0);
     h.finish();
 }
+
+#[tokio::test]
+async fn duplicate_rate_limit_profiles_do_not_duplicate_buckets_after_canonicalization() {
+    api! {
+        client RateLimitCanonicalizationApi {
+            scheme: https,
+            host: "example.com",
+            rate_limit {
+                profile app {
+                    bucket application by [route.host] {
+                        limit 500 every 10 seconds
+                    }
+                }
+                default app
+            }
+        }
+
+        GET Ping {
+            rate_limit app
+            -> Json<()>;
+        }
+    }
+
+    use rate_limit_canonicalization_api::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+    let limiter = RecordingLimiter::default();
+    let plans = limiter.plans.clone();
+    let api = RateLimitCanonicalizationApi::new_with_transport(transport)
+        .with_rate_limiter(Arc::new(limiter));
+
+    api.request(endpoints::Ping::new()).execute().await.unwrap();
+
+    let plans = plans.lock().expect("plan lock").clone();
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].buckets().len(), 1);
+    assert_eq!(plans[0].buckets()[0].id.kind, "application");
+    h.finish();
+}
+
+#[tokio::test]
+async fn endpoint_rate_limit_key_binding_materializes_scope_param_key() {
+    api! {
+        client RateLimitEndpointKeyApi {
+            scheme: https,
+            host: "example.com",
+            rate_limit {
+                profile regional_method {
+                    bucket method by [region, endpoint] {
+                        limit 1600 every 1 minute
+                    }
+                }
+            }
+        }
+
+        scope platform {
+            params { platform: String }
+            host[platform, "api"]
+
+            GET ByRegion {
+                rate_limit key region = platform
+                rate_limit regional_method
+                -> Json<()>;
+            }
+        }
+    }
+
+    use rate_limit_endpoint_key_api::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+    let limiter = RecordingLimiter::default();
+    let plans = limiter.plans.clone();
+    let api =
+        RateLimitEndpointKeyApi::new_with_transport(transport).with_rate_limiter(Arc::new(limiter));
+
+    api.request(endpoints::ByRegion::new("euw1".to_string()))
+        .execute()
+        .await
+        .unwrap();
+
+    let plans = plans.lock().expect("plan lock").clone();
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].buckets().len(), 1);
+    let region_part = &plans[0].buckets()[0].key.parts()[0];
+    assert_eq!(region_part.name, "region");
+    match &region_part.value {
+        RateLimitKeyValue::Static(value) => assert_eq!(value.as_ref(), "euw1"),
+        other => panic!("expected static region key, got {other:?}"),
+    }
+    h.finish();
+}
+
+#[tokio::test]
+async fn rate_limit_bucket_cost_is_emitted_to_runtime_plan() {
+    api! {
+        client RateLimitCostApi {
+            scheme: https,
+            host: "example.com",
+            rate_limit {
+                profile weighted {
+                    bucket method by [route.host, endpoint] {
+                        cost 3
+                        limit 30 every 10 seconds
+                    }
+                }
+                default weighted
+            }
+        }
+
+        GET Ping {
+            -> Json<()>;
+        }
+    }
+
+    use rate_limit_cost_api::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+    let limiter = RecordingLimiter::default();
+    let plans = limiter.plans.clone();
+    let api = RateLimitCostApi::new_with_transport(transport).with_rate_limiter(Arc::new(limiter));
+
+    api.request(endpoints::Ping::new()).execute().await.unwrap();
+
+    let plans = plans.lock().expect("plan lock").clone();
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].buckets().len(), 1);
+    assert_eq!(plans[0].buckets()[0].cost.get(), 3);
+    h.finish();
+}
