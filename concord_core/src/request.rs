@@ -1,4 +1,5 @@
 use crate::client::{ApiClient, ClientContext};
+use crate::cache::CacheRequestMode;
 use crate::debug::DebugLevel;
 use crate::endpoint::{Endpoint, ResponseSpec};
 use crate::error::{ApiClientError, ErrorContext};
@@ -17,6 +18,7 @@ pub(crate) struct RequestOptions {
     pub debug_level: Option<DebugLevel>,
     pub timeout_override: TimeoutOverride,
     pub attempt: u32,
+    pub cache_mode: CacheRequestMode,
 }
 impl Default for RequestOptions {
     fn default() -> Self {
@@ -24,6 +26,7 @@ impl Default for RequestOptions {
             debug_level: None,
             timeout_override: TimeoutOverride::Inherit,
             attempt: 0,
+            cache_mode: CacheRequestMode::Default,
         }
     }
 }
@@ -96,6 +99,24 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     }
 
     #[inline]
+    pub fn cache_default(mut self) -> Self {
+        self.opts.cache_mode = CacheRequestMode::Default;
+        self
+    }
+
+    #[inline]
+    pub fn cache_bypass(mut self) -> Self {
+        self.opts.cache_mode = CacheRequestMode::Bypass;
+        self
+    }
+
+    #[inline]
+    pub fn cache_refresh(mut self) -> Self {
+        self.opts.cache_mode = CacheRequestMode::Refresh;
+        self
+    }
+
+    #[inline]
     pub async fn execute(self) -> Result<<E::Response as ResponseSpec>::Output, ApiClientError> {
         Ok(self.execute_decoded().await?.value)
     }
@@ -117,7 +138,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             page_index: 0,
         };
         self.client
-            .execute_decoded_ref_with(&self.ep, meta, dbg, move |policy| {
+            .execute_decoded_ref_with(&self.ep, meta, dbg, self.opts.cache_mode, move |policy| {
                 apply_timeout_override(policy, timeout_override);
                 Ok(())
             })
@@ -196,6 +217,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             .unwrap_or(self.pending.client.debug_level());
         let timeout_override = self.pending.opts.timeout_override;
         let attempt = self.pending.opts.attempt;
+        let cache_mode = self.pending.opts.cache_mode;
 
         let ctx = ErrorContext {
             endpoint: self.pending.ep.name(),
@@ -225,7 +247,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             let resp: DecodedResponse<<E::Response as ResponseSpec>::Output> = self
                 .pending
                 .client
-                .execute_decoded_ref_with(&self.pending.ep, meta, dbg, |policy| {
+                .execute_decoded_ref_with(&self.pending.ep, meta, dbg, cache_mode, |policy| {
                     apply_timeout_override(policy, timeout_override);
                     ctrl.apply_policy(&st, &self.pending.ep, policy)
                 })

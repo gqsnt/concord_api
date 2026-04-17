@@ -175,24 +175,18 @@ Guardrails:
 3. manual credential invalidation should be cheap and immediate
 4. auth retry budget should remain configurable at core level
 
-## Migration plan to the target auth version
+## Implementation status
 
-### Phase A (done)
+Implemented:
 
 1. manual credential provider + slot lifecycle operations
 2. invalidation/retry decoupling in auth response handling
+3. DSL support for `credential x: Endpoint(E)`
+4. generated `acquire/set/clear/has` helpers
+5. docs/examples alignment across auth and runtime chapters
+6. compile-fail diagnostics for unknown endpoint, recursion, and non-credential endpoint output
 
-### Phase B (done)
-
-1. DSL support for `credential x: Endpoint(E)`
-2. generated `acquire/set/clear/has` helpers
-
-### Phase C (in progress)
-
-1. docs/examples alignment across all chapters
-2. compile-fail diagnostics hardening and coverage expansion
-
-### Phase D (optional future)
+Optional future:
 
 1. explicit refresh strategies for endpoint credentials
 2. persistent credential stores

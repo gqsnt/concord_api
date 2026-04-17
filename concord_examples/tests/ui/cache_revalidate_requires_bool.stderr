@@ -1,0 +1,5 @@
+error: expected `true` or `false` after `revalidate`
+  --> tests/ui/cache_revalidate_requires_bool.rs:11:13
+   |
+11 |             }
+   |             ^

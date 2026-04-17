@@ -102,6 +102,9 @@ Available methods include:
 - `clear_timeout()`
 - `inherit_timeout()`
 - `attempt(u32)`
+- `cache_default()`
+- `cache_bypass()`
+- `cache_refresh()`
 - `execute()`
 - `execute_decoded()`
 - `paginate()` for paginated endpoints

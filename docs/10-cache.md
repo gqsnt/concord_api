@@ -24,8 +24,9 @@ client CachedApi {
             ttl 60 seconds
             capacity 64 mib
             max_body 2 mib
-            revalidate
+            revalidate true
             shared false
+            on_error ignore
         }
 
         default short
@@ -131,8 +132,9 @@ profile http_profile {
     ttl 60 seconds
     capacity 64 mib
     max_body 2 mib
-    revalidate
+    revalidate true
     shared false
+    on_error ignore
 }
 ```
 
@@ -146,9 +148,31 @@ profile http_profile {
 
 `max_body N bytes|kb|kib|mb|mib|gb|gib` skips storing responses larger than the limit.
 
-`revalidate` enables conditional revalidation for stale entries.
+`revalidate true|false` controls conditional revalidation for stale entries.
 
 `shared true|false` controls shared-cache behavior for HTTP cache semantics.
+
+`on_error ignore|serve_stale` controls fallback behavior after a failed revalidation attempt.
+
+## Per-request cache mode
+
+Use request-level cache controls when a call must bypass cache or force refresh.
+
+```rust
+api.request(endpoints::Cached::new())
+    .cache_bypass()
+    .execute()
+    .await?;
+
+api.request(endpoints::Cached::new())
+    .cache_refresh()
+    .execute()
+    .await?;
+```
+
+`cache_bypass()` skips cache lookup and skips cache store/update.
+
+`cache_refresh()` skips lookup, performs transport, then stores/updates cache on success.
 
 ## Required feature for the default backend
 

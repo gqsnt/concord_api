@@ -1467,6 +1467,12 @@ fn emit_cache_config(config: &CacheConfigResolved) -> TokenStream2 {
             __cache = __cache.with_shared(#shared);
         });
     }
+    if let Some(failure_mode) = config.failure_mode {
+        let failure_mode = emit_cache_failure_mode(failure_mode);
+        ops.push(quote! {
+            __cache = __cache.with_failure_mode(#failure_mode);
+        });
+    }
     quote! {{
         let mut __cache = ::concord_core::prelude::CacheConfig::new();
         #( #ops )*
@@ -1507,6 +1513,12 @@ fn emit_cache_patch_ops(patch: &CacheConfigPatchResolved) -> Vec<TokenStream2> {
             __cache = __cache.with_shared(#shared);
         });
     }
+    if let Some(failure_mode) = patch.failure_mode {
+        let failure_mode = emit_cache_failure_mode(failure_mode);
+        ops.push(quote! {
+            __cache = __cache.with_failure_mode(#failure_mode);
+        });
+    }
     ops
 }
 
@@ -1518,6 +1530,17 @@ fn emit_cache_capacity_op(capacity: CacheCapacityResolved) -> TokenStream2 {
         CacheCapacityResolved::Bytes(bytes) => quote! {
             __cache = __cache.with_capacity_bytes(#bytes);
         },
+    }
+}
+
+fn emit_cache_failure_mode(mode: CacheFailureModeResolved) -> TokenStream2 {
+    match mode {
+        CacheFailureModeResolved::Ignore => {
+            quote! { ::concord_core::prelude::CacheFailureMode::Ignore }
+        }
+        CacheFailureModeResolved::ServeStaleOnError => {
+            quote! { ::concord_core::prelude::CacheFailureMode::ServeStaleOnError }
+        }
     }
 }
 

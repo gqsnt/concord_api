@@ -209,8 +209,15 @@ pub struct CachePatch {
     pub ttl: Option<CacheDurationSpec>,
     pub capacity: Option<CacheCapacitySpec>,
     pub max_body: Option<CacheSizeSpec>,
-    pub revalidate: Option<Span>,
+    pub revalidate: Option<LitBool>,
     pub shared: Option<LitBool>,
+    pub on_error: Option<CacheOnErrorSpec>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CacheOnErrorSpec {
+    Ignore,
+    ServeStale,
 }
 
 #[derive(Debug, Clone)]

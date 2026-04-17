@@ -59,6 +59,14 @@ pub enum CacheSetting {
     Off,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CacheRequestMode {
+    #[default]
+    Default,
+    Bypass,
+    Refresh,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum CacheMode {
     #[default]
@@ -343,6 +351,7 @@ mod tests {
             retry: RetrySetting::Inherit,
             rate_limit: RateLimitPlan::new(),
             cache: CacheSetting::Config(CacheConfig::new()),
+            cache_mode: CacheRequestMode::Default,
             cache_revalidation: None,
             extensions: RequestExtensions::default(),
         }
@@ -374,6 +383,7 @@ mod tests {
 mod moka_backend {
     use super::*;
     use http_cache_semantics::{AfterResponse, BeforeRequest, CacheOptions, CachePolicy};
+    use moka::notification::RemovalCause;
     use moka::sync::Cache;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
@@ -386,9 +396,43 @@ mod moka_backend {
         weight: u32,
     }
 
+    #[derive(Default)]
+    struct VariantIndex {
+        by_primary: HashMap<CacheKey, Vec<CacheKey>>,
+        by_variant: HashMap<CacheKey, CacheKey>,
+    }
+
+    fn remove_variant_from_index(index: &mut VariantIndex, variant: &CacheKey) {
+        let Some(primary) = index.by_variant.remove(variant) else {
+            return;
+        };
+        if let Some(variants) = index.by_primary.get_mut(&primary) {
+            variants.retain(|key| key != variant);
+            if variants.is_empty() {
+                index.by_primary.remove(&primary);
+            }
+        }
+    }
+
+    fn upsert_variant_index(index: &mut VariantIndex, primary: CacheKey, variant: CacheKey) {
+        if let Some(previous_primary) = index.by_variant.insert(variant.clone(), primary.clone())
+            && previous_primary != primary
+            && let Some(previous) = index.by_primary.get_mut(&previous_primary)
+        {
+            previous.retain(|key| key != &variant);
+            if previous.is_empty() {
+                index.by_primary.remove(&previous_primary);
+            }
+        }
+        let variants = index.by_primary.entry(primary).or_default();
+        if !variants.iter().any(|key| key == &variant) {
+            variants.push(variant);
+        }
+    }
+
     pub struct MokaCacheStore {
         entries: Cache<CacheKey, Arc<CachedEntry>>,
-        index: Mutex<HashMap<CacheKey, Vec<CacheKey>>>,
+        index: Arc<Mutex<VariantIndex>>,
         max_body_bytes: usize,
         shared: bool,
     }
@@ -437,16 +481,24 @@ mod moka_backend {
                 CacheCapacity::Entries(entries) => entries,
                 CacheCapacity::Bytes(bytes) => bytes,
             };
+            let index = Arc::new(Mutex::new(VariantIndex::default()));
+            let index_for_listener = index.clone();
             let entries = Cache::builder()
                 .max_capacity(max_capacity)
                 .weigher(move |_key, value: &Arc<CachedEntry>| match capacity {
                     CacheCapacity::Entries(_) => 1,
                     CacheCapacity::Bytes(_) => value.weight,
                 })
+                .eviction_listener(
+                    move |key: Arc<CacheKey>, _value: Arc<CachedEntry>, _cause: RemovalCause| {
+                        let mut index = index_for_listener.lock().expect("cache index lock");
+                        remove_variant_from_index(&mut index, key.as_ref());
+                    },
+                )
                 .build();
             Self {
                 entries,
-                index: Mutex::new(HashMap::new()),
+                index,
                 max_body_bytes: config.max_body_bytes,
                 shared: config.shared,
             }
@@ -580,10 +632,7 @@ mod moka_backend {
             });
             self.entries.insert(variant.clone(), entry);
             let mut index = self.index.lock().expect("cache index lock");
-            let variants = index.entry(primary).or_default();
-            if !variants.iter().any(|key| key == &variant) {
-                variants.push(variant);
-            }
+            upsert_variant_index(&mut index, primary, variant);
             CacheAfter::Stored
         }
 
@@ -600,8 +649,17 @@ mod moka_backend {
             }
 
             let primary = default_cache_key_with_method(request, &http::Method::GET);
-            let mut index = self.index.lock().expect("cache index lock");
-            if let Some(variants) = index.remove(&primary) {
+            let variants = {
+                let mut index = self.index.lock().expect("cache index lock");
+                let variants = index.by_primary.remove(&primary);
+                if let Some(variants) = variants.as_ref() {
+                    for key in variants {
+                        index.by_variant.remove(key);
+                    }
+                }
+                variants
+            };
+            if let Some(variants) = variants {
                 for key in variants {
                     self.entries.invalidate(&key);
                 }
@@ -659,12 +717,15 @@ mod moka_backend {
                     .index
                     .lock()
                     .expect("cache index lock")
+                    .by_primary
                     .get(&primary)
                     .cloned()
                     .unwrap_or_default();
                 let now = SystemTime::now();
+                let mut stale_variants = Vec::new();
                 for key in variants {
                     let Some(entry) = self.entries.get(&key) else {
+                        stale_variants.push(key);
                         continue;
                     };
                     match entry.policy.before_request(&policy_request, now) {
@@ -694,6 +755,12 @@ mod moka_backend {
                             };
                         }
                         BeforeRequest::Stale { .. } => {}
+                    }
+                }
+                if !stale_variants.is_empty() {
+                    let mut index = self.index.lock().expect("cache index lock");
+                    for key in stale_variants {
+                        remove_variant_from_index(&mut index, &key);
                     }
                 }
                 CacheBefore::Miss

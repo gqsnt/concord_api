@@ -200,6 +200,7 @@ pub struct CacheConfigResolved {
     pub max_body_bytes: Option<u64>,
     pub revalidate: Option<bool>,
     pub shared: Option<bool>,
+    pub failure_mode: Option<CacheFailureModeResolved>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -210,12 +211,19 @@ pub struct CacheConfigPatchResolved {
     pub max_body_bytes: Option<u64>,
     pub revalidate: Option<bool>,
     pub shared: Option<bool>,
+    pub failure_mode: Option<CacheFailureModeResolved>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum CacheCapacityResolved {
     Entries(u64),
     Bytes(u64),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CacheFailureModeResolved {
+    Ignore,
+    ServeStaleOnError,
 }
 
 #[derive(Debug, Clone)]
@@ -475,7 +483,9 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
         &mut endpoints,
     )?;
 
-    let cache_store_enabled = ast_uses_cache(&ast);
+    let cache_store_enabled = policy_uses_cache(&client_policy)
+        || layers.iter().any(|layer| policy_uses_cache(&layer.policy))
+        || endpoints.iter().any(|endpoint| policy_uses_cache(&endpoint.policy));
     let cache_store_config = match &client_policy.cache {
         Some(CacheResolved::Set(config)) => Some(config.clone()),
         Some(CacheResolved::Patch(patch)) => Some(cache_config_from_patch(patch)),
@@ -503,15 +513,11 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
     })
 }
 
-fn ast_uses_cache(ast: &ApiFile) -> bool {
-    ast.client.cache_profiles.is_some() || ast.client.cache.is_some() || items_use_cache(&ast.items)
-}
-
-fn items_use_cache(items: &[Item]) -> bool {
-    items.iter().any(|item| match item {
-        Item::Endpoint(endpoint) => endpoint.cache.is_some(),
-        Item::Layer(layer) => layer.cache.is_some() || items_use_cache(&layer.items),
-    })
+fn policy_uses_cache(policy: &PolicyBlocksResolved) -> bool {
+    policy
+        .cache
+        .as_ref()
+        .is_some_and(|cache| matches!(cache, CacheResolved::Set(_) | CacheResolved::Patch(_)))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1397,11 +1403,17 @@ fn resolve_cache_patch(patch: &CachePatch) -> Result<CacheConfigPatchResolved> {
     if let Some(max_body) = &patch.max_body {
         out.max_body_bytes = Some(resolve_cache_size_bytes(max_body)?);
     }
-    if patch.revalidate.is_some() {
-        out.revalidate = Some(true);
+    if let Some(revalidate) = &patch.revalidate {
+        out.revalidate = Some(revalidate.value);
     }
     if let Some(shared) = &patch.shared {
         out.shared = Some(shared.value);
+    }
+    if let Some(on_error) = patch.on_error {
+        out.failure_mode = Some(match on_error {
+            CacheOnErrorSpec::Ignore => CacheFailureModeResolved::Ignore,
+            CacheOnErrorSpec::ServeStale => CacheFailureModeResolved::ServeStaleOnError,
+        });
     }
     Ok(out)
 }
@@ -1424,6 +1436,9 @@ fn apply_cache_patch_resolved(config: &mut CacheConfigResolved, patch: &CacheCon
     }
     if let Some(shared) = patch.shared {
         config.shared = Some(shared);
+    }
+    if let Some(failure_mode) = patch.failure_mode {
+        config.failure_mode = Some(failure_mode);
     }
 }
 

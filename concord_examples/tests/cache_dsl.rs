@@ -1,6 +1,7 @@
 use concord_core::prelude::*;
 use concord_core::transport::{
-    BuiltRequest, BuiltResponse, TransportError, TransportErrorKind, TransportResponse,
+    BuiltRequest, BuiltResponse, TransportBody, TransportError, TransportErrorKind,
+    TransportResponse,
 };
 use concord_macros::api;
 use concord_test_support::*;
@@ -88,6 +89,92 @@ impl CacheStore for RevalidateThenStaleCache {
     }
 }
 
+#[derive(Default)]
+struct RevalidateWithoutMergeCache;
+
+impl CacheStore for RevalidateWithoutMergeCache {
+    fn before_request<'a>(
+        &'a self,
+        request: &'a BuiltRequest,
+    ) -> Pin<Box<dyn Future<Output = CacheBefore> + Send + 'a>> {
+        Box::pin(async move {
+            let mut headers = request.headers.clone();
+            headers.insert(IF_NONE_MATCH, http::HeaderValue::from_static("\"v1\""));
+            CacheBefore::Revalidate {
+                request_headers: headers,
+                cached: CacheRevalidation {
+                    key: CacheKey::new("missing".to_string()),
+                    cached_response: BuiltResponse {
+                        meta: request.meta.clone(),
+                        url: request.url.clone(),
+                        status: http::StatusCode::OK,
+                        headers: json_headers(),
+                        body: json_bytes(&"stale".to_string()),
+                        rate_limit: request.rate_limit.clone(),
+                    },
+                },
+            }
+        })
+    }
+
+    fn after_response<'a>(
+        &'a self,
+        _request: &'a BuiltRequest,
+        _response: &'a BuiltResponse,
+        _revalidation: Option<CacheRevalidation>,
+    ) -> Pin<Box<dyn Future<Output = CacheAfter> + Send + 'a>> {
+        Box::pin(async move { CacheAfter::NotStored(CacheSkipReason::Backend) })
+    }
+}
+
+struct OneChunkBody {
+    chunk: Option<bytes::Bytes>,
+}
+
+impl TransportBody for OneChunkBody {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<bytes::Bytes>, TransportError>> + Send + 'a>> {
+        Box::pin(async move { Ok(self.chunk.take()) })
+    }
+}
+
+#[derive(Clone, Default)]
+struct FirstOkThenTimeoutTransport {
+    calls: Arc<AtomicUsize>,
+}
+
+impl Transport for FirstOkThenTimeoutTransport {
+    fn send(
+        &self,
+        req: BuiltRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        let calls = self.calls.clone();
+        Box::pin(async move {
+            let call = calls.fetch_add(1, Ordering::SeqCst);
+            if call == 0 {
+                let mut headers = json_headers();
+                headers.insert(CACHE_CONTROL, http::HeaderValue::from_static("max-age=0"));
+                headers.insert(ETAG, http::HeaderValue::from_static("\"v1\""));
+                let body = json_bytes(&"first".to_string());
+                return Ok(TransportResponse {
+                    meta: req.meta,
+                    url: req.url,
+                    status: http::StatusCode::OK,
+                    headers,
+                    content_length: Some(body.len() as u64),
+                    rate_limit: req.rate_limit,
+                    body: Box::new(OneChunkBody { chunk: Some(body) }),
+                });
+            }
+            Err(TransportError::with_kind(
+                TransportErrorKind::Timeout,
+                std::io::Error::new(std::io::ErrorKind::TimedOut, "revalidation timed out"),
+            ))
+        })
+    }
+}
+
 fn json_headers() -> http::HeaderMap {
     let mut headers = http::HeaderMap::new();
     headers.insert(
@@ -95,6 +182,223 @@ fn json_headers() -> http::HeaderMap {
         http::HeaderValue::from_static("application/json"),
     );
     headers
+}
+
+#[tokio::test]
+async fn cache_bypass_hits_transport_without_overwriting_cached_value() {
+    api! {
+        client CacheBypassApi {
+            scheme: https,
+            host: "example.com",
+            cache {
+                profile short { ttl 60 seconds }
+                default short
+            }
+        }
+
+        GET Cached {
+            path["cached"]
+            -> Json<String>;
+        }
+    }
+
+    use cache_bypass_api::*;
+
+    let (transport, h) = mock()
+        .reply(
+            MockReply::ok_json(json_bytes(&"first".to_string()))
+                .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=60")),
+        )
+        .reply(
+            MockReply::ok_json(json_bytes(&"bypass".to_string()))
+                .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=60")),
+        )
+        .build();
+
+    let api = CacheBypassApi::new_with_transport(transport);
+    let first = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let bypass = api
+        .request(endpoints::Cached::new())
+        .cache_bypass()
+        .execute()
+        .await
+        .unwrap();
+    let third = api.request(endpoints::Cached::new()).execute().await.unwrap();
+
+    assert_eq!(first, "first");
+    assert_eq!(bypass, "bypass");
+    assert_eq!(third, "first");
+    h.assert_recorded_len(2);
+    h.finish();
+}
+
+#[tokio::test]
+async fn cache_refresh_hits_transport_and_updates_cached_value() {
+    api! {
+        client CacheRefreshApi {
+            scheme: https,
+            host: "example.com",
+            cache {
+                profile short { ttl 60 seconds }
+                default short
+            }
+        }
+
+        GET Cached {
+            path["cached"]
+            -> Json<String>;
+        }
+    }
+
+    use cache_refresh_api::*;
+
+    let (transport, h) = mock()
+        .reply(
+            MockReply::ok_json(json_bytes(&"first".to_string()))
+                .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=60")),
+        )
+        .reply(
+            MockReply::ok_json(json_bytes(&"refreshed".to_string()))
+                .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=60")),
+        )
+        .build();
+
+    let api = CacheRefreshApi::new_with_transport(transport);
+    let first = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let refreshed = api
+        .request(endpoints::Cached::new())
+        .cache_refresh()
+        .execute()
+        .await
+        .unwrap();
+    let third = api.request(endpoints::Cached::new()).execute().await.unwrap();
+
+    assert_eq!(first, "first");
+    assert_eq!(refreshed, "refreshed");
+    assert_eq!(third, "refreshed");
+    h.assert_recorded_len(2);
+    h.finish();
+}
+
+#[tokio::test]
+async fn cache_profile_revalidate_false_skips_conditional_headers() {
+    api! {
+        client CacheNoRevalidateApi {
+            scheme: https,
+            host: "example.com",
+            cache {
+                profile read {
+                    ttl 60 seconds
+                    revalidate false
+                }
+                default read
+            }
+        }
+
+        GET Cached {
+            path["cached"]
+            -> Json<String>;
+        }
+    }
+
+    use cache_no_revalidate_api::*;
+
+    let (transport, h) = mock()
+        .reply(
+            MockReply::ok_json(json_bytes(&"first".to_string()))
+                .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=0"))
+                .with_header(ETAG, http::HeaderValue::from_static("\"v1\"")),
+        )
+        .reply(
+            MockReply::ok_json(json_bytes(&"second".to_string()))
+                .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=60")),
+        )
+        .build();
+
+    let api = CacheNoRevalidateApi::new_with_transport(transport);
+    let first = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let second = api.request(endpoints::Cached::new()).execute().await.unwrap();
+
+    assert_eq!(first, "first");
+    assert_eq!(second, "second");
+    h.assert_recorded_len(2);
+    let reqs = h.recorded();
+    assert_eq!(reqs[1].headers.get(IF_NONE_MATCH), None);
+    h.finish();
+}
+
+#[tokio::test]
+async fn cache_profile_on_error_serve_stale_returns_stale_after_revalidation_error() {
+    api! {
+        client CacheServeStaleApi {
+            scheme: https,
+            host: "example.com",
+            cache {
+                profile read {
+                    ttl 60 seconds
+                    on_error serve_stale
+                }
+                default read
+            }
+        }
+
+        GET Cached {
+            path["cached"]
+            -> Json<String>;
+        }
+    }
+
+    use cache_serve_stale_api::*;
+
+    let transport = FirstOkThenTimeoutTransport::default();
+    let calls = transport.calls.clone();
+    let api = CacheServeStaleApi::new_with_transport(transport);
+
+    let first = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let second = api.request(endpoints::Cached::new()).execute().await.unwrap();
+
+    assert_eq!(first, "first");
+    assert_eq!(second, "first");
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn revalidation_304_without_cache_merge_retries_once_with_unconditional_fetch() {
+    api! {
+        client CacheRevalidationFallbackApi {
+            scheme: https,
+            host: "example.com",
+        }
+
+        GET Cached {
+            path["cached"]
+            -> Json<String>;
+        }
+    }
+
+    use cache_revalidation_fallback_api::*;
+
+    let (transport, h) = mock()
+        .reply(
+            MockReply::status(http::StatusCode::NOT_MODIFIED)
+                .with_header(ETAG, http::HeaderValue::from_static("\"v1\"")),
+        )
+        .reply(MockReply::ok_json(json_bytes(&"fresh".to_string())))
+        .build();
+
+    let api = CacheRevalidationFallbackApi::new_with_transport(transport)
+        .with_cache_store(Arc::new(RevalidateWithoutMergeCache));
+
+    let value = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    assert_eq!(value, "fresh");
+    h.assert_recorded_len(2);
+    let reqs = h.recorded();
+    assert_eq!(
+        reqs[0].headers.get(IF_NONE_MATCH),
+        Some(&http::HeaderValue::from_static("\"v1\""))
+    );
+    assert_eq!(reqs[1].headers.get(IF_NONE_MATCH), None);
+    h.finish();
 }
 
 #[tokio::test]
@@ -246,7 +550,7 @@ async fn cache_profile_http_capacity_and_max_body_are_honored() {
                     ttl 60 seconds
                     capacity 64 mib
                     max_body 1 bytes
-                    revalidate
+                    revalidate true
                     shared false
                 }
                 default http_profile

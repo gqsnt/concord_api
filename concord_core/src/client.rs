@@ -3,7 +3,7 @@ use crate::auth::{
     AuthHttpResponse, AuthMode, AuthPart, AuthPrepareContext as EndpointAuthPrepareContext,
     AuthRequirementId, AuthResponseAction, AuthResponseContext as EndpointAuthResponseContext,
 };
-use crate::cache::{CacheAfter, CacheBefore, CacheStore};
+use crate::cache::{CacheAfter, CacheBefore, CacheRequestMode, CacheStore};
 use crate::codec::FormatType;
 use crate::codec::{ContentType, Decodes, Encodes};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
@@ -338,6 +338,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         ep: &E,
         meta: RequestMeta,
         dbg: DebugLevel,
+        cache_mode: CacheRequestMode,
         patch_policy: F,
     ) -> Result<DecodedResponse<<E::Response as ResponseSpec>::Output>, ApiClientError>
     where
@@ -362,12 +363,20 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut attempt_index: u32 = 0;
         let mut transport_retry_index: u32 = 0;
         let mut auth_retry_index: u32 = 0;
+        let mut force_cache_refresh_for_next_attempt = false;
+        let mut used_revalidation_refetch = false;
 
         loop {
             let mut attempt_meta = meta.clone();
             attempt_meta.attempt = base_attempt.saturating_add(attempt_index);
 
             let mut built = self.build_request::<E, F>(ep, attempt_meta, &patch_policy)?;
+            built.cache_mode = if force_cache_refresh_for_next_attempt {
+                force_cache_refresh_for_next_attempt = false;
+                CacheRequestMode::Refresh
+            } else {
+                cache_mode
+            };
             let auth_http = ClientAuthHttpExecutor { client: self };
             let auth_request_meta = built.meta.clone();
             let auth_attempt = auth_ctrl
@@ -385,24 +394,27 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 )
                 .await?;
             let url_str = built.url.as_str().to_string();
-            let cache_revalidation = match self
-                .runtime_state
-                .cache_store()
-                .before_request(&built)
-                .await
-            {
-                CacheBefore::Hit(cached) => {
-                    return Self::decode_built_response::<E>(cached, ctx.clone());
-                }
-                CacheBefore::Revalidate {
-                    request_headers,
-                    cached,
-                } => {
-                    built.headers = request_headers;
-                    built.cache_revalidation = Some(cached.clone());
-                    Some(cached)
-                }
-                CacheBefore::Miss | CacheBefore::Bypass => None,
+            let cache_revalidation = match built.cache_mode {
+                CacheRequestMode::Default => match self
+                    .runtime_state
+                    .cache_store()
+                    .before_request(&built)
+                    .await
+                {
+                    CacheBefore::Hit(cached) => {
+                        return Self::decode_built_response::<E>(cached, ctx.clone());
+                    }
+                    CacheBefore::Revalidate {
+                        request_headers,
+                        cached,
+                    } => {
+                        built.headers = request_headers;
+                        built.cache_revalidation = Some(cached.clone());
+                        Some(cached)
+                    }
+                    CacheBefore::Miss | CacheBefore::Bypass => None,
+                },
+                CacheRequestMode::Bypass | CacheRequestMode::Refresh => None,
             };
 
             if dbg_verbose {
@@ -442,6 +454,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
             match send_result {
                 Ok(resp) => {
+                    let was_revalidation_304 =
+                        resp.status == StatusCode::NOT_MODIFIED && cache_revalidation.is_some();
                     let auth_action = auth_ctrl
                         .on_response(
                             &mut endpoint_auth_state,
@@ -474,15 +488,30 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         attempt_index = attempt_index.saturating_add(1);
                         continue;
                     }
-                    let cache_after = self
-                        .runtime_state
-                        .cache_store()
-                        .after_response(&built_for_cache, &resp, cache_revalidation.clone())
-                        .await;
-                    let resp = match cache_after {
-                        CacheAfter::Updated(updated) => updated,
-                        _ => resp,
+                    let cache_after = if built_for_cache.cache_mode == CacheRequestMode::Bypass {
+                        None
+                    } else {
+                        Some(
+                            self.runtime_state
+                                .cache_store()
+                                .after_response(&built_for_cache, &resp, cache_revalidation.clone())
+                                .await,
+                        )
                     };
+                    let maybe_updated = match &cache_after {
+                        Some(CacheAfter::Updated(updated)) => Some(updated.clone()),
+                        _ => None,
+                    };
+                    if was_revalidation_304
+                        && maybe_updated.is_none()
+                        && !used_revalidation_refetch
+                    {
+                        used_revalidation_refetch = true;
+                        force_cache_refresh_for_next_attempt = true;
+                        attempt_index = attempt_index.saturating_add(1);
+                        continue;
+                    }
+                    let resp = maybe_updated.unwrap_or(resp);
                     if dbg_verbose {
                         self.debug_sink
                             .response_status(dbg, resp.status, &url_str, true);
@@ -550,13 +579,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     let Some(mut delay) =
                         self.retry_delay(&retry_config, &retry_ctx, transport_retry_index)
                     else {
-                        if let Some(cached) = self
-                            .runtime_state
-                            .cache_store()
-                            .after_error(&built_for_cache, &err, cache_revalidation.clone())
-                            .await
-                        {
-                            return Self::decode_built_response::<E>(cached, ctx.clone());
+                        if built_for_cache.cache_mode == CacheRequestMode::Default {
+                            if let Some(cached) = self
+                                .runtime_state
+                                .cache_store()
+                                .after_error(&built_for_cache, &err, cache_revalidation.clone())
+                                .await
+                            {
+                                return Self::decode_built_response::<E>(cached, ctx.clone());
+                            }
                         }
                         return Err(err);
                     };
@@ -654,6 +685,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             body: body_bytes,
             timeout,
             cache,
+            cache_mode: CacheRequestMode::Default,
             retry,
             rate_limit,
             cache_revalidation: None,
@@ -1048,6 +1080,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     body,
                     timeout: policy.timeout,
                     cache: crate::cache::CacheSetting::Off,
+                    cache_mode: CacheRequestMode::Default,
                     retry: RetrySetting::Inherit,
                     rate_limit: RateLimitPlan::new(),
                     cache_revalidation: None,

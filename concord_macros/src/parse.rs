@@ -953,14 +953,38 @@ fn parse_cache_patch_body(input: ParseStream<'_>) -> Result<CachePatch> {
             if patch.revalidate.is_some() {
                 return Err(syn::Error::new(input.span(), "duplicate cache revalidate"));
             }
-            let token = input.parse::<kw::revalidate>()?;
-            patch.revalidate = Some(token.span);
+            input.parse::<kw::revalidate>()?;
+            if !input.peek(LitBool) {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "expected `true` or `false` after `revalidate`",
+                ));
+            }
+            patch.revalidate = Some(input.parse::<LitBool>()?);
         } else if input.peek(kw::shared) {
             if patch.shared.is_some() {
                 return Err(syn::Error::new(input.span(), "duplicate cache shared"));
             }
             input.parse::<kw::shared>()?;
             patch.shared = Some(input.parse::<LitBool>()?);
+        } else if input.peek(kw::on_error) {
+            if patch.on_error.is_some() {
+                return Err(syn::Error::new(input.span(), "duplicate cache on_error"));
+            }
+            input.parse::<kw::on_error>()?;
+            patch.on_error = Some(if input.peek(kw::ignore) {
+                input.parse::<kw::ignore>()?;
+                CacheOnErrorSpec::Ignore
+            } else if input.peek(kw::serve_stale) {
+                input.parse::<kw::serve_stale>()?;
+                CacheOnErrorSpec::ServeStale
+            } else {
+                let tt: TokenTree = input.parse()?;
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "expected `ignore` or `serve_stale` after `on_error`",
+                ));
+            });
         } else {
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(
