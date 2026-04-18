@@ -1,6 +1,7 @@
 # Summary
 
 - [Concord DSL Book](README.md)
+- [0. V2 Cheat Sheet](00-v2-cheat-sheet.md)
 - [1. Introduction](01-introduction.md)
 - [2. Client Blocks](02-client.md)
 - [3. Routing and Endpoints](03-routing-and-endpoints.md)

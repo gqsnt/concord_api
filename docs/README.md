@@ -6,25 +6,33 @@ This directory is written as a small book. Each chapter focuses on one concept a
 
 Start with:
 
+- [V2 Cheat Sheet](00-v2-cheat-sheet.md)
 - [Introduction](01-introduction.md)
 - [Client Blocks](02-client.md)
 - [Routing and Endpoints](03-routing-and-endpoints.md)
-- [Runtime Client](12-runtime-client.md)
+- [Authentication](07-authentication.md)
 
-For focused topics:
+Then use focused chapters:
 
 - [Parameters, Variables, and Values](04-params-vars-and-values.md)
 - [Headers, Query, and Timeout](05-headers-query-timeout.md)
 - [Bodies, Responses, and Mapping](06-bodies-responses-mapping.md)
-- [Authentication](07-authentication.md)
 - [Retry](08-retry.md)
 - [Rate Limiting](09-rate-limiting.md)
 - [Caching](10-cache.md)
 - [Pagination](11-pagination.md)
+- [Runtime Client](12-runtime-client.md)
 - [Testing and Debugging](13-testing-and-debugging.md)
 - [Customization and Extension Points](14-customization.md)
 - [Authentication Evolution](15-auth-evolution.md)
 - [Authentication System Blueprint](16-auth-system-blueprint.md)
+
+v2 canonical reminders:
+
+- Use `vars.*`, `secret.*`, and `ep.*` references.
+- Use `part[...]` for composed route/header/query values.
+- Use `scope { host[...] path[...] ... }` for shared routing.
+- Endpoint-backed session credentials are explicit via `acquire_auth_*`.
 
 Most examples assume these imports:
 

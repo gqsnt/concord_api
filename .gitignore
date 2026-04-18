@@ -2,4 +2,5 @@
 .idea
 condense.exe
 output.txt
+docs.txt
 .env
