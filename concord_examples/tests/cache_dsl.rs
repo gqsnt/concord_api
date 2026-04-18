@@ -61,7 +61,7 @@ impl CacheStore for RevalidateThenStaleCache {
     ) -> Pin<Box<dyn Future<Output = CacheBefore> + Send + 'a>> {
         Box::pin(async move {
             let mut headers = request.headers.clone();
-            headers.insert(IF_NONE_MATCH, http::HeaderValue::from_static("\"v1\""));
+            headers.insert(IF_NONE_MATCH, http::HeaderValue::from_static("\"etag-1\""));
             CacheBefore::Revalidate {
                 request_headers: headers,
                 cached: CacheRevalidation {
@@ -99,7 +99,7 @@ impl CacheStore for RevalidateWithoutMergeCache {
     ) -> Pin<Box<dyn Future<Output = CacheBefore> + Send + 'a>> {
         Box::pin(async move {
             let mut headers = request.headers.clone();
-            headers.insert(IF_NONE_MATCH, http::HeaderValue::from_static("\"v1\""));
+            headers.insert(IF_NONE_MATCH, http::HeaderValue::from_static("\"etag-1\""));
             CacheBefore::Revalidate {
                 request_headers: headers,
                 cached: CacheRevalidation {
@@ -155,7 +155,7 @@ impl Transport for FirstOkThenTimeoutTransport {
             if call == 0 {
                 let mut headers = json_headers();
                 headers.insert(CACHE_CONTROL, http::HeaderValue::from_static("max-age=0"));
-                headers.insert(ETAG, http::HeaderValue::from_static("\"v1\""));
+                headers.insert(ETAG, http::HeaderValue::from_static("\"etag-1\""));
                 let body = json_bytes(&"first".to_string());
                 return Ok(TransportResponse {
                     meta: req.meta,
@@ -307,7 +307,7 @@ async fn cache_profile_revalidate_false_skips_conditional_headers() {
         .reply(
             MockReply::ok_json(json_bytes(&"first".to_string()))
                 .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=0"))
-                .with_header(ETAG, http::HeaderValue::from_static("\"v1\"")),
+                .with_header(ETAG, http::HeaderValue::from_static("\"etag-1\"")),
         )
         .reply(
             MockReply::ok_json(json_bytes(&"second".to_string()))
@@ -381,7 +381,7 @@ async fn revalidation_304_without_cache_merge_retries_once_with_unconditional_fe
     let (transport, h) = mock()
         .reply(
             MockReply::status(http::StatusCode::NOT_MODIFIED)
-                .with_header(ETAG, http::HeaderValue::from_static("\"v1\"")),
+                .with_header(ETAG, http::HeaderValue::from_static("\"etag-1\"")),
         )
         .reply(MockReply::ok_json(json_bytes(&"fresh".to_string())))
         .build();
@@ -395,7 +395,7 @@ async fn revalidation_304_without_cache_merge_retries_once_with_unconditional_fe
     let reqs = h.recorded();
     assert_eq!(
         reqs[0].headers.get(IF_NONE_MATCH),
-        Some(&http::HeaderValue::from_static("\"v1\""))
+        Some(&http::HeaderValue::from_static("\"etag-1\""))
     );
     assert_eq!(reqs[1].headers.get(IF_NONE_MATCH), None);
     h.finish();
@@ -923,11 +923,11 @@ async fn stale_cache_revalidates_with_etag_and_uses_304_body() {
         .reply(
             MockReply::ok_json(json_bytes(&"first".to_string()))
                 .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=0"))
-                .with_header(ETAG, http::HeaderValue::from_static("\"v1\"")),
+                .with_header(ETAG, http::HeaderValue::from_static("\"etag-1\"")),
         )
         .reply(
             MockReply::status(http::StatusCode::NOT_MODIFIED)
-                .with_header(ETAG, http::HeaderValue::from_static("\"v1\"")),
+                .with_header(ETAG, http::HeaderValue::from_static("\"etag-1\"")),
         )
         .build();
 
@@ -949,7 +949,7 @@ async fn stale_cache_revalidates_with_etag_and_uses_304_body() {
     let reqs = h.recorded();
     assert_eq!(
         reqs[1].headers.get(IF_NONE_MATCH),
-        Some(&http::HeaderValue::from_static("\"v1\""))
+        Some(&http::HeaderValue::from_static("\"etag-1\""))
     );
     h.finish();
 }

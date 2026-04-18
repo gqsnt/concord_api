@@ -204,7 +204,7 @@ async fn scope_header_auth_uses_api_key_credential_and_secret_setter_rebuilds_st
 
         scope protected {
             use_auth HeaderAuth("X-Api-Key", api_key)
-            path["v1"]
+            path["api"]
 
             GET Ping {
                 -> Json<()>;
@@ -229,10 +229,10 @@ async fn scope_header_auth_uses_api_key_credential_and_secret_setter_rebuilds_st
     let reqs = h.recorded();
     assert_eq!(reqs.len(), 2);
     assert_request(&reqs[0])
-        .path("/v1")
+        .path("/api")
         .header("x-api-key", "tok1");
     assert_request(&reqs[1])
-        .path("/v1")
+        .path("/api")
         .header("x-api-key", "tok2");
 
     h.finish();

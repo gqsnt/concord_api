@@ -1,5 +1,0 @@
-error: `fmt[...]` and `fmt?[...]` were removed in v2; use `part[...]`
-  --> tests/ui/removed_fmt.rs:11:14
-   |
-11 |         path[fmt["u-", id]]
-   |              ^^^

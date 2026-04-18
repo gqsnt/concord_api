@@ -6,7 +6,7 @@ This directory is written as a small book. Each chapter focuses on one concept a
 
 Start with:
 
-- [V2 Cheat Sheet](00-v2-cheat-sheet.md)
+- [Cheat Sheet](00-cheat-sheet.md)
 - [Introduction](01-introduction.md)
 - [Client Blocks](02-client.md)
 - [Routing and Endpoints](03-routing-and-endpoints.md)
@@ -27,7 +27,7 @@ Then use focused chapters:
 - [Authentication Evolution](15-auth-evolution.md)
 - [Authentication System Blueprint](16-auth-system-blueprint.md)
 
-v2 canonical reminders:
+Canonical reminders:
 
 - Use `vars.*`, `secret.*`, and `ep.*` references.
 - Use `part[...]` for composed route/header/query values.

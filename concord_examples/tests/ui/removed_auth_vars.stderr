@@ -1,5 +1,0 @@
-error: `auth_vars {}` was removed in v2; use `secret {}`
- --> tests/ui/removed_auth_vars.rs:7:9
-  |
-7 |         auth_vars {
-  |         ^^^^^^^^^

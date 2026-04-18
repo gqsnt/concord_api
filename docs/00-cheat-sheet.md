@@ -1,6 +1,6 @@
-# 0. V2 Cheat Sheet
+# 0. Cheat Sheet
 
-This chapter is the fast entry point for Concord DSL v2.
+This chapter is the fast entry point for the Concord DSL.
 
 ## Canonical DSL vocabulary
 
@@ -11,7 +11,7 @@ This chapter is the fast entry point for Concord DSL v2.
 - `scope name { host[...] path[...] ... }`: shared route + policy
 - `part[...]`: template composition for route/header/query values
 
-## Minimal v2 shape
+## Minimal shape
 
 ```rust
 api! {
@@ -31,9 +31,9 @@ api! {
         }
     }
 
-    scope v1 {
+    scope core {
         host[vars.tenant, "api"]
-        path["v1"]
+        path["api"]
         use_auth HeaderAuth("X-Api-Key", key)
 
         GET Me {
@@ -56,13 +56,6 @@ auth {
 api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
 api.request(endpoints::Me::new()).execute().await?;
 ```
-
-## Removed in v2
-
-- `auth_vars { ... }` -> use `secret { ... }`
-- `fmt[...]` / `fmt?[...]` -> use `part[...]`
-- top-level `prefix ... {}` or `path ... {}` layers -> use `scope name { host[...] path[...] ... }`
-- `cx.*` and `auth.*` aliases -> use `vars.*` and `secret.*`
 
 ## Suggested reading order
 

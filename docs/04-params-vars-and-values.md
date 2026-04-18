@@ -107,8 +107,6 @@ headers {
 
 Canonical prefixes are `vars.`, `secret.`, and `ep.`.
 
-Legacy aliases `cx.` and `auth.` were removed in v2.
-
 For endpoint and scope parameters, a bare lowercase identifier is normalized to `ep.<name>` in policy expressions.
 
 ```rust

@@ -73,9 +73,9 @@ The macro normally generates route and policy parts from `host[...]`, `path[...]
 For manual core clients, you can implement route and policy parts directly through `concord_core::internal`.
 
 ```rust
-pub struct V1Route;
+pub struct ApiRoute;
 
-impl<Cx, E> concord_core::internal::RoutePart<Cx, E> for V1Route
+impl<Cx, E> concord_core::internal::RoutePart<Cx, E> for ApiRoute
 where
     Cx: ClientContext,
 {
@@ -85,7 +85,7 @@ where
         _auth: &Cx::AuthVars,
         route: &mut RouteParts,
     ) -> Result<(), ApiClientError> {
-        route.path_mut().push_segment("v1");
+        route.path_mut().push_segment("api");
         Ok(())
     }
 }

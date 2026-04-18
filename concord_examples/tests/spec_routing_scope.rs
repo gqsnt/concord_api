@@ -485,7 +485,7 @@ async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
             params {
                 v: String
             }
-            path["v1", part["p", v]]
+            path["api", part["p", v]]
 
             GET One {
                 path["x"]
@@ -507,7 +507,7 @@ async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
         .unwrap();
 
     let reqs = h.recorded();
-    assert_request(&reqs[0]).path("/v1/pa%2Fb/x");
+    assert_request(&reqs[0]).path("/api/pa%2Fb/x");
 
     h.finish();
 }
@@ -524,7 +524,7 @@ async fn scope_path_part_in_layer_optional_omits_segment_no_double_slash() {
             params {
                 v?: String
             }
-            path["v1", part["p", v], "z"]
+            path["api", part["p", v], "z"]
 
             GET One {
                 path["x"]
@@ -552,8 +552,8 @@ async fn scope_path_part_in_layer_optional_omits_segment_no_double_slash() {
         .unwrap();
 
     let reqs = h.recorded();
-    assert_request(&reqs[0]).path("/v1/z/x");
-    assert_request(&reqs[1]).path("/v1/pk/z/x");
+    assert_request(&reqs[0]).path("/api/z/x");
+    assert_request(&reqs[1]).path("/api/pk/z/x");
 
     h.finish();
 }

@@ -81,7 +81,7 @@ async fn retry_scope_profile_applies_to_child_endpoints() {
         }
 
         scope service {
-            path["v1"]
+            path["api"]
             retry read
 
             GET Flaky {

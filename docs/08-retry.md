@@ -59,7 +59,7 @@ Retry can be applied to a scope.
 
 ```rust
 scope service {
-    path["v1"]
+    path["api"]
     retry read
 
     GET Flaky {

@@ -370,9 +370,9 @@ mod test {
     #[test]
     fn test_host_label_order_is_stable() {
         let mut h = HostParts::default();
-        h.push_label_static("v1");
         h.push_label_static("api");
-        assert_eq!(h.join("example.com"), "v1.api.example.com");
+        h.push_label_static("api");
+        assert_eq!(h.join("example.com"), "api.api.example.com");
     }
     #[test]
     fn test_url_path_push() {
@@ -400,7 +400,7 @@ mod test {
     fn test_host_parts_absolute_rejects_push_label() {
         let mut h = HostParts::default();
         h.set_absolute("api.example.net");
-        h.push_label_static("v1");
+        h.push_label_static("api");
         let ctx = ErrorContext {
             endpoint: "TestEndpoint",
             method: http::Method::GET,

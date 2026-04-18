@@ -1,5 +1,0 @@
-error: `path ... {}` layers were removed in v2; use `scope name { path[...] ... }`
- --> tests/ui/removed_path_layer.rs:9:5
-  |
-9 |     path users {
-  |     ^^^^

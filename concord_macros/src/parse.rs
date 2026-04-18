@@ -65,11 +65,6 @@ impl Parse for ClientDef {
                 }
                 vars = Some(content.parse::<VarsBlockTaggedVars>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::auth_vars) {
-                return Err(syn::Error::new(
-                    content.span(),
-                    "`auth_vars {}` was removed in v2; use `secret {}`",
-                ));
             } else if content.peek(kw::secret) {
                 if auth_vars.is_some() {
                     return Err(syn::Error::new(
@@ -402,12 +397,6 @@ fn set_once_secret_ref(out: &mut Option<SecretRef>, span: Span, value: SecretRef
 
 fn parse_secret_ref(input: ParseStream<'_>) -> Result<SecretRef> {
     let ns: Ident = input.parse()?;
-    if ns == "auth" {
-        return Err(syn::Error::new(
-            ns.span(),
-            "`auth.*` was removed in v2; use `secret.*`",
-        ));
-    }
     if ns != "secret" {
         return Err(syn::Error::new(
             ns.span(),
@@ -1277,12 +1266,12 @@ impl Parse for Item {
         if input.peek(kw::prefix) {
             Err(syn::Error::new(
                 input.span(),
-                "`prefix ... {}` layers were removed in v2; use `scope name { host[...] ... }`",
+                "invalid top-level item; expected `scope` or endpoint",
             ))
         } else if input.peek(kw::path) {
             Err(syn::Error::new(
                 input.span(),
-                "`path ... {}` layers were removed in v2; use `scope name { path[...] ... }`",
+                "invalid top-level item; expected `scope` or endpoint",
             ))
         } else if input.peek(kw::scope) {
             Ok(Item::Layer(input.parse::<LayerDefTaggedScope>()?.0))
@@ -1414,7 +1403,7 @@ impl Parse for LayerDefTaggedScope {
             } else if content.peek(kw::prefix) {
                 return Err(syn::Error::new(
                     content.span(),
-                    "`prefix ... {}` layers were removed in v2; use nested `scope` with `host[...]`",
+                    "invalid item in scope",
                 ));
             } else {
                 items.push(Item::Endpoint(content.parse::<EndpointDef>()?));
@@ -2109,13 +2098,7 @@ fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
             if inner.peek(Ident) && inner.peek2(Token![.]) {
                 let fork = inner.fork();
                 let base: Ident = fork.parse()?;
-                if (base == "vars"
-                    || base == "ep"
-                    || base == "secret"
-                    || base == "cx"
-                    || base == "auth")
-                    && fork.peek(Token![.])
-                {
+                if (base == "vars" || base == "ep" || base == "secret") && fork.peek(Token![.]) {
                     let _dot: Token![.] = fork.parse()?;
                     let _name: Ident = fork.parse()?;
                     if fork.is_empty() {
@@ -2158,26 +2141,19 @@ fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
 
 fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue> {
     if input.peek(kw::fmt) {
-        return Err(syn::Error::new(
-            input.span(),
-            "`fmt[...]` and `fmt?[...]` were removed in v2; use `part[...]`",
-        ));
+        return Err(syn::Error::new(input.span(), "invalid policy value syntax"));
     }
     if input.peek(kw::part) {
         return Ok(PolicyValue::Fmt(parse_part_spec(input)?));
     }
 
     let expr: syn::Expr = input.parse()?;
-    reject_legacy_policy_scope_aliases(&expr)?;
     Ok(PolicyValue::Expr(normalize_policy_expr(expr)))
 }
 
 fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
     if input.peek(kw::fmt) {
-        return Err(syn::Error::new(
-            input.span(),
-            "`fmt[...]` and `fmt?[...]` were removed in v2; use `part[...]`",
-        ));
+        return Err(syn::Error::new(input.span(), "invalid route atom syntax"));
     }
     if input.peek(kw::part) {
         return Ok(RouteAtom::Fmt(parse_part_spec(input)?));
@@ -2196,13 +2172,7 @@ fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
         if content.peek(Ident) && content.peek2(Token![.]) {
             let fork = content.fork();
             let base: Ident = fork.parse()?;
-            if (base == "vars"
-                || base == "ep"
-                || base == "secret"
-                || base == "cx"
-                || base == "auth")
-                && fork.peek(Token![.])
-            {
+            if (base == "vars" || base == "ep" || base == "secret") && fork.peek(Token![.]) {
                 let _dot: Token![.] = fork.parse()?;
                 let _name: Ident = fork.parse()?;
                 if fork.is_empty() {
@@ -2273,18 +2243,6 @@ fn resolve_scoped_ref_base(base: &Ident) -> Result<RefScope> {
     if *base == "ep" {
         return Ok(RefScope::Ep);
     }
-    if *base == "cx" {
-        return Err(syn::Error::new(
-            base.span(),
-            "`cx.*` was removed in v2; use `vars.*`",
-        ));
-    }
-    if *base == "auth" {
-        return Err(syn::Error::new(
-            base.span(),
-            "`auth.*` was removed in v2; use `secret.*`",
-        ));
-    }
     Err(syn::Error::new(
         base.span(),
         "unknown scoped reference prefix; expected `vars.`, `ep.`, or `secret.`",
@@ -2309,116 +2267,13 @@ fn parse_scoped_ref_from_ident(input: ParseStream<'_>) -> Result<ScopedRef> {
     }
 }
 
-fn reject_legacy_policy_scope_aliases(expr: &Expr) -> Result<()> {
-    match expr {
-        Expr::Path(p) => {
-            if p.qself.is_none() && p.path.segments.len() == 1 {
-                let base = &p.path.segments[0].ident;
-                if *base == "cx" {
-                    return Err(syn::Error::new(
-                        base.span(),
-                        "`cx` alias was removed in v2; use `vars.<name>`",
-                    ));
-                }
-                if *base == "auth" {
-                    return Err(syn::Error::new(
-                        base.span(),
-                        "`auth` alias was removed in v2; use `secret.<name>`",
-                    ));
-                }
-            }
-            Ok(())
-        }
-        Expr::Field(f) => {
-            if let Expr::Path(base_path) = &*f.base
-                && base_path.qself.is_none()
-                && base_path.path.segments.len() == 1
-            {
-                let base = &base_path.path.segments[0].ident;
-                if *base == "cx" {
-                    return Err(syn::Error::new(
-                        base.span(),
-                        "`cx.*` was removed in v2; use `vars.*`",
-                    ));
-                }
-                if *base == "auth" {
-                    return Err(syn::Error::new(
-                        base.span(),
-                        "`auth.*` was removed in v2; use `secret.*`",
-                    ));
-                }
-            }
-            reject_legacy_policy_scope_aliases(&f.base)
-        }
-        Expr::Paren(p) => reject_legacy_policy_scope_aliases(&p.expr),
-        Expr::Reference(r) => reject_legacy_policy_scope_aliases(&r.expr),
-        Expr::Unary(u) => reject_legacy_policy_scope_aliases(&u.expr),
-        Expr::Binary(b) => {
-            reject_legacy_policy_scope_aliases(&b.left)?;
-            reject_legacy_policy_scope_aliases(&b.right)
-        }
-        Expr::Cast(c) => reject_legacy_policy_scope_aliases(&c.expr),
-        Expr::Call(c) => {
-            reject_legacy_policy_scope_aliases(&c.func)?;
-            for arg in &c.args {
-                reject_legacy_policy_scope_aliases(arg)?;
-            }
-            Ok(())
-        }
-        Expr::MethodCall(m) => {
-            reject_legacy_policy_scope_aliases(&m.receiver)?;
-            for arg in &m.args {
-                reject_legacy_policy_scope_aliases(arg)?;
-            }
-            Ok(())
-        }
-        Expr::Index(i) => {
-            reject_legacy_policy_scope_aliases(&i.expr)?;
-            reject_legacy_policy_scope_aliases(&i.index)
-        }
-        Expr::Array(a) => {
-            for elem in &a.elems {
-                reject_legacy_policy_scope_aliases(elem)?;
-            }
-            Ok(())
-        }
-        Expr::Tuple(t) => {
-            for elem in &t.elems {
-                reject_legacy_policy_scope_aliases(elem)?;
-            }
-            Ok(())
-        }
-        Expr::Assign(a) => {
-            reject_legacy_policy_scope_aliases(&a.left)?;
-            reject_legacy_policy_scope_aliases(&a.right)
-        }
-        Expr::If(i) => {
-            reject_legacy_policy_scope_aliases(&i.cond)?;
-            for stmt in &i.then_branch.stmts {
-                if let syn::Stmt::Expr(e, _) = stmt {
-                    reject_legacy_policy_scope_aliases(e)?;
-                }
-            }
-            if let Some((_, else_expr)) = &i.else_branch {
-                reject_legacy_policy_scope_aliases(else_expr)?;
-            }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
 fn normalize_policy_expr(expr: Expr) -> Expr {
     match expr {
         Expr::Path(p) => {
             if p.qself.is_none() && p.path.segments.len() == 1 {
                 let seg = &p.path.segments[0];
                 let id = &seg.ident;
-                if (*id != "vars")
-                    && (*id != "secret")
-                    && (*id != "cx")
-                    && (*id != "auth")
-                    && (*id != "ep")
+                if (*id != "vars") && (*id != "secret") && (*id != "ep")
                     && id
                         .to_string()
                         .chars()
@@ -2440,10 +2295,15 @@ fn normalize_policy_expr(expr: Expr) -> Expr {
                     Ident::new("cx", b.span())
                 } else if *b == "secret" {
                     Ident::new("auth", b.span())
-                } else if *b == "cx" || *b == "ep" || *b == "auth" {
+                } else if *b == "ep" {
                     b.clone()
                 } else {
-                    Ident::new("ep", b.span())
+                    return Expr::Field(syn::ExprField {
+                        attrs: f.attrs,
+                        base: Box::new(normalize_policy_expr(*f.base)),
+                        dot_token: f.dot_token,
+                        member: f.member,
+                    });
                 };
                 f.base = Box::new(syn::parse_quote!(#nb));
             } else {

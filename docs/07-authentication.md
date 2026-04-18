@@ -24,7 +24,7 @@ api! {
 
     scope protected {
         use_auth HeaderAuth("X-Api-Key", api_key)
-        path["v1"]
+        path["api"]
 
         GET Ping {
             -> Json<()>;

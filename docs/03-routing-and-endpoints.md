@@ -199,8 +199,8 @@ Routes are concatenated from outer scopes to inner scopes to endpoint.
 scope api {
     path["api"]
 
-    scope v1 {
-        path["v1"]
+    scope public {
+        path["public"]
 
         GET GetUser {
             params { id: u32 }
@@ -211,7 +211,7 @@ scope api {
 }
 ```
 
-This endpoint builds `/api/v1/users/{id}`.
+This endpoint builds `/api/public/users/{id}`.
 
 ## Path versus host policy
 

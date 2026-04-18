@@ -773,7 +773,7 @@ impl core::fmt::Display for PlatformRoute {
     }
 }
 
-/// Regional routing values (LoL account-v1, match-v5).
+/// Regional routing values for account/match routes.
 /// Ex: europe.api.riotgames.com
 #[derive(Clone, Copy, Debug)]
 pub enum RegionalRoute {
@@ -818,7 +818,7 @@ pub mod models {
     use std::collections::HashMap;
 
     // ---------------------------
-    // ACCOUNT-V1 (regional routing)
+    // ACCOUNT (regional routing)
     // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -948,7 +948,7 @@ pub mod models {
     }
 
     // ---------------------------
-    // CLASH-V1
+    // CLASH
     // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ClashTeamDto {

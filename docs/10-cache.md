@@ -271,13 +271,13 @@ If the first response contains:
 
 ```text
 Cache-Control: max-age=0
-ETag: "v1"
+ETag: "etag-1"
 ```
 
 then the next request sends:
 
 ```text
-If-None-Match: "v1"
+If-None-Match: "etag-1"
 ```
 
 If the server returns `304 Not Modified`, Concord returns the cached body and refreshes the stored headers and HTTP cache policy.
