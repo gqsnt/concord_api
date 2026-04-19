@@ -45,9 +45,10 @@ An endpoint that inherits `read` retries a matching `503` once, producing attemp
 Use `retry off` to clear inherited retry policy.
 
 ```rust
-GET NoRetry {
+GET NoRetry
+-> Json<()>
+{
     retry off
-    -> Json<()>;
 }
 ```
 
@@ -62,13 +63,15 @@ scope service {
     path["api"]
     retry read
 
-    GET Flaky {
-        -> Json<()>;
+    GET Flaky
+    -> Json<()>
+    {
     }
 
-    GET NoRetry {
+    GET NoRetry
+    -> Json<()>
+    {
         retry off
-        -> Json<()>;
     }
 }
 ```
@@ -100,7 +103,9 @@ The `read` profile inherits attempts, methods, and backoff from `base`, then add
 An endpoint or scope can define an inline retry patch.
 
 ```rust
-GET Limited {
+GET Limited
+-> Json<()>
+{
     retry {
         attempts 2
         methods [GET]
@@ -108,7 +113,6 @@ GET Limited {
         retry_after honor
         backoff none
     }
-    -> Json<()>;
 }
 ```
 
@@ -175,12 +179,13 @@ retry {
     }
 }
 
-POST Create {
+POST Create
+-> Json<()>
+{
     retry write
     headers {
         "Idempotency-Key" as idempotency_key: String
     }
-    -> Json<()>;
 }
 ```
 

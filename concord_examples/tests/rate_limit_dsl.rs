@@ -170,14 +170,16 @@ async fn rate_limit_profiles_generate_request_plan_and_allow_custom_limiter() {
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             rate_limit method_read
-            -> Json<()>;
         }
 
-        GET NoLimit {
+        GET NoLimit
+        -> Json<()>
+        {
             rate_limit off
-            -> Json<()>;
         }
     }
 
@@ -235,9 +237,10 @@ async fn rate_limit_custom_response_policy_marks_limited_response() {
             }
         }
 
-        GET Limited {
+        GET Limited
+        -> Json<()>
+        {
             rate_limit method_read
-            -> Json<()>;
         }
     }
 
@@ -290,9 +293,10 @@ async fn rate_limit_response_bucket_scope_falls_back_when_bucket_is_missing() {
             }
         }
 
-        GET NoBucket {
+        GET NoBucket
+        -> Json<()>
+        {
             rate_limit off
-            -> Json<()>;
         }
     }
 
@@ -368,9 +372,10 @@ async fn retry_does_not_duplicate_delay_when_rate_limiter_stores_cooldown() {
             }
         }
 
-        GET Limited {
+        GET Limited
+        -> Json<()>
+        {
             rate_limit method_read
-            -> Json<()>;
         }
     }
 
@@ -438,14 +443,14 @@ async fn rate_limit_scope_key_binding_materializes_param_key() {
             }
         }
 
-        scope platform {
-            params { platform: String }
+        scope platform(platform: String) {
             host[platform, "api"]
             rate_limit key region = platform
 
-            GET ByRegion {
+            GET ByRegion
+            -> Json<()>
+            {
                 rate_limit regional_method
-                -> Json<()>;
             }
         }
     }
@@ -491,8 +496,9 @@ async fn inflight_followers_do_not_consume_rate_limit_permits() {
             }
         }
 
-        GET Ping {
-            -> Json<()>;
+        GET Ping
+        -> Json<()>
+        {
         }
     }
 
@@ -544,8 +550,9 @@ async fn cache_hits_do_not_consume_rate_limit_permits() {
             }
         }
 
-        GET Cached {
-            -> Json<()>;
+        GET Cached
+        -> Json<()>
+        {
         }
     }
 
@@ -584,9 +591,10 @@ async fn duplicate_rate_limit_profiles_do_not_duplicate_buckets_after_canonicali
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             rate_limit app
-            -> Json<()>;
         }
     }
 
@@ -622,14 +630,14 @@ async fn endpoint_rate_limit_key_binding_materializes_scope_param_key() {
             }
         }
 
-        scope platform {
-            params { platform: String }
+        scope platform(platform: String) {
             host[platform, "api"]
 
-            GET ByRegion {
+            GET ByRegion
+            -> Json<()>
+            {
                 rate_limit key region = platform
                 rate_limit regional_method
-                -> Json<()>;
             }
         }
     }
@@ -676,8 +684,9 @@ async fn rate_limit_bucket_cost_is_emitted_to_runtime_plan() {
             }
         }
 
-        GET Ping {
-            -> Json<()>;
+        GET Ping
+        -> Json<()>
+        {
         }
     }
 

@@ -19,13 +19,15 @@ async fn retry_profile_retries_status_then_endpoint_can_turn_it_off() {
             }
         }
 
-        GET Ping {
-            -> Json<()>;
+        GET Ping
+        -> Json<()>
+        {
         }
 
-        GET NoRetry {
+        GET NoRetry
+        -> Json<()>
+        {
             retry off
-            -> Json<()>;
         }
     }
 
@@ -84,13 +86,15 @@ async fn retry_scope_profile_applies_to_child_endpoints() {
             path["api"]
             retry read
 
-            GET Flaky {
-                -> Json<()>;
+            GET Flaky
+            -> Json<()>
+            {
             }
 
-            GET NoRetry {
+            GET NoRetry
+            -> Json<()>
+            {
                 retry off
-                -> Json<()>;
             }
         }
     }
@@ -139,7 +143,9 @@ async fn retry_patch_honors_retry_after_status() {
             host: "example.com",
         }
 
-        GET Limited {
+        GET Limited
+        -> Json<()>
+        {
             retry {
                 attempts 2
                 methods [GET]
@@ -147,7 +153,6 @@ async fn retry_patch_honors_retry_after_status() {
                 retry_after honor
                 backoff none
             }
-            -> Json<()>;
         }
     }
 
@@ -191,17 +196,19 @@ async fn retry_post_requires_declared_idempotency_header() {
             }
         }
 
-        POST Create {
+        POST Create
+        -> Json<()>
+        {
             retry write
             headers {
                 "Idempotency-Key" as idempotency_key: String
             }
-            -> Json<()>;
         }
 
-        POST UnsafeCreate {
+        POST UnsafeCreate
+        -> Json<()>
+        {
             retry write
-            -> Json<()>;
         }
     }
 

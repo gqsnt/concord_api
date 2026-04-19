@@ -31,17 +31,15 @@ api! {
     scope users {
         path["users"]
 
-        GET GetUser {
-            params { id: u32 }
+        GET GetUser(id: u32) -> Json<models::User> {
             path[id]
-            -> Json<models::User>;
         }
     }
 }
 
 async fn load_user() -> Result<models::User, ApiClientError> {
     let api = users_api::UsersApi::new();
-    api.request(users_api::endpoints::GetUser::new(42))
+    api.request(users_api::endpoints::users::GetUser::new(42))
         .execute()
         .await
 }
@@ -61,26 +59,21 @@ A policy is inherited from client to scope to endpoint. Endpoint-level settings 
 
 ## What Concord generates
 
-For each endpoint, Concord generates a struct with a constructor and builder-style setters for optional or defaulted parameters.
+For each endpoint, Concord generates a struct with a constructor and builder-style setters for optional or defaulted parameters. The generated `endpoints` module also mirrors the scope tree, so the Rust call site shows the API architecture directly.
 
 ```rust
-let endpoint = users_api::endpoints::GetUser::new(42);
+let endpoint = users_api::endpoints::users::GetUser::new(42);
 let value = api.request(endpoint).execute().await?;
 ```
 
 For a parameter declared as optional or defaulted, the generated endpoint usually starts from `new()` or from required arguments, then exposes a setter with the same Rust field name.
 
 ```rust
-GET ListUsers {
-    params {
-        page?: u32,
-        trace: bool = false
-    }
+GET ListUsers(page?: u32, trace: bool = false) -> Json<Vec<User>> {
     query {
         "page" = page,
         "trace" = trace
     }
-    -> Json<Vec<User>>;
 }
 ```
 

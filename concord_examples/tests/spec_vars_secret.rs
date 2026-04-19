@@ -17,8 +17,9 @@ async fn vars_default_and_setter_affect_emitted_header() {
             }
         }
 
-        GET Ping {
-            -> Json<()>;
+        GET Ping
+        -> Json<()>
+        {
         }
     }
 
@@ -59,8 +60,9 @@ async fn vars_required_ctor_arg_and_setter_affect_emitted_header() {
             }
         }
 
-        GET Ping {
-            -> Json<()>;
+        GET Ping
+        -> Json<()>
+        {
         }
     }
 
@@ -107,8 +109,9 @@ async fn secret_required_and_setter_affect_emitted_header() {
         scope token2_scope {
             host[vars.token2]
 
-            GET Ping {
-                -> Json<()>;
+            GET Ping
+            -> Json<()>
+            {
             }
         }
     }
@@ -150,8 +153,9 @@ async fn secret_invalid_header_value_reported_as_invalid_param_and_request_not_s
             }
         }
 
-        GET Ping {
-            -> Json<()>;
+        GET Ping
+        -> Json<()>
+        {
         }
     }
 

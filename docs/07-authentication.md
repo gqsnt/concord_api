@@ -26,9 +26,7 @@ api! {
         use_auth HeaderAuth("X-Api-Key", api_key)
         path["api"]
 
-        GET Ping {
-            -> Json<()>;
-        }
+        GET Ping -> Json<()>;
     }
 }
 ```
@@ -37,10 +35,10 @@ The generated client receives the required secret and applies it to each protect
 
 ```rust
 let mut api = api_dsl_header::ApiDslHeader::new("tok1".to_string());
-api.request(api_dsl_header::endpoints::Ping::new()).execute().await?;
+api.request(api_dsl_header::endpoints::protected::Ping::new()).execute().await?;
 
 api.set_api_key("tok2");
-api.request(api_dsl_header::endpoints::Ping::new()).execute().await?;
+api.request(api_dsl_header::endpoints::protected::Ping::new()).execute().await?;
 ```
 
 Secret setters rebuild auth state, and clones observe the updated state.
@@ -74,12 +72,10 @@ Credential names are local identifiers referenced by `use_auth`.
 Use `Endpoint(...)` when a credential must be acquired explicitly from an API endpoint response.
 
 ```rust
-POST LoginForSession {
+POST LoginForSession(body: Json<LoginRequest>) -> Json<LoginResponse> | AccessToken => {
+    AccessToken::new(r.access_token)
+} {
     path["login"]
-    body Json<LoginRequest>
-    -> Json<LoginResponse> | AccessToken => {
-        AccessToken::new(r.access_token)
-    };
 }
 
 client Api {
@@ -90,9 +86,10 @@ client Api {
     }
 }
 
-GET Me {
+scope protected {
     use_auth BearerAuth(session)
-    -> Json<User>;
+
+    GET Me -> Json<User>;
 }
 ```
 
@@ -104,6 +101,7 @@ Endpoint-backed credentials are manual by default:
 
 ```rust
 api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
+api.request(endpoints::protected::Me::new()).execute().await?;
 api.set_auth_session_value(AccessToken::new("seed")).await;
 let has = api.has_auth_session().await;
 api.clear_auth_session().await;
@@ -138,9 +136,8 @@ scope platform {
     use_auth HeaderAuth("X-Riot-Token", riot_api_key)
     path["lol"]
 
-    GET GetPlatformData {
+    GET GetPlatformData -> Json<PlatformDataDto> {
         path["status", "v4", "platform-data"]
-        -> Json<PlatformDataDto>;
     }
 }
 ```
@@ -158,9 +155,8 @@ auth {
     credential api_key: ApiKey(secret.api_key)
 }
 
-GET Ping {
+GET Ping -> Json<()> {
     use_auth HeaderAuth("X-Api-Key", api_key)
-    -> Json<()>;
 }
 ```
 
@@ -179,9 +175,8 @@ auth {
     credential token: AccessToken(secret.access_token)
 }
 
-GET Ping {
+GET Ping -> Json<()> {
     use_auth BearerAuth(token)
-    -> Json<()>;
 }
 ```
 
@@ -196,9 +191,8 @@ authorization: Bearer <token>
 Query auth writes a credential into the URL query string.
 
 ```rust
-GET Ping {
+GET Ping -> Json<()> {
     use_auth QueryAuth("api_key", api_key)
-    -> Json<()>;
 }
 ```
 
@@ -209,12 +203,11 @@ This sends `?api_key=<secret>`. Prefer header-based auth when the upstream API s
 Use a list to apply all steps in order.
 
 ```rust
-GET Ping {
+GET Ping -> Json<()> {
     use_auth [
         BearerAuth(token),
         HeaderAuth("X-Api-Key", api_key)
     ]
-    -> Json<()>;
 }
 ```
 
@@ -225,12 +218,11 @@ The request receives both auth artifacts.
 Use `one_of` for fallback auth. Concord tries the first usage and, if the response challenges or rejects it, retries with the next usage.
 
 ```rust
-GET Ping {
+GET Ping -> Json<()> {
     use_auth one_of [
         BearerAuth(token),
         HeaderAuth("X-Fallback-Key", fallback)
     ]
-    -> Json<()>;
 }
 ```
 
@@ -255,9 +247,8 @@ auth {
     }
 }
 
-GET Ping {
+GET Ping -> Json<()> {
     use_auth BearerAuth(token)
-    -> Json<()>;
 }
 ```
 
@@ -282,9 +273,8 @@ auth {
     credential token: Custom<DslStaticTokenProvider>(DslStaticTokenProvider)
 }
 
-GET Ping {
+GET Ping -> Json<()> {
     use_auth BearerAuth(token)
-    -> Json<()>;
 }
 ```
 
@@ -301,9 +291,8 @@ auth {
     credential token: Custom<DslStaticTokenProvider>(DslStaticTokenProvider)
 }
 
-GET Ping {
+GET Ping -> Json<()> {
     use_auth Custom<DslFormattingBearerAuth>(DslFormattingBearerAuth::new("tenant-a:"), token)
-    -> Json<()>;
 }
 ```
 
@@ -322,9 +311,8 @@ auth {
     credential cert: Custom<DslCertificateProvider>(DslCertificateProvider)
 }
 
-GET Ping {
+GET Ping -> Json<()> {
     use_auth CertificateAuth(cert)
-    -> Json<()>;
 }
 ```
 

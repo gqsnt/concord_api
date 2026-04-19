@@ -576,10 +576,12 @@ fn parse_vars_block(input: ParseStream<'_>) -> Result<VarsBlock> {
     Ok(VarsBlock { decls })
 }
 
-fn parse_params_block(input: ParseStream<'_>) -> Result<Vec<VarDeclNoWire>> {
-    input.parse::<kw::params>()?;
+fn parse_inline_var_decls(
+    input: ParseStream<'_>,
+    ctx: &'static str,
+) -> Result<Vec<VarDeclNoWire>> {
     let content;
-    braced!(content in input);
+    parenthesized!(content in input);
     let mut decls = Vec::new();
     while !content.is_empty() {
         decls.push(content.parse::<VarDeclNoWire>()?);
@@ -591,11 +593,211 @@ fn parse_params_block(input: ParseStream<'_>) -> Result<Vec<VarDeclNoWire>> {
             let tt: TokenTree = content.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "expected `,` between params declarations",
+                format!("expected `,` between {ctx} declarations"),
             ));
         }
     }
     Ok(decls)
+}
+
+struct EndpointBlockParts {
+    route: RouteExpr,
+    policy: PolicyBlocks,
+    auth_uses: Vec<AuthUseDecl>,
+    cache: Option<CacheSpec>,
+    retry: Option<RetrySpec>,
+    rate_limit: Option<RateLimitSpec>,
+    rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
+    paginate: Option<PaginateSpec>,
+}
+
+fn parse_endpoint_response_spec(input: ParseStream<'_>) -> Result<(CodecSpec, Option<MapSpec>)> {
+    input.parse::<Token![->]>()?;
+    let response: CodecSpec = input.parse()?;
+
+    let map = if input.peek(Token![|]) {
+        input.parse::<Token![|]>()?;
+        let out_ty: Type = input.parse()?;
+        input.parse::<Token![=>]>()?;
+        let body: Expr = input.parse()?;
+        Some(MapSpec { out_ty, body })
+    } else {
+        None
+    };
+
+    Ok((response, map))
+}
+
+fn parse_endpoint_signature_args(
+    input: ParseStream<'_>,
+) -> Result<(Vec<VarDeclNoWire>, Option<CodecSpec>)> {
+    let content;
+    parenthesized!(content in input);
+
+    let mut params = Vec::new();
+    let mut body = None;
+
+    while !content.is_empty() {
+        if content.peek(kw::body) {
+            if body.is_some() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "duplicate `body` in endpoint signature",
+                ));
+            }
+            content.parse::<kw::body>()?;
+            content.parse::<Token![:]>()?;
+            body = Some(content.parse::<CodecSpec>()?);
+        } else {
+            params.push(content.parse::<VarDeclNoWire>()?);
+        }
+
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+            continue;
+        }
+        if !content.is_empty() {
+            let tt: TokenTree = content.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "expected `,` between endpoint signature items",
+            ));
+        }
+    }
+
+    Ok((params, body))
+}
+
+fn parse_endpoint_block_parts(
+    input: ParseStream<'_>,
+    name: &Ident,
+) -> Result<EndpointBlockParts> {
+    let mut route = RouteExpr { atoms: Vec::new() };
+    let mut policy = PolicyBlocks::default();
+    let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
+    let mut cache: Option<CacheSpec> = None;
+    let mut retry: Option<RetrySpec> = None;
+    let mut rate_limit: Option<RateLimitSpec> = None;
+    let mut rate_limit_keys = Vec::new();
+    let mut paginate: Option<PaginateSpec> = None;
+
+    while !input.is_empty() {
+        if input.peek(kw::params) {
+            return Err(syn::Error::new(
+                name.span(),
+                "endpoint params blocks are not supported; declare params in `Name(...)`",
+            ));
+        } else if input.peek(kw::path) {
+            if !route.atoms.is_empty() {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "duplicate `path[...]` in endpoint",
+                ));
+            }
+            input.parse::<kw::path>()?;
+            route = parse_route_expr_bracket(input)?;
+            let _ = input.parse::<Option<Token![,]>>()?;
+        } else if input.peek(kw::headers) {
+            policy.headers = Some(input.parse::<PolicyBlockTaggedHeaders>()?.0);
+            let _ = input.parse::<Option<Token![,]>>()?;
+        } else if input.peek(kw::query) {
+            policy.query = Some(input.parse::<PolicyBlockTaggedQuery>()?.0);
+            let _ = input.parse::<Option<Token![,]>>()?;
+        } else if input.peek(kw::timeout) {
+            input.parse::<kw::timeout>()?;
+            input.parse::<Token![:]>()?;
+            let t = parse_expr_until_comma_or_endpoint_arrow(input)?;
+            policy.timeout = Some(normalize_policy_expr(t));
+            let _ = input.parse::<Option<Token![,]>>()?;
+        } else if input.peek(kw::use_auth) {
+            auth_uses.push(input.parse::<AuthUseDecl>()?);
+            let _ = input.parse::<Option<Token![,]>>()?;
+        } else if input.peek(kw::cache) {
+            if cache.is_some() {
+                return Err(syn::Error::new(
+                    name.span(),
+                    "duplicate cache policy in endpoint",
+                ));
+            }
+            match parse_cache_decl(input)? {
+                CacheDecl::Spec(spec) => cache = Some(spec),
+                CacheDecl::Profiles(_) => {
+                    return Err(syn::Error::new(
+                        name.span(),
+                        "cache profiles are only allowed in client blocks",
+                    ));
+                }
+            }
+            let _ = input.parse::<Option<Token![,]>>()?;
+        } else if input.peek(kw::retry) {
+            match parse_retry_decl(input)? {
+                RetryDecl::Spec(spec) => {
+                    if retry.is_some() {
+                        return Err(syn::Error::new(
+                            name.span(),
+                            "duplicate retry policy in endpoint",
+                        ));
+                    }
+                    retry = Some(spec);
+                }
+                RetryDecl::Profiles(_) => {
+                    return Err(syn::Error::new(
+                        name.span(),
+                        "retry profiles are only allowed in client blocks",
+                    ));
+                }
+            }
+            let _ = input.parse::<Option<Token![,]>>()?;
+        } else if input.peek(kw::rate_limit) {
+            let fork = input.fork();
+            fork.parse::<kw::rate_limit>()?;
+            if fork.peek(kw::key) {
+                rate_limit_keys.push(parse_rate_limit_key_binding(input)?);
+            } else {
+                if rate_limit.is_some() {
+                    return Err(syn::Error::new(
+                        name.span(),
+                        "duplicate rate_limit policy in endpoint",
+                    ));
+                }
+                rate_limit = Some(parse_rate_limit_spec(input)?);
+            }
+            let _ = input.parse::<Option<Token![,]>>()?;
+        } else if input.peek(kw::paginate) {
+            if paginate.is_some() {
+                return Err(syn::Error::new(name.span(), "duplicate `paginate`"));
+            }
+            paginate = Some(input.parse::<PaginateSpec>()?);
+            let _ = input.parse::<Option<Token![,]>>()?;
+        } else if input.peek(kw::body) {
+            return Err(syn::Error::new(
+                name.span(),
+                "endpoint body blocks are not supported; declare body in `Name(body: Codec<...>)`",
+            ));
+        } else if input.peek(Token![->]) {
+            return Err(syn::Error::new(
+                name.span(),
+                "endpoint response blocks are not supported; declare response in endpoint header",
+            ));
+        } else {
+            let tt: proc_macro2::TokenTree = input.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "unexpected token in endpoint block",
+            ));
+        }
+    }
+
+    Ok(EndpointBlockParts {
+        route,
+        policy,
+        auth_uses,
+        cache,
+        retry,
+        rate_limit,
+        rate_limit_keys,
+        paginate,
+    })
 }
 
 enum RetryDecl {
@@ -1286,12 +1488,16 @@ struct LayerDefTaggedScope(LayerDef);
 impl Parse for LayerDefTaggedScope {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::scope>()?;
-        let _name: Ident = input.parse()?;
+        let name: Ident = input.parse()?;
+        let params: Vec<VarDeclNoWire> = if input.peek(token::Paren) {
+            parse_inline_var_decls(input, "scope param")?
+        } else {
+            Vec::new()
+        };
 
         let content;
         braced!(content in input);
 
-        let mut params: Vec<VarDeclNoWire> = Vec::new();
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut cache: Option<CacheSpec> = None;
@@ -1304,14 +1510,10 @@ impl Parse for LayerDefTaggedScope {
 
         while !content.is_empty() {
             if content.peek(kw::params) {
-                if !params.is_empty() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "duplicate `params {}` in scope",
-                    ));
-                }
-                params = parse_params_block(&content)?;
-                let _ = content.parse::<Option<Token![,]>>()?;
+                return Err(syn::Error::new(
+                    content.span(),
+                    "scope params blocks are not supported; declare params in `scope name(...)`",
+                ));
             } else if content.peek(kw::host) {
                 if host_route.is_some() {
                     return Err(syn::Error::new(
@@ -1414,6 +1616,7 @@ impl Parse for LayerDefTaggedScope {
         // Normalize `scope` into one or two nested internal layers.
         let outer = match (host_route, path_route) {
             (Some(host), Some(path)) => LayerDef {
+                scope_name: Some(name),
                 kind: LayerKind::Prefix,
                 route: host,
                 params,
@@ -1424,6 +1627,7 @@ impl Parse for LayerDefTaggedScope {
                 rate_limit,
                 rate_limit_keys,
                 items: vec![Item::Layer(LayerDef {
+                    scope_name: None,
                     kind: LayerKind::Path,
                     route: path,
                     params: Vec::new(),
@@ -1437,6 +1641,7 @@ impl Parse for LayerDefTaggedScope {
                 })],
             },
             (Some(host), None) => LayerDef {
+                scope_name: Some(name),
                 kind: LayerKind::Prefix,
                 route: host,
                 params,
@@ -1449,6 +1654,7 @@ impl Parse for LayerDefTaggedScope {
                 items,
             },
             (None, Some(path)) => LayerDef {
+                scope_name: Some(name),
                 kind: LayerKind::Path,
                 route: path,
                 params,
@@ -1461,6 +1667,7 @@ impl Parse for LayerDefTaggedScope {
                 items,
             },
             (None, None) => LayerDef {
+                scope_name: Some(name),
                 kind: LayerKind::Path,
                 route: RouteExpr { atoms: Vec::new() },
                 params,
@@ -1482,296 +1689,64 @@ impl Parse for EndpointDef {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let method: Ident = input.parse()?;
         let name: Ident = input.parse()?;
-        if input.peek(token::Brace) {
-            let content;
-            braced!(content in input);
+        let (params, body) = if input.peek(token::Paren) {
+            parse_endpoint_signature_args(input)?
+        } else {
+            (Vec::new(), None)
+        };
 
-            let mut params: Vec<VarDeclNoWire> = Vec::new();
-            let mut route = RouteExpr { atoms: Vec::new() };
-            let mut policy = PolicyBlocks::default();
-            let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
-            let mut cache: Option<CacheSpec> = None;
-            let mut retry: Option<RetrySpec> = None;
-            let mut rate_limit: Option<RateLimitSpec> = None;
-            let mut rate_limit_keys = Vec::new();
-            let mut paginate: Option<PaginateSpec> = None;
-            let mut body: Option<CodecSpec> = None;
-            let mut response: Option<CodecSpec> = None;
-            let mut map: Option<MapSpec> = None;
+        if !input.peek(Token![->]) {
+            return Err(syn::Error::new(
+                input.span(),
+                "endpoint declarations must use `METHOD Name(...) -> Response { ... }` (or `METHOD Name -> Response { ... }`)",
+            ));
+        }
 
-            while !content.is_empty() {
-                if content.peek(kw::params) {
-                    if !params.is_empty() {
-                        return Err(syn::Error::new(
-                            content.span(),
-                            "duplicate `params {}` in endpoint",
-                        ));
-                    }
-                    params = parse_params_block(&content)?;
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::path) {
-                    if !route.atoms.is_empty() {
-                        return Err(syn::Error::new(
-                            content.span(),
-                            "duplicate `path[...]` in endpoint",
-                        ));
-                    }
-                    content.parse::<kw::path>()?;
-                    route = parse_route_expr_bracket(&content)?;
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::headers) {
-                    policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::query) {
-                    policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::timeout) {
-                    content.parse::<kw::timeout>()?;
-                    content.parse::<Token![:]>()?;
-                    let t = parse_expr_until_comma_or_endpoint_arrow(&content)?;
-                    policy.timeout = Some(normalize_policy_expr(t));
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::use_auth) {
-                    auth_uses.push(content.parse::<AuthUseDecl>()?);
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::cache) {
-                    if cache.is_some() {
-                        return Err(syn::Error::new(
-                            name.span(),
-                            "duplicate cache policy in endpoint",
-                        ));
-                    }
-                    match parse_cache_decl(&content)? {
-                        CacheDecl::Spec(spec) => cache = Some(spec),
-                        CacheDecl::Profiles(_) => {
-                            return Err(syn::Error::new(
-                                name.span(),
-                                "cache profiles are only allowed in client blocks",
-                            ));
-                        }
-                    }
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::retry) {
-                    match parse_retry_decl(&content)? {
-                        RetryDecl::Spec(spec) => {
-                            if retry.is_some() {
-                                return Err(syn::Error::new(
-                                    name.span(),
-                                    "duplicate retry policy in endpoint",
-                                ));
-                            }
-                            retry = Some(spec);
-                        }
-                        RetryDecl::Profiles(_) => {
-                            return Err(syn::Error::new(
-                                name.span(),
-                                "retry profiles are only allowed in client blocks",
-                            ));
-                        }
-                    }
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::rate_limit) {
-                    let fork = content.fork();
-                    fork.parse::<kw::rate_limit>()?;
-                    if fork.peek(kw::key) {
-                        rate_limit_keys.push(parse_rate_limit_key_binding(&content)?);
-                    } else {
-                        if rate_limit.is_some() {
-                            return Err(syn::Error::new(
-                                name.span(),
-                                "duplicate rate_limit policy in endpoint",
-                            ));
-                        }
-                        rate_limit = Some(parse_rate_limit_spec(&content)?);
-                    }
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::paginate) {
-                    if paginate.is_some() {
-                        return Err(syn::Error::new(name.span(), "duplicate `paginate`"));
-                    }
-                    paginate = Some(content.parse::<PaginateSpec>()?);
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(kw::body) {
-                    if body.is_some() {
-                        return Err(syn::Error::new(name.span(), "duplicate `body`"));
-                    }
-                    content.parse::<kw::body>()?;
-                    body = Some(content.parse::<CodecSpec>()?);
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else if content.peek(Token![->]) {
-                    content.parse::<Token![->]>()?;
-                    response = Some(content.parse::<CodecSpec>()?);
-                    map = if content.peek(Token![|]) {
-                        content.parse::<Token![|]>()?;
-                        let out_ty: Type = content.parse()?;
-                        content.parse::<Token![=>]>()?;
-                        let body: Expr = content.parse()?;
-                        Some(MapSpec { out_ty, body })
-                    } else {
-                        None
-                    };
-                    let _ = content.parse::<Option<token::Semi>>()?;
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                } else {
-                    let tt: proc_macro2::TokenTree = content.parse()?;
-                    return Err(syn::Error::new(
-                        tt.span(),
-                        "unexpected token in endpoint block",
-                    ));
-                }
-            }
+        let (response, map) = parse_endpoint_response_spec(input)?;
 
-            let response = response.ok_or_else(|| {
-                syn::Error::new(name.span(), "endpoint block is missing `-> <Codec>`")
-            })?;
-
+        if input.peek(token::Semi) {
+            let _semi: token::Semi = input.parse()?;
             return Ok(Self {
                 method,
                 name,
-                route,
+                route: RouteExpr { atoms: Vec::new() },
                 params,
-                policy,
-                auth_uses,
-                cache,
-                retry,
-                rate_limit,
-                rate_limit_keys,
-                paginate,
+                policy: PolicyBlocks::default(),
+                auth_uses: Vec::new(),
+                cache: None,
+                retry: None,
+                rate_limit: None,
+                rate_limit_keys: Vec::new(),
+                paginate: None,
                 body,
                 response,
                 map,
             });
         }
 
-        let route: RouteExpr = parse_route_expr_slash(input)?;
-        let params: Vec<VarDeclNoWire> = Vec::new();
-        let mut policy = PolicyBlocks::default();
-        let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
-        let mut cache: Option<CacheSpec> = None;
-        let mut retry: Option<RetrySpec> = None;
-        let mut rate_limit: Option<RateLimitSpec> = None;
-        let mut rate_limit_keys = Vec::new();
-        let mut paginate: Option<PaginateSpec> = None;
-        let mut body: Option<CodecSpec> = None;
-
-        // parse endpoint parts until `->`
-        while !input.peek(Token![->]) {
-            if input.peek(kw::headers) {
-                policy.headers = Some(input.parse::<PolicyBlockTaggedHeaders>()?.0);
-                let _ = input.parse::<Option<Token![,]>>()?;
-            } else if input.peek(kw::query) {
-                policy.query = Some(input.parse::<PolicyBlockTaggedQuery>()?.0);
-                let _ = input.parse::<Option<Token![,]>>()?;
-            } else if input.peek(kw::timeout) {
-                input.parse::<kw::timeout>()?;
-                input.parse::<Token![:]>()?;
-                policy.timeout = Some(normalize_policy_expr(
-                    parse_expr_until_comma_or_endpoint_arrow(input)?,
-                ));
-                let _ = input.parse::<Option<Token![,]>>()?;
-            } else if input.peek(kw::use_auth) {
-                auth_uses.push(input.parse::<AuthUseDecl>()?);
-                let _ = input.parse::<Option<Token![,]>>()?;
-            } else if input.peek(kw::cache) {
-                if cache.is_some() {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "duplicate cache policy in endpoint",
-                    ));
-                }
-                match parse_cache_decl(input)? {
-                    CacheDecl::Spec(spec) => cache = Some(spec),
-                    CacheDecl::Profiles(_) => {
-                        return Err(syn::Error::new(
-                            name.span(),
-                            "cache profiles are only allowed in client blocks",
-                        ));
-                    }
-                }
-                let _ = input.parse::<Option<Token![,]>>()?;
-            } else if input.peek(kw::retry) {
-                match parse_retry_decl(input)? {
-                    RetryDecl::Spec(spec) => {
-                        if retry.is_some() {
-                            return Err(syn::Error::new(
-                                name.span(),
-                                "duplicate retry policy in endpoint",
-                            ));
-                        }
-                        retry = Some(spec);
-                    }
-                    RetryDecl::Profiles(_) => {
-                        return Err(syn::Error::new(
-                            name.span(),
-                            "retry profiles are only allowed in client blocks",
-                        ));
-                    }
-                }
-                let _ = input.parse::<Option<Token![,]>>()?;
-            } else if input.peek(kw::rate_limit) {
-                let fork = input.fork();
-                fork.parse::<kw::rate_limit>()?;
-                if fork.peek(kw::key) {
-                    rate_limit_keys.push(parse_rate_limit_key_binding(input)?);
-                } else {
-                    if rate_limit.is_some() {
-                        return Err(syn::Error::new(
-                            name.span(),
-                            "duplicate rate_limit policy in endpoint",
-                        ));
-                    }
-                    rate_limit = Some(parse_rate_limit_spec(input)?);
-                }
-                let _ = input.parse::<Option<Token![,]>>()?;
-            } else if input.peek(kw::paginate) {
-                if paginate.is_some() {
-                    return Err(syn::Error::new(name.span(), "duplicate `paginate`"));
-                }
-                paginate = Some(input.parse::<PaginateSpec>()?);
-                let _ = input.parse::<Option<Token![,]>>()?;
-            } else if input.peek(kw::body) {
-                if body.is_some() {
-                    return Err(syn::Error::new(name.span(), "duplicate `body`"));
-                }
-                input.parse::<kw::body>()?;
-                body = Some(input.parse::<CodecSpec>()?);
-                let _ = input.parse::<Option<Token![,]>>()?;
-            } else {
-                let tt: proc_macro2::TokenTree = input.parse()?;
-                return Err(syn::Error::new(
-                    tt.span(),
-                    "unexpected token in endpoint; expected use_auth/headers/query/timeout/paginate/body or `->`",
-                ));
-            }
+        if !input.peek(token::Brace) {
+            return Err(syn::Error::new(
+                input.span(),
+                "expected endpoint block or `;` after endpoint header",
+            ));
         }
 
-        input.parse::<Token![->]>()?;
-        let response: CodecSpec = input.parse()?;
-
-        let map = if input.peek(Token![|]) {
-            input.parse::<Token![|]>()?;
-            let out_ty: Type = input.parse()?;
-            input.parse::<Token![=>]>()?;
-            let body: Expr = input.parse()?;
-            Some(MapSpec { out_ty, body })
-        } else {
-            None
-        };
-
-        let _semi: token::Semi = input.parse()?;
+        let content;
+        braced!(content in input);
+        let parts = parse_endpoint_block_parts(&content, &name)?;
 
         Ok(Self {
             method,
             name,
-            route,
+            route: parts.route,
             params,
-            policy,
-            auth_uses,
-            cache,
-            retry,
-            rate_limit,
-            rate_limit_keys,
-            paginate,
+            policy: parts.policy,
+            auth_uses: parts.auth_uses,
+            cache: parts.cache,
+            retry: parts.retry,
+            rate_limit: parts.rate_limit,
+            rate_limit_keys: parts.rate_limit_keys,
+            paginate: parts.paginate,
             body,
             response,
             map,
@@ -2200,16 +2175,6 @@ fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
         tt.span(),
         "expected string literal or `{var:Ty}` in route",
     ))
-}
-
-fn parse_route_expr_slash(input: ParseStream<'_>) -> Result<RouteExpr> {
-    let mut atoms: Vec<RouteAtom> = Vec::new();
-    atoms.push(parse_route_atom(input)?);
-    while input.peek(Token![/]) {
-        input.parse::<Token![/]>()?;
-        atoms.push(parse_route_atom(input)?);
-    }
-    Ok(RouteExpr { atoms })
 }
 
 fn parse_route_expr_bracket(input: ParseStream<'_>) -> Result<RouteExpr> {

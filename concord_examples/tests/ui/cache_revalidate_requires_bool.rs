@@ -13,9 +13,10 @@ api! {
         }
     }
 
-    GET Cached {
+    GET Cached
+    -> Json<String>
+    {
         path["cached"]
-        -> Json<String>;
     }
 }
 

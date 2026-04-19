@@ -1,16 +1,12 @@
 use concord_macros::api;
 
 api! {
-    client UiMissingType {
+    client UiEndpointRouteFirstRemoved {
         scheme: https,
         host: "example.com",
     }
 
-    GET One(id)
-    -> Json<()>
-    {
-        path["x", id]
-    }
+    GET Ping "health" -> Json<()>;
 }
 
 fn main() {}

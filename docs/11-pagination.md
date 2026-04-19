@@ -24,7 +24,9 @@ The decoded response type must implement `PageItems`.
 `Vec<T>` already implements `PageItems`, so endpoints returning `Json<Vec<T>>` work directly.
 
 ```rust
-GET List {
+GET List
+-> Json<Vec<String>>
+{
     path["x"]
     paginate PagedPagination {
         page_key = "p".into(),
@@ -32,7 +34,6 @@ GET List {
         page = 1,
         per_page = 20
     }
-    -> Json<Vec<String>>;
 }
 ```
 
@@ -64,12 +65,10 @@ impl PageItems for Page {
 Use `OffsetLimitPagination` for APIs that take an offset and limit.
 
 ```rust
-GET List {
+GET List(start: u64 = 0, count: u64 = 2)
+-> Json<Vec<String>>
+{
     path["x"]
-    params {
-        start: u64 = 0,
-        count: u64 = 2
-    }
     query {
         "start" = start,
         "count" = count
@@ -78,7 +77,6 @@ GET List {
         offset = start,
         limit = count
     }
-    -> Json<Vec<String>>;
 }
 ```
 
@@ -101,12 +99,10 @@ The controller stops on an empty page by default. It also stops on a short page 
 Use `PagedPagination` for APIs that take a page number and page size.
 
 ```rust
-GET List {
+GET List(page: u32 = 1, page_size: u32 = 2)
+-> Json<Vec<String>>
+{
     path["x"]
-    params {
-        page: u32 = 1,
-        page_size: u32 = 2
-    }
     query {
         "p" = page,
         "sz" = page_size
@@ -117,7 +113,6 @@ GET List {
         page = page as u64,
         per_page = page_size as u64
     }
-    -> Json<Vec<String>>;
 }
 ```
 
@@ -150,12 +145,10 @@ impl HasNextCursor for Page {
 Endpoint example:
 
 ```rust
-GET List {
+GET List(page_cursor?: String, page_size: u64 = 2)
+-> Json<Page>
+{
     path["x"]
-    params {
-        page_cursor?: String,
-        page_size: u64 = 2
-    }
     query {
         "pageCursor" = page_cursor,
         "pageSize" = page_size
@@ -164,7 +157,6 @@ GET List {
         cursor = page_cursor,
         per_page = page_size
     }
-    -> Json<Page>;
 }
 ```
 

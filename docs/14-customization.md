@@ -53,13 +53,13 @@ impl core::fmt::Display for PlatformRoute {
 Then use it in the DSL.
 
 ```rust
-scope platform {
-    params { platform: PlatformRoute }
+scope platform(platform: PlatformRoute) {
     host[platform, "api"]
 
-    GET Status {
+    GET Status
+    -> Json<PlatformData>
+    {
         path["lol", "status", "v4", "platform-data"]
-        -> Json<PlatformData>;
     }
 }
 ```
@@ -153,9 +153,10 @@ api! {
         }
     }
 
-    GET Ping {
+    GET Ping
+    -> Json<()>
+    {
         use_auth BearerAuth(token)
-        -> Json<()>;
     }
 }
 ```
@@ -334,9 +335,10 @@ where
 Use it in the DSL.
 
 ```rust
-GET Ping {
+GET Ping
+-> Json<()>
+{
     use_auth Custom<PrefixBearer>(PrefixBearer::new("tenant-a:"), token)
-    -> Json<()>;
 }
 ```
 
@@ -727,11 +729,9 @@ impl<T: Send + 'static> HasNextCursor for Page<T> {
 Then use built-in cursor pagination.
 
 ```rust
-GET List {
-    params {
-        page_cursor?: String,
-        page_size: u64 = 50
-    }
+GET List(page_cursor?: String, page_size: u64 = 50)
+-> Json<Page<Item>>
+{
     query {
         "cursor" = page_cursor,
         "limit" = page_size
@@ -740,7 +740,6 @@ GET List {
         cursor = page_cursor,
         per_page = page_size
     }
-    -> Json<Page<Item>>;
 }
 ```
 
@@ -805,12 +804,13 @@ where
 Use it in the DSL.
 
 ```rust
-GET List {
+GET List
+-> Json<Vec<Item>>
+{
     paginate HeaderCursorPagination {
         cursor_header = "x-next-cursor",
         query_key = "cursor"
     }
-    -> Json<Vec<Item>>;
 }
 ```
 

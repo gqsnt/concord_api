@@ -24,9 +24,10 @@ async fn query_set_remove_push_override_and_tostring() {
                 "b" = false
             }
 
-            GET One {
+            GET One
+            -> Json<()>
+            {
                 query { "dup" = "e1" }
-                -> Json<()>;
             }
         }
     }
@@ -58,13 +59,11 @@ async fn query_part_set_required_param() {
             host: "example.com",
         }
 
-        GET One {
-            params {
-                v: String
-            }
+        GET One(v: String)
+        -> Json<()>
+        {
             path["x"]
             query { "q" = part["a:", v] }
-            -> Json<()>;
         }
     }
 
@@ -96,13 +95,11 @@ async fn query_part_optional_removes_key_when_missing() {
             host: "example.com",
         }
 
-        GET One {
-            params {
-                v?: String
-            }
+        GET One(v?: String)
+        -> Json<()>
+        {
             path["x"]
             query { "q" = part["a:", v] }
-            -> Json<()>;
         }
     }
 
@@ -141,16 +138,14 @@ async fn query_part_push_appends_duplicate_keys_in_order() {
             host: "example.com",
         }
 
-        GET One {
-            params {
-                v: String
-            }
+        GET One(v: String)
+        -> Json<()>
+        {
             path["x"]
             query {
                 "dup" += part["p:", v],
                 "dup" += "s"
             }
-            -> Json<()>;
         }
     }
 
@@ -200,9 +195,10 @@ async fn headers_kebab_string_bind_remove_override() {
                 -"x-static"
             }
 
-            GET One {
+            GET One
+            -> Json<()>
+            {
                 headers { -"x-flag" }
-                -> Json<()>;
             }
         }
     }
@@ -242,8 +238,9 @@ async fn header_value_from_vars_to_string_and_invalid_header_value_error() {
             }
         }
 
-        GET One {
-            -> Json<()>;
+        GET One
+        -> Json<()>
+        {
         }
     }
 
@@ -294,18 +291,21 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
             headers { "accept" = "text/plain" }
         }
 
-        GET A {
-            -> Json<()>;
+        GET A
+        -> Json<()>
+        {
         }
 
-        GET B {
+        GET B
+        -> Json<()>
+        {
             headers { "accept" = "text/plain" }
-            -> Json<()>;
         }
 
-        GET C {
+        GET C
+        -> Json<()>
+        {
             headers { -"accept" }
-            -> Json<()>;
         }
     }
 

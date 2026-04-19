@@ -71,65 +71,40 @@ api! {
         scope posts {
             path["posts"]
 
-            GET GetPosts {
-                params {
-                    user_id?: u32,
-                    x_debug: bool = true
-                }
+            GET GetPosts(user_id?: u32, x_debug: bool = true) -> Json<Vec<models::Post>> {
                 query {
                     "userId" = user_id
                 }
                 headers {
                     "x-debug" = part["test:", x_debug]
                 }
-                -> Json<Vec<models::Post>>;
             }
 
-            GET GetPost {
-                params {
-                    id: i32
-                }
+            GET GetPost(id: i32) -> Json<models::Post> {
                 path[id]
-                -> Json<models::Post>;
             }
 
-            GET GetPostComments {
-                params {
-                    post_id: i32
-                }
+            GET GetPostComments(post_id: i32) -> Json<Vec<models::Comment>> {
                 path[post_id, "comments"]
-                -> Json<Vec<models::Comment>>;
             }
 
-            POST CreatePost {
-                body Json<models::NewPost>
-                -> Json<models::Post>;
-            }
+            POST CreatePost(body: Json<models::NewPost>) -> Json<models::Post>;
         }
 
         scope users {
             path["users"]
 
-            GET GetUser {
-                params {
-                    id: i32
-                }
+            GET GetUser(id: i32) -> Json<models::User> {
                 path[id]
-                -> Json<models::User>;
             }
 
-            GET GetUserPosts {
-                params {
-                    id: i32,
-                    user_id?: u32
-                }
+            GET GetUserPosts(id: i32, user_id?: u32) -> Json<Vec<models::Post>> | Vec<String> => {
+                IntoIterator::into_iter(r).map(|p| p.title).collect()
+            } {
                 path[id, "posts"]
                 query {
                     "userId" = user_id
                 }
-                -> Json<Vec<models::Post>> | Vec<String> => {
-                    IntoIterator::into_iter(r).map(|p| p.title).collect()
-                };
             }
         }
     }
@@ -140,7 +115,11 @@ pub async fn test_api() -> Result<(), ApiClientError> {
 
     let posts = client
         .clone()
-        .request(client::endpoints::GetPosts::new().user_id(1).x_debug(true))
+        .request(
+            client::endpoints::jsonplaceholder::posts::GetPosts::new()
+                .user_id(1)
+                .x_debug(true),
+        )
         .debug_level(DebugLevel::VV)
         .execute()
         .await?;
@@ -148,24 +127,26 @@ pub async fn test_api() -> Result<(), ApiClientError> {
 
     let post = client
         .clone()
-        .request(client::endpoints::GetPost::new(1))
+        .request(client::endpoints::jsonplaceholder::posts::GetPost::new(1))
         .debug_level(DebugLevel::V)
         .execute()
         .await?;
     println!("GET /posts/1 => title={:?}", post.title);
 
     let comments = client
-        .request(client::endpoints::GetPostComments::new(1))
+        .request(client::endpoints::jsonplaceholder::posts::GetPostComments::new(1))
         .execute()
         .await?;
     println!("GET /posts/1/comments => {} comments", comments.len());
 
     let created = client
-        .request(client::endpoints::CreatePost::new(models::NewPost {
+        .request(client::endpoints::jsonplaceholder::posts::CreatePost::new(
+            models::NewPost {
             title: "foo".to_string(),
             body: "bar".to_string(),
             user_id: 10,
-        }))
+        },
+        ))
         .execute()
         .await?;
     println!(
@@ -174,13 +155,13 @@ pub async fn test_api() -> Result<(), ApiClientError> {
     );
 
     let user = client
-        .request(client::endpoints::GetUser::new(1))
+        .request(client::endpoints::jsonplaceholder::users::GetUser::new(1))
         .execute()
         .await?;
     println!("GET /users/1 => username={}", user.username);
 
     let titles = client
-        .request(client::endpoints::GetUserPosts::new(1))
+        .request(client::endpoints::jsonplaceholder::users::GetUserPosts::new(1))
         .execute()
         .await?;
     println!("GET /users/1/posts => {} titles (mapped)", titles.len());

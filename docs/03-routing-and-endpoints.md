@@ -21,17 +21,15 @@ api! {
         scope posts {
             path["posts"]
 
-            GET GetPost {
-                params { id: i32 }
+            GET GetPost(id: i32) -> Json<Post> {
                 path[id]
-                -> Json<Post>;
             }
         }
     }
 }
 ```
 
-`GetPost::new(1)` targets:
+`endpoints::jsonplaceholder::posts::GetPost::new(1)` targets:
 
 ```text
 https://jsonplaceholder.typicode.com/posts/1
@@ -42,27 +40,24 @@ https://jsonplaceholder.typicode.com/posts/1
 A `scope` groups child scopes and endpoints.
 
 ```rust
-scope platform {
-    params { platform: PlatformRoute }
+scope platform(platform: PlatformRoute) {
     host[platform, "api"]
     path["lol"]
 
     scope summoner_v4 {
         path["summoner", "v4", "summoners"]
 
-        GET GetSummonerByPuuid {
-            params { puuid: String }
+        GET GetSummonerByPuuid(puuid: String) -> Json<SummonerDto> {
             path["by-puuid", puuid]
-            -> Json<SummonerDto>;
         }
     }
 }
 ```
 
-The generated endpoint constructor includes required parameters from parent scopes and the endpoint. A call might look like:
+The generated endpoint constructor includes required parameters from parent scopes and the endpoint. The generated `endpoints` module mirrors the scope tree, so a call can keep the same structure:
 
 ```rust
-api.request(endpoints::GetSummonerByPuuid::new(
+api.request(endpoints::platform::summoner_v4::GetSummonerByPuuid::new(
         "abc".to_string(),
         PlatformRoute::Euw1,
     ))
@@ -82,8 +77,7 @@ client RiotClient {
     host: "riotgames.com",
 }
 
-scope platform {
-    params { platform: PlatformRoute }
+scope platform(platform: PlatformRoute) {
     host[platform, "api"]
 }
 ```
@@ -100,10 +94,8 @@ Host labels must be valid DNS labels after formatting. The routing tests reject 
 scope posts {
     path["posts"]
 
-    GET GetPostComments {
-        params { post_id: i32 }
+    GET GetPostComments(post_id: i32) -> Json<Vec<Comment>> {
         path[post_id, "comments"]
-        -> Json<Vec<Comment>>;
     }
 }
 ```
@@ -127,10 +119,8 @@ builds:
 Optional parameters can appear in a path. Missing values are omitted without leaving a double slash.
 
 ```rust
-GET One {
-    params { opt?: String }
+GET One(opt?: String) -> Json<()> {
     path["x", opt, "y"]
-    -> Json<()>;
 }
 ```
 
@@ -147,10 +137,8 @@ api.request(endpoints::One::new().opt("z".to_string())).execute().await?;
 Use `part[...]` to build one segment, header value, or query value from multiple pieces.
 
 ```rust
-GET One {
-    params { v: String }
+GET One(v: String) -> Json<()> {
     path["x", part["p", v]]
-    -> Json<()>;
 }
 ```
 
@@ -159,10 +147,8 @@ If `v` is `a/b`, the final path is `/x/pa%2Fb`. The slash is encoded because `pa
 When a `part[...]` references an optional value and that value is missing, the containing route item or policy value is omitted.
 
 ```rust
-GET One {
-    params { v?: String }
+GET One(v?: String) -> Json<()> {
     path["x", part["p", v], "y"]
-    -> Json<()>;
 }
 ```
 
@@ -170,24 +156,22 @@ GET One {
 
 ## Endpoint shape
 
-Most endpoint definitions use the block form.
+The canonical endpoint form makes the contract visible in the header: required and optional inputs first, response second, detail block after.
 
 ```rust
-GET GetUser {
-    params { id: u32 }
+GET GetUser(id: u32) -> Json<User> {
     path[id]
     headers { "x-debug" = true }
     query { "include" = "profile" }
-    -> Json<User>;
 }
 ```
 
 The method is an HTTP method identifier such as `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, or `OPTIONS`.
 
-The endpoint name becomes a generated Rust type under `endpoints`.
+The endpoint name becomes a generated Rust type under `endpoints`, and nested scopes become nested endpoint modules.
 
 ```rust
-let ep = endpoints::GetUser::new(42);
+let ep = endpoints::users::GetUser::new(42);
 let user = api.request(ep).execute().await?;
 ```
 
@@ -202,10 +186,8 @@ scope api {
     scope public {
         path["public"]
 
-        GET GetUser {
-            params { id: u32 }
+        GET GetUser(id: u32) -> Json<User> {
             path["users", id]
-            -> Json<User>;
         }
     }
 }
@@ -222,25 +204,22 @@ Use `host[...]` for DNS labels and `path[...]` for URL path segments. Do not put
 For a large API, mirror the upstream documentation with nested scopes.
 
 ```rust
-scope regional {
-    params { region: RegionRoute }
+scope regional(region: RegionRoute) {
     host[region, "api"]
 
     scope match_v5_matches {
         path["lol", "match", "v5", "matches"]
 
-        GET GetMatchIdsByPuuid {
-            params {
-                puuid: String,
-                start: u64 = 0,
-                count: u64 = 20
-            }
+        GET GetMatchIdsByPuuid(
+            puuid: String,
+            start: u64 = 0,
+            count: u64 = 20
+        ) -> Json<Vec<String>> {
             path["by-puuid", puuid, "ids"]
             query {
                 "start" = start,
                 "count" = count
             }
-            -> Json<Vec<String>>;
         }
     }
 }

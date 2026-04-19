@@ -6,7 +6,7 @@ Most user code follows this shape:
 
 ```rust
 let api = client::Client::new(true);
-let value = api.request(client::endpoints::GetPost::new(1))
+let value = api.request(client::endpoints::jsonplaceholder::posts::GetPost::new(1))
     .execute()
     .await?;
 ```
@@ -22,9 +22,7 @@ api! {
         host: "example.com",
     }
 
-    GET Ping {
-        -> Json<()>;
-    }
+    GET Ping -> Json<()>;
 }
 ```
 
@@ -36,6 +34,8 @@ api.request(client::endpoints::Ping::new()).execute().await?;
 ```
 
 For `client RiotClient`, the module is `riot_client`.
+
+Nested scopes also become nested endpoint modules. A scope such as `scope users { GET GetUser(...) ... }` generates `endpoints::users::GetUser`.
 
 ## Construction
 
@@ -64,7 +64,7 @@ For the core `ApiClient`, use `with_reqwest_client` or `with_transport` when wor
 `request(endpoint)` returns `PendingRequest`.
 
 ```rust
-let pending = api.request(endpoints::GetPost::new(1));
+let pending = api.request(endpoints::jsonplaceholder::posts::GetPost::new(1));
 ```
 
 `execute()` sends and returns the decoded value.
@@ -76,7 +76,7 @@ let post = pending.execute().await?;
 `execute_decoded()` sends and returns `DecodedResponse<T>`.
 
 ```rust
-let response = api.request(endpoints::GetPost::new(1))
+let response = api.request(endpoints::jsonplaceholder::posts::GetPost::new(1))
     .execute_decoded()
     .await?;
 
@@ -88,7 +88,7 @@ println!("{} {}", response.status, response.url);
 `PendingRequest` supports per-request options:
 
 ```rust
-api.request(endpoints::GetPost::new(1))
+api.request(endpoints::jsonplaceholder::posts::GetPost::new(1))
     .debug_level(DebugLevel::VV)
     .timeout(core::time::Duration::from_secs(5))
     .execute()

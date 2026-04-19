@@ -8,7 +8,7 @@ This chapter is the fast entry point for the Concord DSL.
 - `secret { ... }`: sensitive inputs
 - `auth { credential ... }`: credential source/lifecycle
 - `use_auth ...`: wire application
-- `scope name { host[...] path[...] ... }`: shared route + policy
+- `scope name(...) { host[...] path[...] ... }`: shared route + policy
 - `part[...]`: template composition for route/header/query values
 
 ## Minimal shape
@@ -36,9 +36,8 @@ api! {
         path["api"]
         use_auth HeaderAuth("X-Api-Key", key)
 
-        GET Me {
+        GET Me -> Json<User> {
             path["me"]
-            -> Json<User>;
         }
     }
 }
@@ -54,7 +53,7 @@ auth {
 
 ```rust
 api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
-api.request(endpoints::Me::new()).execute().await?;
+api.request(endpoints::core::Me::new()).execute().await?;
 ```
 
 ## Suggested reading order

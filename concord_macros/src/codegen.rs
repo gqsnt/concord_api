@@ -880,10 +880,79 @@ fn auth_use_credential_ident_ir(auth_use: &AuthUseIr) -> &Ident {
 
 fn emit_endpoints(ir: &Ir, cx_ty: &Ident) -> TokenStream2 {
     let endpoint_defs = ir.endpoints.iter().map(|ep| emit_endpoint_def(ep, cx_ty));
+    let scope_modules = emit_endpoint_scope_modules(ir);
     quote! {
         pub mod endpoints {
             use super::*;
             #( #endpoint_defs )*
+            #scope_modules
+        }
+    }
+}
+
+struct EndpointScopeModule {
+    name: Ident,
+    endpoints: Vec<Ident>,
+    children: Vec<EndpointScopeModule>,
+}
+
+fn insert_endpoint_scope_module(
+    modules: &mut Vec<EndpointScopeModule>,
+    path: &[Ident],
+    endpoint: &Ident,
+) {
+    let Some((head, tail)) = path.split_first() else {
+        return;
+    };
+
+    let index = if let Some(index) = modules.iter().position(|module| module.name == *head) {
+        index
+    } else {
+        modules.push(EndpointScopeModule {
+            name: head.clone(),
+            endpoints: Vec::new(),
+            children: Vec::new(),
+        });
+        modules.len() - 1
+    };
+
+    if tail.is_empty() {
+        modules[index].endpoints.push(endpoint.clone());
+    } else {
+        insert_endpoint_scope_module(&mut modules[index].children, tail, endpoint);
+    }
+}
+
+fn emit_endpoint_scope_modules(ir: &Ir) -> TokenStream2 {
+    let mut modules = Vec::new();
+    for endpoint in &ir.endpoints {
+        if endpoint.scope_modules.is_empty() {
+            continue;
+        }
+        insert_endpoint_scope_module(&mut modules, &endpoint.scope_modules, &endpoint.name);
+    }
+
+    let tokens = modules
+        .iter()
+        .map(|module| emit_endpoint_scope_module(module, 1));
+    quote! { #( #tokens )* }
+}
+
+fn emit_endpoint_scope_module(module: &EndpointScopeModule, depth: usize) -> TokenStream2 {
+    let name = &module.name;
+    let endpoint_reexports = module.endpoints.iter().map(|endpoint| {
+        let supers = (0..depth).map(|_| quote! { super:: });
+        quote! { pub use #( #supers )* #endpoint; }
+    });
+    let children = module
+        .children
+        .iter()
+        .map(|child| emit_endpoint_scope_module(child, depth + 1));
+
+    quote! {
+        pub mod #name {
+            #( #endpoint_reexports )*
+            #( #children )*
         }
     }
 }
@@ -1209,6 +1278,19 @@ fn emit_client_wrapper(
 fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
     let name = &ep.name;
     let method = &ep.method;
+    let endpoint_name = if ep.scope_modules.is_empty() {
+        LitStr::new(&name.to_string(), name.span())
+    } else {
+        let mut qualified = ep
+            .scope_modules
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("::");
+        qualified.push_str("::");
+        qualified.push_str(&name.to_string());
+        LitStr::new(&qualified, name.span())
+    };
 
     // fields (endpoint vars)
     let mut fields_ts = Vec::new();
@@ -1365,6 +1447,11 @@ fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
             type Pagination = #pagination_ty;
             type Body = #body_ty;
             type Response = #response_ty;
+
+            #[inline]
+            fn name(&self) -> &'static str {
+                #endpoint_name
+            }
         }
     }
 }

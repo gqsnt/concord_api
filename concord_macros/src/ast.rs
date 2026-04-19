@@ -151,6 +151,7 @@ pub struct ScopedRef {
 
 #[derive(Debug)]
 pub struct LayerDef {
+    pub scope_name: Option<Ident>,
     pub kind: LayerKind,
     pub route: RouteExpr,
     pub params: Vec<VarDeclNoWire>,

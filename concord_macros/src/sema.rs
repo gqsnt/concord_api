@@ -34,6 +34,7 @@ pub struct VarInfo {
 
 #[derive(Debug)]
 pub struct LayerIr {
+    pub scope_name: Option<Ident>,
     pub kind: LayerKind,
     pub prefix_pieces: Vec<PrefixPiece>, // if Prefix
     pub path_pieces: Vec<PathPiece>,     // if Path
@@ -46,6 +47,7 @@ pub struct LayerIr {
 #[derive(Debug)]
 pub struct EndpointIr {
     pub name: Ident,
+    pub scope_modules: Vec<Ident>,
     pub method: Ident,
     pub route_pieces: Vec<PathPiece>,
 
@@ -397,7 +399,7 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
     }
     collect_client_binds(&ast.client.policy, &mut client_vars_map)?;
 
-    // auth vars: ONLY from `auth_vars {}`.
+    // secret vars: only from `secret {}`.
     let mut auth_vars_map: BTreeMap<String, VarInfo> = BTreeMap::new();
     if let Some(vb) = &ast.client.auth_vars {
         for d in &vb.decls {
@@ -1879,6 +1881,7 @@ fn walk_items(
                 )?;
 
                 layers.push(LayerIr {
+                    scope_name: ld.scope_name.clone(),
                     kind: ld.kind,
                     prefix_pieces,
                     path_pieces,
@@ -2314,6 +2317,10 @@ fn analyze_endpoint(
     // 8) Produce final IR.
     Ok(EndpointIr {
         name: ed.name.clone(),
+        scope_modules: ancestry
+            .iter()
+            .filter_map(|&lid| layers[lid].scope_name.clone())
+            .collect(),
         method: ed.method.clone(),
         route_pieces,
         ancestry: ancestry.to_vec(),

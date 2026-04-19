@@ -11,14 +11,16 @@ async fn status_204_requires_no_content_response_spec() {
             host: "example.com",
         }
 
-        GET A {
+        GET A
+        -> Json<()>
+        {
             path["a"]
-            -> Json<()>;
         }
 
-        GET B {
+        GET B
+        -> NoContent<()>
+        {
             path["b"]
-            -> NoContent<()>;
         }
     }
 
@@ -66,14 +68,16 @@ async fn head_requires_no_content_response_spec() {
             host: "example.com",
         }
 
-        HEAD A {
+        HEAD A
+        -> Json<()>
+        {
             path["a"]
-            -> Json<()>;
         }
 
-        HEAD B {
+        HEAD B
+        -> NoContent<()>
+        {
             path["b"]
-            -> NoContent<()>;
         }
     }
 

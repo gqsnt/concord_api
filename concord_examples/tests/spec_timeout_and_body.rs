@@ -21,9 +21,10 @@ async fn timeout_layering_client_scope_endpoint() {
             path["x"]
             timeout: core::time::Duration::from_secs(10)
 
-            GET A {
+            GET A
+            -> Json<()>
+            {
                 timeout: core::time::Duration::from_secs(2)
-                -> Json<()>;
             }
         }
     }
@@ -49,22 +50,23 @@ async fn content_type_injection_only_when_missing_and_body_present() {
             host: "example.com",
         }
 
-        POST A {
+        POST A(body: Json<NewObj>)
+        -> Json<()>
+        {
             path["x"]
-            body Json<NewObj>
-            -> Json<()>;
         }
 
-        POST B {
+        POST B(body: Json<NewObj>)
+        -> Json<()>
+        {
             path["y"]
             headers { "content-type" = "text/plain" }
-            body Json<NewObj>
-            -> Json<()>;
         }
 
-        GET C {
+        GET C
+        -> Json<()>
+        {
             path["z"]
-            -> Json<()>;
         }
     }
 
@@ -134,9 +136,10 @@ async fn timeout_endpoint_shape_allows_compact_arrow_layout() {
             path["x"]
             timeout: core::time::Duration::from_secs(10)
 
-            GET A {
+            GET A
+            -> Json<()>
+            {
                 timeout: core::time::Duration::from_secs(2)
-                -> Json<()>;
             }
         }
     }

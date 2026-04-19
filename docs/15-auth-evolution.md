@@ -23,12 +23,12 @@ No collapse into a single auth abstraction.
 Endpoint-backed credentials reuse endpoint output mapping; no auth-specific response mapping language exists.
 
 ```rust
-POST LoginForSession {
+POST LoginForSession(body: Json<LoginRequest>)
+-> Json<LoginResponse> | AccessToken => {
+AccessToken::new(r.access_token)
+}
+{
     path["login"]
-    body Json<LoginRequest>
-    -> Json<LoginResponse> | AccessToken => {
-        AccessToken::new(r.access_token)
-    };
 }
 
 client Api {

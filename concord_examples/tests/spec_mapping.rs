@@ -15,11 +15,12 @@ async fn mapping_closure_variant_maps_ids() {
             host: "example.com",
         }
 
-        GET Ids {
+        GET Ids
+        -> Json<Vec<Item>> | Vec<String> => {
+        r.into_iter().map(|x| x.id).collect::<Vec<_>>()
+        }
+        {
             path["ids"]
-            -> Json<Vec<Item>> | Vec<String> => {
-                r.into_iter().map(|x| x.id).collect::<Vec<_>>()
-            };
         }
     }
 

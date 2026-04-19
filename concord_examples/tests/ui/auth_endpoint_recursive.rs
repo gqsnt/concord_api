@@ -9,15 +9,17 @@ api! {
         }
     }
 
-    POST LoginForSession {
+    POST LoginForSession
+    -> Json<()>
+    {
         path["login"]
         use_auth BearerAuth(session) // ERROR: recursive dependency
-        -> Json<()>;
     }
 
-    GET Me {
+    GET Me
+    -> Json<()>
+    {
         use_auth BearerAuth(session)
-        -> Json<()>;
     }
 }
 

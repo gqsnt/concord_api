@@ -9,9 +9,10 @@ api! {
         }
     }
 
-    GET Ping {
+    GET Ping
+    -> Json<()>
+    {
         use_auth BearerAuth(session)
-        -> Json<()>;
     }
 }
 

@@ -8,12 +8,10 @@ api! {
         host: "example.com",
     }
 
-    GET List {
+    GET List(page: u32 = 1, page_size: u32 = 2)
+    -> Json<Vec<String>>
+    {
         path["x"]
-        params {
-            page: u32 = 1,
-            page_size: u32 = 2
-        }
         query {
             "p" = page,
             "sz" = page_size
@@ -24,7 +22,6 @@ api! {
             page = page as u64,
             per_page = page_size as u64
         }
-        -> Json<Vec<String>>;
     }
 }
 

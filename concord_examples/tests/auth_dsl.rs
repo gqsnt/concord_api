@@ -206,8 +206,9 @@ async fn scope_header_auth_uses_api_key_credential_and_secret_setter_rebuilds_st
             use_auth HeaderAuth("X-Api-Key", api_key)
             path["api"]
 
-            GET Ping {
-                -> Json<()>;
+            GET Ping
+            -> Json<()>
+            {
             }
         }
     }
@@ -249,9 +250,10 @@ async fn custom_bearer_usage_macro_formats_token_before_applying_it() {
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             use_auth Custom<DslFormattingBearerAuth>(DslFormattingBearerAuth::new("tenant-a:"), token)
-            -> Json<()>;
         }
     }
 
@@ -283,12 +285,13 @@ async fn auth_list_applies_all_steps_in_order() {
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             use_auth [
                 BearerAuth(token),
                 HeaderAuth("X-Api-Key", api_key)
             ]
-            -> Json<()>;
         }
     }
 
@@ -322,12 +325,13 @@ async fn auth_one_of_falls_back_to_next_usage_after_unauthorized() {
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             use_auth one_of [
                 BearerAuth(token),
                 HeaderAuth("X-Fallback-Key", fallback)
             ]
-            -> Json<()>;
         }
     }
 
@@ -372,9 +376,10 @@ async fn custom_provider_macro_can_login_with_internal_request_against_current_a
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             use_auth BearerAuth(session)
-            -> Json<()>;
         }
     }
 
@@ -423,9 +428,10 @@ async fn endpoint_query_auth_uses_api_key_credential() {
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             use_auth QueryAuth("api_key", api_key)
-            -> Json<()>;
         }
     }
 
@@ -462,9 +468,10 @@ async fn oauth2_client_credentials_dsl_uses_internal_token_request_then_bearer_a
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             use_auth BearerAuth(token)
-            -> Json<()>;
         }
     }
 
@@ -519,8 +526,9 @@ async fn secret_setter_rebuild_updates_all_client_clones() {
 
         scope protected {
             use_auth HeaderAuth("X-Api-Key", api_key)
-            GET Ping {
-                -> Json<()>;
+            GET Ping
+            -> Json<()>
+            {
             }
         }
     }
@@ -574,9 +582,10 @@ async fn custom_provider_secret_update_rebuilds_state() {
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             use_auth HeaderAuth("X-Api-Key", captured)
-            -> Json<()>;
         }
     }
 
@@ -612,18 +621,19 @@ async fn endpoint_backed_manual_credential_requires_explicit_acquire_and_shares_
             }
         }
 
-        POST LoginForSession {
+        POST LoginForSession(body: Json<DslSessionLoginRequest>)
+        -> Json<DslSessionLoginResponse> | AccessToken => {
+        AccessToken::new(r.access_token)
+        }
+        {
             path["login"]
-            body Json<DslSessionLoginRequest>
-            -> Json<DslSessionLoginResponse> | AccessToken => {
-                AccessToken::new(r.access_token)
-            };
         }
 
-        GET Protected {
+        GET Protected
+        -> Json<()>
+        {
             path["protected"]
             use_auth BearerAuth(session)
-            -> Json<()>;
         }
     }
 
@@ -721,18 +731,20 @@ async fn endpoint_backed_manual_credential_401_invalidates_without_auto_retry_an
             }
         }
 
-        POST LoginForSession {
+        POST LoginForSession
+        -> Json<DslSessionLoginResponse> | AccessToken => {
+        AccessToken::new(r.access_token)
+        }
+        {
             path["login"]
             use_auth HeaderAuth("X-Upstream-Key", upstream)
-            -> Json<DslSessionLoginResponse> | AccessToken => {
-                AccessToken::new(r.access_token)
-            };
         }
 
-        GET Protected {
+        GET Protected
+        -> Json<()>
+        {
             path["protected"]
             use_auth BearerAuth(session)
-            -> Json<()>;
         }
     }
 
@@ -801,9 +813,10 @@ async fn certificate_auth_macro_usage_is_supported() {
             }
         }
 
-        GET Ping {
+        GET Ping
+        -> Json<()>
+        {
             use_auth CertificateAuth(cert)
-            -> Json<()>;
         }
     }
 

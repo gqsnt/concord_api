@@ -4,7 +4,8 @@ Concord has three common value sources:
 
 - Client variables from `vars { ... }`
 - Secrets from `secret { ... }`
-- Endpoint and scope parameters from `params { ... }`
+- Endpoint parameters from endpoint signatures
+- Scope parameters from `scope name(...)`
 
 The DSL lets you reference these values in host labels, path segments, headers, query strings, pagination controllers, auth providers, retry idempotency, and rate-limit keys.
 
@@ -24,26 +25,26 @@ client Client {
 A declaration can be required, optional, or defaulted.
 
 ```rust
-params {
-    id: u32,                      // required
-    page?: u32,                   // optional
-    per_page: u32 = 20            // defaulted
+GET ListPosts(
+    id: u32,
+    page?: u32,
+    per_page: u32 = 20
+) -> Json<Vec<Post>> {
+    query {
+        "page" = page,
+        "per_page" = per_page
+    }
 }
 ```
 
 Required values become constructor arguments. Optional and defaulted values become builder setters on the endpoint.
 
 ```rust
-GET ListPosts {
-    params {
-        user_id?: u32,
-        x_debug: bool = true
-    }
+GET ListPosts(user_id?: u32, x_debug: bool = true) -> Json<Vec<Post>> {
     query {
         "userId" = user_id,
         "debug" = x_debug
     }
-    -> Json<Vec<Post>>;
 }
 ```
 
@@ -58,13 +59,11 @@ api.request(endpoints::ListPosts::new().user_id(1).x_debug(false))
 Scope parameters are inherited by child endpoints. Use them for region, platform, tenant, version, or any route value shared by multiple endpoints.
 
 ```rust
-scope platform {
-    params { platform: PlatformRoute }
+scope platform(platform: PlatformRoute) {
     host[platform, "api"]
 
-    GET GetPlatformData {
+    GET GetPlatformData -> Json<PlatformDataDto> {
         path["lol", "status", "v4", "platform-data"]
-        -> Json<PlatformDataDto>;
     }
 }
 ```
@@ -153,12 +152,11 @@ Values are converted to strings for headers and query strings. Invalid header na
 Headers and query blocks can bind request parameters directly.
 
 ```rust
-POST Create {
+POST Create(body: Json<CreateRequest>) -> Json<CreateResponse> {
     headers {
         "Idempotency-Key" as idempotency_key: String
     }
     retry write
-    -> Json<CreateResponse>;
 }
 ```
 
@@ -186,10 +184,8 @@ query {
 Optional values are omitted when missing.
 
 ```rust
-GET Search {
-    params { q?: String }
+GET Search(q?: String) -> Json<Vec<Item>> {
     query { "q" = q }
-    -> Json<Vec<Item>>;
 }
 ```
 
@@ -202,10 +198,8 @@ The same rule applies to optional path segments and `part[...]` values.
 A defaulted parameter is present unless the endpoint builder overrides it.
 
 ```rust
-GET GetPosts {
-    params { x_debug: bool = true }
+GET GetPosts(x_debug: bool = true) -> Json<Vec<Post>> {
     headers { "x-debug" = part["test:", x_debug] }
-    -> Json<Vec<Post>>;
 }
 ```
 

@@ -1,5 +1,5 @@
 error: expected `:`
-  --> tests/ui/missing_placeholder_type.rs:12:9
-   |
-12 |         }
-   |         ^
+ --> tests/ui/missing_placeholder_type.rs:9:15
+  |
+9 |     GET One(id)
+  |               ^

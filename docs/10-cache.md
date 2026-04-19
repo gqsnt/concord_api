@@ -41,10 +41,11 @@ A `default` profile applies to endpoints that inherit cache policy.
 An endpoint can apply a named profile.
 
 ```rust
-GET Cached {
+GET Cached
+-> Json<String>
+{
     path["cached"]
     cache short
-    -> Json<String>;
 }
 ```
 
@@ -55,13 +56,14 @@ If the client has a default cache profile, the endpoint can omit `cache short` a
 An endpoint or scope can define cache policy inline.
 
 ```rust
-GET Cached {
+GET Cached
+-> Json<String>
+{
     path["cached"]
     cache {
         ttl 60 seconds
         max_body 2 mib
     }
-    -> Json<String>;
 }
 ```
 
@@ -80,12 +82,13 @@ cache {
     default tiny
 }
 
-GET Cached {
+GET Cached
+-> Json<String>
+{
     path["cached"]
     cache {
         max_body 2 mib
     }
-    -> Json<String>;
 }
 ```
 
@@ -94,17 +97,19 @@ The endpoint keeps the inherited TTL and overrides `max_body`.
 Use `cache only ...` to replace inherited config instead of patching it.
 
 ```rust
-GET Cached {
+GET Cached
+-> Json<String>
+{
     cache only short
-    -> Json<String>;
 }
 
-GET InlineOnly {
+GET InlineOnly
+-> Json<String>
+{
     cache only {
         ttl 30 seconds
         max_body 1 mib
     }
-    -> Json<String>;
 }
 ```
 
@@ -113,10 +118,11 @@ GET InlineOnly {
 Use `cache off` to clear inherited cache.
 
 ```rust
-GET Uncached {
+GET Uncached
+-> Json<String>
+{
     path["uncached"]
     cache off
-    -> Json<String>;
 }
 ```
 
@@ -199,9 +205,10 @@ cache default backend requires a `cache-moka` crate feature that enables `concor
 A cacheable GET stores the response after a successful transport response.
 
 ```rust
-GET Cached {
+GET Cached
+-> Json<String>
+{
     path["cached"]
-    -> Json<String>;
 }
 ```
 
@@ -220,11 +227,11 @@ If the first response is `no-store` and the second response is cacheable, two ca
 `Vary` creates separate variants based on request headers.
 
 ```rust
-GET Localized {
-    params { lang: String }
+GET Localized(lang: String)
+-> Json<String>
+{
     path["localized"]
     headers { "accept-language" = lang }
-    -> Json<String>;
 }
 ```
 
@@ -287,14 +294,16 @@ If the server returns `304 Not Modified`, Concord returns the cached body and re
 Successful unsafe methods invalidate matching cached GET entries for the same URI.
 
 ```rust
-GET Read {
+GET Read
+-> Json<String>
+{
     path["resource"]
-    -> Json<String>;
 }
 
-POST Write {
+POST Write
+-> Json<String>
+{
     path["resource"]
-    -> Json<String>;
 }
 ```
 

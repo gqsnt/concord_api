@@ -31,14 +31,12 @@ async fn scope_host_default_and_override_and_order() {
             host: "example.com",
         }
 
-        scope platform {
-            params {
-                region: Region = Region::EUW
-            }
+        scope platform(region: Region = Region::EUW) {
             host[region, "api"]
 
-            GET Ping {
-                -> Json<()>;
+            GET Ping
+            -> Json<()>
+            {
             }
         }
     }
@@ -82,14 +80,12 @@ async fn scope_host_optional_label_omitted_without_double_dot() {
             host: "example.com",
         }
 
-        scope tenant {
-            params {
-                sub?: String
-            }
+        scope tenant(sub?: String) {
             host[sub, "api"]
 
-            GET Ping {
-                -> Json<()>;
+            GET Ping
+            -> Json<()>
+            {
             }
         }
     }
@@ -133,14 +129,12 @@ async fn scope_host_label_validation_errors() {
             host: "example.com",
         }
 
-        scope platform {
-            params {
-                region: Region = Region::EUW
-            }
+        scope platform(region: Region = Region::EUW) {
             host[region, "api"]
 
-            GET Ping {
-                -> Json<()>;
+            GET Ping
+            -> Json<()>
+            {
             }
         }
     }
@@ -234,12 +228,10 @@ async fn scope_path_concat_percent_encoding() {
         scope lol {
             path["lol"]
 
-            GET GetMatch {
-                params {
-                    match_id: String
-                }
+            GET GetMatch(match_id: String)
+            -> Json<()>
+            {
                 path["matches", match_id]
-                -> Json<()>;
             }
         }
     }
@@ -270,12 +262,10 @@ async fn scope_path_part_builds_single_segment_and_encodes() {
             host: "example.com",
         }
 
-        GET One {
-            params {
-                v: String
-            }
+        GET One(v: String)
+        -> Json<()>
+        {
             path["x", part["p", v]]
-            -> Json<()>;
         }
     }
 
@@ -305,12 +295,10 @@ async fn scope_path_part_optional_omits_segment_when_missing() {
             host: "example.com",
         }
 
-        GET One {
-            params {
-                v?: String
-            }
+        GET One(v?: String)
+        -> Json<()>
+        {
             path["x", part["p", v], "y"]
-            -> Json<()>;
         }
     }
 
@@ -347,12 +335,10 @@ async fn scope_path_optional_item_omitted_no_double_slash() {
             host: "example.com",
         }
 
-        GET One {
-            params {
-                opt?: String
-            }
+        GET One(opt?: String)
+        -> Json<()>
+        {
             path["x", opt, "y"]
-            -> Json<()>;
         }
     }
 
@@ -395,15 +381,13 @@ async fn scope_host_part_adds_one_label() {
             host: "example.com",
         }
 
-        scope layer {
-            params {
-                id: String
-            }
+        scope layer(id: String) {
             host["api", part["t", id]]
 
-            GET One {
+            GET One
+            -> Json<()>
+            {
                 path["x"]
-                -> Json<()>;
             }
         }
     }
@@ -435,15 +419,13 @@ async fn scope_host_part_optional_omits_label_when_missing() {
             host: "example.com",
         }
 
-        scope layer {
-            params {
-                id?: String
-            }
+        scope layer(id?: String) {
             host["api", part["t", id]]
 
-            GET One {
+            GET One
+            -> Json<()>
+            {
                 path["x"]
-                -> Json<()>;
             }
         }
     }
@@ -481,15 +463,13 @@ async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
             host: "example.com",
         }
 
-        scope layer {
-            params {
-                v: String
-            }
+        scope layer(v: String) {
             path["api", part["p", v]]
 
-            GET One {
+            GET One
+            -> Json<()>
+            {
                 path["x"]
-                -> Json<()>;
             }
         }
     }
@@ -520,15 +500,13 @@ async fn scope_path_part_in_layer_optional_omits_segment_no_double_slash() {
             host: "example.com",
         }
 
-        scope layer {
-            params {
-                v?: String
-            }
+        scope layer(v?: String) {
             path["api", part["p", v], "z"]
 
-            GET One {
+            GET One
+            -> Json<()>
+            {
                 path["x"]
-                -> Json<()>;
             }
         }
     }

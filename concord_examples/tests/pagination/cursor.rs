@@ -37,12 +37,10 @@ api! {
         host: "example.com",
     }
 
-    GET List {
+    GET List(page_cursor?: String, page_size: u64 = 2)
+    -> Json<Page>
+    {
         path["x"]
-        params {
-            page_cursor?: String,
-            page_size: u64 = 2
-        }
         query {
             "pageCursor" = page_cursor,
             "pageSize" = page_size
@@ -51,7 +49,6 @@ api! {
             cursor = page_cursor,
             per_page = page_size
         }
-        -> Json<Page>;
     }
 }
 

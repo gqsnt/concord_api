@@ -6,13 +6,10 @@ api! {
         host: "example.com",
     }
 
-    GET A {
-        params {
-            id: u32,
-            id: String
-        }
+    GET A(id: u32, id: String)
+    -> Json<()>
+    {
         path["x", id]
-        -> Json<()>;
     }
 }
 

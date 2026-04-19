@@ -6,13 +6,14 @@ api! {
         host: "example.com",
     }
 
-    GET Ping {
+    GET Ping
+    -> Json<()>
+    {
         rate_limit {
             bucket method by [region, endpoint] { // ERROR: unknown key
                 limit 30 every 10 seconds
             }
         }
-        -> Json<()>;
     }
 }
 

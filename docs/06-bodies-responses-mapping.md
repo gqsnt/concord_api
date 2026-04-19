@@ -3,10 +3,7 @@
 An endpoint can declare a request body and must declare a response codec.
 
 ```rust
-POST CreatePost {
-    body Json<NewPost>
-    -> Json<Post>;
-}
+POST CreatePost(body: Json<NewPost>) -> Json<Post>;
 ```
 
 The body codec controls how the request body is encoded. The response codec controls how response bytes are decoded.
@@ -33,10 +30,8 @@ api! {
         host: "example.com",
     }
 
-    POST CreatePost {
+    POST CreatePost(body: Json<models::NewPost>) -> Json<Post> {
         path["posts"]
-        body Json<models::NewPost>
-        -> Json<Post>;
     }
 }
 ```
@@ -62,13 +57,11 @@ Common response codecs exported by the prelude are:
 - `Text<T>` for text bodies where the codec implementation supports the target type.
 - `NoContent<()>` for responses that must not have a body.
 
-A response declaration is required.
+A response declaration is required. The canonical form puts the response in the endpoint header.
 
 ```rust
-GET GetPost {
-    params { id: i32 }
+GET GetPost(id: i32) -> Json<Post> {
     path["posts", id]
-    -> Json<Post>;
 }
 ```
 
@@ -101,12 +94,10 @@ Use `execute_decoded()` when the status, headers, URL, or request metadata matte
 Mapping transforms a decoded response into another output type.
 
 ```rust
-GET GetUserPosts {
-    params { id: i32 }
+GET GetUserPosts(id: i32) -> Json<Vec<Post>> | Vec<String> => {
+    IntoIterator::into_iter(r).map(|p| p.title).collect()
+} {
     path["users", id, "posts"]
-    -> Json<Vec<Post>> | Vec<String> => {
-        IntoIterator::into_iter(r).map(|p| p.title).collect()
-    };
 }
 ```
 
@@ -126,9 +117,8 @@ Use mapping for small transformations that are part of the API contract, such as
 `HEAD` endpoints must use `NoContent<()>`.
 
 ```rust
-HEAD CheckUser {
+HEAD CheckUser -> NoContent<()> {
     path["users", "42"]
-    -> NoContent<()>;
 }
 ```
 

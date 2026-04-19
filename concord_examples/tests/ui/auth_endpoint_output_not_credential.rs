@@ -12,15 +12,17 @@ api! {
         }
     }
 
-    POST LoginForSession {
+    POST LoginForSession
+    -> Json<()> | NotCredential => {
+    NotCredential
+    }
+    {
         path["login"]
-        -> Json<()> | NotCredential => {
-            NotCredential
-        };
     }
 
-    GET Health {
-        -> Json<()>;
+    GET Health
+    -> Json<()>
+    {
     }
 }
 

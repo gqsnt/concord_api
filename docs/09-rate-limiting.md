@@ -55,9 +55,10 @@ client RateLimitDslApi {
 An endpoint can add a profile to the inherited default.
 
 ```rust
-GET Ping {
+GET Ping
+-> Json<()>
+{
     rate_limit method_read
-    -> Json<()>;
 }
 ```
 
@@ -70,9 +71,10 @@ When multiple layers or profiles accidentally emit exact duplicate buckets, the 
 Use `rate_limit off` to clear inherited rate-limit profiles.
 
 ```rust
-GET NoLimit {
+GET NoLimit
+-> Json<()>
+{
     rate_limit off
-    -> Json<()>;
 }
 ```
 
@@ -85,9 +87,10 @@ The resulting request has an empty rate-limit plan.
 Apply several profiles with a list.
 
 ```rust
-GET GetAccountByRiotId {
+GET GetAccountByRiotId
+-> Json<AccountDto>
+{
     rate_limit [account_standard_method, riot_high_volume_method]
-    -> Json<AccountDto>;
 }
 ```
 
@@ -98,9 +101,10 @@ Use this when one upstream endpoint counts against multiple documented quotas.
 Use `rate_limit only ...` when a scope or endpoint should replace inherited profiles instead of adding to them.
 
 ```rust
-GET Special {
+GET Special
+-> Json<()>
+{
     rate_limit only method_read
-    -> Json<()>;
 }
 ```
 
@@ -111,13 +115,14 @@ The `only` form is also available for inline rate-limit blocks.
 For one-off behavior, define a plan directly.
 
 ```rust
-GET Limited {
+GET Limited
+-> Json<()>
+{
     rate_limit {
         bucket method by [route.host, endpoint] {
             limit 30 every 10 seconds
         }
     }
-    -> Json<()>;
 }
 ```
 
@@ -160,14 +165,14 @@ bucket method by [route.host, endpoint] {
 Use `rate_limit key` to name a route or scope parameter for bucket keys.
 
 ```rust
-scope platform {
-    params { platform: String }
+scope platform(platform: String) {
     host[platform, "api"]
     rate_limit key region = platform
 
-    GET ByRegion {
+    GET ByRegion
+    -> Json<()>
+    {
         rate_limit regional_method
-        -> Json<()>;
     }
 }
 ```
@@ -187,10 +192,11 @@ At runtime, the bucket key contains the actual `platform` value, such as `euw1`.
 The same key binding syntax is available inside endpoint blocks:
 
 ```rust
-GET ByRegion {
+GET ByRegion
+-> Json<()>
+{
     rate_limit key region = platform
     rate_limit regional_method
-    -> Json<()>;
 }
 ```
 

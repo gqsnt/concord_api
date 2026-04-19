@@ -8,12 +8,10 @@ api! {
         host: "example.com",
     }
 
-    GET List {
+    GET List(start: u64 = 0, count: u64 = 2)
+    -> Json<Vec<String>>
+    {
         path["x"]
-        params {
-            start: u64 = 0,
-            count: u64 = 2
-        }
         query {
             "start" = start,
             "count" = count
@@ -22,7 +20,6 @@ api! {
             offset = start,
             limit = count
         }
-        -> Json<Vec<String>>;
     }
 }
 

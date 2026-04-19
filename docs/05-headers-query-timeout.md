@@ -49,9 +49,8 @@ scope p_scope {
         -"x-static"
     }
 
-    GET One {
+    GET One -> Json<()> {
         headers { -"x-flag" }
-        -> Json<()>;
     }
 }
 ```
@@ -63,12 +62,11 @@ The endpoint request contains `x-debug: override`, does not contain `x-static`, 
 A header can declare an endpoint parameter and set the header from it.
 
 ```rust
-POST Create {
+POST Create -> Json<CreateResponse> {
     headers {
         "Idempotency-Key" as idempotency_key: String
     }
     retry write
-    -> Json<CreateResponse>;
 }
 ```
 
@@ -102,11 +100,10 @@ scope x_scope {
         "dup" += "s1"
     }
 
-    GET One {
+    GET One -> Json<()> {
         query {
             "dup" = "e1"
         }
-        -> Json<()>;
     }
 }
 ```
@@ -118,11 +115,9 @@ scope x_scope {
 `part[...]` is useful for derived query values.
 
 ```rust
-GET One {
-    params { v: String }
+GET One(v: String) -> Json<()> {
     path["x"]
     query { "q" = part["a:", v] }
-    -> Json<()>;
 }
 ```
 
@@ -131,11 +126,9 @@ This sends query key `q` with value `a:z` for `v = "z"`.
 If the referenced value is optional and missing, the query key is absent.
 
 ```rust
-GET One {
-    params { v?: String }
+GET One(v?: String) -> Json<()> {
     path["x"]
     query { "q" = part["a:", v] }
-    -> Json<()>;
 }
 ```
 
@@ -146,13 +139,12 @@ GET One {
 Bind a query value directly from an endpoint parameter.
 
 ```rust
-GET Search {
+GET Search -> Json<SearchResponse> {
     path["search"]
     query {
         "q" as query: String,
         "page" as page: u32 = 1
     }
-    -> Json<SearchResponse>;
 }
 ```
 
@@ -163,33 +155,24 @@ Use string keys when the wire key must contain underscores, dashes, capitalizati
 `Json<T>` response endpoints set `Accept: application/json` unless the endpoint or an inherited policy explicitly overrides or removes `accept`.
 
 ```rust
-GET A {
-    -> Json<()>;
-}
+GET A -> Json<()>;
 
-GET B {
+GET B -> Json<()> {
     headers { "accept" = "text/plain" }
-    -> Json<()>;
 }
 
-GET C {
+GET C -> Json<()> {
     headers { -"accept" }
-    -> Json<()>;
 }
 ```
 
 For JSON request bodies, Concord sets `Content-Type: application/json` unless policy overrides it.
 
 ```rust
-POST A {
-    body Json<NewObj>
-    -> Json<()>;
-}
+POST A(body: Json<NewObj>) -> Json<()>;
 
-POST B {
+POST B(body: Json<NewObj>) -> Json<()> {
     headers { "content-type" = "text/plain" }
-    body Json<NewObj>
-    -> Json<()>;
 }
 ```
 
@@ -210,9 +193,8 @@ scope x_scope {
     path["x"]
     timeout: core::time::Duration::from_millis(500)
 
-    GET A {
+    GET A -> Json<()> {
         timeout: core::time::Duration::from_secs(1)
-        -> Json<()>;
     }
 }
 ```

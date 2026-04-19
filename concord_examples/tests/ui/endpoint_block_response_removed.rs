@@ -1,15 +1,13 @@
 use concord_macros::api;
 
 api! {
-    client UiMissingType {
+    client UiEndpointBlockResponseRemoved {
         scheme: https,
         host: "example.com",
     }
 
-    GET One(id)
-    -> Json<()>
-    {
-        path["x", id]
+    GET Ping {
+        -> Json<()>;
     }
 }
 

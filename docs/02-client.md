@@ -37,8 +37,7 @@ client RiotClient {
     host: "riotgames.com",
 }
 
-scope platform {
-    params { platform: PlatformRoute }
+scope platform(platform: PlatformRoute) {
     host[platform, "api"]
     path["lol"]
 }

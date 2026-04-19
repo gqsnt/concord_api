@@ -34,21 +34,18 @@ api! {
         }
     }
 
-    POST LoginForSession {
+    POST LoginForSession(body: Json<SessionLoginRequest>) -> Json<SessionLoginResponse> | AccessToken => {
+        AccessToken::new(r.access_token)
+    } {
         path["login"]
         use_auth HeaderAuth("X-Upstream-Key", upstream)
-        body Json<SessionLoginRequest>
-        -> Json<SessionLoginResponse> | AccessToken => {
-            AccessToken::new(r.access_token)
-        };
     }
 
     scope protected {
         use_auth BearerAuth(session)
 
-        GET Me {
+        GET Me -> Json<SessionUser> {
             path["me"]
-            -> Json<SessionUser>;
         }
     }
 }
@@ -58,7 +55,7 @@ pub async fn session_flow_example() -> Result<(), ApiClientError> {
 
     // This will fail until session is acquired.
     let _ = api
-        .request(session_api::endpoints::Me::new())
+        .request(session_api::endpoints::protected::Me::new())
         .execute()
         .await;
 
@@ -71,7 +68,7 @@ pub async fn session_flow_example() -> Result<(), ApiClientError> {
     .await?;
 
     let _me = api
-        .request(session_api::endpoints::Me::new())
+        .request(session_api::endpoints::protected::Me::new())
         .execute()
         .await?;
 

@@ -3,7 +3,6 @@ syn::custom_keyword!(client);
 syn::custom_keyword!(scheme);
 syn::custom_keyword!(host);
 syn::custom_keyword!(vars);
-syn::custom_keyword!(auth_vars);
 syn::custom_keyword!(auth);
 syn::custom_keyword!(secret);
 syn::custom_keyword!(headers);

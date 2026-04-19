@@ -6,14 +6,15 @@ api! {
         host: "example.com",
     }
 
-    GET Ping {
+    GET Ping
+    -> Json<()>
+    {
         rate_limit {
             bucket method by [route.host] {
                 cost true // ERROR: expected integer literal
                 limit 30 every 10 seconds
             }
         }
-        -> Json<()>;
     }
 }
 
