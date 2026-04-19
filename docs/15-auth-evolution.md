@@ -18,31 +18,33 @@ No collapse into a single auth abstraction.
 
 1. Static secret-backed: `ApiKey(secret.x)`, `AccessToken(secret.y)`, `Basic(...)`
 2. Provider-backed: `OAuth2ClientCredentials { ... }`, `Custom<T>(expr)`
-3. Endpoint-backed manual: `Endpoint(LoginEndpoint)`
+3. Endpoint-backed manual: `Endpoint(auth::LoginEndpoint)`
 
 Endpoint-backed credentials reuse endpoint output mapping; no auth-specific response mapping language exists.
 
 ```rust
-POST LoginForSession(body: Json<LoginRequest>)
--> Json<LoginResponse> | AccessToken => {
-AccessToken::new(r.access_token)
-}
-{
-    path["login"]
+scope auth {
+    POST LoginForSession(body: Json<LoginRequest>)
+    -> Json<LoginResponse> | AccessToken => {
+        AccessToken::new(r.access_token)
+    }
+    {
+        path["login"]
+    }
 }
 
 client Api {
     scheme: https,
     host: "example.com",
     auth {
-        credential session: Endpoint(LoginForSession)
+        credential session: Endpoint(auth::LoginForSession)
     }
 }
 ```
 
 ## Endpoint-backed manual lifecycle
 
-`credential x: Endpoint(E)` is manual by default:
+`credential x: Endpoint(scope::E)` is manual by default:
 
 1. No implicit login call during protected requests.
 2. Missing value yields `AuthErrorKind::MissingCredential`.
@@ -50,7 +52,7 @@ client Api {
 
 Generated client API:
 
-1. `pub async fn acquire_auth_<name>(&self, ep: endpoints::<Endpoint>) -> Result<(), ApiClientError>`
+1. `pub async fn acquire_auth_<name>(&self, ep: endpoints::<scope>::<Endpoint>) -> Result<(), ApiClientError>`
 2. `pub async fn set_auth_<name>_value(&self, value: Material)`
 3. `pub async fn clear_auth_<name>(&self)`
 4. `pub async fn has_auth_<name>(&self) -> bool`
@@ -115,7 +117,7 @@ Two distinct acquisition paths remain:
 
 Compile-time guard exists for direct self-dependency:
 
-- if credential `c` uses `Endpoint(E)` and endpoint `E` uses `c`, compilation fails.
+- if credential `c` uses `Endpoint(auth::E)` and endpoint `auth::E` uses `c`, compilation fails.
 
 Runtime recursion protection for provider internal auth remains in place.
 

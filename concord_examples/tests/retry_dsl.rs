@@ -110,12 +110,12 @@ async fn retry_scope_profile_applies_to_child_endpoints() {
         .build();
     let api = ApiDslRetryScope::new_with_transport(transport);
 
-    api.request(endpoints::Flaky::new())
+    api.request(endpoints::service::Flaky::new())
         .execute()
         .await
         .unwrap();
     let err = api
-        .request(endpoints::NoRetry::new())
+        .request(endpoints::service::NoRetry::new())
         .execute()
         .await
         .expect_err("endpoint retry off should override scope retry");
@@ -196,12 +196,12 @@ async fn retry_post_requires_declared_idempotency_header() {
             }
         }
 
-        POST Create
+        POST Create(idempotency_key: String)
         -> Json<()>
         {
             retry write
             headers {
-                "Idempotency-Key" as idempotency_key: String
+                "Idempotency-Key" = idempotency_key
             }
         }
 

@@ -47,12 +47,12 @@ api! {
 
 ```rust
 auth {
-    credential session: Endpoint(LoginForSession)
+    credential session: Endpoint(auth::LoginForSession)
 }
 ```
 
 ```rust
-api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
+api.acquire_auth_session(endpoints::auth::LoginForSession::new(...)).await?;
 api.request(endpoints::core::Me::new()).execute().await?;
 ```
 

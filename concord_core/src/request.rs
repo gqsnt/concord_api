@@ -1,5 +1,5 @@
-use crate::client::{ApiClient, ClientContext};
 use crate::cache::CacheRequestMode;
+use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{Endpoint, ResponseSpec};
 use crate::error::{ApiClientError, ErrorContext};

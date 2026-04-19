@@ -5,15 +5,17 @@ api! {
         scheme: https,
         host: "example.com",
         auth {
-            credential session: Endpoint(LoginForSession)
+            credential session: Endpoint(auth::LoginForSession)
         }
     }
 
-    POST LoginForSession
-    -> Json<()>
-    {
-        path["login"]
-        use_auth BearerAuth(session) // ERROR: recursive dependency
+    scope auth {
+        POST LoginForSession
+        -> Json<()>
+        {
+            path["login"]
+            use_auth BearerAuth(session) // ERROR: recursive dependency
+        }
     }
 
     GET Me

@@ -223,9 +223,15 @@ async fn scope_header_auth_uses_api_key_credential_and_secret_setter_rebuilds_st
         .build();
 
     let mut api = ApiDslHeader::new_with_transport("tok1".to_string(), transport);
-    api.request(endpoints::Ping::new()).execute().await.unwrap();
+    api.request(endpoints::protected::Ping::new())
+        .execute()
+        .await
+        .unwrap();
     api.set_api_key("tok2");
-    api.request(endpoints::Ping::new()).execute().await.unwrap();
+    api.request(endpoints::protected::Ping::new())
+        .execute()
+        .await
+        .unwrap();
 
     let reqs = h.recorded();
     assert_eq!(reqs.len(), 2);
@@ -545,15 +551,18 @@ async fn secret_setter_rebuild_updates_all_client_clones() {
     let mut api = ApiDslCloneRebuild::new_with_transport("tok1".to_string(), transport);
     let clone = api.clone();
 
-    api.request(endpoints::Ping::new()).execute().await.unwrap();
+    api.request(endpoints::protected::Ping::new())
+        .execute()
+        .await
+        .unwrap();
     clone
-        .request(endpoints::Ping::new())
+        .request(endpoints::protected::Ping::new())
         .execute()
         .await
         .unwrap();
     api.set_api_key("tok2");
     clone
-        .request(endpoints::Ping::new())
+        .request(endpoints::protected::Ping::new())
         .execute()
         .await
         .unwrap();
@@ -617,16 +626,18 @@ async fn endpoint_backed_manual_credential_requires_explicit_acquire_and_shares_
             scheme: https,
             host: "example.com",
             auth {
-                credential session: Endpoint(LoginForSession)
+                credential session: Endpoint(auth::LoginForSession)
             }
         }
 
-        POST LoginForSession(body: Json<DslSessionLoginRequest>)
-        -> Json<DslSessionLoginResponse> | AccessToken => {
-        AccessToken::new(r.access_token)
-        }
-        {
-            path["login"]
+        scope auth {
+            POST LoginForSession(body: Json<DslSessionLoginRequest>)
+            -> Json<DslSessionLoginResponse> | AccessToken => {
+                AccessToken::new(r.access_token)
+            }
+            {
+                path["login"]
+            }
         }
 
         GET Protected
@@ -669,9 +680,11 @@ async fn endpoint_backed_manual_credential_requires_explicit_acquire_and_shares_
         "missing credential should fail before transport"
     );
 
-    api.acquire_auth_session(endpoints::LoginForSession::new(DslSessionLoginRequest {
-        username: "alice".to_string(),
-    }))
+    api.acquire_auth_session(endpoints::auth::LoginForSession::new(
+        DslSessionLoginRequest {
+            username: "alice".to_string(),
+        },
+    ))
     .await
     .unwrap();
     assert!(api.has_auth_session().await);
@@ -727,17 +740,19 @@ async fn endpoint_backed_manual_credential_401_invalidates_without_auto_retry_an
             }
             auth {
                 credential upstream: ApiKey(secret.upstream_key)
-                credential session: Endpoint(LoginForSession)
+                credential session: Endpoint(auth::LoginForSession)
             }
         }
 
-        POST LoginForSession
-        -> Json<DslSessionLoginResponse> | AccessToken => {
-        AccessToken::new(r.access_token)
-        }
-        {
-            path["login"]
-            use_auth HeaderAuth("X-Upstream-Key", upstream)
+        scope auth {
+            POST LoginForSession
+            -> Json<DslSessionLoginResponse> | AccessToken => {
+                AccessToken::new(r.access_token)
+            }
+            {
+                path["login"]
+                use_auth HeaderAuth("X-Upstream-Key", upstream)
+            }
         }
 
         GET Protected
@@ -762,7 +777,7 @@ async fn endpoint_backed_manual_credential_401_invalidates_without_auto_retry_an
         .build();
     let api = ApiDslEndpointManualInvalidation::new_with_transport("up-key".to_string(), transport);
 
-    api.acquire_auth_session(endpoints::LoginForSession::new())
+    api.acquire_auth_session(endpoints::auth::LoginForSession::new())
         .await
         .unwrap();
     assert!(api.has_auth_session().await);

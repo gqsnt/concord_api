@@ -26,6 +26,8 @@ Then use focused chapters:
 - [Customization and Extension Points](14-customization.md)
 - [Authentication Evolution](15-auth-evolution.md)
 - [Authentication System Blueprint](16-auth-system-blueprint.md)
+- [Cache System Blueprint](17-cache-system-blueprint.md)
+- [Rate-Limit System Blueprint](18-rate-limit-system-blueprint.md)
 
 Canonical reminders:
 

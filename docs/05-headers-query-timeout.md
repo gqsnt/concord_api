@@ -59,12 +59,12 @@ The endpoint request contains `x-debug: override`, does not contain `x-static`, 
 
 ## Header binding
 
-A header can declare an endpoint parameter and set the header from it.
+A header can use an endpoint parameter declared in the endpoint signature.
 
 ```rust
-POST Create -> Json<CreateResponse> {
+POST Create(idempotency_key: String) -> Json<CreateResponse> {
     headers {
-        "Idempotency-Key" as idempotency_key: String
+        "Idempotency-Key" = idempotency_key
     }
     retry write
 }
@@ -136,14 +136,14 @@ GET One(v?: String) -> Json<()> {
 
 ## Query binding
 
-Bind a query value directly from an endpoint parameter.
+Bind query values from endpoint parameters declared in the endpoint signature.
 
 ```rust
-GET Search -> Json<SearchResponse> {
+GET Search(query: String, page: u32 = 1) -> Json<SearchResponse> {
     path["search"]
     query {
-        "q" as query: String,
-        "page" as page: u32 = 1
+        "q" = query,
+        "page" = page
     }
 }
 ```

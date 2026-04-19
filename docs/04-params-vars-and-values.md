@@ -147,35 +147,36 @@ query {
 
 Values are converted to strings for headers and query strings. Invalid header names or values become request-building errors before transport is called.
 
-## Short binds in policy blocks
+## Policy values from endpoint params
 
-Headers and query blocks can bind request parameters directly.
+Declare endpoint parameters in the signature, then assign them in `headers` or `query`.
 
 ```rust
-POST Create(body: Json<CreateRequest>) -> Json<CreateResponse> {
+POST Create(idempotency_key: String, body: Json<CreateRequest>) -> Json<CreateResponse> {
     headers {
-        "Idempotency-Key" as idempotency_key: String
+        "Idempotency-Key" = idempotency_key
     }
     retry write
 }
 ```
 
-This declares an endpoint parameter named `idempotency_key` and wires it to the header. The generated constructor receives the required value.
-
-Short bind syntax uses an identifier key and a type.
+The generated constructor receives the required values from the endpoint signature.
 
 ```rust
-query {
-    page?: u32,
-    per_page: u32 = 20
+GET List(page?: u32, per_page: u32 = 20) -> Json<Vec<Post>> {
+    path["posts"]
+    query {
+        "page" = page,
+        "per_page" = per_page
+    }
 }
 ```
 
-This declares `page` and `per_page` as endpoint parameters and writes them to query keys named after the identifiers. When you need exact wire spelling, use a string key with `as`.
+Use string keys when the wire spelling is exact (`per_page`, `X-Trace-Id`, etc.).
 
 ```rust
 query {
-    "per_page" as per_page: u32 = 20
+    "per_page" = per_page
 }
 ```
 

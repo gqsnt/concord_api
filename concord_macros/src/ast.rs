@@ -60,7 +60,7 @@ pub enum AuthCredentialKind {
         scope: Option<LitStr>,
     },
     Endpoint {
-        endpoint: Ident,
+        endpoint: Path,
     },
     Custom {
         provider_ty: Type,
@@ -132,7 +132,6 @@ pub struct RouteExpr {
 #[derive(Debug, Clone)]
 pub enum RouteAtom {
     Static(LitStr),
-    Var(TemplateVarDecl),
     Ref(ScopedRef),
     Fmt(FmtSpec),
 }
@@ -391,14 +390,6 @@ pub enum PolicyStmt {
         value: PolicyValue,
         op: SetOp,
     },
-    Bind {
-        key: KeySpec,
-        decl: VarDeclNoWire,
-    },
-    BindShort {
-        ident_key: Ident,
-        decl: VarDeclShort,
-    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -416,24 +407,6 @@ pub enum KeySpec {
 /// `as x_debug?: bool = true`
 #[derive(Debug, Clone)]
 pub struct VarDeclNoWire {
-    pub rust: Ident,
-    pub optional: bool,
-    pub ty: Type,
-    pub default: Option<Expr>,
-}
-
-/// `page_cursor?: String = "x".into()`
-#[derive(Debug, Clone)]
-pub struct VarDeclShort {
-    pub optional: bool,
-    pub ty: Type,
-    pub default: Option<Expr>,
-}
-
-/// `{wire as rust?: Ty = default}`
-#[derive(Debug, Clone)]
-pub struct TemplateVarDecl {
-    pub wire: Ident,
     pub rust: Ident,
     pub optional: bool,
     pub ty: Type,
@@ -467,12 +440,11 @@ impl PolicyValue {
 pub struct FmtSpec {
     pub span: Span,
     pub require_all: bool,     // fmt? => true
-    pub pieces: Vec<FmtPiece>, // ["...", {x:u32}, ...]
+    pub pieces: Vec<FmtPiece>, // ["...", vars.x, ...]
 }
 
 #[derive(Debug, Clone)]
 pub enum FmtPiece {
     Lit(LitStr),
-    Var(TemplateVarDecl), // réutilise déjà votre parser de `{wire as rust?: Ty = default}`
     Ref(ScopedRef),
 }

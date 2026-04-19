@@ -251,7 +251,7 @@ impl UrlPath {
     /// - Les littéraux de route (issus des `"..."` côté macro) sont injectés **raw** via cette méthode.
     /// - Cette injection est normalisée (jointure + retrait du trailing slash), mais **autorise** des '/' dans la chaîne.
     /// - Ne pas utiliser avec des données utilisateur.
-    /// - Pour des données utilisateur, utiliser `push_segment_encoded()` (utilisé par les `{placeholder}`).
+    /// - Pour des données utilisateur, utiliser `push_segment_encoded()` (utilisé par les valeurs dynamiques).
     pub fn push_raw(&mut self, piece: &str) {
         let piece = piece.trim();
         if piece.is_empty() || piece == "/" {
@@ -310,7 +310,7 @@ impl UrlPath {
     }
 
     /// Contrat:
-    /// - Utilisé pour les `{placeholder}` (valeurs dynamiques).
+    /// - Utilisé pour les valeurs dynamiques.
     /// - Garantit une sémantique "un segment" (pas de '/').
     pub fn push_segment_encoded(&mut self, seg: &str) {
         if seg.is_empty() || seg == "/" {

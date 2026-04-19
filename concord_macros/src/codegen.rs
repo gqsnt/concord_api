@@ -550,10 +550,10 @@ fn emit_endpoint_parts(
     auth_vars_ty: &Ident,
     cx_ty: &Ident,
 ) -> TokenStream2 {
-    let name = &ep.name;
+    let endpoint_ty = endpoint_internal_ident(ep);
     let method = &ep.method;
-    let route_ty = emit_helpers::ident(&format!("__Route_{name}"), Span::call_site());
-    let policy_ty = emit_helpers::ident(&format!("__Policy_{name}"), Span::call_site());
+    let route_ty = emit_helpers::ident(&format!("__Route_{endpoint_ty}"), Span::call_site());
+    let policy_ty = emit_helpers::ident(&format!("__Policy_{endpoint_ty}"), Span::call_site());
 
     let ep_opt = ep_optionals(ep);
 
@@ -602,19 +602,19 @@ fn emit_endpoint_parts(
         }
     };
 
-    let paginate_ty = emit_helpers::ident(&format!("__Pag_{name}"), Span::call_site());
+    let paginate_ty = emit_helpers::ident(&format!("__Pag_{endpoint_ty}"), Span::call_site());
     let paginate_impl = emit_paginate_part(ep, &paginate_ty, cx_ty, vars_ty);
 
-    let map_ty = emit_helpers::ident(&format!("__Map_{name}"), Span::call_site());
+    let map_ty = emit_helpers::ident(&format!("__Map_{endpoint_ty}"), Span::call_site());
     let map_impl = emit_map_part(ep, &map_ty);
 
     let auth_impl = emit_auth_parts(ir, ep, cx_ty);
 
     quote! {
         pub struct #route_ty;
-        impl ::concord_core::internal::RoutePart<super::#cx_ty, super::endpoints::#name> for #route_ty {
+        impl ::concord_core::internal::RoutePart<super::#cx_ty, super::__endpoints::#endpoint_ty> for #route_ty {
             fn apply(
-                    ep: &super::endpoints::#name,
+                    ep: &super::__endpoints::#endpoint_ty,
                     vars: &super::#vars_ty,
                     auth: &super::#auth_vars_ty,
                     route: &mut ::concord_core::prelude::RouteParts
@@ -629,8 +629,8 @@ fn emit_endpoint_parts(
         }
 
         pub struct #policy_ty;
-        impl ::concord_core::internal::PolicyPart<super::#cx_ty, super::endpoints::#name> for #policy_ty {
-            fn apply(ep: &super::endpoints::#name, vars: &super::#vars_ty, auth: &super::#auth_vars_ty, policy: &mut ::concord_core::prelude::Policy)
+        impl ::concord_core::internal::PolicyPart<super::#cx_ty, super::__endpoints::#endpoint_ty> for #policy_ty {
+            fn apply(ep: &super::__endpoints::#endpoint_ty, vars: &super::#vars_ty, auth: &super::#auth_vars_ty, policy: &mut ::concord_core::prelude::Policy)
                 -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
             {
                 let ctx = ::concord_core::prelude::ErrorContext {
@@ -660,9 +660,10 @@ fn auth_one_of_alt_part_ident(ep_name: &Ident, index: usize, alt_index: usize) -
 }
 
 fn emit_endpoint_auth_item_ty(ep: &EndpointIr, index: usize, plan: &AuthUsePlanIr) -> TokenStream2 {
+    let endpoint_ty = endpoint_internal_ident(ep);
     match plan {
         AuthUsePlanIr::Use(_) => {
-            let ident = auth_use_part_ident(&ep.name, index);
+            let ident = auth_use_part_ident(&endpoint_ty, index);
             quote! { super::__internal::#ident }
         }
         AuthUsePlanIr::OneOf(alts) => {
@@ -670,10 +671,10 @@ fn emit_endpoint_auth_item_ty(ep: &EndpointIr, index: usize, plan: &AuthUsePlanI
             let last = iter
                 .next()
                 .expect("one_of must contain at least one alternative");
-            let last_ident = auth_one_of_alt_part_ident(&ep.name, index, last);
+            let last_ident = auth_one_of_alt_part_ident(&endpoint_ty, index, last);
             let mut out = quote! { super::__internal::#last_ident };
             for alt in iter {
-                let ident = auth_one_of_alt_part_ident(&ep.name, index, alt);
+                let ident = auth_one_of_alt_part_ident(&endpoint_ty, index, alt);
                 out =
                     quote! { ::concord_core::internal::OneOfAuth<super::__internal::#ident, #out> };
             }
@@ -703,18 +704,19 @@ fn emit_endpoint_auth_ty(ep: &EndpointIr) -> TokenStream2 {
 }
 
 fn emit_auth_parts(ir: &Ir, ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
+    let endpoint_ty = endpoint_internal_ident(ep);
     let mut parts = Vec::new();
     for (idx, plan) in ep.auth_uses.iter().enumerate() {
         match plan {
             AuthUsePlanIr::Use(auth_use) => {
-                let part_ty = auth_use_part_ident(&ep.name, idx);
+                let part_ty = auth_use_part_ident(&endpoint_ty, idx);
                 parts.push(emit_auth_part_for_ident(
                     ir, ep, cx_ty, &part_ty, idx, None, auth_use,
                 ));
             }
             AuthUsePlanIr::OneOf(alts) => {
                 for (alt_idx, auth_use) in alts.iter().enumerate() {
-                    let part_ty = auth_one_of_alt_part_ident(&ep.name, idx, alt_idx);
+                    let part_ty = auth_one_of_alt_part_ident(&endpoint_ty, idx, alt_idx);
                     parts.push(emit_auth_part_for_ident(
                         ir,
                         ep,
@@ -743,7 +745,8 @@ fn emit_auth_part_for_ident(
     alt_idx: Option<usize>,
     auth_use: &AuthUseIr,
 ) -> TokenStream2 {
-    let ep_name = &ep.name;
+    let endpoint_ty = endpoint_internal_ident(ep);
+    let endpoint_key = endpoint_qualified_name(ep);
     let credential = auth_use_credential_ident_ir(auth_use);
     let credential_ir = ir
         .client_auth_credentials
@@ -755,12 +758,12 @@ fn emit_auth_part_for_ident(
     let usage_expr = emit_auth_usage_expr(ep, cx_ty, auth_use);
     let step_id = if let Some(alt) = alt_idx {
         LitStr::new(
-            &format!("{}:{}:alt{}:{}", ep_name, idx, alt, credential),
+            &format!("{}:{}:alt{}:{}", endpoint_key, idx, alt, credential),
             Span::call_site(),
         )
     } else {
         LitStr::new(
-            &format!("{}:{}:{}", ep_name, idx, credential),
+            &format!("{}:{}:{}", endpoint_key, idx, credential),
             Span::call_site(),
         )
     };
@@ -793,12 +796,12 @@ fn emit_auth_part_for_ident(
     quote! {
         pub struct #part_ty;
 
-        impl ::concord_core::internal::AuthPart<super::#cx_ty, super::endpoints::#ep_name> for #part_ty {
+        impl ::concord_core::internal::AuthPart<super::#cx_ty, super::__endpoints::#endpoint_ty> for #part_ty {
             type Ctrl = ::concord_core::prelude::UseCredential<super::#cx_ty, #provider_ty, #usage_ty>;
 
             fn controller(
                 ctx: ::concord_core::prelude::AuthBuildContext<'_, super::#cx_ty>,
-                ep: &super::endpoints::#ep_name,
+                ep: &super::__endpoints::#endpoint_ty,
             ) -> ::core::result::Result<Self::Ctrl, ::concord_core::prelude::ApiClientError> {
                 #usage_expr
                 ::core::result::Result::Ok(::concord_core::prelude::UseCredential::new(
@@ -825,7 +828,7 @@ fn emit_auth_usage_ty(auth_use: &AuthUseIr) -> TokenStream2 {
 }
 
 fn emit_auth_usage_expr(ep: &EndpointIr, cx_ty: &Ident, auth_use: &AuthUseIr) -> TokenStream2 {
-    let ep_name = &ep.name;
+    let endpoint_ty = endpoint_internal_ident(ep);
     match &auth_use.kind {
         AuthUseKindIr::Bearer { .. } => quote! {
             let _ = ep;
@@ -838,8 +841,8 @@ fn emit_auth_usage_expr(ep: &EndpointIr, cx_ty: &Ident, auth_use: &AuthUseIr) ->
                     ::http::header::HeaderName::from_bytes(#header.as_bytes())
                         .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam {
                             ctx: ::concord_core::prelude::ErrorContext {
-                                endpoint: <super::endpoints::#ep_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::name(ep),
-                                method: <super::endpoints::#ep_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::METHOD,
+                                endpoint: <super::__endpoints::#endpoint_ty as ::concord_core::prelude::Endpoint<super::#cx_ty>>::name(ep),
+                                method: <super::__endpoints::#endpoint_ty as ::concord_core::prelude::Endpoint<super::#cx_ty>>::METHOD,
                             },
                             param: #param,
                         })?
@@ -878,28 +881,102 @@ fn auth_use_credential_ident_ir(auth_use: &AuthUseIr) -> &Ident {
     }
 }
 
+fn endpoint_internal_ident(ep: &EndpointIr) -> Ident {
+    fn pascalize(raw: &str) -> String {
+        raw.split('_')
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                let mut chars = part.chars();
+                let Some(first) = chars.next() else {
+                    return String::new();
+                };
+                let mut out = String::new();
+                out.extend(first.to_uppercase());
+                out.push_str(chars.as_str());
+                out
+            })
+            .collect::<String>()
+    }
+
+    let mut name = String::from("Ep");
+    for scope in &ep.scope_modules {
+        name.push_str(&pascalize(&scope.to_string()));
+    }
+    name.push_str(&pascalize(&ep.name.to_string()));
+    name.push('H');
+    name.push_str(&stable_endpoint_hash(&endpoint_qualified_name(ep)));
+    emit_helpers::ident(&name, ep.name.span())
+}
+
+fn stable_endpoint_hash(value: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn endpoint_qualified_name(ep: &EndpointIr) -> String {
+    if ep.scope_modules.is_empty() {
+        ep.name.to_string()
+    } else {
+        let mut qualified = ep
+            .scope_modules
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("::");
+        qualified.push_str("::");
+        qualified.push_str(&ep.name.to_string());
+        qualified
+    }
+}
+
 fn emit_endpoints(ir: &Ir, cx_ty: &Ident) -> TokenStream2 {
-    let endpoint_defs = ir.endpoints.iter().map(|ep| emit_endpoint_def(ep, cx_ty));
+    let endpoint_defs = ir.endpoints.iter().map(|ep| {
+        let internal = endpoint_internal_ident(ep);
+        emit_endpoint_def(ep, &internal, cx_ty)
+    });
+    let root_endpoint_reexports = ir.endpoints.iter().filter_map(|ep| {
+        if !ep.scope_modules.is_empty() {
+            return None;
+        }
+        let public = &ep.name;
+        let internal = endpoint_internal_ident(ep);
+        Some(quote! { pub use super::__endpoints::#internal as #public; })
+    });
     let scope_modules = emit_endpoint_scope_modules(ir);
     quote! {
-        pub mod endpoints {
+        mod __endpoints {
             use super::*;
             #( #endpoint_defs )*
+        }
+
+        pub mod endpoints {
+            #( #root_endpoint_reexports )*
             #scope_modules
         }
     }
 }
 
+#[derive(Clone)]
+struct EndpointScopeAlias {
+    public: Ident,
+    internal: Ident,
+}
+
 struct EndpointScopeModule {
     name: Ident,
-    endpoints: Vec<Ident>,
+    endpoints: Vec<EndpointScopeAlias>,
     children: Vec<EndpointScopeModule>,
 }
 
 fn insert_endpoint_scope_module(
     modules: &mut Vec<EndpointScopeModule>,
     path: &[Ident],
-    endpoint: &Ident,
+    public: &Ident,
+    internal: &Ident,
 ) {
     let Some((head, tail)) = path.split_first() else {
         return;
@@ -917,9 +994,12 @@ fn insert_endpoint_scope_module(
     };
 
     if tail.is_empty() {
-        modules[index].endpoints.push(endpoint.clone());
+        modules[index].endpoints.push(EndpointScopeAlias {
+            public: public.clone(),
+            internal: internal.clone(),
+        });
     } else {
-        insert_endpoint_scope_module(&mut modules[index].children, tail, endpoint);
+        insert_endpoint_scope_module(&mut modules[index].children, tail, public, internal);
     }
 }
 
@@ -929,7 +1009,13 @@ fn emit_endpoint_scope_modules(ir: &Ir) -> TokenStream2 {
         if endpoint.scope_modules.is_empty() {
             continue;
         }
-        insert_endpoint_scope_module(&mut modules, &endpoint.scope_modules, &endpoint.name);
+        let internal = endpoint_internal_ident(endpoint);
+        insert_endpoint_scope_module(
+            &mut modules,
+            &endpoint.scope_modules,
+            &endpoint.name,
+            &internal,
+        );
     }
 
     let tokens = modules
@@ -940,9 +1026,11 @@ fn emit_endpoint_scope_modules(ir: &Ir) -> TokenStream2 {
 
 fn emit_endpoint_scope_module(module: &EndpointScopeModule, depth: usize) -> TokenStream2 {
     let name = &module.name;
-    let endpoint_reexports = module.endpoints.iter().map(|endpoint| {
-        let supers = (0..depth).map(|_| quote! { super:: });
-        quote! { pub use #( #supers )* #endpoint; }
+    let endpoint_reexports = module.endpoints.iter().map(|alias| {
+        let public = &alias.public;
+        let internal = &alias.internal;
+        let supers = (0..=depth).map(|_| quote! { super:: });
+        quote! { pub use #( #supers )* __endpoints::#internal as #public; }
     });
     let children = module
         .children
@@ -1162,6 +1250,7 @@ fn emit_client_wrapper(
         let AuthCredentialKindIr::Endpoint {
             endpoint,
             output_ty,
+            ..
         } = &credential.kind
         else {
             return None;
@@ -1275,22 +1364,10 @@ fn emit_client_wrapper(
     }
 }
 
-fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
-    let name = &ep.name;
+fn emit_endpoint_def(ep: &EndpointIr, ty_name: &Ident, cx_ty: &Ident) -> TokenStream2 {
     let method = &ep.method;
-    let endpoint_name = if ep.scope_modules.is_empty() {
-        LitStr::new(&name.to_string(), name.span())
-    } else {
-        let mut qualified = ep
-            .scope_modules
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("::");
-        qualified.push_str("::");
-        qualified.push_str(&name.to_string());
-        LitStr::new(&qualified, name.span())
-    };
+    let endpoint_name_str = endpoint_qualified_name(ep);
+    let endpoint_name = LitStr::new(&endpoint_name_str, ep.name.span());
 
     // fields (endpoint vars)
     let mut fields_ts = Vec::new();
@@ -1370,15 +1447,15 @@ fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
         init_parts.push(quote! { body });
     }
 
-    let route_ident = emit_helpers::ident(&format!("__Route_{name}"), Span::call_site());
-    let policy_ident = emit_helpers::ident(&format!("__Policy_{name}"), Span::call_site());
+    let route_ident = emit_helpers::ident(&format!("__Route_{ty_name}"), Span::call_site());
+    let policy_ident = emit_helpers::ident(&format!("__Policy_{ty_name}"), Span::call_site());
     let route_ty = quote! { super::__internal::#route_ident };
     let policy_ty = quote! { super::__internal::#policy_ident };
     let auth_ty = emit_endpoint_auth_ty(ep);
 
     // pagination part
     let pagination_ty = if ep.paginate.is_some() {
-        let p_ident = emit_helpers::ident(&format!("__Pag_{name}"), Span::call_site());
+        let p_ident = emit_helpers::ident(&format!("__Pag_{ty_name}"), Span::call_site());
         quote! { super::__internal::#p_ident }
     } else {
         quote! { ::concord_core::internal::NoPagination }
@@ -1386,7 +1463,7 @@ fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
 
     // body part
     let body_ty = if ep.body.is_some() {
-        let b_ident = emit_helpers::ident(&format!("__Body_{name}"), Span::call_site());
+        let b_ident = emit_helpers::ident(&format!("__Body_{ty_name}"), Span::call_site());
         quote! { #b_ident }
     } else {
         quote! { ::concord_core::internal::NoBody }
@@ -1398,7 +1475,7 @@ fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
     let response_base = quote! { ::concord_core::internal::Decoded<#dec_enc, #decoded_ty> };
 
     let response_ty = if ep.map.is_some() {
-        let m_ident = emit_helpers::ident(&format!("__Map_{name}"), Span::call_site());
+        let m_ident = emit_helpers::ident(&format!("__Map_{ty_name}"), Span::call_site());
         quote! { ::concord_core::internal::Mapped<#response_base, super::__internal::#m_ident> }
     } else {
         response_base
@@ -1408,13 +1485,13 @@ fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
     let body_impl = if let Some(body) = &ep.body {
         let enc = &body.enc;
         let ty = &body.ty;
-        let b_ident = emit_helpers::ident(&format!("__Body_{name}"), Span::call_site());
+        let b_ident = emit_helpers::ident(&format!("__Body_{ty_name}"), Span::call_site());
         quote! {
             pub struct #b_ident;
-            impl ::concord_core::internal::BodyPart<#name> for #b_ident {
+            impl ::concord_core::internal::BodyPart<#ty_name> for #b_ident {
                 type Body = #ty;
                 type Enc = #enc;
-                fn body(ep: &#name) -> ::core::option::Option<&Self::Body> {
+                fn body(ep: &#ty_name) -> ::core::option::Option<&Self::Body> {
                     ::core::option::Option::Some(&ep.body)
                 }
             }
@@ -1424,11 +1501,11 @@ fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
     };
 
     quote! {
-        pub struct #name {
+        pub struct #ty_name {
               #( #struct_fields, )*
         }
 
-        impl #name {
+        impl #ty_name {
             #[inline]
               pub fn new( #( #fn_args ),* ) -> Self {
                 Self { #( #init_parts, )* }
@@ -1439,7 +1516,7 @@ fn emit_endpoint_def(ep: &EndpointIr, cx_ty: &Ident) -> TokenStream2 {
 
         #body_impl
 
-        impl ::concord_core::prelude::Endpoint<super::#cx_ty> for #name {
+        impl ::concord_core::prelude::Endpoint<super::#cx_ty> for #ty_name {
             const METHOD: ::http::Method = ::http::Method::#method;
             type Route = #route_ty;
             type Policy = #policy_ty;
@@ -1848,12 +1925,6 @@ fn emit_policy_ops(
     ops.iter()
         .map(|op| match op {
             PolicyOp::Remove { key } => emit_remove_op(key, kind, ctx),
-            PolicyOp::Bind {
-                key,
-                field,
-                optional,
-                kind: _,
-            } => emit_bind_op(key, kind, field, *optional, ctx),
             PolicyOp::Set {
                 key,
                 value,
@@ -1892,73 +1963,6 @@ fn emit_remove_op(key: &KeyResolved, kind: PolicyKeyKind, _ctx: PolicyEmitCtx) -
             let lit = emit_helpers::lit_str(&ks, sp);
             quote! {
                 policy.remove_query(#lit);
-            }
-        }
-    }
-}
-
-fn emit_bind_op(
-    key: &KeyResolved,
-    kind: PolicyKeyKind,
-    field: &Ident,
-    optional: bool,
-    ctx: PolicyEmitCtx,
-) -> TokenStream2 {
-    match kind {
-        PolicyKeyKind::Header => {
-            let (ks, sp, _) = emit_key_string(key, kind);
-            let name = emit_helpers::emit_header_name(&ks, sp);
-
-            let value_expr = match ctx {
-                PolicyEmitCtx::ClientBase => quote! { &vars.#field },
-                _ => quote! { &ep.#field },
-            };
-
-            if optional {
-                quote! {
-                    if let ::core::option::Option::Some(__v) = #value_expr.as_ref() {
-                        let __hv = ::http::HeaderValue::from_str(&__v.to_string())
-                            .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam {
-                                ctx: ctx.clone(),
-                                param: concat!("header:", #ks),
-                            })?;
-                        policy.insert_header(#name, __hv);
-                    } else {
-                        policy.remove_header(#name);
-                    }
-                }
-            } else {
-                quote! {
-                    let __hv = ::http::HeaderValue::from_str(&#value_expr.to_string())
-                        .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam {
-                            ctx: ctx.clone(),
-                            param: concat!("header:", #ks),
-                        })?;
-                    policy.insert_header(#name, __hv);
-                }
-            }
-        }
-        PolicyKeyKind::Query => {
-            let (ks, sp, _) = emit_key_string(key, kind);
-            let lit = emit_helpers::lit_str(&ks, sp);
-
-            let value_expr = match ctx {
-                PolicyEmitCtx::ClientBase => quote! { &vars.#field },
-                _ => quote! { &ep.#field },
-            };
-
-            if optional {
-                quote! {
-                    if let ::core::option::Option::Some(__v) = #value_expr.as_ref() {
-                        policy.set_query(#lit, __v.to_string());
-                    } else {
-                        policy.remove_query(#lit);
-                    }
-                }
-            } else {
-                quote! {
-                    policy.set_query(#lit, #value_expr.to_string());
-                }
             }
         }
     }
@@ -2340,24 +2344,6 @@ fn emit_prefix_route_apply(
                 let lit = LitStr::new(s, Span::call_site());
                 ops.push(quote! { route.host_mut().push_label_static(#lit); });
             }
-            PrefixPiece::Var {
-                wire,
-                field,
-                optional,
-            } => {
-                let wire_lit = LitStr::new(wire, Span::call_site());
-                if *optional {
-                    ops.push(quote! {
-                        if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
-                            route.host_mut().push_label(__v.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
-                        }
-                    });
-                } else {
-                    ops.push(quote! {
-                        route.host_mut().push_label(ep.#field.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
-                    });
-                }
-            }
             PrefixPiece::CxVar { field, optional } => {
                 let wire_lit = LitStr::new(&format!("cx.{}", field), Span::call_site());
                 if *optional {
@@ -2433,19 +2419,6 @@ fn emit_path_route_apply(
                 let lit = LitStr::new(s, Span::call_site());
                 ops.push(quote! { route.path_mut().push_raw(#lit); });
             }
-            PathPiece::Var { field, optional } => {
-                if *optional {
-                    ops.push(quote! {
-                        if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
-                            route.path_mut().push_segment_encoded(&__v.to_string());
-                        }
-                    });
-                } else {
-                    ops.push(
-                        quote! { route.path_mut().push_segment_encoded(&ep.#field.to_string()); },
-                    );
-                }
-            }
             PathPiece::CxVar { field, optional } => {
                 if *optional {
                     ops.push(quote! {
@@ -2505,12 +2478,6 @@ fn emit_path_route_apply(
 fn find_query_key_for_ep_field<'a>(ep: &'a EndpointIr, field: &Ident) -> Option<&'a KeyResolved> {
     // Take the last matching query op (closest to the endpoint) if multiple exist.
     ep.policy.query.iter().rev().find_map(|op| match op {
-        PolicyOp::Bind {
-            key,
-            kind: PolicyKeyKind::Query,
-            field: f,
-            ..
-        } if f == field => Some(key),
         PolicyOp::Set {
             key,
             value: ValueKind::EpField(f),
@@ -2526,16 +2493,16 @@ fn emit_paginate_part(
     cx_ty: &Ident,
     vars_ty: &Ident,
 ) -> TokenStream2 {
-    let name = &ep.name;
+    let endpoint_ty = endpoint_internal_ident(ep);
 
     let Some(p) = &ep.paginate else {
         return quote! {
             pub struct #paginate_ty;
-            impl ::concord_core::internal::PaginationPart<super::#cx_ty, super::endpoints::#name> for #paginate_ty {
+            impl ::concord_core::internal::PaginationPart<super::#cx_ty, super::__endpoints::#endpoint_ty> for #paginate_ty {
                 type Ctrl = ::concord_core::internal::NoController;
                 fn controller(
                     _vars: &super::#vars_ty,
-                    _ep: &super::endpoints::#name
+                    _ep: &super::__endpoints::#endpoint_ty
                 ) -> ::core::result::Result<Self::Ctrl, ::concord_core::prelude::ApiClientError> {
                     ::core::result::Result::Ok(::concord_core::internal::NoController)
                 }
@@ -2618,12 +2585,12 @@ fn emit_paginate_part(
     quote! {
         pub struct #paginate_ty;
 
-        impl ::concord_core::internal::PaginationPart<super::#cx_ty, super::endpoints::#name> for #paginate_ty {
+        impl ::concord_core::internal::PaginationPart<super::#cx_ty, super::__endpoints::#endpoint_ty> for #paginate_ty {
             type Ctrl = #ctrl_ty;
 
             fn controller(
                 vars: &super::#vars_ty,
-                ep: &super::endpoints::#name
+                ep: &super::__endpoints::#endpoint_ty
             ) -> ::core::result::Result<Self::Ctrl, ::concord_core::prelude::ApiClientError> {
                 #[allow(unused_variables)]
                 let cx = vars;

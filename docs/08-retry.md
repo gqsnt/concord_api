@@ -179,12 +179,12 @@ retry {
     }
 }
 
-POST Create
+POST Create(idempotency_key: String)
 -> Json<()>
 {
     retry write
     headers {
-        "Idempotency-Key" as idempotency_key: String
+        "Idempotency-Key" = idempotency_key
     }
 }
 ```

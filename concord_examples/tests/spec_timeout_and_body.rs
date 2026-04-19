@@ -34,7 +34,11 @@ async fn timeout_layering_client_scope_endpoint() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiTimeout::new_with_transport(transport);
-    let _ = api.request(endpoints::A::new()).execute().await.unwrap();
+    let _ = api
+        .request(endpoints::x_scope::A::new())
+        .execute()
+        .await
+        .unwrap();
 
     let reqs = h.recorded();
     assert_request(&reqs[0]).timeout(Some(core::time::Duration::from_secs(2)));
@@ -149,7 +153,11 @@ async fn timeout_endpoint_shape_allows_compact_arrow_layout() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiTimeoutNoComma::new_with_transport(transport);
-    let _ = api.request(endpoints::A::new()).execute().await.unwrap();
+    let _ = api
+        .request(endpoints::x_scope::A::new())
+        .execute()
+        .await
+        .unwrap();
 
     let reqs = h.recorded();
     assert_request(&reqs[0]).timeout(Some(core::time::Duration::from_secs(2)));

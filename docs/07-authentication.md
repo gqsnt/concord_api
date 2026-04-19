@@ -62,7 +62,7 @@ Supported credential forms include:
 - `AccessToken(secret.name)`
 - `Basic(secret.username, secret.password)`
 - `OAuth2ClientCredentials { ... }`
-- `Endpoint(LoginEndpoint)`
+- `Endpoint(auth::LoginEndpoint)`
 - `Custom<ProviderType>(provider_expr)`
 
 Credential names are local identifiers referenced by `use_auth`.
@@ -72,17 +72,19 @@ Credential names are local identifiers referenced by `use_auth`.
 Use `Endpoint(...)` when a credential must be acquired explicitly from an API endpoint response.
 
 ```rust
-POST LoginForSession(body: Json<LoginRequest>) -> Json<LoginResponse> | AccessToken => {
-    AccessToken::new(r.access_token)
-} {
-    path["login"]
+scope auth {
+    POST LoginForSession(body: Json<LoginRequest>) -> Json<LoginResponse> | AccessToken => {
+        AccessToken::new(r.access_token)
+    } {
+        path["login"]
+    }
 }
 
 client Api {
     scheme: https,
     host: "example.com",
     auth {
-        credential session: Endpoint(LoginForSession)
+        credential session: Endpoint(auth::LoginForSession)
     }
 }
 
@@ -100,7 +102,7 @@ Endpoint-backed credentials are manual by default:
 3. The generated client exposes async lifecycle helpers.
 
 ```rust
-api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
+api.acquire_auth_session(endpoints::auth::LoginForSession::new(...)).await?;
 api.request(endpoints::protected::Me::new()).execute().await?;
 api.set_auth_session_value(AccessToken::new("seed")).await;
 let has = api.has_auth_session().await;

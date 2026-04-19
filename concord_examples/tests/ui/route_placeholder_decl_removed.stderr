@@ -1,0 +1,5 @@
+error: route placeholder declarations are not supported; declare params in scope/endpoint signatures and reference them in route items
+  --> tests/ui/route_placeholder_decl_removed.rs:10:20
+   |
+10 |         path["x", {id: String}]
+   |                    ^^

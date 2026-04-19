@@ -30,15 +30,17 @@ api! {
 
         auth {
             credential upstream: ApiKey(secret.upstream_key)
-            credential session: Endpoint(LoginForSession)
+            credential session: Endpoint(auth::LoginForSession)
         }
     }
 
-    POST LoginForSession(body: Json<SessionLoginRequest>) -> Json<SessionLoginResponse> | AccessToken => {
-        AccessToken::new(r.access_token)
-    } {
-        path["login"]
-        use_auth HeaderAuth("X-Upstream-Key", upstream)
+    scope auth {
+        POST LoginForSession(body: Json<SessionLoginRequest>) -> Json<SessionLoginResponse> | AccessToken => {
+            AccessToken::new(r.access_token)
+        } {
+            path["login"]
+            use_auth HeaderAuth("X-Upstream-Key", upstream)
+        }
     }
 
     scope protected {
@@ -59,7 +61,7 @@ pub async fn session_flow_example() -> Result<(), ApiClientError> {
         .execute()
         .await;
 
-    api.acquire_auth_session(session_api::endpoints::LoginForSession::new(
+    api.acquire_auth_session(session_api::endpoints::auth::LoginForSession::new(
         SessionLoginRequest {
             username: "alice".to_string(),
             password: "secret".to_string(),

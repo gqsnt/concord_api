@@ -37,7 +37,11 @@ async fn query_set_remove_push_override_and_tostring() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiQuery::new_with_transport(transport);
-    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
+    let _ = api
+        .request(endpoints::x_scope::One::new())
+        .execute()
+        .await
+        .unwrap();
 
     let reqs = h.recorded();
     let r = &reqs[0];
@@ -208,7 +212,11 @@ async fn headers_kebab_string_bind_remove_override() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiHeaders::new_with_transport(transport);
-    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
+    let _ = api
+        .request(endpoints::p_scope::One::new())
+        .execute()
+        .await
+        .unwrap();
 
     let reqs = h.recorded();
     let req = &reqs[0];

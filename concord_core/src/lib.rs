@@ -57,8 +57,7 @@ pub mod prelude {
     pub use crate::cache::{
         CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,
         CacheKey, CacheMode, CachePrimaryKey, CacheRequestMode, CacheRevalidation, CacheSetting,
-        CacheSkipReason,
-        CacheStore, NoopCacheStore, default_cache_key,
+        CacheSkipReason, CacheStore, NoopCacheStore, default_cache_key,
     };
     #[cfg(feature = "cache-moka")]
     pub use crate::cache::{MokaCacheConfig, MokaCacheStore};

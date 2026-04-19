@@ -126,9 +126,17 @@ async fn secret_required_and_setter_affect_emitted_header() {
         .build();
 
     let api = ApiSecret::new_with_transport("tok1".to_string(), transport);
-    let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
+    let _ = api
+        .request(endpoints::token2_scope::Ping::new())
+        .execute()
+        .await
+        .unwrap();
     api.set_token("tok2");
-    let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
+    let _ = api
+        .request(endpoints::token2_scope::Ping::new())
+        .execute()
+        .await
+        .unwrap();
 
     let reqs = h.recorded();
     assert_eq!(reqs.len(), 2);

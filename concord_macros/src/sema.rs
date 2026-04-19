@@ -41,7 +41,7 @@ pub struct LayerIr {
     pub policy: PolicyBlocksResolved,
     pub auth_uses: Vec<AuthUsePlanIr>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingResolved>,
-    pub decls: Vec<VarInfo>, // endpoint vars declared by this layer (placeholders + binds)
+    pub decls: Vec<VarInfo>, // endpoint vars declared by this layer
 }
 
 #[derive(Debug)]
@@ -89,7 +89,8 @@ pub enum AuthCredentialKindIr {
         scope: Option<LitStr>,
     },
     Endpoint {
-        endpoint: Ident,
+        endpoint: syn::Path,
+        endpoint_key: String,
         output_ty: Type,
     },
     Custom {
@@ -146,25 +147,14 @@ pub enum AuthUseProvenanceIr {
 #[derive(Debug, Clone)]
 pub enum PrefixPiece {
     Static(String),
-    Var {
-        wire: String,
-        field: Ident,
-        optional: bool,
-    },
-    CxVar {
-        field: Ident,
-        optional: bool,
-    },
-    EpVar {
-        field: Ident,
-    },
+    CxVar { field: Ident, optional: bool },
+    EpVar { field: Ident },
     Fmt(FmtResolved),
 }
 
 #[derive(Debug, Clone)]
 pub enum PathPiece {
     Static(String),
-    Var { field: Ident, optional: bool },
     CxVar { field: Ident, optional: bool },
     EpVar { field: Ident },
     Fmt(FmtResolved),
@@ -330,12 +320,6 @@ pub enum PolicyOp {
         // if value is a pure optional ref, emit conditional set/remove
         conditional_on_optional_ref: Option<OptionalRefKind>,
     },
-    Bind {
-        key: KeyResolved,
-        kind: PolicyKeyKind,
-        field: Ident,
-        optional: bool,
-    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -384,7 +368,7 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
     let mod_name_str = emit_helpers::to_snake(&client_name.to_string());
     let mod_name = Ident::new(&mod_name_str, client_name.span());
 
-    // client vars: start from explicit `vars {}` then merge binds/fmt decls from client policy.
+    // client vars: explicit `vars {}` only.
     let mut client_vars_map: BTreeMap<String, VarInfo> = BTreeMap::new();
     if let Some(vb) = &ast.client.vars {
         for d in &vb.decls {
@@ -397,7 +381,6 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
             )?;
         }
     }
-    collect_client_binds(&ast.client.policy, &mut client_vars_map)?;
 
     // secret vars: only from `secret {}`.
     let mut auth_vars_map: BTreeMap<String, VarInfo> = BTreeMap::new();
@@ -532,73 +515,6 @@ enum PolicyOwner {
     Layer,
 }
 
-fn collect_client_binds(policy: &PolicyBlocks, out: &mut BTreeMap<String, VarInfo>) -> Result<()> {
-    // existant: binds
-    for blk in policy.headers.iter().chain(policy.query.iter()) {
-        for stmt in &blk.stmts {
-            match stmt {
-                PolicyStmt::Bind { decl, .. } => {
-                    upsert_var(
-                        out,
-                        &decl.rust,
-                        decl.optional,
-                        &decl.ty,
-                        decl.default.as_ref(),
-                    )?;
-                }
-                PolicyStmt::BindShort { ident_key, decl } => {
-                    upsert_var(
-                        out,
-                        ident_key,
-                        decl.optional,
-                        &decl.ty,
-                        decl.default.as_ref(),
-                    )?;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    // nouveau: fmt decls
-    for blk in policy.headers.iter().chain(policy.query.iter()) {
-        for stmt in &blk.stmts {
-            if let PolicyStmt::Set { value, .. } = stmt
-                && let crate::ast::PolicyValue::Fmt(fmt) = value
-            {
-                for p in &fmt.pieces {
-                    if let crate::ast::FmtPiece::Var(d) = p {
-                        upsert_var(out, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-fn collect_policy_fmt_decls(policy: &crate::ast::PolicyBlocks, out: &mut Vec<VarInfo>) {
-    for blk in policy.headers.iter().chain(policy.query.iter()) {
-        for stmt in &blk.stmts {
-            if let crate::ast::PolicyStmt::Set { value, .. } = stmt
-                && let crate::ast::PolicyValue::Fmt(fmt) = value
-            {
-                for p in &fmt.pieces {
-                    if let crate::ast::FmtPiece::Var(d) = p {
-                        out.push(VarInfo {
-                            rust: d.rust.clone(),
-                            optional: d.optional,
-                            ty: d.ty.clone(),
-                            default: d.default.clone(),
-                        });
-                    }
-                }
-            }
-        }
-    }
-}
-
 fn upsert_var(
     out: &mut BTreeMap<String, VarInfo>,
     rust: &Ident,
@@ -704,14 +620,16 @@ fn analyze_auth_credentials(
                 }
             }
             AuthCredentialKind::Endpoint { endpoint } => {
-                let output_ty = endpoint_outputs.get(&endpoint.to_string()).ok_or_else(|| {
+                let endpoint_key = endpoint_ref_key(endpoint)?;
+                let output_ty = endpoint_outputs.get(&endpoint_key).ok_or_else(|| {
                     syn::Error::new(
                         endpoint.span(),
-                        format!("unknown auth endpoint `{}` in credential source", endpoint),
+                        format!("unknown auth endpoint `{endpoint_key}` in credential source"),
                     )
                 })?;
                 AuthCredentialKindIr::Endpoint {
                     endpoint: endpoint.clone(),
+                    endpoint_key,
                     output_ty: output_ty.clone(),
                 }
             }
@@ -731,6 +649,26 @@ fn analyze_auth_credentials(
     }
 
     Ok(out)
+}
+
+fn endpoint_ref_key(path: &syn::Path) -> Result<String> {
+    if path.segments.is_empty() {
+        return Err(syn::Error::new_spanned(
+            path,
+            "auth endpoint reference must be `Endpoint(Name)` or `Endpoint(scope::Name)`",
+        ));
+    }
+    let mut out = Vec::new();
+    for segment in &path.segments {
+        if !matches!(segment.arguments, syn::PathArguments::None) {
+            return Err(syn::Error::new_spanned(
+                segment,
+                "auth endpoint reference segments must not contain generic arguments",
+            ));
+        }
+        out.push(segment.ident.to_string());
+    }
+    Ok(out.join("::"))
 }
 
 fn validate_required_secret(
@@ -1933,41 +1871,46 @@ fn reject_formatted_lit(lit: &LitStr, ctx: &'static str) -> Result<()> {
         return Err(syn::Error::new(
             lit.span(),
             format!(
-                "{ctx} string literals must not contain `{{` or `}}`; use separate atoms (e.g. \"a\" / {{id:Ty}} / \"b\" or {{x:Ty}} . \"api\")"
+                "{ctx} string literals must not contain `{{` or `}}`; use separate route atoms such as \"a\", id, \"b\", or part[\"x\", id]"
             ),
         ));
     }
     Ok(())
 }
 
-fn varinfo_from_decl(d: &TemplateVarDecl) -> VarInfo {
-    VarInfo {
-        rust: d.rust.clone(),
-        optional: d.optional,
-        ty: d.ty.clone(),
-        default: d.default.clone(),
-    }
-}
-
 fn collect_endpoint_output_types(items: &[Item]) -> Result<BTreeMap<String, Type>> {
     let mut out = BTreeMap::new();
-    collect_endpoint_output_types_into(items, &mut out)?;
+    let mut scope_stack: Vec<String> = Vec::new();
+    collect_endpoint_output_types_into(items, &mut out, &mut scope_stack)?;
     Ok(out)
 }
 
 fn collect_endpoint_output_types_into(
     items: &[Item],
     out: &mut BTreeMap<String, Type>,
+    scope_stack: &mut Vec<String>,
 ) -> Result<()> {
     for item in items {
         match item {
-            Item::Layer(layer) => collect_endpoint_output_types_into(&layer.items, out)?,
+            Item::Layer(layer) => {
+                if let Some(name) = &layer.scope_name {
+                    scope_stack.push(name.to_string());
+                    collect_endpoint_output_types_into(&layer.items, out, scope_stack)?;
+                    let _ = scope_stack.pop();
+                } else {
+                    collect_endpoint_output_types_into(&layer.items, out, scope_stack)?;
+                }
+            }
             Item::Endpoint(endpoint) => {
-                let key = endpoint.name.to_string();
+                let key = if scope_stack.is_empty() {
+                    endpoint.name.to_string()
+                } else {
+                    format!("{}::{}", scope_stack.join("::"), endpoint.name)
+                };
                 if out.contains_key(&key) {
                     return Err(syn::Error::new(
                         endpoint.name.span(),
-                        format!("duplicate endpoint `{}`", endpoint.name),
+                        format!("duplicate endpoint `{key}`"),
                     ));
                 }
                 let output_ty = endpoint
@@ -1982,10 +1925,26 @@ fn collect_endpoint_output_types_into(
     Ok(())
 }
 
+fn endpoint_scope_key(scope_modules: &[Ident], endpoint: &Ident) -> String {
+    if scope_modules.is_empty() {
+        endpoint.to_string()
+    } else {
+        format!(
+            "{}::{}",
+            scope_modules
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("::"),
+            endpoint
+        )
+    }
+}
+
 fn analyze_layer_route_and_decls(
     ld: &LayerDef,
 ) -> Result<(Vec<PrefixPiece>, Vec<PathPiece>, Vec<VarInfo>)> {
-    let mut decls: Vec<VarInfo> = ld
+    let decls: Vec<VarInfo> = ld
         .params
         .iter()
         .map(|d| VarInfo {
@@ -2016,17 +1975,8 @@ fn analyze_layer_route_and_decls(
                             prefix_pieces.push(PrefixPiece::Static(label.to_string()));
                         }
                     }
-                    RouteAtom::Var(d) => {
-                        decls.push(varinfo_from_decl(d));
-                        prefix_pieces.push(PrefixPiece::Var {
-                            wire: d.wire.to_string(),
-                            field: d.rust.clone(),
-                            optional: d.optional,
-                        });
-                    }
                     RouteAtom::Fmt(spec) => {
-                        let (resolved, fmt_decls) = resolve_route_fmt_spec(spec, None, None)?;
-                        decls.extend(fmt_decls);
+                        let resolved = resolve_route_fmt_spec(spec, None, None)?;
                         prefix_pieces.push(PrefixPiece::Fmt(resolved));
                     }
                     RouteAtom::Ref(r) => {
@@ -2060,16 +2010,8 @@ fn analyze_layer_route_and_decls(
                         reject_formatted_lit(lit, "path")?;
                         path_pieces.push(PathPiece::Static(lit.value()));
                     }
-                    RouteAtom::Var(d) => {
-                        decls.push(varinfo_from_decl(d));
-                        path_pieces.push(PathPiece::Var {
-                            field: d.rust.clone(),
-                            optional: d.optional,
-                        });
-                    }
                     RouteAtom::Fmt(spec) => {
-                        let (resolved, fmt_decls) = resolve_route_fmt_spec(spec, None, None)?;
-                        decls.extend(fmt_decls);
+                        let resolved = resolve_route_fmt_spec(spec, None, None)?;
                         path_pieces.push(PathPiece::Fmt(resolved));
                     }
                     RouteAtom::Ref(r) => {
@@ -2098,27 +2040,6 @@ fn analyze_layer_route_and_decls(
         }
     }
 
-    // Collect endpoint-var binds declared in this layer's policy
-    for blk in ld.policy.headers.iter().chain(ld.policy.query.iter()) {
-        for stmt in &blk.stmts {
-            match stmt {
-                PolicyStmt::Bind { decl, .. } => decls.push(VarInfo {
-                    rust: decl.rust.clone(),
-                    optional: decl.optional,
-                    ty: decl.ty.clone(),
-                    default: decl.default.clone(),
-                }),
-                PolicyStmt::BindShort { ident_key, decl } => decls.push(VarInfo {
-                    rust: ident_key.clone(),
-                    optional: decl.optional,
-                    ty: decl.ty.clone(),
-                    default: decl.default.clone(),
-                }),
-                _ => {}
-            }
-        }
-    }
-    collect_policy_fmt_decls(&ld.policy, &mut decls);
     Ok((prefix_pieces, path_pieces, decls))
 }
 
@@ -2139,17 +2060,25 @@ fn analyze_endpoint(
     // 1) Start endpoint var registry from ancestor layers.
     //    This defines what `ep.<field>` will contain (plus endpoint-local vars).
     let mut ep_vars: BTreeMap<String, VarInfo> = BTreeMap::new();
+    let mut ep_var_order: Vec<String> = Vec::new();
+    let mut upsert_ep = |rust: &Ident, optional: bool, ty: &Type, default: Option<&Expr>| {
+        let key = rust.to_string();
+        if !ep_vars.contains_key(&key) {
+            ep_var_order.push(key.clone());
+        }
+        upsert_var(&mut ep_vars, rust, optional, ty, default)
+    };
 
     for &lid in ancestry {
         for v in &layers[lid].decls {
-            upsert_var(&mut ep_vars, &v.rust, v.optional, &v.ty, v.default.as_ref())?;
+            upsert_ep(&v.rust, v.optional, &v.ty, v.default.as_ref())?;
         }
     }
     for d in &ed.params {
-        upsert_var(&mut ep_vars, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
+        upsert_ep(&d.rust, d.optional, &d.ty, d.default.as_ref())?;
     }
 
-    // 2) Build endpoint route pieces and collect vars declared in the route.
+    // 2) Build endpoint route pieces.
     let mut route_pieces: Vec<PathPiece> = Vec::new();
 
     for atom in &ed.route.atoms {
@@ -2160,24 +2089,8 @@ fn analyze_endpoint(
                 route_pieces.push(PathPiece::Static(lit.value()));
             }
 
-            RouteAtom::Var(d) => {
-                // Route placeholder declares a variable.
-                upsert_var(&mut ep_vars, &d.rust, d.optional, &d.ty, d.default.as_ref())?;
-
-                route_pieces.push(PathPiece::Var {
-                    field: d.rust.clone(),
-                    optional: d.optional,
-                });
-            }
-
             RouteAtom::Fmt(spec) => {
-                // part[...] inside a route can declare vars too.
-                let (resolved, fmt_decls) =
-                    resolve_route_fmt_spec(spec, Some(client_vars), Some(&ep_vars))?;
-
-                for v in fmt_decls {
-                    upsert_var(&mut ep_vars, &v.rust, v.optional, &v.ty, v.default.as_ref())?;
-                }
+                let resolved = resolve_route_fmt_spec(spec, Some(client_vars), Some(&ep_vars))?;
                 route_pieces.push(PathPiece::Fmt(resolved));
             }
             RouteAtom::Ref(r) => match r.scope {
@@ -2214,45 +2127,7 @@ fn analyze_endpoint(
         }
     }
 
-    // 3) Collect endpoint-level policy binds into `ep_vars` so codegen has all fields.
-    //    (headers/query bind syntaxes)
-    for blk in ed.policy.headers.iter().chain(ed.policy.query.iter()) {
-        for stmt in &blk.stmts {
-            match stmt {
-                PolicyStmt::Bind { decl, .. } => {
-                    upsert_var(
-                        &mut ep_vars,
-                        &decl.rust,
-                        decl.optional,
-                        &decl.ty,
-                        decl.default.as_ref(),
-                    )?;
-                }
-                PolicyStmt::BindShort { ident_key, decl } => {
-                    // `ident_key` is the rust field name in this form (per your snippet)
-                    upsert_var(
-                        &mut ep_vars,
-                        ident_key,
-                        decl.optional,
-                        &decl.ty,
-                        decl.default.as_ref(),
-                    )?;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    // 4) Collect any vars introduced by policy part[...] inside headers/query.
-    {
-        let mut fmt_decls: Vec<VarInfo> = Vec::new();
-        collect_policy_fmt_decls(&ed.policy, &mut fmt_decls);
-        for v in fmt_decls {
-            upsert_var(&mut ep_vars, &v.rust, v.optional, &v.ty, v.default.as_ref())?;
-        }
-    }
-
-    // 5) Resolve policy blocks now that endpoint vars are known.
+    // 3) Resolve policy blocks now that endpoint vars are known.
     let mut policy = resolve_policy_blocks(
         &ed.policy,
         PolicyOwner::Endpoint,
@@ -2262,7 +2137,11 @@ fn analyze_endpoint(
     )?;
     policy.retry = resolve_retry_spec(ed.retry.as_ref(), retry_profiles)?;
     policy.cache = resolve_cache_spec(ed.cache.as_ref(), cache_profiles)?;
-    let endpoint_decls = ep_vars.values().cloned().collect::<Vec<_>>();
+    let endpoint_decls = ep_var_order
+        .iter()
+        .filter_map(|key| ep_vars.get(key))
+        .cloned()
+        .collect::<Vec<_>>();
     let endpoint_key_bindings =
         resolve_rate_limit_key_bindings(&ed.rate_limit_keys, &endpoint_decls)?;
     let mut visible_keys = rate_limit_key_bindings_for_ancestry(ancestry, layers);
@@ -2284,11 +2163,16 @@ fn analyze_endpoint(
         auth_credentials,
         AuthUseProvenanceIr::Endpoint,
     )?);
+    let scope_modules: Vec<Ident> = ancestry
+        .iter()
+        .filter_map(|&lid| layers[lid].scope_name.clone())
+        .collect();
+    let current_endpoint_key = endpoint_scope_key(&scope_modules, &ed.name);
     for credential in auth_credentials.values() {
-        let AuthCredentialKindIr::Endpoint { endpoint, .. } = &credential.kind else {
+        let AuthCredentialKindIr::Endpoint { endpoint_key, .. } = &credential.kind else {
             continue;
         };
-        if endpoint != &ed.name {
+        if endpoint_key != &current_endpoint_key {
             continue;
         }
         if auth_plan_references_credential(&auth_uses, &credential.name) {
@@ -2302,31 +2186,28 @@ fn analyze_endpoint(
         }
     }
 
-    // 6) Resolve paginate, if any.
+    // 4) Resolve paginate, if any.
     let paginate = match &ed.paginate {
         None => None,
         Some(p) => Some(resolve_paginate(p, client_vars, auth_vars, &ep_vars)?),
     };
 
-    // 7) Resolve map block, if any.
+    // 5) Resolve map block, if any.
     let map = ed.map.as_ref().map(|m| MapResolved {
         out_ty: m.out_ty.clone(),
         body: m.body.clone(),
     });
 
-    // 8) Produce final IR.
+    // 6) Produce final IR.
     Ok(EndpointIr {
         name: ed.name.clone(),
-        scope_modules: ancestry
-            .iter()
-            .filter_map(|&lid| layers[lid].scope_name.clone())
-            .collect(),
+        scope_modules,
         method: ed.method.clone(),
         route_pieces,
         ancestry: ancestry.to_vec(),
 
-        // Stable order (BTreeMap order).
-        vars: ep_vars.values().cloned().collect(),
+        // Stable declaration order.
+        vars: endpoint_decls,
 
         body: ed.body.clone(),
         response: ed.response.clone(),
@@ -2501,28 +2382,6 @@ fn resolve_policy_block(
                     conditional_on_optional_ref: cond,
                 });
             }
-            PolicyStmt::Bind { key, decl } => {
-                if owner == PolicyOwner::Client {
-                    // bind declares client var; validation done separately
-                }
-                ops.push(PolicyOp::Bind {
-                    key: resolve_key(key),
-                    kind,
-                    field: decl.rust.clone(),
-                    optional: decl.optional,
-                });
-            }
-            PolicyStmt::BindShort { ident_key, decl } => {
-                if kind == PolicyKeyKind::Header {
-                    // ok
-                }
-                ops.push(PolicyOp::Bind {
-                    key: KeyResolved::Ident(ident_key.clone()),
-                    kind,
-                    field: ident_key.clone(),
-                    optional: decl.optional,
-                });
-            }
         }
     }
 
@@ -2607,8 +2466,6 @@ fn policy_stmt_span(s: &PolicyStmt) -> Span {
             value,
             op: _,
         } => value.span(),
-        PolicyStmt::Bind { key: _, decl } => decl.rust.span(),
-        PolicyStmt::BindShort { ident_key, decl: _ } => ident_key.span(),
     }
 }
 
@@ -2653,27 +2510,12 @@ fn resolve_route_fmt_spec(
     spec: &FmtSpec,
     client_vars: Option<&BTreeMap<String, VarInfo>>,
     ep_vars: Option<&BTreeMap<String, VarInfo>>,
-) -> Result<(FmtResolved, Vec<VarInfo>)> {
-    let mut decls: Vec<VarInfo> = Vec::new();
+) -> Result<FmtResolved> {
     let mut pieces: Vec<FmtResolvedPiece> = Vec::new();
 
     for p in &spec.pieces {
         match p {
             FmtPiece::Lit(l) => pieces.push(FmtResolvedPiece::Lit(l.clone())),
-            FmtPiece::Var(d) => {
-                // même déclaration qu’un placeholder
-                decls.push(VarInfo {
-                    rust: d.rust.clone(),
-                    optional: d.optional,
-                    ty: d.ty.clone(),
-                    default: d.default.clone(),
-                });
-                pieces.push(FmtResolvedPiece::Var {
-                    source: FmtVarSource::Ep,
-                    field: d.rust.clone(),
-                    optional: d.optional,
-                });
-            }
             FmtPiece::Ref(r) => match r.scope {
                 RefScope::Cx => {
                     let cv = client_vars
@@ -2713,18 +2555,15 @@ fn resolve_route_fmt_spec(
         }
     }
 
-    Ok((
-        FmtResolved {
-            require_all: spec.require_all,
-            pieces,
-        },
-        decls,
-    ))
+    Ok(FmtResolved {
+        require_all: spec.require_all,
+        pieces,
+    })
 }
 
 fn resolve_policy_value_kind(
     v: &crate::ast::PolicyValue,
-    owner: PolicyOwner,
+    _owner: PolicyOwner,
     client_vars: &BTreeMap<String, VarInfo>,
     auth_vars: &BTreeMap<String, VarInfo>,
     endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
@@ -2741,46 +2580,6 @@ fn resolve_policy_value_kind(
             for p in &fmt.pieces {
                 match p {
                     crate::ast::FmtPiece::Lit(s) => pieces.push(FmtResolvedPiece::Lit(s.clone())),
-                    crate::ast::FmtPiece::Var(d) => {
-                        has_optional |= d.optional;
-
-                        // validation d’existence si possible (client et endpoint)
-                        match owner {
-                            PolicyOwner::Client => {
-                                if !client_vars.contains_key(&d.rust.to_string()) {
-                                    return Err(syn::Error::new(
-                                        d.rust.span(),
-                                        format!("unknown client var `{}`", d.rust),
-                                    ));
-                                }
-                            }
-                            PolicyOwner::Endpoint => {
-                                let ep = endpoint_vars.ok_or_else(|| {
-                                    syn::Error::new(d.rust.span(), "ep vars not available")
-                                })?;
-                                if !ep.contains_key(&d.rust.to_string()) {
-                                    return Err(syn::Error::new(
-                                        d.rust.span(),
-                                        format!("unknown endpoint var `{}`", d.rust),
-                                    ));
-                                }
-                            }
-                            PolicyOwner::Layer => {
-                                // layer-level: pas forcément de registry complet ici; l’existence est garantie
-                                // par l’injection dans decls + union endpoint.
-                            }
-                        }
-
-                        pieces.push(FmtResolvedPiece::Var {
-                            source: match owner {
-                                PolicyOwner::Client => FmtVarSource::Cx,
-                                PolicyOwner::Endpoint => FmtVarSource::Ep,
-                                PolicyOwner::Layer => FmtVarSource::Ep, // layer policy runs with ep in scope
-                            },
-                            field: d.rust.clone(),
-                            optional: d.optional,
-                        });
-                    }
                     crate::ast::FmtPiece::Ref(r) => match r.scope {
                         RefScope::Cx => {
                             let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
@@ -2843,33 +2642,6 @@ fn resolve_policy_value_kind(
                 pieces,
             }))
         }
-    }
-}
-
-impl syn::parse::Parse for TemplateVarDecl {
-    fn parse(input: syn::parse::ParseStream<'_>) -> Result<Self> {
-        let wire: Ident = input.parse()?;
-        let mut rust = wire.clone();
-        if input.peek(syn::Token![as]) {
-            input.parse::<syn::Token![as]>()?;
-            rust = input.parse::<Ident>()?;
-        }
-        let optional = input.parse::<Option<syn::Token![?]>>()?.is_some();
-        input.parse::<syn::Token![:]>()?;
-        let ty: Type = input.parse()?;
-        let default = if input.peek(syn::Token![=]) {
-            input.parse::<syn::Token![=]>()?;
-            Some(input.parse::<Expr>()?)
-        } else {
-            None
-        };
-        Ok(TemplateVarDecl {
-            wire,
-            rust,
-            optional,
-            ty,
-            default,
-        })
     }
 }
 

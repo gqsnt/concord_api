@@ -1,0 +1,15 @@
+error[E0433]: failed to resolve: could not find `Ping` in `endpoints`
+  --> tests/ui/scoped_endpoint_root_alias_removed.rs:20:75
+   |
+20 |     let _ = api.request(ui_scoped_endpoint_root_alias_removed::endpoints::Ping::new());
+   |                                                                           ^^^^ could not find `Ping` in `endpoints`
+   |
+help: consider importing this struct through its public re-export
+   |
+ 1 + use crate::ui_scoped_endpoint_root_alias_removed::endpoints::api::Ping;
+   |
+help: if you import `Ping`, refer to it directly
+   |
+20 -     let _ = api.request(ui_scoped_endpoint_root_alias_removed::endpoints::Ping::new());
+20 +     let _ = api.request(Ping::new());
+   |

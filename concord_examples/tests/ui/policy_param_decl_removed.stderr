@@ -1,0 +1,5 @@
+error: policy parameter declarations are not supported; declare parameters in the endpoint signature and assign with `key = ep.param`
+  --> tests/ui/policy_param_decl_removed.rs:11:13
+   |
+11 |             page: u32
+   |             ^^^^

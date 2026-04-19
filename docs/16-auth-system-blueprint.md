@@ -39,7 +39,7 @@ Credential source taxonomy:
 
 1. static secret-backed: `ApiKey(secret.x)`, `AccessToken(secret.y)`, `Basic(...)`
 2. provider-backed: `OAuth2ClientCredentials { ... }`, `Custom<T>(expr)`
-3. endpoint-backed manual: `Endpoint(LoginEndpoint)`
+3. endpoint-backed manual: `Endpoint(auth::LoginEndpoint)`
 
 Endpoint-backed credentials reuse endpoint output mapping:
 
@@ -123,7 +123,7 @@ Auth retry loop is distinct from transport retry loop.
 2. endpoint can use `use_auth` explicitly
 3. no implicit `SkipAuth` is forced
 
-Direct self-dependency (`credential c: Endpoint(E)` where `E` uses `c`) must fail at compile-time.
+Direct self-dependency (`credential c: Endpoint(auth::E)` where `auth::E` uses `c`) must fail at compile-time.
 
 ## Behavior matrix
 
@@ -143,7 +143,7 @@ Direct self-dependency (`credential c: Endpoint(E)` where `E` uses `c`) must fai
 Compile-time diagnostics should prioritize:
 
 1. unknown credential reference in `use_auth`
-2. unknown endpoint in `credential x: Endpoint(E)`
+2. unknown endpoint in `credential x: Endpoint(auth::E)`
 3. direct recursive credential/endpoint auth dependency
 4. endpoint output not satisfying `CredentialMaterial` bounds
 5. usage/material incompatibility
@@ -181,7 +181,7 @@ Implemented:
 
 1. manual credential provider + slot lifecycle operations
 2. invalidation/retry decoupling in auth response handling
-3. DSL support for `credential x: Endpoint(E)`
+3. DSL support for `credential x: Endpoint(auth::E)`
 4. generated `acquire/set/clear/has` helpers
 5. docs/examples alignment across auth and runtime chapters
 6. compile-fail diagnostics for unknown endpoint, recursion, and non-credential endpoint output

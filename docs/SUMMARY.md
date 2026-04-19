@@ -18,3 +18,5 @@
 - [14. Customization and Extension Points](14-customization.md)
 - [15. Authentication Evolution](15-auth-evolution.md)
 - [16. Authentication System Blueprint](16-auth-system-blueprint.md)
+- [17. Cache System Blueprint](17-cache-system-blueprint.md)
+- [18. Rate-Limit System Blueprint](18-rate-limit-system-blueprint.md)

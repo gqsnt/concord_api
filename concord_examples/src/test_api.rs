@@ -142,10 +142,10 @@ pub async fn test_api() -> Result<(), ApiClientError> {
     let created = client
         .request(client::endpoints::jsonplaceholder::posts::CreatePost::new(
             models::NewPost {
-            title: "foo".to_string(),
-            body: "bar".to_string(),
-            user_id: 10,
-        },
+                title: "foo".to_string(),
+                body: "bar".to_string(),
+                user_id: 10,
+            },
         ))
         .execute()
         .await?;

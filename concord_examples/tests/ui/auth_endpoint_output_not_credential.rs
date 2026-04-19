@@ -8,16 +8,18 @@ api! {
         scheme: https,
         host: "example.com",
         auth {
-            credential session: Endpoint(LoginForSession)
+            credential session: Endpoint(auth::LoginForSession)
         }
     }
 
-    POST LoginForSession
-    -> Json<()> | NotCredential => {
-    NotCredential
-    }
-    {
-        path["login"]
+    scope auth {
+        POST LoginForSession
+        -> Json<()> | NotCredential => {
+        NotCredential
+        }
+        {
+            path["login"]
+        }
     }
 
     GET Health

@@ -93,7 +93,7 @@ Use `secret` values for credentials only. Use `vars` for ordinary configuration.
 For endpoint-backed manual credentials, generated clients also expose async lifecycle helpers:
 
 ```rust
-api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
+api.acquire_auth_session(endpoints::auth::LoginForSession::new(...)).await?;
 api.set_auth_session_value(AccessToken::new("seed")).await;
 let has = api.has_auth_session().await;
 api.clear_auth_session().await;

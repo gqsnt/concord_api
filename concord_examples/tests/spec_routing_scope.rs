@@ -47,7 +47,11 @@ async fn scope_host_default_and_override_and_order() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiPrefixDefault::new_with_transport(transport);
-        let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
+        let _ = api
+            .request(endpoints::platform::Ping::new())
+            .execute()
+            .await
+            .unwrap();
 
         let reqs = h.recorded();
         assert_request(&reqs[0]).host("euw1.api.example.com");
@@ -60,7 +64,7 @@ async fn scope_host_default_and_override_and_order() {
 
         let api = ApiPrefixDefault::new_with_transport(transport);
         let _ = api
-            .request(endpoints::Ping::new().region(Region::NA))
+            .request(endpoints::platform::Ping::new().region(Region::NA))
             .execute()
             .await
             .unwrap();
@@ -96,7 +100,11 @@ async fn scope_host_optional_label_omitted_without_double_dot() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiPrefixOpt::new_with_transport(transport);
-        let _ = api.request(endpoints::Ping::new()).execute().await.unwrap();
+        let _ = api
+            .request(endpoints::tenant::Ping::new())
+            .execute()
+            .await
+            .unwrap();
 
         let reqs = h.recorded();
         assert_request(&reqs[0]).host("api.example.com");
@@ -109,7 +117,7 @@ async fn scope_host_optional_label_omitted_without_double_dot() {
 
         let api = ApiPrefixOpt::new_with_transport(transport);
         let _ = api
-            .request(endpoints::Ping::new().sub("x".to_string()))
+            .request(endpoints::tenant::Ping::new().sub("x".to_string()))
             .execute()
             .await
             .unwrap();
@@ -146,7 +154,7 @@ async fn scope_host_label_validation_errors() {
 
         let api = ApiPrefixInvalid::new_with_transport(transport);
         let err = api
-            .request(endpoints::Ping::new().region(Region::BadDot))
+            .request(endpoints::platform::Ping::new().region(Region::BadDot))
             .execute()
             .await
             .unwrap_err();
@@ -171,7 +179,7 @@ async fn scope_host_label_validation_errors() {
 
         let api = ApiPrefixInvalid::new_with_transport(transport);
         let err = api
-            .request(endpoints::Ping::new().region(Region::BadDashStart))
+            .request(endpoints::platform::Ping::new().region(Region::BadDashStart))
             .execute()
             .await
             .unwrap_err();
@@ -196,7 +204,7 @@ async fn scope_host_label_validation_errors() {
 
         let api = ApiPrefixInvalid::new_with_transport(transport);
         let err = api
-            .request(endpoints::Ping::new().region(Region::BadUnderscore))
+            .request(endpoints::platform::Ping::new().region(Region::BadUnderscore))
             .execute()
             .await
             .unwrap_err();
@@ -243,7 +251,7 @@ async fn scope_path_concat_percent_encoding() {
     let api = ApiPath::new_with_transport(transport);
 
     let _ = api
-        .request(endpoints::GetMatch::new("a/b".to_string()))
+        .request(endpoints::lol::GetMatch::new("a/b".to_string()))
         .execute()
         .await
         .unwrap();
@@ -398,7 +406,7 @@ async fn scope_host_part_adds_one_label() {
 
     let api = ApiPrefixLayerFmt::new_with_transport(transport);
     let _ = api
-        .request(endpoints::One::new("42".to_string()))
+        .request(endpoints::layer::One::new("42".to_string()))
         .execute()
         .await
         .unwrap();
@@ -441,9 +449,13 @@ async fn scope_host_part_optional_omits_label_when_missing() {
 
     let api = ApiPrefixLayerFmtOpt::new_with_transport(transport);
 
-    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
     let _ = api
-        .request(endpoints::One::new().id("z".to_string()))
+        .request(endpoints::layer::One::new())
+        .execute()
+        .await
+        .unwrap();
+    let _ = api
+        .request(endpoints::layer::One::new().id("z".to_string()))
         .execute()
         .await
         .unwrap();
@@ -481,7 +493,7 @@ async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
     let api = ApiPathLayerFmt::new_with_transport(transport);
 
     let _ = api
-        .request(endpoints::One::new("a/b".to_string()))
+        .request(endpoints::layer::One::new("a/b".to_string()))
         .execute()
         .await
         .unwrap();
@@ -522,9 +534,13 @@ async fn scope_path_part_in_layer_optional_omits_segment_no_double_slash() {
 
     let api = ApiPathLayerFmtOpt::new_with_transport(transport);
 
-    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
     let _ = api
-        .request(endpoints::One::new().v("k".to_string()))
+        .request(endpoints::layer::One::new())
+        .execute()
+        .await
+        .unwrap();
+    let _ = api
+        .request(endpoints::layer::One::new().v("k".to_string()))
         .execute()
         .await
         .unwrap();

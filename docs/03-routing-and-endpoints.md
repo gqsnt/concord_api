@@ -58,8 +58,8 @@ The generated endpoint constructor includes required parameters from parent scop
 
 ```rust
 api.request(endpoints::platform::summoner_v4::GetSummonerByPuuid::new(
-        "abc".to_string(),
         PlatformRoute::Euw1,
+        "abc".to_string(),
     ))
     .execute()
     .await?;
@@ -168,7 +168,7 @@ GET GetUser(id: u32) -> Json<User> {
 
 The method is an HTTP method identifier such as `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, or `OPTIONS`.
 
-The endpoint name becomes a generated Rust type under `endpoints`, and nested scopes become nested endpoint modules.
+The endpoint name becomes a generated Rust type under `endpoints`. Nested scopes become nested endpoint modules; scoped endpoints are not reexported at the root.
 
 ```rust
 let ep = endpoints::users::GetUser::new(42);

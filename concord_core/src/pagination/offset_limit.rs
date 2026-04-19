@@ -9,7 +9,7 @@ use std::borrow::Cow;
 /// Offset/limit pagination (offset starts at 0 by default).
 ///
 /// This is the single "engine" for all offset-based APIs:
-/// - you bind `offset` and `limit` to any endpoint placeholders via `paginate { offset: start, limit: count }`
+/// - you bind `offset` and `limit` to endpoint params via `paginate { offset: start, limit: count }`
 /// - codegen can hint the effective query keys so this controller remains opaque to codegen.
 #[derive(Clone, Debug)]
 pub struct OffsetLimitPagination {

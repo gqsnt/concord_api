@@ -1,0 +1,5 @@
+error: template parameter declarations are not supported in `part[...]`; use identifier or scoped refs (`vars.x`, `ep.y`, `secret.z`)
+  --> tests/ui/part_placeholder_decl_removed.rs:11:32
+   |
+11 |             "q" = part["id:", {id: String}]
+   |                                ^^

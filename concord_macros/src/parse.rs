@@ -269,7 +269,8 @@ impl Parse for AuthCredentialDecl {
             "Endpoint" => {
                 let content;
                 parenthesized!(content in input);
-                let endpoint: Ident = content.parse()?;
+                let endpoint: Path = content.parse()?;
+                validate_auth_endpoint_path(&endpoint)?;
                 if !content.is_empty() {
                     return Err(syn::Error::new(
                         content.span(),
@@ -406,6 +407,24 @@ fn parse_secret_ref(input: ParseStream<'_>) -> Result<SecretRef> {
     input.parse::<Token![.]>()?;
     let ident: Ident = input.parse()?;
     Ok(SecretRef { ident })
+}
+
+fn validate_auth_endpoint_path(path: &Path) -> Result<()> {
+    if path.segments.is_empty() {
+        return Err(syn::Error::new_spanned(
+            path,
+            "Endpoint(...) expects `Login` or `scope::Login`",
+        ));
+    }
+    for segment in &path.segments {
+        if !matches!(segment.arguments, syn::PathArguments::None) {
+            return Err(syn::Error::new_spanned(
+                segment,
+                "Endpoint(...) path segments must not contain generic arguments",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn parse_angle_type(input: ParseStream<'_>, span: Span, label: &'static str) -> Result<Type> {
@@ -576,10 +595,7 @@ fn parse_vars_block(input: ParseStream<'_>) -> Result<VarsBlock> {
     Ok(VarsBlock { decls })
 }
 
-fn parse_inline_var_decls(
-    input: ParseStream<'_>,
-    ctx: &'static str,
-) -> Result<Vec<VarDeclNoWire>> {
+fn parse_inline_var_decls(input: ParseStream<'_>, ctx: &'static str) -> Result<Vec<VarDeclNoWire>> {
     let content;
     parenthesized!(content in input);
     let mut decls = Vec::new();
@@ -668,10 +684,7 @@ fn parse_endpoint_signature_args(
     Ok((params, body))
 }
 
-fn parse_endpoint_block_parts(
-    input: ParseStream<'_>,
-    name: &Ident,
-) -> Result<EndpointBlockParts> {
+fn parse_endpoint_block_parts(input: ParseStream<'_>, name: &Ident) -> Result<EndpointBlockParts> {
     let mut route = RouteExpr { atoms: Vec::new() };
     let mut policy = PolicyBlocks::default();
     let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
@@ -1603,10 +1616,7 @@ impl Parse for LayerDefTaggedScope {
             } else if content.peek(kw::scope) {
                 items.push(content.parse::<Item>()?);
             } else if content.peek(kw::prefix) {
-                return Err(syn::Error::new(
-                    content.span(),
-                    "invalid item in scope",
-                ));
+                return Err(syn::Error::new(content.span(), "invalid item in scope"));
             } else {
                 items.push(Item::Endpoint(content.parse::<EndpointDef>()?));
             }
@@ -1826,8 +1836,6 @@ fn stmt_span(stmt: &PolicyStmt) -> Span {
     match stmt {
         PolicyStmt::Remove { key } => key_spec_span(key),
         PolicyStmt::Set { key, .. } => key_spec_span(key),
-        PolicyStmt::Bind { key, .. } => key_spec_span(key),
-        PolicyStmt::BindShort { ident_key, .. } => ident_key.span(),
     }
 }
 
@@ -1881,9 +1889,10 @@ impl Parse for PolicyStmt {
         if input.peek(LitStr) {
             let key = KeySpec::Str(input.parse::<LitStr>()?);
             if input.peek(Token![as]) {
-                input.parse::<Token![as]>()?;
-                let decl = input.parse::<VarDeclNoWire>()?;
-                return Ok(PolicyStmt::Bind { key, decl });
+                return Err(syn::Error::new(
+                    input.span(),
+                    "policy binds are not supported; declare parameters in the endpoint signature and assign with `\"key\" = ep.param`",
+                ));
             }
 
             // set/push
@@ -1901,33 +1910,21 @@ impl Parse for PolicyStmt {
         // ident start
         let ident: Ident = input.parse()?;
 
-        // short bind: ident ? : Type (= Expr)?
+        // short bind removal
         if input.peek(Token![?]) || input.peek(Token![:]) {
-            let optional = input.parse::<Option<Token![?]>>()?.is_some();
-            input.parse::<Token![:]>()?;
-            let ty: Type = input.parse()?;
-            let default = if input.peek(Token![=]) {
-                input.parse::<Token![=]>()?;
-                Some(input.parse::<Expr>()?)
-            } else {
-                None
-            };
-            return Ok(PolicyStmt::BindShort {
-                ident_key: ident.clone(),
-                decl: VarDeclShort {
-                    optional,
-                    ty,
-                    default,
-                },
-            });
+            return Err(syn::Error::new(
+                ident.span(),
+                "policy parameter declarations are not supported; declare parameters in the endpoint signature and assign with `key = ep.param`",
+            ));
         }
 
         let key = KeySpec::Ident(ident);
 
         if input.peek(Token![as]) {
-            input.parse::<Token![as]>()?;
-            let decl = input.parse::<VarDeclNoWire>()?;
-            return Ok(PolicyStmt::Bind { key, decl });
+            return Err(syn::Error::new(
+                input.span(),
+                "policy binds are not supported; declare parameters in the endpoint signature and assign with `key = ep.param`",
+            ));
         }
 
         let op = if input.peek(Token![+=]) {
@@ -2082,18 +2079,21 @@ fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
                         let name: Ident = inner.parse()?;
                         let scope = resolve_scoped_ref_base(&base)?;
                         pieces.push(FmtPiece::Ref(ScopedRef { scope, ident: name }));
-                    } else {
-                        let d: TemplateVarDecl = inner.parse()?;
-                        pieces.push(FmtPiece::Var(d));
+                        if !inner.is_empty() {
+                            return Err(syn::Error::new(
+                                inner.span(),
+                                "unexpected tokens in scoped reference",
+                            ));
+                        }
+                        let _ = content.parse::<Option<Token![,]>>()?;
+                        continue;
                     }
-                } else {
-                    let d: TemplateVarDecl = inner.parse()?;
-                    pieces.push(FmtPiece::Var(d));
                 }
-            } else {
-                let d: TemplateVarDecl = inner.parse()?;
-                pieces.push(FmtPiece::Var(d));
             }
+            return Err(syn::Error::new(
+                inner.span(),
+                "template parameter declarations are not supported in `part[...]`; use identifier or scoped refs (`vars.x`, `ep.y`, `secret.z`)",
+            ));
         } else if content.peek(Ident) {
             let sr = parse_scoped_ref_from_ident(&content)?;
             pieces.push(FmtPiece::Ref(sr));
@@ -2101,7 +2101,7 @@ fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
             let tt: TokenTree = content.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "expected string literal, identifier, or `{var:Ty}` in part[...]",
+                "expected string literal, identifier, or scoped reference in `part[...]`",
             ));
         }
         let _ = content.parse::<Option<Token![,]>>()?;
@@ -2166,14 +2166,15 @@ fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
                 }
             }
         }
-        // Fallback: declaration placeholder.
-        let d: TemplateVarDecl = syn::parse2::<TemplateVarDecl>(content.parse::<TokenStream2>()?)?;
-        return Ok(RouteAtom::Var(d));
+        return Err(syn::Error::new(
+            content.span(),
+            "route placeholder declarations are not supported; declare params in scope/endpoint signatures and reference them in route items",
+        ));
     }
     let tt: proc_macro2::TokenTree = input.parse()?;
     Err(syn::Error::new(
         tt.span(),
-        "expected string literal or `{var:Ty}` in route",
+        "expected string literal, identifier, scoped reference, or `part[...]` in route",
     ))
 }
 
@@ -2238,7 +2239,9 @@ fn normalize_policy_expr(expr: Expr) -> Expr {
             if p.qself.is_none() && p.path.segments.len() == 1 {
                 let seg = &p.path.segments[0];
                 let id = &seg.ident;
-                if (*id != "vars") && (*id != "secret") && (*id != "ep")
+                if (*id != "vars")
+                    && (*id != "secret")
+                    && (*id != "ep")
                     && id
                         .to_string()
                         .chars()

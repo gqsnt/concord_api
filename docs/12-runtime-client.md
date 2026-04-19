@@ -152,7 +152,7 @@ Endpoint-backed manual credentials share state the same way:
 let api = protected_api::ProtectedApi::new();
 let clone = api.clone();
 
-api.acquire_auth_session(endpoints::LoginForSession::new(...)).await?;
+api.acquire_auth_session(endpoints::auth::LoginForSession::new(...)).await?;
 assert!(clone.has_auth_session().await);
 
 clone.clear_auth_session().await;

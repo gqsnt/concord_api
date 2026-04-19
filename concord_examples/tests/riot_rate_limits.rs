@@ -147,7 +147,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChampionRotations::new(platform))
+                api.request(endpoints::platform::champion_v3::GetChampionRotations::new(platform))
                     .execute(),
             )
             .await,
@@ -158,7 +158,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetSummonerByPuuid::new(
+                api.request(endpoints::platform::summoner_v4::GetSummonerByPuuid::new(
                     platform,
                     "puuid".to_string(),
                 ))
@@ -172,7 +172,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChallengerLeagueByQueue::new(
+                api.request(endpoints::platform::league_v4::challengerleagues::GetChallengerLeagueByQueue::new(
                     platform,
                     LeagueQueue::RankedSolo5x5,
                 ))
@@ -186,7 +186,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetGrandmasterLeagueByQueue::new(
+                api.request(endpoints::platform::league_v4::grandmasterleagues::GetGrandmasterLeagueByQueue::new(
                     platform,
                     LeagueQueue::RankedSolo5x5,
                 ))
@@ -200,7 +200,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetMasterLeagueByQueue::new(
+                api.request(endpoints::platform::league_v4::masterleagues::GetMasterLeagueByQueue::new(
                     platform,
                     LeagueQueue::RankedSolo5x5,
                 ))
@@ -214,9 +214,9 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetLeagueById::new(
-                    "league-id".to_string(),
+                api.request(endpoints::platform::league_v4::leagues::GetLeagueById::new(
                     platform,
+                    "league-id".to_string(),
                 ))
                 .execute(),
             )
@@ -228,11 +228,11 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetLeagueEntries::new(
-                    "I".to_string(),
+                api.request(endpoints::platform::league_v4::entries::GetLeagueEntries::new(
                     platform,
                     "RANKED_SOLO_5x5".to_string(),
                     "DIAMOND".to_string(),
+                    "I".to_string(),
                 ))
                 .execute(),
             )
@@ -244,9 +244,9 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetLeagueEntriesByPuuid::new(
-                    "encrypted-puuid".to_string(),
+                api.request(endpoints::platform::league_v4::entries::GetLeagueEntriesByPuuid::new(
                     platform,
+                    "encrypted-puuid".to_string(),
                 ))
                 .execute(),
             )
@@ -258,11 +258,11 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetLeagueExpEntries::new(
-                    "I".to_string(),
+                api.request(endpoints::platform::league_exp_v4::GetLeagueExpEntries::new(
                     platform,
                     "RANKED_SOLO_5x5".to_string(),
                     "DIAMOND".to_string(),
+                    "I".to_string(),
                 ))
                 .execute(),
             )
@@ -274,7 +274,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetClashTeam::new(
+                api.request(endpoints::platform::clash_v1::GetClashTeam::new(
                     platform,
                     "team-id".to_string(),
                 ))
@@ -288,7 +288,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetClashTournament::new(platform, 42))
+                api.request(endpoints::platform::clash_v1::GetClashTournament::new(platform, 42))
                     .execute(),
             )
             .await,
@@ -299,7 +299,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetClashTournamentByTeam::new(
+                api.request(endpoints::platform::clash_v1::GetClashTournamentByTeam::new(
                     platform,
                     "team-id".to_string(),
                 ))
@@ -313,7 +313,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetClashTournaments::new(platform))
+                api.request(endpoints::platform::clash_v1::GetClashTournaments::new(platform))
                     .execute(),
             )
             .await,
@@ -324,7 +324,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetClashPlayersByPuuid::new(
+                api.request(endpoints::platform::clash_v1::GetClashPlayersByPuuid::new(
                     platform,
                     "puuid".to_string(),
                 ))
@@ -338,7 +338,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChallengePercentiles::new(platform))
+                api.request(endpoints::platform::challenges_v1::GetChallengePercentiles::new(platform))
                     .execute(),
             )
             .await,
@@ -349,10 +349,10 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChallengeLeaderboardsByLevel::new(
+                api.request(endpoints::platform::challenges_v1::GetChallengeLeaderboardsByLevel::new(
+                    platform,
                     1,
                     "MASTER".to_string(),
-                    platform,
                 ))
                 .execute(),
             )
@@ -364,8 +364,8 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChallengePercentilesByChallenge::new(
-                    1, platform,
+                api.request(endpoints::platform::challenges_v1::GetChallengePercentilesByChallenge::new(
+                    platform, 1,
                 ))
                 .execute(),
             )
@@ -377,7 +377,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChallengeConfig::new(1, platform))
+                api.request(endpoints::platform::challenges_v1::GetChallengeConfig::new(platform, 1))
                     .execute(),
             )
             .await,
@@ -388,7 +388,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChallengePlayerData::new(
+                api.request(endpoints::platform::challenges_v1::GetChallengePlayerData::new(
                     platform,
                     "puuid".to_string(),
                 ))
@@ -402,7 +402,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChallengeConfigs::new(platform))
+                api.request(endpoints::platform::challenges_v1::GetChallengeConfigs::new(platform))
                     .execute(),
             )
             .await,
@@ -413,9 +413,9 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChampionMasteriesByPuuid::new(
-                    "encrypted-puuid".to_string(),
+                api.request(endpoints::platform::champion_mastery_v4::champion_masteries::GetChampionMasteriesByPuuid::new(
                     platform,
+                    "encrypted-puuid".to_string(),
                 ))
                 .execute(),
             )
@@ -427,10 +427,10 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChampionMasteryByPuuidAndChampion::new(
-                    266,
-                    "encrypted-puuid".to_string(),
+                api.request(endpoints::platform::champion_mastery_v4::champion_masteries::GetChampionMasteryByPuuidAndChampion::new(
                     platform,
+                    "encrypted-puuid".to_string(),
+                    266,
                 ))
                 .execute(),
             )
@@ -442,9 +442,9 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetChampionMasteryScoreByPuuid::new(
-                    "encrypted-puuid".to_string(),
+                api.request(endpoints::platform::champion_mastery_v4::scores::GetChampionMasteryScoreByPuuid::new(
                     platform,
+                    "encrypted-puuid".to_string(),
                 ))
                 .execute(),
             )
@@ -456,9 +456,9 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetTopChampionMasteriesByPuuid::new(
-                    "encrypted-puuid".to_string(),
+                api.request(endpoints::platform::champion_mastery_v4::champion_masteries::GetTopChampionMasteriesByPuuid::new(
                     platform,
+                    "encrypted-puuid".to_string(),
                 ))
                 .execute(),
             )
@@ -470,7 +470,7 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetPlatformData::new(platform))
+                api.request(endpoints::platform::status_v4::GetPlatformData::new(platform))
                     .execute(),
             )
             .await,
@@ -481,9 +481,9 @@ async fn riot_platform_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetSpectatorV5ActiveGameBySummoner::new(
-                    "encrypted-puuid".to_string(),
+                api.request(endpoints::platform::spectator_v5::GetSpectatorV5ActiveGameBySummoner::new(
                     platform,
+                    "encrypted-puuid".to_string(),
                 ))
                 .execute(),
             )
@@ -521,9 +521,9 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetAccountByRiotId::new(
-                    "game".to_string(),
+                api.request(endpoints::regional::account_v1_accounts::GetAccountByRiotId::new(
                     region,
+                    "game".to_string(),
                     "tag".to_string(),
                 ))
                 .execute(),
@@ -536,9 +536,9 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetAccountByPuuid::new(
-                    "puuid".to_string(),
+                api.request(endpoints::regional::account_v1_accounts::GetAccountByPuuid::new(
                     region,
+                    "puuid".to_string(),
                 ))
                 .execute(),
             )
@@ -550,10 +550,10 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetAccountRegionByGameAndPuuid::new(
+                api.request(endpoints::regional::account_v1_region::GetAccountRegionByGameAndPuuid::new(
+                    region,
                     "lol".to_string(),
                     "puuid".to_string(),
-                    region,
                 ))
                 .execute(),
             )
@@ -565,7 +565,7 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetMatch::new("match-id".to_string(), region))
+                api.request(endpoints::regional::match_v5_matches::GetMatch::new(region, "match-id".to_string()))
                     .execute(),
             )
             .await,
@@ -576,9 +576,9 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetMatchIdsByPuuid::new(
-                    "puuid".to_string(),
+                api.request(endpoints::regional::match_v5_matches::GetMatchIdsByPuuid::new(
                     region,
+                    "puuid".to_string(),
                 ))
                 .execute(),
             )
@@ -590,7 +590,7 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetTimeline::new("match-id".to_string(), region))
+                api.request(endpoints::regional::match_v5_matches::GetTimeline::new(region, "match-id".to_string()))
                     .execute(),
             )
             .await,
@@ -601,9 +601,9 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetMatchReplaysByPuuid::new(
-                    "puuid".to_string(),
+                api.request(endpoints::regional::match_v5_matches::GetMatchReplaysByPuuid::new(
                     region,
+                    "puuid".to_string(),
                 ))
                 .execute(),
             )
@@ -615,7 +615,7 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::CreateTournamentStubCodes::new(
+                api.request(endpoints::regional::tournament_stub_v5::CreateTournamentStubCodes::new(
                     region,
                     1,
                     body.clone(),
@@ -630,7 +630,7 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetTournamentStubLobbyEventsByCode::new(
+                api.request(endpoints::regional::tournament_stub_v5::GetTournamentStubLobbyEventsByCode::new(
                     region,
                     "code".to_string(),
                 ))
@@ -644,7 +644,7 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::GetTournamentStubCode::new(
+                api.request(endpoints::regional::tournament_stub_v5::GetTournamentStubCode::new(
                     region,
                     "code".to_string(),
                 ))
@@ -658,7 +658,7 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::RegisterTournamentStubProvider::new(
+                api.request(endpoints::regional::tournament_stub_v5::RegisterTournamentStubProvider::new(
                     region,
                     body.clone(),
                 ))
@@ -672,7 +672,7 @@ async fn riot_regional_methods_have_declared_rate_limits() {
         (
             record(
                 &plans,
-                api.request(endpoints::RegisterTournamentStubTournament::new(
+                api.request(endpoints::regional::tournament_stub_v5::RegisterTournamentStubTournament::new(
                     region, body,
                 ))
                 .execute(),

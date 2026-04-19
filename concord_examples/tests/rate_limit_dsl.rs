@@ -463,7 +463,7 @@ async fn rate_limit_scope_key_binding_materializes_param_key() {
     let api =
         RateLimitScopeKeyApi::new_with_transport(transport).with_rate_limiter(Arc::new(limiter));
 
-    api.request(endpoints::ByRegion::new("euw1".to_string()))
+    api.request(endpoints::platform::ByRegion::new("euw1".to_string()))
         .execute()
         .await
         .unwrap();
@@ -650,7 +650,7 @@ async fn endpoint_rate_limit_key_binding_materializes_scope_param_key() {
     let api =
         RateLimitEndpointKeyApi::new_with_transport(transport).with_rate_limiter(Arc::new(limiter));
 
-    api.request(endpoints::ByRegion::new("euw1".to_string()))
+    api.request(endpoints::platform::ByRegion::new("euw1".to_string()))
         .execute()
         .await
         .unwrap();

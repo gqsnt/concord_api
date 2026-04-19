@@ -134,7 +134,8 @@ struct OneChunkBody {
 impl TransportBody for OneChunkBody {
     fn next_chunk<'a>(
         &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<bytes::Bytes>, TransportError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Option<bytes::Bytes>, TransportError>> + Send + 'a>>
+    {
         Box::pin(async move { Ok(self.chunk.take()) })
     }
 }
@@ -217,14 +218,22 @@ async fn cache_bypass_hits_transport_without_overwriting_cached_value() {
         .build();
 
     let api = CacheBypassApi::new_with_transport(transport);
-    let first = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let first = api
+        .request(endpoints::Cached::new())
+        .execute()
+        .await
+        .unwrap();
     let bypass = api
         .request(endpoints::Cached::new())
         .cache_bypass()
         .execute()
         .await
         .unwrap();
-    let third = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let third = api
+        .request(endpoints::Cached::new())
+        .execute()
+        .await
+        .unwrap();
 
     assert_eq!(first, "first");
     assert_eq!(bypass, "bypass");
@@ -266,14 +275,22 @@ async fn cache_refresh_hits_transport_and_updates_cached_value() {
         .build();
 
     let api = CacheRefreshApi::new_with_transport(transport);
-    let first = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let first = api
+        .request(endpoints::Cached::new())
+        .execute()
+        .await
+        .unwrap();
     let refreshed = api
         .request(endpoints::Cached::new())
         .cache_refresh()
         .execute()
         .await
         .unwrap();
-    let third = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let third = api
+        .request(endpoints::Cached::new())
+        .execute()
+        .await
+        .unwrap();
 
     assert_eq!(first, "first");
     assert_eq!(refreshed, "refreshed");
@@ -319,8 +336,16 @@ async fn cache_profile_revalidate_false_skips_conditional_headers() {
         .build();
 
     let api = CacheNoRevalidateApi::new_with_transport(transport);
-    let first = api.request(endpoints::Cached::new()).execute().await.unwrap();
-    let second = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let first = api
+        .request(endpoints::Cached::new())
+        .execute()
+        .await
+        .unwrap();
+    let second = api
+        .request(endpoints::Cached::new())
+        .execute()
+        .await
+        .unwrap();
 
     assert_eq!(first, "first");
     assert_eq!(second, "second");
@@ -358,8 +383,16 @@ async fn cache_profile_on_error_serve_stale_returns_stale_after_revalidation_err
     let calls = transport.calls.clone();
     let api = CacheServeStaleApi::new_with_transport(transport);
 
-    let first = api.request(endpoints::Cached::new()).execute().await.unwrap();
-    let second = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let first = api
+        .request(endpoints::Cached::new())
+        .execute()
+        .await
+        .unwrap();
+    let second = api
+        .request(endpoints::Cached::new())
+        .execute()
+        .await
+        .unwrap();
 
     assert_eq!(first, "first");
     assert_eq!(second, "first");
@@ -394,7 +427,11 @@ async fn revalidation_304_without_cache_merge_retries_once_with_unconditional_fe
     let api = CacheRevalidationFallbackApi::new_with_transport(transport)
         .with_cache_store(Arc::new(RevalidateWithoutMergeCache));
 
-    let value = api.request(endpoints::Cached::new()).execute().await.unwrap();
+    let value = api
+        .request(endpoints::Cached::new())
+        .execute()
+        .await
+        .unwrap();
     assert_eq!(value, "fresh");
     h.assert_recorded_len(2);
     let reqs = h.recorded();

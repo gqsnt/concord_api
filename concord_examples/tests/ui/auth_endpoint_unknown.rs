@@ -5,7 +5,7 @@ api! {
         scheme: https,
         host: "example.com",
         auth {
-            credential session: Endpoint(LoginMissing) // ERROR: unknown endpoint reference
+            credential session: Endpoint(auth::LoginMissing) // ERROR: unknown endpoint reference
         }
     }
 
