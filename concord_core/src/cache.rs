@@ -191,7 +191,7 @@ pub struct CacheRevalidation {
 #[derive(Clone, Debug)]
 pub enum CacheAfter {
     Stored,
-    Updated(BuiltResponse),
+    Updated(Box<BuiltResponse>),
     NotStored(CacheSkipReason),
     Invalidated,
 }
@@ -696,7 +696,7 @@ mod moka_backend {
                         weight: entry.weight,
                     });
                     self.entries.insert(revalidation.key, new_entry);
-                    CacheAfter::Updated(updated)
+                    CacheAfter::Updated(Box::new(updated))
                 }
                 AfterResponse::Modified(_, _) => self.store_response(request, response),
             }

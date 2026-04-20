@@ -24,7 +24,7 @@ pub enum ApiClientError {
     #[error("{ctx}: invalid/missing param: {param}")]
     InvalidParam {
         ctx: ErrorContext,
-        param: &'static str,
+        param: Cow<'static, str>,
     },
 
     #[error("{ctx}: build url error: {source}")]
@@ -43,8 +43,8 @@ pub enum ApiClientError {
     HttpStatus {
         ctx: ErrorContext,
         status: StatusCode,
-        headers: HeaderMap,
-        rate_limit: Option<crate::rate_limit::RateLimitResponseAction>,
+        headers: Box<HeaderMap>,
+        rate_limit: Option<Box<crate::rate_limit::RateLimitResponseAction>>,
     },
 
     #[error("{ctx}: decode error: {source}")]
@@ -124,5 +124,95 @@ impl ApiClientError {
             ctx,
             source: error.into(),
         }
+    }
+
+    #[inline]
+    pub fn invalid_param(ctx: ErrorContext, param: impl Into<Cow<'static, str>>) -> ApiClientError {
+        ApiClientError::InvalidParam {
+            ctx,
+            param: param.into(),
+        }
+    }
+
+    #[inline]
+    pub fn context(&self) -> &ErrorContext {
+        match self {
+            ApiClientError::InvalidParam { ctx, .. }
+            | ApiClientError::BuildUrl { ctx, .. }
+            | ApiClientError::Transport { ctx, .. }
+            | ApiClientError::HttpStatus { ctx, .. }
+            | ApiClientError::Decode { ctx, .. }
+            | ApiClientError::HeadRequiresNoContent { ctx }
+            | ApiClientError::Transform { ctx, .. }
+            | ApiClientError::NoContentStatusRequiresNoContent { ctx, .. }
+            | ApiClientError::Codec { ctx, .. }
+            | ApiClientError::Pagination { ctx, .. }
+            | ApiClientError::PaginationLimit { ctx, .. }
+            | ApiClientError::Auth { ctx, .. }
+            | ApiClientError::PolicyViolation { ctx, .. }
+            | ApiClientError::InvalidHostLabel { ctx, .. }
+            | ApiClientError::ControllerConfig { ctx, .. } => ctx,
+        }
+    }
+
+    #[inline]
+    pub fn http_status(&self) -> Option<StatusCode> {
+        match self {
+            ApiClientError::HttpStatus { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn http_headers(&self) -> Option<&HeaderMap> {
+        match self {
+            ApiClientError::HttpStatus { headers, .. } => Some(headers.as_ref()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn rate_limit_response_action(
+        &self,
+    ) -> Option<&crate::rate_limit::RateLimitResponseAction> {
+        match self {
+            ApiClientError::HttpStatus { rate_limit, .. } => rate_limit.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rate_limit::{RateLimitResponseAction, RateLimitTarget};
+
+    #[test]
+    fn http_status_accessors_hide_boxing_details() {
+        let mut headers = HeaderMap::new();
+        headers.insert("retry-after", http::HeaderValue::from_static("1"));
+        let ctx = ErrorContext {
+            endpoint: "Ping",
+            method: http::Method::GET,
+        };
+        let err = ApiClientError::HttpStatus {
+            ctx,
+            status: StatusCode::TOO_MANY_REQUESTS,
+            headers: Box::new(headers),
+            rate_limit: Some(Box::new(RateLimitResponseAction::Limited {
+                retry_after: Some(std::time::Duration::from_secs(1)),
+                target: RateLimitTarget::Request,
+                cooldown_stored: false,
+            })),
+        };
+
+        assert_eq!(err.context().endpoint, "Ping");
+        assert_eq!(err.http_status(), Some(StatusCode::TOO_MANY_REQUESTS));
+        assert_eq!(
+            err.http_headers()
+                .and_then(|headers| headers.get("retry-after")),
+            Some(&http::HeaderValue::from_static("1"))
+        );
+        assert!(err.rate_limit_response_action().is_some());
     }
 }

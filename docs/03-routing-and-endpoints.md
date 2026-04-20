@@ -44,8 +44,8 @@ scope platform(platform: PlatformRoute) {
     host[platform, "api"]
     path["lol"]
 
-    scope summoner_v4 {
-        path["summoner", "v4", "summoners"]
+    scope summoner {
+        path["summoner", "summoners"]
 
         GET GetSummonerByPuuid(puuid: String) -> Json<SummonerDto> {
             path["by-puuid", puuid]
@@ -57,7 +57,7 @@ scope platform(platform: PlatformRoute) {
 The generated endpoint constructor includes required parameters from parent scopes and the endpoint. The generated `endpoints` module mirrors the scope tree, so a call can keep the same structure:
 
 ```rust
-api.request(endpoints::platform::summoner_v4::GetSummonerByPuuid::new(
+api.request(endpoints::platform::summoner::GetSummonerByPuuid::new(
         PlatformRoute::Euw1,
         "abc".to_string(),
     ))
@@ -208,7 +208,7 @@ scope regional(region: RegionRoute) {
     host[region, "api"]
 
     scope match_v5_matches {
-        path["lol", "match", "v5", "matches"]
+        path["lol", "match", "matches"]
 
         GET GetMatchIdsByPuuid(
             puuid: String,

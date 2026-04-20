@@ -162,8 +162,8 @@ impl SharedSendError {
                 ..
             } => SharedSendError::HttpStatus {
                 status: *status,
-                headers: headers.clone(),
-                rate_limit: rate_limit.clone(),
+                headers: headers.as_ref().clone(),
+                rate_limit: rate_limit.as_deref().cloned(),
             },
             _ => SharedSendError::Other {
                 message: err.to_string(),
@@ -187,8 +187,8 @@ impl SharedSendError {
             } => ApiClientError::HttpStatus {
                 ctx,
                 status,
-                headers,
-                rate_limit,
+                headers: Box::new(headers),
+                rate_limit: rate_limit.map(Box::new),
             },
             SharedSendError::Other { message } => {
                 let io = std::io::Error::other(message);

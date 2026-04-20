@@ -127,7 +127,7 @@ Compile-time diagnostics include:
 
 1. unknown auth endpoint in credential source
 2. direct endpoint/credential self-dependency
-3. existing usage/credential compatibility checks
+3. existing usage/credential fit checks
 4. endpoint output that does not satisfy `CredentialMaterial` trait bounds (compile-time trait error)
 
 Runtime diagnostics include:

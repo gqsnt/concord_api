@@ -48,7 +48,7 @@ pub fn emit_header_name(key: &str, span: Span) -> TokenStream2 {
         ::http::header::HeaderName::from_bytes(#key_lit.as_bytes())
             .map_err(|_| ::concord_core::prelude::ApiClientError::InvalidParam {
                 ctx: ctx.clone(),
-                param: #param_lit,
+                param: #param_lit.into(),
             })?
     }}
 }
@@ -60,7 +60,7 @@ pub fn emit_err_invalid_param(param: &str, span: Span) -> TokenStream2 {
     quote! {
         ::concord_core::prelude::ApiClientError::InvalidParam {
             ctx: ctx.clone(),
-            param: #lit,
+            param: #lit.into(),
         }
     }
 }

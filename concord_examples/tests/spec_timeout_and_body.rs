@@ -34,8 +34,7 @@ async fn timeout_layering_client_scope_endpoint() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiTimeout::new_with_transport(transport);
-    let _ = api
-        .request(endpoints::x_scope::A::new())
+    api.request(endpoints::x_scope::A::new())
         .execute()
         .await
         .unwrap();
@@ -80,8 +79,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiBody::new_with_transport(transport);
-        let _ = api
-            .request(endpoints::A::new(NewObj { id: "1".into() }))
+        api.request(endpoints::A::new(NewObj { id: "1".into() }))
             .execute()
             .await
             .unwrap();
@@ -98,8 +96,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiBody::new_with_transport(transport);
-        let _ = api
-            .request(endpoints::B::new(NewObj { id: "1".into() }))
+        api.request(endpoints::B::new(NewObj { id: "1".into() }))
             .execute()
             .await
             .unwrap();
@@ -116,7 +113,7 @@ async fn content_type_injection_only_when_missing_and_body_present() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiBody::new_with_transport(transport);
-        let _ = api.request(endpoints::C::new()).execute().await.unwrap();
+        api.request(endpoints::C::new()).execute().await.unwrap();
 
         let reqs = h.recorded();
         assert_request(&reqs[0])
@@ -153,8 +150,7 @@ async fn timeout_endpoint_shape_allows_compact_arrow_layout() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiTimeoutNoComma::new_with_transport(transport);
-    let _ = api
-        .request(endpoints::x_scope::A::new())
+    api.request(endpoints::x_scope::A::new())
         .execute()
         .await
         .unwrap();

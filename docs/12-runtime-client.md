@@ -132,9 +132,9 @@ Transport errors can run transport-error hooks, retry policy, and cache `after_e
 
 ## Cloning clients
 
-Generated clients are cloneable when their transport is cloneable. Runtime state such as auth state, rate limiter, cache store, and inflight registry is shared through internal `Arc` state.
+Generated clients are cloneable when their transport is cloneable.
 
-Secret setters rebuild auth state so existing clones observe updated credentials.
+Auth state is shared across clones. Secret setters rebuild auth state through that shared handle, so existing clones observe updated credentials.
 
 ```rust
 let mut api = protected_api::ProtectedApi::new("tok1".to_string());
@@ -159,6 +159,8 @@ clone.clear_auth_session().await;
 assert!(!api.has_auth_session().await);
 ```
 
+Runtime components installed before cloning are shared by `Arc`: cache store, rate limiter, inflight registry, retry policy, runtime hooks, and debug sink. Setter methods replace the component on the handle you call them on; install process-wide components before cloning when every clone should use the same replacement.
+
 ## Debug output
 
 Set debug globally:
@@ -181,7 +183,40 @@ api.request(endpoints::GetPost::new(1))
 
 `DebugLevel::VV` also logs headers and formatted body previews.
 
-The generated wrapper forwards debug level. Replacing the `DebugSink` is a lower-level `concord_core::ApiClient` option and is not currently forwarded by generated wrappers.
+Generated wrappers forward debug level and debug sink setters:
+
+```rust
+let api = users_api::UsersApi::new()
+    .with_debug_sink(Arc::new(MyDebugSink))
+    .with_debug_level(DebugLevel::V);
+```
+
+Use a custom `DebugSink` for tests, tracing integrations, or redaction policies that differ from the built-in stderr sink.
+
+## Error inspection
+
+`ApiClientError::HttpStatus` stores headers and rate-limit response action behind boxes to keep the error type reasonably sized. Pattern matching remains possible:
+
+```rust
+match err {
+    ApiClientError::HttpStatus { status, headers, .. } => {
+        eprintln!("status={status} retry-after={:?}", headers.get("retry-after"));
+    }
+    other => return Err(other),
+}
+```
+
+For ordinary inspection, prefer accessors:
+
+```rust
+if err.http_status() == Some(http::StatusCode::TOO_MANY_REQUESTS) {
+    if let Some(action) = err.rate_limit_response_action() {
+        eprintln!("rate-limit action: {action:?}");
+    }
+}
+```
+
+`err.context()` returns the endpoint/method context for all error variants, and `err.http_headers()` returns response headers for HTTP status errors.
 
 ## Custom transport
 
@@ -217,9 +252,9 @@ pub trait RuntimeHooks: Send + Sync + 'static {
 }
 ```
 
-Install hooks through the lower-level `concord_core::ApiClient` in integrations that use the core client directly. Generated wrappers currently forward the common knobs for debug level, pagination caps, rate limiter, cache store, and inflight policy, but they do not forward runtime hook setters.
+Install hooks through generated wrappers or through the lower-level `concord_core::ApiClient` in integrations that use the core client directly. Generated wrappers forward the common runtime knobs: debug level, debug sink, pagination caps, rate limiter, cache store, inflight policy, runtime hooks, retry policy, and max auth retries.
 
-Use hooks for metrics, tracing, auditing, or request blocking in `pre_send` when working at that lower level.
+Use hooks for metrics, tracing, auditing, or request blocking in `pre_send`.
 
 ## Inflight coordination
 

@@ -54,7 +54,7 @@ async fn status_204_requires_no_content_response_spec() {
             .build();
 
         let api = ApiNoContent::new_with_transport(transport);
-        let _ = api.request(endpoints::B::new()).execute().await.unwrap();
+        api.request(endpoints::B::new()).execute().await.unwrap();
 
         h.finish();
     }
@@ -105,7 +105,7 @@ async fn head_requires_no_content_response_spec() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiHead::new_with_transport(transport);
-        let _ = api.request(endpoints::B::new()).execute().await.unwrap();
+        api.request(endpoints::B::new()).execute().await.unwrap();
 
         h.finish();
     }

@@ -321,7 +321,7 @@ where
         let value = format!("Bearer {}", material.token.expose());
         let value = HeaderValue::from_str(&value).map_err(|_| ApiClientError::InvalidParam {
             ctx: ctx.error_context(),
-            param: "authorization bearer token",
+            param: "authorization bearer token".into(),
         })?;
         ctx.request.headers.insert(AUTHORIZATION, value);
         Ok(material.safe_identity())
@@ -380,7 +380,7 @@ where
         let value = HeaderValue::from_str(material.secret_value()).map_err(|_| {
             ApiClientError::InvalidParam {
                 ctx: ctx.error_context(),
-                param: "auth header value",
+                param: format!("auth header:{}", self.header.as_str()).into(),
             }
         })?;
         ctx.request.headers.insert(self.header.clone(), value);
@@ -451,7 +451,7 @@ where
         let value = format!("Basic {}", BASE64_STANDARD.encode(raw));
         let value = HeaderValue::from_str(&value).map_err(|_| ApiClientError::InvalidParam {
             ctx: ctx.error_context(),
-            param: "authorization basic credential",
+            param: "authorization basic credential".into(),
         })?;
         ctx.request.headers.insert(AUTHORIZATION, value);
         Ok(material.safe_identity())

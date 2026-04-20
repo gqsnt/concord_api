@@ -4,7 +4,7 @@ use concord_test_support::*;
 
 #[derive(Clone, Debug)]
 enum Region {
-    EUW,
+    Euw,
     NA,
     BadDot,
     BadDashStart,
@@ -14,7 +14,7 @@ enum Region {
 impl core::fmt::Display for Region {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Region::EUW => f.write_str("euw1"),
+            Region::Euw => f.write_str("euw1"),
             Region::NA => f.write_str("na1"),
             Region::BadDot => f.write_str("bad.name"),
             Region::BadDashStart => f.write_str("-bad"),
@@ -31,7 +31,7 @@ async fn scope_host_default_and_override_and_order() {
             host: "example.com",
         }
 
-        scope platform(region: Region = Region::EUW) {
+        scope platform(region: Region = Region::Euw) {
             host[region, "api"]
 
             GET Ping
@@ -47,8 +47,7 @@ async fn scope_host_default_and_override_and_order() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiPrefixDefault::new_with_transport(transport);
-        let _ = api
-            .request(endpoints::platform::Ping::new())
+        api.request(endpoints::platform::Ping::new())
             .execute()
             .await
             .unwrap();
@@ -63,8 +62,7 @@ async fn scope_host_default_and_override_and_order() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiPrefixDefault::new_with_transport(transport);
-        let _ = api
-            .request(endpoints::platform::Ping::new().region(Region::NA))
+        api.request(endpoints::platform::Ping::new().region(Region::NA))
             .execute()
             .await
             .unwrap();
@@ -100,8 +98,7 @@ async fn scope_host_optional_label_omitted_without_double_dot() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiPrefixOpt::new_with_transport(transport);
-        let _ = api
-            .request(endpoints::tenant::Ping::new())
+        api.request(endpoints::tenant::Ping::new())
             .execute()
             .await
             .unwrap();
@@ -116,8 +113,7 @@ async fn scope_host_optional_label_omitted_without_double_dot() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiPrefixOpt::new_with_transport(transport);
-        let _ = api
-            .request(endpoints::tenant::Ping::new().sub("x".to_string()))
+        api.request(endpoints::tenant::Ping::new().sub("x".to_string()))
             .execute()
             .await
             .unwrap();
@@ -137,7 +133,7 @@ async fn scope_host_label_validation_errors() {
             host: "example.com",
         }
 
-        scope platform(region: Region = Region::EUW) {
+        scope platform(region: Region = Region::Euw) {
             host[region, "api"]
 
             GET Ping
@@ -250,8 +246,7 @@ async fn scope_path_concat_percent_encoding() {
 
     let api = ApiPath::new_with_transport(transport);
 
-    let _ = api
-        .request(endpoints::lol::GetMatch::new("a/b".to_string()))
+    api.request(endpoints::lol::GetMatch::new("a/b".to_string()))
         .execute()
         .await
         .unwrap();
@@ -283,8 +278,7 @@ async fn scope_path_part_builds_single_segment_and_encodes() {
 
     let api = ApiPathFmt::new_with_transport(transport);
 
-    let _ = api
-        .request(endpoints::One::new("a/b".to_string()))
+    api.request(endpoints::One::new("a/b".to_string()))
         .execute()
         .await
         .unwrap();
@@ -321,9 +315,8 @@ async fn scope_path_part_optional_omits_segment_when_missing() {
 
     let api = ApiPathFmtOpt::new_with_transport(transport);
 
-    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
-    let _ = api
-        .request(endpoints::One::new().v("z".to_string()))
+    api.request(endpoints::One::new()).execute().await.unwrap();
+    api.request(endpoints::One::new().v("z".to_string()))
         .execute()
         .await
         .unwrap();
@@ -356,7 +349,7 @@ async fn scope_path_optional_item_omitted_no_double_slash() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiOptSeg::new_with_transport(transport);
-        let _ = api.request(endpoints::One::new()).execute().await.unwrap();
+        api.request(endpoints::One::new()).execute().await.unwrap();
 
         let reqs = h.recorded();
         assert_request(&reqs[0]).path("/x/y");
@@ -368,8 +361,7 @@ async fn scope_path_optional_item_omitted_no_double_slash() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiOptSeg::new_with_transport(transport);
-        let _ = api
-            .request(endpoints::One::new().opt("z".to_string()))
+        api.request(endpoints::One::new().opt("z".to_string()))
             .execute()
             .await
             .unwrap();
@@ -405,8 +397,7 @@ async fn scope_host_part_adds_one_label() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiPrefixLayerFmt::new_with_transport(transport);
-    let _ = api
-        .request(endpoints::layer::One::new("42".to_string()))
+    api.request(endpoints::layer::One::new("42".to_string()))
         .execute()
         .await
         .unwrap();
@@ -449,13 +440,11 @@ async fn scope_host_part_optional_omits_label_when_missing() {
 
     let api = ApiPrefixLayerFmtOpt::new_with_transport(transport);
 
-    let _ = api
-        .request(endpoints::layer::One::new())
+    api.request(endpoints::layer::One::new())
         .execute()
         .await
         .unwrap();
-    let _ = api
-        .request(endpoints::layer::One::new().id("z".to_string()))
+    api.request(endpoints::layer::One::new().id("z".to_string()))
         .execute()
         .await
         .unwrap();
@@ -492,8 +481,7 @@ async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
 
     let api = ApiPathLayerFmt::new_with_transport(transport);
 
-    let _ = api
-        .request(endpoints::layer::One::new("a/b".to_string()))
+    api.request(endpoints::layer::One::new("a/b".to_string()))
         .execute()
         .await
         .unwrap();
@@ -534,13 +522,11 @@ async fn scope_path_part_in_layer_optional_omits_segment_no_double_slash() {
 
     let api = ApiPathLayerFmtOpt::new_with_transport(transport);
 
-    let _ = api
-        .request(endpoints::layer::One::new())
+    api.request(endpoints::layer::One::new())
         .execute()
         .await
         .unwrap();
-    let _ = api
-        .request(endpoints::layer::One::new().v("k".to_string()))
+    api.request(endpoints::layer::One::new().v("k".to_string()))
         .execute()
         .await
         .unwrap();

@@ -236,7 +236,7 @@ where
         let value =
             http::HeaderValue::from_str(&value).map_err(|_| ApiClientError::InvalidParam {
                 ctx: ctx.error_context(),
-                param: "authorization formatted bearer token",
+                param: "authorization formatted bearer token".into(),
             })?;
         ctx.request.headers.insert(AUTHORIZATION, value);
         Ok(material.safe_identity())
@@ -1315,7 +1315,7 @@ impl AuthUsage<DuplicateUsageCx, DuplicateUsagePing, AccessToken> for DuplicateU
         let value =
             http::HeaderValue::from_str(&value).map_err(|_| ApiClientError::InvalidParam {
                 ctx: ctx.error_context(),
-                param: "duplicate usage authorization",
+                param: "duplicate usage authorization".into(),
             })?;
         ctx.request.headers.insert(AUTHORIZATION, value);
         Ok(AuthIdentity::Static(self.marker))

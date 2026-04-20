@@ -56,14 +56,14 @@ api.request(endpoints::ListPosts::new().user_id(1).x_debug(false))
 
 ## Scope parameters
 
-Scope parameters are inherited by child endpoints. Use them for region, platform, tenant, version, or any route value shared by multiple endpoints.
+Scope parameters are inherited by child endpoints. Use them for region, platform, tenant, locale, or any route value shared by multiple endpoints.
 
 ```rust
 scope platform(platform: PlatformRoute) {
     host[platform, "api"]
 
     GET GetPlatformData -> Json<PlatformDataDto> {
-        path["lol", "status", "v4", "platform-data"]
+        path["lol", "status", "platform-data"]
     }
 }
 ```

@@ -4,7 +4,7 @@ Concord has two kinds of customization.
 
 DSL customization is part of the generated client. These extension points are intended to be used from `api!` definitions or generated client setters.
 
-Core customization is available when working with `concord_core::ApiClient` directly or when injecting runtime objects into a generated client. Some core traits are public but not forwarded by generated wrappers yet.
+Core customization is available when working with `concord_core::ApiClient` directly or when injecting runtime objects into a generated client. Generated wrappers forward the common runtime knobs. Direct core usage remains useful for lower-level client contexts, manual endpoints, and advanced extension work.
 
 This chapter lists the extension points that can be implemented by user code and the places where each implementation is used.
 
@@ -22,9 +22,9 @@ This chapter lists the extension points that can be implemented by user code and
 | Inflight deduplication key | `InflightPolicy` | Yes, `with_inflight_policy` | No |
 | Pagination wrapper response | `PageItems`, `HasNextCursor` | Yes | `paginate CursorPagination`, etc. |
 | Pagination controller | `concord_core::internal::Controller` | Advanced | `paginate MyController { ... }` |
-| Runtime hooks | `RuntimeHooks` | Core only | No |
-| Retry policy | `RetryPolicy` | Core only | Prefer retry DSL |
-| Debug sink | `DebugSink` | Core only, currently constrained | No |
+| Runtime hooks | `RuntimeHooks` | Yes, `with_runtime_hooks` | No |
+| Retry policy | `RetryPolicy` | Yes, `with_retry_policy` | Prefer retry DSL |
+| Debug sink | `DebugSink` | Yes, `with_debug_sink` | No |
 | Manual route/header/query policy | `RoutePart`, `PolicyPart` | Core only | Macro normally generates these |
 | Manual client/endpoint | `ClientContext`, `Endpoint` | Core only | Macro normally generates these |
 | Custom codecs | Internal codec traits | Not currently public | No stable external hook |
@@ -59,7 +59,7 @@ scope platform(platform: PlatformRoute) {
     GET Status
     -> Json<PlatformData>
     {
-        path["lol", "status", "v4", "platform-data"]
+        path["lol", "status", "platform-data"]
     }
 }
 ```
@@ -818,7 +818,7 @@ This is an advanced extension point because it uses `concord_core::internal` tra
 
 ## Custom Runtime Hooks
 
-`RuntimeHooks` can observe or block sends in core clients.
+`RuntimeHooks` can observe or block sends.
 
 ```rust
 #[derive(Default)]
@@ -846,14 +846,14 @@ impl RuntimeHooks for MetricsHooks {
 }
 ```
 
-Install hooks on the lower-level core client.
+Install hooks on a generated client.
 
 ```rust
-let mut api = ApiClient::<MyContext, _>::with_transport(vars, auth_vars, transport);
-api.set_runtime_hooks(Arc::new(MetricsHooks));
+let api = client::Client::new()
+    .with_runtime_hooks(Arc::new(MetricsHooks));
 ```
 
-Generated client wrappers do not currently forward `set_runtime_hooks` or `with_runtime_hooks`.
+Hooks are runtime instrumentation, so they stay out of the DSL. Generated wrappers forward the runtime hook setters to the underlying core client.
 
 ## Custom Retry Policy
 
@@ -880,14 +880,14 @@ impl RetryPolicy for RetryTimeouts {
 }
 ```
 
-Install it on a core client.
+Install it on a generated client when the retry DSL is not the right abstraction.
 
 ```rust
-let mut api = ApiClient::<MyContext, _>::with_transport(vars, auth_vars, transport);
-api.set_retry_policy(Arc::new(RetryTimeouts));
+let api = client::Client::new()
+    .with_retry_policy(Arc::new(RetryTimeouts));
 ```
 
-Generated wrappers do not currently forward retry-policy setters. Use the retry DSL for generated clients.
+Prefer the retry DSL for endpoint-specific policy. Use a runtime `RetryPolicy` for environment-wide fallback behavior.
 
 ## Manual Client Context and Endpoint
 
@@ -938,12 +938,13 @@ This is intentionally lower level than the DSL. Use it only when the macro is no
 
 ## Custom Debug Sink
 
-`DebugSink` is a core trait for replacing debug output. However, the current generated wrapper does not forward debug-sink setters, and the trait method signature uses an internal debug format type. Treat custom debug sinks as a core-internal extension point until the public API is widened.
+`DebugSink` is a core trait for replacing debug output. Generated wrappers forward debug-sink setters.
 
-For generated clients today, use:
+Install a custom sink on a generated client:
 
 ```rust
 let api = client::Client::new()
+    .with_debug_sink(Arc::new(MyDebugSink))
     .with_debug_level(DebugLevel::V);
 ```
 
@@ -972,4 +973,4 @@ Use generated client setters for runtime behavior that varies by process: cache 
 
 Use custom auth providers and usages when the upstream authentication flow is non-standard.
 
-Use direct `concord_core::ApiClient` only for lower-level integration work that generated wrappers do not expose yet, such as runtime hooks or fallback retry policy.
+Use direct `concord_core::ApiClient` only for lower-level integration work where hand-written client contexts or endpoints are the right abstraction.

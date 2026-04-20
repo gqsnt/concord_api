@@ -20,3 +20,7 @@
 - [16. Authentication System Blueprint](16-auth-system-blueprint.md)
 - [17. Cache System Blueprint](17-cache-system-blueprint.md)
 - [18. Rate-Limit System Blueprint](18-rate-limit-system-blueprint.md)
+- [19. Maintainer Principles](19-maintainer-principles.md)
+- [20. Contract](20-contract.md)
+- [21. DSL Reference](21-dsl-reference.md)
+- [22. Large API Authoring Style](22-authoring-style.md)

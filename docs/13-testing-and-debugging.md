@@ -223,9 +223,18 @@ Run full validation before merging broad changes.
 
 ```powershell
 cargo fmt --check
-cargo check -p concord_core
 cargo check -p concord_core --no-default-features
+cargo check -p concord_core --all-features
+cargo check -p concord_examples --no-default-features --tests
 cargo test --workspace
+cargo test -p concord_examples --tests
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+Cache DSL tests require the `cache-moka` feature:
+
+```powershell
+cargo test -p concord_examples --features cache-moka --test cache_dsl
 ```
 
 ## Test design guidance

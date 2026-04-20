@@ -146,7 +146,7 @@ Compile-time diagnostics should prioritize:
 2. unknown endpoint in `credential x: Endpoint(auth::E)`
 3. direct recursive credential/endpoint auth dependency
 4. endpoint output not satisfying `CredentialMaterial` bounds
-5. usage/material incompatibility
+5. usage/material mismatch
 
 Runtime diagnostics should prioritize:
 

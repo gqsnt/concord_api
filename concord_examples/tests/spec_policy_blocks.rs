@@ -37,8 +37,7 @@ async fn query_set_remove_push_override_and_tostring() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiQuery::new_with_transport(transport);
-    let _ = api
-        .request(endpoints::x_scope::One::new())
+    api.request(endpoints::x_scope::One::new())
         .execute()
         .await
         .unwrap();
@@ -76,8 +75,7 @@ async fn query_part_set_required_param() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiQueryFmtReq::new_with_transport(transport);
-    let _ = api
-        .request(endpoints::One::new("z".to_string()))
+    api.request(endpoints::One::new("z".to_string()))
         .execute()
         .await
         .unwrap();
@@ -118,9 +116,8 @@ async fn query_part_optional_removes_key_when_missing() {
 
     let api = ApiQueryFmtOpt::new_with_transport(transport);
 
-    let _ = api.request(endpoints::One::new()).execute().await.unwrap();
-    let _ = api
-        .request(endpoints::One::new().v("z".to_string()))
+    api.request(endpoints::One::new()).execute().await.unwrap();
+    api.request(endpoints::One::new().v("z".to_string()))
         .execute()
         .await
         .unwrap();
@@ -158,8 +155,7 @@ async fn query_part_push_appends_duplicate_keys_in_order() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiQueryFmtPush::new_with_transport(transport);
-    let _ = api
-        .request(endpoints::One::new("z".to_string()))
+    api.request(endpoints::One::new("z".to_string()))
         .execute()
         .await
         .unwrap();
@@ -212,8 +208,7 @@ async fn headers_kebab_string_bind_remove_override() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiHeaders::new_with_transport(transport);
-    let _ = api
-        .request(endpoints::p_scope::One::new())
+    api.request(endpoints::p_scope::One::new())
         .execute()
         .await
         .unwrap();
@@ -258,7 +253,7 @@ async fn header_value_from_vars_to_string_and_invalid_header_value_error() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiHeaderInvalid::new_with_transport("ok".to_string(), transport);
-        let _ = api.request(endpoints::One::new()).execute().await.unwrap();
+        api.request(endpoints::One::new()).execute().await.unwrap();
 
         let reqs = h.recorded();
         assert_request(&reqs[0]).header("x-bool", "false");
@@ -323,7 +318,7 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiAccept::new_with_transport(transport);
-        let _ = api.request(endpoints::A::new()).execute().await.unwrap();
+        api.request(endpoints::A::new()).execute().await.unwrap();
 
         let reqs = h.recorded();
         assert_request(&reqs[0]).header(ACCEPT, "application/json");
@@ -335,7 +330,7 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiAccept::new_with_transport(transport);
-        let _ = api.request(endpoints::B::new()).execute().await.unwrap();
+        api.request(endpoints::B::new()).execute().await.unwrap();
 
         let reqs = h.recorded();
         assert_request(&reqs[0]).header(ACCEPT, "text/plain");
@@ -347,7 +342,7 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
         let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
         let api = ApiAccept::new_with_transport(transport);
-        let _ = api.request(endpoints::C::new()).execute().await.unwrap();
+        api.request(endpoints::C::new()).execute().await.unwrap();
 
         let reqs = h.recorded();
         assert_request(&reqs[0]).header_absent(ACCEPT);

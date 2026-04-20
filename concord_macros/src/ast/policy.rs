@@ -1,0 +1,80 @@
+#[derive(Debug, Default)]
+pub struct PolicyBlocks {
+    pub headers: Option<PolicyBlock>,
+    pub query: Option<PolicyBlock>,
+    pub timeout: Option<Expr>,
+}
+
+#[derive(Debug)]
+pub struct PolicyBlock {
+    pub stmts: Vec<PolicyStmt>,
+}
+
+#[derive(Debug)]
+pub enum PolicyStmt {
+    Remove {
+        key: KeySpec,
+    },
+    Set {
+        key: KeySpec,
+        value: PolicyValue,
+        op: SetOp,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetOp {
+    Set,
+    Push, // query only
+}
+
+#[derive(Debug)]
+pub enum KeySpec {
+    Ident(Ident),
+    Str(LitStr),
+}
+
+/// `as x_debug?: bool = true`
+#[derive(Debug, Clone)]
+pub struct VarDeclNoWire {
+    pub rust: Ident,
+    pub optional: bool,
+    pub ty: Type,
+    pub default: Option<Expr>,
+}
+
+/// `Json<T>` (encoding type = `Json`, decoded/body type = `T`)
+#[derive(Debug, Clone)]
+pub struct CodecSpec {
+    pub enc: Path,
+    pub ty: Type,
+}
+
+#[derive(Debug)]
+pub enum PolicyValue {
+    Expr(Expr),
+    Fmt(FmtSpec),
+}
+
+impl PolicyValue {
+    #[inline]
+    pub fn span(&self) -> Span {
+        match self {
+            PolicyValue::Expr(e) => e.span(),
+            PolicyValue::Fmt(f) => f.span,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FmtSpec {
+    pub span: Span,
+    pub require_all: bool,     // fmt? => true
+    pub pieces: Vec<FmtPiece>, // ["...", vars.x, ...]
+}
+
+#[derive(Debug, Clone)]
+pub enum FmtPiece {
+    Lit(LitStr),
+    Ref(ScopedRef),
+}

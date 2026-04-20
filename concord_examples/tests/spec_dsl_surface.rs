@@ -2,6 +2,12 @@ use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
 use http::header::CONTENT_TYPE;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 #[derive(Clone, Debug)]
 pub enum Region {
@@ -49,8 +55,7 @@ async fn inline_scope_params_and_nested_endpoint_modules_work() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
 
     let api = ApiSurfaceScope::new_with_transport(transport);
-    let _ = api
-        .request(endpoints::platform::status::Ping::new().region(Region::Na))
+    api.request(endpoints::platform::status::Ping::new().region(Region::Na))
         .execute()
         .await
         .unwrap();
@@ -105,5 +110,105 @@ async fn signature_style_endpoint_supports_params_body_and_mapping() {
         .header(CONTENT_TYPE, "application/json")
         .body_present();
 
+    h.finish();
+}
+
+#[tokio::test]
+async fn same_endpoint_name_under_different_scopes_is_valid() {
+    api! {
+        client ApiSurfaceDuplicateNames {
+            scheme: https,
+            host: "example.com",
+        }
+
+        scope alpha {
+            path["alpha"]
+
+            GET Ping -> Json<()> {
+                path["ping"]
+            }
+        }
+
+        scope beta {
+            path["beta"]
+
+            GET Ping -> Json<()> {
+                path["ping"]
+            }
+        }
+    }
+
+    use api_surface_duplicate_names::*;
+
+    let (transport, h) = mock()
+        .reply(MockReply::ok_json(json_bytes(&())))
+        .reply(MockReply::ok_json(json_bytes(&())))
+        .build();
+
+    let api = ApiSurfaceDuplicateNames::new_with_transport(transport);
+    api.request(endpoints::alpha::Ping::new())
+        .execute()
+        .await
+        .unwrap();
+    api.request(endpoints::beta::Ping::new())
+        .execute()
+        .await
+        .unwrap();
+
+    let reqs = h.recorded();
+    assert_request(&reqs[0]).path("/alpha/ping");
+    assert_request(&reqs[1]).path("/beta/ping");
+
+    h.finish();
+}
+
+#[derive(Default)]
+struct CountingHooks {
+    pre_send_count: Arc<AtomicUsize>,
+}
+
+impl RuntimeHooks for CountingHooks {
+    fn pre_send<'a>(
+        &'a self,
+        _ctx: PreSendHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ApiClientError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.pre_send_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+    }
+}
+
+#[tokio::test]
+async fn generated_runtime_hooks_are_used_by_clones_when_installed_before_clone() {
+    api! {
+        client ApiSurfaceHooks {
+            scheme: https,
+            host: "example.com",
+        }
+
+        GET Ping -> Json<()> {
+            path["ping"]
+        }
+    }
+
+    use api_surface_hooks::*;
+
+    let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
+    let pre_send_count = Arc::new(AtomicUsize::new(0));
+    let api = ApiSurfaceHooks::new_with_transport(transport).with_runtime_hooks(Arc::new(
+        CountingHooks {
+            pre_send_count: pre_send_count.clone(),
+        },
+    ));
+    let clone = api.clone();
+
+    clone
+        .request(endpoints::Ping::new())
+        .execute()
+        .await
+        .unwrap();
+
+    assert_eq!(pre_send_count.load(Ordering::SeqCst), 1);
     h.finish();
 }

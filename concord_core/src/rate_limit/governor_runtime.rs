@@ -210,106 +210,6 @@ impl GovernorRateLimiter {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::rate_limit::RateLimitPlan;
-    use std::num::NonZeroU32;
-
-    fn test_context() -> RateLimitContext<'static> {
-        static METHOD: http::Method = http::Method::GET;
-        static URL: &str = "https://example.com/a";
-        static ENDPOINT: &str = "TestEndpoint";
-
-        let bucket = RateLimitBucketUse::new(
-            "method",
-            "test",
-            RateLimitKey::new(vec![RateLimitKeyPart::static_value("k", "v")]),
-        )
-        .with_windows(vec![RateLimitWindow::new(
-            NonZeroU32::new(10).expect("non-zero"),
-            Duration::from_secs(10),
-        )]);
-        let plan = RateLimitPlan::from_buckets(vec![bucket]);
-        RateLimitContext {
-            endpoint: ENDPOINT,
-            method: &METHOD,
-            url: URL,
-            url_host: Some("example.com"),
-            attempt: 0,
-            page_index: 0,
-            idempotent: true,
-            plan: Box::leak(Box::new(plan)),
-        }
-    }
-
-    #[test]
-    fn window_entry_cap_is_enforced() {
-        let limiter = GovernorRateLimiter::new()
-            .with_max_window_entries(1)
-            .with_window_idle_ttl(Duration::ZERO);
-        let ctx = test_context();
-
-        let spec_a = GovernorWindowSpec {
-            id: RateLimitBucketId::new("method", "a"),
-            key: ResolvedRateLimitKey(vec![("k".to_string(), "a".to_string())]),
-            window: RateLimitWindow::new(
-                NonZeroU32::new(10).expect("non-zero"),
-                Duration::from_secs(10),
-            ),
-        };
-        let spec_b = GovernorWindowSpec {
-            id: RateLimitBucketId::new("method", "b"),
-            key: ResolvedRateLimitKey(vec![("k".to_string(), "b".to_string())]),
-            window: RateLimitWindow::new(
-                NonZeroU32::new(10).expect("non-zero"),
-                Duration::from_secs(10),
-            ),
-        };
-
-        let _ = limiter.limiter_for(&ctx, spec_a).expect("first limiter");
-        let _ = limiter.limiter_for(&ctx, spec_b).expect("second limiter");
-
-        let guard = limiter.windows.lock().expect("window lock");
-        assert_eq!(guard.len(), 1);
-    }
-
-    #[test]
-    fn idle_window_entries_are_pruned() {
-        let limiter = GovernorRateLimiter::new()
-            .with_max_window_entries(8)
-            .with_window_idle_ttl(Duration::from_millis(1));
-        let ctx = test_context();
-
-        let spec_a = GovernorWindowSpec {
-            id: RateLimitBucketId::new("method", "a"),
-            key: ResolvedRateLimitKey(vec![("k".to_string(), "a".to_string())]),
-            window: RateLimitWindow::new(
-                NonZeroU32::new(10).expect("non-zero"),
-                Duration::from_secs(10),
-            ),
-        };
-        let spec_b = GovernorWindowSpec {
-            id: RateLimitBucketId::new("method", "b"),
-            key: ResolvedRateLimitKey(vec![("k".to_string(), "b".to_string())]),
-            window: RateLimitWindow::new(
-                NonZeroU32::new(10).expect("non-zero"),
-                Duration::from_secs(10),
-            ),
-        };
-
-        let _ = limiter
-            .limiter_for(&ctx, spec_a.clone())
-            .expect("first limiter");
-        std::thread::sleep(Duration::from_millis(5));
-        let _ = limiter.limiter_for(&ctx, spec_b).expect("second limiter");
-
-        let guard = limiter.windows.lock().expect("window lock");
-        assert_eq!(guard.len(), 1);
-        assert!(!guard.contains_key(&spec_a));
-    }
-}
-
 impl RateLimiter for GovernorRateLimiter {
     fn acquire<'a>(
         &'a self,
@@ -518,5 +418,105 @@ fn cooldown_keys_for_target(
                 keys
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rate_limit::RateLimitPlan;
+    use std::num::NonZeroU32;
+
+    fn test_context() -> RateLimitContext<'static> {
+        static METHOD: http::Method = http::Method::GET;
+        static URL: &str = "https://example.com/a";
+        static ENDPOINT: &str = "TestEndpoint";
+
+        let bucket = RateLimitBucketUse::new(
+            "method",
+            "test",
+            RateLimitKey::new(vec![RateLimitKeyPart::static_value("k", "v")]),
+        )
+        .with_windows(vec![RateLimitWindow::new(
+            NonZeroU32::new(10).expect("non-zero"),
+            Duration::from_secs(10),
+        )]);
+        let plan = RateLimitPlan::from_buckets(vec![bucket]);
+        RateLimitContext {
+            endpoint: ENDPOINT,
+            method: &METHOD,
+            url: URL,
+            url_host: Some("example.com"),
+            attempt: 0,
+            page_index: 0,
+            idempotent: true,
+            plan: Box::leak(Box::new(plan)),
+        }
+    }
+
+    #[test]
+    fn window_entry_cap_is_enforced() {
+        let limiter = GovernorRateLimiter::new()
+            .with_max_window_entries(1)
+            .with_window_idle_ttl(Duration::ZERO);
+        let ctx = test_context();
+
+        let spec_a = GovernorWindowSpec {
+            id: RateLimitBucketId::new("method", "a"),
+            key: ResolvedRateLimitKey(vec![("k".to_string(), "a".to_string())]),
+            window: RateLimitWindow::new(
+                NonZeroU32::new(10).expect("non-zero"),
+                Duration::from_secs(10),
+            ),
+        };
+        let spec_b = GovernorWindowSpec {
+            id: RateLimitBucketId::new("method", "b"),
+            key: ResolvedRateLimitKey(vec![("k".to_string(), "b".to_string())]),
+            window: RateLimitWindow::new(
+                NonZeroU32::new(10).expect("non-zero"),
+                Duration::from_secs(10),
+            ),
+        };
+
+        let _ = limiter.limiter_for(&ctx, spec_a).expect("first limiter");
+        let _ = limiter.limiter_for(&ctx, spec_b).expect("second limiter");
+
+        let guard = limiter.windows.lock().expect("window lock");
+        assert_eq!(guard.len(), 1);
+    }
+
+    #[test]
+    fn idle_window_entries_are_pruned() {
+        let limiter = GovernorRateLimiter::new()
+            .with_max_window_entries(8)
+            .with_window_idle_ttl(Duration::from_millis(1));
+        let ctx = test_context();
+
+        let spec_a = GovernorWindowSpec {
+            id: RateLimitBucketId::new("method", "a"),
+            key: ResolvedRateLimitKey(vec![("k".to_string(), "a".to_string())]),
+            window: RateLimitWindow::new(
+                NonZeroU32::new(10).expect("non-zero"),
+                Duration::from_secs(10),
+            ),
+        };
+        let spec_b = GovernorWindowSpec {
+            id: RateLimitBucketId::new("method", "b"),
+            key: ResolvedRateLimitKey(vec![("k".to_string(), "b".to_string())]),
+            window: RateLimitWindow::new(
+                NonZeroU32::new(10).expect("non-zero"),
+                Duration::from_secs(10),
+            ),
+        };
+
+        let _ = limiter
+            .limiter_for(&ctx, spec_a.clone())
+            .expect("first limiter");
+        std::thread::sleep(Duration::from_millis(5));
+        let _ = limiter.limiter_for(&ctx, spec_b).expect("second limiter");
+
+        let guard = limiter.windows.lock().expect("window lock");
+        assert_eq!(guard.len(), 1);
+        assert!(!guard.contains_key(&spec_a));
     }
 }

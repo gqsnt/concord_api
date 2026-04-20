@@ -28,6 +28,10 @@ Then use focused chapters:
 - [Authentication System Blueprint](16-auth-system-blueprint.md)
 - [Cache System Blueprint](17-cache-system-blueprint.md)
 - [Rate-Limit System Blueprint](18-rate-limit-system-blueprint.md)
+- [Maintainer Principles](19-maintainer-principles.md)
+- [Contract](20-contract.md)
+- [DSL Reference](21-dsl-reference.md)
+- [Large API Authoring Style](22-authoring-style.md)
 
 Canonical reminders:
 

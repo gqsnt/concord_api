@@ -139,7 +139,7 @@ scope platform {
     path["lol"]
 
     GET GetPlatformData -> Json<PlatformDataDto> {
-        path["status", "v4", "platform-data"]
+        path["status", "platform-data"]
     }
 }
 ```

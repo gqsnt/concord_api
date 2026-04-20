@@ -109,7 +109,7 @@ Add only optional extras (default no-op methods), if needed:
 1. `clear_all()`
 2. `invalidate_key(...)`
 
-This preserves compatibility for existing custom stores.
+This keeps existing custom stores working.
 
 ## 6) DX and observability
 

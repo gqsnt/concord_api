@@ -1,0 +1,95 @@
+fn emit_rate_limit_op(
+    rate_limit: &Option<RateLimitResolved>,
+    ctx: PolicyEmitCtx,
+) -> Option<TokenStream2> {
+    let rate_limit = rate_limit.as_ref()?;
+    Some(match rate_limit {
+        RateLimitResolved::Clear => quote! {
+            policy.clear_rate_limit();
+        },
+        RateLimitResolved::Add(plan) => {
+            let plan = emit_rate_limit_plan(plan, ctx);
+            quote! {
+                policy.add_rate_limit(#plan);
+            }
+        }
+        RateLimitResolved::Replace(plan) => {
+            let plan = emit_rate_limit_plan(plan, ctx);
+            quote! {
+                policy.replace_rate_limit(#plan);
+            }
+        }
+    })
+}
+
+fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> TokenStream2 {
+    let buckets = plan.buckets.iter().map(|bucket| {
+        let kind = LitStr::new(&bucket.kind, Span::call_site());
+        let name = LitStr::new(&bucket.name, Span::call_site());
+        let key = emit_rate_limit_key(&bucket.key, ctx);
+        let cost = bucket.cost;
+        let windows = bucket.windows.iter().map(|window| {
+            let max = window.max;
+            let per_secs = window.per_secs;
+            quote! {
+                ::concord_core::prelude::RateLimitWindow::new(
+                    ::std::num::NonZeroU32::new(#max).expect("validated non-zero rate limit max"),
+                    ::std::time::Duration::from_secs(#per_secs),
+                )
+            }
+        });
+        quote! {
+            ::concord_core::prelude::RateLimitBucketUse::new(#kind, #name, #key)
+                .with_cost(::std::num::NonZeroU32::new(#cost).expect("validated non-zero rate limit cost"))
+                .with_windows(::std::vec![ #( #windows ),* ])
+        }
+    });
+    quote! {
+        ::concord_core::prelude::RateLimitPlan::from_buckets(::std::vec![ #( #buckets ),* ])
+    }
+}
+
+fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> TokenStream2 {
+    let parts = keys.iter().map(|key| match key {
+        RateLimitKeyResolved::RouteHost => {
+            quote! { ::concord_core::prelude::RateLimitKeyPart::url_host() }
+        }
+        RateLimitKeyResolved::Endpoint => {
+            quote! { ::concord_core::prelude::RateLimitKeyPart::endpoint() }
+        }
+        RateLimitKeyResolved::Method => {
+            quote! { ::concord_core::prelude::RateLimitKeyPart::method() }
+        }
+        RateLimitKeyResolved::Named { name, .. } => {
+            let name = LitStr::new(name, Span::call_site());
+            quote! {
+                compile_error!(concat!("unresolved rate_limit key `", #name, "`"))
+            }
+        }
+        RateLimitKeyResolved::EpField { name, field } => {
+            let name = LitStr::new(name, field.span());
+            match ctx {
+                PolicyEmitCtx::ClientBase => quote! {
+                    compile_error!("endpoint/scope rate_limit key cannot be used in client base policy")
+                },
+                PolicyEmitCtx::Layer | PolicyEmitCtx::Endpoint => quote! {
+                    ::concord_core::prelude::RateLimitKeyPart::static_value(
+                        #name,
+                        ::std::string::ToString::to_string(&ep.#field),
+                    )
+                },
+            }
+        }
+        RateLimitKeyResolved::Static { name, value } => {
+            let name = LitStr::new(name, Span::call_site());
+            let value = LitStr::new(value, Span::call_site());
+            quote! {
+                ::concord_core::prelude::RateLimitKeyPart::static_value(#name, #value)
+            }
+        }
+    });
+    quote! {
+        ::concord_core::prelude::RateLimitKey::new(::std::vec![ #( #parts ),* ])
+    }
+}
+

@@ -1,3 +1,5 @@
+#![cfg(feature = "cache-moka")]
+
 use concord_core::prelude::*;
 use concord_core::transport::{
     BuiltRequest, BuiltResponse, TransportBody, TransportError, TransportErrorKind,
