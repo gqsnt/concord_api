@@ -97,11 +97,6 @@ fn resolve_retry_patch(patch: &RetryPatch) -> Result<RetryPatchResolved> {
             .as_ref()
             .map(|kinds| resolve_retry_transport_errors(kinds))
             .transpose()?,
-        backoff: patch
-            .backoff
-            .as_ref()
-            .map(resolve_retry_backoff)
-            .transpose()?,
         respect_retry_after: patch.respect_retry_after,
         idempotency: patch
             .idempotency
@@ -123,9 +118,6 @@ fn apply_retry_patch(config: &mut RetryConfigResolved, patch: &RetryPatchResolve
     }
     if let Some(transport_errors) = &patch.transport_errors {
         config.transport_errors = transport_errors.clone();
-    }
-    if let Some(backoff) = &patch.backoff {
-        config.backoff = backoff.clone();
     }
     if let Some(respect_retry_after) = patch.respect_retry_after {
         config.respect_retry_after = respect_retry_after;
@@ -152,9 +144,6 @@ impl ProfileValue for RetryPatchResolved {
         }
         if child.transport_errors.is_some() {
             parent.transport_errors = child.transport_errors;
-        }
-        if child.backoff.is_some() {
-            parent.backoff = child.backoff;
         }
         if child.respect_retry_after.is_some() {
             parent.respect_retry_after = child.respect_retry_after;
@@ -264,12 +253,6 @@ fn resolve_retry_transport_errors(kinds: &[Ident]) -> Result<Vec<Ident>> {
             Ok(Ident::new(variant, kind.span()))
         })
         .collect()
-}
-
-fn resolve_retry_backoff(spec: &RetryBackoffSpec) -> Result<RetryBackoffResolved> {
-    match spec {
-        RetryBackoffSpec::None => Ok(RetryBackoffResolved::None),
-    }
 }
 
 fn resolve_retry_idempotency(spec: &RetryIdempotencySpec) -> Result<RetryIdempotencyResolved> {

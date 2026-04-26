@@ -6,16 +6,14 @@ use concord_test_support::*;
 async fn retry_profile_retries_status_then_endpoint_can_turn_it_off() {
     api! {
         client ApiDslRetryProfile {
-            scheme: https,
-            host: "example.com",
-            retry {
-                profile read {
+            base https "example.com"
+            default {
+                retry read
+            }
+            retry read {
                     attempts 2
                     methods [GET, HEAD]
-                    on status[503]
-                    backoff none
-                }
-                default read
+                    on [503]
             }
         }
 
@@ -68,22 +66,18 @@ async fn retry_profile_retries_status_then_endpoint_can_turn_it_off() {
 async fn retry_scope_profile_applies_to_child_endpoints() {
     api! {
         client ApiDslRetryScope {
-            scheme: https,
-            host: "example.com",
-            retry {
-                profile base {
+            base https "example.com"
+            retry base {
                     attempts 2
                     methods [GET]
-                    backoff none
-                }
-                profile read extends base {
-                    on status[503]
-                }
+            }
+            retry read extends base {
+                    on [503]
             }
         }
 
         scope service {
-            path["api"]
+            path ["api"]
             retry read
 
             GET Flaky
@@ -139,8 +133,7 @@ async fn retry_scope_profile_applies_to_child_endpoints() {
 async fn retry_patch_honors_retry_after_status() {
     api! {
         client ApiDslRetryPatch {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET Limited
@@ -149,9 +142,8 @@ async fn retry_patch_honors_retry_after_status() {
             retry {
                 attempts 2
                 methods [GET]
-                on status[429]
-                retry_after honor
-                backoff none
+                on [429]
+                retry_after
             }
         }
     }
@@ -183,16 +175,12 @@ async fn retry_patch_honors_retry_after_status() {
 async fn retry_post_requires_declared_idempotency_header() {
     api! {
         client ApiDslRetryPost {
-            scheme: https,
-            host: "example.com",
-            retry {
-                profile write {
+            base https "example.com"
+            retry write {
                     attempts 2
                     methods [POST]
-                    on status[503]
-                    idempotency header("Idempotency-Key")
-                    backoff none
-                }
+                    on [503]
+                    idempotency header "Idempotency-Key"
             }
         }
 

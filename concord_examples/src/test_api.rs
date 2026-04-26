@@ -42,34 +42,30 @@ pub mod models {
 
 api! {
     client Client {
-        scheme: https,
-        host: "typicode.com",
-        vars {
-            subdomain: String = "jsonplaceholder".to_string(),
-            client_trace: bool
-        }
+        base https "typicode.com"
+        var subdomain: String = "jsonplaceholder".to_string()
+        var client_trace: bool
 
         headers {
             "user-agent" = "ClientApiExample/1.0",
             "x-client-trace" = vars.client_trace
         }
-        retry {
-            profile read {
+        default {
+            retry read
+        }
+        retry read {
                 attempts 2
                 methods [GET, HEAD]
-                on status[429, 500, 502, 503, 504]
-                retry_after honor
-                backoff none
-            }
-            default read
+                on [429, 500, 502, 503, 504]
+                retry_after
         }
     }
 
     scope jsonplaceholder {
-        host[vars.subdomain]
+        host [vars.subdomain]
 
         scope posts {
-            path["posts"]
+            path ["posts"]
 
             GET GetPosts(user_id?: u32, x_debug: bool = true) -> Json<Vec<models::Post>> {
                 query {
@@ -81,27 +77,29 @@ api! {
             }
 
             GET GetPost(id: i32) -> Json<models::Post> {
-                path[id]
+                path [id]
             }
 
             GET GetPostComments(post_id: i32) -> Json<Vec<models::Comment>> {
-                path[post_id, "comments"]
+                path [post_id, "comments"]
             }
 
             POST CreatePost(body: Json<models::NewPost>) -> Json<models::Post>;
         }
 
         scope users {
-            path["users"]
+            path ["users"]
 
             GET GetUser(id: i32) -> Json<models::User> {
-                path[id]
+                path [id]
             }
 
-            GET GetUserPosts(id: i32, user_id?: u32) -> Json<Vec<models::Post>> | Vec<String> => {
+            GET GetUserPosts(id: i32, user_id?: u32) -> Json<Vec<models::Post>>
+                map Vec<String> {
                 IntoIterator::into_iter(r).map(|p| p.title).collect()
-            } {
-                path[id, "posts"]
+            }
+            {
+                path [id, "posts"]
                 query {
                     "userId" = user_id
                 }

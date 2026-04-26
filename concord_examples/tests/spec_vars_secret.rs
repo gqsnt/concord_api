@@ -7,11 +7,8 @@ use http::header::AUTHORIZATION;
 async fn vars_default_and_setter_affect_emitted_header() {
     api! {
         client ApiVarsDefault {
-            scheme: https,
-            host: "example.com",
-            vars {
-                user_agent: String = "ua1".to_string()
-            }
+            base https "example.com"
+            var user_agent: String = "ua1".to_string()
             headers {
                 "x-ua" = vars.user_agent
             }
@@ -50,11 +47,8 @@ async fn vars_default_and_setter_affect_emitted_header() {
 async fn vars_required_ctor_arg_and_setter_affect_emitted_header() {
     api! {
         client ApiVarsReq {
-            scheme: https,
-            host: "example.com",
-            vars {
-                tenant: String
-            }
+            base https "example.com"
+            var tenant: String
             headers {
                 "x-tenant" = vars.tenant
             }
@@ -93,21 +87,16 @@ async fn vars_required_ctor_arg_and_setter_affect_emitted_header() {
 async fn secret_required_and_setter_affect_emitted_header() {
     api! {
         client ApiSecret {
-            scheme: https,
-            host: "example.com",
-            secret {
-                token: String
-            }
-            vars {
-                token2: String = "default".to_string()
-            }
+            base https "example.com"
+            secret token: String
+            var token2: String = "default".to_string()
             headers {
                 "authorization" = secret.token
             }
         }
 
         scope token2_scope {
-            host[vars.token2]
+            host [vars.token2]
 
             GET Ping
             -> Json<()>
@@ -149,11 +138,8 @@ async fn secret_required_and_setter_affect_emitted_header() {
 async fn secret_invalid_header_value_reported_as_invalid_param_and_request_not_sent() {
     api! {
         client ApiSecretBad {
-            scheme: https,
-            host: "example.com",
-            secret {
-                token: String
-            }
+            base https "example.com"
+            secret token: String
             headers {
                 "authorization" = secret.token
             }

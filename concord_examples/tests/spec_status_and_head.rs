@@ -7,20 +7,19 @@ use http::StatusCode;
 async fn status_204_requires_no_content_response_spec() {
     api! {
         client ApiNoContent {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET A
         -> Json<()>
         {
-            path["a"]
+            path ["a"]
         }
 
         GET B
         -> NoContent<()>
         {
-            path["b"]
+            path ["b"]
         }
     }
 
@@ -64,20 +63,19 @@ async fn status_204_requires_no_content_response_spec() {
 async fn head_requires_no_content_response_spec() {
     api! {
         client ApiHead {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         HEAD A
         -> Json<()>
         {
-            path["a"]
+            path ["a"]
         }
 
         HEAD B
         -> NoContent<()>
         {
-            path["b"]
+            path ["b"]
         }
     }
 

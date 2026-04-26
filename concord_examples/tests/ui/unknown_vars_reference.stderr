@@ -1,5 +1,5 @@
 error: unknown client var `vars.missing`
- --> tests/ui/unknown_vars_reference.rs:8:24
+ --> tests/ui/unknown_vars_reference.rs:7:24
   |
-8 |             "x" = vars.missing // ERROR: unknown vars entry
+7 |             "x" = vars.missing // ERROR: unknown vars entry
   |                        ^^^^^^^

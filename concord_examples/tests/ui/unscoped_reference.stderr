@@ -1,5 +1,5 @@
 error: ep.* is not allowed here
- --> tests/ui/unscoped_reference.rs:8:19
+ --> tests/ui/unscoped_reference.rs:7:19
   |
-8 |             "x" = token // ERROR: unscoped
+7 |             "x" = token // ERROR: unscoped
   |                   ^^^^^

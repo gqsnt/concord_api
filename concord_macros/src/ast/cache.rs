@@ -22,10 +22,7 @@ pub enum CacheSpec {
 pub struct CachePatch {
     pub http: Option<Span>,
     pub ttl: Option<CacheDurationSpec>,
-    pub capacity: Option<CacheCapacitySpec>,
-    pub max_body: Option<CacheSizeSpec>,
     pub revalidate: Option<LitBool>,
-    pub shared: Option<LitBool>,
     pub on_error: Option<CacheOnErrorSpec>,
 }
 
@@ -39,24 +36,4 @@ pub enum CacheOnErrorSpec {
 pub struct CacheDurationSpec {
     pub amount: LitInt,
     pub unit: RateLimitDurationUnit,
-}
-
-#[derive(Debug, Clone)]
-pub enum CacheCapacitySpec {
-    Entries { amount: LitInt },
-    Bytes(CacheSizeSpec),
-}
-
-#[derive(Debug, Clone)]
-pub struct CacheSizeSpec {
-    pub amount: LitInt,
-    pub unit: CacheSizeUnit,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CacheSizeUnit {
-    Bytes,
-    KiB,
-    MiB,
-    GiB,
 }

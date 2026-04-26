@@ -4,14 +4,13 @@ use concord_test_support::*;
 
 api! {
     client ApiOffsetLimit {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET List(start: u64 = 0, count: u64 = 2)
     -> Json<Vec<String>>
     {
-        path["x"]
+        path ["x"]
         query {
             "start" = start,
             "count" = count

@@ -192,19 +192,14 @@ pub struct DslSessionLoginResponse {
 async fn scope_header_auth_uses_api_key_credential_and_secret_setter_rebuilds_state() {
     api! {
         client ApiDslHeader {
-            scheme: https,
-            host: "example.com",
-            secret {
-                api_key: String
-            }
-            auth {
-                credential api_key: ApiKey(secret.api_key)
-            }
+            base https "example.com"
+            secret api_key: String
+            credential api_key = api_key(secret.api_key)
         }
 
         scope protected {
-            use_auth HeaderAuth("X-Api-Key", api_key)
-            path["api"]
+            auth header "X-Api-Key" = api_key
+            path ["api"]
 
             GET Ping
             -> Json<()>
@@ -249,17 +244,14 @@ async fn scope_header_auth_uses_api_key_credential_and_secret_setter_rebuilds_st
 async fn custom_bearer_usage_macro_formats_token_before_applying_it() {
     api! {
         client ApiDslCustomBearer {
-            scheme: https,
-            host: "example.com",
-            auth {
-                credential token: Custom<DslStaticTokenProvider>(DslStaticTokenProvider)
-            }
+            base https "example.com"
+                credential token = custom<DslStaticTokenProvider>(DslStaticTokenProvider)
         }
 
         GET Ping
         -> Json<()>
         {
-            use_auth Custom<DslFormattingBearerAuth>(DslFormattingBearerAuth::new("tenant-a:"), token)
+            auth custom<DslFormattingBearerAuth>(DslFormattingBearerAuth::new("tenant-a:"), token)
         }
     }
 
@@ -280,24 +272,19 @@ async fn custom_bearer_usage_macro_formats_token_before_applying_it() {
 async fn auth_list_applies_all_steps_in_order() {
     api! {
         client ApiDslAuthList {
-            scheme: https,
-            host: "example.com",
-            secret {
-                api_key: String
-            }
-            auth {
-                credential token: Custom<DslStaticTokenProvider>(DslStaticTokenProvider)
-                credential api_key: ApiKey(secret.api_key)
-            }
+            base https "example.com"
+            secret api_key: String
+                credential token = custom<DslStaticTokenProvider>(DslStaticTokenProvider)
+            credential api_key = api_key(secret.api_key)
         }
 
         GET Ping
         -> Json<()>
         {
-            use_auth [
-                BearerAuth(token),
-                HeaderAuth("X-Api-Key", api_key)
-            ]
+            auth all {
+                bearer token
+                header "X-Api-Key" = api_key
+            }
         }
     }
 
@@ -320,24 +307,19 @@ async fn auth_list_applies_all_steps_in_order() {
 async fn auth_one_of_falls_back_to_next_usage_after_unauthorized() {
     api! {
         client ApiDslOneOf {
-            scheme: https,
-            host: "example.com",
-            secret {
-                fallback_key: String
-            }
-            auth {
-                credential token: Custom<DslStaticTokenProvider>(DslStaticTokenProvider)
-                credential fallback: ApiKey(secret.fallback_key)
-            }
+            base https "example.com"
+            secret fallback_key: String
+                credential token = custom<DslStaticTokenProvider>(DslStaticTokenProvider)
+            credential fallback = api_key(secret.fallback_key)
         }
 
         GET Ping
         -> Json<()>
         {
-            use_auth one_of [
-                BearerAuth(token),
-                HeaderAuth("X-Fallback-Key", fallback)
-            ]
+            auth any {
+                bearer token
+                header "X-Fallback-Key" = fallback
+            }
         }
     }
 
@@ -369,23 +351,18 @@ async fn auth_one_of_falls_back_to_next_usage_after_unauthorized() {
 async fn custom_provider_macro_can_login_with_internal_request_against_current_api() {
     api! {
         client ApiDslCustomLogin {
-            scheme: https,
-            host: "example.com",
-            secret {
-                username: String,
-                password: String
-            }
-            auth {
-                credential session: Custom<DslLoginProvider>(
+            base https "example.com"
+            secret username: String
+            secret password: String
+                credential session = custom<DslLoginProvider>(
                     DslLoginProvider::new(secret.username.clone(), secret.password.clone())
                 )
-            }
         }
 
         GET Ping
         -> Json<()>
         {
-            use_auth BearerAuth(session)
+            auth bearer session
         }
     }
 
@@ -424,20 +401,15 @@ async fn custom_provider_macro_can_login_with_internal_request_against_current_a
 async fn endpoint_query_auth_uses_api_key_credential() {
     api! {
         client ApiDslQuery {
-            scheme: https,
-            host: "example.com",
-            secret {
-                api_key: String
-            }
-            auth {
-                credential api_key: ApiKey(secret.api_key)
-            }
+            base https "example.com"
+            secret api_key: String
+            credential api_key = api_key(secret.api_key)
         }
 
         GET Ping
         -> Json<()>
         {
-            use_auth QueryAuth("api_key", api_key)
+            auth query "api_key" = api_key
         }
     }
 
@@ -458,26 +430,21 @@ async fn endpoint_query_auth_uses_api_key_credential() {
 async fn oauth2_client_credentials_dsl_uses_internal_token_request_then_bearer_auth() {
     api! {
         client ApiDslOAuth {
-            scheme: https,
-            host: "example.com",
-            secret {
-                client_id: String,
-                client_secret: String
-            }
-            auth {
-                credential token: OAuth2ClientCredentials {
+            base https "example.com"
+            secret client_id: String
+            secret client_secret: String
+                credential token = oauth2_client {
                     token_url: "https://auth.example.com/token",
                     client_id: secret.client_id,
                     client_secret: secret.client_secret,
                     scope: "read"
                 }
-            }
         }
 
         GET Ping
         -> Json<()>
         {
-            use_auth BearerAuth(token)
+            auth bearer token
         }
     }
 
@@ -520,18 +487,13 @@ async fn oauth2_client_credentials_dsl_uses_internal_token_request_then_bearer_a
 async fn secret_setter_rebuild_updates_all_client_clones() {
     api! {
         client ApiDslCloneRebuild {
-            scheme: https,
-            host: "example.com",
-            secret {
-                api_key: String
-            }
-            auth {
-                credential api_key: ApiKey(secret.api_key)
-            }
+            base https "example.com"
+            secret api_key: String
+            credential api_key = api_key(secret.api_key)
         }
 
         scope protected {
-            use_auth HeaderAuth("X-Api-Key", api_key)
+            auth header "X-Api-Key" = api_key
             GET Ping
             -> Json<()>
             {
@@ -579,22 +541,17 @@ async fn secret_setter_rebuild_updates_all_client_clones() {
 async fn custom_provider_secret_update_rebuilds_state() {
     api! {
         client ApiDslCustomRebuild {
-            scheme: https,
-            host: "example.com",
-            secret {
-                api_key: String
-            }
-            auth {
-                credential captured: Custom<DslCapturedApiKeyProvider>(
+            base https "example.com"
+            secret api_key: String
+                credential captured = custom<DslCapturedApiKeyProvider>(
                     DslCapturedApiKeyProvider::new(secret.api_key.clone())
                 )
-            }
         }
 
         GET Ping
         -> Json<()>
         {
-            use_auth HeaderAuth("X-Api-Key", captured)
+            auth header "X-Api-Key" = captured
         }
     }
 
@@ -623,28 +580,26 @@ async fn custom_provider_secret_update_rebuilds_state() {
 async fn endpoint_backed_manual_credential_requires_explicit_acquire_and_shares_lifecycle() {
     api! {
         client ApiDslEndpointManual {
-            scheme: https,
-            host: "example.com",
-            auth {
-                credential session: Endpoint(auth::LoginForSession)
-            }
+            base https "example.com"
+            credential session = endpoint auth::LoginForSession
         }
 
         scope auth {
             POST LoginForSession(body: Json<DslSessionLoginRequest>)
-            -> Json<DslSessionLoginResponse> | AccessToken => {
+            -> Json<DslSessionLoginResponse>
+                map AccessToken {
                 AccessToken::new(r.access_token)
             }
             {
-                path["login"]
+                path ["login"]
             }
         }
 
         GET Protected
         -> Json<()>
         {
-            path["protected"]
-            use_auth BearerAuth(session)
+            path ["protected"]
+            auth bearer session
         }
     }
 
@@ -733,33 +688,29 @@ async fn endpoint_backed_manual_credential_401_invalidates_without_auto_retry_an
  {
     api! {
         client ApiDslEndpointManualInvalidation {
-            scheme: https,
-            host: "example.com",
-            secret {
-                upstream_key: String
-            }
-            auth {
-                credential upstream: ApiKey(secret.upstream_key)
-                credential session: Endpoint(auth::LoginForSession)
-            }
+            base https "example.com"
+            secret upstream_key: String
+            credential upstream = api_key(secret.upstream_key)
+            credential session = endpoint auth::LoginForSession
         }
 
         scope auth {
             POST LoginForSession
-            -> Json<DslSessionLoginResponse> | AccessToken => {
+            -> Json<DslSessionLoginResponse>
+                map AccessToken {
                 AccessToken::new(r.access_token)
             }
             {
-                path["login"]
-                use_auth HeaderAuth("X-Upstream-Key", upstream)
+                path ["login"]
+                auth header "X-Upstream-Key" = upstream
             }
         }
 
         GET Protected
         -> Json<()>
         {
-            path["protected"]
-            use_auth BearerAuth(session)
+            path ["protected"]
+            auth bearer session
         }
     }
 
@@ -821,17 +772,14 @@ async fn endpoint_backed_manual_credential_401_invalidates_without_auto_retry_an
 async fn certificate_auth_macro_usage_is_supported() {
     api! {
         client ApiDslCertificate {
-            scheme: https,
-            host: "example.com",
-            auth {
-                credential cert: Custom<DslCertificateProvider>(DslCertificateProvider)
-            }
+            base https "example.com"
+                credential cert = custom<DslCertificateProvider>(DslCertificateProvider)
         }
 
         GET Ping
         -> Json<()>
         {
-            use_auth CertificateAuth(cert)
+            auth certificate cert
         }
     }
 

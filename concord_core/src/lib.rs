@@ -42,18 +42,17 @@ pub mod prelude {
     pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::auth::{
         AccessToken, ApiKey, AuthAppliedPart, AuthApplyContext, AuthAttempt, AuthBuildContext,
-        AuthChain, AuthChallengeContext, AuthChallengeDecision, AuthController, AuthError,
-        AuthErrorKind, AuthFuture, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse,
-        AuthIdentity, AuthInternalPolicy, AuthMode, AuthPart,
-        AuthPrepareContext as EndpointAuthPrepareContext, AuthProvenance, AuthRequirementId,
-        AuthResponseAction, AuthResponseContext as EndpointAuthResponseContext, AuthRetryReason,
-        AuthStepPolicy, AuthUsage, AuthUsageId, BasicAuth, BasicCredential, BearerAuth,
-        CertificateAuth, ClientCertificate, CredentialContext, CredentialId, CredentialLease,
-        CredentialMaterial, CredentialProvider, CredentialRefreshReason, CredentialSlot,
-        HeaderAuth, InvalidateReason, ManualCredentialProvider, NoAuth, NoAuthController,
-        NoAuthState, OneOfAuth, OneOfAuthController, OneOfAuthState, QueryAuth, SecretCredential,
-        StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider, TransportAuth,
-        UseCredential, UseCredentialState,
+        AuthChallengeContext, AuthChallengeDecision, AuthError, AuthErrorKind, AuthFuture,
+        AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthIdentity, AuthInternalPolicy,
+        AuthMode, AuthPart, AuthPrepareContext as EndpointAuthPrepareContext, AuthProvenance,
+        AuthRequirementId, AuthResponseAction, AuthResponseContext as EndpointAuthResponseContext,
+        AuthRetryReason, AuthStepPolicy, AuthUsage, AuthUsageId, BasicAuth, BasicCredential,
+        BearerAuth, CertificateAuth, ClientCertificate, CredentialContext, CredentialId,
+        CredentialLease, CredentialMaterial, CredentialProvider, CredentialRefreshReason,
+        CredentialSlot, HeaderAuth, InvalidateReason, ManualCredentialProvider, NoAuth,
+        NoAuthState, OneOfAuth, OneOfAuthState, QueryAuth, SecretCredential, StaticApiKeyProvider,
+        StaticBasicProvider, StaticBearerProvider, TransportAuth, UseCredential,
+        UseCredentialState,
     };
     pub use crate::cache::{
         CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,
@@ -82,9 +81,8 @@ pub mod prelude {
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
         RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitKey, RateLimitKeyPart,
         RateLimitKeyValue, RateLimitObservation, RateLimitObserver, RateLimitPermit, RateLimitPlan,
-        RateLimitResponseAction, RateLimitResponseContext, RateLimitResponsePolicy,
-        RateLimitScopeHint, RateLimitSetting, RateLimitTarget, RateLimitWindow, RateLimiter,
-        parse_retry_after,
+        RateLimitResponseAction, RateLimitResponseContext, RateLimitScopeHint, RateLimitSetting,
+        RateLimitWindow, RateLimiter, parse_retry_after,
     };
     pub use crate::request::{PaginatedRequest, PendingRequest};
     pub use crate::retry::{
@@ -106,7 +104,8 @@ pub mod prelude {
 
 pub mod advanced {
     pub use crate::auth::{
-        CredentialMaterial, CredentialProvider, CredentialSlot, SecretCredential,
+        AuthChain, AuthController, AuthPart, CredentialMaterial, CredentialProvider,
+        CredentialSlot, NoAuthController, OneOfAuthController, SecretCredential,
     };
     pub use crate::cache::{CacheConfig, CacheStore};
     pub use crate::inflight::{InflightPolicy, InflightRegistry};

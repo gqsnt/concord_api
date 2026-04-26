@@ -24,14 +24,8 @@ pub struct RetryPatch {
     pub methods: Option<Vec<Ident>>,
     pub statuses: Option<Vec<LitInt>>,
     pub transport_errors: Option<Vec<Ident>>,
-    pub backoff: Option<RetryBackoffSpec>,
     pub respect_retry_after: Option<bool>,
     pub idempotency: Option<RetryIdempotencySpec>,
-}
-
-#[derive(Debug, Clone)]
-pub enum RetryBackoffSpec {
-    None,
 }
 
 #[derive(Debug, Clone)]

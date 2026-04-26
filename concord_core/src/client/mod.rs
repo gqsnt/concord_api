@@ -7,7 +7,7 @@ use crate::cache::{CacheAfter, CacheBefore, CacheRequestMode, CacheRevalidation,
 use crate::codec::FormatType;
 use crate::codec::{ContentType, Decodes, Encodes};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
-use crate::endpoint::{BodyPart, Endpoint, PolicyPart, ResponseSpec, RoutePart};
+use crate::endpoint::{BodyPart, Endpoint, PolicyPart, RequestPlan, ResponseSpec, RoutePart};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::inflight::{InflightPolicy, RequestKey, SharedSendError, SharedSendResult};
 use crate::pagination::Caps;

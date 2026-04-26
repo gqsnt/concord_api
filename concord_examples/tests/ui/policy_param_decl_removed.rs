@@ -2,8 +2,7 @@ use concord_macros::api;
 
 api! {
     client UiPolicyParamDeclRemoved {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET Search -> Json<()> {

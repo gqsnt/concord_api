@@ -2,8 +2,7 @@ use concord_macros::api;
 
 api! {
     client UiUnknownVars {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
         headers {
             "x" = vars.missing // ERROR: unknown vars entry
         }

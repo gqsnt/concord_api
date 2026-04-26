@@ -2,8 +2,7 @@ use concord_macros::api;
 
 api! {
     client UiEndpointParamsBlockRemoved {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET Ping(id: String)
@@ -12,7 +11,7 @@ api! {
         params {
             other: String
         }
-        path["ping", id]
+        path ["ping", id]
     }
 }
 

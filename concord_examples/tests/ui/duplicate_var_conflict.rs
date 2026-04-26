@@ -2,14 +2,13 @@ use concord_macros::api;
 
 api! {
     client UiDup {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET A(id: u32, id: String)
     -> Json<()>
     {
-        path["x", id]
+        path ["x", id]
     }
 }
 

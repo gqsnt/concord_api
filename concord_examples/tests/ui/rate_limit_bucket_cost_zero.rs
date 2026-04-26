@@ -2,17 +2,16 @@ use concord_macros::api;
 
 api! {
     client UiRateLimitBucketCostZero {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET Ping
     -> Json<()>
     {
         rate_limit {
-            bucket method by [route.host] {
+            bucket method by [host] {
                 cost 0 // ERROR: cost must be > 0
-                limit 30 every 10 seconds
+                30 / 10s
             }
         }
     }

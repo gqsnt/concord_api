@@ -1,5 +1,5 @@
 error: scope params blocks are not supported; declare params in `scope name(...)`
-  --> tests/ui/scope_params_block_removed.rs:10:9
-   |
-10 |         params {
-   |         ^^^^^^
+ --> tests/ui/scope_params_block_removed.rs:9:9
+  |
+9 |         params {
+  |         ^^^^^^

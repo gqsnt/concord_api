@@ -190,6 +190,55 @@ pub trait RateLimitObserver: Send + Sync + 'static {
     fn observe(&self, ctx: RateLimitResponseContext<'_>) -> RateLimitObservation;
 }
 
+pub struct RateLimitObservationBuilder<'a> {
+    ctx: &'a RateLimitResponseContext<'a>,
+    observation: RateLimitObservation,
+}
+
+impl<'a> RateLimitObservationBuilder<'a> {
+    #[inline]
+    pub fn scope_header(mut self, name: &str) -> Self {
+        self.observation = self.observation.scope_header(self.ctx, name);
+        self
+    }
+
+    #[inline]
+    pub fn retry_after(mut self) -> RateLimitObservation {
+        self.observation = self.observation.retry_after_header(self.ctx);
+        self.observation
+    }
+
+    #[inline]
+    pub fn observe(self) -> RateLimitObservation {
+        self.observation
+    }
+}
+
+impl<'a> RateLimitResponseContext<'a> {
+    #[inline]
+    pub fn is_429(&self) -> bool {
+        self.status == StatusCode::TOO_MANY_REQUESTS
+    }
+
+    #[inline]
+    pub fn retry_after(&self) -> Option<Duration> {
+        parse_retry_after(self.headers)
+    }
+
+    #[inline]
+    pub fn on_429(&'a self) -> RateLimitObservationBuilder<'a> {
+        let observation = if self.is_429() {
+            RateLimitObservation::limited()
+        } else {
+            RateLimitObservation::continue_()
+        };
+        RateLimitObservationBuilder {
+            ctx: self,
+            observation,
+        }
+    }
+}
+
 impl<T> RateLimitResponsePolicy for T
 where
     T: RateLimitObserver,

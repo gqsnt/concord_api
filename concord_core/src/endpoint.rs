@@ -16,6 +16,11 @@ pub use plan::{
     RequestOverrides, RequestPlan, ResolvedRoute, ResponsePlan,
 };
 
+pub struct ClientPlanContext<'a, Cx: ClientContext> {
+    pub vars: &'a Cx::Vars,
+    pub auth_vars: &'a Cx::AuthVars,
+}
+
 /// RoutePart modifie `RouteParts` (host + path).
 pub trait RoutePart<Cx: ClientContext, E>: Send + Sync + 'static {
     fn apply(
@@ -234,5 +239,15 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
 
     fn response_is_no_content() -> bool {
         <Self::Response as ResponseSpec>::is_no_content()
+    }
+
+    fn plan(&self, _ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError> {
+        Err(ApiClientError::PolicyViolation {
+            ctx: crate::error::ErrorContext {
+                endpoint: self.name(),
+                method: Self::METHOD.clone(),
+            },
+            msg: "endpoint does not provide a v4 RequestPlan yet",
+        })
     }
 }

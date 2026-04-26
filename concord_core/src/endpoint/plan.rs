@@ -1,10 +1,6 @@
 #![allow(dead_code)]
 
-use crate::auth::AuthPlan;
-use crate::cache::CachePlan;
 use crate::policy::ResolvedPolicy;
-use crate::rate_limit::RateLimitPlan;
-use crate::retry::RetryPlan;
 use crate::transport::RequestMeta;
 use http::Method;
 use std::borrow::Cow;
@@ -37,10 +33,6 @@ pub struct EndpointPlan {
     pub policy: ResolvedPolicy,
     pub body: BodyPlan,
     pub response: ResponsePlan,
-    pub auth: AuthPlan,
-    pub cache: CachePlan,
-    pub retry: RetryPlan,
-    pub rate_limit: RateLimitPlan,
     pub pagination: Option<PaginationPlan>,
 }
 

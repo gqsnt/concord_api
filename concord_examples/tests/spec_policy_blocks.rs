@@ -7,8 +7,7 @@ use http::header::{ACCEPT, USER_AGENT};
 async fn query_set_remove_push_override_and_tostring() {
     api! {
         client ApiQuery {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
             query {
                 "sdk" = "concord",
                 "dup" += "c0"
@@ -16,7 +15,7 @@ async fn query_set_remove_push_override_and_tostring() {
         }
 
         scope x_scope {
-            path["x"]
+            path ["x"]
             query {
                 -"sdk",
                 "dup" += "p1",
@@ -58,14 +57,13 @@ async fn query_set_remove_push_override_and_tostring() {
 async fn query_part_set_required_param() {
     api! {
         client ApiQueryFmtReq {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET One(v: String)
         -> Json<()>
         {
-            path["x"]
+            path ["x"]
             query { "q" = part["a:", v] }
         }
     }
@@ -93,14 +91,13 @@ async fn query_part_set_required_param() {
 async fn query_part_optional_removes_key_when_missing() {
     api! {
         client ApiQueryFmtOpt {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET One(v?: String)
         -> Json<()>
         {
-            path["x"]
+            path ["x"]
             query { "q" = part["a:", v] }
         }
     }
@@ -135,14 +132,13 @@ async fn query_part_optional_removes_key_when_missing() {
 async fn query_part_push_appends_duplicate_keys_in_order() {
     api! {
         client ApiQueryFmtPush {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET One(v: String)
         -> Json<()>
         {
-            path["x"]
+            path ["x"]
             query {
                 "dup" += part["p:", v],
                 "dup" += "s"
@@ -174,12 +170,9 @@ async fn query_part_push_appends_duplicate_keys_in_order() {
 async fn headers_kebab_string_bind_remove_override() {
     api! {
         client ApiHeaders {
-            scheme: https,
-            host: "example.com",
-            vars {
-                user_agent: String = "ua".to_string(),
-                flag: bool = true
-            }
+            base https "example.com"
+            var user_agent: String = "ua".to_string()
+            var flag: bool = true
             headers {
                 user_agent = vars.user_agent,
                 x_debug = "caribou",
@@ -189,7 +182,7 @@ async fn headers_kebab_string_bind_remove_override() {
         }
 
         scope p_scope {
-            path["p"]
+            path ["p"]
             headers {
                 "x-debug" = "override",
                 -"x-static"
@@ -229,12 +222,9 @@ async fn headers_kebab_string_bind_remove_override() {
 async fn header_value_from_vars_to_string_and_invalid_header_value_error() {
     api! {
         client ApiHeaderInvalid {
-            scheme: https,
-            host: "example.com",
-            vars {
-                bad: String,
-                trace: bool = false
-            }
+            base https "example.com"
+            var bad: String
+            var trace: bool = false
             headers {
                 "x-bad" = vars.bad,
                 "x-bool" = vars.trace
@@ -289,8 +279,7 @@ async fn header_value_from_vars_to_string_and_invalid_header_value_error() {
 async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
     api! {
         client ApiAccept {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
             headers { "accept" = "text/plain" }
         }
 

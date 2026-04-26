@@ -33,14 +33,13 @@ impl HasNextCursor for Page {
 
 api! {
     client ApiCursor {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET List(page_cursor?: String, page_size: u64 = 2)
     -> Json<Page>
     {
-        path["x"]
+        path ["x"]
         query {
             "pageCursor" = page_cursor,
             "pageSize" = page_size

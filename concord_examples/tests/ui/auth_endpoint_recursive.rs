@@ -2,26 +2,23 @@ use concord_macros::api;
 
 api! {
     client RecursiveApi {
-        scheme: https,
-        host: "example.com",
-        auth {
-            credential session: Endpoint(auth::LoginForSession)
-        }
+        base https "example.com"
+        credential session = endpoint auth::LoginForSession
     }
 
     scope auth {
         POST LoginForSession
         -> Json<()>
         {
-            path["login"]
-            use_auth BearerAuth(session) // ERROR: recursive dependency
+            path ["login"]
+            auth bearer session // ERROR: recursive dependency
         }
     }
 
     GET Me
     -> Json<()>
     {
-        use_auth BearerAuth(session)
+        auth bearer session
     }
 }
 

@@ -5,14 +5,13 @@ struct Payload;
 
 api! {
     client UiEndpointBodyBlockRemoved {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     POST Create
     -> Json<()>
     {
-        path["create"]
+        path ["create"]
         body Json<Payload>
     }
 }

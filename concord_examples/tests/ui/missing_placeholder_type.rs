@@ -2,14 +2,13 @@ use concord_macros::api;
 
 api! {
     client UiMissingType {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET One(id)
     -> Json<()>
     {
-        path["x", id]
+        path ["x", id]
     }
 }
 

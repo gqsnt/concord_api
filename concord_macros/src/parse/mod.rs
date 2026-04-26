@@ -3,6 +3,7 @@ use crate::ast::*;
 use crate::kw;
 use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
 use syn::parse::{Parse, ParseStream};
+use syn::spanned::Spanned;
 use syn::{
     Expr, Ident, LitBool, LitInt, LitStr, Path, Result, Token, Type, braced, bracketed,
     parenthesized, token,
@@ -57,39 +58,29 @@ impl Parse for ClientDef {
                 host = Some(content.parse::<LitStr>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::scheme) {
-                content.parse::<kw::scheme>()?;
-                content.parse::<Token![:]>()?;
-                let v: Ident = content.parse()?;
-                scheme = Some(match v.to_string().as_str() {
-                    "http" => SchemeLit::Http,
-                    "https" => SchemeLit::Https,
-                    _ => {
-                        return Err(syn::Error::new(
-                            v.span(),
-                            "scheme must be `http` or `https`",
-                        ));
-                    }
-                });
-                let _ = content.parse::<Option<Token![,]>>()?;
+                return Err(syn::Error::new(
+                    content.span(),
+                    "`scheme:` was removed in v4; use `base https \"example.com\"`",
+                ));
             } else if content.peek(kw::vars) {
-                if vars.is_some() {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "duplicate `vars {}` in client",
-                    ));
-                }
-                vars = Some(content.parse::<VarsBlockTaggedVars>()?.0);
+                return Err(syn::Error::new(
+                    content.span(),
+                    "`vars {}` was removed in v4; use one `var name: Type` declaration per variable",
+                ));
+            } else if content.peek(kw::var) {
+                content.parse::<kw::var>()?;
+                let decl: VarDeclNoWire = content.parse()?;
+                vars.get_or_insert_with(|| VarsBlock { decls: Vec::new() })
+                    .decls
+                    .push(decl);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::secret) {
                 content.parse::<kw::secret>()?;
                 if content.peek(token::Brace) {
-                    if auth_vars.is_some() {
-                        return Err(syn::Error::new(
-                            name.span(),
-                            "duplicate `secret {}` in client",
-                        ));
-                    }
-                    auth_vars = Some(parse_vars_block(&content)?);
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "`secret {}` was removed in v4; use one `secret name: Type` declaration per secret",
+                    ));
                 } else {
                     let decl: VarDeclNoWire = content.parse()?;
                     auth_vars
@@ -100,84 +91,82 @@ impl Parse for ClientDef {
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::auth) {
                 content.parse::<kw::auth>()?;
-                if !content.peek(token::Brace) {
-                    auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
-                    let _ = content.parse::<Option<Token![,]>>()?;
-                    continue;
-                }
-                if !auth_credentials.is_empty() {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "duplicate `auth {}` in client",
-                    ));
-                }
-                let block = parse_auth_block_after_keyword(&content)?;
-                auth_credentials.extend(block.credentials);
+                auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::credential) {
                 content.parse::<kw::credential>()?;
                 auth_credentials.push(parse_auth_credential_after_keyword(&content, true)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::use_auth) {
-                auth_uses.push(content.parse::<AuthUseDecl>()?);
-                let _ = content.parse::<Option<Token![,]>>()?;
+                return Err(syn::Error::new(
+                    content.span(),
+                    "`use_auth` was removed in v4; use `auth header/query/bearer/basic/certificate ...`",
+                ));
             } else if content.peek(kw::cache) {
-                match parse_cache_decl(&content)? {
-                    CacheDecl::Profiles(block) => {
-                        if cache_profiles.is_some() {
-                            return Err(syn::Error::new(
-                                name.span(),
-                                "duplicate cache profile block in client",
-                            ));
-                        }
-                        cache_profiles = Some(block);
-                    }
-                    CacheDecl::Spec(spec) => {
-                        if cache.is_some() {
-                            return Err(syn::Error::new(
-                                name.span(),
-                                "duplicate client cache policy",
-                            ));
-                        }
-                        cache = Some(spec);
-                    }
-                }
+                content.parse::<kw::cache>()?;
+                cache_profiles
+                    .get_or_insert_with(|| CacheProfilesBlock {
+                        profiles: Vec::new(),
+                        default: None,
+                    })
+                    .profiles
+                    .push(parse_cache_profile_decl_after_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::retry) {
-                match parse_retry_decl(&content)? {
-                    RetryDecl::Profiles(block) => {
-                        if retry_profiles.is_some() {
-                            return Err(syn::Error::new(
-                                name.span(),
-                                "duplicate retry profile block in client",
-                            ));
-                        }
-                        retry_profiles = Some(block);
-                    }
-                    RetryDecl::Spec(spec) => {
-                        if retry.is_some() {
-                            return Err(syn::Error::new(
-                                name.span(),
-                                "duplicate client retry policy",
-                            ));
-                        }
-                        retry = Some(spec);
-                    }
-                }
+                content.parse::<kw::retry>()?;
+                retry_profiles
+                    .get_or_insert_with(|| RetryProfilesBlock {
+                        profiles: Vec::new(),
+                        default: None,
+                    })
+                    .profiles
+                    .push(parse_retry_profile_decl_after_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::rate_limit) {
-                if rate_limit.is_some() {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "duplicate rate_limit block in client",
-                    ));
-                }
-                rate_limit = Some(parse_rate_limit_profiles_decl(&content)?);
+                content.parse::<kw::rate_limit>()?;
+                rate_limit
+                    .get_or_insert_with(|| RateLimitProfilesBlock {
+                        profiles: Vec::new(),
+                        default: Vec::new(),
+                        response_policy: None,
+                    })
+                    .profiles
+                    .push(parse_rate_limit_profile_decl_after_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::host) {
-                content.parse::<kw::host>()?;
-                content.parse::<Token![:]>()?;
-                host = Some(content.parse::<LitStr>()?);
+                return Err(syn::Error::new(
+                    content.span(),
+                    "`host:` was removed in v4; use `base https \"example.com\"` for the client root or `host [...]` in scopes",
+                ));
+            } else if content.peek(kw::default) {
+                content.parse::<kw::default>()?;
+                let default_content;
+                braced!(default_content in content);
+                parse_client_default_block(
+                    &default_content,
+                    &mut policy,
+                    &mut auth_uses,
+                    &mut cache,
+                    &mut retry,
+                    &mut rate_limit,
+                )?;
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::observe) {
+                content.parse::<kw::observe>()?;
+                content.parse::<kw::rate_limit>()?;
+                let observer: Path = content.parse()?;
+                let block = rate_limit.get_or_insert_with(|| RateLimitProfilesBlock {
+                    profiles: Vec::new(),
+                    default: Vec::new(),
+                    response_policy: None,
+                });
+                if block.response_policy.is_some() {
+                    return Err(syn::Error::new(
+                        observer.span(),
+                        "duplicate rate_limit observer",
+                    ));
+                }
+                block.response_policy = Some(observer);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::headers) {
                 policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
@@ -220,9 +209,18 @@ impl Parse for ClientDef {
             }
         }
 
-        let scheme =
-            scheme.ok_or_else(|| syn::Error::new(name.span(), "missing `scheme:` in client"))?;
-        let host = host.ok_or_else(|| syn::Error::new(name.span(), "missing `host:` in client"))?;
+        let scheme = scheme.ok_or_else(|| {
+            syn::Error::new(
+                name.span(),
+                "missing `base https \"example.com\"` in client",
+            )
+        })?;
+        let host = host.ok_or_else(|| {
+            syn::Error::new(
+                name.span(),
+                "missing `base https \"example.com\"` in client",
+            )
+        })?;
 
         Ok(Self {
             vars,
@@ -242,6 +240,106 @@ impl Parse for ClientDef {
             rate_limit,
         })
     }
+}
+
+fn parse_client_default_block(
+    input: ParseStream<'_>,
+    policy: &mut PolicyBlocks,
+    auth_uses: &mut Vec<AuthUseDecl>,
+    cache: &mut Option<CacheSpec>,
+    retry: &mut Option<RetrySpec>,
+    rate_limit: &mut Option<RateLimitProfilesBlock>,
+) -> Result<()> {
+    while !input.is_empty() {
+        if input.peek(kw::headers) {
+            policy.headers = Some(input.parse::<PolicyBlockTaggedHeaders>()?.0);
+        } else if input.peek(kw::header) {
+            policy
+                .headers
+                .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
+                .stmts
+                .push(parse_v3_single_policy_stmt(
+                    input,
+                    PolicyBlockKind::Headers,
+                )?);
+        } else if input.peek(kw::query) {
+            if input.peek2(token::Brace) {
+                policy.query = Some(input.parse::<PolicyBlockTaggedQuery>()?.0);
+            } else {
+                policy
+                    .query
+                    .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
+                    .stmts
+                    .push(parse_v3_single_policy_stmt(input, PolicyBlockKind::Query)?);
+            }
+        } else if input.peek(kw::timeout) {
+            input.parse::<kw::timeout>()?;
+            if input.peek(Token![:]) {
+                input.parse::<Token![:]>()?;
+            }
+            policy.timeout = Some(normalize_policy_expr(input.parse::<Expr>()?));
+        } else if input.peek(kw::auth) {
+            input.parse::<kw::auth>()?;
+            auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
+        } else if input.peek(kw::cache) {
+            if cache.is_some() {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "duplicate default cache policy",
+                ));
+            }
+            match parse_cache_decl(input)? {
+                CacheDecl::Spec(spec) => *cache = Some(spec),
+            }
+        } else if input.peek(kw::retry) {
+            if retry.is_some() {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "duplicate default retry policy",
+                ));
+            }
+            match parse_retry_decl(input)? {
+                RetryDecl::Spec(spec) => *retry = Some(spec),
+            }
+        } else if input.peek(kw::rate_limit) {
+            let spec = parse_rate_limit_spec(input)?;
+            let RateLimitSpec::Profiles {
+                only: false,
+                profiles,
+            } = spec
+            else {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "client default rate_limit must be a profile or profile list",
+                ));
+            };
+            let block = rate_limit.get_or_insert_with(|| RateLimitProfilesBlock {
+                profiles: Vec::new(),
+                default: Vec::new(),
+                response_policy: None,
+            });
+            if !block.default.is_empty() {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "duplicate default rate_limit policy",
+                ));
+            }
+            block.default = profiles;
+        } else if input.peek(kw::use_auth) {
+            return Err(syn::Error::new(
+                input.span(),
+                "`use_auth` was removed in v4; use `auth ...`",
+            ));
+        } else {
+            let tt: TokenTree = input.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "unexpected token in client default block",
+            ));
+        }
+        let _ = input.parse::<Option<Token![,]>>()?;
+    }
+    Ok(())
 }
 
 // Keep feature-domain macro chunks in separate files without widening helper visibility.

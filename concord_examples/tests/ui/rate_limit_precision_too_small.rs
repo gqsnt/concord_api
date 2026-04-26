@@ -2,16 +2,15 @@ use concord_macros::api;
 
 api! {
     client UiRateLimitPrecisionTooSmall {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET Ping
     -> Json<()>
     {
         rate_limit {
-            bucket method by [route.host] {
-                limit 2000000001 every 1 second // ERROR: sub-nanosecond cell period
+            bucket method by [host] {
+                2000000001 / 1s // ERROR: sub-nanosecond cell period
             }
         }
     }

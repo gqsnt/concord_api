@@ -33,18 +33,17 @@ pub struct CreateBody {
 async fn inline_scope_params_and_nested_endpoint_modules_work() {
     api! {
         client ApiSurfaceScope {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope platform(region: Region = Region::Euw) {
-            host[region, "api"]
+            host [region, "api"]
 
             scope status {
-                path["status"]
+                path ["status"]
 
                 GET Ping -> Json<()> {
-                    path["ping"]
+                    path ["ping"]
                 }
             }
         }
@@ -72,14 +71,15 @@ async fn inline_scope_params_and_nested_endpoint_modules_work() {
 async fn signature_style_endpoint_supports_params_body_and_mapping() {
     api! {
         client ApiSurfaceEndpoint {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
-        POST CreatePost(id: String, body: Json<CreateBody>) -> Json<CreateBody> | String => {
+        POST CreatePost(id: String, body: Json<CreateBody>) -> Json<CreateBody>
+                map String {
             r.id
-        } {
-            path["posts", id]
+        }
+            {
+            path ["posts", id]
         }
     }
 
@@ -117,23 +117,22 @@ async fn signature_style_endpoint_supports_params_body_and_mapping() {
 async fn same_endpoint_name_under_different_scopes_is_valid() {
     api! {
         client ApiSurfaceDuplicateNames {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope alpha {
-            path["alpha"]
+            path ["alpha"]
 
             GET Ping -> Json<()> {
-                path["ping"]
+                path ["ping"]
             }
         }
 
         scope beta {
-            path["beta"]
+            path ["beta"]
 
             GET Ping -> Json<()> {
-                path["ping"]
+                path ["ping"]
             }
         }
     }
@@ -183,12 +182,11 @@ impl RuntimeHooks for CountingHooks {
 async fn generated_runtime_hooks_are_used_by_clones_when_installed_before_clone() {
     api! {
         client ApiSurfaceHooks {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET Ping -> Json<()> {
-            path["ping"]
+            path ["ping"]
         }
     }
 
@@ -225,12 +223,12 @@ async fn v3_tree_facade_inline_leaf_and_await_work() {
         }
 
         scope protected {
-            path["me"]
+            path ["me"]
             auth header "X-Api-Key" = upstream
 
             GET Me
                 as me
-                path["profile"]
+                path ["profile"]
                 query verbose = true
                 -> Json<String>
         }

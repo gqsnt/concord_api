@@ -115,36 +115,9 @@ impl CacheStore for AlwaysHitCache {
 #[derive(Default)]
 struct HeaderScopePolicy;
 
-impl RateLimitResponsePolicy for HeaderScopePolicy {
-    fn observe(&self, ctx: &RateLimitResponseContext<'_>) -> RateLimitObservation {
-        if ctx.status != http::StatusCode::TOO_MANY_REQUESTS {
-            return RateLimitObservation::continue_();
-        }
-
-        let target = ctx
-            .headers
-            .get(http::HeaderName::from_static("x-limit-scope"))
-            .and_then(|value| value.to_str().ok())
-            .map(|value| match value.trim() {
-                "application" => RateLimitTarget::bucket_kind("application", RateLimitTarget::Host),
-                "method" => RateLimitTarget::bucket_kind("method", RateLimitTarget::Endpoint),
-                _ => RateLimitTarget::current_plan_or_endpoint(),
-            })
-            .unwrap_or_else(RateLimitTarget::current_plan_or_endpoint);
-
-        let delay = ctx
-            .headers
-            .get(http::HeaderName::from_static("x-delay-ms"))
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .or_else(|| parse_retry_after(ctx.headers));
-
-        let mut observation = RateLimitObservation::limited().with_target(target);
-        if let Some(delay) = delay {
-            observation = observation.with_delay(delay);
-        }
-        observation
+impl RateLimitObserver for HeaderScopePolicy {
+    fn observe(&self, ctx: RateLimitResponseContext<'_>) -> RateLimitObservation {
+        ctx.on_429().scope_header("x-rate-limit-type").retry_after()
     }
 }
 
@@ -152,21 +125,20 @@ impl RateLimitResponsePolicy for HeaderScopePolicy {
 async fn rate_limit_profiles_generate_request_plan_and_allow_custom_limiter() {
     api! {
         client RateLimitDslApi {
-            scheme: https,
-            host: "example.com",
-            rate_limit {
-                profile app {
-                    bucket application by [route.host] {
-                        limit 500 every 10 seconds
+            base https "example.com"
+            default {
+                rate_limit app
+            }
+            rate_limit app {
+                    bucket application by [host] {
+                        500 / 10s
                     }
-                }
-                profile method_read {
-                    bucket method by [route.host, endpoint] {
-                        limit 30 every 10 seconds
-                        limit 500 every 10 minutes
+            }
+            rate_limit method_read {
+                    bucket method by [host, endpoint] {
+                        30 / 10s
+                        500 / 10m
                     }
-                }
-                default app
             }
         }
 
@@ -218,22 +190,20 @@ async fn rate_limit_profiles_generate_request_plan_and_allow_custom_limiter() {
 async fn rate_limit_custom_response_policy_marks_limited_response() {
     api! {
         client RateLimitCustomResponseApi {
-            scheme: https,
-            host: "example.com",
-            rate_limit {
-                response custom HeaderScopePolicy
-
-                profile app {
-                    bucket application by [route.host] {
-                        limit 500 every 10 seconds
+            base https "example.com"
+            observe rate_limit HeaderScopePolicy
+            default {
+                rate_limit app
+            }
+            rate_limit app {
+                    bucket application by [host] {
+                        500 / 10s
                     }
-                }
-                profile method_read {
-                    bucket method by [route.host, endpoint] {
-                        limit 30 every 10 seconds
+            }
+            rate_limit method_read {
+                    bucket method by [host, endpoint] {
+                        30 / 10s
                     }
-                }
-                default app
             }
         }
 
@@ -286,11 +256,8 @@ async fn rate_limit_custom_response_policy_marks_limited_response() {
 async fn rate_limit_response_bucket_scope_falls_back_when_bucket_is_missing() {
     api! {
         client RateLimitMissingBucketFallbackApi {
-            scheme: https,
-            host: "example.com",
-            rate_limit {
-                response custom HeaderScopePolicy
-            }
+            base https "example.com"
+            observe rate_limit HeaderScopePolicy
         }
 
         GET NoBucket
@@ -304,12 +271,12 @@ async fn rate_limit_response_bucket_scope_falls_back_when_bucket_is_missing() {
 
     let throttled = MockReply::status(http::StatusCode::TOO_MANY_REQUESTS)
         .with_header(
-            http::HeaderName::from_static("x-limit-scope"),
+            http::HeaderName::from_static("x-rate-limit-type"),
             http::HeaderValue::from_static("method"),
         )
         .with_header(
-            http::HeaderName::from_static("x-delay-ms"),
-            http::HeaderValue::from_static("40"),
+            http::header::RETRY_AFTER,
+            http::HeaderValue::from_static("1"),
         );
     let (transport, h) = mock()
         .replies([throttled, MockReply::ok_json(json_bytes(&()))])
@@ -349,26 +316,21 @@ async fn rate_limit_response_bucket_scope_falls_back_when_bucket_is_missing() {
 async fn retry_does_not_duplicate_delay_when_rate_limiter_stores_cooldown() {
     api! {
         client RateLimitRetryCoordinationApi {
-            scheme: https,
-            host: "example.com",
-            retry {
-                profile read {
+            base https "example.com"
+            default {
+                retry read
+            }
+            retry read {
                     attempts 2
                     methods [GET]
-                    on status[429]
-                    retry_after honor
-                    backoff none
-                }
-                default read
+                    on [429]
+                    retry_after
             }
-            rate_limit {
-                response custom HeaderScopePolicy
-
-                profile method_read {
-                    bucket method by [route.host, endpoint] {
-                        limit 30 every 10 seconds
+            observe rate_limit HeaderScopePolicy
+            rate_limit method_read {
+                    bucket method by [host, endpoint] {
+                        30 / 10s
                     }
-                }
             }
         }
 
@@ -387,12 +349,8 @@ async fn retry_does_not_duplicate_delay_when_rate_limiter_stores_cooldown() {
             http::HeaderValue::from_static("1"),
         )
         .with_header(
-            http::HeaderName::from_static("x-limit-scope"),
+            http::HeaderName::from_static("x-rate-limit-type"),
             http::HeaderValue::from_static("method"),
-        )
-        .with_header(
-            http::HeaderName::from_static("x-delay-ms"),
-            http::HeaderValue::from_static("40"),
         );
     let (transport, h) = mock()
         .replies([throttled, MockReply::ok_json(json_bytes(&()))])
@@ -407,11 +365,11 @@ async fn retry_does_not_duplicate_delay_when_rate_limiter_stores_cooldown() {
     let elapsed = started.elapsed();
 
     assert!(
-        elapsed >= Duration::from_millis(25),
+        elapsed >= Duration::from_millis(900),
         "retry should still pass through the limiter cooldown"
     );
     assert!(
-        elapsed < Duration::from_millis(500),
+        elapsed < Duration::from_millis(1500),
         "retry must not also sleep the HTTP Retry-After header when limiter stored the cooldown"
     );
 
@@ -426,25 +384,24 @@ async fn retry_does_not_duplicate_delay_when_rate_limiter_stores_cooldown() {
 async fn rate_limit_scope_key_binding_materializes_param_key() {
     api! {
         client RateLimitScopeKeyApi {
-            scheme: https,
-            host: "example.com",
-            rate_limit {
-                profile app {
-                    bucket application by [route.host] {
-                        limit 500 every 10 seconds
+            base https "example.com"
+            default {
+                rate_limit app
+            }
+            rate_limit app {
+                    bucket application by [host] {
+                        500 / 10s
                     }
-                }
-                profile regional_method {
+            }
+            rate_limit regional_method {
                     bucket method by [region, endpoint] {
-                        limit 1600 every 1 minute
+                        1600 / 1m
                     }
-                }
-                default app
             }
         }
 
         scope platform(platform: String) {
-            host[platform, "api"]
+            host [platform, "api"]
             rate_limit key region = platform
 
             GET ByRegion
@@ -484,15 +441,14 @@ async fn rate_limit_scope_key_binding_materializes_param_key() {
 async fn inflight_followers_do_not_consume_rate_limit_permits() {
     api! {
         client RateLimitInflightApi {
-            scheme: https,
-            host: "example.com",
-            rate_limit {
-                profile app {
-                    bucket application by [route.host] {
-                        limit 500 every 10 seconds
+            base https "example.com"
+            default {
+                rate_limit app
+            }
+            rate_limit app {
+                    bucket application by [host] {
+                        500 / 10s
                     }
-                }
-                default app
             }
         }
 
@@ -538,15 +494,14 @@ async fn inflight_followers_do_not_consume_rate_limit_permits() {
 async fn cache_hits_do_not_consume_rate_limit_permits() {
     api! {
         client RateLimitCacheApi {
-            scheme: https,
-            host: "example.com",
-            rate_limit {
-                profile app {
-                    bucket application by [route.host] {
-                        limit 500 every 10 seconds
+            base https "example.com"
+            default {
+                rate_limit app
+            }
+            rate_limit app {
+                    bucket application by [host] {
+                        500 / 10s
                     }
-                }
-                default app
             }
         }
 
@@ -579,15 +534,14 @@ async fn cache_hits_do_not_consume_rate_limit_permits() {
 async fn duplicate_rate_limit_profiles_do_not_duplicate_buckets_after_canonicalization() {
     api! {
         client RateLimitCanonicalizationApi {
-            scheme: https,
-            host: "example.com",
-            rate_limit {
-                profile app {
-                    bucket application by [route.host] {
-                        limit 500 every 10 seconds
+            base https "example.com"
+            default {
+                rate_limit app
+            }
+            rate_limit app {
+                    bucket application by [host] {
+                        500 / 10s
                     }
-                }
-                default app
             }
         }
 
@@ -619,19 +573,16 @@ async fn duplicate_rate_limit_profiles_do_not_duplicate_buckets_after_canonicali
 async fn endpoint_rate_limit_key_binding_materializes_scope_param_key() {
     api! {
         client RateLimitEndpointKeyApi {
-            scheme: https,
-            host: "example.com",
-            rate_limit {
-                profile regional_method {
+            base https "example.com"
+            rate_limit regional_method {
                     bucket method by [region, endpoint] {
-                        limit 1600 every 1 minute
+                        1600 / 1m
                     }
-                }
             }
         }
 
         scope platform(platform: String) {
-            host[platform, "api"]
+            host [platform, "api"]
 
             GET ByRegion
             -> Json<()>
@@ -671,16 +622,15 @@ async fn endpoint_rate_limit_key_binding_materializes_scope_param_key() {
 async fn rate_limit_bucket_cost_is_emitted_to_runtime_plan() {
     api! {
         client RateLimitCostApi {
-            scheme: https,
-            host: "example.com",
-            rate_limit {
-                profile weighted {
-                    bucket method by [route.host, endpoint] {
+            base https "example.com"
+            default {
+                rate_limit weighted
+            }
+            rate_limit weighted {
+                    bucket method by [host, endpoint] {
                         cost 3
-                        limit 30 every 10 seconds
+                        30 / 10s
                     }
-                }
-                default weighted
             }
         }
 

@@ -1,5 +1,5 @@
 error: endpoint params blocks are not supported; declare params in `Name(...)`
- --> tests/ui/endpoint_params_block_removed.rs:9:9
+ --> tests/ui/endpoint_params_block_removed.rs:8:9
   |
-9 |     GET Ping(id: String)
+8 |     GET Ping(id: String)
   |         ^^^^

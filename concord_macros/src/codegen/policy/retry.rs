@@ -74,10 +74,6 @@ fn emit_retry_patch_ops(patch: &RetryPatchResolved) -> Vec<TokenStream2> {
         });
         ops.push(quote! { __retry.transport_errors = ::std::vec![ #( #transport_errors ),* ]; });
     }
-    if let Some(backoff) = &patch.backoff {
-        let backoff = emit_retry_backoff(backoff);
-        ops.push(quote! { __retry.backoff = #backoff; });
-    }
     if let Some(respect_retry_after) = patch.respect_retry_after {
         ops.push(quote! { __retry.respect_retry_after = #respect_retry_after; });
     }

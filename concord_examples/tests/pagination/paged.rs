@@ -4,14 +4,13 @@ use concord_test_support::*;
 
 api! {
     client ApiPaged {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET List(page: u32 = 1, page_size: u32 = 2)
     -> Json<Vec<String>>
     {
-        path["x"]
+        path ["x"]
         query {
             "p" = page,
             "sz" = page_size

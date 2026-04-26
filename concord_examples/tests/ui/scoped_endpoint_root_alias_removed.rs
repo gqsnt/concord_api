@@ -3,8 +3,7 @@ use concord_macros::api;
 
 api! {
     client UiScopedEndpointRootAliasRemoved {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     scope api {

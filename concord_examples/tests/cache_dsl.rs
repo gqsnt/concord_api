@@ -191,18 +191,17 @@ fn json_headers() -> http::HeaderMap {
 async fn cache_bypass_hits_transport_without_overwriting_cached_value() {
     api! {
         client CacheBypassApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short { ttl 60 seconds }
-                default short
+            base https "example.com"
+            default {
+                cache short
             }
+                cache short { ttl 60 seconds }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -248,18 +247,17 @@ async fn cache_bypass_hits_transport_without_overwriting_cached_value() {
 async fn cache_refresh_hits_transport_and_updates_cached_value() {
     api! {
         client CacheRefreshApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short { ttl 60 seconds }
-                default short
+            base https "example.com"
+            default {
+                cache short
             }
+                cache short { ttl 60 seconds }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -302,24 +300,23 @@ async fn cache_refresh_hits_transport_and_updates_cached_value() {
 }
 
 #[tokio::test]
-async fn cache_profile_revalidate_false_skips_conditional_headers() {
+async fn cache_profile_revalidates_with_conditional_headers() {
     api! {
         client CacheNoRevalidateApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile read {
+            base https "example.com"
+            default {
+                cache read
+            }
+            cache read {
                     ttl 60 seconds
-                    revalidate false
-                }
-                default read
+
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -353,7 +350,10 @@ async fn cache_profile_revalidate_false_skips_conditional_headers() {
     assert_eq!(second, "second");
     h.assert_recorded_len(2);
     let reqs = h.recorded();
-    assert_eq!(reqs[1].headers.get(IF_NONE_MATCH), None);
+    assert_eq!(
+        reqs[1].headers.get(IF_NONE_MATCH),
+        Some(&http::HeaderValue::from_static("\"etag-1\""))
+    );
     h.finish();
 }
 
@@ -361,21 +361,20 @@ async fn cache_profile_revalidate_false_skips_conditional_headers() {
 async fn cache_profile_on_error_serve_stale_returns_stale_after_revalidation_error() {
     api! {
         client CacheServeStaleApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile read {
+            base https "example.com"
+            default {
+                cache read
+            }
+            cache read {
                     ttl 60 seconds
                     on_error serve_stale
-                }
-                default read
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -405,14 +404,13 @@ async fn cache_profile_on_error_serve_stale_returns_stale_after_revalidation_err
 async fn revalidation_304_without_cache_merge_retries_once_with_unconditional_fetch() {
     api! {
         client CacheRevalidationFallbackApi {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -449,20 +447,19 @@ async fn revalidation_304_without_cache_merge_retries_once_with_unconditional_fe
 async fn cache_profile_fresh_hit_skips_transport() {
     api! {
         client CacheFreshApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short {
+            base https "example.com"
+            default {
+                cache short
+            }
+            cache short {
                     ttl 60 seconds
-                }
-                default short
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -497,18 +494,14 @@ async fn cache_profile_fresh_hit_skips_transport() {
 async fn endpoint_inline_cache_sets_up_default_backend_without_client_cache_block() {
     api! {
         client EndpointOnlyCacheApi {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
-            cache {
-                ttl 60 seconds
-                max_body 2 mib
-            }
+            path ["cached"]
+            cache 60s
         }
     }
 
@@ -540,24 +533,19 @@ async fn endpoint_inline_cache_sets_up_default_backend_without_client_cache_bloc
 async fn cache_inline_patch_inherits_profile_ttl_and_overrides_max_body() {
     api! {
         client CacheInlinePatchApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile tiny {
+            base https "example.com"
+            default {
+                cache tiny
+            }
+            cache tiny {
                     ttl 60 seconds
-                    max_body 1 bytes
-                }
-                default tiny
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
-            cache {
-                max_body 2 mib
-            }
+            path ["cached"]
         }
     }
 
@@ -586,28 +574,24 @@ async fn cache_inline_patch_inherits_profile_ttl_and_overrides_max_body() {
 }
 
 #[tokio::test]
-async fn cache_profile_http_capacity_and_max_body_are_honored() {
+async fn cache_profile_http_semantics_are_honored() {
     api! {
         client CacheFullProfileApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile http_profile {
+            base https "example.com"
+            default {
+                cache http_profile
+            }
+            cache http_profile {
                     http
                     ttl 60 seconds
-                    capacity 64 mib
-                    max_body 1 bytes
-                    revalidate true
-                    shared false
-                }
-                default http_profile
+                    revalidate
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -616,10 +600,6 @@ async fn cache_profile_http_capacity_and_max_body_are_honored() {
     let (transport, h) = mock()
         .reply(
             MockReply::ok_json(json_bytes(&"first".to_string()))
-                .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=60")),
-        )
-        .reply(
-            MockReply::ok_json(json_bytes(&"second".to_string()))
                 .with_header(CACHE_CONTROL, http::HeaderValue::from_static("max-age=60")),
         )
         .build();
@@ -637,8 +617,8 @@ async fn cache_profile_http_capacity_and_max_body_are_honored() {
         .unwrap();
 
     assert_eq!(first, "first");
-    assert_eq!(second, "second");
-    h.assert_recorded_len(2);
+    assert_eq!(second, "first");
+    h.assert_recorded_len(1);
     h.finish();
 }
 
@@ -646,28 +626,27 @@ async fn cache_profile_http_capacity_and_max_body_are_honored() {
 async fn cache_hit_skips_rate_limit_after_initial_store() {
     api! {
         client CacheRateLimitApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short {
-                    ttl 60 seconds
-                }
-                default short
+            base https "example.com"
+            default {
+                cache short
             }
-            rate_limit {
-                profile app {
-                    bucket application by [route.host] {
-                        limit 500 every 10 seconds
+            cache short {
+                    ttl 60 seconds
+            }
+            default {
+                rate_limit app
+            }
+            rate_limit app {
+                    bucket application by [host] {
+                        500 / 10s
                     }
-                }
-                default app
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -705,29 +684,27 @@ async fn cache_hit_skips_rate_limit_after_initial_store() {
 async fn cache_hit_skips_retry_and_transport_after_initial_store() {
     api! {
         client CacheRetryApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short {
-                    ttl 60 seconds
-                }
-                default short
+            base https "example.com"
+            default {
+                cache short
             }
-            retry {
-                profile read {
+            cache short {
+                    ttl 60 seconds
+            }
+            default {
+                retry read
+            }
+            retry read {
                     attempts 2
                     methods [GET]
-                    on status[500]
-                    backoff none
-                }
-                default read
+                    on [500]
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -762,20 +739,19 @@ async fn cache_hit_skips_retry_and_transport_after_initial_store() {
 async fn cache_control_no_store_is_not_stored() {
     api! {
         client CacheNoStoreApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short {
+            base https "example.com"
+            default {
+                cache short
+            }
+            cache short {
                     ttl 60 seconds
-                }
-                default short
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -814,20 +790,19 @@ async fn cache_control_no_store_is_not_stored() {
 async fn cache_vary_header_keeps_variants_separate() {
     api! {
         client CacheVaryApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short {
+            base https "example.com"
+            default {
+                cache short
+            }
+            cache short {
                     ttl 60 seconds
-                }
-                default short
             }
         }
 
         GET Localized(lang: String)
         -> Json<String>
         {
-            path["localized"]
+            path ["localized"]
             headers { "accept-language" = lang }
         }
     }
@@ -875,27 +850,22 @@ async fn cache_vary_header_keeps_variants_separate() {
 async fn authenticated_cache_keys_are_isolated_by_auth_identity() {
     api! {
         client CacheAuthApi {
-            scheme: https,
-            host: "example.com",
-            secret {
-                api_key: String
+            base https "example.com"
+            secret api_key: String
+            credential api_key = api_key(secret.api_key)
+            auth header "Authorization" = api_key
+            default {
+                cache short
             }
-            auth {
-                credential api_key: ApiKey(secret.api_key)
-            }
-            use_auth HeaderAuth("Authorization", api_key)
-            cache {
-                profile short {
+            cache short {
                     ttl 60 seconds
-                }
-                default short
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -951,20 +921,19 @@ async fn authenticated_cache_keys_are_isolated_by_auth_identity() {
 async fn stale_cache_revalidates_with_etag_and_uses_304_body() {
     api! {
         client CacheRevalidateApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short {
+            base https "example.com"
+            default {
+                cache short
+            }
+            cache short {
                     ttl 60 seconds
-                }
-                default short
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -1009,23 +978,21 @@ async fn stale_cache_revalidates_with_etag_and_uses_304_body() {
 async fn revalidation_transport_errors_retry_before_cache_after_error_fallback() {
     api! {
         client CacheRevalidationErrorApi {
-            scheme: https,
-            host: "example.com",
-            retry {
-                profile read {
+            base https "example.com"
+            default {
+                retry read
+            }
+            retry read {
                     attempts 2
                     methods [GET]
                     on transport[Timeout]
-                    backoff none
-                }
-                default read
             }
         }
 
         GET Cached
         -> Json<String>
         {
-            path["cached"]
+            path ["cached"]
         }
     }
 
@@ -1054,20 +1021,19 @@ async fn revalidation_transport_errors_retry_before_cache_after_error_fallback()
 async fn cache_off_clears_inherited_cache() {
     api! {
         client CacheOffApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short {
+            base https "example.com"
+            default {
+                cache short
+            }
+            cache short {
                     ttl 60 seconds
-                }
-                default short
             }
         }
 
         GET Uncached
         -> Json<String>
         {
-            path["uncached"]
+            path ["uncached"]
             cache off
         }
     }
@@ -1107,26 +1073,25 @@ async fn cache_off_clears_inherited_cache() {
 async fn unsafe_success_invalidates_cached_get_for_same_uri() {
     api! {
         client CacheInvalidateApi {
-            scheme: https,
-            host: "example.com",
-            cache {
-                profile short {
+            base https "example.com"
+            default {
+                cache short
+            }
+            cache short {
                     ttl 60 seconds
-                }
-                default short
             }
         }
 
         GET Read
         -> Json<String>
         {
-            path["resource"]
+            path ["resource"]
         }
 
         POST Write
         -> Json<String>
         {
-            path["resource"]
+            path ["resource"]
         }
     }
 

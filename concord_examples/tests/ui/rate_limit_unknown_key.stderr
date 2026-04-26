@@ -1,5 +1,5 @@
 error: unknown rate_limit key `region`
-  --> tests/ui/rate_limit_unknown_key.rs:13:31
+  --> tests/ui/rate_limit_unknown_key.rs:12:31
    |
-13 |             bucket method by [region, endpoint] { // ERROR: unknown key
+12 |             bucket method by [region, endpoint] { // ERROR: unknown key
    |                               ^^^^^^

@@ -182,10 +182,7 @@ pub enum CacheResolved {
 pub struct CacheConfigResolved {
     pub http: bool,
     pub default_ttl_secs: Option<u64>,
-    pub capacity: Option<CacheCapacityResolved>,
-    pub max_body_bytes: Option<u64>,
     pub revalidate: Option<bool>,
-    pub shared: Option<bool>,
     pub failure_mode: Option<CacheFailureModeResolved>,
 }
 
@@ -193,17 +190,8 @@ pub struct CacheConfigResolved {
 pub struct CacheConfigPatchResolved {
     pub http: Option<bool>,
     pub default_ttl_secs: Option<u64>,
-    pub capacity: Option<CacheCapacityResolved>,
-    pub max_body_bytes: Option<u64>,
     pub revalidate: Option<bool>,
-    pub shared: Option<bool>,
     pub failure_mode: Option<CacheFailureModeResolved>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CacheCapacityResolved {
-    Entries(u64),
-    Bytes(u64),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -286,7 +274,6 @@ pub struct RetryPatchResolved {
     pub methods: Option<Vec<Ident>>,
     pub statuses: Option<Vec<u16>>,
     pub transport_errors: Option<Vec<Ident>>,
-    pub backoff: Option<RetryBackoffResolved>,
     pub respect_retry_after: Option<bool>,
     pub idempotency: Option<RetryIdempotencyResolved>,
 }

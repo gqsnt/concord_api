@@ -1,61 +1,13 @@
-struct VarsBlockTaggedVars(VarsBlock);
-#[allow(dead_code)]
-struct VarsBlockTaggedSecret(VarsBlock);
-impl Parse for VarsBlockTaggedVars {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        input.parse::<kw::vars>()?;
-        Ok(Self(parse_vars_block(input)?))
-    }
-}
-impl Parse for VarsBlockTaggedSecret {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        input.parse::<kw::secret>()?;
-        Ok(Self(parse_vars_block(input)?))
-    }
-}
-
-#[allow(dead_code)]
-struct AuthBlockTagged(AuthBlock);
-
-impl Parse for AuthBlockTagged {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        input.parse::<kw::auth>()?;
-        Ok(Self(parse_auth_block_after_keyword(input)?))
-    }
-}
-
-fn parse_auth_block_after_keyword(input: ParseStream<'_>) -> Result<AuthBlock> {
-        let content;
-        braced!(content in input);
-        let mut credentials = Vec::new();
-        while !content.is_empty() {
-            credentials.push(content.parse::<AuthCredentialDecl>()?);
-            let _ = content.parse::<Option<Token![,]>>()?;
-        }
-        Ok(AuthBlock { credentials })
-}
-
-impl Parse for AuthCredentialDecl {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        input.parse::<kw::credential>()?;
-        parse_auth_credential_after_keyword(input, false)
-    }
-}
-
 fn parse_auth_credential_after_keyword(
     input: ParseStream<'_>,
-    v3_equals: bool,
+    _v4_equals: bool,
 ) -> Result<AuthCredentialDecl> {
         let name: Ident = input.parse()?;
-        if v3_equals {
-            input.parse::<Token![=]>()?;
-        } else {
-            input.parse::<Token![:]>()?;
-        }
+        input.parse::<Token![=]>()?;
 
         let kind_name: Ident = input.parse()?;
         let kind = match kind_name.to_string().as_str() {
-            "ApiKey" | "api_key" => {
+            "api_key" => {
                 let content;
                 parenthesized!(content in input);
                 let secret = parse_secret_ref(&content)?;
@@ -67,7 +19,7 @@ fn parse_auth_credential_after_keyword(
                 }
                 AuthCredentialKind::ApiKey { secret }
             }
-            "BearerToken" | "AccessToken" | "access_token" => {
+            "bearer" => {
                 let content;
                 parenthesized!(content in input);
                 let secret = parse_secret_ref(&content)?;
@@ -79,7 +31,7 @@ fn parse_auth_credential_after_keyword(
                 }
                 AuthCredentialKind::StaticBearer { secret }
             }
-            "Basic" => {
+            "basic" => {
                 let content;
                 parenthesized!(content in input);
                 let username = parse_secret_ref(&content)?;
@@ -93,23 +45,14 @@ fn parse_auth_credential_after_keyword(
                 }
                 AuthCredentialKind::Basic { username, password }
             }
-            "OAuth2ClientCredentials" => {
+            "oauth2_client" => {
                 parse_oauth2_client_credentials(input, kind_name.span())?.into()
             }
-            "Endpoint" | "endpoint" => {
-                let content;
-                parenthesized!(content in input);
-                let endpoint: Path = content.parse()?;
-                validate_auth_endpoint_path(&endpoint)?;
-                if !content.is_empty() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "unexpected Endpoint arguments",
-                    ));
-                }
+            "endpoint" => {
+                let endpoint = parse_auth_endpoint_ref(input)?;
                 AuthCredentialKind::Endpoint { endpoint }
             }
-            "Custom" => {
+            "custom" => {
                 let provider_ty = parse_angle_type(input, kind_name.span(), "custom provider")?;
                 let content;
                 parenthesized!(content in input);
@@ -128,12 +71,35 @@ fn parse_auth_credential_after_keyword(
             _ => {
                 return Err(syn::Error::new(
                     kind_name.span(),
-                    "unknown auth credential kind; expected ApiKey/api_key, BearerToken/AccessToken/access_token, Basic, OAuth2ClientCredentials, Endpoint/endpoint, or Custom<T>",
+                    "unknown auth credential kind; expected api_key(...), bearer(...), basic(...), oauth2_client { ... }, endpoint path, or custom<T>(...)",
                 ));
             }
         };
 
         Ok(AuthCredentialDecl { name, kind })
+}
+
+fn parse_auth_endpoint_ref(input: ParseStream<'_>) -> Result<Path> {
+    let mut segments = syn::punctuated::Punctuated::<syn::PathSegment, Token![::]>::new();
+    let first: Ident = input.parse()?;
+    segments.push(syn::PathSegment::from(first));
+
+    while input.peek(Token![.]) || input.peek(Token![::]) {
+        if input.peek(Token![.]) {
+            input.parse::<Token![.]>()?;
+        } else {
+            input.parse::<Token![::]>()?;
+        }
+        let ident: Ident = input.parse()?;
+        segments.push(syn::PathSegment::from(ident));
+    }
+
+    let path = Path {
+        leading_colon: None,
+        segments,
+    };
+    validate_auth_endpoint_path(&path)?;
+    Ok(path)
 }
 
 struct OAuth2ClientCredentialsFields {
@@ -287,7 +253,26 @@ impl Parse for AuthUseDecl {
 }
 
 fn parse_auth_use_decl_after_auth_keyword(input: ParseStream<'_>) -> Result<AuthUseDecl> {
-    Ok(AuthUseDecl::Single(Box::new(parse_v3_auth_use_kind(input)?)))
+    if input.peek(kw::all) {
+        input.parse::<kw::all>()?;
+        return Ok(AuthUseDecl::AllOf(parse_v4_auth_use_block(input)?));
+    }
+    if input.peek(kw::any) {
+        input.parse::<kw::any>()?;
+        return Ok(AuthUseDecl::OneOf(parse_v4_auth_use_block(input)?));
+    }
+    Ok(AuthUseDecl::Single(Box::new(parse_v4_auth_use_kind(input)?)))
+}
+
+fn parse_v4_auth_use_block(input: ParseStream<'_>) -> Result<Vec<AuthUseKind>> {
+    let content;
+    braced!(content in input);
+    let mut out = Vec::new();
+    while !content.is_empty() {
+        out.push(parse_v4_auth_use_kind(&content)?);
+        let _ = content.parse::<Option<Token![,]>>()?;
+    }
+    Ok(out)
 }
 
 fn parse_auth_use_kinds_list(input: ParseStream<'_>) -> Result<Vec<AuthUseKind>> {
@@ -407,7 +392,7 @@ fn parse_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
     Ok(kind)
 }
 
-fn parse_v3_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
+fn parse_v4_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
     let usage: Ident = input.parse()?;
     match usage.to_string().as_str() {
         "bearer" => Ok(AuthUseKind::Bearer {
@@ -431,9 +416,28 @@ fn parse_v3_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
         "certificate" => Ok(AuthUseKind::Certificate {
             credential: input.parse()?,
         }),
+        "custom" => {
+            let usage_ty = parse_angle_type(input, usage.span(), "custom auth usage")?;
+            let content;
+            parenthesized!(content in input);
+            let usage: Expr = content.parse()?;
+            content.parse::<Token![,]>()?;
+            let credential: Ident = content.parse()?;
+            if !content.is_empty() {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "unexpected custom auth usage arguments",
+                ));
+            }
+            Ok(AuthUseKind::Custom {
+                usage_ty: Box::new(usage_ty),
+                usage: Box::new(usage),
+                credential,
+            })
+        }
         _ => Err(syn::Error::new(
             usage.span(),
-            "unknown auth usage; expected `bearer credential`, `header \"Name\" = credential`, `query \"name\" = credential`, `basic credential`, or `certificate credential`",
+            "unknown auth usage; expected `bearer credential`, `header \"Name\" = credential`, `query \"name\" = credential`, `basic credential`, `certificate credential`, or `custom<T>(expr, credential)`",
         )),
     }
 }

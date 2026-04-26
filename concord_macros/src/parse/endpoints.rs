@@ -1,24 +1,3 @@
-fn parse_vars_block(input: ParseStream<'_>) -> Result<VarsBlock> {
-    let content;
-    braced!(content in input);
-    let mut decls = Vec::new();
-    while !content.is_empty() {
-        decls.push(content.parse::<VarDeclNoWire>()?);
-        if content.peek(Token![,]) {
-            content.parse::<Token![,]>()?;
-            continue;
-        }
-        if !content.is_empty() {
-            let tt: TokenTree = content.parse()?;
-            return Err(syn::Error::new(
-                tt.span(),
-                "expected `,` between vars declarations",
-            ));
-        }
-    }
-    Ok(VarsBlock { decls })
-}
-
 fn parse_inline_var_decls(input: ParseStream<'_>, ctx: &'static str) -> Result<Vec<VarDeclNoWire>> {
     let content;
     parenthesized!(content in input);
@@ -125,10 +104,22 @@ fn parse_endpoint_response_spec(input: ParseStream<'_>) -> Result<(CodecSpec, Op
     let response: CodecSpec = input.parse()?;
 
     let map = if input.peek(Token![|]) {
-        input.parse::<Token![|]>()?;
+        return Err(syn::Error::new(
+            input.span(),
+            "old mapping syntax `-> Json<T> | Out => ...` was removed in v4; use `-> Json<T> map Out { ... }`",
+        ));
+    } else if input.peek(kw::map) {
+        input.parse::<kw::map>()?;
         let out_ty: Type = input.parse()?;
-        input.parse::<Token![=>]>()?;
-        let body: Expr = input.parse()?;
+        let content;
+        braced!(content in input);
+        let body: Expr = content.parse()?;
+        if !content.is_empty() {
+            return Err(syn::Error::new(
+                content.span(),
+                "unexpected tokens after map expression",
+            ));
+        }
         Some(MapSpec { out_ty, body })
     } else {
         None
@@ -216,8 +207,10 @@ fn parse_endpoint_block_parts(input: ParseStream<'_>, name: &Ident) -> Result<En
             parts.policy.timeout = Some(normalize_policy_expr(t));
             let _ = input.parse::<Option<Token![,]>>()?;
         } else if input.peek(kw::use_auth) {
-            parts.auth_uses.push(input.parse::<AuthUseDecl>()?);
-            let _ = input.parse::<Option<Token![,]>>()?;
+            return Err(syn::Error::new(
+                input.span(),
+                "`use_auth` was removed in v4; use `auth ...`",
+            ));
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
@@ -231,12 +224,6 @@ fn parse_endpoint_block_parts(input: ParseStream<'_>, name: &Ident) -> Result<En
             }
             match parse_cache_decl(input)? {
                 CacheDecl::Spec(spec) => parts.cache = Some(spec),
-                CacheDecl::Profiles(_) => {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "cache profiles are only allowed in client blocks",
-                    ));
-                }
             }
             let _ = input.parse::<Option<Token![,]>>()?;
         } else if input.peek(kw::retry) {
@@ -249,12 +236,6 @@ fn parse_endpoint_block_parts(input: ParseStream<'_>, name: &Ident) -> Result<En
                         ));
                     }
                     parts.retry = Some(spec);
-                }
-                RetryDecl::Profiles(_) => {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "retry profiles are only allowed in client blocks",
-                    ));
                 }
             }
             let _ = input.parse::<Option<Token![,]>>()?;
@@ -347,7 +328,10 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
             let t = parse_expr_until_comma_or_endpoint_arrow(input)?;
             parts.policy.timeout = Some(normalize_policy_expr(t));
         } else if input.peek(kw::use_auth) {
-            parts.auth_uses.push(input.parse::<AuthUseDecl>()?);
+            return Err(syn::Error::new(
+                input.span(),
+                "`use_auth` was removed in v4; use `auth ...`",
+            ));
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
@@ -357,9 +341,6 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
             }
             match parse_cache_decl(input)? {
                 CacheDecl::Spec(spec) => parts.cache = Some(spec),
-                CacheDecl::Profiles(_) => {
-                    return Err(syn::Error::new(name.span(), "cache profiles are only allowed in client blocks"));
-                }
             }
         } else if input.peek(kw::retry) {
             match parse_retry_decl(input)? {
@@ -368,9 +349,6 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
                         return Err(syn::Error::new(name.span(), "duplicate retry policy in endpoint"));
                     }
                     parts.retry = Some(spec);
-                }
-                RetryDecl::Profiles(_) => {
-                    return Err(syn::Error::new(name.span(), "retry profiles are only allowed in client blocks"));
                 }
             }
         } else if input.peek(kw::rate_limit) {

@@ -11,16 +11,16 @@ pub struct Item {
 async fn mapping_closure_variant_maps_ids() {
     api! {
         client ApiMap {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET Ids
-        -> Json<Vec<Item>> | Vec<String> => {
+        -> Json<Vec<Item>>
+                map Vec<String> {
         r.into_iter().map(|x| x.id).collect::<Vec<_>>()
         }
-        {
-            path["ids"]
+            {
+            path ["ids"]
         }
     }
 

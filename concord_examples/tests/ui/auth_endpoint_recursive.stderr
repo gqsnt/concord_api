@@ -1,5 +1,5 @@
 error: credential `session` cannot acquire via endpoint `LoginForSession` because the endpoint uses that credential
-  --> tests/ui/auth_endpoint_recursive.rs:13:14
+  --> tests/ui/auth_endpoint_recursive.rs:10:14
    |
-13 |         POST LoginForSession
+10 |         POST LoginForSession
    |              ^^^^^^^^^^^^^^^

@@ -1,5 +1,5 @@
 error: policy binds are not supported; declare parameters in the endpoint signature and assign with `"key" = ep.param`
-  --> tests/ui/policy_bind_removed.rs:11:31
+  --> tests/ui/policy_bind_removed.rs:10:31
    |
-11 |             "Idempotency-Key" as idempotency_key: String
+10 |             "Idempotency-Key" as idempotency_key: String
    |                               ^^

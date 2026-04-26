@@ -12,13 +12,12 @@ pub struct NewObj {
 async fn timeout_layering_client_scope_endpoint() {
     api! {
         client ApiTimeout {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
             timeout: core::time::Duration::from_secs(30)
         }
 
         scope x_scope {
-            path["x"]
+            path ["x"]
             timeout: core::time::Duration::from_secs(10)
 
             GET A
@@ -49,27 +48,26 @@ async fn timeout_layering_client_scope_endpoint() {
 async fn content_type_injection_only_when_missing_and_body_present() {
     api! {
         client ApiBody {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         POST A(body: Json<NewObj>)
         -> Json<()>
         {
-            path["x"]
+            path ["x"]
         }
 
         POST B(body: Json<NewObj>)
         -> Json<()>
         {
-            path["y"]
+            path ["y"]
             headers { "content-type" = "text/plain" }
         }
 
         GET C
         -> Json<()>
         {
-            path["z"]
+            path ["z"]
         }
     }
 
@@ -128,13 +126,12 @@ async fn content_type_injection_only_when_missing_and_body_present() {
 async fn timeout_endpoint_shape_allows_compact_arrow_layout() {
     api! {
         client ApiTimeoutNoComma {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
             timeout: core::time::Duration::from_secs(30)
         }
 
         scope x_scope {
-            path["x"]
+            path ["x"]
             timeout: core::time::Duration::from_secs(10)
 
             GET A

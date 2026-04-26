@@ -21,33 +21,30 @@ pub struct SessionUser {
 
 api! {
     client SessionApi {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
 
-        secret {
-            upstream_key: String
-        }
+        secret upstream_key: String
 
-        auth {
-            credential upstream: ApiKey(secret.upstream_key)
-            credential session: Endpoint(auth::LoginForSession)
-        }
+        credential upstream = api_key(secret.upstream_key)
+        credential session = endpoint auth::LoginForSession
     }
 
     scope auth {
-        POST LoginForSession(body: Json<SessionLoginRequest>) -> Json<SessionLoginResponse> | AccessToken => {
+        POST LoginForSession(body: Json<SessionLoginRequest>) -> Json<SessionLoginResponse>
+                map AccessToken {
             AccessToken::new(r.access_token)
-        } {
-            path["login"]
-            use_auth HeaderAuth("X-Upstream-Key", upstream)
+        }
+            {
+            path ["login"]
+            auth header "X-Upstream-Key" = upstream
         }
     }
 
     scope protected {
-        use_auth BearerAuth(session)
+        auth bearer session
 
         GET Me -> Json<SessionUser> {
-            path["me"]
+            path ["me"]
         }
     }
 }

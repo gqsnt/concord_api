@@ -1,62 +1,19 @@
-fn parse_rate_limit_profiles_decl(input: ParseStream<'_>) -> Result<RateLimitProfilesBlock> {
-    input.parse::<kw::rate_limit>()?;
-    let content;
-    braced!(content in input);
-
-    let mut profiles = Vec::new();
-    let mut default = Vec::new();
-    let mut response_policy = None;
-
-    while !content.is_empty() {
-        if content.peek(kw::response) {
-            if response_policy.is_some() {
-                return Err(syn::Error::new(
-                    content.span(),
-                    "duplicate rate_limit response policy",
-                ));
-            }
-            content.parse::<kw::response>()?;
-            let _ = content.parse::<Option<kw::custom>>()?;
-            response_policy = Some(content.parse::<Path>()?);
-        } else if content.peek(kw::profile) {
-            content.parse::<kw::profile>()?;
-            let name: Ident = content.parse()?;
-            let extends = if content.peek(kw::extends) {
-                content.parse::<kw::extends>()?;
-                Some(content.parse()?)
-            } else {
-                None
-            };
-            let body;
-            braced!(body in content);
-            profiles.push(RateLimitProfileDef {
-                name,
-                extends,
-                plan: parse_rate_limit_plan_body(&body)?,
-            });
-        } else if content.peek(kw::default) {
-            if !default.is_empty() {
-                return Err(syn::Error::new(
-                    content.span(),
-                    "duplicate rate_limit default",
-                ));
-            }
-            content.parse::<kw::default>()?;
-            default = parse_rate_limit_profile_list(&content)?;
-        } else {
-            let tt: TokenTree = content.parse()?;
-            return Err(syn::Error::new(
-                tt.span(),
-                "unexpected token in rate_limit block",
-            ));
-        }
-        let _ = content.parse::<Option<Token![,]>>()?;
-    }
-
-    Ok(RateLimitProfilesBlock {
-        profiles,
-        default,
-        response_policy,
+fn parse_rate_limit_profile_decl_after_keyword(
+    input: ParseStream<'_>,
+) -> Result<RateLimitProfileDef> {
+    let name: Ident = input.parse()?;
+    let extends = if input.peek(kw::extends) {
+        input.parse::<kw::extends>()?;
+        Some(input.parse()?)
+    } else {
+        None
+    };
+    let body;
+    braced!(body in input);
+    Ok(RateLimitProfileDef {
+        name,
+        extends,
+        plan: parse_rate_limit_plan_body(&body)?,
     })
 }
 
@@ -146,13 +103,6 @@ fn parse_rate_limit_bucket(input: ParseStream<'_>) -> Result<RateLimitBucketSpec
             }
             content.parse::<kw::cost>()?;
             cost = Some(content.parse::<LitInt>()?);
-        } else if content.peek(kw::limit) {
-            content.parse::<kw::limit>()?;
-            let max: LitInt = content.parse()?;
-            content.parse::<kw::every>()?;
-            let every: LitInt = content.parse()?;
-            let unit = parse_rate_limit_duration_unit(&content)?;
-            windows.push(RateLimitWindowSpec { max, every, unit });
         } else if content.peek(LitInt) {
             let max: LitInt = content.parse()?;
             content.parse::<Token![/]>()?;
@@ -173,7 +123,7 @@ fn parse_rate_limit_bucket(input: ParseStream<'_>) -> Result<RateLimitBucketSpec
             let tt: TokenTree = content.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "unexpected token in rate_limit bucket; expected `cost` or `limit`",
+                "unexpected token in rate_limit bucket; expected `cost` or `500 / 10s` shorthand",
             ));
         }
         let _ = content.parse::<Option<Token![,]>>()?;
@@ -205,19 +155,8 @@ fn parse_rate_limit_key_spec(input: ParseStream<'_>) -> Result<RateLimitKeySpec>
 
     let first: Ident = input.parse()?;
     let first_s = first.to_string();
-    if first_s == "route" && input.peek(Token![.]) {
-        input.parse::<Token![.]>()?;
-        let second: Ident = input.parse()?;
-        if second == "host" {
-            return Ok(RateLimitKeySpec::RouteHost);
-        }
-        return Err(syn::Error::new(
-            second.span(),
-            "unknown rate_limit route key; expected `route.host`",
-        ));
-    }
-
     match first_s.as_str() {
+        "host" => Ok(RateLimitKeySpec::RouteHost),
         "endpoint" => Ok(RateLimitKeySpec::Endpoint),
         "method" => Ok(RateLimitKeySpec::Method),
         _ => Ok(RateLimitKeySpec::Named(first)),

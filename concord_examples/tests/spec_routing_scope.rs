@@ -27,12 +27,11 @@ impl core::fmt::Display for Region {
 async fn scope_host_default_and_override_and_order() {
     api! {
         client ApiPrefixDefault {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope platform(region: Region = Region::Euw) {
-            host[region, "api"]
+            host [region, "api"]
 
             GET Ping
             -> Json<()>
@@ -78,12 +77,11 @@ async fn scope_host_default_and_override_and_order() {
 async fn scope_host_optional_label_omitted_without_double_dot() {
     api! {
         client ApiPrefixOpt {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope tenant(sub?: String) {
-            host[sub, "api"]
+            host [sub, "api"]
 
             GET Ping
             -> Json<()>
@@ -129,12 +127,11 @@ async fn scope_host_optional_label_omitted_without_double_dot() {
 async fn scope_host_label_validation_errors() {
     api! {
         client ApiPrefixInvalid {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope platform(region: Region = Region::Euw) {
-            host[region, "api"]
+            host [region, "api"]
 
             GET Ping
             -> Json<()>
@@ -225,17 +222,16 @@ async fn scope_host_label_validation_errors() {
 async fn scope_path_concat_percent_encoding() {
     api! {
         client ApiPath {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope lol {
-            path["lol"]
+            path ["lol"]
 
             GET GetMatch(match_id: String)
             -> Json<()>
             {
-                path["matches", match_id]
+                path ["matches", match_id]
             }
         }
     }
@@ -261,14 +257,13 @@ async fn scope_path_concat_percent_encoding() {
 async fn scope_path_part_builds_single_segment_and_encodes() {
     api! {
         client ApiPathFmt {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET One(v: String)
         -> Json<()>
         {
-            path["x", part["p", v]]
+            path ["x", part["p", v]]
         }
     }
 
@@ -293,14 +288,13 @@ async fn scope_path_part_builds_single_segment_and_encodes() {
 async fn scope_path_part_optional_omits_segment_when_missing() {
     api! {
         client ApiPathFmtOpt {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET One(v?: String)
         -> Json<()>
         {
-            path["x", part["p", v], "y"]
+            path ["x", part["p", v], "y"]
         }
     }
 
@@ -332,14 +326,13 @@ async fn scope_path_part_optional_omits_segment_when_missing() {
 async fn scope_path_optional_item_omitted_no_double_slash() {
     api! {
         client ApiOptSeg {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         GET One(opt?: String)
         -> Json<()>
         {
-            path["x", opt, "y"]
+            path ["x", opt, "y"]
         }
     }
 
@@ -377,17 +370,16 @@ async fn scope_path_optional_item_omitted_no_double_slash() {
 async fn scope_host_part_adds_one_label() {
     api! {
         client ApiPrefixLayerFmt {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope layer(id: String) {
-            host["api", part["t", id]]
+            host ["api", part["t", id]]
 
             GET One
             -> Json<()>
             {
-                path["x"]
+                path ["x"]
             }
         }
     }
@@ -414,17 +406,16 @@ async fn scope_host_part_adds_one_label() {
 async fn scope_host_part_optional_omits_label_when_missing() {
     api! {
         client ApiPrefixLayerFmtOpt {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope layer(id?: String) {
-            host["api", part["t", id]]
+            host ["api", part["t", id]]
 
             GET One
             -> Json<()>
             {
-                path["x"]
+                path ["x"]
             }
         }
     }
@@ -460,17 +451,16 @@ async fn scope_host_part_optional_omits_label_when_missing() {
 async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
     api! {
         client ApiPathLayerFmt {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope layer(v: String) {
-            path["api", part["p", v]]
+            path ["api", part["p", v]]
 
             GET One
             -> Json<()>
             {
-                path["x"]
+                path ["x"]
             }
         }
     }
@@ -496,17 +486,16 @@ async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
 async fn scope_path_part_in_layer_optional_omits_segment_no_double_slash() {
     api! {
         client ApiPathLayerFmtOpt {
-            scheme: https,
-            host: "example.com",
+            base https "example.com"
         }
 
         scope layer(v?: String) {
-            path["api", part["p", v], "z"]
+            path ["api", part["p", v], "z"]
 
             GET One
             -> Json<()>
             {
-                path["x"]
+                path ["x"]
             }
         }
     }

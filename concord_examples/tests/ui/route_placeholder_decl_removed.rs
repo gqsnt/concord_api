@@ -2,12 +2,11 @@ use concord_macros::api;
 
 api! {
     client UiRoutePlaceholderRemoved {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET One(id: String) -> Json<()> {
-        path["x", {id: String}]
+        path ["x", {id: String}]
     }
 }
 

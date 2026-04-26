@@ -2,8 +2,7 @@ use concord_macros::api;
 
 api! {
     client UiPartPlaceholderRemoved {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET One(id: String) -> Json<()> {

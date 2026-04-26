@@ -2,8 +2,7 @@ use concord_macros::api;
 
 api! {
     client UiRateLimitUnknownKey {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     GET Ping
@@ -11,7 +10,7 @@ api! {
     {
         rate_limit {
             bucket method by [region, endpoint] { // ERROR: unknown key
-                limit 30 every 10 seconds
+                30 / 10s
             }
         }
     }

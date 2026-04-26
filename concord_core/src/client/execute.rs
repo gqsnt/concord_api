@@ -1,4 +1,17 @@
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
+    pub async fn execute_plan<R>(&self, plan: RequestPlan) -> Result<R, ApiClientError>
+    where
+        R: Send + 'static,
+    {
+        Err(ApiClientError::PolicyViolation {
+            ctx: ErrorContext {
+                endpoint: plan.endpoint.meta.name,
+                method: plan.endpoint.meta.method.clone(),
+            },
+            msg: "v4 RequestPlan execution is not wired to generated endpoints yet",
+        })
+    }
+
     pub(crate) async fn execute_decoded_ref_with<E, F>(
         &self,
         ep: &E,

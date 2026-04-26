@@ -5,20 +5,18 @@ struct NotCredential;
 
 api! {
     client BadEndpointOutputApi {
-        scheme: https,
-        host: "example.com",
-        auth {
-            credential session: Endpoint(auth::LoginForSession)
-        }
+        base https "example.com"
+        credential session = endpoint auth::LoginForSession
     }
 
     scope auth {
         POST LoginForSession
-        -> Json<()> | NotCredential => {
+        -> Json<()>
+                map NotCredential {
         NotCredential
         }
-        {
-            path["login"]
+            {
+            path ["login"]
         }
     }
 

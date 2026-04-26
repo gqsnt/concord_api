@@ -1,5 +1,5 @@
 error: endpoint declarations must use `METHOD Name(...) -> Response { ... }` (or `METHOD Name -> Response { ... }`)
- --> tests/ui/endpoint_block_response_removed.rs:9:14
+ --> tests/ui/endpoint_block_response_removed.rs:8:14
   |
-9 |     GET Ping {
+8 |     GET Ping {
   |              ^

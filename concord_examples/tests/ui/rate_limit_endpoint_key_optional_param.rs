@@ -2,14 +2,11 @@ use concord_macros::api;
 
 api! {
     client UiRateLimitEndpointKeyOptionalParam {
-        scheme: https,
-        host: "example.com",
-        rate_limit {
-            profile regional {
+        base https "example.com"
+        rate_limit regional {
                 bucket method by [region, endpoint] {
-                    limit 10 every 1 minute
+                    10 / 1m
                 }
-            }
         }
     }
 

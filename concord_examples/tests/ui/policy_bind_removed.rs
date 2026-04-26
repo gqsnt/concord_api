@@ -2,8 +2,7 @@ use concord_macros::api;
 
 api! {
     client UiPolicyBindRemoved {
-        scheme: https,
-        host: "example.com",
+        base https "example.com"
     }
 
     POST Create(body: Json<()>) -> Json<()> {

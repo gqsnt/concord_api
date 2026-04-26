@@ -91,17 +91,8 @@ fn resolve_cache_patch(patch: &CachePatch) -> Result<CacheConfigPatchResolved> {
     if let Some(ttl) = &patch.ttl {
         out.default_ttl_secs = Some(resolve_cache_duration_secs(ttl)?);
     }
-    if let Some(capacity) = &patch.capacity {
-        out.capacity = Some(resolve_cache_capacity(capacity)?);
-    }
-    if let Some(max_body) = &patch.max_body {
-        out.max_body_bytes = Some(resolve_cache_size_bytes(max_body)?);
-    }
     if let Some(revalidate) = &patch.revalidate {
         out.revalidate = Some(revalidate.value);
-    }
-    if let Some(shared) = &patch.shared {
-        out.shared = Some(shared.value);
     }
     if let Some(on_error) = patch.on_error {
         out.failure_mode = Some(match on_error {
@@ -119,17 +110,8 @@ fn apply_cache_patch_resolved(config: &mut CacheConfigResolved, patch: &CacheCon
     if let Some(ttl) = patch.default_ttl_secs {
         config.default_ttl_secs = Some(ttl);
     }
-    if let Some(capacity) = patch.capacity {
-        config.capacity = Some(capacity);
-    }
-    if let Some(max_body_bytes) = patch.max_body_bytes {
-        config.max_body_bytes = Some(max_body_bytes);
-    }
     if let Some(revalidate) = patch.revalidate {
         config.revalidate = Some(revalidate);
-    }
-    if let Some(shared) = patch.shared {
-        config.shared = Some(shared);
     }
     if let Some(failure_mode) = patch.failure_mode {
         config.failure_mode = Some(failure_mode);
@@ -148,17 +130,8 @@ impl ProfileValue for CacheConfigPatchResolved {
         if child.default_ttl_secs.is_some() {
             parent.default_ttl_secs = child.default_ttl_secs;
         }
-        if child.capacity.is_some() {
-            parent.capacity = child.capacity;
-        }
-        if child.max_body_bytes.is_some() {
-            parent.max_body_bytes = child.max_body_bytes;
-        }
         if child.revalidate.is_some() {
             parent.revalidate = child.revalidate;
-        }
-        if child.shared.is_some() {
-            parent.shared = child.shared;
         }
         if child.failure_mode.is_some() {
             parent.failure_mode = child.failure_mode;
@@ -192,40 +165,4 @@ fn resolve_cache_duration_secs(ttl: &CacheDurationSpec) -> Result<u64> {
     Ok(amount.saturating_mul(multiplier))
 }
 
-fn resolve_cache_capacity(capacity: &CacheCapacitySpec) -> Result<CacheCapacityResolved> {
-    match capacity {
-        CacheCapacitySpec::Entries { amount } => {
-            let entries = amount.base10_parse::<u64>()?;
-            if entries == 0 {
-                return Err(syn::Error::new(
-                    amount.span(),
-                    "cache capacity entries must be greater than zero",
-                ));
-            }
-            Ok(CacheCapacityResolved::Entries(entries))
-        }
-        CacheCapacitySpec::Bytes(size) => Ok(CacheCapacityResolved::Bytes(
-            resolve_cache_size_bytes(size)?,
-        )),
-    }
-}
-
-fn resolve_cache_size_bytes(size: &CacheSizeSpec) -> Result<u64> {
-    let amount = size.amount.base10_parse::<u64>()?;
-    if amount == 0 {
-        return Err(syn::Error::new(
-            size.amount.span(),
-            "cache size must be greater than zero",
-        ));
-    }
-    let multiplier = match size.unit {
-        CacheSizeUnit::Bytes => 1,
-        CacheSizeUnit::KiB => 1024,
-        CacheSizeUnit::MiB => 1024 * 1024,
-        CacheSizeUnit::GiB => 1024 * 1024 * 1024,
-    };
-    amount
-        .checked_mul(multiplier)
-        .ok_or_else(|| syn::Error::new(size.amount.span(), "cache size is too large to represent"))
-}
 

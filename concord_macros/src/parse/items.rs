@@ -92,8 +92,10 @@ impl Parse for LayerDefTaggedScope {
                 policy.timeout = Some(normalize_policy_expr(t));
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::use_auth) {
-                auth_uses.push(content.parse::<AuthUseDecl>()?);
-                let _ = content.parse::<Option<Token![,]>>()?;
+                return Err(syn::Error::new(
+                    content.span(),
+                    "`use_auth` was removed in v4; use `auth ...`",
+                ));
             } else if content.peek(kw::auth) {
                 content.parse::<kw::auth>()?;
                 auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
@@ -107,12 +109,6 @@ impl Parse for LayerDefTaggedScope {
                 }
                 match parse_cache_decl(&content)? {
                     CacheDecl::Spec(spec) => cache = Some(spec),
-                    CacheDecl::Profiles(_) => {
-                        return Err(syn::Error::new(
-                            content.span(),
-                            "cache profiles are only allowed in client blocks",
-                        ));
-                    }
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::retry) {
@@ -125,12 +121,6 @@ impl Parse for LayerDefTaggedScope {
                             ));
                         }
                         retry = Some(spec);
-                    }
-                    RetryDecl::Profiles(_) => {
-                        return Err(syn::Error::new(
-                            content.span(),
-                            "retry profiles are only allowed in client blocks",
-                        ));
                     }
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
