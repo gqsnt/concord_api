@@ -40,6 +40,7 @@ pub struct LayerIr {
 #[derive(Debug)]
 pub struct EndpointIr {
     pub name: Ident,
+    pub alias: Option<Ident>,
     pub scope_modules: Vec<Ident>,
     pub method: Ident,
     pub route_pieces: Vec<PathPiece>,

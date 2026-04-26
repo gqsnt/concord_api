@@ -12,6 +12,7 @@ mod rate_limit;
 mod request;
 mod response_classify;
 mod retry;
+pub mod runtime;
 mod runtime_hooks;
 mod runtime_state;
 mod secret;
@@ -80,15 +81,17 @@ pub mod prelude {
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
         RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitKey, RateLimitKeyPart,
-        RateLimitKeyValue, RateLimitObservation, RateLimitPermit, RateLimitPlan,
+        RateLimitKeyValue, RateLimitObservation, RateLimitObserver, RateLimitPermit, RateLimitPlan,
         RateLimitResponseAction, RateLimitResponseContext, RateLimitResponsePolicy,
-        RateLimitSetting, RateLimitTarget, RateLimitWindow, RateLimiter, parse_retry_after,
+        RateLimitScopeHint, RateLimitSetting, RateLimitTarget, RateLimitWindow, RateLimiter,
+        parse_retry_after,
     };
     pub use crate::request::{PaginatedRequest, PendingRequest};
     pub use crate::retry::{
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,
         RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy, RetrySetting,
     };
+    pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{
         HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext, RuntimeHooks,
         TransportErrorHookContext,
@@ -99,4 +102,17 @@ pub mod prelude {
     pub use crate::transport::{DecodedResponse, RequestMeta};
     pub use crate::transport::{ReqwestTransport, Transport};
     pub use crate::types::{HostLabelSource, HostParts as HostMap, HostSpec, RouteParts, UrlPath};
+}
+
+pub mod advanced {
+    pub use crate::auth::{
+        CredentialMaterial, CredentialProvider, CredentialSlot, SecretCredential,
+    };
+    pub use crate::cache::{CacheConfig, CacheStore};
+    pub use crate::inflight::{InflightPolicy, InflightRegistry};
+    pub use crate::rate_limit::{RateLimitPlan, RateLimitResponsePolicy, RateLimiter};
+    pub use crate::retry::RetryPolicy;
+    pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};
+    pub use crate::runtime_hooks::RuntimeHooks;
+    pub use crate::transport::Transport;
 }

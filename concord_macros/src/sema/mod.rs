@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use syn::{Expr, Ident, LitStr, Result, Type, spanned::Spanned};
 
 include!("ir.rs");
+include!("profiles.rs");
 pub fn analyze(ast: ApiFile) -> Result<Ir> {
     let client_name = ast.client.name.clone();
     let mod_name_str = emit_helpers::to_snake(&client_name.to_string());

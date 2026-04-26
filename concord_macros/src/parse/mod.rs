@@ -1,4 +1,4 @@
-﻿// concord_macros/src/parse.rs
+// concord_macros/src/parse.rs
 use crate::ast::*;
 use crate::kw;
 use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
@@ -31,7 +31,7 @@ impl Parse for ClientDef {
         let mut host: Option<LitStr> = None;
         let mut vars: Option<VarsBlock> = None;
         let mut auth_vars: Option<VarsBlock> = None;
-        let mut auth: Option<AuthBlock> = None;
+        let mut auth_credentials: Vec<AuthCredentialDecl> = Vec::new();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut cache_profiles: Option<CacheProfilesBlock> = None;
         let mut cache: Option<CacheSpec> = None;
@@ -41,7 +41,22 @@ impl Parse for ClientDef {
         let mut policy = PolicyBlocks::default();
 
         while !content.is_empty() {
-            if content.peek(kw::scheme) {
+            if content.peek(kw::base) {
+                content.parse::<kw::base>()?;
+                let v: Ident = content.parse()?;
+                scheme = Some(match v.to_string().as_str() {
+                    "http" => SchemeLit::Http,
+                    "https" => SchemeLit::Https,
+                    _ => {
+                        return Err(syn::Error::new(
+                            v.span(),
+                            "base scheme must be `http` or `https`",
+                        ));
+                    }
+                });
+                host = Some(content.parse::<LitStr>()?);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::scheme) {
                 content.parse::<kw::scheme>()?;
                 content.parse::<Token![:]>()?;
                 let v: Ident = content.parse()?;
@@ -66,22 +81,42 @@ impl Parse for ClientDef {
                 vars = Some(content.parse::<VarsBlockTaggedVars>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::secret) {
-                if auth_vars.is_some() {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "duplicate `secret {}` in client",
-                    ));
+                content.parse::<kw::secret>()?;
+                if content.peek(token::Brace) {
+                    if auth_vars.is_some() {
+                        return Err(syn::Error::new(
+                            name.span(),
+                            "duplicate `secret {}` in client",
+                        ));
+                    }
+                    auth_vars = Some(parse_vars_block(&content)?);
+                } else {
+                    let decl: VarDeclNoWire = content.parse()?;
+                    auth_vars
+                        .get_or_insert_with(|| VarsBlock { decls: Vec::new() })
+                        .decls
+                        .push(decl);
                 }
-                auth_vars = Some(content.parse::<VarsBlockTaggedSecret>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::auth) {
-                if auth.is_some() {
+                content.parse::<kw::auth>()?;
+                if !content.peek(token::Brace) {
+                    auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
+                    let _ = content.parse::<Option<Token![,]>>()?;
+                    continue;
+                }
+                if !auth_credentials.is_empty() {
                     return Err(syn::Error::new(
                         name.span(),
                         "duplicate `auth {}` in client",
                     ));
                 }
-                auth = Some(content.parse::<AuthBlockTagged>()?.0);
+                let block = parse_auth_block_after_keyword(&content)?;
+                auth_credentials.extend(block.credentials);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::credential) {
+                content.parse::<kw::credential>()?;
+                auth_credentials.push(parse_auth_credential_after_keyword(&content, true)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::use_auth) {
                 auth_uses.push(content.parse::<AuthUseDecl>()?);
@@ -147,8 +182,29 @@ impl Parse for ClientDef {
             } else if content.peek(kw::headers) {
                 policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::header) {
+                policy
+                    .headers
+                    .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
+                    .stmts
+                    .push(parse_v3_single_policy_stmt(
+                        &content,
+                        PolicyBlockKind::Headers,
+                    )?);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::query) {
-                policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
+                if content.peek2(token::Brace) {
+                    policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
+                } else {
+                    policy
+                        .query
+                        .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
+                        .stmts
+                        .push(parse_v3_single_policy_stmt(
+                            &content,
+                            PolicyBlockKind::Query,
+                        )?);
+                }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::timeout) {
                 content.parse::<kw::timeout>()?;
@@ -171,7 +227,9 @@ impl Parse for ClientDef {
         Ok(Self {
             vars,
             auth_vars,
-            auth,
+            auth: (!auth_credentials.is_empty()).then_some(AuthBlock {
+                credentials: auth_credentials,
+            }),
             auth_uses,
             cache_profiles,
             cache,

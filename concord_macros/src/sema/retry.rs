@@ -5,70 +5,31 @@ fn resolve_retry_profiles(
         return Ok(BTreeMap::new());
     };
 
-    let mut raw: BTreeMap<String, &RetryProfileDef> = BTreeMap::new();
-    for profile in &block.profiles {
-        let key = profile.name.to_string();
-        if raw.insert(key.clone(), profile).is_some() {
-            return Err(syn::Error::new(
-                profile.name.span(),
-                format!("duplicate retry profile `{key}`"),
-            ));
-        }
-    }
+    let defaults = block.default.iter().cloned().collect::<Vec<_>>();
+    let patches = resolve_profile_set(
+        "retry",
+        block
+            .profiles
+            .iter()
+            .map(|profile| {
+                Ok((
+                    profile.name.clone(),
+                    profile.extends.clone(),
+                    resolve_retry_patch(&profile.patch)?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?,
+        defaults,
+    )?;
 
-    let mut resolved = BTreeMap::new();
-    let mut stack = Vec::new();
-    for profile in &block.profiles {
-        resolve_retry_profile(&profile.name, &raw, &mut resolved, &mut stack)?;
-    }
-    if let Some(default) = &block.default
-        && !resolved.contains_key(&default.to_string())
-    {
-        return Err(syn::Error::new(
-            default.span(),
-            format!("unknown default retry profile `{default}`"),
-        ));
-    }
-
-    Ok(resolved)
-}
-
-fn resolve_retry_profile(
-    name: &Ident,
-    raw: &BTreeMap<String, &RetryProfileDef>,
-    resolved: &mut BTreeMap<String, RetryConfigResolved>,
-    stack: &mut Vec<String>,
-) -> Result<RetryConfigResolved> {
-    let key = name.to_string();
-    if let Some(config) = resolved.get(&key) {
-        return Ok(config.clone());
-    }
-    if stack.iter().any(|item| item == &key) {
-        return Err(syn::Error::new(
-            name.span(),
-            format!("retry profile inheritance cycle involving `{key}`"),
-        ));
-    }
-
-    let Some(profile) = raw.get(&key) else {
-        return Err(syn::Error::new(
-            name.span(),
-            format!("unknown retry profile `{key}`"),
-        ));
-    };
-
-    stack.push(key.clone());
-    let mut config = if let Some(base) = &profile.extends {
-        resolve_retry_profile(base, raw, resolved, stack)?
-    } else {
-        RetryConfigResolved::default()
-    };
-    let patch = resolve_retry_patch(&profile.patch)?;
-    apply_retry_patch(&mut config, &patch);
-    stack.pop();
-
-    resolved.insert(key, config.clone());
-    Ok(config)
+    Ok(patches
+        .into_iter()
+        .map(|(name, patch)| {
+            let mut config = RetryConfigResolved::default();
+            apply_retry_patch(&mut config, &patch);
+            (name, config)
+        })
+        .collect())
 }
 
 fn resolve_client_retry(
@@ -171,6 +132,41 @@ fn apply_retry_patch(config: &mut RetryConfigResolved, patch: &RetryPatchResolve
     }
     if let Some(idempotency) = &patch.idempotency {
         config.idempotency = idempotency.clone();
+    }
+}
+
+impl ProfileValue for RetryPatchResolved {
+    fn empty() -> Self {
+        Self::default()
+    }
+
+    fn merge(mut parent: Self, child: Self) -> Self {
+        if child.attempts.is_some() {
+            parent.attempts = child.attempts;
+        }
+        if child.methods.is_some() {
+            parent.methods = child.methods;
+        }
+        if child.statuses.is_some() {
+            parent.statuses = child.statuses;
+        }
+        if child.transport_errors.is_some() {
+            parent.transport_errors = child.transport_errors;
+        }
+        if child.backoff.is_some() {
+            parent.backoff = child.backoff;
+        }
+        if child.respect_retry_after.is_some() {
+            parent.respect_retry_after = child.respect_retry_after;
+        }
+        if child.idempotency.is_some() {
+            parent.idempotency = child.idempotency;
+        }
+        parent
+    }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
     }
 }
 

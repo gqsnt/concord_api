@@ -66,6 +66,8 @@ pub struct RateLimitObservation {
     pub limited: bool,
     pub delay: Option<Duration>,
     pub target: RateLimitTarget,
+    pub scope: Option<RateLimitScopeHint>,
+    pub retry_after: Option<Duration>,
 }
 
 impl RateLimitObservation {
@@ -80,12 +82,15 @@ impl RateLimitObservation {
             limited: true,
             delay: None,
             target: RateLimitTarget::current_plan_or_endpoint(),
+            scope: Some(RateLimitScopeHint::CurrentEndpoint),
+            retry_after: None,
         }
     }
 
     #[inline]
     pub fn with_delay(mut self, delay: Duration) -> Self {
         self.delay = Some(delay);
+        self.retry_after = Some(delay);
         self
     }
 
@@ -94,6 +99,36 @@ impl RateLimitObservation {
         self.target = target;
         self
     }
+
+    #[inline]
+    pub fn scope_header(mut self, ctx: &RateLimitResponseContext<'_>, name: &str) -> Self {
+        if let Some(value) = ctx.headers.get(name).and_then(|v| v.to_str().ok()) {
+            let kind = value.trim();
+            if !kind.is_empty() {
+                self.scope = Some(RateLimitScopeHint::BucketKind(kind.to_string()));
+                self.target = RateLimitTarget::bucket_kind(
+                    kind.to_string(),
+                    RateLimitTarget::current_plan_or_endpoint(),
+                );
+            }
+        }
+        self
+    }
+
+    #[inline]
+    pub fn retry_after_header(mut self, ctx: &RateLimitResponseContext<'_>) -> Self {
+        if let Some(delay) = parse_retry_after(ctx.headers) {
+            self.delay = Some(delay);
+            self.retry_after = Some(delay);
+        }
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RateLimitScopeHint {
+    BucketKind(String),
+    CurrentEndpoint,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -151,6 +186,19 @@ pub trait RateLimitResponsePolicy: Send + Sync + 'static {
     fn observe(&self, ctx: &RateLimitResponseContext<'_>) -> RateLimitObservation;
 }
 
+pub trait RateLimitObserver: Send + Sync + 'static {
+    fn observe(&self, ctx: RateLimitResponseContext<'_>) -> RateLimitObservation;
+}
+
+impl<T> RateLimitResponsePolicy for T
+where
+    T: RateLimitObserver,
+{
+    fn observe(&self, ctx: &RateLimitResponseContext<'_>) -> RateLimitObservation {
+        RateLimitObserver::observe(self, ctx.clone())
+    }
+}
+
 #[derive(Default)]
 pub struct DefaultRateLimitResponsePolicy;
 
@@ -160,12 +208,9 @@ impl RateLimitResponsePolicy for DefaultRateLimitResponsePolicy {
             return RateLimitObservation::continue_();
         }
 
-        let mut observation = RateLimitObservation::limited()
-            .with_target(RateLimitTarget::current_plan_or_endpoint());
-        if let Some(delay) = parse_retry_after(ctx.headers) {
-            observation = observation.with_delay(delay);
-        }
-        observation
+        RateLimitObservation::limited()
+            .with_target(RateLimitTarget::current_plan_or_endpoint())
+            .retry_after_header(ctx)
     }
 }
 

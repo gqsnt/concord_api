@@ -73,6 +73,57 @@ pub enum CacheMode {
     Http,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CachePlan {
+    pub mode: CachePlanMode,
+    pub ttl: Option<Duration>,
+    pub revalidate: bool,
+    pub stale_on_error: bool,
+}
+
+#[allow(dead_code)]
+impl CachePlan {
+    #[inline]
+    pub fn off() -> Self {
+        Self {
+            mode: CachePlanMode::Off,
+            ttl: None,
+            revalidate: false,
+            stale_on_error: false,
+        }
+    }
+
+    #[inline]
+    pub fn ttl(ttl: Duration) -> Self {
+        Self {
+            mode: CachePlanMode::Ttl,
+            ttl: Some(ttl),
+            revalidate: false,
+            stale_on_error: false,
+        }
+    }
+
+    #[inline]
+    pub fn http() -> Self {
+        Self {
+            mode: CachePlanMode::Http,
+            ttl: None,
+            revalidate: true,
+            stale_on_error: false,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum CachePlanMode {
+    Off,
+    Ttl,
+    #[default]
+    Http,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CacheCapacity {
     Entries(u64),

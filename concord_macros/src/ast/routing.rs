@@ -59,6 +59,7 @@ pub struct LayerDef {
 pub struct EndpointDef {
     pub method: Ident, // "GET", "POST", ...
     pub name: Ident,
+    pub alias: Option<Ident>,
     pub route: RouteExpr,
     pub params: Vec<VarDeclNoWire>,
 

@@ -2,6 +2,7 @@ use crate::cache::{CacheStore, NoopCacheStore};
 use crate::inflight::{InflightPolicy, InflightRegistry, NoopInflightPolicy};
 use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
+use crate::runtime::RuntimeConfig;
 use crate::runtime_hooks::{NoopRuntimeHooks, RuntimeHooks};
 use std::sync::Arc;
 
@@ -31,6 +32,24 @@ impl Default for ClientRuntimeState {
 }
 
 impl ClientRuntimeState {
+    #[inline]
+    pub fn from_config(config: RuntimeConfig) -> Self {
+        Self {
+            hooks: config.hooks,
+            cache_store: config.cache_store,
+            inflight_policy: config.inflight_policy,
+            inflight_registry: config.inflight_registry,
+            rate_limiter: config.rate_limiter,
+            retry_policy: config.retry_policy,
+            max_auth_retries: config.auth.max_retries,
+        }
+    }
+
+    #[inline]
+    pub fn apply_config(&mut self, config: RuntimeConfig) {
+        *self = Self::from_config(config);
+    }
+
     #[inline]
     pub fn hooks(&self) -> &Arc<dyn RuntimeHooks> {
         &self.hooks
@@ -94,5 +113,11 @@ impl ClientRuntimeState {
     #[inline]
     pub fn set_rate_limiter(&mut self, rate_limiter: Arc<dyn RateLimiter>) {
         self.rate_limiter = rate_limiter;
+    }
+}
+
+impl From<RuntimeConfig> for ClientRuntimeState {
+    fn from(value: RuntimeConfig) -> Self {
+        Self::from_config(value)
     }
 }

@@ -1,5 +1,6 @@
 // concord_macros/src/kw.rs
 syn::custom_keyword!(client);
+syn::custom_keyword!(base);
 syn::custom_keyword!(scheme);
 syn::custom_keyword!(host);
 syn::custom_keyword!(vars);
@@ -25,6 +26,7 @@ syn::custom_keyword!(shared);
 syn::custom_keyword!(on_error);
 syn::custom_keyword!(ignore);
 syn::custom_keyword!(serve_stale);
+syn::custom_keyword!(stale_on_error);
 syn::custom_keyword!(retry);
 syn::custom_keyword!(rate_limit);
 syn::custom_keyword!(profile);
@@ -56,6 +58,13 @@ syn::custom_keyword!(retry_after);
 syn::custom_keyword!(honor);
 syn::custom_keyword!(idempotency);
 syn::custom_keyword!(header);
+syn::custom_keyword!(bearer);
+syn::custom_keyword!(basic);
+syn::custom_keyword!(certificate);
+syn::custom_keyword!(api_key);
+syn::custom_keyword!(access_token);
+syn::custom_keyword!(endpoint);
+syn::custom_keyword!(observe);
 
 syn::custom_keyword!(prefix);
 syn::custom_keyword!(path);

@@ -153,6 +153,22 @@ fn parse_rate_limit_bucket(input: ParseStream<'_>) -> Result<RateLimitBucketSpec
             let every: LitInt = content.parse()?;
             let unit = parse_rate_limit_duration_unit(&content)?;
             windows.push(RateLimitWindowSpec { max, every, unit });
+        } else if content.peek(LitInt) {
+            let max: LitInt = content.parse()?;
+            content.parse::<Token![/]>()?;
+            let every: LitInt = content.parse()?;
+            let suffix = every.suffix();
+            let unit = match suffix {
+                "s" => RateLimitDurationUnit::Seconds,
+                "m" => RateLimitDurationUnit::Minutes,
+                _ => {
+                    return Err(syn::Error::new(
+                        every.span(),
+                        "rate_limit shorthand duration must use `s` or `m`, e.g. `500 / 10s`",
+                    ));
+                }
+            };
+            windows.push(RateLimitWindowSpec { max, every, unit });
         } else {
             let tt: TokenTree = content.parse()?;
             return Err(syn::Error::new(

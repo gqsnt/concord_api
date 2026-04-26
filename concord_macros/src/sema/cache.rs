@@ -5,68 +5,27 @@ fn resolve_cache_profiles(
         return Ok(BTreeMap::new());
     };
 
-    let mut raw: BTreeMap<String, &CacheProfileDef> = BTreeMap::new();
-    for profile in &block.profiles {
-        let key = profile.name.to_string();
-        if raw.insert(key.clone(), profile).is_some() {
-            return Err(syn::Error::new(
-                profile.name.span(),
-                format!("duplicate cache profile `{key}`"),
-            ));
-        }
-    }
+    let defaults = block.default.iter().cloned().collect::<Vec<_>>();
+    let patches = resolve_profile_set(
+        "cache",
+        block
+            .profiles
+            .iter()
+            .map(|profile| {
+                Ok((
+                    profile.name.clone(),
+                    profile.extends.clone(),
+                    resolve_cache_patch(&profile.patch)?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?,
+        defaults,
+    )?;
 
-    let mut resolved = BTreeMap::new();
-    let mut stack = Vec::new();
-    for profile in &block.profiles {
-        resolve_cache_profile(&profile.name, &raw, &mut resolved, &mut stack)?;
-    }
-    if let Some(default) = &block.default
-        && !resolved.contains_key(&default.to_string())
-    {
-        return Err(syn::Error::new(
-            default.span(),
-            format!("unknown default cache profile `{default}`"),
-        ));
-    }
-
-    Ok(resolved)
-}
-
-fn resolve_cache_profile(
-    name: &Ident,
-    raw: &BTreeMap<String, &CacheProfileDef>,
-    resolved: &mut BTreeMap<String, CacheConfigResolved>,
-    stack: &mut Vec<String>,
-) -> Result<CacheConfigResolved> {
-    let key = name.to_string();
-    if let Some(config) = resolved.get(&key) {
-        return Ok(config.clone());
-    }
-    if stack.iter().any(|item| item == &key) {
-        return Err(syn::Error::new(
-            name.span(),
-            format!("cache profile inheritance cycle involving `{key}`"),
-        ));
-    }
-    let Some(profile) = raw.get(&key) else {
-        return Err(syn::Error::new(
-            name.span(),
-            format!("unknown cache profile `{key}`"),
-        ));
-    };
-
-    stack.push(key.clone());
-    let mut config = if let Some(base) = &profile.extends {
-        resolve_cache_profile(base, raw, resolved, stack)?
-    } else {
-        CacheConfigResolved::default()
-    };
-    apply_cache_patch(&mut config, &profile.patch)?;
-    stack.pop();
-
-    resolved.insert(key, config.clone());
-    Ok(config)
+    Ok(patches
+        .into_iter()
+        .map(|(name, patch)| (name, cache_config_from_patch(&patch)))
+        .collect())
 }
 
 fn resolve_client_cache(
@@ -124,12 +83,6 @@ fn resolve_cache_spec(
     }
 }
 
-fn apply_cache_patch(config: &mut CacheConfigResolved, patch: &CachePatch) -> Result<()> {
-    let patch = resolve_cache_patch(patch)?;
-    apply_cache_patch_resolved(config, &patch);
-    Ok(())
-}
-
 fn resolve_cache_patch(patch: &CachePatch) -> Result<CacheConfigPatchResolved> {
     let mut out = CacheConfigPatchResolved::default();
     if patch.http.is_some() {
@@ -180,6 +133,41 @@ fn apply_cache_patch_resolved(config: &mut CacheConfigResolved, patch: &CacheCon
     }
     if let Some(failure_mode) = patch.failure_mode {
         config.failure_mode = Some(failure_mode);
+    }
+}
+
+impl ProfileValue for CacheConfigPatchResolved {
+    fn empty() -> Self {
+        Self::default()
+    }
+
+    fn merge(mut parent: Self, child: Self) -> Self {
+        if child.http.is_some() {
+            parent.http = child.http;
+        }
+        if child.default_ttl_secs.is_some() {
+            parent.default_ttl_secs = child.default_ttl_secs;
+        }
+        if child.capacity.is_some() {
+            parent.capacity = child.capacity;
+        }
+        if child.max_body_bytes.is_some() {
+            parent.max_body_bytes = child.max_body_bytes;
+        }
+        if child.revalidate.is_some() {
+            parent.revalidate = child.revalidate;
+        }
+        if child.shared.is_some() {
+            parent.shared = child.shared;
+        }
+        if child.failure_mode.is_some() {
+            parent.failure_mode = child.failure_mode;
+        }
+        parent
+    }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
     }
 }
 

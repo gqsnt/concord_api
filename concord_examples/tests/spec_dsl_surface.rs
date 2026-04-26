@@ -212,3 +212,46 @@ async fn generated_runtime_hooks_are_used_by_clones_when_installed_before_clone(
     assert_eq!(pre_send_count.load(Ordering::SeqCst), 1);
     h.finish();
 }
+
+#[tokio::test]
+async fn v3_tree_facade_inline_leaf_and_await_work() {
+    api! {
+        client ApiSurfaceV3 {
+            base https "example.com"
+            secret api_key: String
+            credential upstream = api_key(secret.api_key)
+
+            header "x-client" = "v3"
+        }
+
+        scope protected {
+            path["me"]
+            auth header "X-Api-Key" = upstream
+
+            GET Me
+                as me
+                path["profile"]
+                query verbose = true
+                -> Json<String>
+        }
+    }
+
+    use api_surface_v3::*;
+
+    let (transport, h) = mock()
+        .reply(MockReply::ok_json(json_bytes(&"alice".to_string())))
+        .build();
+
+    let api = ApiSurfaceV3::new_with_transport("secret".to_string(), transport);
+    let out = api.protected().me().await.unwrap();
+
+    assert_eq!(out, "alice");
+    let reqs = h.recorded();
+    assert_request(&reqs[0])
+        .path("/me/profile")
+        .query_has("verbose", "true")
+        .header("x-client", "v3")
+        .header("x-api-key", "secret");
+
+    h.finish();
+}

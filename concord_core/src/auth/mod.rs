@@ -5,6 +5,7 @@ mod future;
 mod http;
 mod ids;
 mod materials;
+mod plan;
 mod providers;
 mod usage;
 mod util;
@@ -26,6 +27,10 @@ pub use http::{
 };
 pub use ids::{AuthIdentity, AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential, ClientCertificate};
+pub use plan::{
+    AuthAttemptSummary, AuthChallengePolicy, AuthDecision, AuthModePlan, AuthPlacement, AuthPlan,
+    AuthRequirement, CredentialRef, CustomAuthPlacement,
+};
 #[cfg(feature = "json")]
 pub use providers::OAuth2ClientCredentialsProvider;
 pub use providers::{

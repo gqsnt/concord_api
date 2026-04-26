@@ -5,70 +5,21 @@ fn resolve_rate_limit_profiles(
         return Ok(BTreeMap::new());
     };
 
-    let mut raw: BTreeMap<String, &RateLimitProfileDef> = BTreeMap::new();
-    for profile in &block.profiles {
-        let key = profile.name.to_string();
-        if raw.insert(key.clone(), profile).is_some() {
-            return Err(syn::Error::new(
-                profile.name.span(),
-                format!("duplicate rate_limit profile `{key}`"),
-            ));
-        }
-    }
-
-    let mut resolved = BTreeMap::new();
-    let mut stack = Vec::new();
-    for profile in &block.profiles {
-        resolve_rate_limit_profile(&profile.name, &raw, &mut resolved, &mut stack)?;
-    }
-    for default in &block.default {
-        if !resolved.contains_key(&default.to_string()) {
-            return Err(syn::Error::new(
-                default.span(),
-                format!("unknown default rate_limit profile `{default}`"),
-            ));
-        }
-    }
-
-    Ok(resolved)
-}
-
-fn resolve_rate_limit_profile(
-    name: &Ident,
-    raw: &BTreeMap<String, &RateLimitProfileDef>,
-    resolved: &mut BTreeMap<String, RateLimitPlanResolved>,
-    stack: &mut Vec<String>,
-) -> Result<RateLimitPlanResolved> {
-    let key = name.to_string();
-    if let Some(plan) = resolved.get(&key) {
-        return Ok(plan.clone());
-    }
-    if stack.iter().any(|item| item == &key) {
-        return Err(syn::Error::new(
-            name.span(),
-            format!("rate_limit profile inheritance cycle involving `{key}`"),
-        ));
-    }
-
-    let Some(profile) = raw.get(&key) else {
-        return Err(syn::Error::new(
-            name.span(),
-            format!("unknown rate_limit profile `{key}`"),
-        ));
-    };
-
-    stack.push(key.clone());
-    let mut plan = if let Some(base) = &profile.extends {
-        resolve_rate_limit_profile(base, raw, resolved, stack)?
-    } else {
-        RateLimitPlanResolved::default()
-    };
-    let mut own = resolve_rate_limit_plan_spec(&profile.plan, &key)?;
-    plan.buckets.append(&mut own.buckets);
-    stack.pop();
-
-    resolved.insert(key, plan.clone());
-    Ok(plan)
+    resolve_profile_set(
+        "rate_limit",
+        block
+            .profiles
+            .iter()
+            .map(|profile| {
+                Ok((
+                    profile.name.clone(),
+                    profile.extends.clone(),
+                    resolve_rate_limit_plan_spec(&profile.plan, &profile.name.to_string())?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?,
+        block.default.clone(),
+    )
 }
 
 fn resolve_client_rate_limit(
@@ -213,6 +164,21 @@ fn resolve_rate_limit_plan_spec(
         });
     }
     Ok(out)
+}
+
+impl ProfileValue for RateLimitPlanResolved {
+    fn empty() -> Self {
+        Self::default()
+    }
+
+    fn merge(mut parent: Self, mut child: Self) -> Self {
+        parent.buckets.append(&mut child.buckets);
+        parent
+    }
+
+    fn validate(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 fn resolve_rate_limit_key_spec(spec: &RateLimitKeySpec) -> RateLimitKeyResolved {

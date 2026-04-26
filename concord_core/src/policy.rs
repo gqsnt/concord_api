@@ -6,6 +6,13 @@ use core::time::Duration;
 use http::header::{ACCEPT, CONTENT_TYPE, HeaderName};
 use http::{HeaderMap, HeaderValue};
 
+pub mod feature;
+pub mod resolved;
+#[allow(unused_imports)]
+pub use feature::FeatureUse;
+#[allow(unused_imports)]
+pub use resolved::ResolvedPolicy;
+
 pub type PolicyParts = (
     HeaderMap,
     Vec<(String, String)>,

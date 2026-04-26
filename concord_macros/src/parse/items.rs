@@ -67,8 +67,23 @@ impl Parse for LayerDefTaggedScope {
             } else if content.peek(kw::headers) {
                 policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::header) {
+                policy
+                    .headers
+                    .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
+                    .stmts
+                    .push(parse_v3_single_policy_stmt(&content, PolicyBlockKind::Headers)?);
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::query) {
-                policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
+                if content.peek2(token::Brace) {
+                    policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
+                } else {
+                    policy
+                        .query
+                        .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
+                        .stmts
+                        .push(parse_v3_single_policy_stmt(&content, PolicyBlockKind::Query)?);
+                }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::timeout) {
                 content.parse::<kw::timeout>()?;
@@ -78,6 +93,10 @@ impl Parse for LayerDefTaggedScope {
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::use_auth) {
                 auth_uses.push(content.parse::<AuthUseDecl>()?);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::auth) {
+                content.parse::<kw::auth>()?;
+                auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::cache) {
                 if cache.is_some() {
@@ -222,6 +241,15 @@ impl Parse for EndpointDef {
             (Vec::new(), None)
         };
 
+        let alias = if input.peek(Token![as]) {
+            input.parse::<Token![as]>()?;
+            Some(input.parse::<Ident>()?)
+        } else {
+            None
+        };
+
+        let leading_parts = parse_endpoint_inline_parts(input, &name)?;
+
         if !input.peek(Token![->]) {
             return Err(syn::Error::new(
                 input.span(),
@@ -230,21 +258,24 @@ impl Parse for EndpointDef {
         }
 
         let (response, map) = parse_endpoint_response_spec(input)?;
+        let trailing_parts = parse_endpoint_inline_parts(input, &name)?;
+        let inline_parts = leading_parts.merge(trailing_parts, &name)?;
 
         if input.peek(token::Semi) {
             let _semi: token::Semi = input.parse()?;
             return Ok(Self {
                 method,
                 name,
-                route: RouteExpr { atoms: Vec::new() },
+                alias,
+                route: inline_parts.route,
                 params,
-                policy: PolicyBlocks::default(),
-                auth_uses: Vec::new(),
-                cache: None,
-                retry: None,
-                rate_limit: None,
-                rate_limit_keys: Vec::new(),
-                paginate: None,
+                policy: inline_parts.policy,
+                auth_uses: inline_parts.auth_uses,
+                cache: inline_parts.cache,
+                retry: inline_parts.retry,
+                rate_limit: inline_parts.rate_limit,
+                rate_limit_keys: inline_parts.rate_limit_keys,
+                paginate: inline_parts.paginate,
                 body,
                 response,
                 map,
@@ -252,19 +283,33 @@ impl Parse for EndpointDef {
         }
 
         if !input.peek(token::Brace) {
-            return Err(syn::Error::new(
-                input.span(),
-                "expected endpoint block or `;` after endpoint header",
-            ));
+            return Ok(Self {
+                method,
+                name,
+                alias,
+                route: inline_parts.route,
+                params,
+                policy: inline_parts.policy,
+                auth_uses: inline_parts.auth_uses,
+                cache: inline_parts.cache,
+                retry: inline_parts.retry,
+                rate_limit: inline_parts.rate_limit,
+                rate_limit_keys: inline_parts.rate_limit_keys,
+                paginate: inline_parts.paginate,
+                body,
+                response,
+                map,
+            });
         }
 
         let content;
         braced!(content in input);
-        let parts = parse_endpoint_block_parts(&content, &name)?;
+        let parts = inline_parts.merge(parse_endpoint_block_parts(&content, &name)?, &name)?;
 
         Ok(Self {
             method,
             name,
+            alias,
             route: parts.route,
             params,
             policy: parts.policy,

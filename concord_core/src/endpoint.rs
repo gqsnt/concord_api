@@ -9,6 +9,13 @@ use crate::types::RouteParts;
 use http::Method;
 use std::marker::PhantomData;
 
+pub mod plan;
+#[allow(unused_imports)]
+pub use plan::{
+    AttemptState, BodyPlan, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
+    RequestOverrides, RequestPlan, ResolvedRoute, ResponsePlan,
+};
+
 /// RoutePart modifie `RouteParts` (host + path).
 pub trait RoutePart<Cx: ClientContext, E>: Send + Sync + 'static {
     fn apply(

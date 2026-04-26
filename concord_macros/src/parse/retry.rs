@@ -83,7 +83,10 @@ fn parse_retry_patch_body(input: ParseStream<'_>) -> Result<RetryPatch> {
             set_retry_patch_field(&mut patch.methods, methods, input.span(), "methods")?;
         } else if input.peek(kw::on) {
             input.parse::<kw::on>()?;
-            if input.peek(kw::status) {
+            if input.peek(token::Bracket) {
+                let statuses = parse_lit_int_list(input)?;
+                set_retry_patch_field(&mut patch.statuses, statuses, input.span(), "status")?;
+            } else if input.peek(kw::status) {
                 input.parse::<kw::status>()?;
                 let statuses = parse_lit_int_list(input)?;
                 set_retry_patch_field(&mut patch.statuses, statuses, input.span(), "status")?;
@@ -124,19 +127,13 @@ fn parse_retry_patch_body(input: ParseStream<'_>) -> Result<RetryPatch> {
             input.parse::<kw::retry_after>()?;
             if input.peek(kw::honor) {
                 input.parse::<kw::honor>()?;
-                set_retry_patch_field(
-                    &mut patch.respect_retry_after,
-                    true,
-                    input.span(),
-                    "retry_after",
-                )?;
-            } else {
-                let tt: TokenTree = input.parse()?;
-                return Err(syn::Error::new(
-                    tt.span(),
-                    "expected `honor` after `retry_after`",
-                ));
             }
+            set_retry_patch_field(
+                &mut patch.respect_retry_after,
+                true,
+                input.span(),
+                "retry_after",
+            )?;
         } else if input.peek(kw::idempotency) {
             input.parse::<kw::idempotency>()?;
             if input.peek(kw::header) {

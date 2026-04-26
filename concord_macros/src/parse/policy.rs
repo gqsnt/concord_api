@@ -73,6 +73,50 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
     Ok(PolicyBlock { stmts })
 }
 
+fn parse_v3_single_policy_stmt(
+    input: ParseStream<'_>,
+    kind: PolicyBlockKind,
+) -> Result<PolicyStmt> {
+    let key = if kind == PolicyBlockKind::Headers {
+        input.parse::<kw::header>()?;
+        KeySpec::Str(input.parse::<LitStr>()?)
+    } else {
+        input.parse::<kw::query>()?;
+        if input.peek(LitStr) {
+            KeySpec::Str(input.parse::<LitStr>()?)
+        } else {
+            KeySpec::Ident(input.parse::<Ident>()?)
+        }
+    };
+
+    if input.peek(Token![-]) {
+        input.parse::<Token![-]>()?;
+        return Ok(PolicyStmt::Remove { key });
+    }
+
+    let op = if input.peek(Token![+=]) {
+        if kind == PolicyBlockKind::Headers {
+            return Err(syn::Error::new(
+                input.span(),
+                "`+=` is not allowed for singular `header` policy",
+            ));
+        }
+        input.parse::<Token![+=]>()?;
+        SetOp::Push
+    } else {
+        input.parse::<Token![=]>()?;
+        SetOp::Set
+    };
+    let value = if input.peek(kw::part) {
+        parse_policy_value(input)?
+    } else {
+        PolicyValue::Expr(normalize_policy_expr(parse_expr_until_comma_or_endpoint_arrow(
+            input,
+        )?))
+    };
+    Ok(PolicyStmt::Set { key, value, op })
+}
+
 impl Parse for PolicyStmt {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(Token![-]) {

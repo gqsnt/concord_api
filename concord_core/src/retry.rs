@@ -3,6 +3,9 @@ use http::header::{HeaderName, RETRY_AFTER};
 use http::{HeaderMap, Method, StatusCode};
 use std::time::Duration;
 
+#[allow(dead_code)]
+pub type RetryPlan = RetryConfig;
+
 #[derive(Debug)]
 pub enum RetryOutcome<'a> {
     Transport(&'a TransportError),

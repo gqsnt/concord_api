@@ -242,6 +242,38 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
+    pub fn configure(&mut self, f: impl FnOnce(&mut crate::runtime::RuntimeConfig)) -> &mut Self {
+        let mut config = crate::runtime::RuntimeConfig {
+            hooks: self.runtime_state.hooks().clone(),
+            cache_store: self.runtime_state.cache_store().clone(),
+            inflight_policy: self.runtime_state.inflight_policy().clone(),
+            inflight_registry: self.runtime_state.inflight_registry().clone(),
+            rate_limiter: self.runtime_state.rate_limiter().clone(),
+            retry_policy: self.runtime_state.retry_policy().clone(),
+            auth: crate::runtime::AuthRuntimeConfig {
+                max_retries: self.runtime_state.max_auth_retries(),
+            },
+            pagination: self.pagination_caps,
+            debug: crate::runtime::DebugConfig {
+                level: self.debug_level,
+                sink: self.debug_sink.clone(),
+            },
+        };
+        f(&mut config);
+        self.debug_level = config.debug.level;
+        self.debug_sink = config.debug.sink.clone();
+        self.pagination_caps = config.pagination;
+        Arc::make_mut(&mut self.runtime_state).apply_config(config);
+        self
+    }
+
+    #[inline]
+    pub fn with_configure(mut self, f: impl FnOnce(&mut crate::runtime::RuntimeConfig)) -> Self {
+        self.configure(f);
+        self
+    }
+
+    #[inline]
     pub fn request<E>(&self, ep: E) -> PendingRequest<'_, Cx, E, T>
     where
         E: Endpoint<Cx>,

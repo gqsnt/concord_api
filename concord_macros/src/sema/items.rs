@@ -421,6 +421,7 @@ fn analyze_endpoint(
     // 6) Produce final IR.
     Ok(EndpointIr {
         name: ed.name.clone(),
+        alias: ed.alias.clone(),
         scope_modules,
         method: ed.method.clone(),
         route_pieces,

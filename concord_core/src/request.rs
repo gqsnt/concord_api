@@ -10,6 +10,8 @@ use crate::policy::PolicyPatch;
 use crate::timeout::TimeoutOverride;
 use crate::transport::{DecodedResponse, RequestMeta};
 use std::collections::HashSet;
+use std::future::{Future, IntoFuture};
+use std::pin::Pin;
 use std::time::Duration;
 
 /// Options runtime partagées entre requête simple et pagination.
@@ -153,6 +155,32 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         <E::Pagination as PaginationPart<Cx, E>>::Ctrl: Controller<Cx, E>,
     {
         PaginatedRequest::new(self)
+    }
+
+    #[inline]
+    pub fn pages(self) -> PaginatedRequest<'a, Cx, E, T>
+    where
+        E: PaginatedEndpoint<Cx>,
+        <E::Response as ResponseSpec>::Output: PageItems,
+        <E::Pagination as PaginationPart<Cx, E>>::Ctrl: Controller<Cx, E>,
+    {
+        self.paginate()
+    }
+}
+
+impl<'a, Cx, E, T> IntoFuture for PendingRequest<'a, Cx, E, T>
+where
+    Cx: ClientContext + 'a,
+    E: Endpoint<Cx> + 'a,
+    T: crate::transport::Transport + 'a,
+    <E::Response as ResponseSpec>::Output: 'a,
+{
+    type Output = Result<<E::Response as ResponseSpec>::Output, ApiClientError>;
+    type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
+
+    #[inline]
+    fn into_future(self) -> Self::IntoFuture {
+        Box::pin(self.execute())
     }
 }
 

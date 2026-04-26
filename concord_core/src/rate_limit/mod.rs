@@ -15,8 +15,9 @@ pub use plan::{
     RateLimitPlan, RateLimitSetting, RateLimitWindow,
 };
 pub use response::{
-    DefaultRateLimitResponsePolicy, RateLimitObservation, RateLimitResponseAction,
-    RateLimitResponsePolicy, RateLimitTarget, parse_retry_after,
+    DefaultRateLimitResponsePolicy, RateLimitObservation, RateLimitObserver,
+    RateLimitResponseAction, RateLimitResponsePolicy, RateLimitScopeHint, RateLimitTarget,
+    parse_retry_after,
 };
 
 #[cfg(not(feature = "rate-limit-governor"))]

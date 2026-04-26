@@ -1,4 +1,5 @@
 struct VarsBlockTaggedVars(VarsBlock);
+#[allow(dead_code)]
 struct VarsBlockTaggedSecret(VarsBlock);
 impl Parse for VarsBlockTaggedVars {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -13,11 +14,17 @@ impl Parse for VarsBlockTaggedSecret {
     }
 }
 
+#[allow(dead_code)]
 struct AuthBlockTagged(AuthBlock);
 
 impl Parse for AuthBlockTagged {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::auth>()?;
+        Ok(Self(parse_auth_block_after_keyword(input)?))
+    }
+}
+
+fn parse_auth_block_after_keyword(input: ParseStream<'_>) -> Result<AuthBlock> {
         let content;
         braced!(content in input);
         let mut credentials = Vec::new();
@@ -25,19 +32,30 @@ impl Parse for AuthBlockTagged {
             credentials.push(content.parse::<AuthCredentialDecl>()?);
             let _ = content.parse::<Option<Token![,]>>()?;
         }
-        Ok(Self(AuthBlock { credentials }))
-    }
+        Ok(AuthBlock { credentials })
 }
 
 impl Parse for AuthCredentialDecl {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::credential>()?;
+        parse_auth_credential_after_keyword(input, false)
+    }
+}
+
+fn parse_auth_credential_after_keyword(
+    input: ParseStream<'_>,
+    v3_equals: bool,
+) -> Result<AuthCredentialDecl> {
         let name: Ident = input.parse()?;
-        input.parse::<Token![:]>()?;
+        if v3_equals {
+            input.parse::<Token![=]>()?;
+        } else {
+            input.parse::<Token![:]>()?;
+        }
 
         let kind_name: Ident = input.parse()?;
         let kind = match kind_name.to_string().as_str() {
-            "ApiKey" => {
+            "ApiKey" | "api_key" => {
                 let content;
                 parenthesized!(content in input);
                 let secret = parse_secret_ref(&content)?;
@@ -49,7 +67,7 @@ impl Parse for AuthCredentialDecl {
                 }
                 AuthCredentialKind::ApiKey { secret }
             }
-            "BearerToken" | "AccessToken" => {
+            "BearerToken" | "AccessToken" | "access_token" => {
                 let content;
                 parenthesized!(content in input);
                 let secret = parse_secret_ref(&content)?;
@@ -78,7 +96,7 @@ impl Parse for AuthCredentialDecl {
             "OAuth2ClientCredentials" => {
                 parse_oauth2_client_credentials(input, kind_name.span())?.into()
             }
-            "Endpoint" => {
+            "Endpoint" | "endpoint" => {
                 let content;
                 parenthesized!(content in input);
                 let endpoint: Path = content.parse()?;
@@ -110,13 +128,12 @@ impl Parse for AuthCredentialDecl {
             _ => {
                 return Err(syn::Error::new(
                     kind_name.span(),
-                    "unknown auth credential kind; expected ApiKey, BearerToken, AccessToken, Basic, OAuth2ClientCredentials, Endpoint, or Custom<T>",
+                    "unknown auth credential kind; expected ApiKey/api_key, BearerToken/AccessToken/access_token, Basic, OAuth2ClientCredentials, Endpoint/endpoint, or Custom<T>",
                 ));
             }
         };
 
-        Ok(Self { name, kind })
-    }
+        Ok(AuthCredentialDecl { name, kind })
 }
 
 struct OAuth2ClientCredentialsFields {
@@ -269,6 +286,10 @@ impl Parse for AuthUseDecl {
     }
 }
 
+fn parse_auth_use_decl_after_auth_keyword(input: ParseStream<'_>) -> Result<AuthUseDecl> {
+    Ok(AuthUseDecl::Single(Box::new(parse_v3_auth_use_kind(input)?)))
+}
+
 fn parse_auth_use_kinds_list(input: ParseStream<'_>) -> Result<Vec<AuthUseKind>> {
     let content;
     bracketed!(content in input);
@@ -384,5 +405,36 @@ fn parse_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
     };
 
     Ok(kind)
+}
+
+fn parse_v3_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
+    let usage: Ident = input.parse()?;
+    match usage.to_string().as_str() {
+        "bearer" => Ok(AuthUseKind::Bearer {
+            credential: input.parse()?,
+        }),
+        "header" => {
+            let header: LitStr = input.parse()?;
+            input.parse::<Token![=]>()?;
+            let credential: Ident = input.parse()?;
+            Ok(AuthUseKind::Header { header, credential })
+        }
+        "query" => {
+            let key: LitStr = input.parse()?;
+            input.parse::<Token![=]>()?;
+            let credential: Ident = input.parse()?;
+            Ok(AuthUseKind::Query { key, credential })
+        }
+        "basic" => Ok(AuthUseKind::Basic {
+            credential: input.parse()?,
+        }),
+        "certificate" => Ok(AuthUseKind::Certificate {
+            credential: input.parse()?,
+        }),
+        _ => Err(syn::Error::new(
+            usage.span(),
+            "unknown auth usage; expected `bearer credential`, `header \"Name\" = credential`, `query \"name\" = credential`, `basic credential`, or `certificate credential`",
+        )),
+    }
 }
 

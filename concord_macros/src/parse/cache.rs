@@ -82,6 +82,51 @@ fn parse_cache_spec(input: ParseStream<'_>) -> Result<CacheSpec> {
         });
     }
 
+    if input.peek(kw::http) {
+        let token = input.parse::<kw::http>()?;
+        return Ok(CacheSpec::Patch {
+            only,
+            patch: CachePatch {
+                http: Some(token.span),
+                ..CachePatch::default()
+            },
+        });
+    }
+
+    if input.peek(kw::revalidate) {
+        input.parse::<kw::revalidate>()?;
+        return Ok(CacheSpec::Patch {
+            only,
+            patch: CachePatch {
+                revalidate: Some(LitBool::new(true, input.span())),
+                ..CachePatch::default()
+            },
+        });
+    }
+
+    if input.peek(kw::stale_on_error) {
+        input.parse::<kw::stale_on_error>()?;
+        return Ok(CacheSpec::Patch {
+            only,
+            patch: CachePatch {
+                on_error: Some(CacheOnErrorSpec::ServeStale),
+                ..CachePatch::default()
+            },
+        });
+    }
+
+    if input.peek(LitInt) {
+        let amount: LitInt = input.parse()?;
+        let unit = parse_rate_limit_duration_unit_from_lit_or_stream(&amount, input)?;
+        return Ok(CacheSpec::Patch {
+            only,
+            patch: CachePatch {
+                ttl: Some(CacheDurationSpec { amount, unit }),
+                ..CachePatch::default()
+            },
+        });
+    }
+
     Ok(CacheSpec::Profile {
         only,
         profile: input.parse()?,
@@ -103,7 +148,7 @@ fn parse_cache_patch_body(input: ParseStream<'_>) -> Result<CachePatch> {
             }
             input.parse::<kw::ttl>()?;
             let amount: LitInt = input.parse()?;
-            let unit = parse_rate_limit_duration_unit(input)?;
+            let unit = parse_rate_limit_duration_unit_from_lit_or_stream(&amount, input)?;
             patch.ttl = Some(CacheDurationSpec { amount, unit });
         } else if input.peek(kw::capacity) {
             if patch.capacity.is_some() {
@@ -163,6 +208,21 @@ fn parse_cache_patch_body(input: ParseStream<'_>) -> Result<CachePatch> {
         let _ = input.parse::<Option<Token![,]>>()?;
     }
     Ok(patch)
+}
+
+fn parse_rate_limit_duration_unit_from_lit_or_stream(
+    amount: &LitInt,
+    input: ParseStream<'_>,
+) -> Result<RateLimitDurationUnit> {
+    match amount.suffix() {
+        "s" => Ok(RateLimitDurationUnit::Seconds),
+        "m" => Ok(RateLimitDurationUnit::Minutes),
+        "" => parse_rate_limit_duration_unit(input),
+        _ => Err(syn::Error::new(
+            amount.span(),
+            "duration shorthand must use `s` or `m`, e.g. `cache 5m`",
+        )),
+    }
 }
 
 fn parse_cache_capacity(input: ParseStream<'_>) -> Result<CacheCapacitySpec> {
