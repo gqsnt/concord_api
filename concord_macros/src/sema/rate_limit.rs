@@ -288,7 +288,7 @@ fn rate_limit_key_bindings_for_ancestry(
 ) -> BTreeMap<String, RateLimitKeyBindingResolved> {
     let mut out = BTreeMap::new();
     for &lid in ancestry {
-        for binding in &layers[lid].rate_limit_keys {
+        for binding in &layers[lid].rate_limit_key_bindings {
             out.insert(binding.name.clone(), binding.clone());
         }
     }

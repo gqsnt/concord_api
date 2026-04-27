@@ -32,33 +32,33 @@ fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> Tok
             let max = window.max;
             let per_secs = window.per_secs;
             quote! {
-                ::concord_core::prelude::RateLimitWindow::new(
+                ::concord_core::advanced::RateLimitWindow::new(
                     ::std::num::NonZeroU32::new(#max).expect("validated non-zero rate limit max"),
                     ::std::time::Duration::from_secs(#per_secs),
                 )
             }
         });
         quote! {
-            ::concord_core::prelude::RateLimitBucketUse::new(#kind, #name, #key)
+            ::concord_core::advanced::RateLimitBucketUse::new(#kind, #name, #key)
                 .with_cost(::std::num::NonZeroU32::new(#cost).expect("validated non-zero rate limit cost"))
                 .with_windows(::std::vec![ #( #windows ),* ])
         }
     });
     quote! {
-        ::concord_core::prelude::RateLimitPlan::from_buckets(::std::vec![ #( #buckets ),* ])
+        ::concord_core::advanced::RateLimitPlan::from_buckets(::std::vec![ #( #buckets ),* ])
     }
 }
 
 fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> TokenStream2 {
     let parts = keys.iter().map(|key| match key {
         RateLimitKeyResolved::RouteHost => {
-            quote! { ::concord_core::prelude::RateLimitKeyPart::url_host() }
+            quote! { ::concord_core::advanced::RateLimitKeyPart::url_host() }
         }
         RateLimitKeyResolved::Endpoint => {
-            quote! { ::concord_core::prelude::RateLimitKeyPart::endpoint() }
+            quote! { ::concord_core::advanced::RateLimitKeyPart::endpoint() }
         }
         RateLimitKeyResolved::Method => {
-            quote! { ::concord_core::prelude::RateLimitKeyPart::method() }
+            quote! { ::concord_core::advanced::RateLimitKeyPart::method() }
         }
         RateLimitKeyResolved::Named { name, .. } => {
             let name = LitStr::new(name, Span::call_site());
@@ -73,7 +73,7 @@ fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> Tok
                     compile_error!("endpoint/scope rate_limit key cannot be used in client base policy")
                 },
                 PolicyEmitCtx::Layer | PolicyEmitCtx::Endpoint => quote! {
-                    ::concord_core::prelude::RateLimitKeyPart::static_value(
+                    ::concord_core::advanced::RateLimitKeyPart::static_value(
                         #name,
                         ::std::string::ToString::to_string(&ep.#field),
                     )
@@ -84,12 +84,15 @@ fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> Tok
             let name = LitStr::new(name, Span::call_site());
             let value = LitStr::new(value, Span::call_site());
             quote! {
-                ::concord_core::prelude::RateLimitKeyPart::static_value(#name, #value)
+                ::concord_core::advanced::RateLimitKeyPart::static_value(#name, #value)
             }
         }
     });
     quote! {
-        ::concord_core::prelude::RateLimitKey::new(::std::vec![ #( #parts ),* ])
+        ::concord_core::advanced::RateLimitKey::new(::std::vec![ #( #parts ),* ])
     }
 }
+
+
+
 

@@ -7,7 +7,7 @@ use syn::{Expr, Ident, LitStr, Result, Type, spanned::Spanned};
 
 include!("ir.rs");
 include!("profiles.rs");
-pub fn analyze(ast: ApiFile) -> Result<Ir> {
+pub fn analyze(ast: ApiFile) -> Result<ResolvedApi> {
     let client_name = ast.client.name.clone();
     let mod_name_str = emit_helpers::to_snake(&client_name.to_string());
     let mod_name = Ident::new(&mod_name_str, client_name.span());
@@ -50,7 +50,7 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
         .iter()
         .map(|c| (c.name.to_string(), c.clone()))
         .collect();
-    let client_auth_uses = resolve_auth_uses(
+    let client_auth = resolve_auth_requirements(
         &ast.client.auth_uses,
         &auth_credential_map,
         AuthUseProvenanceIr::Client,
@@ -96,14 +96,14 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
 
     // walk layers/endpoints
     let mut layers: Vec<LayerIr> = Vec::new();
-    let mut endpoints: Vec<EndpointIr> = Vec::new();
+    let mut endpoints: Vec<ResolvedEndpoint> = Vec::new();
 
     let mut ancestry: Vec<usize> = Vec::new();
     let mut walk_ctx = WalkItemsCtx {
         client_vars: &client_vars_map,
         auth_vars: &auth_vars_map,
         auth_credentials: &auth_credential_map,
-        client_auth_uses: &client_auth_uses,
+        client_auth: &client_auth,
         cache_profiles: &cache_profiles,
         retry_profiles: &retry_profiles,
         rate_limit_profiles: &rate_limit_profiles,
@@ -114,16 +114,14 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
 
     let cache_store_enabled = policy_uses_cache(&client_policy)
         || layers.iter().any(|layer| policy_uses_cache(&layer.policy))
-        || endpoints
-            .iter()
-            .any(|endpoint| policy_uses_cache(&endpoint.policy));
+        || endpoints.iter().any(endpoint_uses_cache);
     let cache_store_config = match &client_policy.cache {
         Some(CacheResolved::Set(config)) => Some(config.clone()),
         Some(CacheResolved::Patch(patch)) => Some(cache_config_from_patch(patch)),
         Some(CacheResolved::Clear) | None => None,
     };
 
-    Ok(Ir {
+    Ok(ResolvedApi {
         mod_name,
         client_name,
         scheme: ast.client.scheme,
@@ -139,7 +137,6 @@ pub fn analyze(ast: ApiFile) -> Result<Ir> {
             .rate_limit
             .as_ref()
             .and_then(|block| block.response_policy.clone()),
-        layers,
         endpoints,
     })
 }
@@ -154,22 +151,22 @@ include!("items.rs");
 include!("policy.rs");
 
 #[cfg(test)]
-fn debug_resolved_endpoints(ir: &Ir) -> String {
+fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
     let mut out = String::new();
-    for ep in &ir.endpoints {
+    for ep in &resolved_api.endpoints {
         let route = format!(
             "prefix={:?} path_layers={:?} endpoint={:?}",
             ep.prefix_pieces, ep.path_layer_pieces, ep.route_pieces
         );
         let policy = format!(
-            "layers={} headers={} query={} auth={} retry={} cache={} rate_limit={}",
-            ep.policy_layers.len(),
-            ep.policy.headers.len(),
-            ep.policy.query.len(),
-            ep.auth_uses.len(),
-            ep.policy.retry.is_some(),
-            ep.policy.cache.is_some(),
-            ep.policy.rate_limit.is_some()
+            "scopes={} headers={} query={} auth={} retry={} cache={} rate_limit={}",
+            ep.policy.scopes.len(),
+            ep.policy.endpoint.headers.len(),
+            ep.policy.endpoint.query.len(),
+            ep.policy.auth.len(),
+            ep.policy.endpoint.retry.is_some(),
+            ep.policy.endpoint.cache.is_some(),
+            ep.policy.endpoint.rate_limit.is_some()
         );
         let facade = if ep.scope_modules.is_empty() {
             ep.name.to_string()
@@ -217,8 +214,8 @@ mod tests {
             "#,
         )
         .expect("valid api syntax");
-        let ir = analyze(ast).expect("analysis succeeds");
-        let snapshot = debug_resolved_endpoints(&ir);
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let snapshot = debug_resolved_endpoints(&resolved_api);
 
         assert!(snapshot.contains("Me method=GET"));
         assert!(snapshot.contains("path_layers=[Static(\"v1\")]"));

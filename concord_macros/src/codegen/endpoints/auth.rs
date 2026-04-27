@@ -1,37 +1,37 @@
-fn emit_endpoint_auth_plan(ir: &Ir, ep: &EndpointIr) -> TokenStream2 {
-    if ep.auth_uses.is_empty() {
-        return quote! { ::concord_core::prelude::AuthPlan::default() };
+fn emit_endpoint_auth_plan(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) -> TokenStream2 {
+    if ep.policy.auth.is_empty() {
+        return quote! { ::concord_core::advanced::AuthPlan::default() };
     }
     let mut requirements = Vec::new();
-    for (idx, plan) in ep.auth_uses.iter().enumerate() {
+    for (idx, plan) in ep.policy.auth.iter().enumerate() {
         match plan {
             AuthUsePlanIr::Use(auth_use) => {
-                requirements.push(emit_auth_requirement(ir, ep, idx, None, auth_use));
+                requirements.push(emit_auth_requirement(resolved_api, ep, idx, None, auth_use));
             }
         }
     }
     quote! {
-        ::concord_core::prelude::AuthPlan {
+        ::concord_core::advanced::AuthPlan {
             requirements: ::std::vec![ #( #requirements ),* ],
         }
     }
 }
 
 fn emit_auth_requirement(
-    ir: &Ir,
-    ep: &EndpointIr,
+    resolved_api: &ResolvedApi,
+    ep: &ResolvedEndpoint,
     idx: usize,
     alt_idx: Option<usize>,
     auth_use: &AuthUseIr,
 ) -> TokenStream2 {
     let endpoint_key = endpoint_qualified_name(ep);
     let credential = auth_use_credential_ident_ir(auth_use);
-    let credential_ir = ir
+    let credential_ir = resolved_api
         .client_auth_credentials
         .iter()
         .find(|c| c.name == *credential)
         .expect("auth use was validated by sema");
-    let client_ns = LitStr::new(&ir.client_name.to_string(), ir.client_name.span());
+    let client_ns = LitStr::new(&resolved_api.client_name.to_string(), resolved_api.client_name.span());
     let credential_name = LitStr::new(&credential.to_string(), credential.span());
     let step_id = if let Some(alt) = alt_idx {
         LitStr::new(
@@ -53,26 +53,26 @@ fn emit_auth_requirement(
     let usage_id = emit_auth_usage_id(auth_use);
     let _ = credential_ir;
     quote! {
-        ::concord_core::prelude::AuthRequirement {
-            credential: ::concord_core::prelude::CredentialRef {
-                id: ::concord_core::prelude::CredentialId::new(#client_ns, #credential_name),
+        ::concord_core::advanced::AuthRequirement {
+            credential: ::concord_core::advanced::CredentialRef {
+                id: ::concord_core::advanced::CredentialId::new(#client_ns, #credential_name),
             },
             placement: #placement,
             usage_id: ::concord_core::advanced::AuthUsageId::new(#usage_id),
             step_id: ::core::option::Option::Some(#step_id),
             provenance: ::concord_core::advanced::AuthProvenance::new(#provenance_layer),
-            challenge: ::concord_core::prelude::AuthChallengePolicy::Default,
+            challenge: ::concord_core::advanced::AuthChallengePolicy::Default,
         }
     }
 }
 
 fn emit_auth_placement(auth_use: &AuthUseIr) -> TokenStream2 {
     match &auth_use.kind {
-        AuthUseKindIr::Bearer { .. } => quote! { ::concord_core::prelude::AuthPlacement::Bearer },
-        AuthUseKindIr::Header { header, .. } => quote! { ::concord_core::prelude::AuthPlacement::Header(#header) },
-        AuthUseKindIr::Query { key, .. } => quote! { ::concord_core::prelude::AuthPlacement::Query(#key) },
-        AuthUseKindIr::Basic { .. } => quote! { ::concord_core::prelude::AuthPlacement::Basic },
-        AuthUseKindIr::Certificate { .. } => quote! { ::concord_core::prelude::AuthPlacement::Certificate },
+        AuthUseKindIr::Bearer { .. } => quote! { ::concord_core::advanced::AuthPlacement::Bearer },
+        AuthUseKindIr::Header { header, .. } => quote! { ::concord_core::advanced::AuthPlacement::Header(#header) },
+        AuthUseKindIr::Query { key, .. } => quote! { ::concord_core::advanced::AuthPlacement::Query(#key) },
+        AuthUseKindIr::Basic { .. } => quote! { ::concord_core::advanced::AuthPlacement::Basic },
+        AuthUseKindIr::Certificate { .. } => quote! { ::concord_core::advanced::AuthPlacement::Certificate },
     }
 }
 
@@ -96,3 +96,5 @@ fn auth_use_credential_ident_ir(auth_use: &AuthUseIr) -> &Ident {
         | AuthUseKindIr::Certificate { credential } => credential,
     }
 }
+
+

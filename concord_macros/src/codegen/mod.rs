@@ -1,4 +1,4 @@
-﻿use crate::ast::SetOp;
+use crate::ast::SetOp;
 use crate::emit_helpers;
 use crate::sema::*;
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -39,41 +39,44 @@ fn policy_uses_auth(policy: &PolicyBlocksResolved) -> bool {
         || policy.timeout.as_ref().is_some_and(value_uses_auth)
 }
 
-fn ep_optionals(ep: &EndpointIr) -> std::collections::BTreeMap<String, bool> {
+fn ep_optionals(ep: &ResolvedEndpoint) -> std::collections::BTreeMap<String, bool> {
     ep.vars
         .iter()
         .map(|v| (v.rust.to_string(), v.optional))
         .collect()
 }
 
-pub fn emit(ir: Ir) -> TokenStream2 {
-    let mod_name = ir.mod_name.clone();
-    let scheme = emit_scheme(ir.scheme);
-    let domain = ir.domain.clone();
+pub fn emit(resolved_api: ResolvedApi) -> TokenStream2 {
+    let mod_name = resolved_api.mod_name.clone();
+    let scheme = emit_scheme(resolved_api.scheme);
+    let domain = resolved_api.domain.clone();
 
-    let vars_ty = client_prefixed_ident(&ir.client_name, "Vars");
-    let auth_inner_ty = client_prefixed_ident(&ir.client_name, "AuthInner");
-    let auth_vars_ty = client_prefixed_ident(&ir.client_name, "AuthVars");
-    let auth_state_ty = client_prefixed_ident(&ir.client_name, "AuthState");
-    let cx_ty = client_prefixed_ident(&ir.client_name, "Cx");
+    let vars_ty = client_prefixed_ident(&resolved_api.client_name, "Vars");
+    let auth_inner_ty = client_prefixed_ident(&resolved_api.client_name, "AuthInner");
+    let auth_vars_ty = client_prefixed_ident(&resolved_api.client_name, "AuthVars");
+    let auth_state_ty = client_prefixed_ident(&resolved_api.client_name, "AuthState");
+    let cx_ty = client_prefixed_ident(&resolved_api.client_name, "Cx");
 
-    let vars_struct = emit_client_vars(&ir.client_vars, &vars_ty);
-    let auth_vars_struct =
-        emit_client_auth_vars(&ir.client_auth_vars, &auth_inner_ty, &auth_vars_ty);
-    let auth_state_struct = emit_client_auth_state(&ir, &auth_state_ty, &cx_ty);
+    let vars_struct = emit_client_vars(&resolved_api.client_vars, &vars_ty);
+    let auth_vars_struct = emit_client_auth_vars(
+        &resolved_api.client_auth_vars,
+        &auth_inner_ty,
+        &auth_vars_ty,
+    );
+    let auth_state_struct = emit_client_auth_state(&resolved_api, &auth_state_ty, &cx_ty);
     let cx_struct = emit_client_context(ClientContextEmit {
         scheme: &scheme,
         domain: &domain,
-        ir: &ir,
-        policy: &ir.client_policy,
+        resolved_api: &resolved_api,
+        policy: &resolved_api.client_policy,
         vars_ty: &vars_ty,
         auth_vars_ty: &auth_vars_ty,
         auth_state_ty: &auth_state_ty,
         cx_ty: &cx_ty,
     });
-    let client_wrapper = emit_client_wrapper(&ir, &vars_ty, &auth_vars_ty, &cx_ty);
-    let internal_mod = emit_internal(&ir, &vars_ty, &auth_vars_ty, &cx_ty);
-    let endpoints_mod = emit_endpoints(&ir, &cx_ty);
+    let client_wrapper = emit_client_wrapper(&resolved_api, &vars_ty, &auth_vars_ty, &cx_ty);
+    let internal_mod = emit_internal(&resolved_api, &vars_ty, &auth_vars_ty, &cx_ty);
+    let endpoints_mod = emit_endpoints(&resolved_api, &cx_ty);
 
     quote! {
         mod #mod_name {

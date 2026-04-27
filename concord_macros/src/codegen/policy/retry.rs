@@ -38,7 +38,7 @@ fn emit_retry_config(config: &RetryConfigResolved) -> TokenStream2 {
     let idempotency = emit_retry_idempotency(&config.idempotency);
 
     quote! {
-        ::concord_core::prelude::RetryConfig {
+        ::concord_core::advanced::RetryConfig {
             attempts: #attempts,
             methods: ::std::vec![ #( #methods ),* ],
             statuses: ::std::vec![ #( #statuses ),* ],
@@ -87,19 +87,21 @@ fn emit_retry_patch_ops(patch: &RetryPatchResolved) -> Vec<TokenStream2> {
 
 fn emit_retry_backoff(backoff: &RetryBackoffResolved) -> TokenStream2 {
     match backoff {
-        RetryBackoffResolved::None => quote! { ::concord_core::prelude::RetryBackoff::None },
+        RetryBackoffResolved::None => quote! { ::concord_core::advanced::RetryBackoff::None },
     }
 }
 
 fn emit_retry_idempotency(idempotency: &RetryIdempotencyResolved) -> TokenStream2 {
     match idempotency {
         RetryIdempotencyResolved::SafeMethodsOnly => {
-            quote! { ::concord_core::prelude::RetryIdempotency::SafeMethodsOnly }
+            quote! { ::concord_core::advanced::RetryIdempotency::SafeMethodsOnly }
         }
         RetryIdempotencyResolved::Header(header) => {
             let name = emit_helpers::emit_header_name(&header.value(), header.span());
-            quote! { ::concord_core::prelude::RetryIdempotency::Header(#name) }
+            quote! { ::concord_core::advanced::RetryIdempotency::Header(#name) }
         }
     }
 }
+
+
 

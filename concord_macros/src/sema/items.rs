@@ -2,19 +2,19 @@ struct WalkItemsCtx<'a> {
     client_vars: &'a BTreeMap<String, VarInfo>,
     auth_vars: &'a BTreeMap<String, VarInfo>,
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
-    client_auth_uses: &'a [AuthUsePlanIr],
+    client_auth: &'a [AuthUsePlanIr],
     cache_profiles: &'a BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
     layers: &'a mut Vec<LayerIr>,
-    endpoints: &'a mut Vec<EndpointIr>,
+    endpoints: &'a mut Vec<ResolvedEndpoint>,
 }
 
 struct EndpointAnalysisCtx<'a> {
     client_vars: &'a BTreeMap<String, VarInfo>,
     auth_vars: &'a BTreeMap<String, VarInfo>,
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
-    client_auth_uses: &'a [AuthUsePlanIr],
+    client_auth: &'a [AuthUsePlanIr],
     cache_profiles: &'a BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
@@ -51,7 +51,7 @@ fn walk_items(
                     &visible_keys,
                     None,
                 )?;
-                let auth_uses = resolve_auth_uses(
+                let auth = resolve_auth_requirements(
                     &ld.auth_uses,
                     ctx.auth_credentials,
                     AuthUseProvenanceIr::Scope(id),
@@ -63,8 +63,8 @@ fn walk_items(
                     prefix_pieces,
                     path_pieces,
                     policy,
-                    auth_uses,
-                    rate_limit_keys: key_bindings,
+                    auth,
+                    rate_limit_key_bindings: key_bindings,
                     decls,
                 });
 
@@ -77,7 +77,7 @@ fn walk_items(
                     client_vars: ctx.client_vars,
                     auth_vars: ctx.auth_vars,
                     auth_credentials: ctx.auth_credentials,
-                    client_auth_uses: ctx.client_auth_uses,
+                    client_auth: ctx.client_auth,
                     cache_profiles: ctx.cache_profiles,
                     retry_profiles: ctx.retry_profiles,
                     rate_limit_profiles: ctx.rate_limit_profiles,
@@ -273,7 +273,7 @@ fn analyze_endpoint(
     ed: &EndpointDef,
     ancestry: &[usize],
     ctx: &EndpointAnalysisCtx<'_>,
-) -> syn::Result<EndpointIr> {
+) -> syn::Result<ResolvedEndpoint> {
     use std::collections::BTreeMap;
 
     // 1) Start endpoint var registry from ancestor layers.
@@ -374,29 +374,31 @@ fn analyze_endpoint(
         &visible_keys,
         Some(&ep_vars),
     )?;
-    let mut auth_uses = ctx.client_auth_uses.to_vec();
+    let mut auth = ctx.client_auth.to_vec();
     for &lid in ancestry {
-        auth_uses.extend(ctx.layers[lid].auth_uses.iter().cloned());
+        auth.extend(ctx.layers[lid].auth.iter().cloned());
     }
-    auth_uses.extend(resolve_auth_uses(
+    auth.extend(resolve_auth_requirements(
         &ed.auth_uses,
         ctx.auth_credentials,
         AuthUseProvenanceIr::Endpoint,
     )?);
-    let scope_modules: Vec<Ident> = ancestry
-        .iter()
-        .filter_map(|&lid| ctx.layers[lid].scope_name.clone())
-        .collect();
+    let mut scope_modules = Vec::new();
+    let mut scope_decl_groups = Vec::new();
     let mut prefix_pieces = Vec::new();
     let mut path_layer_pieces = Vec::new();
-    let mut policy_layers = Vec::new();
+    let mut scope_policies = Vec::new();
     for &lid in ancestry {
         let layer = &ctx.layers[lid];
+        if let Some(scope_name) = &layer.scope_name {
+            scope_modules.push(scope_name.clone());
+            scope_decl_groups.push(layer.decls.clone());
+        }
         match layer.kind {
             LayerKind::Prefix => prefix_pieces.extend(layer.prefix_pieces.iter().cloned()),
             LayerKind::Path => path_layer_pieces.extend(layer.path_pieces.iter().cloned()),
         }
-        policy_layers.push(layer.policy.clone());
+        scope_policies.push(layer.policy.clone());
     }
     let current_endpoint_key = endpoint_scope_key(&scope_modules, &ed.name);
     for credential in ctx.auth_credentials.values() {
@@ -406,7 +408,7 @@ fn analyze_endpoint(
         if endpoint_key != &current_endpoint_key {
             continue;
         }
-        if auth_plan_references_credential(&auth_uses, &credential.name) {
+        if auth_plan_references_credential(&auth, &credential.name) {
             return Err(syn::Error::new(
                 ed.name.span(),
                 format!(
@@ -429,17 +431,16 @@ fn analyze_endpoint(
         body: m.body.clone(),
     });
 
-    // 6) Produce final IR.
-    Ok(EndpointIr {
+    // 6) Produce final resolved_api.
+    Ok(ResolvedEndpoint {
         name: ed.name.clone(),
         alias: ed.alias.clone(),
         scope_modules,
+        scope_decl_groups,
         method: ed.method.clone(),
         prefix_pieces,
         path_layer_pieces,
         route_pieces,
-        policy_layers,
-        ancestry: ancestry.to_vec(),
 
         // Stable declaration order.
         vars: endpoint_decls,
@@ -447,8 +448,11 @@ fn analyze_endpoint(
         body: ed.body.clone(),
         response: ed.response.clone(),
 
-        policy,
-        auth_uses,
+        policy: ResolvedPolicySpec {
+            scopes: scope_policies,
+            endpoint: policy,
+            auth,
+        },
         paginate,
         map,
     })

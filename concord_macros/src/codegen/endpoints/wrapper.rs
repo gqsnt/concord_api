@@ -1,15 +1,15 @@
 fn emit_client_wrapper(
-    ir: &Ir,
+    resolved_api: &ResolvedApi,
     vars_ty: &Ident,
     auth_vars_ty: &Ident,
     cx_ty: &Ident,
 ) -> TokenStream2 {
     use quote::quote;
 
-    let client_ty = &ir.client_name;
+    let client_ty = &resolved_api.client_name;
 
     // same "required vars" as Vars::new(...)
-    let required: Vec<&VarInfo> = ir
+    let required: Vec<&VarInfo> = resolved_api
         .client_vars
         .iter()
         .filter(|v| !v.optional && v.default.is_none())
@@ -33,7 +33,7 @@ fn emit_client_wrapper(
         .collect();
     let new_pass = new_pass.as_slice();
 
-    let required_auth: Vec<&VarInfo> = ir
+    let required_auth: Vec<&VarInfo> = resolved_api
         .client_auth_vars
         .iter()
         .filter(|v| !v.optional && v.default.is_none())
@@ -58,7 +58,7 @@ fn emit_client_wrapper(
     ctor_args.extend(new_args.iter().cloned());
     ctor_args.extend(new_auth_args.iter().cloned());
 
-    let var_setters = ir.client_vars.iter().map(|v| {
+    let var_setters = resolved_api.client_vars.iter().map(|v| {
         let f = &v.rust;
         let ty = &v.ty;
         let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
@@ -87,32 +87,32 @@ fn emit_client_wrapper(
         }
     });
 
-    let (credential_secret_names, has_custom_credentials) = auth_credential_secret_names(ir);
-    let configure_rate_limiter = if let Some(policy) = &ir.rate_limit_response_policy {
+    let (credential_secret_names, has_custom_credentials) = auth_credential_secret_names(resolved_api);
+    let configure_rate_limiter = if let Some(policy) = &resolved_api.rate_limit_response_policy {
         quote! {
             __inner.set_rate_limiter(::std::sync::Arc::new(
-                ::concord_core::prelude::GovernorRateLimiter::new()
+                ::concord_core::advanced::GovernorRateLimiter::new()
                     .with_response_policy(::std::sync::Arc::new(#policy::default()))
             ));
         }
     } else {
         quote! {}
     };
-    let configure_cache_store = if ir.cache_store_enabled {
-        let configure_cache_store_body = if let Some(config) = &ir.cache_store_config {
+    let configure_cache_store = if resolved_api.cache_store_enabled {
+        let configure_cache_store_body = if let Some(config) = &resolved_api.cache_store_config {
             let config = emit_cache_config(config);
             quote! {
                 let __cache_config = #config;
                 __inner.set_cache_store(::std::sync::Arc::new(
-                    ::concord_core::prelude::MokaCacheStore::new(
-                        ::concord_core::prelude::MokaCacheConfig::from_cache_config(&__cache_config)
+                    ::concord_core::advanced::MokaCacheStore::new(
+                        ::concord_core::advanced::MokaCacheConfig::from_cache_config(&__cache_config)
                     )
                 ));
             }
         } else {
             quote! {
                 __inner.set_cache_store(::std::sync::Arc::new(
-                    ::concord_core::prelude::MokaCacheStore::default()
+                    ::concord_core::advanced::MokaCacheStore::default()
                 ));
             }
         };
@@ -129,7 +129,7 @@ fn emit_client_wrapper(
     } else {
         quote! {}
     };
-    let auth_setters = ir.client_auth_vars.iter().map(|v| {
+    let auth_setters = resolved_api.client_auth_vars.iter().map(|v| {
         let f = &v.rust;
         let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
         let rebuild_auth_state =
@@ -198,7 +198,7 @@ fn emit_client_wrapper(
             }
         }
     });
-    let credential_lifecycle_methods = ir.client_auth_credentials.iter().filter_map(|credential| {
+    let credential_lifecycle_methods = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
         let name = &credential.name;
         let AuthCredentialKindIr::Endpoint {
             endpoint,
@@ -243,20 +243,20 @@ fn emit_client_wrapper(
             }
         })
     });
-    let (auth_facade_methods, auth_facade_items) = emit_auth_facade(ir, client_ty);
-    let (facade_methods, facade_items) = emit_tree_facade(ir, client_ty, cx_ty);
+    let (auth_facade_methods, auth_facade_items) = emit_auth_facade(resolved_api, client_ty);
+    let (facade_methods, facade_items) = emit_tree_facade(resolved_api, client_ty, cx_ty);
 
     quote! {
         #[derive(Clone)]
-        pub struct #client_ty<T: ::concord_core::prelude::Transport = ::concord_core::prelude::ReqwestTransport> {
+        pub struct #client_ty<T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
             inner: ::concord_core::prelude::ApiClient<#cx_ty, T>,
         }
-        impl #client_ty<::concord_core::prelude::ReqwestTransport> {
+        impl #client_ty<::concord_core::advanced::ReqwestTransport> {
             #[inline]
             pub fn new( #( #ctor_args ),* ) -> Self {
                let vars = #vars_ty::new( #( #new_pass ),* );
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
-                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, ::concord_core::prelude::ReqwestTransport>::new(vars, auth_vars);
+                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, ::concord_core::advanced::ReqwestTransport>::new(vars, auth_vars);
                 #configure_rate_limiter
                 #configure_cache_store
                 Self { inner: __inner }
@@ -264,7 +264,7 @@ fn emit_client_wrapper(
 
 
             #[inline]
-            pub fn new_with_transport<T2: ::concord_core::prelude::Transport>(
+            pub fn new_with_transport<T2: ::concord_core::advanced::Transport>(
                 #( #ctor_args, )*
                 transport: T2
             ) -> #client_ty<T2> {
@@ -279,7 +279,7 @@ fn emit_client_wrapper(
 
         }
 
-        impl<T: ::concord_core::prelude::Transport> #client_ty<T> {
+        impl<T: ::concord_core::advanced::Transport> #client_ty<T> {
             #( #var_setters )*
             #( #auth_setters )*
             #( #credential_lifecycle_methods )*
@@ -292,23 +292,23 @@ fn emit_client_wrapper(
             #[inline]
             pub fn with_debug_level(mut self, level: ::concord_core::prelude::DebugLevel) -> Self { self.inner.set_debug_level(level); self }
             #[inline]
-            pub fn debug_sink(&self) -> &::std::sync::Arc<dyn ::concord_core::prelude::DebugSink> { self.inner.debug_sink() }
+            pub fn debug_sink(&self) -> &::std::sync::Arc<dyn ::concord_core::advanced::DebugSink> { self.inner.debug_sink() }
             #[inline]
-            pub fn set_debug_sink(&mut self, sink: ::std::sync::Arc<dyn ::concord_core::prelude::DebugSink>) { self.inner.set_debug_sink(sink); }
+            pub fn set_debug_sink(&mut self, sink: ::std::sync::Arc<dyn ::concord_core::advanced::DebugSink>) { self.inner.set_debug_sink(sink); }
             #[inline]
-            pub fn with_debug_sink(mut self, sink: ::std::sync::Arc<dyn ::concord_core::prelude::DebugSink>) -> Self { self.inner.set_debug_sink(sink); self }
+            pub fn with_debug_sink(mut self, sink: ::std::sync::Arc<dyn ::concord_core::advanced::DebugSink>) -> Self { self.inner.set_debug_sink(sink); self }
             #[inline]
-            pub fn runtime_hooks(&self) -> &::std::sync::Arc<dyn ::concord_core::prelude::RuntimeHooks> { self.inner.runtime_hooks() }
+            pub fn runtime_hooks(&self) -> &::std::sync::Arc<dyn ::concord_core::advanced::RuntimeHooks> { self.inner.runtime_hooks() }
             #[inline]
-            pub fn set_runtime_hooks(&mut self, hooks: ::std::sync::Arc<dyn ::concord_core::prelude::RuntimeHooks>) { self.inner.set_runtime_hooks(hooks); }
+            pub fn set_runtime_hooks(&mut self, hooks: ::std::sync::Arc<dyn ::concord_core::advanced::RuntimeHooks>) { self.inner.set_runtime_hooks(hooks); }
             #[inline]
-            pub fn with_runtime_hooks(mut self, hooks: ::std::sync::Arc<dyn ::concord_core::prelude::RuntimeHooks>) -> Self { self.inner.set_runtime_hooks(hooks); self }
+            pub fn with_runtime_hooks(mut self, hooks: ::std::sync::Arc<dyn ::concord_core::advanced::RuntimeHooks>) -> Self { self.inner.set_runtime_hooks(hooks); self }
             #[inline]
-            pub fn retry_policy(&self) -> &::std::sync::Arc<dyn ::concord_core::prelude::RetryPolicy> { self.inner.retry_policy() }
+            pub fn retry_policy(&self) -> &::std::sync::Arc<dyn ::concord_core::advanced::RetryPolicy> { self.inner.retry_policy() }
             #[inline]
-            pub fn set_retry_policy(&mut self, retry_policy: ::std::sync::Arc<dyn ::concord_core::prelude::RetryPolicy>) { self.inner.set_retry_policy(retry_policy); }
+            pub fn set_retry_policy(&mut self, retry_policy: ::std::sync::Arc<dyn ::concord_core::advanced::RetryPolicy>) { self.inner.set_retry_policy(retry_policy); }
             #[inline]
-            pub fn with_retry_policy(mut self, retry_policy: ::std::sync::Arc<dyn ::concord_core::prelude::RetryPolicy>) -> Self { self.inner.set_retry_policy(retry_policy); self }
+            pub fn with_retry_policy(mut self, retry_policy: ::std::sync::Arc<dyn ::concord_core::advanced::RetryPolicy>) -> Self { self.inner.set_retry_policy(retry_policy); self }
             #[inline]
             pub fn max_auth_retries(&self) -> u32 { self.inner.max_auth_retries() }
             #[inline]
@@ -316,27 +316,27 @@ fn emit_client_wrapper(
             #[inline]
             pub fn with_max_auth_retries(mut self, max_auth_retries: u32) -> Self { self.inner.set_max_auth_retries(max_auth_retries); self }
             #[inline]
-            pub fn pagination_caps(&self) -> ::concord_core::prelude::Caps { self.inner.pagination_caps() }
+            pub fn pagination_caps(&self) -> ::concord_core::advanced::Caps { self.inner.pagination_caps() }
             #[inline]
-            pub fn set_pagination_caps(&mut self, caps: ::concord_core::prelude::Caps) { self.inner.set_pagination_caps(caps); }
+            pub fn set_pagination_caps(&mut self, caps: ::concord_core::advanced::Caps) { self.inner.set_pagination_caps(caps); }
             #[inline]
-            pub fn with_pagination_caps(mut self, caps: ::concord_core::prelude::Caps) -> Self { self.inner.set_pagination_caps(caps); self }
+            pub fn with_pagination_caps(mut self, caps: ::concord_core::advanced::Caps) -> Self { self.inner.set_pagination_caps(caps); self }
             #[inline]
-            pub fn set_rate_limiter(&mut self, limiter: ::std::sync::Arc<dyn ::concord_core::prelude::RateLimiter>) { self.inner.set_rate_limiter(limiter); }
+            pub fn set_rate_limiter(&mut self, limiter: ::std::sync::Arc<dyn ::concord_core::advanced::RateLimiter>) { self.inner.set_rate_limiter(limiter); }
             #[inline]
-            pub fn with_rate_limiter(mut self, limiter: ::std::sync::Arc<dyn ::concord_core::prelude::RateLimiter>) -> Self { self.inner.set_rate_limiter(limiter); self }
+            pub fn with_rate_limiter(mut self, limiter: ::std::sync::Arc<dyn ::concord_core::advanced::RateLimiter>) -> Self { self.inner.set_rate_limiter(limiter); self }
             #[inline]
-            pub fn set_cache_store(&mut self, store: ::std::sync::Arc<dyn ::concord_core::prelude::CacheStore>) { self.inner.set_cache_store(store); }
+            pub fn set_cache_store(&mut self, store: ::std::sync::Arc<dyn ::concord_core::advanced::CacheStore>) { self.inner.set_cache_store(store); }
             #[inline]
-            pub fn with_cache_store(mut self, store: ::std::sync::Arc<dyn ::concord_core::prelude::CacheStore>) -> Self { self.inner.set_cache_store(store); self }
+            pub fn with_cache_store(mut self, store: ::std::sync::Arc<dyn ::concord_core::advanced::CacheStore>) -> Self { self.inner.set_cache_store(store); self }
             #[inline]
-            pub fn set_inflight_policy(&mut self, policy: ::std::sync::Arc<dyn ::concord_core::prelude::InflightPolicy>) { self.inner.set_inflight_policy(policy); }
+            pub fn set_inflight_policy(&mut self, policy: ::std::sync::Arc<dyn ::concord_core::advanced::InflightPolicy>) { self.inner.set_inflight_policy(policy); }
             #[inline]
-            pub fn with_inflight_policy(mut self, policy: ::std::sync::Arc<dyn ::concord_core::prelude::InflightPolicy>) -> Self { self.inner.set_inflight_policy(policy); self }
+            pub fn with_inflight_policy(mut self, policy: ::std::sync::Arc<dyn ::concord_core::advanced::InflightPolicy>) -> Self { self.inner.set_inflight_policy(policy); self }
             #[inline]
-            pub fn configure(&mut self, f: impl FnOnce(&mut ::concord_core::prelude::RuntimeConfig)) -> &mut Self { self.inner.configure(f); self }
+            pub fn configure(&mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> &mut Self { self.inner.configure(f); self }
             #[inline]
-            pub fn with_configure(mut self, f: impl FnOnce(&mut ::concord_core::prelude::RuntimeConfig)) -> Self { self.inner.configure(f); self }
+            pub fn with_configure(mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> Self { self.inner.configure(f); self }
             #[inline]
             pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E, T>
             where
@@ -353,13 +353,13 @@ fn emit_client_wrapper(
     }
 }
 
-fn emit_auth_facade(ir: &Ir, client_ty: &Ident) -> (TokenStream2, TokenStream2) {
-    let root_auth_scope_exists = ir
+fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStream2, TokenStream2) {
+    let root_auth_scope_exists = resolved_api
         .endpoints
         .iter()
         .any(|ep| ep.scope_modules.first().is_some_and(|scope| scope == "auth"));
     let auth_ty = emit_helpers::ident(&format!("__{}Auth", client_ty), client_ty.span());
-    let handle_items = ir.client_auth_credentials.iter().filter_map(|credential| {
+    let handle_items = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
         let AuthCredentialKindIr::Endpoint {
             endpoint: _,
             output_ty,
@@ -371,11 +371,11 @@ fn emit_auth_facade(ir: &Ir, client_ty: &Ident) -> (TokenStream2, TokenStream2) 
         let name = &credential.name;
         let handle_ty = emit_helpers::ident(&format!("__{}Auth{}", client_ty, name), name.span());
         Some(quote! {
-            pub struct #handle_ty<'a, T: ::concord_core::prelude::Transport = ::concord_core::prelude::ReqwestTransport> {
+            pub struct #handle_ty<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
                 client: &'a #client_ty<T>,
             }
 
-            impl<'a, T: ::concord_core::prelude::Transport> #handle_ty<'a, T> {
+            impl<'a, T: ::concord_core::advanced::Transport> #handle_ty<'a, T> {
                 #[inline]
                 pub async fn acquire<R>(
                     &self,
@@ -410,7 +410,7 @@ fn emit_auth_facade(ir: &Ir, client_ty: &Ident) -> (TokenStream2, TokenStream2) 
             }
         })
     });
-    let auth_methods = emit_auth_accessor_methods(ir, client_ty);
+    let auth_methods = emit_auth_accessor_methods(resolved_api, client_ty);
 
     let auth_method = if root_auth_scope_exists {
         quote! {}
@@ -430,11 +430,11 @@ fn emit_auth_facade(ir: &Ir, client_ty: &Ident) -> (TokenStream2, TokenStream2) 
         }
     };
     let auth_state_item = quote! {
-        pub struct #auth_ty<'a, T: ::concord_core::prelude::Transport = ::concord_core::prelude::ReqwestTransport> {
+        pub struct #auth_ty<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
             client: &'a #client_ty<T>,
         }
 
-        impl<'a, T: ::concord_core::prelude::Transport> #auth_ty<'a, T> {
+        impl<'a, T: ::concord_core::advanced::Transport> #auth_ty<'a, T> {
             #auth_methods
         }
     };
@@ -446,8 +446,8 @@ fn emit_auth_facade(ir: &Ir, client_ty: &Ident) -> (TokenStream2, TokenStream2) 
     (methods, items)
 }
 
-fn emit_auth_accessor_methods(ir: &Ir, client_ty: &Ident) -> TokenStream2 {
-    let methods = ir.client_auth_credentials.iter().filter_map(|credential| {
+fn emit_auth_accessor_methods(resolved_api: &ResolvedApi, client_ty: &Ident) -> TokenStream2 {
+    let methods = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
         if !matches!(credential.kind, AuthCredentialKindIr::Endpoint { .. }) {
             return None;
         }
@@ -511,31 +511,22 @@ fn required_vars(vars: &[VarInfo]) -> Vec<&VarInfo> {
         .collect()
 }
 
-fn collect_facade_scopes(ir: &Ir) -> Vec<FacadeScopeInfo> {
+fn collect_facade_scopes(resolved_api: &ResolvedApi) -> Vec<FacadeScopeInfo> {
     let mut scopes: Vec<FacadeScopeInfo> = Vec::new();
-    for ep in &ir.endpoints {
-        let mut path = Vec::new();
-        for &layer_id in &ep.ancestry {
-            let layer = &ir.layers[layer_id];
-            let Some(scope_name) = &layer.scope_name else {
-                continue;
-            };
-            path.push(scope_name.clone());
+    for ep in &resolved_api.endpoints {
+        for idx in 0..ep.scope_modules.len() {
+            let path = ep.scope_modules[..=idx].to_vec();
             if scopes.iter().any(|scope| scope.path == path) {
                 continue;
             }
-            let mut decls = Vec::new();
-            for &ancestor_id in &ep.ancestry {
-                let ancestor = &ir.layers[ancestor_id];
-                if ancestor.scope_name.is_some() {
-                    decls.extend(ancestor.decls.clone());
-                }
-                if ancestor_id == layer_id {
-                    break;
-                }
-            }
+            let decls = ep
+                .scope_decl_groups
+                .iter()
+                .take(idx + 1)
+                .flat_map(|group| group.iter().cloned())
+                .collect();
             scopes.push(FacadeScopeInfo {
-                path: path.clone(),
+                path,
                 decls,
             });
         }
@@ -543,20 +534,20 @@ fn collect_facade_scopes(ir: &Ir) -> Vec<FacadeScopeInfo> {
     scopes
 }
 
-fn emit_tree_facade(ir: &Ir, client_ty: &Ident, cx_ty: &Ident) -> (TokenStream2, TokenStream2) {
-    let scopes = collect_facade_scopes(ir);
+fn emit_tree_facade(resolved_api: &ResolvedApi, client_ty: &Ident, cx_ty: &Ident) -> (TokenStream2, TokenStream2) {
+    let scopes = collect_facade_scopes(resolved_api);
     let root_scope_methods = scopes
         .iter()
         .filter(|scope| scope.path.len() == 1)
         .map(|scope| emit_scope_ctor_method(scope, client_ty, None));
-    let root_endpoint_methods = ir
+    let root_endpoint_methods = resolved_api
         .endpoints
         .iter()
         .filter(|ep| ep.scope_modules.is_empty())
         .map(|ep| emit_facade_endpoint_method(ep, client_ty, cx_ty, &[], true));
     let scope_structs = scopes
         .iter()
-        .map(|scope| emit_facade_scope_struct(ir, client_ty, cx_ty, scope, &scopes));
+        .map(|scope| emit_facade_scope_struct(resolved_api, client_ty, cx_ty, scope, &scopes));
 
     let methods = quote! {
         #( #root_scope_methods )*
@@ -632,7 +623,7 @@ fn emit_scope_ctor_method(
 }
 
 fn emit_facade_scope_struct(
-    ir: &Ir,
+    resolved_api: &ResolvedApi,
     client_ty: &Ident,
     cx_ty: &Ident,
     scope: &FacadeScopeInfo,
@@ -679,25 +670,25 @@ fn emit_facade_scope_struct(
         .iter()
         .filter(|child| child.path.len() == scope.path.len() + 1 && child.path.starts_with(&scope.path))
         .map(|child| emit_scope_ctor_method(child, client_ty, Some(scope)));
-    let endpoint_methods = ir
+    let endpoint_methods = resolved_api
         .endpoints
         .iter()
         .filter(|ep| ep.scope_modules == scope.path)
         .map(|ep| emit_facade_endpoint_method(ep, client_ty, cx_ty, &scope.decls, false));
     let auth_accessor_methods = if scope.path.len() == 1 && scope.path[0] == "auth" {
-        emit_auth_accessor_methods(ir, client_ty)
+        emit_auth_accessor_methods(resolved_api, client_ty)
     } else {
         quote! {}
     };
 
     quote! {
         #[allow(non_camel_case_types)]
-        pub struct #struct_name<'a, T: ::concord_core::prelude::Transport = ::concord_core::prelude::ReqwestTransport> {
+        pub struct #struct_name<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
             client: &'a #client_ty<T>,
             #( #fields, )*
         }
 
-        impl<'a, T: ::concord_core::prelude::Transport> #struct_name<'a, T> {
+        impl<'a, T: ::concord_core::advanced::Transport> #struct_name<'a, T> {
             #( #setters )*
             #( #child_methods )*
             #( #endpoint_methods )*
@@ -707,7 +698,7 @@ fn emit_facade_scope_struct(
 }
 
 fn emit_facade_endpoint_method(
-    ep: &EndpointIr,
+    ep: &ResolvedEndpoint,
     _client_ty: &Ident,
     cx_ty: &Ident,
     captured: &[VarInfo],
@@ -787,4 +778,7 @@ fn emit_facade_endpoint_method(
         }
     }
 }
+
+
+
 

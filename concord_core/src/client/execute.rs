@@ -143,7 +143,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         url: &url_str,
                         attempt: base_attempt.saturating_add(attempt_index),
                         retry_count: transport_retry_index,
-                        page_index: 0,
+                        page_index: plan.overrides.page_index,
                         idempotent: plan.endpoint.meta.idempotent,
                         request_headers: &retry_request_headers,
                         response_headers,

@@ -1,6 +1,6 @@
 fn emit_endpoint_def(
-    ir: &Ir,
-    ep: &EndpointIr,
+    resolved_api: &ResolvedApi,
+    ep: &ResolvedEndpoint,
     ty_name: &Ident,
     cx_ty: &Ident,
 ) -> TokenStream2 {
@@ -94,12 +94,12 @@ fn emit_endpoint_def(
     let response_decode_fn = quote! {
         fn #decode_fn(
             resp: ::concord_core::transport::BuiltResponse,
-            ctx: ::concord_core::prelude::ErrorContext,
+            ctx: ::concord_core::error::ErrorContext,
         ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
             let decoded = <#response_dec as ::concord_core::internal::Decodes<#decoded_ty>>::decode(&resp.body)
                 .map_err(|e| ::concord_core::prelude::ApiClientError::Decode { ctx: ctx.clone(), source: e.into() })?;
             #decode_body
-            let out = ::concord_core::prelude::DecodedResponse {
+            let out = ::concord_core::transport::DecodedResponse {
                 meta: resp.meta,
                 url: resp.url,
                 status: resp.status,
@@ -112,7 +112,7 @@ fn emit_endpoint_def(
 
     let route_policy =
         emit_endpoint_plan_route_policy(ep, method, &endpoint_name, cx_ty, response_dec);
-    let auth_plan = emit_endpoint_auth_plan(ir, ep);
+    let auth_plan = emit_endpoint_auth_plan(resolved_api, ep);
     let body_plan = if let Some(body) = &ep.body {
         let enc = &body.enc;
         let ty = &body.ty;
@@ -159,7 +159,7 @@ fn emit_endpoint_def(
                 let vars = plan_ctx.vars;
                 let auth = plan_ctx.auth_vars;
                 let ep = self;
-                let ctx_err = ::concord_core::prelude::ErrorContext { endpoint: #endpoint_name, method: ::http::Method::#method };
+                let ctx_err = ::concord_core::error::ErrorContext { endpoint: #endpoint_name, method: ::http::Method::#method };
                 let __auth_plan = #auth_plan;
                 let ctx = ctx_err.clone();
                 #route_policy
@@ -193,7 +193,7 @@ fn emit_endpoint_def(
 }
 
 fn emit_endpoint_plan_route_policy(
-    ep: &EndpointIr,
+    ep: &ResolvedEndpoint,
     method: &Ident,
     _endpoint_name: &LitStr,
     cx_ty: &Ident,
@@ -202,19 +202,19 @@ fn emit_endpoint_plan_route_policy(
     let ep_opt = ep_optionals(ep);
     let prefix_layer_route_ops = emit_prefix_route_apply(&ep.prefix_pieces, Some(&ep_opt));
     let path_layer_route_ops = emit_path_route_apply(&ep.path_layer_pieces, Some(&ep_opt));
-    let layer_policy_ops = ep.policy_layers.iter().map(|policy_layer| {
-        let layer_policy_apply = emit_policy_apply_fn(policy_layer, PolicyEmitCtx::Layer);
+    let scope_policy_ops = ep.policy.scopes.iter().map(|scope_policy| {
+        let scope_policy_apply = emit_policy_apply_fn(scope_policy, PolicyEmitCtx::Layer);
         quote! {
             {
                 let __prev = policy.layer();
-                policy.set_layer(::concord_core::prelude::PolicyLayer::PrefixPath);
-                #layer_policy_apply
+                policy.set_layer(::concord_core::internal::PolicyLayer::PrefixPath);
+                #scope_policy_apply
                 policy.set_layer(__prev);
             }
         }
     });
     let endpoint_route_apply = emit_path_route_apply(&ep.route_pieces, Some(&ep_opt));
-    let endpoint_policy_apply = emit_policy_apply_fn(&ep.policy, PolicyEmitCtx::Endpoint);
+    let endpoint_policy_apply = emit_policy_apply_fn(&ep.policy.endpoint, PolicyEmitCtx::Endpoint);
     quote! {
         let mut route = <super::#cx_ty as ::concord_core::prelude::ClientContext>::base_route(vars, auth);
         #prefix_layer_route_ops
@@ -228,14 +228,14 @@ fn emit_endpoint_plan_route_policy(
         };
 
         let mut policy = <super::#cx_ty as ::concord_core::prelude::ClientContext>::base_policy(vars, auth, &ctx_err)?;
-        #( #layer_policy_ops )*
+        #( #scope_policy_ops )*
         {
             let __prev = policy.layer();
-            policy.set_layer(::concord_core::prelude::PolicyLayer::Endpoint);
+            policy.set_layer(::concord_core::internal::PolicyLayer::Endpoint);
             #endpoint_policy_apply
             policy.set_layer(__prev);
         }
-        policy.set_layer(::concord_core::prelude::PolicyLayer::Runtime);
+        policy.set_layer(::concord_core::internal::PolicyLayer::Runtime);
         if ::http::Method::#method != ::http::Method::HEAD
             && !<#response_dec as ::concord_core::internal::ContentType>::IS_NO_CONTENT
         {
@@ -243,7 +243,7 @@ fn emit_endpoint_plan_route_policy(
         }
         let (headers, query, timeout, cache, retry, mut rate_limit) = policy.into_parts();
         rate_limit.canonicalize();
-        let __resolved_policy = ::concord_core::prelude::ResolvedPolicy {
+        let __resolved_policy = ::concord_core::internal::ResolvedPolicy {
             headers,
             query,
             timeout,
@@ -256,7 +256,7 @@ fn emit_endpoint_plan_route_policy(
 }
 
 
-fn emit_endpoint_pagination_plan(ep: &EndpointIr) -> TokenStream2 {
+fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
     let Some(p) = &ep.paginate else {
         return quote! {
             let __pagination_plan = ::core::option::Option::None;
@@ -309,3 +309,6 @@ fn emit_endpoint_pagination_plan(ep: &EndpointIr) -> TokenStream2 {
         let __pagination_plan = ::core::option::Option::Some(::concord_core::internal::PaginationPlan::from(ctrl));
     }
 }
+
+
+

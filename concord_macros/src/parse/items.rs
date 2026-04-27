@@ -148,7 +148,7 @@ impl Parse for LayerDefTaggedScope {
             }
         }
 
-        // Internal IR currently stores one route-kind per layer.
+        // The normalized model stores one route-kind per layer.
         // Normalize `scope` into one or two nested internal layers.
         let outer = match (host_route, path_route) {
             (Some(host), Some(path)) => LayerDef {

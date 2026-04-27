@@ -1,3 +1,4 @@
+use concord_core::advanced::*;
 use concord_core::prelude::*;
 use concord_examples::riot::{LeagueQueue, PlatformRoute, RegionalRoute};
 use concord_examples::riot::{RiotClient, riot_endpoints as endpoints};

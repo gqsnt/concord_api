@@ -1,5 +1,5 @@
 #[derive(Debug)]
-pub struct Ir {
+pub struct ResolvedApi {
     pub mod_name: Ident,
     pub client_name: Ident,
     pub scheme: SchemeLit,
@@ -13,8 +13,7 @@ pub struct Ir {
     pub cache_store_config: Option<CacheConfigResolved>,
     pub rate_limit_response_policy: Option<syn::Path>,
 
-    pub layers: Vec<LayerIr>,
-    pub endpoints: Vec<EndpointIr>,
+    pub endpoints: Vec<ResolvedEndpoint>,
 }
 
 #[derive(Debug, Clone)]
@@ -32,33 +31,37 @@ pub struct LayerIr {
     pub prefix_pieces: Vec<PrefixPiece>, // if Prefix
     pub path_pieces: Vec<PathPiece>,     // if Path
     pub policy: PolicyBlocksResolved,
-    pub auth_uses: Vec<AuthUsePlanIr>,
-    pub rate_limit_keys: Vec<RateLimitKeyBindingResolved>,
+    pub auth: Vec<AuthUsePlanIr>,
+    pub rate_limit_key_bindings: Vec<RateLimitKeyBindingResolved>,
     pub decls: Vec<VarInfo>, // endpoint vars declared by this layer
 }
 
 #[derive(Debug)]
-pub struct EndpointIr {
+pub struct ResolvedEndpoint {
     pub name: Ident,
     pub alias: Option<Ident>,
     pub scope_modules: Vec<Ident>,
+    pub scope_decl_groups: Vec<Vec<VarInfo>>,
     pub method: Ident,
     pub prefix_pieces: Vec<PrefixPiece>,
     pub path_layer_pieces: Vec<PathPiece>,
     pub route_pieces: Vec<PathPiece>,
-    pub policy_layers: Vec<PolicyBlocksResolved>,
-
-    pub ancestry: Vec<usize>, // layer ids in nesting order (outer -> inner)
 
     pub vars: Vec<VarInfo>, // endpoint vars (union, stable)
     pub body: Option<CodecSpec>,
     pub response: CodecSpec,
 
-    pub policy: PolicyBlocksResolved,
-    pub auth_uses: Vec<AuthUsePlanIr>,
+    pub policy: ResolvedPolicySpec,
 
     pub paginate: Option<PaginateResolved>,
     pub map: Option<MapResolved>,
+}
+
+#[derive(Debug)]
+pub struct ResolvedPolicySpec {
+    pub scopes: Vec<PolicyBlocksResolved>,
+    pub endpoint: PolicyBlocksResolved,
+    pub auth: Vec<AuthUsePlanIr>,
 }
 
 #[derive(Debug, Clone)]

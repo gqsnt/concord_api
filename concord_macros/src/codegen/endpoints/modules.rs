@@ -1,4 +1,4 @@
-fn endpoint_internal_ident(ep: &EndpointIr) -> Ident {
+fn endpoint_internal_ident(ep: &ResolvedEndpoint) -> Ident {
     fn pascalize(raw: &str) -> String {
         raw.split('_')
             .filter(|part| !part.is_empty())
@@ -34,7 +34,7 @@ fn stable_endpoint_hash(value: &str) -> String {
     format!("{hash:016x}")
 }
 
-fn endpoint_qualified_name(ep: &EndpointIr) -> String {
+fn endpoint_qualified_name(ep: &ResolvedEndpoint) -> String {
     if ep.scope_modules.is_empty() {
         ep.name.to_string()
     } else {
@@ -50,12 +50,12 @@ fn endpoint_qualified_name(ep: &EndpointIr) -> String {
     }
 }
 
-fn emit_endpoints(ir: &Ir, cx_ty: &Ident) -> TokenStream2 {
-    let endpoint_defs = ir.endpoints.iter().map(|ep| {
+fn emit_endpoints(resolved_api: &ResolvedApi, cx_ty: &Ident) -> TokenStream2 {
+    let endpoint_defs = resolved_api.endpoints.iter().map(|ep| {
         let internal = endpoint_internal_ident(ep);
-        emit_endpoint_def(ir, ep, &internal, cx_ty)
+        emit_endpoint_def(resolved_api, ep, &internal, cx_ty)
     });
-    let root_endpoint_reexports = ir.endpoints.iter().filter_map(|ep| {
+    let root_endpoint_reexports = resolved_api.endpoints.iter().filter_map(|ep| {
         if !ep.scope_modules.is_empty() {
             return None;
         }
@@ -63,7 +63,7 @@ fn emit_endpoints(ir: &Ir, cx_ty: &Ident) -> TokenStream2 {
         let internal = endpoint_internal_ident(ep);
         Some(quote! { pub use super::__endpoints::#internal as #public; })
     });
-    let scope_modules = emit_endpoint_scope_modules(ir);
+    let scope_modules = emit_endpoint_scope_modules(resolved_api);
     quote! {
         mod __endpoints {
             use super::*;
@@ -120,9 +120,9 @@ fn insert_endpoint_scope_module(
     }
 }
 
-fn emit_endpoint_scope_modules(ir: &Ir) -> TokenStream2 {
+fn emit_endpoint_scope_modules(resolved_api: &ResolvedApi) -> TokenStream2 {
     let mut modules = Vec::new();
-    for endpoint in &ir.endpoints {
+    for endpoint in &resolved_api.endpoints {
         if endpoint.scope_modules.is_empty() {
             continue;
         }
@@ -161,4 +161,6 @@ fn emit_endpoint_scope_module(module: &EndpointScopeModule, depth: usize) -> Tok
         }
     }
 }
+
+
 

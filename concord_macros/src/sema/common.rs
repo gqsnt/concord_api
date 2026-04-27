@@ -5,6 +5,11 @@ fn policy_uses_cache(policy: &PolicyBlocksResolved) -> bool {
         .is_some_and(|cache| matches!(cache, CacheResolved::Set(_) | CacheResolved::Patch(_)))
 }
 
+fn endpoint_uses_cache(endpoint: &ResolvedEndpoint) -> bool {
+    endpoint.policy.scopes.iter().any(policy_uses_cache)
+        || policy_uses_cache(&endpoint.policy.endpoint)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PolicyOwner {
     Client,

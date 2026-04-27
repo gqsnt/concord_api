@@ -43,11 +43,14 @@ api! {
     scope protected {
         auth bearer session
 
-        GET Me -> Json<SessionUser> {
+        GET Me
+            as me
             path ["me"]
-        }
+            -> Json<SessionUser>
     }
 }
+
+pub use self::session_api::SessionApi;
 
 pub async fn session_flow_example() -> Result<(), ApiClientError> {
     let api = session_api::SessionApi::new("upstream-key".to_string());

@@ -190,7 +190,7 @@ impl Drop for MockHandle {
     }
 }
 
-impl concord_core::prelude::Transport for MockTransport {
+impl concord_core::advanced::Transport for MockTransport {
     fn send(
         &self,
         req: BuiltRequest,

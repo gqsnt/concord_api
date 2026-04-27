@@ -134,7 +134,7 @@ fn validate_required_secret(
     Ok(())
 }
 
-fn resolve_auth_uses(
+fn resolve_auth_requirements(
     uses: &[AuthUseDecl],
     credentials: &BTreeMap<String, AuthCredentialIr>,
     provenance: AuthUseProvenanceIr,
@@ -156,7 +156,7 @@ fn resolve_auth_uses(
                         .map(auth_use_credential_ident)
                         .map(Ident::span)
                         .unwrap_or_else(Span::call_site),
-                    "auth all { ... } is not supported in v4 yet; write multiple auth lines instead",
+                    "auth any/all groups are not supported in v4; write multiple auth lines for required auth",
                 ));
             }
             AuthUseDecl::OneOf(kinds) => {
@@ -166,7 +166,7 @@ fn resolve_auth_uses(
                         .map(auth_use_credential_ident)
                         .map(Ident::span)
                         .unwrap_or_else(Span::call_site),
-                    "auth any { ... } is not supported in v4 yet",
+                    "auth any/all groups are not supported in v4; write multiple auth lines for required auth",
                 ));
             }
         }
@@ -212,7 +212,7 @@ fn resolve_auth_use_kind(
             let _ = usage_ty;
             return Err(syn::Error::new_spanned(
                 usage,
-                "custom auth placement is not supported in v4 yet; use bearer/header/query/basic/certificate auth instead",
+                "custom auth placement is not supported in v4",
             ));
         }
     };

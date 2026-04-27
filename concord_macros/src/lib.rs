@@ -15,10 +15,10 @@ pub fn api(input: TokenStream) -> TokenStream {
         Err(e) => return e.to_compile_error().into(),
     };
 
-    let ir = match sema::analyze(ast) {
+    let resolved_api = match sema::analyze(ast) {
         Ok(v) => v,
         Err(e) => return e.to_compile_error().into(),
     };
 
-    codegen::emit(ir).into()
+    codegen::emit(resolved_api).into()
 }

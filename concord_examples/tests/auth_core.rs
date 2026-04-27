@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use concord_core::advanced::CredentialSlot;
+use concord_core::advanced::*;
 use concord_core::prelude::*;
 use http::{HeaderMap, Method, StatusCode};
 
@@ -151,7 +151,7 @@ impl Endpoint<TestCx> for Ping {
 #[derive(Clone)]
 struct CapturingTransport;
 
-impl concord_core::prelude::Transport for CapturingTransport {
+impl concord_core::advanced::Transport for CapturingTransport {
     fn send(
         &self,
         req: concord_core::transport::BuiltRequest,

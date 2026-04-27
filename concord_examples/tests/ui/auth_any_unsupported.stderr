@@ -1,4 +1,4 @@
-error: auth any { ... } is not supported in v4 yet
+error: auth any/all groups are not supported in v4; write multiple auth lines for required auth
   --> tests/ui/auth_any_unsupported.rs:14:32
    |
 14 |             header "X-Token" = key

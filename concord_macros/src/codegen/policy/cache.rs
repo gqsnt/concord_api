@@ -45,7 +45,7 @@ fn emit_cache_config(config: &CacheConfigResolved) -> TokenStream2 {
         });
     }
     quote! {{
-        let mut __cache = ::concord_core::prelude::CacheConfig::new();
+        let mut __cache = ::concord_core::advanced::CacheConfig::new();
         #( #ops )*
         __cache
     }}
@@ -80,11 +80,13 @@ fn emit_cache_patch_ops(patch: &CacheConfigPatchResolved) -> Vec<TokenStream2> {
 fn emit_cache_failure_mode(mode: CacheFailureModeResolved) -> TokenStream2 {
     match mode {
         CacheFailureModeResolved::Ignore => {
-            quote! { ::concord_core::prelude::CacheFailureMode::Ignore }
+            quote! { ::concord_core::advanced::CacheFailureMode::Ignore }
         }
         CacheFailureModeResolved::ServeStaleOnError => {
-            quote! { ::concord_core::prelude::CacheFailureMode::ServeStaleOnError }
+            quote! { ::concord_core::advanced::CacheFailureMode::ServeStaleOnError }
         }
     }
 }
+
+
 

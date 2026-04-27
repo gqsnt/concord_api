@@ -1,6 +1,18 @@
-fn find_query_key_for_ep_field<'a>(ep: &'a EndpointIr, field: &Ident) -> Option<&'a KeyResolved> {
+fn find_query_key_for_ep_field<'a>(ep: &'a ResolvedEndpoint, field: &Ident) -> Option<&'a KeyResolved> {
     // Take the last matching query op (closest to the endpoint) if multiple exist.
-    ep.policy.query.iter().rev().find_map(|op| match op {
+    ep.policy
+        .endpoint
+        .query
+        .iter()
+        .rev()
+        .chain(
+            ep.policy
+                .scopes
+                .iter()
+                .rev()
+                .flat_map(|scope| scope.query.iter().rev()),
+        )
+        .find_map(|op| match op {
         PolicyOp::Set {
             key,
             value: ValueKind::EpField(f),
@@ -9,5 +21,7 @@ fn find_query_key_for_ep_field<'a>(ep: &'a EndpointIr, field: &Ident) -> Option<
         _ => None,
     })
 }
+
+
 
 

@@ -154,12 +154,12 @@ fn emit_prefix_route_apply(
                 if *optional {
                     ops.push(quote! {
                         if let ::core::option::Option::Some(__v) = vars.#field.as_ref() {
-                            route.host_mut().push_label(__v.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
+                            route.host_mut().push_label(__v.to_string(), ::concord_core::advanced::HostLabelSource::Placeholder { name: #wire_lit });
                         }
                     });
                 } else {
                     ops.push(quote! {
-                        route.host_mut().push_label(vars.#field.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
+                        route.host_mut().push_label(vars.#field.to_string(), ::concord_core::advanced::HostLabelSource::Placeholder { name: #wire_lit });
                     });
                 }
             }
@@ -171,12 +171,12 @@ fn emit_prefix_route_apply(
                 if is_optional {
                     ops.push(quote! {
                         if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
-                            route.host_mut().push_label(__v.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
+                            route.host_mut().push_label(__v.to_string(), ::concord_core::advanced::HostLabelSource::Placeholder { name: #wire_lit });
                         }
                     });
                 } else {
                     ops.push(quote! {
-                        route.host_mut().push_label(ep.#field.to_string(), ::concord_core::prelude::HostLabelSource::Placeholder { name: #wire_lit });
+                        route.host_mut().push_label(ep.#field.to_string(), ::concord_core::advanced::HostLabelSource::Placeholder { name: #wire_lit });
                     });
                 }
             }
@@ -191,7 +191,7 @@ fn emit_prefix_route_apply(
                                 let __fmt_s: ::std::string::String = { #build };
                                 route.host_mut().push_label(
                                     __fmt_s,
-                                    ::concord_core::prelude::HostLabelSource::Mixed
+                                    ::concord_core::advanced::HostLabelSource::Mixed
                                 );
                             }
                         }
@@ -202,7 +202,7 @@ fn emit_prefix_route_apply(
                             let __fmt_s: ::std::string::String = { #build };
                             route.host_mut().push_label(
                                 __fmt_s,
-                                ::concord_core::prelude::HostLabelSource::Mixed
+                                ::concord_core::advanced::HostLabelSource::Mixed
                             );
                         }
                     });
@@ -279,4 +279,6 @@ fn emit_path_route_apply(
     }
     quote! { #( #ops )* }
 }
+
+
 
