@@ -72,10 +72,12 @@ fn analyze_auth_credentials(
             AuthCredentialKind::Custom {
                 provider_ty,
                 provider,
-            } => AuthCredentialKindIr::Custom {
-                provider_ty: (**provider_ty).clone(),
-                provider: (**provider).clone(),
-            },
+            } => {
+                return Err(syn::Error::new(
+                    provider_ty.span().join(provider.span()).unwrap_or(provider_ty.span()),
+                    "custom auth credentials are not supported in v4 yet; implement a CredentialProvider plus bearer/header/query/basic/certificate placement instead",
+                ));
+            }
         };
 
         out.push(AuthCredentialIr {
@@ -148,26 +150,24 @@ fn resolve_auth_uses(
                 )?)));
             }
             AuthUseDecl::AllOf(kinds) => {
-                for kind in kinds {
-                    out.push(AuthUsePlanIr::Use(Box::new(resolve_auth_use_kind(
-                        kind,
-                        credentials,
-                        provenance,
-                    )?)));
-                }
+                return Err(syn::Error::new(
+                    kinds
+                        .first()
+                        .map(auth_use_credential_ident)
+                        .map(Ident::span)
+                        .unwrap_or_else(Span::call_site),
+                    "auth all { ... } is not supported in v4 yet; write multiple auth lines instead",
+                ));
             }
             AuthUseDecl::OneOf(kinds) => {
-                if kinds.len() < 2 {
-                    return Err(syn::Error::new(
-                        Span::call_site(),
-                        "use_auth one_of[...] requires at least two auth usages",
-                    ));
-                }
-                let mut alts = Vec::new();
-                for kind in kinds {
-                    alts.push(resolve_auth_use_kind(kind, credentials, provenance)?);
-                }
-                out.push(AuthUsePlanIr::OneOf(alts));
+                return Err(syn::Error::new(
+                    kinds
+                        .first()
+                        .map(auth_use_credential_ident)
+                        .map(Ident::span)
+                        .unwrap_or_else(Span::call_site),
+                    "auth any { ... } is not supported in v4 yet",
+                ));
             }
         }
     }
@@ -207,14 +207,14 @@ fn resolve_auth_use_kind(
             credential: credential.clone(),
         },
         AuthUseKind::Custom {
-            usage_ty,
-            usage,
-            credential,
-        } => AuthUseKindIr::Custom {
-            usage_ty: usage_ty.clone(),
-            usage: usage.clone(),
-            credential: credential.clone(),
-        },
+            usage_ty, usage, ..
+        } => {
+            let _ = usage_ty;
+            return Err(syn::Error::new_spanned(
+                usage,
+                "custom auth placement is not supported in v4 yet; use bearer/header/query/basic/certificate auth instead",
+            ));
+        }
     };
     Ok(AuthUseIr { kind, provenance })
 }
@@ -236,8 +236,7 @@ fn auth_use_credential_ident_ir(u: &AuthUseIr) -> &Ident {
         | AuthUseKindIr::Header { credential, .. }
         | AuthUseKindIr::Query { credential, .. }
         | AuthUseKindIr::Basic { credential }
-        | AuthUseKindIr::Certificate { credential }
-        | AuthUseKindIr::Custom { credential, .. } => credential,
+        | AuthUseKindIr::Certificate { credential } => credential,
     }
 }
 
@@ -246,9 +245,6 @@ fn auth_plan_references_credential(plans: &[AuthUsePlanIr], target: &Ident) -> b
         AuthUsePlanIr::Use(auth_use) => {
             auth_use_credential_ident_ir(auth_use) == target
         }
-        AuthUsePlanIr::OneOf(uses) => uses
-            .iter()
-            .any(|auth_use| auth_use_credential_ident_ir(auth_use) == target),
     })
 }
 
@@ -284,7 +280,6 @@ fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<(
         | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => MaterialShape::AccessToken,
         AuthCredentialKindIr::Basic { .. } => MaterialShape::Basic,
         AuthCredentialKindIr::Endpoint { output_ty, .. } => shape_from_type(output_ty),
-        AuthCredentialKindIr::Custom { .. } => MaterialShape::Unknown,
     };
 
     let fits = match u {

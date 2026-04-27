@@ -176,7 +176,7 @@ impl Parse for ClientDef {
                     .headers
                     .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
                     .stmts
-                    .push(parse_v3_single_policy_stmt(
+                    .push(parse_inline_policy_stmt(
                         &content,
                         PolicyBlockKind::Headers,
                     )?);
@@ -189,10 +189,7 @@ impl Parse for ClientDef {
                         .query
                         .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
                         .stmts
-                        .push(parse_v3_single_policy_stmt(
-                            &content,
-                            PolicyBlockKind::Query,
-                        )?);
+                        .push(parse_inline_policy_stmt(&content, PolicyBlockKind::Query)?);
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::timeout) {
@@ -258,10 +255,7 @@ fn parse_client_default_block(
                 .headers
                 .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
                 .stmts
-                .push(parse_v3_single_policy_stmt(
-                    input,
-                    PolicyBlockKind::Headers,
-                )?);
+                .push(parse_inline_policy_stmt(input, PolicyBlockKind::Headers)?);
         } else if input.peek(kw::query) {
             if input.peek2(token::Brace) {
                 policy.query = Some(input.parse::<PolicyBlockTaggedQuery>()?.0);
@@ -270,7 +264,7 @@ fn parse_client_default_block(
                     .query
                     .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
                     .stmts
-                    .push(parse_v3_single_policy_stmt(input, PolicyBlockKind::Query)?);
+                    .push(parse_inline_policy_stmt(input, PolicyBlockKind::Query)?);
             }
         } else if input.peek(kw::timeout) {
             input.parse::<kw::timeout>()?;

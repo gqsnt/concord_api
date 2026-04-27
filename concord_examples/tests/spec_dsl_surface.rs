@@ -212,9 +212,9 @@ async fn generated_runtime_hooks_are_used_by_clones_when_installed_before_clone(
 }
 
 #[tokio::test]
-async fn v3_tree_facade_inline_leaf_and_await_work() {
+async fn v4_tree_facade_inline_leaf_and_await_work() {
     api! {
-        client ApiSurfaceV3 {
+        client ApiSurfaceV4 {
             base https "example.com"
             secret api_key: String
             credential upstream = api_key(secret.api_key)
@@ -234,13 +234,13 @@ async fn v3_tree_facade_inline_leaf_and_await_work() {
         }
     }
 
-    use api_surface_v3::*;
+    use api_surface_v4::*;
 
     let (transport, h) = mock()
         .reply(MockReply::ok_json(json_bytes(&"alice".to_string())))
         .build();
 
-    let api = ApiSurfaceV3::new_with_transport("secret".to_string(), transport);
+    let api = ApiSurfaceV4::new_with_transport("secret".to_string(), transport);
     let out = api.protected().me().await.unwrap();
 
     assert_eq!(out, "alice");

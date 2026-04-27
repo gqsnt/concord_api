@@ -1,0 +1,13 @@
+error: custom auth credentials are not supported in v4 yet; implement a CredentialProvider plus bearer/header/query/basic/certificate placement instead
+ --> tests/ui/custom_auth_unsupported.rs:9:33
+  |
+9 |         credential key = custom<Provider>(Provider)
+  |                                 ^^^^^^^^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/ui/custom_auth_unsupported.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

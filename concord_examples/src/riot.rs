@@ -801,7 +801,7 @@ pub mod models {
         pub chest_granted: bool,
         pub tokens_earned: i32,
         #[serde(default)]
-        pub summoner_id: Option<String>, // legacy encryptedSummonerId shape
+        pub summoner_id: Option<String>,
         #[serde(default)]
         pub puuid: Option<String>,
         #[serde(flatten)]
@@ -1004,14 +1004,9 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
     let default_region = RegionalRoute::Europe;
 
     let account = riot
-        .request(
-            riot_client::endpoints::regional::account_v1_accounts::GetAccountByRiotId::new(
-                default_region,
-                "Random Iron".to_string(),
-                "EUVV".to_string(),
-            ),
-        )
-        .execute()
+        .regional(default_region)
+        .account_v1_accounts()
+        .get_account_by_riot_id("Random Iron".to_string(), "EUVV".to_string())
         .await?;
     println!(
         "Account: {}#{} puuid={}",
@@ -1019,13 +1014,9 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
     );
 
     let match_ids: Vec<String> = riot
-        .request(
-            riot_client::endpoints::regional::match_v5_matches::GetMatchIdsByPuuid::new(
-                default_region,
-                account.puuid.clone(),
-            )
-            .count(100),
-        )
+        .regional(default_region)
+        .match_v5_matches()
+        .get_match_ids_by_puuid(account.puuid.clone())
         .paginate()
         .max_items(10_000)
         .collect()

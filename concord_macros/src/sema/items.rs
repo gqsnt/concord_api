@@ -387,6 +387,17 @@ fn analyze_endpoint(
         .iter()
         .filter_map(|&lid| ctx.layers[lid].scope_name.clone())
         .collect();
+    let mut prefix_pieces = Vec::new();
+    let mut path_layer_pieces = Vec::new();
+    let mut policy_layers = Vec::new();
+    for &lid in ancestry {
+        let layer = &ctx.layers[lid];
+        match layer.kind {
+            LayerKind::Prefix => prefix_pieces.extend(layer.prefix_pieces.iter().cloned()),
+            LayerKind::Path => path_layer_pieces.extend(layer.path_pieces.iter().cloned()),
+        }
+        policy_layers.push(layer.policy.clone());
+    }
     let current_endpoint_key = endpoint_scope_key(&scope_modules, &ed.name);
     for credential in ctx.auth_credentials.values() {
         let AuthCredentialKindIr::Endpoint { endpoint_key, .. } = &credential.kind else {
@@ -424,7 +435,10 @@ fn analyze_endpoint(
         alias: ed.alias.clone(),
         scope_modules,
         method: ed.method.clone(),
+        prefix_pieces,
+        path_layer_pieces,
         route_pieces,
+        policy_layers,
         ancestry: ancestry.to_vec(),
 
         // Stable declaration order.

@@ -282,10 +282,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
-    fn ctx_for<E: Endpoint<Cx>>(ep: &E) -> ErrorContext {
-        ErrorContext {
-            endpoint: ep.name(),
-            method: E::METHOD.clone(),
+    pub fn plan_context(&self) -> ClientPlanContext<'_, Cx> {
+        ClientPlanContext {
+            vars: self.vars(),
+            auth_vars: self.auth_vars(),
         }
     }
 

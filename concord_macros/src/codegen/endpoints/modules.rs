@@ -53,7 +53,7 @@ fn endpoint_qualified_name(ep: &EndpointIr) -> String {
 fn emit_endpoints(ir: &Ir, cx_ty: &Ident) -> TokenStream2 {
     let endpoint_defs = ir.endpoints.iter().map(|ep| {
         let internal = endpoint_internal_ident(ep);
-        emit_endpoint_def(ep, &internal, cx_ty)
+        emit_endpoint_def(ir, ep, &internal, cx_ty)
     });
     let root_endpoint_reexports = ir.endpoints.iter().filter_map(|ep| {
         if !ep.scope_modules.is_empty() {

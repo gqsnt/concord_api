@@ -7,6 +7,7 @@ pub(crate) mod json;
 
 pub(crate) mod text;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Format {
     Binary,
     Text,

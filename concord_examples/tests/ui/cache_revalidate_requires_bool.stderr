@@ -7,21 +7,15 @@ error[E0425]: cannot find type `Json` in this scope
    = help: consider importing this struct:
            concord_core::prelude::Json
 
-error[E0599]: no method named `name` found for reference `&EpCachedHc0987ad6fa7b16f3` in the current scope
+error[E0282]: type annotations needed
   --> tests/ui/cache_revalidate_requires_bool.rs:3:1
    |
- 3 |   api! {
-   |  _^
+ 3 | / api! {
  4 | |     client CacheRevalidateRequiresBool {
  5 | |         base https "example.com"
  6 | |         default {
 ...  |
 20 | | }
-   | |_^ method not found in `&EpCachedHc0987ad6fa7b16f3`
+   | |_^ cannot infer type
    |
-   = help: items from traits can only be used if the trait is in scope
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: trait `Endpoint` which provides `name` is implemented but not in scope; perhaps you want to import it
-   |
- 3 + use concord_core::prelude::Endpoint;
-   |

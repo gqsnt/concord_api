@@ -329,18 +329,18 @@ impl UrlPath {
     }
 }
 
-pub struct RouteParts {
+pub struct RouteBuilder {
     host: HostParts,
     path: UrlPath,
 }
 
-impl Default for RouteParts {
+impl Default for RouteBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RouteParts {
+impl RouteBuilder {
     pub fn new() -> Self {
         Self {
             host: HostParts::default(),

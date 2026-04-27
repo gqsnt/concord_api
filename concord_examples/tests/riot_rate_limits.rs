@@ -79,14 +79,14 @@ fn application_windows(plan: &RateLimitPlan) -> Vec<Vec<Window>> {
 fn assert_windows(
     recorded: &RecordedPlan,
     method: Method,
-    host: &str,
+    hostname: &str,
     path: &str,
     expected_method_windows: &[&[Window]],
 ) {
     assert_eq!(recorded.method, method, "{}", recorded.endpoint);
 
     let url = url::Url::parse(&recorded.url).expect("recorded URL should parse");
-    assert_eq!(url.host_str(), Some(host), "{}", recorded.endpoint);
+    assert_eq!(url.host_str(), Some(hostname), "{}", recorded.endpoint);
     assert_eq!(url.path(), path, "{}", recorded.endpoint);
 
     assert_eq!(

@@ -1,4 +1,3 @@
-mod core;
 mod credentials;
 mod errors;
 mod future;
@@ -7,14 +6,8 @@ mod ids;
 mod materials;
 mod plan;
 mod providers;
-mod usage;
 mod util;
 
-pub use core::{
-    AuthAppliedPart, AuthAttempt, AuthBuildContext, AuthChain, AuthChainController, AuthController,
-    AuthPart, AuthPrepareContext, AuthResponseAction, AuthResponseContext, AuthRetryReason, NoAuth,
-    NoAuthController, NoAuthState, OneOfAuth, OneOfAuthController, OneOfAuthState,
-};
 pub use credentials::{
     AuthStepPolicy, CredentialContext, CredentialLease, CredentialMaterial, CredentialProvider,
     CredentialSlot, SecretCredential,
@@ -28,15 +21,15 @@ pub use http::{
 pub use ids::{AuthIdentity, AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential, ClientCertificate};
 pub use plan::{
-    AuthAttemptSummary, AuthChallengePolicy, AuthDecision, AuthModePlan, AuthPlacement, AuthPlan,
-    AuthRequirement, CredentialRef, CustomAuthPlacement,
+    AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy, AuthDecision, AuthPlacement,
+    AuthPlan, AuthRequirement, AuthRetryReason, CredentialRef, apply_basic_credential,
+    apply_certificate_credential, apply_secret_credential, invalidate_rejected_credential,
 };
 #[cfg(feature = "json")]
 pub use providers::OAuth2ClientCredentialsProvider;
 pub use providers::{
     ManualCredentialProvider, StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider,
 };
-pub use usage::{
-    AuthApplyContext, AuthChallengeContext, AuthChallengeDecision, AuthUsage, BasicAuth,
-    BearerAuth, CertificateAuth, HeaderAuth, QueryAuth, UseCredential, UseCredentialState,
-};
+
+#[derive(Clone, Default)]
+pub struct NoAuthState;

@@ -43,7 +43,10 @@ pub struct EndpointIr {
     pub alias: Option<Ident>,
     pub scope_modules: Vec<Ident>,
     pub method: Ident,
+    pub prefix_pieces: Vec<PrefixPiece>,
+    pub path_layer_pieces: Vec<PathPiece>,
     pub route_pieces: Vec<PathPiece>,
+    pub policy_layers: Vec<PolicyBlocksResolved>,
 
     pub ancestry: Vec<usize>, // layer ids in nesting order (outer -> inner)
 
@@ -64,6 +67,7 @@ pub struct AuthCredentialIr {
     pub kind: AuthCredentialKindIr,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum AuthCredentialKindIr {
     ApiKey {
@@ -87,10 +91,6 @@ pub enum AuthCredentialKindIr {
         endpoint_key: String,
         output_ty: Type,
     },
-    Custom {
-        provider_ty: Type,
-        provider: Expr,
-    },
 }
 
 #[derive(Debug, Clone)]
@@ -102,7 +102,6 @@ pub struct AuthUseIr {
 #[derive(Debug, Clone)]
 pub enum AuthUsePlanIr {
     Use(Box<AuthUseIr>),
-    OneOf(Vec<AuthUseIr>),
 }
 
 #[derive(Debug, Clone)]
@@ -122,11 +121,6 @@ pub enum AuthUseKindIr {
         credential: Ident,
     },
     Certificate {
-        credential: Ident,
-    },
-    Custom {
-        usage_ty: Box<Type>,
-        usage: Box<Expr>,
         credential: Ident,
     },
 }
@@ -154,7 +148,7 @@ pub enum PathPiece {
     Fmt(FmtResolved),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PolicyBlocksResolved {
     pub headers: Vec<PolicyOp>,
     pub query: Vec<PolicyOp>,

@@ -1,9 +1,5 @@
-use crate::client::ClientContext;
-use crate::endpoint::{Endpoint, ResponseSpec};
-use crate::error::{ApiClientError, ErrorContext};
-use crate::pagination::{Control, Controller, PageItems, ProgressKey, Stop};
-use crate::policy::PolicyPatch;
-use crate::transport::DecodedResponse;
+use crate::endpoint::PaginationPlan;
+use crate::pagination::Stop;
 use std::borrow::Cow;
 
 /// Output helper trait for cursor pagination.
@@ -13,6 +9,14 @@ use std::borrow::Cow;
 pub trait HasNextCursor {
     type Cursor: ToString + Send + Sync + 'static;
     fn next_cursor(&self) -> Option<&Self::Cursor>;
+}
+
+impl<T: Send + 'static> HasNextCursor for Vec<T> {
+    type Cursor = String;
+
+    fn next_cursor(&self) -> Option<&Self::Cursor> {
+        None
+    }
 }
 
 /// Cursor pagination:
@@ -53,90 +57,16 @@ impl Default for CursorPagination {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct CursorState {
-    pub cursor: Option<String>,
-    pub per_page: u64,
-    pub started: bool,
-}
-
-impl<Cx, E> Controller<Cx, E> for CursorPagination
-where
-    Cx: ClientContext,
-    E: Endpoint<Cx>,
-    <E::Response as ResponseSpec>::Output: PageItems + HasNextCursor,
-{
-    type State = CursorState;
-
-    fn init(&self, _ep: &E) -> Result<Self::State, ApiClientError> {
-        if self.per_page == 0 {
-            let ctx = ErrorContext {
-                endpoint: std::any::type_name::<E>(),
-                method: E::METHOD.clone(),
-            };
-            return Err(ApiClientError::Pagination {
-                ctx,
-                msg: "cursor: per_page=0".into(),
-            });
+impl From<CursorPagination> for PaginationPlan {
+    fn from(value: CursorPagination) -> Self {
+        Self::Cursor {
+            cursor_key: value.cursor_key.into_owned(),
+            per_page_key: value.per_page_key.into_owned(),
+            cursor: value.cursor,
+            per_page: value.per_page,
+            send_cursor_on_first: value.send_cursor_on_first,
+            stop_when_cursor_missing: value.stop_when_cursor_missing,
+            stop: value.stop,
         }
-        Ok(CursorState {
-            cursor: self.cursor.clone(),
-            per_page: self.per_page,
-            started: false,
-        })
-    }
-
-    fn apply_policy(
-        &self,
-        st: &Self::State,
-        _ep: &E,
-        policy: &mut PolicyPatch<'_>,
-    ) -> Result<(), ApiClientError> {
-        policy.set_query(self.per_page_key.as_ref(), st.per_page.to_string());
-
-        let should_send_cursor = st.started || self.send_cursor_on_first;
-
-        match (should_send_cursor, &st.cursor) {
-            (true, Some(c)) if !c.is_empty() => {
-                policy.set_query(self.cursor_key.as_ref(), c.clone());
-            }
-            _ => {
-                // ensure it is absent (important when iterating)
-                policy.remove_query(self.cursor_key.as_ref());
-            }
-        }
-
-        Ok(())
-    }
-
-    fn on_page(
-        &self,
-        st: &mut Self::State,
-        _ep_next: &mut E,
-        resp: &DecodedResponse<<E::Response as ResponseSpec>::Output>,
-    ) -> Result<Control, ApiClientError> {
-        st.started = true;
-
-        if matches!(self.stop, Stop::OnEmpty) && resp.value.len() == 0 {
-            return Ok(Control::Stop);
-        }
-
-        let next = resp
-            .value
-            .next_cursor()
-            .map(|c| c.to_string())
-            .filter(|s| !s.is_empty());
-
-        st.cursor = next;
-
-        if st.cursor.is_none() && self.stop_when_cursor_missing {
-            return Ok(Control::Stop);
-        }
-
-        Ok(Control::Continue)
-    }
-
-    fn progress_key(&self, st: &Self::State, _ep: &E) -> Option<ProgressKey> {
-        st.cursor.clone().map(ProgressKey::Str)
     }
 }

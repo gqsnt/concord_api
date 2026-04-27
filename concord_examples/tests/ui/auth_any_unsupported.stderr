@@ -1,0 +1,13 @@
+error: auth any { ... } is not supported in v4 yet
+  --> tests/ui/auth_any_unsupported.rs:14:32
+   |
+14 |             header "X-Token" = key
+   |                                ^^^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/ui/auth_any_unsupported.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

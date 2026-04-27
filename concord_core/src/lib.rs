@@ -22,42 +22,35 @@ mod types;
 
 pub mod internal {
     #[doc(hidden)]
-    pub use crate::auth::{
-        AuthChain, AuthController, AuthPart, AuthResponseAction, NoAuth, NoAuthController,
-        NoAuthState, OneOfAuth, OneOfAuthController, OneOfAuthState,
-    };
+    pub use crate::auth::{CredentialSlot, NoAuthState};
     #[doc(hidden)]
+    pub use crate::codec::{ContentType, Decodes, Encodes, Format, FormatType};
     pub use crate::endpoint::{
-        BodyPart, Chain, Decoded, Mapped, MappedResp, NoBody, NoPolicy, NoRoute, PolicyPart,
-        ResponseSpec, RoutePart, Transform, TransformResp,
+        BodyPlan, ClientPlanContext, Decoded, EndpointMeta, EndpointPlan, Mapped, MappedResp,
+        PaginationPlan, RequestArgs, RequestOverrides, RequestPlan, ResolvedRoute, ResponsePlan,
+        ResponseSpec, Transform, TransformResp,
     };
     #[doc(hidden)]
     pub use crate::pagination::{
-        Control, Controller, CursorPagination, HasNextCursor, NoController, NoPagination,
-        OffsetLimitPagination, PagedPagination, PaginationPart, ProgressKey,
+        Control, CursorPagination, HasNextCursor, OffsetLimitPagination, PagedPagination,
+        ProgressKey,
     };
 }
 pub mod prelude {
     #[cfg(feature = "json")]
     pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::auth::{
-        AccessToken, ApiKey, AuthAppliedPart, AuthApplyContext, AuthAttempt, AuthBuildContext,
-        AuthChallengeContext, AuthChallengeDecision, AuthError, AuthErrorKind, AuthFuture,
-        AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthIdentity, AuthInternalPolicy,
-        AuthMode, AuthPart, AuthPrepareContext as EndpointAuthPrepareContext, AuthProvenance,
-        AuthRequirementId, AuthResponseAction, AuthResponseContext as EndpointAuthResponseContext,
-        AuthRetryReason, AuthStepPolicy, AuthUsage, AuthUsageId, BasicAuth, BasicCredential,
-        BearerAuth, CertificateAuth, ClientCertificate, CredentialContext, CredentialId,
-        CredentialLease, CredentialMaterial, CredentialProvider, CredentialRefreshReason,
-        CredentialSlot, HeaderAuth, InvalidateReason, ManualCredentialProvider, NoAuth,
-        NoAuthState, OneOfAuth, OneOfAuthState, QueryAuth, SecretCredential, StaticApiKeyProvider,
-        StaticBasicProvider, StaticBearerProvider, TransportAuth, UseCredential,
-        UseCredentialState,
+        AccessToken, ApiKey, AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy,
+        AuthDecision, AuthError, AuthErrorKind, AuthPlacement, AuthPlan, AuthRequirement,
+        BasicCredential, ClientCertificate, CredentialContext, CredentialId, CredentialLease,
+        CredentialMaterial, CredentialProvider, CredentialRef, CredentialRefreshReason,
+        InvalidateReason, ManualCredentialProvider, SecretCredential, StaticApiKeyProvider,
+        StaticBasicProvider, StaticBearerProvider,
     };
     pub use crate::cache::{
-        CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,
-        CacheKey, CacheMode, CachePrimaryKey, CacheRequestMode, CacheRevalidation, CacheSetting,
-        CacheSkipReason, CacheStore, NoopCacheStore, default_cache_key,
+        CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode, CacheKey, CacheMode,
+        CachePrimaryKey, CacheRequestMode, CacheRevalidation, CacheSetting, CacheSkipReason,
+        CacheStore, NoopCacheStore, default_cache_key,
     };
     #[cfg(feature = "cache-moka")]
     pub use crate::cache::{MokaCacheConfig, MokaCacheStore};
@@ -68,15 +61,12 @@ pub mod prelude {
     pub use crate::debug::{DebugLevel, DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::endpoint::Endpoint;
     pub use crate::error::{ApiClientError, ErrorContext, FxError};
-    pub use crate::inflight::{
-        InflightPolicy, InflightRegistry, NoopInflightPolicy, RequestKey, SafeMethodInflightPolicy,
-    };
-    pub use crate::pagination::PaginatedEndpoint;
+    pub use crate::inflight::{InflightPolicy, NoopInflightPolicy, SafeMethodInflightPolicy};
     pub use crate::pagination::{
         Caps, CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
         ProgressKey, Stop,
     };
-    pub use crate::policy::{Policy, PolicyLayer, PolicyParts, PolicyPatch};
+    pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
         RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitKey, RateLimitKeyPart,
@@ -94,24 +84,31 @@ pub mod prelude {
         HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext, RuntimeHooks,
         TransportErrorHookContext,
     };
-    pub use crate::runtime_state::ClientRuntimeState;
     pub use crate::secret::SecretString;
     pub use crate::timeout::TimeoutOverride;
     pub use crate::transport::{DecodedResponse, RequestMeta};
     pub use crate::transport::{ReqwestTransport, Transport};
-    pub use crate::types::{HostLabelSource, HostParts as HostMap, HostSpec, RouteParts, UrlPath};
+    pub use crate::types::{
+        HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,
+    };
 }
 
 pub mod advanced {
     pub use crate::auth::{
-        AuthChain, AuthController, AuthPart, CredentialMaterial, CredentialProvider,
-        CredentialSlot, NoAuthController, OneOfAuthController, SecretCredential,
+        AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy, AuthDecision, AuthFuture,
+        AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthIdentity, AuthInternalPolicy,
+        AuthMode, AuthPlacement, AuthPlan, AuthProvenance, AuthRequirement, AuthRequirementId,
+        AuthRetryReason, AuthStepPolicy, AuthUsageId, ClientCertificate, CredentialMaterial,
+        CredentialProvider, CredentialSlot, SecretCredential, TransportAuth,
+        apply_basic_credential, apply_certificate_credential, apply_secret_credential,
+        invalidate_rejected_credential,
     };
-    pub use crate::cache::{CacheConfig, CacheStore};
-    pub use crate::inflight::{InflightPolicy, InflightRegistry};
+    pub use crate::cache::{CacheAfter, CacheBefore, CacheConfig, CacheStore};
+    pub use crate::inflight::{InflightPolicy, InflightRegistry, RequestKey};
     pub use crate::rate_limit::{RateLimitPlan, RateLimitResponsePolicy, RateLimiter};
     pub use crate::retry::RetryPolicy;
     pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::RuntimeHooks;
+    pub use crate::runtime_state::ClientRuntimeState;
     pub use crate::transport::Transport;
 }

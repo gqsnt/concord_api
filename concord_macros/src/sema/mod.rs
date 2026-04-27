@@ -152,3 +152,79 @@ include!("cache.rs");
 include!("rate_limit.rs");
 include!("items.rs");
 include!("policy.rs");
+
+#[cfg(test)]
+fn debug_resolved_endpoints(ir: &Ir) -> String {
+    let mut out = String::new();
+    for ep in &ir.endpoints {
+        let route = format!(
+            "prefix={:?} path_layers={:?} endpoint={:?}",
+            ep.prefix_pieces, ep.path_layer_pieces, ep.route_pieces
+        );
+        let policy = format!(
+            "layers={} headers={} query={} auth={} retry={} cache={} rate_limit={}",
+            ep.policy_layers.len(),
+            ep.policy.headers.len(),
+            ep.policy.query.len(),
+            ep.auth_uses.len(),
+            ep.policy.retry.is_some(),
+            ep.policy.cache.is_some(),
+            ep.policy.rate_limit.is_some()
+        );
+        let facade = if ep.scope_modules.is_empty() {
+            ep.name.to_string()
+        } else {
+            format!(
+                "{}::{}",
+                ep.scope_modules
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("::"),
+                ep.name
+            )
+        };
+        out.push_str(&format!(
+            "{} method={} route=[{}] policy=[{}] facade={}\n",
+            ep.name, ep.method, route, policy, facade
+        ));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolved_endpoint_debug_includes_inherited_tree_state() {
+        let ast: ApiFile = syn::parse_str(
+            r#"
+            client Api {
+                base https "example.com"
+                secret token: String
+                credential key = api_key(secret.token)
+            }
+
+            scope protected {
+                path ["v1"]
+                auth header "X-Token" = key
+
+                GET Me -> Json<()> {
+                    path ["me"]
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let ir = analyze(ast).expect("analysis succeeds");
+        let snapshot = debug_resolved_endpoints(&ir);
+
+        assert!(snapshot.contains("Me method=GET"));
+        assert!(snapshot.contains("path_layers=[Static(\"v1\")]"));
+        assert!(snapshot.contains("endpoint=[Static(\"me\")]"));
+        assert!(snapshot.contains("auth=1"));
+        assert!(snapshot.contains("query=0"));
+        assert!(snapshot.contains("facade=protected::Me"));
+    }
+}

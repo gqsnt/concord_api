@@ -73,7 +73,7 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
     Ok(PolicyBlock { stmts })
 }
 
-fn parse_v3_single_policy_stmt(
+fn parse_inline_policy_stmt(
     input: ParseStream<'_>,
     kind: PolicyBlockKind,
 ) -> Result<PolicyStmt> {

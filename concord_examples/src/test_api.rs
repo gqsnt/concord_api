@@ -112,56 +112,46 @@ pub async fn test_api() -> Result<(), ApiClientError> {
     let client = client::Client::new(true);
 
     let posts = client
-        .clone()
-        .request(
-            client::endpoints::jsonplaceholder::posts::GetPosts::new()
-                .user_id(1)
-                .x_debug(true),
-        )
+        .jsonplaceholder()
+        .posts()
+        .get_posts()
         .debug_level(DebugLevel::VV)
-        .execute()
         .await?;
-    println!("GET /posts?userId=1 => {} posts", posts.len());
+    println!("GET /posts => {} posts", posts.len());
 
     let post = client
-        .clone()
-        .request(client::endpoints::jsonplaceholder::posts::GetPost::new(1))
+        .jsonplaceholder()
+        .posts()
+        .get_post(1)
         .debug_level(DebugLevel::V)
-        .execute()
         .await?;
     println!("GET /posts/1 => title={:?}", post.title);
 
     let comments = client
-        .request(client::endpoints::jsonplaceholder::posts::GetPostComments::new(1))
-        .execute()
+        .jsonplaceholder()
+        .posts()
+        .get_post_comments(1)
         .await?;
     println!("GET /posts/1/comments => {} comments", comments.len());
 
     let created = client
-        .request(client::endpoints::jsonplaceholder::posts::CreatePost::new(
-            models::NewPost {
-                title: "foo".to_string(),
-                body: "bar".to_string(),
-                user_id: 10,
-            },
-        ))
-        .execute()
+        .jsonplaceholder()
+        .posts()
+        .create_post(models::NewPost {
+            title: "foo".to_string(),
+            body: "bar".to_string(),
+            user_id: 10,
+        })
         .await?;
     println!(
         "POST /posts => id={} user_id={}",
         created.id, created.user_id
     );
 
-    let user = client
-        .request(client::endpoints::jsonplaceholder::users::GetUser::new(1))
-        .execute()
-        .await?;
+    let user = client.jsonplaceholder().users().get_user(1).await?;
     println!("GET /users/1 => username={}", user.username);
 
-    let titles = client
-        .request(client::endpoints::jsonplaceholder::users::GetUserPosts::new(1))
-        .execute()
-        .await?;
+    let titles = client.jsonplaceholder().users().get_user_posts(1).await?;
     println!("GET /users/1/posts => {} titles (mapped)", titles.len());
 
     Ok(())

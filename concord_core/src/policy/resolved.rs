@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 
-use crate::cache::CachePlan;
+use crate::auth::AuthPlan;
+use crate::cache::CacheSetting;
 use crate::rate_limit::RateLimitPlan;
-use crate::retry::RetryPlan;
+use crate::retry::RetrySetting;
 use http::HeaderMap;
 use std::time::Duration;
 
@@ -11,7 +12,8 @@ pub struct ResolvedPolicy {
     pub headers: HeaderMap,
     pub query: Vec<(String, String)>,
     pub timeout: Option<Duration>,
-    pub cache: Option<CachePlan>,
-    pub retry: Option<RetryPlan>,
+    pub auth: AuthPlan,
+    pub cache: CacheSetting,
+    pub retry: RetrySetting,
     pub rate_limit: RateLimitPlan,
 }

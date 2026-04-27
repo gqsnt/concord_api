@@ -191,13 +191,13 @@ fn parse_endpoint_block_parts(input: ParseStream<'_>, name: &Ident) -> Result<En
             parts.policy.headers = Some(input.parse::<PolicyBlockTaggedHeaders>()?.0);
             let _ = input.parse::<Option<Token![,]>>()?;
         } else if input.peek(kw::header) {
-            parts.policy.headers.get_or_insert_with(|| PolicyBlock { stmts: Vec::new() }).stmts.push(parse_v3_single_policy_stmt(input, PolicyBlockKind::Headers)?);
+            parts.policy.headers.get_or_insert_with(|| PolicyBlock { stmts: Vec::new() }).stmts.push(parse_inline_policy_stmt(input, PolicyBlockKind::Headers)?);
             let _ = input.parse::<Option<Token![,]>>()?;
         } else if input.peek(kw::query) {
             if input.peek2(token::Brace) {
                 parts.policy.query = Some(input.parse::<PolicyBlockTaggedQuery>()?.0);
             } else {
-                parts.policy.query.get_or_insert_with(|| PolicyBlock { stmts: Vec::new() }).stmts.push(parse_v3_single_policy_stmt(input, PolicyBlockKind::Query)?);
+                parts.policy.query.get_or_insert_with(|| PolicyBlock { stmts: Vec::new() }).stmts.push(parse_inline_policy_stmt(input, PolicyBlockKind::Query)?);
             }
             let _ = input.parse::<Option<Token![,]>>()?;
         } else if input.peek(kw::timeout) {
@@ -305,7 +305,7 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
                 .headers
                 .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
                 .stmts
-                .push(parse_v3_single_policy_stmt(input, PolicyBlockKind::Headers)?);
+                .push(parse_inline_policy_stmt(input, PolicyBlockKind::Headers)?);
         } else if input.peek(kw::query) {
             if input.peek2(token::Brace) {
                 if parts.policy.query.is_some() {
@@ -318,7 +318,7 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
                     .query
                     .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
                     .stmts
-                    .push(parse_v3_single_policy_stmt(input, PolicyBlockKind::Query)?);
+                    .push(parse_inline_policy_stmt(input, PolicyBlockKind::Query)?);
             }
         } else if input.peek(kw::timeout) {
             input.parse::<kw::timeout>()?;

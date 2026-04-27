@@ -72,7 +72,7 @@ impl Parse for LayerDefTaggedScope {
                     .headers
                     .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
                     .stmts
-                    .push(parse_v3_single_policy_stmt(&content, PolicyBlockKind::Headers)?);
+                    .push(parse_inline_policy_stmt(&content, PolicyBlockKind::Headers)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::query) {
                 if content.peek2(token::Brace) {
@@ -82,7 +82,7 @@ impl Parse for LayerDefTaggedScope {
                         .query
                         .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
                         .stmts
-                        .push(parse_v3_single_policy_stmt(&content, PolicyBlockKind::Query)?);
+                        .push(parse_inline_policy_stmt(&content, PolicyBlockKind::Query)?);
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::timeout) {

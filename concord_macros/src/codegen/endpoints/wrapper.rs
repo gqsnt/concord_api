@@ -361,7 +361,7 @@ fn emit_auth_facade(ir: &Ir, client_ty: &Ident) -> (TokenStream2, TokenStream2) 
     let auth_ty = emit_helpers::ident(&format!("__{}Auth", client_ty), client_ty.span());
     let handle_items = ir.client_auth_credentials.iter().filter_map(|credential| {
         let AuthCredentialKindIr::Endpoint {
-            endpoint,
+            endpoint: _,
             output_ty,
             ..
         } = &credential.kind
@@ -377,11 +377,14 @@ fn emit_auth_facade(ir: &Ir, client_ty: &Ident) -> (TokenStream2, TokenStream2) 
 
             impl<'a, T: ::concord_core::prelude::Transport> #handle_ty<'a, T> {
                 #[inline]
-                pub async fn acquire(
+                pub async fn acquire<R>(
                     &self,
-                    ep: endpoints::#endpoint,
-                ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
-                    let value: #output_ty = self.client.request(ep).execute().await?;
+                    request: R,
+                ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError>
+                where
+                    R: ::core::future::IntoFuture<Output = ::core::result::Result<#output_ty, ::concord_core::prelude::ApiClientError>>,
+                {
+                    let value: #output_ty = request.await?;
                     let __auth_state = self.client.inner.auth_state();
                     __auth_state.#name.set_manual(value).await;
                     Ok(())
@@ -409,7 +412,7 @@ fn emit_auth_facade(ir: &Ir, client_ty: &Ident) -> (TokenStream2, TokenStream2) 
     });
     let auth_methods = emit_auth_accessor_methods(ir, client_ty);
 
-    let methods = if root_auth_scope_exists {
+    let auth_method = if root_auth_scope_exists {
         quote! {}
     } else {
         quote! {
@@ -419,17 +422,20 @@ fn emit_auth_facade(ir: &Ir, client_ty: &Ident) -> (TokenStream2, TokenStream2) 
         }
         }
     };
-    let auth_state_item = if root_auth_scope_exists {
-        quote! {}
-    } else {
-        quote! {
+    let methods = quote! {
+        #auth_method
+        #[inline]
+        pub fn auth_state(&self) -> #auth_ty<'_, T> {
+            #auth_ty { client: self }
+        }
+    };
+    let auth_state_item = quote! {
         pub struct #auth_ty<'a, T: ::concord_core::prelude::Transport = ::concord_core::prelude::ReqwestTransport> {
             client: &'a #client_ty<T>,
         }
 
         impl<'a, T: ::concord_core::prelude::Transport> #auth_ty<'a, T> {
             #auth_methods
-        }
         }
     };
 

@@ -1,5 +1,4 @@
 use crate::cache::{CacheConfig, CacheSetting};
-use crate::error::{ApiClientError, ErrorContext};
 use crate::rate_limit::RateLimitPlan;
 use crate::retry::{RetryConfig, RetrySetting};
 use core::time::Duration;
@@ -13,7 +12,7 @@ pub use feature::FeatureUse;
 #[allow(unused_imports)]
 pub use resolved::ResolvedPolicy;
 
-pub type PolicyParts = (
+pub type PolicySnapshot = (
     HeaderMap,
     Vec<(String, String)>,
     Option<Duration>,
@@ -205,7 +204,7 @@ impl Policy {
         self.query.retain(|(k, _)| k != key);
     }
 
-    pub fn into_parts(self) -> PolicyParts {
+    pub fn into_parts(self) -> PolicySnapshot {
         (
             self.headers,
             self.query,
@@ -217,108 +216,21 @@ impl Policy {
     }
 }
 
-pub struct PolicyPatch<'a> {
-    ctx: ErrorContext,
-    inner: &'a mut Policy,
-}
-
-impl<'a> PolicyPatch<'a> {
-    #[inline]
-    pub(crate) fn new(ctx: ErrorContext, inner: &'a mut Policy) -> Self {
-        Self { ctx, inner }
-    }
-
-    #[inline]
-    pub fn set_header(
-        &mut self,
-        name: HeaderName,
-        value: HeaderValue,
-    ) -> Result<(), ApiClientError> {
-        self.guard_accept(&name)?;
-        self.inner.insert_header(name, value);
-        Ok(())
-    }
-
-    #[inline]
-    pub fn remove_header(&mut self, name: HeaderName) -> Result<(), ApiClientError> {
-        self.guard_accept(&name)?;
-        self.inner.remove_header(name);
-        Ok(())
-    }
-
-    #[inline]
-    pub fn push_query(&mut self, key: &str, value: impl Into<String>) {
-        self.inner.push_query(key, value);
-    }
-
-    #[inline]
-    pub fn set_query(&mut self, key: &str, value: impl Into<String>) {
-        self.inner.set_query(key, value);
-    }
-
-    #[inline]
-    pub fn remove_query(&mut self, key: &str) {
-        self.inner.remove_query(key);
-    }
-
-    #[inline]
-    pub fn set_timeout_override(&mut self, t: Option<Duration>) {
-        self.inner.timeout = t;
-    }
-
-    #[inline]
-    pub fn set_cache_override(&mut self, cache: Option<CacheConfig>) {
-        self.inner.cache = cache.map_or(CacheSetting::Off, CacheSetting::Config);
-    }
-
-    #[inline]
-    pub fn set_retry_override(&mut self, retry: Option<RetryConfig>) {
-        self.inner.retry = retry.map_or(RetrySetting::Off, RetrySetting::Config);
-    }
-
-    #[inline]
-    pub fn add_rate_limit(&mut self, plan: RateLimitPlan) {
-        self.inner.add_rate_limit(plan);
-    }
-
-    #[inline]
-    pub fn replace_rate_limit(&mut self, plan: RateLimitPlan) {
-        self.inner.replace_rate_limit(plan);
-    }
-
-    #[inline]
-    pub fn clear_rate_limit(&mut self) {
-        self.inner.clear_rate_limit();
-    }
-
-    #[inline]
-    pub fn set_accept_override(&mut self, v: Option<HeaderValue>) {
-        // Explicit override authorizes runtime changes coherently.
-        self.inner.accept_explicit_by_runtime = true;
-        match v {
-            Some(hv) => {
-                self.inner.headers.insert(ACCEPT, hv);
-            }
-            None => {
-                let _ = self.inner.headers.remove(ACCEPT);
-            }
+impl From<ResolvedPolicy> for Policy {
+    fn from(resolved: ResolvedPolicy) -> Self {
+        Self {
+            headers: resolved.headers,
+            query: resolved.query,
+            timeout: resolved.timeout,
+            cache: resolved.cache,
+            retry: resolved.retry,
+            rate_limit: resolved.rate_limit,
+            layer: PolicyLayer::Runtime,
+            accept_explicit_by_endpoint: true,
+            accept_explicit_by_runtime: true,
         }
     }
-
-    fn guard_accept(&self, name: &HeaderName) -> Result<(), ApiClientError> {
-        if self.inner.layer == PolicyLayer::Runtime
-            && *name == ACCEPT
-            && !(self.inner.accept_explicit_by_endpoint || self.inner.accept_explicit_by_runtime)
-        {
-            return Err(ApiClientError::PolicyViolation {
-                ctx: self.ctx.clone(),
-                msg: "runtime cannot override Accept unless endpoint explicitly set/removed it",
-            });
-        }
-        Ok(())
-    }
 }
-
 #[cfg(test)]
 mod test {
     use super::*;

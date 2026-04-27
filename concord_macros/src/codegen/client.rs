@@ -88,7 +88,7 @@ fn emit_client_auth_state(ir: &Ir, auth_state_ty: &Ident, cx_ty: &Ident) -> Toke
         let name = &c.name;
         let provider_ty = emit_auth_provider_ty(&c.kind);
         quote! {
-            pub(crate) #name: ::std::sync::Arc<::concord_core::prelude::CredentialSlot<#cx_ty, #provider_ty>>
+            pub(crate) #name: ::std::sync::Arc<::concord_core::internal::CredentialSlot<#cx_ty, #provider_ty>>
         }
     });
 
@@ -103,11 +103,11 @@ fn emit_client_auth_state(ir: &Ir, auth_state_ty: &Ident, cx_ty: &Ident) -> Toke
 fn emit_client_auth_state_init(ir: &Ir, auth_state_ty: &Ident) -> (TokenStream2, TokenStream2) {
     if ir.client_auth_credentials.is_empty() {
         return (
-            quote! { ::concord_core::prelude::NoAuthState },
+            quote! { ::concord_core::internal::NoAuthState },
             quote! {
                 let _ = vars;
                 let _ = auth;
-                ::concord_core::prelude::NoAuthState
+                ::concord_core::internal::NoAuthState
             },
         );
     }
@@ -117,7 +117,7 @@ fn emit_client_auth_state_init(ir: &Ir, auth_state_ty: &Ident) -> (TokenStream2,
         let name = &c.name;
         let provider = emit_auth_provider_init(&client_ns, c);
         quote! {
-            #name: ::std::sync::Arc::new(::concord_core::prelude::CredentialSlot::new(#provider))
+            #name: ::std::sync::Arc::new(::concord_core::internal::CredentialSlot::new(#provider))
         }
     });
     let auth_bind = if ir.client_auth_vars.is_empty() {
@@ -159,7 +159,6 @@ fn emit_auth_provider_ty(kind: &AuthCredentialKindIr) -> TokenStream2 {
         AuthCredentialKindIr::Endpoint { output_ty, .. } => {
             quote! { ::concord_core::prelude::ManualCredentialProvider<#output_ty> }
         }
-        AuthCredentialKindIr::Custom { provider_ty, .. } => quote! { #provider_ty },
     }
 }
 
@@ -219,13 +218,11 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
                     .with_missing_hint(#hint)
             }
         }
-        AuthCredentialKindIr::Custom { provider, .. } => quote! { #provider },
     }
 }
 
 fn auth_credential_secret_names(ir: &Ir) -> (std::collections::BTreeSet<String>, bool) {
     let mut out = std::collections::BTreeSet::new();
-    let mut has_custom = false;
     for c in &ir.client_auth_credentials {
         match &c.kind {
             AuthCredentialKindIr::ApiKey { secret }
@@ -245,12 +242,121 @@ fn auth_credential_secret_names(ir: &Ir) -> (std::collections::BTreeSet<String>,
                 out.insert(client_secret.to_string());
             }
             AuthCredentialKindIr::Endpoint { .. } => {}
-            AuthCredentialKindIr::Custom { .. } => {
-                has_custom = true;
-            }
         }
     }
-    (out, has_custom)
+    (out, false)
+}
+
+fn emit_client_auth_prepare_fn(ir: &Ir) -> TokenStream2 {
+    let client_ns = LitStr::new(&ir.client_name.to_string(), ir.client_name.span());
+    let arms = ir.client_auth_credentials.iter().map(|c| {
+        let name = &c.name;
+        let name_lit = LitStr::new(&name.to_string(), name.span());
+        let apply = match &c.kind {
+            AuthCredentialKindIr::Basic { .. } => quote! { ::concord_core::advanced::apply_basic_credential(request, requirement, &lease.value)? },
+            AuthCredentialKindIr::Endpoint { .. } => quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? },
+            AuthCredentialKindIr::ApiKey { .. }
+            | AuthCredentialKindIr::StaticBearer { .. }
+            | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? },
+        };
+        quote! {
+            if requirement.credential.id == ::concord_core::prelude::CredentialId::new(#client_ns, #name_lit) {
+                let credential_ctx = ::concord_core::prelude::CredentialContext {
+                    vars,
+                    auth,
+                    auth_state,
+                    executor,
+                    credential_id: requirement.credential.id.clone(),
+                    reason: ::concord_core::prelude::CredentialRefreshReason::Missing,
+                };
+                let lease = auth_state.#name
+                    .get_or_refresh(credential_ctx, ::concord_core::advanced::AuthStepPolicy::default())
+                    .await?;
+                let identity = #apply;
+                return ::core::result::Result::Ok(::concord_core::prelude::AuthAppliedCredential {
+                    credential_id: requirement.credential.id.clone(),
+                    usage_id: requirement.usage_id.clone(),
+                    step_id: requirement.step_id,
+                    generation: ::core::option::Option::Some(lease.generation),
+                    identity,
+                    provenance: requirement.provenance.clone(),
+                });
+            }
+        }
+    });
+    quote! {
+        fn prepare_auth_requirement<'a>(
+            requirement: &'a ::concord_core::prelude::AuthRequirement,
+            request: &'a mut ::concord_core::transport::BuiltRequest,
+            vars: &'a Self::Vars,
+            auth: &'a Self::AuthVars,
+            auth_state: &'a Self::AuthState,
+            executor: &'a dyn ::concord_core::advanced::AuthHttpExecutor,
+            _meta: &'a ::concord_core::prelude::RequestMeta,
+        ) -> ::concord_core::advanced::AuthFuture<'a, ::core::result::Result<::concord_core::prelude::AuthAppliedCredential, ::concord_core::prelude::AuthError>> {
+            ::std::boxed::Box::pin(async move {
+                #( #arms )*
+                ::core::result::Result::Err(::concord_core::prelude::AuthError::new(
+                    ::concord_core::prelude::AuthErrorKind::UnsupportedScheme,
+                    format!("unknown auth credential `{}`", requirement.credential.id),
+                ))
+            })
+        }
+    }
+}
+
+fn emit_client_auth_response_fn(ir: &Ir) -> TokenStream2 {
+    let client_ns = LitStr::new(&ir.client_name.to_string(), ir.client_name.span());
+    let arms = ir.client_auth_credentials.iter().map(|c| {
+        let name = &c.name;
+        let name_lit = LitStr::new(&name.to_string(), name.span());
+        quote! {
+            if requirement.credential.id == ::concord_core::prelude::CredentialId::new(#client_ns, #name_lit) {
+                let signal = if status == ::http::StatusCode::UNAUTHORIZED {
+                    ::core::option::Option::Some((::concord_core::prelude::InvalidateReason::Unauthorized, ::concord_core::advanced::AuthRetryReason::Unauthorized))
+                } else if status == ::http::StatusCode::FORBIDDEN {
+                    ::core::option::Option::Some((::concord_core::prelude::InvalidateReason::Forbidden, ::concord_core::advanced::AuthRetryReason::Forbidden))
+                } else {
+                    ::core::option::Option::None
+                };
+                if let ::core::option::Option::Some((invalidate_reason, retry_reason)) = signal {
+                    ::concord_core::advanced::invalidate_rejected_credential(
+                        auth_state.#name.as_ref(),
+                        vars,
+                        auth,
+                        auth_state,
+                        executor,
+                        applied,
+                        invalidate_reason,
+                    ).await?;
+                    return ::core::result::Result::Ok(::concord_core::prelude::AuthDecision::RetryAfterRefresh {
+                        credential: requirement.credential.clone(),
+                        generation: applied.generation,
+                        reason: retry_reason,
+                    });
+                }
+                return ::core::result::Result::Ok(::concord_core::prelude::AuthDecision::Continue);
+            }
+        }
+    });
+    quote! {
+        fn handle_auth_response<'a>(
+            requirement: &'a ::concord_core::prelude::AuthRequirement,
+            applied: &'a ::concord_core::prelude::AuthAppliedCredential,
+            vars: &'a Self::Vars,
+            auth: &'a Self::AuthVars,
+            auth_state: &'a Self::AuthState,
+            executor: &'a dyn ::concord_core::advanced::AuthHttpExecutor,
+            _meta: &'a ::concord_core::prelude::RequestMeta,
+            status: ::http::StatusCode,
+            _headers: &'a ::http::HeaderMap,
+        ) -> ::concord_core::advanced::AuthFuture<'a, ::core::result::Result<::concord_core::prelude::AuthDecision, ::concord_core::prelude::AuthError>> {
+            ::std::boxed::Box::pin(async move {
+                #( #arms )*
+                ::core::result::Result::Ok(::concord_core::prelude::AuthDecision::Continue)
+            })
+        }
+    }
 }
 
 struct ClientContextEmit<'a> {
@@ -277,6 +383,8 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
     } = ctx;
     let base_policy = emit_policy_fn_base(policy);
     let (auth_state_assoc_ty, init_auth_state) = emit_client_auth_state_init(ir, auth_state_ty);
+    let prepare_auth_requirement = emit_client_auth_prepare_fn(ir);
+    let handle_auth_response = emit_client_auth_response_fn(ir);
 
     quote! {
         #[derive(Clone)]
@@ -295,6 +403,10 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
             ) -> Self::AuthState {
                 #init_auth_state
             }
+
+            #prepare_auth_requirement
+
+            #handle_auth_response
 
             fn base_policy(
                 vars: &Self::Vars,

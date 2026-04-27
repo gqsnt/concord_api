@@ -23,8 +23,40 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
         })
     }
 
-    fn base_route(_vars: &Self::Vars, _auth: &Self::AuthVars) -> RouteParts {
-        RouteParts::new()
+    fn prepare_auth_requirement<'a>(
+        _requirement: &'a crate::auth::AuthRequirement,
+        _request: &'a mut BuiltRequest,
+        _vars: &'a Self::Vars,
+        _auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+    ) -> crate::auth::AuthFuture<'a, Result<crate::auth::AuthAppliedCredential, AuthError>> {
+        Box::pin(async {
+            Err(AuthError::new(
+                AuthErrorKind::UnsupportedScheme,
+                "auth requirement is not supported by this client context",
+            ))
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn handle_auth_response<'a>(
+        _requirement: &'a crate::auth::AuthRequirement,
+        _applied: &'a crate::auth::AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        _auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+        _status: http::StatusCode,
+        _headers: &'a http::HeaderMap,
+    ) -> crate::auth::AuthFuture<'a, Result<crate::auth::AuthDecision, AuthError>> {
+        Box::pin(async { Ok(crate::auth::AuthDecision::Continue) })
+    }
+
+    fn base_route(_vars: &Self::Vars, _auth: &Self::AuthVars) -> RouteBuilder {
+        RouteBuilder::new()
     }
 
     fn base_policy(

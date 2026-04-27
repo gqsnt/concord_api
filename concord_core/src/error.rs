@@ -96,13 +96,6 @@ pub enum ApiClientError {
         placeholder: Option<&'static str>,
         reason: HostLabelInvalidReason,
     },
-
-    #[error("{ctx}: controller config error: key={key} expected={expected}")]
-    ControllerConfig {
-        ctx: ErrorContext,
-        key: &'static str,
-        expected: &'static str,
-    },
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -150,8 +143,7 @@ impl ApiClientError {
             | ApiClientError::PaginationLimit { ctx, .. }
             | ApiClientError::Auth { ctx, .. }
             | ApiClientError::PolicyViolation { ctx, .. }
-            | ApiClientError::InvalidHostLabel { ctx, .. }
-            | ApiClientError::ControllerConfig { ctx, .. } => ctx,
+            | ApiClientError::InvalidHostLabel { ctx, .. } => ctx,
         }
     }
 
