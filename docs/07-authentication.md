@@ -1,339 +1,194 @@
 # 7. Authentication
 
-Authentication is described in two steps:
+Concord v4 separates two concepts:
 
-1. Declare credential providers in `auth { ... }`.
-2. Apply credentials with `use_auth ...` at the client, scope, or endpoint level.
-
-Secrets are declared separately in `secret { ... }`.
-
-```rust
-api! {
-    client ApiDslHeader {
-        scheme: https,
-        host: "example.com",
-
-        secret {
-            api_key: String
-        }
-
-        auth {
-            credential api_key: ApiKey(secret.api_key)
-        }
-    }
-
-    scope protected {
-        use_auth HeaderAuth("X-Api-Key", api_key)
-        path["api"]
-
-        GET Ping -> Json<()>;
-    }
-}
-```
-
-The generated client receives the required secret and applies it to each protected request.
-
-```rust
-let mut api = api_dsl_header::ApiDslHeader::new("tok1".to_string());
-api.request(api_dsl_header::endpoints::protected::Ping::new()).execute().await?;
-
-api.set_api_key("tok2");
-api.request(api_dsl_header::endpoints::protected::Ping::new()).execute().await?;
-```
-
-Secret setters rebuild auth state, and clones observe the updated state.
+| Concept | Meaning |
+| --- | --- |
+| credential | where secret material comes from |
+| auth placement | how that material is applied to a request |
 
 ## Credential declarations
 
-Credential declarations live inside the client `auth` block.
+Credentials live in the client block.
 
 ```rust
-auth {
-    credential api_key: ApiKey(secret.api_key)
-    credential token: BearerToken(secret.access_token)
-    credential basic: Basic(secret.username, secret.password)
-}
-```
-
-Supported credential forms include:
-
-- `ApiKey(secret.name)`
-- `BearerToken(secret.name)`
-- `AccessToken(secret.name)`
-- `Basic(secret.username, secret.password)`
-- `OAuth2ClientCredentials { ... }`
-- `Endpoint(auth::LoginEndpoint)`
-- `Custom<ProviderType>(provider_expr)`
-
-Credential names are local identifiers referenced by `use_auth`.
-
-## Endpoint-backed manual credentials
-
-Use `Endpoint(...)` when a credential must be acquired explicitly from an API endpoint response.
-
-```rust
-scope auth {
-    POST LoginForSession(body: Json<LoginRequest>) -> Json<LoginResponse> | AccessToken => {
-        AccessToken::new(r.access_token)
-    } {
-        path["login"]
-    }
-}
-
 client Api {
-    scheme: https,
-    host: "example.com",
-    auth {
-        credential session: Endpoint(auth::LoginForSession)
-    }
-}
+    base https "example.com"
 
-scope protected {
-    use_auth BearerAuth(session)
+    secret api_key: String
+    secret username: String
+    secret password: String
 
-    GET Me -> Json<User>;
+    credential key = api_key(secret.api_key)
+    credential bearer = bearer(secret.api_key)
+    credential admin = basic(secret.username, secret.password)
 }
 ```
 
-Endpoint-backed credentials are manual by default:
-
-1. Concord does not auto-call the login endpoint.
-2. Using the credential before acquisition fails with `AuthErrorKind::MissingCredential`.
-3. The generated client exposes async lifecycle helpers.
+Supported built-in credential sources:
 
 ```rust
-api.acquire_auth_session(endpoints::auth::LoginForSession::new(...)).await?;
-api.request(endpoints::protected::Me::new()).execute().await?;
-api.set_auth_session_value(AccessToken::new("seed")).await;
-let has = api.has_auth_session().await;
-api.clear_auth_session().await;
+credential key = api_key(secret.api_key)
+credential token = bearer(secret.access_token)
+credential admin = basic(secret.username, secret.password)
+credential session = endpoint auth_api::LoginForSession
 ```
 
-Typical runtime error before acquisition:
-
-```text
-missing credential `session`; call `client.acquire_auth_session(...)` first
-```
-
-The login endpoint output type (after optional response mapping) must implement `CredentialMaterial`.
-The login endpoint can itself use `use_auth` when explicit upstream auth is required.
-See `concord_examples/src/auth_session.rs` for a complete end-to-end example.
+OAuth2 client credentials may be available when the relevant feature is enabled.
 
 ## Applying auth
 
-Auth usage declares how a credential is applied to a request.
+Apply credentials with `auth`.
 
 ```rust
-use_auth BearerAuth(token)
-use_auth HeaderAuth("X-Api-Key", api_key)
-use_auth QueryAuth("api_key", api_key)
-use_auth BasicAuth(basic)
-use_auth CertificateAuth(cert)
+auth header "X-Api-Key" = key
+auth bearer session
+auth query "api_key" = key
+auth basic admin
 ```
 
-Auth can be applied at the client level, scope level, or endpoint level. Use scope-level auth for protected API families.
+Auth can be written at client, scope, or endpoint level.
 
 ```rust
-scope platform {
-    use_auth HeaderAuth("X-Riot-Token", riot_api_key)
-    path["lol"]
+scope protected {
+    auth bearer session
 
-    GET GetPlatformData -> Json<PlatformDataDto> {
-        path["status", "platform-data"]
-    }
+    GET Me
+        as me
+        path ["me"]
+        -> Json<User>
 }
 ```
+
+## Multiple auth lines
+
+Multiple auth lines mean all listed requirements apply.
+
+```rust
+auth header "X-Api-Key" = key
+auth bearer session
+```
+
+v4 does not document `auth any` / `auth all` groups as stable user-facing syntax.
 
 ## Header auth
 
-Header auth writes a credential into a named header.
-
 ```rust
-secret {
-    api_key: String
+credential riot = api_key(secret.api_key)
+
+scope platform(platform: PlatformRoute) {
+    auth header "X-Riot-Token" = riot
 }
-
-auth {
-    credential api_key: ApiKey(secret.api_key)
-}
-
-GET Ping -> Json<()> {
-    use_auth HeaderAuth("X-Api-Key", api_key)
-}
-```
-
-The resulting request contains:
-
-```text
-x-api-key: <secret>
 ```
 
 ## Bearer auth
 
-Bearer auth writes the credential into `Authorization`.
-
 ```rust
-auth {
-    credential token: AccessToken(secret.access_token)
+credential session = endpoint auth_api::LoginForSession
+
+scope protected {
+    auth bearer session
 }
-
-GET Ping -> Json<()> {
-    use_auth BearerAuth(token)
-}
-```
-
-The resulting request contains:
-
-```text
-authorization: Bearer <token>
 ```
 
 ## Query auth
 
-Query auth writes a credential into the URL query string.
-
 ```rust
-GET Ping -> Json<()> {
-    use_auth QueryAuth("api_key", api_key)
+credential key = api_key(secret.api_key)
+
+scope legacy {
+    auth query "api_key" = key
 }
 ```
 
-This sends `?api_key=<secret>`. Prefer header-based auth when the upstream API supports it, because query credentials are more likely to be logged by intermediaries.
+Use query auth only for APIs that require it.
 
-## Multiple auth steps
-
-Use a list to apply all steps in order.
+## Basic auth
 
 ```rust
-GET Ping -> Json<()> {
-    use_auth [
-        BearerAuth(token),
-        HeaderAuth("X-Api-Key", api_key)
-    ]
+credential admin = basic(secret.username, secret.password)
+
+scope admin {
+    auth basic admin
 }
 ```
 
-The request receives both auth artifacts.
+## Endpoint-backed session credentials
 
-## One-of auth fallback
+Endpoint-backed credentials are manual. Concord does not login automatically.
 
-Use `one_of` for fallback auth. Concord tries the first usage and, if the response challenges or rejects it, retries with the next usage.
-
-```rust
-GET Ping -> Json<()> {
-    use_auth one_of [
-        BearerAuth(token),
-        HeaderAuth("X-Fallback-Key", fallback)
-    ]
-}
-```
-
-In the tests, a `401 Unauthorized` response with a bearer challenge causes the second request to use the fallback header and omit the failed bearer token.
-
-## OAuth2 client credentials
-
-OAuth2 client credentials are declared as a credential provider.
+DSL:
 
 ```rust
-secret {
-    client_id: String,
-    client_secret: String
+client SessionApi {
+    base https "example.com"
+
+    secret upstream_key: String
+
+    credential upstream = api_key(secret.upstream_key)
+    credential session = endpoint auth_api::LoginForSession
 }
 
-auth {
-    credential token: OAuth2ClientCredentials {
-        token_url: "https://auth.example.com/token",
-        client_id: secret.client_id,
-        client_secret: secret.client_secret,
-        scope: "read"
+scope auth_api {
+    POST LoginForSession(body: Json<LoginRequest>)
+        -> Json<LoginResponse>
+        map AccessToken {
+            AccessToken::new(r.access_token)
+        }
+    {
+        path ["login"]
+        auth header "X-Upstream-Key" = upstream
     }
 }
 
-GET Ping -> Json<()> {
-    use_auth BearerAuth(token)
+scope protected {
+    auth bearer session
+
+    GET Me
+        as me
+        path ["me"]
+        -> Json<User>
 }
 ```
 
-The provider sends an internal token request, then applies the returned access token as bearer auth.
-
-The tested token request uses:
-
-```text
-POST https://auth.example.com/token
-Authorization: Basic <base64 client_id:client_secret>
-Content-Type: application/x-www-form-urlencoded
-
-grant_type=client_credentials&scope=read
-```
-
-## Custom credential providers
-
-Use `Custom<T>(expr)` when built-in credential providers are not enough.
+Usage:
 
 ```rust
-auth {
-    credential token: Custom<DslStaticTokenProvider>(DslStaticTokenProvider)
-}
+let api = session_api::SessionApi::new("upstream-key".to_string());
 
-GET Ping -> Json<()> {
-    use_auth BearerAuth(token)
-}
+api.auth_state()
+    .session()
+    .acquire(api.auth_api().login_for_session(LoginRequest {
+        username: "alice".to_string(),
+        password: "secret".to_string(),
+    }))
+    .await?;
+
+let me = api.protected().me().await?;
+
+api.auth_state().session().clear().await;
 ```
 
-The custom provider implements the core credential provider traits from `concord_core::prelude`.
+## Auth retry behavior
 
-A custom provider can perform internal HTTP requests through `CredentialContext.executor`. Tests use this to implement a login flow that posts a form to `/login`, receives an access token, then applies bearer auth to the original request.
+When a request fails because a credential is rejected, Concord can invalidate the exact credential generation used by the request and retry within the configured auth retry limit.
 
-## Custom auth usage
+This behavior is internal to the runtime. Users usually only need to:
 
-Use `Custom<UsageType>(usage_expr, credential)` when the credential is valid but the wire format is custom.
+1. declare the credential;
+2. apply it with `auth`;
+3. acquire manual credentials when needed.
 
-```rust
-auth {
-    credential token: Custom<DslStaticTokenProvider>(DslStaticTokenProvider)
-}
+## Extension points
 
-GET Ping -> Json<()> {
-    use_auth Custom<DslFormattingBearerAuth>(DslFormattingBearerAuth::new("tenant-a:"), token)
-}
-```
+Credential providers are extension points under `concord_core::advanced`.
 
-The test formats the token before applying it:
+Use custom providers for new ways of obtaining credential material.
 
-```text
-authorization: Bearer tenant-a:macro-token
-```
+Custom auth placements are not documented as stable v4. Prefer built-in placements:
 
-## Certificate auth
-
-Certificate auth is supported as a usage form.
-
-```rust
-auth {
-    credential cert: Custom<DslCertificateProvider>(DslCertificateProvider)
-}
-
-GET Ping -> Json<()> {
-    use_auth CertificateAuth(cert)
-}
-```
-
-The exact transport behavior depends on the transport and certificate integration.
-
-## Auth response handling
-
-Auth runs before cache lookup, so authenticated cache keys can include the auth identity.
-
-Auth response handling happens before cache storage. This prevents Concord from storing a response that will trigger an auth retry.
-
-Auth invalidation and auth retry are now independent decisions. This matters for manual endpoint-backed credentials: a `401` can invalidate local auth state without forcing an automatic retry.
-
-Auth retries are capped by the runtime max auth retry budget in the core client. The generated wrapper uses the core default; expose or configure the lower-level `ApiClient` directly if an integration needs to tune that budget.
-
-## Practical guidance
-
-Use `secret` plus `auth` for credentials. Do not build auth headers manually unless the upstream API is unusual.
-
-Put `use_auth` at the narrowest level that matches the API. Client-level auth is fine for APIs where every endpoint is protected. Scope-level auth is usually clearer for mixed public and private APIs.
-
-Use `one_of` only when the API genuinely accepts multiple alternatives. It causes additional requests when fallback is needed.
+- bearer;
+- header;
+- query;
+- basic;
+- certificate if supported by your transport/runtime.

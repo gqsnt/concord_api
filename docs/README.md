@@ -1,50 +1,112 @@
-# Concord DSL Book
+# Concord v4 Documentation
 
-Concord is a Rust API-client generator built around the `api!` macro. You describe the shape of an HTTP API in a compact DSL, and Concord generates strongly typed endpoint structs plus a runtime client that handles routing, policy inheritance, authentication, retries, rate limits, caching, pagination, decoding, and testing hooks.
+Concord is a Rust API-client generator built around the `api!` macro.
 
-This directory is written as a small book. Each chapter focuses on one concept and uses examples based on the code and tests in `concord_examples`.
+You describe an HTTP API as a tree:
 
-Start with:
+```text
+client = root
+scope = branch
+endpoint = leaf
+policy = inherited branch behavior
+```
 
-- [Cheat Sheet](00-cheat-sheet.md)
-- [Introduction](01-introduction.md)
-- [Client Blocks](02-client.md)
-- [Routing and Endpoints](03-routing-and-endpoints.md)
-- [Authentication](07-authentication.md)
+Concord then generates:
 
-Then use focused chapters:
+1. a typed client,
+2. a tree-shaped facade (`api.scope().endpoint().await?`),
+3. explicit endpoint structs for advanced use,
+4. a runtime pipeline that handles routing, auth, cache, rate limits, retry, pagination, transport and decoding.
 
-- [Parameters, Variables, and Values](04-params-vars-and-values.md)
-- [Headers, Query, and Timeout](05-headers-query-timeout.md)
-- [Bodies, Responses, and Mapping](06-bodies-responses-mapping.md)
-- [Retry](08-retry.md)
-- [Rate Limiting](09-rate-limiting.md)
-- [Caching](10-cache.md)
-- [Pagination](11-pagination.md)
-- [Runtime Client](12-runtime-client.md)
-- [Testing and Debugging](13-testing-and-debugging.md)
-- [Customization and Extension Points](14-customization.md)
-- [Authentication Evolution](15-auth-evolution.md)
-- [Authentication System Blueprint](16-auth-system-blueprint.md)
-- [Cache System Blueprint](17-cache-system-blueprint.md)
-- [Rate-Limit System Blueprint](18-rate-limit-system-blueprint.md)
-- [Maintainer Principles](19-maintainer-principles.md)
-- [Contract](20-contract.md)
-- [DSL Reference](21-dsl-reference.md)
-- [Large API Authoring Style](22-authoring-style.md)
-
-Canonical reminders:
-
-- Use `vars.*`, `secret.*`, and `ep.*` references.
-- Use `part[...]` for composed route/header/query values.
-- Use `scope { host[...] path[...] ... }` for shared routing.
-- Endpoint-backed session credentials are explicit via `acquire_auth_*`.
-
-Most examples assume these imports:
+Most examples assume:
 
 ```rust
 use concord_core::prelude::*;
 use concord_macros::api;
 ```
 
-The `Json<T>` codec requires the `concord_core/json` feature. The built-in Moka cache backend requires the `concord_core/cache-moka` feature.
+## Recommended reading order
+
+1. [Quick Start](00-quick-start.md)
+2. [Mental Model](01-mental-model.md)
+3. [DSL Overview](02-dsl-overview.md)
+4. [Client Blocks](03-client.md)
+5. [Scopes, Routes, and Endpoints](04-scopes-routes-endpoints.md)
+6. [Generated Client Usage](05-generated-client.md)
+7. [Policies: Headers, Query, Timeout](06-policies.md)
+8. [Authentication](07-authentication.md)
+9. [Bodies, Responses, and Mapping](08-bodies-responses-mapping.md)
+10. [Retry](09-retry.md)
+11. [Rate Limiting](10-rate-limiting.md)
+12. [Caching](11-caching.md)
+13. [Pagination](12-pagination.md)
+14. [Runtime and Request Lifecycle](13-runtime.md)
+15. [Extension Points](14-extension-points.md)
+16. [Testing and Debugging](15-testing-debugging.md)
+17. [DSL Reference](16-dsl-reference.md)
+18. [Migration Notes](17-migration-notes.md)
+
+## Canonical v4 style
+
+```rust
+api! {
+    client SessionApi {
+        base https "example.com"
+
+        secret upstream_key: String
+
+        credential upstream = api_key(secret.upstream_key)
+        credential session = endpoint auth_api::LoginForSession
+    }
+
+    scope auth_api {
+        POST LoginForSession(body: Json<LoginRequest>)
+            -> Json<LoginResponse>
+            map AccessToken {
+                AccessToken::new(r.access_token)
+            }
+        {
+            path ["login"]
+            auth header "X-Upstream-Key" = upstream
+        }
+    }
+
+    scope protected {
+        auth bearer session
+
+        GET Me
+            as me
+            path ["me"]
+            -> Json<User>
+    }
+}
+```
+
+Usage:
+
+```rust
+let api = session_api::SessionApi::new("upstream-key".to_string());
+
+api.auth_state()
+    .session()
+    .acquire(api.auth_api().login_for_session(LoginRequest {
+        username: "alice".to_string(),
+        password: "secret".to_string(),
+    }))
+    .await?;
+
+let me = api.protected().me().await?;
+```
+
+## What this documentation does not cover as stable v4
+
+These are intentionally not presented as stable v4 user-facing APIs:
+
+- old `scheme:` / `host:` client syntax;
+- old `auth { credential ... }` block syntax;
+- old `use_auth HeaderAuth(...)` style;
+- `auth any` / `auth all` groups;
+- custom auth placement;
+- cache storage tuning in the DSL;
+- old `backoff none`;
+- old rate-limit `response custom` and `route.host` syntax.
