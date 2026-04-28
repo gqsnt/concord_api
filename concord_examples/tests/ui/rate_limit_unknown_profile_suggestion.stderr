@@ -1,0 +1,7 @@
+error: unknown rate_limit profile `ap`
+       did you mean `app`?
+       available rate_limit profiles: `app`
+  --> tests/ui/rate_limit_unknown_profile_suggestion.rs:15:20
+   |
+15 |         rate_limit ap
+   |                    ^^

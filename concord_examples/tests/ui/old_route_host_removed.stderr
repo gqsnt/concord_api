@@ -1,0 +1,5 @@
+error: `route.host` was removed in v4 rate-limit keys; use `host`
+ --> tests/ui/old_route_host_removed.rs:8:36
+  |
+8 |             bucket application by [route.host] {
+  |                                    ^^^^^

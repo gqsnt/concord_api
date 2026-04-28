@@ -1,7 +1,7 @@
-fn emit_scheme(s: crate::ast::SchemeLit) -> TokenStream2 {
+fn emit_scheme(s: crate::model::Scheme) -> TokenStream2 {
     match s {
-        crate::ast::SchemeLit::Http => quote! { ::http::uri::Scheme::HTTP },
-        crate::ast::SchemeLit::Https => quote! { ::http::uri::Scheme::HTTPS },
+        crate::model::Scheme::Http => quote! { ::http::uri::Scheme::HTTP },
+        crate::model::Scheme::Https => quote! { ::http::uri::Scheme::HTTPS },
     }
 }
 

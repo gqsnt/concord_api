@@ -7,7 +7,7 @@ pub struct ApiFile {
 #[derive(Debug)]
 pub struct ClientDef {
     pub name: Ident,
-    pub scheme: SchemeLit,
+    pub scheme: Scheme,
     pub host: LitStr,
     pub policy: PolicyBlocks,
     pub vars: Option<VarsBlock>,

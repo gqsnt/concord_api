@@ -22,12 +22,6 @@ pub enum PolicyStmt {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SetOp {
-    Set,
-    Push, // query only
-}
-
 #[derive(Debug)]
 pub enum KeySpec {
     Ident(Ident),

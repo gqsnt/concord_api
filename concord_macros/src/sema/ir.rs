@@ -2,7 +2,7 @@
 pub struct ResolvedApi {
     pub mod_name: Ident,
     pub client_name: Ident,
-    pub scheme: SchemeLit,
+    pub scheme: Scheme,
     pub domain: LitStr,
 
     pub client_vars: Vec<VarInfo>,      // stable order
@@ -40,11 +40,16 @@ pub struct LayerIr {
 pub struct ResolvedEndpoint {
     pub name: Ident,
     pub alias: Option<Ident>,
+    // Resolved facade module path and stable ordered facade parameter groups.
+    // These are sema outputs, not raw AST ancestry.
     pub scope_modules: Vec<Ident>,
-    pub scope_decl_groups: Vec<Vec<VarInfo>>,
+    pub facade_param_groups: Vec<Vec<VarInfo>>,
     pub method: Ident,
+    // Fully resolved route fragments split by emission concern. Codegen may
+    // emit them directly; it must not walk raw scope ancestry to rediscover
+    // these pieces.
     pub prefix_pieces: Vec<PrefixPiece>,
-    pub path_layer_pieces: Vec<PathPiece>,
+    pub scope_path_pieces: Vec<PathPiece>,
     pub route_pieces: Vec<PathPiece>,
 
     pub vars: Vec<VarInfo>, // endpoint vars (union, stable)
@@ -59,6 +64,8 @@ pub struct ResolvedEndpoint {
 
 #[derive(Debug)]
 pub struct ResolvedPolicySpec {
+    // Stable ordered inherited scope policy snapshots plus endpoint-local
+    // policy. These are normalized sema results, not raw policy AST nodes.
     pub scopes: Vec<PolicyBlocksResolved>,
     pub endpoint: PolicyBlocksResolved,
     pub auth: Vec<AuthUsePlanIr>,

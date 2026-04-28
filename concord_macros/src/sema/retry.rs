@@ -47,7 +47,7 @@ fn resolve_client_retry(
     let Some(config) = profiles.get(&default_profile.to_string()) else {
         return Err(syn::Error::new(
             default_profile.span(),
-            format!("unknown default retry profile `{default_profile}`"),
+            unknown_name_message("default retry profile", default_profile, profiles),
         ));
     };
     Ok(Some(RetryResolved::Set(config.clone())))
@@ -67,7 +67,7 @@ fn resolve_retry_spec(
             let Some(config) = profiles.get(&name.to_string()) else {
                 return Err(syn::Error::new(
                     name.span(),
-                    format!("unknown retry profile `{name}`"),
+                    unknown_name_message("retry profile", name, profiles),
                 ));
             };
             Ok(Some(RetryResolved::Set(config.clone())))

@@ -1,4 +1,5 @@
 error: unknown rate_limit key `region`
+       no rate_limit keys are declared
   --> tests/ui/rate_limit_unknown_key.rs:12:31
    |
 12 |             bucket method by [region, endpoint] { // ERROR: unknown key

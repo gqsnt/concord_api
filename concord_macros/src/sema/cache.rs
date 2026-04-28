@@ -47,7 +47,7 @@ fn resolve_client_cache(
     let Some(config) = profiles.get(&default.to_string()) else {
         return Err(syn::Error::new(
             default.span(),
-            format!("unknown default cache profile `{default}`"),
+            unknown_name_message("default cache profile", default, profiles),
         ));
     };
     Ok(Some(CacheResolved::Set(config.clone())))
@@ -67,7 +67,7 @@ fn resolve_cache_spec(
             let Some(config) = profiles.get(&profile.to_string()) else {
                 return Err(syn::Error::new(
                     profile.span(),
-                    format!("unknown cache profile `{profile}`"),
+                    unknown_name_message("cache profile", profile, profiles),
                 ));
             };
             Ok(Some(CacheResolved::Set(config.clone())))

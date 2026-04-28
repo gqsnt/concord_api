@@ -1,0 +1,5 @@
+error: `scheme:` was removed in v4; use `base https "example.com"`
+ --> tests/ui/old_client_scheme_host_removed.rs:5:9
+  |
+5 |         scheme: https,
+  |         ^^^^^^

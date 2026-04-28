@@ -107,6 +107,11 @@ fn parse_retry_patch_body(input: ParseStream<'_>) -> Result<RetryPatch> {
                     "expected `header(\"...\")` after `idempotency`",
                 ));
             }
+        } else if input.peek(kw::backoff) {
+            return Err(syn::Error::new(
+                input.span(),
+                "`backoff none` was removed in v4; remove the line",
+            ));
         } else {
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(

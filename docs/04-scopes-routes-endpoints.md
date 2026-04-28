@@ -221,11 +221,11 @@ scope regional(region: RegionalRoute) {
             path ["by-puuid", puuid, "ids"]
 
             query {
-                queue = queue
+                queue
                 "startTime" = start_time
                 "endTime" = end_time
-                start = start
-                count = count
+                start
+                count
             }
 
             paginate OffsetLimitPagination {

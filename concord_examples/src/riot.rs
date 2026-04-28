@@ -23,6 +23,7 @@ api! {
         }
         default {
             retry read
+            rate_limit app
         }
         retry read {
                 attempts 2
@@ -31,9 +32,6 @@ api! {
                 retry_after
         }
         observe rate_limit RiotRateLimitHeaders
-        default {
-            rate_limit app
-        }
         rate_limit app {
                 bucket application by [host] {
                     500 / 10s
@@ -90,43 +88,39 @@ api! {
     }
 
     scope platform(platform: PlatformRoute) {
-        auth header "X-Riot-Token" = riot_api_key
-
         host [platform, "api"]
         path ["lol"]
+
+        auth header "X-Riot-Token" = riot_api_key
 
         scope champion_v3 {
             path ["platform", "v3"]
 
             GET GetChampionRotations
+            as rotations
+            path ["champion-rotations"]
             -> Json<models::ChampionRotationsDto>
-            {
-                path ["champion-rotations"]
-                rate_limit league_queue_slow
-            }
+            rate_limit league_queue_slow
         }
 
         scope summoner_v4 {
             path ["summoner", "v4", "summoners"]
 
             GET GetSummonerByPuuid(puuid: String)
+            as by_puuid
+            path ["by-puuid", puuid]
             -> Json<models::SummonerDto>
-            {
-                path ["by-puuid", puuid]
-                rate_limit summoner_by_puuid
-            }
+            rate_limit summoner_by_puuid
 
             GET GetSummonerById(summoner_id: String)
+            as by_id
+            path [summoner_id]
             -> Json<models::SummonerDto>
-            {
-                path [summoner_id]
-            }
 
             GET GetSummonerByName(summoner_name: String)
+            as by_name
+            path ["by-name", summoner_name]
             -> Json<models::SummonerDto>
-            {
-                path ["by-name", summoner_name]
-            }
         }
 
         scope champion_mastery_v4 {
@@ -136,39 +130,32 @@ api! {
                 path ["champion-masteries"]
 
                 GET GetChampionMasteriesBySummoner(summoner_id: String)
+                path ["by-summoner", summoner_id]
                 -> Json<Vec<models::ChampionMasteryDto>>
-                {
-                    path ["by-summoner", summoner_id]
-                    rate_limit riot_high_volume_method
-                }
+                rate_limit riot_high_volume_method
 
                 GET GetChampionMasteryByChampion(summoner_id: String, champion_id: i64)
+                path ["by-summoner", summoner_id, "by-champion", champion_id]
                 -> Json<models::ChampionMasteryDto>
-                {
-                    path ["by-summoner", summoner_id, "by-champion", champion_id]
-                    rate_limit riot_high_volume_method
-                }
+                rate_limit riot_high_volume_method
 
                 GET GetChampionMasteriesByPuuid(encrypted_puuid: String)
+                as by_puuid
+                path ["by-puuid", encrypted_puuid]
                 -> Json<Vec<models::ChampionMasteryDto>>
-                {
-                    path ["by-puuid", encrypted_puuid]
-                    rate_limit riot_high_volume_method
-                }
+                rate_limit riot_high_volume_method
 
                 GET GetChampionMasteryByPuuidAndChampion(encrypted_puuid: String, champion_id: i64)
+                path ["by-puuid", encrypted_puuid, "by-champion", champion_id]
                 -> Json<models::ChampionMasteryDto>
-                {
-                    path ["by-puuid", encrypted_puuid, "by-champion", champion_id]
-                    rate_limit riot_high_volume_method
-                }
+                rate_limit riot_high_volume_method
 
                 GET GetTopChampionMasteriesByPuuid(encrypted_puuid: String, count?: u32)
+                path ["by-puuid", encrypted_puuid, "top"]
                 -> Json<Vec<models::ChampionMasteryDto>>
                 {
-                    path ["by-puuid", encrypted_puuid, "top"]
                     query {
-                        count = count
+                        count
                     }
                     rate_limit riot_high_volume_method
                 }
@@ -178,18 +165,15 @@ api! {
                 path ["scores"]
 
                 GET GetChampionMasteryScore(summoner_id: String)
+                as score
+                path ["by-summoner", summoner_id]
                 -> Json<i32>
-                {
-                    path ["by-summoner", summoner_id]
-                    rate_limit riot_high_volume_method
-                }
+                rate_limit riot_high_volume_method
 
                 GET GetChampionMasteryScoreByPuuid(encrypted_puuid: String)
+                path ["by-puuid", encrypted_puuid]
                 -> Json<i32>
-                {
-                    path ["by-puuid", encrypted_puuid]
-                    rate_limit riot_high_volume_method
-                }
+                rate_limit riot_high_volume_method
             }
         }
 
@@ -200,69 +184,58 @@ api! {
                 path ["challengerleagues"]
 
                 GET GetChallengerLeagueByQueue(queue: LeagueQueue)
+                path ["by-queue", queue]
                 -> Json<models::LeagueListDto>
-                {
-                    path ["by-queue", queue]
-                    rate_limit league_queue_slow
-                }
+                rate_limit league_queue_slow
             }
 
             scope grandmasterleagues {
                 path ["grandmasterleagues"]
 
                 GET GetGrandmasterLeagueByQueue(queue: LeagueQueue)
+                path ["by-queue", queue]
                 -> Json<models::LeagueListDto>
-                {
-                    path ["by-queue", queue]
-                    rate_limit league_queue_slow
-                }
+                rate_limit league_queue_slow
             }
 
             scope masterleagues {
                 path ["masterleagues"]
 
                 GET GetMasterLeagueByQueue(queue: LeagueQueue)
+                path ["by-queue", queue]
                 -> Json<models::LeagueListDto>
-                {
-                    path ["by-queue", queue]
-                    rate_limit league_queue_slow
-                }
+                rate_limit league_queue_slow
             }
 
             scope leagues {
                 path ["leagues"]
 
                 GET GetLeagueById(league_id: String)
+                path [league_id]
                 -> Json<models::LeagueListDto>
-                {
-                    path [league_id]
-                    rate_limit league_by_id
-                }
+                rate_limit league_by_id
             }
 
             scope entries {
                 path ["entries"]
 
                 GET GetLeagueEntriesBySummoner(summoner_id: String)
+                path ["by-summoner", summoner_id]
                 -> Json<Vec<models::LeagueEntryDto>>
-                {
-                    path ["by-summoner", summoner_id]
-                    rate_limit riot_high_volume_method
-                }
+                rate_limit riot_high_volume_method
 
                 GET GetLeagueEntriesByPuuid(encrypted_puuid: String)
+                path ["by-puuid", encrypted_puuid]
                 -> Json<Vec<models::LeagueEntryDto>>
-                {
-                    path ["by-puuid", encrypted_puuid]
-                    rate_limit riot_high_volume_method
-                }
+                rate_limit riot_high_volume_method
 
                 GET GetLeagueEntries(queue: String, tier: String, division: String, page?: u32)
+                as by_queue
+                path [queue, tier, division]
                 -> Json<Vec<models::LeagueEntryDto>>
                 {
-                    path [queue, tier, division]
                     query {
-                        page = page
+                        page
                     }
                     rate_limit league_entries
                 }
@@ -273,11 +246,12 @@ api! {
             path ["league-exp", "v4", "entries"]
 
             GET GetLeagueExpEntries(queue: String, tier: String, division: String, page?: u32)
+            as by_queue
+            path [queue, tier, division]
             -> Json<Vec<models::LeagueEntryDto>>
             {
-                path [queue, tier, division]
                 query {
-                    page = page
+                    page
                 }
                 rate_limit league_entries
             }
@@ -287,88 +261,68 @@ api! {
             path ["clash", "v1"]
 
             GET GetClashTeam(team_id: String)
+            path ["teams", team_id]
             -> Json<models::ClashTeamDto>
-            {
-                path ["teams", team_id]
-                rate_limit clash_team_or_by_team
-            }
+            rate_limit clash_team_or_by_team
 
             GET GetClashTournament(tournament_id: i64)
+            path ["tournaments", tournament_id]
             -> Json<models::ClashTournamentDto>
-            {
-                path ["tournaments", tournament_id]
-                rate_limit clash_tournament_lookup
-            }
+            rate_limit clash_tournament_lookup
 
             GET GetClashTournamentByTeam(team_id: String)
+            path ["tournaments", "by-team", team_id]
             -> Json<models::ClashTournamentDto>
-            {
-                path ["tournaments", "by-team", team_id]
-                rate_limit clash_team_or_by_team
-            }
+            rate_limit clash_team_or_by_team
 
             GET GetClashTournaments
+            path ["tournaments"]
             -> Json<Vec<models::ClashTournamentDto>>
-            {
-                path ["tournaments"]
-                rate_limit clash_tournament_lookup
-            }
+            rate_limit clash_tournament_lookup
 
             GET GetClashPlayersByPuuid(puuid: String)
+            path ["players", "by-puuid", puuid]
             -> Json<Vec<models::ClashPlayerDto>>
-            {
-                path ["players", "by-puuid", puuid]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
         }
 
         scope challenges_v1 {
             path ["challenges", "v1"]
 
             GET GetChallengePercentiles
+            path ["challenges", "percentiles"]
             -> Json<serde_json::Value>
-            {
-                path ["challenges", "percentiles"]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
 
             GET GetChallengeLeaderboardsByLevel(challenge_id: i64, level: String, limit?: u32)
+            path ["challenges", challenge_id, "leaderboards", "by-level", level]
             -> Json<serde_json::Value>
             {
-                path ["challenges", challenge_id, "leaderboards", "by-level", level]
                 query {
-                    limit = limit
+                    limit
                 }
                 rate_limit riot_high_volume_method
             }
 
             GET GetChallengePercentilesByChallenge(challenge_id: i64)
+            path ["challenges", challenge_id, "percentiles"]
             -> Json<serde_json::Value>
-            {
-                path ["challenges", challenge_id, "percentiles"]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
 
             GET GetChallengeConfig(challenge_id: i64)
+            path ["challenges", challenge_id, "config"]
             -> Json<serde_json::Value>
-            {
-                path ["challenges", challenge_id, "config"]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
 
             GET GetChallengePlayerData(puuid: String)
+            path ["player-data", puuid]
             -> Json<serde_json::Value>
-            {
-                path ["player-data", puuid]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
 
             GET GetChallengeConfigs
+            path ["challenges", "config"]
             -> Json<serde_json::Value>
-            {
-                path ["challenges", "config"]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
         }
 
         scope spectator_v4 {
@@ -378,19 +332,15 @@ api! {
                 path ["featured-games"]
 
                 GET GetFeaturedGames
-                -> Json<models::FeaturedGamesDto>
-                {
-                }
+                -> Json<models::FeaturedGamesDto>;
             }
 
             scope active_games_by_summoner {
                 path ["active-games", "by-summoner"]
 
                 GET GetCurrentGameInfoBySummoner(summoner_id: String)
+                path [summoner_id]
                 -> Json<models::CurrentGameInfoDto>
-                {
-                    path [summoner_id]
-                }
             }
         }
 
@@ -398,22 +348,19 @@ api! {
             path ["spectator", "v5", "active-games"]
 
             GET GetSpectatorV5ActiveGameBySummoner(encrypted_puuid: String)
+            path ["by-summoner", encrypted_puuid]
             -> Json<models::CurrentGameInfoDto>
-            {
-                path ["by-summoner", encrypted_puuid]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
         }
 
         scope status_v4 {
             path ["status", "v4"]
 
             GET GetPlatformData
+            as platform_data
+            path ["platform-data"]
             -> Json<models::PlatformDataDto>
-            {
-                path ["platform-data"]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
         }
     }
 
@@ -424,55 +371,50 @@ api! {
             path ["riot", "account", "v1", "accounts"]
 
             GET GetAccountByRiotId(game_name: String, tag_line: String)
+            as by_riot_id
+            path ["by-riot-id", game_name, tag_line]
             -> Json<models::AccountDto>
-            {
-                path ["by-riot-id", game_name, tag_line]
-                rate_limit [account_standard_method, riot_high_volume_method]
-            }
+            rate_limit [account_standard_method, riot_high_volume_method]
 
             GET GetAccountByPuuid(puuid: String)
+            as by_puuid
+            path ["by-puuid", puuid]
             -> Json<models::AccountDto>
-            {
-                path ["by-puuid", puuid]
-                rate_limit [account_standard_method, riot_high_volume_method]
-            }
+            rate_limit [account_standard_method, riot_high_volume_method]
         }
 
         scope account_v1_region {
             path ["riot", "account", "v1", "region"]
 
             GET GetAccountRegionByGameAndPuuid(game: String, puuid: String)
+            path ["by-game", game, "by-puuid", puuid]
             -> Json<models::AccountRegionDto>
-            {
-                path ["by-game", game, "by-puuid", puuid]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
         }
 
         scope account_v1_active_shards {
             path ["riot", "account", "v1", "active-shards"]
 
             GET GetActiveShardByGameAndPuuid(game: String, puuid: String)
+            path ["by-game", game, "by-puuid", puuid]
             -> Json<models::ActiveShardDto>
-            {
-                path ["by-game", game, "by-puuid", puuid]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
         }
 
         scope match_v5_matches {
             path ["lol", "match", "v5", "matches"]
 
             GET GetMatchIdsByPuuid(puuid: String, queue?: u16, start_time?: i64, end_time?: i64, start: u64 = 0, count: u64 = 20)
+            as ids_by_puuid
+            path ["by-puuid", puuid, "ids"]
             -> Json<Vec<String>>
             {
-                path ["by-puuid", puuid, "ids"]
                 query {
-                    queue = queue,
+                    queue,
                     "startTime" = start_time,
                     "endTime" = end_time,
-                    start = start,
-                    count = count
+                    start,
+                    count
                 }
                 paginate OffsetLimitPagination {
                     offset = start,
@@ -482,68 +424,57 @@ api! {
             }
 
             GET GetMatch(match_id: String)
+            as by_id
+            path [match_id]
             -> Json<models::MatchDto>
-            {
-                path [match_id]
-                rate_limit match_v5_method
-            }
+            rate_limit match_v5_method
 
             GET GetTimeline(match_id: String)
+            as timeline
+            path [match_id, "timeline"]
             -> Json<models::TimelineDto>
-            {
-                path [match_id, "timeline"]
-                rate_limit match_v5_method
-            }
+            rate_limit match_v5_method
 
             GET GetMatchReplaysByPuuid(puuid: String)
+            as replays_by_puuid
+            path ["by-puuid", puuid, "replays"]
             -> Json<serde_json::Value>
-            {
-                path ["by-puuid", puuid, "replays"]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
         }
 
         scope tournament_stub_v5 {
             path ["lol", "tournament-stub", "v5"]
 
             POST CreateTournamentStubCodes(tournament_id: i64, count?: u32, body: Json<serde_json::Value>)
+            path ["codes"]
             -> Json<Vec<String>>
             {
-                path ["codes"]
                 query {
                     "tournamentId" = tournament_id,
-                    count = count
+                    count
                 }
                 rate_limit riot_high_volume_method
             }
 
             GET GetTournamentStubLobbyEventsByCode(tournament_code: String)
+            path ["lobby-events", "by-code", tournament_code]
             -> Json<serde_json::Value>
-            {
-                path ["lobby-events", "by-code", tournament_code]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
 
             GET GetTournamentStubCode(tournament_code: String)
+            path ["codes", tournament_code]
             -> Json<serde_json::Value>
-            {
-                path ["codes", tournament_code]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
 
             POST RegisterTournamentStubProvider(body: Json<serde_json::Value>)
+            path ["providers"]
             -> Json<i32>
-            {
-                path ["providers"]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
 
             POST RegisterTournamentStubTournament(body: Json<serde_json::Value>)
+            path ["tournaments"]
             -> Json<i32>
-            {
-                path ["tournaments"]
-                rate_limit riot_high_volume_method
-            }
+            rate_limit riot_high_volume_method
         }
     }
 }
@@ -572,26 +503,20 @@ api! {
             path ["api"]
 
             GET GetVersions
+            path ["versions.json"]
             -> Json<Vec<String>>
-            {
-                path ["versions.json"]
-            }
 
             GET GetRealmByRegion(region: String)
+            path ["realms", region]
             -> Json<models::RealmDto>
-            {
-                path ["realms", region]
-            }
         }
 
         scope cdn_root {
             path ["cdn"]
 
             GET GetLanguages
+            path ["languages.json"]
             -> Json<Vec<String>>
-            {
-                path ["languages.json"]
-            }
         }
 
         scope cdn_versioned(version: String) {
@@ -604,41 +529,29 @@ api! {
                     path ["champion"]
 
                     GET GetChampionList
+                    path ["champion.json"]
                     -> Json<models::ChampionListDto>
-                    {
-                        path ["champion.json"]
-                    }
 
                     GET GetChampionFull
+                    path ["championFull.json"]
                     -> Json<serde_json::Value>
-                    {
-                        path ["championFull.json"]
-                    }
 
                     GET GetChampionDetail(champion: String)
+                    path [champion]
                     -> Json<models::ChampionDetailDto>
-                    {
-                        path [champion]
-                    }
                 }
 
                 GET GetSummonerSpells
+                path ["summoner.json"]
                 -> Json<models::SummonerSpellListDto>
-                {
-                    path ["summoner.json"]
-                }
 
                 GET GetItems
+                path ["item.json"]
                 -> Json<models::ItemListDto>
-                {
-                    path ["item.json"]
-                }
 
                 GET GetRunesReforged
+                path ["runesReforged.json"]
                 -> Json<models::RunesReforgedDto>
-                {
-                    path ["runesReforged.json"]
-                }
             }
         }
     }
@@ -1006,7 +919,7 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
     let account = riot
         .regional(default_region)
         .account_v1_accounts()
-        .get_account_by_riot_id("Random Iron".to_string(), "EUVV".to_string())
+        .by_riot_id("Random Iron".to_string(), "EUVV".to_string())
         .await?;
     println!(
         "Account: {}#{} puuid={}",
@@ -1016,7 +929,7 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
     let match_ids: Vec<String> = riot
         .regional(default_region)
         .match_v5_matches()
-        .get_match_ids_by_puuid(account.puuid.clone())
+        .ids_by_puuid(account.puuid.clone())
         .paginate()
         .max_items(10_000)
         .collect()

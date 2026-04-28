@@ -127,34 +127,13 @@ headers {
 
 query {
     "userId" = user_id
-    "page" = page
+    page
 }
 ```
 
-## Deprecated old style
+## v4 form
 
-Do not write:
-
-```rust
-client Api {
-    scheme: https,
-    host: "example.com",
-}
-
-auth {
-    credential key: ApiKey(secret.api_key)
-}
-
-use_auth HeaderAuth("X-Api-Key", key)
-
-retry {
-    profile read {
-        backoff none
-    }
-}
-```
-
-v4 uses:
+Use the v4 root/client/auth form:
 
 ```rust
 client Api {
@@ -165,3 +144,5 @@ client Api {
 
 auth header "X-Api-Key" = key
 ```
+
+Migration examples for removed syntax live in [Migration Notes](17-migration-notes.md).

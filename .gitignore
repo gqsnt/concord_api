@@ -4,3 +4,6 @@ condense.exe
 output.txt
 docs.txt
 .env
+
+*_output_*.txt
+/agent

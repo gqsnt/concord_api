@@ -1,5 +1,11 @@
-use crate::ast::SetOp;
+//! Code generation for resolved v4 APIs.
+//!
+//! This layer receives `ResolvedApi` and emits client wrappers, facade methods,
+//! auth state, endpoint structs, and endpoint `plan()` implementations. It must
+//! not inspect raw parser structs or raw scope stacks.
+
 use crate::emit_helpers;
+use crate::model::SetOp;
 use crate::sema::*;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
@@ -9,6 +15,27 @@ use syn::{Ident, LitStr};
 fn client_prefixed_ident(client: &Ident, suffix: &str) -> Ident {
     // Example: RiotClient + "Vars" => RiotClientVars
     emit_helpers::ident(&format!("{}{}", client, suffix), client.span())
+}
+
+fn acquire_as_trait_ident(client: &Ident, credential: &Ident) -> Ident {
+    let mut pascal = String::new();
+    let mut upper_next = true;
+    for ch in credential.to_string().chars() {
+        if ch == '_' || ch == '-' {
+            upper_next = true;
+            continue;
+        }
+        if upper_next {
+            pascal.extend(ch.to_uppercase());
+            upper_next = false;
+        } else {
+            pascal.push(ch);
+        }
+    }
+    emit_helpers::ident(
+        &format!("__{}AcquireAs{}Ext", client, pascal),
+        credential.span(),
+    )
 }
 
 #[inline]
@@ -77,6 +104,20 @@ pub fn emit(resolved_api: ResolvedApi) -> TokenStream2 {
     let client_wrapper = emit_client_wrapper(&resolved_api, &vars_ty, &auth_vars_ty, &cx_ty);
     let internal_mod = emit_internal(&resolved_api, &vars_ty, &auth_vars_ty, &cx_ty);
     let endpoints_mod = emit_endpoints(&resolved_api, &cx_ty);
+    let acquire_trait_imports =
+        resolved_api
+            .client_auth_credentials
+            .iter()
+            .filter_map(|credential| {
+                let AuthCredentialKindIr::Endpoint { .. } = &credential.kind else {
+                    return None;
+                };
+                let trait_name =
+                    acquire_as_trait_ident(&resolved_api.client_name, &credential.name);
+                Some(quote! {
+                    pub use #mod_name::#trait_name;
+                })
+            });
 
     quote! {
         mod #mod_name {
@@ -92,6 +133,8 @@ pub fn emit(resolved_api: ResolvedApi) -> TokenStream2 {
             #endpoints_mod
             #internal_mod
         }
+
+        #( #acquire_trait_imports )*
     }
 }
 
@@ -99,3 +142,194 @@ pub fn emit(resolved_api: ResolvedApi) -> TokenStream2 {
 include!("client.rs");
 include!("endpoints/mod.rs");
 include!("policy/mod.rs");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quote::quote;
+
+    fn expanded(input: TokenStream2) -> String {
+        let resolved = crate::sema::analyze_tokens_for_test(input);
+        emit(resolved)
+            .to_string()
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect()
+    }
+
+    fn assert_contains_all(expanded: &str, snippets: &[&str]) {
+        for snippet in snippets {
+            let compact: String = snippet.chars().filter(|ch| !ch.is_whitespace()).collect();
+            assert!(
+                expanded.contains(&compact),
+                "expanded code did not contain `{snippet}`\n\nexpanded:\n{expanded}"
+            );
+        }
+    }
+
+    #[test]
+    fn generated_minimal_api_snapshot_contains_facade_and_endpoint_plan() {
+        let out = expanded(quote! {
+            client SnapshotMinimal {
+                base https "example.com"
+            }
+
+            GET Ping
+                as ping
+                path ["ping"]
+                -> Json<String>;
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "pub fn ping (& self",
+                "-> :: concord_core :: prelude :: PendingRequest",
+                "impl :: concord_core :: prelude :: Endpoint < super :: SnapshotMinimalCx > for EpPing",
+                "type Response = String",
+                "fn plan (& self, plan_ctx : & :: concord_core :: internal :: ClientPlanContext",
+                ":: concord_core :: internal :: RequestPlan",
+                ":: concord_core :: internal :: EndpointPlan",
+                ":: concord_core :: internal :: ResponsePlan",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_auth_session_snapshot_contains_auth_state_and_acquire_sugar() {
+        let out = expanded(quote! {
+            client SnapshotAuth {
+                base https "example.com"
+                secret upstream_key: String
+
+                credential upstream = api_key(secret.upstream_key)
+                credential session = endpoint auth_api::LoginForSession
+            }
+
+            scope auth_api {
+                POST LoginForSession(body: Json<LoginRequest>) -> Json<LoginResponse>
+                    map AccessToken {
+                        AccessToken::new(r.access_token)
+                    }
+                {
+                    path ["login"]
+                    auth header "X-Upstream-Key" = upstream
+                }
+            }
+
+            scope protected {
+                auth bearer session
+
+                GET Me
+                    as me
+                    path ["me"]
+                    -> Json<User>
+            }
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "pub struct SnapshotAuthAuthState",
+                "pub fn session (& self) -> __SnapshotAuthAuthsession",
+                "pub trait __SnapshotAuthAcquireAsSessionExt",
+                "fn acquire_as_session (self,) -> :: core :: pin :: Pin",
+                ":: concord_core :: advanced :: AuthPlacement :: Bearer",
+                ":: concord_core :: advanced :: AuthPlacement :: Header (\"X-Upstream-Key\")",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_pagination_snapshot_contains_pagination_plan() {
+        let out = expanded(quote! {
+            client SnapshotPagination {
+                base https "example.com"
+            }
+
+            GET List(start: u64 = 0, count: u64 = 20)
+                as list
+                path ["items"]
+                -> Json<Vec<String>>
+            {
+                query {
+                    start
+                    count
+                }
+
+                paginate OffsetLimitPagination {
+                    offset = start,
+                    limit = count
+                }
+            }
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "let __pagination_plan = :: core :: option :: Option :: Some",
+                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
+                "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"start\")",
+                "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"count\")",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_rate_limit_snapshot_contains_runtime_plan() {
+        let out = expanded(quote! {
+            client SnapshotRateLimit {
+                base https "example.com"
+
+                default {
+                    rate_limit app
+                }
+
+                rate_limit app {
+                    bucket application by [host] {
+                        10 / 1s
+                    }
+                }
+            }
+
+            GET Ping
+                as ping
+                path ["ping"]
+                -> Json<()>;
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "policy . add_rate_limit (:: concord_core :: advanced :: RateLimitPlan :: from_buckets",
+                "RateLimitBucketUse :: new (\"application\" , \"app_0\"",
+                "RateLimitBucketUse :: new",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_mapping_snapshot_contains_final_response_type_and_transform() {
+        let out = expanded(quote! {
+            client SnapshotMapping {
+                base https "example.com"
+            }
+
+            POST Login(body: Json<LoginRequest>) -> Json<LoginResponse>
+                map AccessToken {
+                    AccessToken::new(r.access_token)
+                }
+            {
+                path ["login"]
+            }
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "type Response = AccessToken",
+                "let value : AccessToken = (AccessToken :: new (r . access_token))",
+            ],
+        );
+    }
+}

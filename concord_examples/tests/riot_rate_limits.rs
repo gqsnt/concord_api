@@ -131,8 +131,10 @@ async fn riot_platform_methods_have_declared_rate_limits() {
     let (transport, handle) = mock().build();
     let limiter = DenyRecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api = RiotClient::new_with_transport("riot-key".to_string(), transport)
-        .with_rate_limiter(Arc::new(limiter));
+    let api =
+        RiotClient::new_with_transport("riot-key".to_string(), transport).with_configure(|cfg| {
+            cfg.rate_limiter(Arc::new(limiter));
+        });
 
     let platform = PlatformRoute::EUW1;
     let host = "euw1.api.riotgames.com";
@@ -508,8 +510,10 @@ async fn riot_regional_methods_have_declared_rate_limits() {
     let (transport, handle) = mock().build();
     let limiter = DenyRecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api = RiotClient::new_with_transport("riot-key".to_string(), transport)
-        .with_rate_limiter(Arc::new(limiter));
+    let api =
+        RiotClient::new_with_transport("riot-key".to_string(), transport).with_configure(|cfg| {
+            cfg.rate_limiter(Arc::new(limiter));
+        });
 
     let region = RegionalRoute::Europe;
     let host = "europe.api.riotgames.com";

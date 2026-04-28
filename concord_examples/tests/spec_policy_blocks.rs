@@ -53,6 +53,54 @@ async fn query_set_remove_push_override_and_tostring() {
     h.finish();
 }
 
+#[tokio::test]
+async fn query_shorthand_supports_required_optional_default_and_mixed_entries() {
+    api! {
+        client ApiQueryShorthand {
+            base https "example.com"
+        }
+
+        GET Search(count: u32 = 20, queue?: String, start: u64)
+        -> Json<()>
+        {
+            path ["search"]
+            query {
+                count
+                queue
+                "startTime" = start
+            }
+        }
+    }
+
+    use api_query_shorthand::*;
+
+    let (transport, h) = mock()
+        .reply(MockReply::ok_json(json_bytes(&())))
+        .reply(MockReply::ok_json(json_bytes(&())))
+        .build();
+
+    let api = ApiQueryShorthand::new_with_transport(transport);
+    api.search(7).await.unwrap();
+    api.request(
+        endpoints::Search::new(7)
+            .queue("ranked".to_string())
+            .count(100),
+    )
+    .execute()
+    .await
+    .unwrap();
+
+    let reqs = h.recorded();
+    assert_request(&reqs[0])
+        .query_has("count", "20")
+        .query_absent("queue")
+        .query_has("startTime", "7");
+    assert_request(&reqs[1])
+        .query_has("count", "100")
+        .query_has("queue", "ranked")
+        .query_has("startTime", "7");
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn query_part_set_required_param() {
     api! {

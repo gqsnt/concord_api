@@ -243,6 +243,44 @@ fn emit_client_wrapper(
             }
         })
     });
+    let credential_pending_methods = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
+        let name = &credential.name;
+        let AuthCredentialKindIr::Endpoint { endpoint, .. } = &credential.kind else {
+            return None;
+        };
+        let method = emit_helpers::ident(&format!("acquire_as_{name}"), name.span());
+        let trait_name = acquire_as_trait_ident(client_ty, name);
+        Some(quote! {
+            pub trait #trait_name<'a> {
+                fn #method(
+                    self,
+                ) -> ::core::pin::Pin<::std::boxed::Box<
+                    dyn ::core::future::Future<
+                            Output = ::core::result::Result<(), ::concord_core::prelude::ApiClientError>,
+                        > + Send + 'a,
+                >>;
+            }
+
+            impl<'a, T> #trait_name<'a>
+                for ::concord_core::prelude::PendingRequest<'a, #cx_ty, endpoints::#endpoint, T>
+            where
+                T: ::concord_core::advanced::Transport + 'a,
+            {
+                #[inline]
+                fn #method(
+                    self,
+                ) -> ::core::pin::Pin<::std::boxed::Box<
+                    dyn ::core::future::Future<
+                            Output = ::core::result::Result<(), ::concord_core::prelude::ApiClientError>,
+                        > + Send + 'a,
+                >> {
+                    ::std::boxed::Box::pin(async move {
+                        self.execute_and_store_manual(|auth_state| auth_state.#name.as_ref()).await
+                    })
+                }
+            }
+        })
+    });
     let (auth_facade_methods, auth_facade_items) = emit_auth_facade(resolved_api, client_ty);
     let (facade_methods, facade_items) = emit_tree_facade(resolved_api, client_ty, cx_ty);
 
@@ -292,47 +330,11 @@ fn emit_client_wrapper(
             #[inline]
             pub fn with_debug_level(mut self, level: ::concord_core::prelude::DebugLevel) -> Self { self.inner.set_debug_level(level); self }
             #[inline]
-            pub fn debug_sink(&self) -> &::std::sync::Arc<dyn ::concord_core::advanced::DebugSink> { self.inner.debug_sink() }
-            #[inline]
-            pub fn set_debug_sink(&mut self, sink: ::std::sync::Arc<dyn ::concord_core::advanced::DebugSink>) { self.inner.set_debug_sink(sink); }
-            #[inline]
-            pub fn with_debug_sink(mut self, sink: ::std::sync::Arc<dyn ::concord_core::advanced::DebugSink>) -> Self { self.inner.set_debug_sink(sink); self }
-            #[inline]
-            pub fn runtime_hooks(&self) -> &::std::sync::Arc<dyn ::concord_core::advanced::RuntimeHooks> { self.inner.runtime_hooks() }
-            #[inline]
-            pub fn set_runtime_hooks(&mut self, hooks: ::std::sync::Arc<dyn ::concord_core::advanced::RuntimeHooks>) { self.inner.set_runtime_hooks(hooks); }
-            #[inline]
-            pub fn with_runtime_hooks(mut self, hooks: ::std::sync::Arc<dyn ::concord_core::advanced::RuntimeHooks>) -> Self { self.inner.set_runtime_hooks(hooks); self }
-            #[inline]
-            pub fn retry_policy(&self) -> &::std::sync::Arc<dyn ::concord_core::advanced::RetryPolicy> { self.inner.retry_policy() }
-            #[inline]
-            pub fn set_retry_policy(&mut self, retry_policy: ::std::sync::Arc<dyn ::concord_core::advanced::RetryPolicy>) { self.inner.set_retry_policy(retry_policy); }
-            #[inline]
-            pub fn with_retry_policy(mut self, retry_policy: ::std::sync::Arc<dyn ::concord_core::advanced::RetryPolicy>) -> Self { self.inner.set_retry_policy(retry_policy); self }
-            #[inline]
-            pub fn max_auth_retries(&self) -> u32 { self.inner.max_auth_retries() }
-            #[inline]
-            pub fn set_max_auth_retries(&mut self, max_auth_retries: u32) { self.inner.set_max_auth_retries(max_auth_retries); }
-            #[inline]
-            pub fn with_max_auth_retries(mut self, max_auth_retries: u32) -> Self { self.inner.set_max_auth_retries(max_auth_retries); self }
-            #[inline]
             pub fn pagination_caps(&self) -> ::concord_core::advanced::Caps { self.inner.pagination_caps() }
             #[inline]
             pub fn set_pagination_caps(&mut self, caps: ::concord_core::advanced::Caps) { self.inner.set_pagination_caps(caps); }
             #[inline]
             pub fn with_pagination_caps(mut self, caps: ::concord_core::advanced::Caps) -> Self { self.inner.set_pagination_caps(caps); self }
-            #[inline]
-            pub fn set_rate_limiter(&mut self, limiter: ::std::sync::Arc<dyn ::concord_core::advanced::RateLimiter>) { self.inner.set_rate_limiter(limiter); }
-            #[inline]
-            pub fn with_rate_limiter(mut self, limiter: ::std::sync::Arc<dyn ::concord_core::advanced::RateLimiter>) -> Self { self.inner.set_rate_limiter(limiter); self }
-            #[inline]
-            pub fn set_cache_store(&mut self, store: ::std::sync::Arc<dyn ::concord_core::advanced::CacheStore>) { self.inner.set_cache_store(store); }
-            #[inline]
-            pub fn with_cache_store(mut self, store: ::std::sync::Arc<dyn ::concord_core::advanced::CacheStore>) -> Self { self.inner.set_cache_store(store); self }
-            #[inline]
-            pub fn set_inflight_policy(&mut self, policy: ::std::sync::Arc<dyn ::concord_core::advanced::InflightPolicy>) { self.inner.set_inflight_policy(policy); }
-            #[inline]
-            pub fn with_inflight_policy(mut self, policy: ::std::sync::Arc<dyn ::concord_core::advanced::InflightPolicy>) -> Self { self.inner.set_inflight_policy(policy); self }
             #[inline]
             pub fn configure(&mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> &mut Self { self.inner.configure(f); self }
             #[inline]
@@ -350,6 +352,7 @@ fn emit_client_wrapper(
 
         #auth_facade_items
         #facade_items
+        #( #credential_pending_methods )*
     }
 }
 
@@ -520,7 +523,7 @@ fn collect_facade_scopes(resolved_api: &ResolvedApi) -> Vec<FacadeScopeInfo> {
                 continue;
             }
             let decls = ep
-                .scope_decl_groups
+                .facade_param_groups
                 .iter()
                 .take(idx + 1)
                 .flat_map(|group| group.iter().cloned())
@@ -767,8 +770,10 @@ fn emit_facade_endpoint_method(
     let lifetime = if root { quote! { '_ } } else { quote! { 'a } };
     let bind_client = if root { quote! {} } else { quote! { let __client = self.client; } };
     let args = call_args.chain(body_arg);
+    let docs = facade_endpoint_docs(ep);
 
     quote! {
+        #( #[doc = #docs] )*
         #[inline]
         pub fn #method(#self_arg, #( #args ),*) -> ::concord_core::prelude::PendingRequest<#lifetime, #cx_ty, #endpoint_path, T> {
             #bind_client
@@ -779,6 +784,68 @@ fn emit_facade_endpoint_method(
     }
 }
 
+fn facade_endpoint_docs(ep: &ResolvedEndpoint) -> Vec<LitStr> {
+    let mut docs = Vec::new();
+    docs.push(LitStr::new(
+        &format!("{} {}", ep.method, doc_path(ep)),
+        ep.name.span(),
+    ));
+    if !ep.policy.auth.is_empty() {
+        docs.push(LitStr::new("", ep.name.span()));
+        docs.push(LitStr::new("Auth:", ep.name.span()));
+        for auth in &ep.policy.auth {
+            let AuthUsePlanIr::Use(auth) = auth;
+            docs.push(LitStr::new(
+                &format!("- {}", doc_auth_use(auth.as_ref())),
+                ep.name.span(),
+            ));
+        }
+    }
+    if endpoint_has_rate_limit(ep) {
+        docs.push(LitStr::new("", ep.name.span()));
+        docs.push(LitStr::new("Rate limit: configured", ep.name.span()));
+    }
+    docs
+}
 
+fn doc_path(ep: &ResolvedEndpoint) -> String {
+    let mut pieces = Vec::new();
+    for piece in ep.scope_path_pieces.iter().chain(ep.route_pieces.iter()) {
+        match piece {
+            PathPiece::Static(value) => pieces.push(value.clone()),
+            PathPiece::CxVar { field, .. } | PathPiece::EpVar { field } => {
+                pieces.push(format!("{{{field}}}"));
+            }
+            PathPiece::Fmt(_) => pieces.push("{part}".to_string()),
+        }
+    }
+    if pieces.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", pieces.join("/"))
+    }
+}
+
+fn doc_auth_use(auth: &AuthUseIr) -> String {
+    match &auth.kind {
+        AuthUseKindIr::Bearer { credential } => format!("bearer `{credential}`"),
+        AuthUseKindIr::Header { header, credential } => {
+            format!("header `{}` = `{credential}`", header.value())
+        }
+        AuthUseKindIr::Query { key, credential } => {
+            format!("query `{}` = `{credential}`", key.value())
+        }
+        AuthUseKindIr::Basic { credential } => format!("basic `{credential}`"),
+        AuthUseKindIr::Certificate { credential } => format!("certificate `{credential}`"),
+    }
+}
+
+fn endpoint_has_rate_limit(ep: &ResolvedEndpoint) -> bool {
+    ep.policy
+        .scopes
+        .iter()
+        .any(|policy| policy.rate_limit.is_some())
+        || ep.policy.endpoint.rate_limit.is_some()
+}
 
 

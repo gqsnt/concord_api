@@ -36,6 +36,7 @@ pub mod internal {
         ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
+    pub use crate::{cache::CacheSetting, retry::RetrySetting};
 }
 pub mod prelude {
     pub use crate::auth::{AccessToken, ApiKey, BasicCredential};
@@ -71,7 +72,7 @@ pub mod advanced {
     };
     pub use crate::cache::{
         CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,
-        CacheKey, CacheMode, CachePrimaryKey, CacheRequestMode, CacheRevalidation, CacheSetting,
+        CacheFuture, CacheKey, CacheMode, CachePrimaryKey, CacheRequestMode, CacheRevalidation,
         CacheSkipReason, CacheStore, NoopCacheStore, default_cache_key,
     };
     #[cfg(feature = "cache-moka")]
@@ -82,17 +83,16 @@ pub mod advanced {
         InflightPolicy, InflightRegistry, NoopInflightPolicy, RequestKey, SafeMethodInflightPolicy,
     };
     pub use crate::pagination::{Caps, Control, ProgressKey};
-    pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
-        RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitKey, RateLimitKeyPart,
-        RateLimitKeyValue, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
-        RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting, RateLimitWindow,
-        RateLimiter, parse_retry_after,
+        RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
+        RateLimitKeyPart, RateLimitKeyValue, RateLimitPermit, RateLimitPlan,
+        RateLimitResponseAction, RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting,
+        RateLimitWindow, RateLimiter, parse_retry_after,
     };
     pub use crate::retry::{
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,
-        RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy, RetrySetting,
+        RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy,
     };
     pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{
@@ -100,7 +100,10 @@ pub mod advanced {
         TransportErrorHookContext,
     };
     pub use crate::runtime_state::ClientRuntimeState;
-    pub use crate::transport::{DecodedResponse, RequestMeta, ReqwestTransport, Transport};
+    pub use crate::transport::{
+        BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta, ReqwestTransport, Transport,
+        TransportBody, TransportError, TransportErrorKind, TransportResponse,
+    };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,
     };

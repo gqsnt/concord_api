@@ -1,4 +1,5 @@
 use concord_core::prelude::*;
+use concord_examples::auth_session::__SessionApiAcquireAsSessionExt as _;
 use concord_examples::auth_session::{SessionLoginRequest, SessionLoginResponse, SessionUser};
 use concord_macros::api;
 use concord_test_support::*;
@@ -97,12 +98,12 @@ async fn endpoint_acquired_session_auth_flow_uses_stored_bearer() {
         transport,
     );
 
-    api.auth_state()
-        .session()
-        .acquire(api.auth_api().login_for_session(SessionLoginRequest {
+    api.auth_api()
+        .login_for_session(SessionLoginRequest {
             username: "alice".to_string(),
             password: "secret".to_string(),
-        }))
+        })
+        .acquire_as_session()
         .await
         .unwrap();
     let out = api.protected().me().await.unwrap();

@@ -117,7 +117,10 @@ fn resolve_policy_block(
                 let cond = match &vk {
                     ValueKind::CxField(id) => {
                         let v = client_vars.get(&id.to_string()).ok_or_else(|| {
-                            syn::Error::new(id.span(), format!("unknown client var `vars.{}`", id))
+                            syn::Error::new(
+                                id.span(),
+                                unknown_scoped_name_message("client var", "vars", id, client_vars),
+                            )
                         })?;
                         if v.optional {
                             Some(OptionalRefKind::Cx)
@@ -130,7 +133,10 @@ fn resolve_policy_block(
                             syn::Error::new(id.span(), "ep.* is not allowed here")
                         })?;
                         let v = ep.get(&id.to_string()).ok_or_else(|| {
-                            syn::Error::new(id.span(), format!("unknown endpoint var `ep.{}`", id))
+                            syn::Error::new(
+                                id.span(),
+                                unknown_scoped_name_message("endpoint var", "ep", id, ep),
+                            )
                         })?;
                         if v.optional {
                             Some(OptionalRefKind::Ep)
@@ -191,7 +197,7 @@ fn resolve_policy_block(
                     if !client_vars.contains_key(&id.to_string()) {
                         return Err(syn::Error::new(
                             id.span(),
-                            format!("unknown client var `vars.{}`", id),
+                            unknown_scoped_name_message("client var", "vars", id, client_vars),
                         ));
                     }
                 }
@@ -209,7 +215,7 @@ fn resolve_policy_block(
                     if !ep.contains_key(&id.to_string()) {
                         return Err(syn::Error::new(
                             id.span(),
-                            format!("unknown endpoint var `ep.{}`", id),
+                            unknown_scoped_name_message("endpoint var", "ep", id, ep),
                         ));
                     }
                 }
@@ -300,9 +306,20 @@ fn resolve_route_fmt_spec(
                     let cv = client_vars
                         .and_then(|m| m.get(&r.ident.to_string()))
                         .ok_or_else(|| {
+                            let msg = client_vars.map_or_else(
+                                || format!("unknown client var `vars.{}`", r.ident),
+                                |vars| {
+                                    unknown_scoped_name_message(
+                                        "client var",
+                                        "vars",
+                                        &r.ident,
+                                        vars,
+                                    )
+                                },
+                            );
                             syn::Error::new(
                                 r.ident.span(),
-                                format!("unknown client var `vars.{}`", r.ident),
+                                msg,
                             )
                         })?;
                     pieces.push(FmtResolvedPiece::Var {
@@ -364,7 +381,12 @@ fn resolve_policy_value_kind(
                             let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
                                 syn::Error::new(
                                     r.ident.span(),
-                                    format!("unknown client var `vars.{}`", r.ident),
+                                    unknown_scoped_name_message(
+                                        "client var",
+                                        "vars",
+                                        &r.ident,
+                                        client_vars,
+                                    ),
                                 )
                             })?;
                             has_optional |= v.optional;
@@ -381,7 +403,12 @@ fn resolve_policy_value_kind(
                             let v = ep.get(&r.ident.to_string()).ok_or_else(|| {
                                 syn::Error::new(
                                     r.ident.span(),
-                                    format!("unknown endpoint var `ep.{}`", r.ident),
+                                    unknown_scoped_name_message(
+                                        "endpoint var",
+                                        "ep",
+                                        &r.ident,
+                                        ep,
+                                    ),
                                 )
                             })?;
                             has_optional |= v.optional;

@@ -1,12 +1,25 @@
-// concord_macros/src/sema.rs
+//! Semantic normalization and resolution for the v4 macro.
+//!
+//! This layer walks the parsed API tree, validates names, resolves inherited
+//! route/policy/auth state, and produces `ResolvedApi` / `ResolvedEndpoint`.
+//! Codegen must consume this resolved model instead of raw parser structures.
+
 use crate::ast::*;
 use crate::emit_helpers;
+use crate::model::{Scheme, SetOp};
 use proc_macro2::Span;
 use std::collections::BTreeMap;
 use syn::{Expr, Ident, LitStr, Result, Type, spanned::Spanned};
 
 include!("ir.rs");
 include!("profiles.rs");
+
+#[cfg(test)]
+pub(crate) fn analyze_tokens_for_test(input: proc_macro2::TokenStream) -> ResolvedApi {
+    let ast = syn::parse2::<crate::ast::ApiFile>(input).expect("parse api");
+    analyze(ast).expect("resolve api")
+}
+
 pub fn analyze(ast: ApiFile) -> Result<ResolvedApi> {
     let client_name = ast.client.name.clone();
     let mod_name_str = emit_helpers::to_snake(&client_name.to_string());
@@ -155,8 +168,8 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
     let mut out = String::new();
     for ep in &resolved_api.endpoints {
         let route = format!(
-            "prefix={:?} path_layers={:?} endpoint={:?}",
-            ep.prefix_pieces, ep.path_layer_pieces, ep.route_pieces
+            "prefix={:?} scope_path={:?} endpoint={:?}",
+            ep.prefix_pieces, ep.scope_path_pieces, ep.route_pieces
         );
         let policy = format!(
             "scopes={} headers={} query={} auth={} retry={} cache={} rate_limit={}",
@@ -168,6 +181,12 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
             ep.policy.endpoint.cache.is_some(),
             ep.policy.endpoint.rate_limit.is_some()
         );
+        let params = ep
+            .vars
+            .iter()
+            .map(|v| v.rust.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
         let facade = if ep.scope_modules.is_empty() {
             ep.name.to_string()
         } else {
@@ -182,8 +201,17 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
             )
         };
         out.push_str(&format!(
-            "{} method={} route=[{}] policy=[{}] facade={}\n",
-            ep.name, ep.method, route, policy, facade
+            "{} method={} route=[{}] params=[{}] policy=[{}] facade={} response={:?} body={} pagination={} map={}\n",
+            ep.name,
+            ep.method,
+            route,
+            params,
+            policy,
+            facade,
+            ep.response,
+            ep.body.is_some(),
+            ep.paginate.is_some(),
+            ep.map.is_some()
         ));
     }
     out
@@ -218,10 +246,95 @@ mod tests {
         let snapshot = debug_resolved_endpoints(&resolved_api);
 
         assert!(snapshot.contains("Me method=GET"));
-        assert!(snapshot.contains("path_layers=[Static(\"v1\")]"));
+        assert!(snapshot.contains("scope_path=[Static(\"v1\")]"));
         assert!(snapshot.contains("endpoint=[Static(\"me\")]"));
         assert!(snapshot.contains("auth=1"));
         assert!(snapshot.contains("query=0"));
         assert!(snapshot.contains("facade=protected::Me"));
+    }
+
+    #[test]
+    fn resolved_endpoint_snapshots_cover_v47_cases() {
+        let ast: ApiFile = syn::parse_str(
+            r#"
+            client SnapshotApi {
+                base https "example.com"
+                secret token: String
+                credential key = api_key(secret.token)
+
+                default {
+                    retry read
+                    rate_limit app
+                }
+
+                retry read {
+                    attempts 2
+                    methods [GET]
+                    on [429]
+                    retry_after
+                }
+
+                rate_limit app {
+                    bucket application by [host] {
+                        10 / 1s
+                    }
+                }
+            }
+
+            GET Ping
+                as ping
+                path ["ping"]
+                -> Json<String>;
+
+            scope protected {
+                path ["v1"]
+                auth header "X-Token" = key
+
+                GET Me(user_id: u64)
+                    as me
+                    path ["users", user_id]
+                    -> Json<User>
+            }
+
+            GET Search(count: u64 = 20, page?: u64)
+                as search
+                path ["search"]
+                -> Json<Vec<String>>
+            {
+                query {
+                    count
+                    page
+                }
+                paginate PagedPagination {
+                    page = page,
+                    per_page = count
+                }
+            }
+
+            POST Login(body: Json<LoginRequest>) -> Json<LoginResponse>
+                map AccessToken {
+                    AccessToken::new(r.access_token)
+                }
+            {
+                path ["login"]
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let snapshot = debug_resolved_endpoints(&resolved_api);
+
+        assert!(snapshot.contains("Ping method=GET"));
+        assert!(snapshot.contains("facade=Ping"));
+        assert!(snapshot.contains("Me method=GET"));
+        assert!(snapshot.contains("params=[user_id]"));
+        assert!(snapshot.contains("auth=1"));
+        assert!(snapshot.contains("Search method=GET"));
+        assert!(snapshot.contains("query=2"));
+        assert!(snapshot.contains("pagination=true"));
+        assert!(snapshot.contains("Login method=POST"));
+        assert!(snapshot.contains("body=true"));
+        assert!(snapshot.contains("map=true"));
+        assert!(snapshot.contains("scopes=1"));
     }
 }

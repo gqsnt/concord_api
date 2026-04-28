@@ -113,7 +113,7 @@ impl Endpoint<TestCx> for Ping {
                     facade_path: &[],
                 },
                 route,
-                policy: ResolvedPolicy {
+                policy: concord_core::internal::ResolvedPolicy {
                     headers: HeaderMap::new(),
                     query: Vec::new(),
                     timeout: None,
@@ -129,8 +129,8 @@ impl Endpoint<TestCx> for Ping {
                             challenge: AuthChallengePolicy::Default,
                         }],
                     },
-                    cache: CacheSetting::Off,
-                    retry: RetrySetting::Off,
+                    cache: concord_core::internal::CacheSetting::Off,
+                    retry: concord_core::internal::RetrySetting::Off,
                     rate_limit: RateLimitPlan::new(),
                 },
                 body: concord_core::internal::BodyPlan::None,

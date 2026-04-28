@@ -131,7 +131,7 @@ api.request(endpoint)
 
 ## Runtime is plan-based
 
-Generated endpoints produce a `RequestPlan`.
+Generated endpoints produce a request plan.
 
 The runtime executes that plan through a fixed pipeline:
 
@@ -148,4 +148,4 @@ retry decision
 decode
 ```
 
-You normally do not interact with `RequestPlan` directly. It matters because extension points plug into the runtime without changing the DSL.
+You normally do not interact with request-plan internals directly. They matter because extension points plug into the runtime without changing the DSL.

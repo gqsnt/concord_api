@@ -86,7 +86,7 @@ fn combine_rate_limit_profiles(
         let Some(plan) = profiles.get(&name.to_string()) else {
             return Err(syn::Error::new(
                 name.span(),
-                format!("unknown rate_limit profile `{name}`"),
+                unknown_name_message("rate_limit profile", name, profiles),
             ));
         };
         out.buckets.extend(plan.buckets.clone());
@@ -221,9 +221,13 @@ fn materialize_rate_limit_plan(
                 ));
             };
             let Some(var) = vars.get(name) else {
+                let available = visible_keys
+                    .keys()
+                    .cloned()
+                    .chain(vars.keys().cloned());
                 return Err(syn::Error::new(
                     *span,
-                    format!("unknown rate_limit key `{name}`"),
+                    unknown_name_message_from_keys("rate_limit key", name, available),
                 ));
             };
             if var.optional {

@@ -195,11 +195,11 @@ async fn generated_runtime_hooks_are_used_by_clones_when_installed_before_clone(
 
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
     let pre_send_count = Arc::new(AtomicUsize::new(0));
-    let api = ApiSurfaceHooks::new_with_transport(transport).with_runtime_hooks(Arc::new(
-        CountingHooks {
+    let api = ApiSurfaceHooks::new_with_transport(transport).with_configure(|cfg| {
+        cfg.runtime_hooks(Arc::new(CountingHooks {
             pre_send_count: pre_send_count.clone(),
-        },
-    ));
+        }));
+    });
     let clone = api.clone();
 
     clone

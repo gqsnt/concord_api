@@ -118,7 +118,7 @@ Paginated endpoints support:
 let items = api
     .regional(region)
     .match_v5_matches()
-    .get_match_ids_by_puuid(puuid)
+    .ids_by_puuid(puuid)
     .paginate()
     .max_items(10_000)
     .collect()
@@ -131,25 +131,27 @@ A paginated endpoint can still be executed once:
 let first_page = api
     .regional(region)
     .match_v5_matches()
-    .get_match_ids_by_puuid(puuid)
+    .ids_by_puuid(puuid)
     .await?;
 ```
 
 ## Auth state facade
 
-Endpoint-backed credentials are managed through `auth_state()`.
+Endpoint-backed credentials can be acquired from the login request itself:
 
 ```rust
-api.auth_state()
-    .session()
-    .acquire(api.auth_api().login_for_session(LoginRequest {
+api.auth_api()
+    .login_for_session(LoginRequest {
         username: "alice".to_string(),
         password: "secret".to_string(),
-    }))
+    })
+    .acquire_as_session()
     .await?;
 
 api.auth_state().session().clear().await;
 ```
+
+The explicit auth-state API remains available for advanced flows.
 
 ## Constructor examples
 

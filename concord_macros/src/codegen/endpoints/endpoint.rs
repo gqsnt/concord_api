@@ -201,7 +201,7 @@ fn emit_endpoint_plan_route_policy(
 ) -> TokenStream2 {
     let ep_opt = ep_optionals(ep);
     let prefix_layer_route_ops = emit_prefix_route_apply(&ep.prefix_pieces, Some(&ep_opt));
-    let path_layer_route_ops = emit_path_route_apply(&ep.path_layer_pieces, Some(&ep_opt));
+    let path_layer_route_ops = emit_path_route_apply(&ep.scope_path_pieces, Some(&ep_opt));
     let scope_policy_ops = ep.policy.scopes.iter().map(|scope_policy| {
         let scope_policy_apply = emit_policy_apply_fn(scope_policy, PolicyEmitCtx::Layer);
         quote! {

@@ -182,6 +182,7 @@ headers {
 query "debug" = true
 
 query {
+    page
     "userId" = user_id
     "tag" += tag
     -"old"
@@ -267,16 +268,6 @@ paginate CursorPagination {
 }
 ```
 
-## Removed old style
+## Migration
 
-Do not use:
-
-```rust
-scheme: https
-host: "example.com"
-auth { credential ... }
-use_auth HeaderAuth(...)
-backoff none
-response custom ...
-route.host
-```
+Removed syntax and replacement examples are documented in [Migration Notes](17-migration-notes.md).

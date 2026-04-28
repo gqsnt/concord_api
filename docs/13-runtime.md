@@ -17,7 +17,7 @@ api.users().get(42).await?;
 Under the hood:
 
 ```text
-Endpoint::plan -> RequestPlan -> ApiClient::execute_plan
+Endpoint::plan -> request plan -> ApiClient::execute_plan
 ```
 
 ## Runtime order
@@ -94,16 +94,20 @@ api.users()
 
 ## Runtime configuration
 
-Generated clients may expose methods such as:
+Generated clients keep the normal surface small:
 
 ```rust
-.with_debug_level(...)
-.with_pagination_caps(...)
-.with_rate_limiter(...)
-.with_cache_store(...)
+let api = users_api::UsersApi::new()
+    .with_configure(|cfg| {
+        cfg.debug(DebugLevel::V);
+        cfg.rate_limiter(limiter);
+        cfg.cache_store(cache_store);
+    });
 ```
 
-Advanced runtime configuration belongs to `concord_core::advanced`.
+Use `configure` / `with_configure` for advanced runtime integration such as
+custom rate limiters, cache stores, retry policies, runtime hooks, and debug
+sinks. Those extension traits live under `concord_core::advanced`.
 
 ## What normal users should know
 

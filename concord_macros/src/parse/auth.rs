@@ -241,11 +241,11 @@ impl Parse for AuthUseDecl {
 
         if input.peek(kw::one_of) {
             input.parse::<kw::one_of>()?;
-            return Ok(AuthUseDecl::OneOf(parse_auth_use_kinds_list(input)?));
+            return Ok(AuthUseDecl::UnsupportedAnyGroup(parse_auth_use_kinds_list(input)?));
         }
 
         if input.peek(token::Bracket) {
-            return Ok(AuthUseDecl::AllOf(parse_auth_use_kinds_list(input)?));
+            return Ok(AuthUseDecl::UnsupportedAllGroup(parse_auth_use_kinds_list(input)?));
         }
 
         Ok(AuthUseDecl::Single(Box::new(parse_auth_use_kind(input)?)))
@@ -255,11 +255,11 @@ impl Parse for AuthUseDecl {
 fn parse_auth_use_decl_after_auth_keyword(input: ParseStream<'_>) -> Result<AuthUseDecl> {
     if input.peek(kw::all) {
         input.parse::<kw::all>()?;
-        return Ok(AuthUseDecl::AllOf(parse_v4_auth_use_block(input)?));
+        return Ok(AuthUseDecl::UnsupportedAllGroup(parse_v4_auth_use_block(input)?));
     }
     if input.peek(kw::any) {
         input.parse::<kw::any>()?;
-        return Ok(AuthUseDecl::OneOf(parse_v4_auth_use_block(input)?));
+        return Ok(AuthUseDecl::UnsupportedAnyGroup(parse_v4_auth_use_block(input)?));
     }
     Ok(AuthUseDecl::Single(Box::new(parse_v4_auth_use_kind(input)?)))
 }

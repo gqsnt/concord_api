@@ -40,7 +40,11 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
     braced!(content in input);
     let mut stmts = Vec::new();
     while !content.is_empty() {
-        let stmt: PolicyStmt = content.parse()?;
+        let stmt: PolicyStmt = if kind == PolicyBlockKind::Query {
+            parse_query_policy_stmt(&content)?
+        } else {
+            content.parse()?
+        };
 
         // 1.2: `+=` is query-only. Forbid in `headers {}` with a direct diagnostic.
         if kind == PolicyBlockKind::Headers
@@ -62,6 +66,9 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
             // trailing comma is allowed => if block ends after this, we simply exit
             continue;
         }
+        if kind == PolicyBlockKind::Query {
+            continue;
+        }
         if !content.is_empty() {
             let tt: TokenTree = content.parse()?;
             return Err(syn::Error::new(
@@ -71,6 +78,28 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
         }
     }
     Ok(PolicyBlock { stmts })
+}
+
+fn parse_query_policy_stmt(input: ParseStream<'_>) -> Result<PolicyStmt> {
+    if input.peek(Ident) {
+        let fork = input.fork();
+        let ident: Ident = fork.parse()?;
+        if !fork.peek(Token![=])
+            && !fork.peek(Token![+=])
+            && !fork.peek(Token![:])
+            && !fork.peek(Token![?])
+            && !fork.peek(Token![as])
+        {
+            input.parse::<Ident>()?;
+            let value: Expr = syn::parse_quote!(#ident);
+            return Ok(PolicyStmt::Set {
+                key: KeySpec::Ident(ident),
+                value: PolicyValue::Expr(normalize_policy_expr(value)),
+                op: SetOp::Set,
+            });
+        }
+    }
+    input.parse()
 }
 
 fn parse_inline_policy_stmt(

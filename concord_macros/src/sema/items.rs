@@ -318,7 +318,12 @@ fn analyze_endpoint(
                     let v = ctx.client_vars.get(&r.ident.to_string()).ok_or_else(|| {
                         syn::Error::new(
                             r.ident.span(),
-                            format!("unknown client var `vars.{}`", r.ident),
+                            unknown_scoped_name_message(
+                                "client var",
+                                "vars",
+                                &r.ident,
+                                ctx.client_vars,
+                            ),
                         )
                     })?;
                     route_pieces.push(PathPiece::CxVar {
@@ -330,7 +335,7 @@ fn analyze_endpoint(
                     let _v = ep_vars.get(&r.ident.to_string()).ok_or_else(|| {
                         syn::Error::new(
                             r.ident.span(),
-                            format!("unknown endpoint var `ep.{}`", r.ident),
+                            unknown_scoped_name_message("endpoint var", "ep", &r.ident, &ep_vars),
                         )
                     })?;
                     route_pieces.push(PathPiece::EpVar {
@@ -384,19 +389,19 @@ fn analyze_endpoint(
         AuthUseProvenanceIr::Endpoint,
     )?);
     let mut scope_modules = Vec::new();
-    let mut scope_decl_groups = Vec::new();
+    let mut facade_param_groups = Vec::new();
     let mut prefix_pieces = Vec::new();
-    let mut path_layer_pieces = Vec::new();
+    let mut scope_path_pieces = Vec::new();
     let mut scope_policies = Vec::new();
     for &lid in ancestry {
         let layer = &ctx.layers[lid];
         if let Some(scope_name) = &layer.scope_name {
             scope_modules.push(scope_name.clone());
-            scope_decl_groups.push(layer.decls.clone());
+            facade_param_groups.push(layer.decls.clone());
         }
         match layer.kind {
             LayerKind::Prefix => prefix_pieces.extend(layer.prefix_pieces.iter().cloned()),
-            LayerKind::Path => path_layer_pieces.extend(layer.path_pieces.iter().cloned()),
+            LayerKind::Path => scope_path_pieces.extend(layer.path_pieces.iter().cloned()),
         }
         scope_policies.push(layer.policy.clone());
     }
@@ -436,10 +441,10 @@ fn analyze_endpoint(
         name: ed.name.clone(),
         alias: ed.alias.clone(),
         scope_modules,
-        scope_decl_groups,
+        facade_param_groups,
         method: ed.method.clone(),
         prefix_pieces,
-        path_layer_pieces,
+        scope_path_pieces,
         route_pieces,
 
         // Stable declaration order.

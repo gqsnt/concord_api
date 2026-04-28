@@ -109,7 +109,7 @@ method
 named key
 ```
 
-Use `host`, not old `route.host`.
+Use `host` for the current request host.
 
 ## Cost
 

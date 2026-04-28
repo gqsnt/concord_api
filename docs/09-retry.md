@@ -118,12 +118,6 @@ POST CreatePost(idempotency_key: String, body: Json<NewPost>)
 }
 ```
 
-## No `backoff none`
-
-v4 documentation does not use `backoff none`.
-
-If a future version adds real backoff strategies, they should be documented as real behavior, not placeholder syntax.
-
 ## Practical guidance
 
 Use small retry budgets.

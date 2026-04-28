@@ -30,12 +30,13 @@ api! {
     }
 
     scope auth_api {
-        POST LoginForSession(body: Json<SessionLoginRequest>) -> Json<SessionLoginResponse>
-                map AccessToken {
+        POST LoginForSession(body: Json<SessionLoginRequest>)
+            path ["login"]
+            -> Json<SessionLoginResponse>
+            map AccessToken {
             AccessToken::new(r.access_token)
         }
-            {
-            path ["login"]
+        {
             auth header "X-Upstream-Key" = upstream
         }
     }
@@ -58,12 +59,12 @@ pub async fn session_flow_example() -> Result<(), ApiClientError> {
     // This will fail until session is acquired.
     let _ = api.protected().me().await;
 
-    api.auth_state()
-        .session()
-        .acquire(api.auth_api().login_for_session(SessionLoginRequest {
+    api.auth_api()
+        .login_for_session(SessionLoginRequest {
             username: "alice".to_string(),
             password: "secret".to_string(),
-        }))
+        })
+        .acquire_as_session()
         .await?;
 
     let _me = api.protected().me().await?;

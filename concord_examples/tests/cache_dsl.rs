@@ -425,8 +425,9 @@ async fn revalidation_304_without_cache_merge_retries_once_with_unconditional_fe
         .reply(MockReply::ok_json(json_bytes(&"fresh".to_string())))
         .build();
 
-    let api = CacheRevalidationFallbackApi::new_with_transport(transport)
-        .with_cache_store(Arc::new(RevalidateWithoutMergeCache));
+    let api = CacheRevalidationFallbackApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.cache_store(Arc::new(RevalidateWithoutMergeCache));
+    });
 
     let value = api
         .request(endpoints::Cached::new())
@@ -661,7 +662,9 @@ async fn cache_hit_skips_rate_limit_after_initial_store() {
         .build();
     let limiter = RecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api = CacheRateLimitApi::new_with_transport(transport).with_rate_limiter(Arc::new(limiter));
+    let api = CacheRateLimitApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.rate_limiter(Arc::new(limiter));
+    });
 
     let first = api
         .request(endpoints::Cached::new())
@@ -1001,8 +1004,9 @@ async fn revalidation_transport_errors_retry_before_cache_after_error_fallback()
 
     let transport = FailingTransport::default();
     let calls = transport.calls.clone();
-    let api = CacheRevalidationErrorApi::new_with_transport(transport)
-        .with_cache_store(Arc::new(RevalidateThenStaleCache));
+    let api = CacheRevalidationErrorApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.cache_store(Arc::new(RevalidateThenStaleCache));
+    });
 
     let value = api
         .request(endpoints::Cached::new())

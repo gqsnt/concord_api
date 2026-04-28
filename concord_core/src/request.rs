@@ -101,6 +101,23 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         Ok(self.execute_decoded().await?.value)
     }
 
+    pub async fn execute_and_store_manual<F>(self, slot: F) -> Result<(), ApiClientError>
+    where
+        E::Response: crate::auth::CredentialMaterial,
+        F: FnOnce(
+            &Cx::AuthState,
+        ) -> &crate::auth::CredentialSlot<
+            Cx,
+            crate::auth::ManualCredentialProvider<E::Response>,
+        >,
+    {
+        let client = self.client;
+        let value = self.execute().await?;
+        let auth_state = client.auth_state();
+        slot(auth_state.as_ref()).set_manual(value).await;
+        Ok(())
+    }
+
     pub async fn execute_decoded(self) -> Result<DecodedResponse<E::Response>, ApiClientError> {
         let mut plan = self.ep.plan(&self.client.plan_context())?;
         plan.overrides.timeout = match self.opts.timeout_override {

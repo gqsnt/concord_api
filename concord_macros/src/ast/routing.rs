@@ -1,9 +1,3 @@
-#[derive(Debug, Clone, Copy)]
-pub enum SchemeLit {
-    Http,
-    Https,
-}
-
 #[derive(Debug)]
 pub enum Item {
     Layer(Box<LayerDef>),

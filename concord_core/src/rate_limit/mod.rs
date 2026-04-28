@@ -9,7 +9,7 @@ mod governor_runtime;
 pub use context::{RateLimitContext, RateLimitPermit, RateLimitResponseContext};
 #[cfg(feature = "rate-limit-governor")]
 pub use governor_runtime::{DefaultRateLimiter, GovernorRateLimiter};
-pub use limiter::{NoopRateLimiter, RateLimiter};
+pub use limiter::{NoopRateLimiter, RateLimitFuture, RateLimiter};
 pub use plan::{
     RateLimitBucketId, RateLimitBucketUse, RateLimitKey, RateLimitKeyPart, RateLimitKeyValue,
     RateLimitPlan, RateLimitSetting, RateLimitWindow,

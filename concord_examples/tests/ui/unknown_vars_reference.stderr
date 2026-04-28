@@ -1,4 +1,5 @@
 error: unknown client var `vars.missing`
+       no client vars are declared
  --> tests/ui/unknown_vars_reference.rs:7:24
   |
 7 |             "x" = vars.missing // ERROR: unknown vars entry

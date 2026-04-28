@@ -86,6 +86,105 @@ fn json_headers() -> HeaderMap {
     headers
 }
 
+#[derive(Clone)]
+struct OrderedTransport {
+    events: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl Transport for OrderedTransport {
+    fn send(
+        &self,
+        req: BuiltRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events.lock().expect("events lock").push("send");
+            let body = json_bytes(&());
+            Ok(TransportResponse {
+                meta: req.meta,
+                url: req.url,
+                status: http::StatusCode::OK,
+                headers: json_headers(),
+                content_length: Some(body.len() as u64),
+                rate_limit: req.rate_limit,
+                body: Box::new(StaticBody { chunk: Some(body) }),
+            })
+        })
+    }
+}
+
+#[derive(Clone)]
+struct OrderedLimiter {
+    events: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl RateLimiter for OrderedLimiter {
+    fn acquire<'a>(
+        &'a self,
+        _ctx: RateLimitContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<RateLimitPermit, ApiClientError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.events
+                .lock()
+                .expect("events lock")
+                .push("rate_limit_acquire");
+            Ok(RateLimitPermit)
+        })
+    }
+
+    fn on_response<'a>(
+        &'a self,
+        _ctx: RateLimitResponseContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<RateLimitResponseAction, ApiClientError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.events
+                .lock()
+                .expect("events lock")
+                .push("rate_limit_observe");
+            Ok(RateLimitResponseAction::Continue)
+        })
+    }
+}
+
+struct OrderedCache {
+    events: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl CacheStore for OrderedCache {
+    fn key_for(&self, _request: &BuiltRequest) -> Option<CacheKey> {
+        Some(CacheKey::new("ordered".to_string()))
+    }
+
+    fn before_request<'a>(
+        &'a self,
+        _request: &'a BuiltRequest,
+    ) -> Pin<Box<dyn Future<Output = CacheBefore> + Send + 'a>> {
+        Box::pin(async move {
+            self.events
+                .lock()
+                .expect("events lock")
+                .push("cache_before");
+            CacheBefore::Miss
+        })
+    }
+
+    fn after_response<'a>(
+        &'a self,
+        _request: &'a BuiltRequest,
+        _response: &'a BuiltResponse,
+        _revalidation: Option<CacheRevalidation>,
+    ) -> Pin<Box<dyn Future<Output = CacheAfter> + Send + 'a>> {
+        Box::pin(async move {
+            self.events
+                .lock()
+                .expect("events lock")
+                .push("cache_after_response");
+            CacheAfter::Stored
+        })
+    }
+}
+
 #[derive(Default)]
 struct AlwaysHitCache {
     response: Mutex<Option<BuiltResponse>>,
@@ -120,6 +219,60 @@ impl RateLimitObserver for HeaderScopePolicy {
     fn observe(&self, ctx: RateLimitResponseContext<'_>) -> RateLimitObservation {
         ctx.on_429().scope_header("x-rate-limit-type").retry_after()
     }
+}
+
+#[tokio::test]
+async fn runtime_order_runs_cache_before_rate_limit_send_observe_cache_after() {
+    api! {
+        client RuntimeOrderApi {
+            base https "example.com"
+            default {
+                cache short
+                rate_limit app
+            }
+            cache short {
+                ttl 60 seconds
+            }
+            rate_limit app {
+                bucket application by [host] {
+                    10 / 1s
+                }
+            }
+        }
+
+        GET Cached
+            as cached
+            path ["cached"]
+            -> Json<()>;
+    }
+
+    use runtime_order_api::*;
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = OrderedTransport {
+        events: events.clone(),
+    };
+    let api = RuntimeOrderApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.cache_store(Arc::new(OrderedCache {
+            events: events.clone(),
+        }));
+        cfg.rate_limiter(Arc::new(OrderedLimiter {
+            events: events.clone(),
+        }));
+    });
+
+    api.cached().await.unwrap();
+
+    assert_eq!(
+        events.lock().expect("events lock").as_slice(),
+        &[
+            "cache_before",
+            "rate_limit_acquire",
+            "send",
+            "rate_limit_observe",
+            "cache_after_response"
+        ]
+    );
 }
 
 #[tokio::test]
@@ -166,7 +319,9 @@ async fn rate_limit_profiles_generate_request_plan_and_allow_custom_limiter() {
         .build();
     let limiter = RecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api = RateLimitDslApi::new_with_transport(transport).with_rate_limiter(Arc::new(limiter));
+    let api = RateLimitDslApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.rate_limiter(Arc::new(limiter));
+    });
 
     api.request(endpoints::Ping::new()).execute().await.unwrap();
     api.request(endpoints::NoLimit::new())
@@ -418,8 +573,9 @@ async fn rate_limit_scope_key_binding_materializes_param_key() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
     let limiter = RecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api =
-        RateLimitScopeKeyApi::new_with_transport(transport).with_rate_limiter(Arc::new(limiter));
+    let api = RateLimitScopeKeyApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.rate_limiter(Arc::new(limiter));
+    });
 
     api.request(endpoints::platform::ByRegion::new("euw1".to_string()))
         .execute()
@@ -471,9 +627,10 @@ async fn inflight_followers_do_not_consume_rate_limit_permits() {
     };
     let limiter = RecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api = RateLimitInflightApi::new_with_transport(transport)
-        .with_rate_limiter(Arc::new(limiter))
-        .with_inflight_policy(Arc::new(SafeMethodInflightPolicy));
+    let api = RateLimitInflightApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.rate_limiter(Arc::new(limiter));
+        cfg.inflight_policy(Arc::new(SafeMethodInflightPolicy));
+    });
 
     let api_a = api.clone();
     let first = tokio::spawn(async move { api_a.request(endpoints::Ping::new()).execute().await });
@@ -517,9 +674,10 @@ async fn cache_hits_do_not_consume_rate_limit_permits() {
     let (transport, h) = mock().build();
     let limiter = RecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api = RateLimitCacheApi::new_with_transport(transport)
-        .with_rate_limiter(Arc::new(limiter))
-        .with_cache_store(Arc::new(AlwaysHitCache::default()));
+    let api = RateLimitCacheApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.rate_limiter(Arc::new(limiter));
+        cfg.cache_store(Arc::new(AlwaysHitCache::default()));
+    });
 
     api.request(endpoints::Cached::new())
         .execute()
@@ -558,8 +716,9 @@ async fn duplicate_rate_limit_profiles_do_not_duplicate_buckets_after_canonicali
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
     let limiter = RecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api = RateLimitCanonicalizationApi::new_with_transport(transport)
-        .with_rate_limiter(Arc::new(limiter));
+    let api = RateLimitCanonicalizationApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.rate_limiter(Arc::new(limiter));
+    });
 
     api.request(endpoints::Ping::new()).execute().await.unwrap();
 
@@ -599,8 +758,9 @@ async fn endpoint_rate_limit_key_binding_materializes_scope_param_key() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
     let limiter = RecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api =
-        RateLimitEndpointKeyApi::new_with_transport(transport).with_rate_limiter(Arc::new(limiter));
+    let api = RateLimitEndpointKeyApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.rate_limiter(Arc::new(limiter));
+    });
 
     api.request(endpoints::platform::ByRegion::new("euw1".to_string()))
         .execute()
@@ -646,7 +806,9 @@ async fn rate_limit_bucket_cost_is_emitted_to_runtime_plan() {
     let (transport, h) = mock().reply(MockReply::ok_json(json_bytes(&()))).build();
     let limiter = RecordingLimiter::default();
     let plans = limiter.plans.clone();
-    let api = RateLimitCostApi::new_with_transport(transport).with_rate_limiter(Arc::new(limiter));
+    let api = RateLimitCostApi::new_with_transport(transport).with_configure(|cfg| {
+        cfg.rate_limiter(Arc::new(limiter));
+    });
 
     api.request(endpoints::Ping::new()).execute().await.unwrap();
 

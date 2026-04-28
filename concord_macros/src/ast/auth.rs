@@ -44,8 +44,8 @@ pub struct SecretRef {
 #[derive(Debug, Clone)]
 pub enum AuthUseDecl {
     Single(Box<AuthUseKind>),
-    AllOf(Vec<AuthUseKind>),
-    OneOf(Vec<AuthUseKind>),
+    UnsupportedAllGroup(Vec<AuthUseKind>),
+    UnsupportedAnyGroup(Vec<AuthUseKind>),
 }
 
 #[derive(Debug, Clone)]

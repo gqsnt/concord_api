@@ -1,9 +1,21 @@
+//! Proc-macro entry point for the Concord v4 DSL.
+//!
+//! The implementation is intentionally staged:
+//!
+//! 1. `parse` accepts v4 syntax and legacy syntax only when it can emit a
+//!    precise migration diagnostic.
+//! 2. `sema` normalizes and resolves the API tree into `ResolvedApi` and
+//!    `ResolvedEndpoint`.
+//! 3. `codegen` emits clients and endpoint `plan()` implementations from the
+//!    resolved model only.
+
 use proc_macro::TokenStream;
 
 mod ast;
 mod codegen;
 mod emit_helpers;
 mod kw;
+mod model;
 mod parse;
 mod sema;
 

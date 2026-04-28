@@ -1,6 +1,11 @@
-// concord_macros/src/parse.rs
+//! Parser for raw DSL syntax.
+//!
+//! This layer is allowed to know about removed syntax, but only to reject it
+//! with v4 replacement diagnostics. It should not resolve inheritance or names.
+
 use crate::ast::*;
 use crate::kw;
+use crate::model::{Scheme, SetOp};
 use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
@@ -28,7 +33,7 @@ impl Parse for ClientDef {
         let content;
         braced!(content in input);
 
-        let mut scheme: Option<SchemeLit> = None;
+        let mut scheme: Option<Scheme> = None;
         let mut host: Option<LitStr> = None;
         let mut vars: Option<VarsBlock> = None;
         let mut auth_vars: Option<VarsBlock> = None;
@@ -46,8 +51,8 @@ impl Parse for ClientDef {
                 content.parse::<kw::base>()?;
                 let v: Ident = content.parse()?;
                 scheme = Some(match v.to_string().as_str() {
-                    "http" => SchemeLit::Http,
-                    "https" => SchemeLit::Https,
+                    "http" => Scheme::Http,
+                    "https" => Scheme::Https,
                     _ => {
                         return Err(syn::Error::new(
                             v.span(),
@@ -101,6 +106,11 @@ impl Parse for ClientDef {
                 return Err(syn::Error::new(
                     content.span(),
                     "`use_auth` was removed in v4; use `auth header/query/bearer/basic/certificate ...`",
+                ));
+            } else if content.peek(kw::response) {
+                return Err(syn::Error::new(
+                    content.span(),
+                    "`response custom` was removed in v4; use `observe rate_limit MyObserver`",
                 ));
             } else if content.peek(kw::cache) {
                 content.parse::<kw::cache>()?;

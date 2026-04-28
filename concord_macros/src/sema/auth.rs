@@ -149,7 +149,7 @@ fn resolve_auth_requirements(
                     provenance,
                 )?)));
             }
-            AuthUseDecl::AllOf(kinds) => {
+            AuthUseDecl::UnsupportedAllGroup(kinds) => {
                 return Err(syn::Error::new(
                     kinds
                         .first()
@@ -159,7 +159,7 @@ fn resolve_auth_requirements(
                     "auth any/all groups are not supported in v4; write multiple auth lines for required auth",
                 ));
             }
-            AuthUseDecl::OneOf(kinds) => {
+            AuthUseDecl::UnsupportedAnyGroup(kinds) => {
                 return Err(syn::Error::new(
                     kinds
                         .first()
@@ -183,7 +183,7 @@ fn resolve_auth_use_kind(
     let cred = credentials.get(&credential.to_string()).ok_or_else(|| {
         syn::Error::new(
             credential.span(),
-            format!("unknown auth credential `{credential}`"),
+            unknown_name_message("auth credential", credential, credentials),
         )
     })?;
     validate_auth_usage_fit(kind, cred)?;
