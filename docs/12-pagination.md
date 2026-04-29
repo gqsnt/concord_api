@@ -44,20 +44,16 @@ Use this when the API accepts an offset/start and a limit/count.
 
 ```rust
 GET List(start: u64 = 0, count: u64 = 20)
-    -> Json<Vec<String>>
-{
     path ["items"]
-
     query {
         "start" = start
         "count" = count
     }
-
     paginate OffsetLimitPagination {
         offset = start
         limit = count
     }
-}
+    -> Json<Vec<String>>
 ```
 
 Requests:
@@ -74,20 +70,16 @@ Use this when the API accepts a page number and page size.
 
 ```rust
 GET List(page: u32 = 1, page_size: u32 = 20)
-    -> Json<Vec<String>>
-{
     path ["items"]
-
     query {
         "page" = page
         "pageSize" = page_size
     }
-
     paginate PagedPagination {
         page = page as u64
         per_page = page_size as u64
     }
-}
+    -> Json<Vec<String>>
 ```
 
 ## Cursor pagination
@@ -96,20 +88,16 @@ Use this when the response returns a cursor.
 
 ```rust
 GET List(page_cursor?: String, page_size: u64 = 20)
-    -> Json<Page>
-{
     path ["items"]
-
     query {
         "pageCursor" = page_cursor
         "pageSize" = page_size
     }
-
     paginate CursorPagination {
         cursor = page_cursor
         per_page = page_size
     }
-}
+    -> Json<Page>
 ```
 
 The first request omits the cursor when it is `None`.

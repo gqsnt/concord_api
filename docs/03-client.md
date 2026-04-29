@@ -146,9 +146,9 @@ client Api {
 
 `default` is useful when a profile should apply broadly.
 
-## Multiple default blocks
+## Default blocks
 
-Prefer one default block for readability:
+A client or scope may contain at most one `default` block. Multiple `default` blocks are invalid.
 
 ```rust
 default {
@@ -156,8 +156,6 @@ default {
     rate_limit app
 }
 ```
-
-If several default blocks are accepted by the parser, treat them as style debt and consolidate in examples.
 
 ## Runtime configuration
 

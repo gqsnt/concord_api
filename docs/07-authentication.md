@@ -96,7 +96,7 @@ scope protected {
 ```rust
 credential key = api_key(secret.api_key)
 
-scope legacy {
+scope partner_api {
     auth query "api_key" = key
 }
 ```
@@ -131,14 +131,12 @@ client SessionApi {
 
 scope auth_api {
     POST LoginForSession(body: Json<LoginRequest>)
+        path ["login"]
+        auth header "X-Upstream-Key" = upstream
         -> Json<LoginResponse>
         map AccessToken {
             AccessToken::new(r.access_token)
         }
-    {
-        path ["login"]
-        auth header "X-Upstream-Key" = upstream
-    }
 }
 
 scope protected {

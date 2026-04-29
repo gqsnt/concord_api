@@ -79,7 +79,7 @@ GET Me
     -> Json<User>
 ```
 
-Use blocks for local query/header/pagination/policy:
+Use direct stanza clauses for local query/header/pagination/policy:
 
 ```rust
 GET GetMatchIdsByPuuid(
@@ -92,8 +92,6 @@ GET GetMatchIdsByPuuid(
 )
     as ids_by_puuid
     path ["by-puuid", puuid, "ids"]
-    -> Json<Vec<String>>
-{
     query {
         queue
         "startTime" = start_time
@@ -108,7 +106,7 @@ GET GetMatchIdsByPuuid(
     }
 
     rate_limit match_v5_method
-}
+    -> Json<Vec<String>>
 ```
 
 ## Aliases

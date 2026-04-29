@@ -111,11 +111,9 @@ Endpoint:
 POST CreatePost(idempotency_key: String, body: Json<NewPost>)
     as create
     path ["posts"]
-    -> Json<Post>
-{
     header "Idempotency-Key" = idempotency_key
     retry write
-}
+    -> Json<Post>
 ```
 
 ## Practical guidance

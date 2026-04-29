@@ -112,26 +112,21 @@ GET Name(required: Type, optional?: Type, defaulted: Type = expr)
     -> Json<T>
 ```
 
-With block:
+With stanza clauses:
 
 ```rust
 GET Name(id: u64)
-    -> Json<T>
-{
     path [id]
-
     query {
         "include" = "profile"
     }
-
     headers {
         "x-debug" = true
     }
-
     retry read
     cache short
     rate_limit method_read
-}
+    -> Json<T>
 ```
 
 With body:
@@ -147,13 +142,11 @@ With mapping:
 
 ```rust
 GET Titles(user_id: u64)
+    path ["users", user_id, "posts"]
     -> Json<Vec<Post>>
     map Vec<String> {
         IntoIterator::into_iter(r).map(|p| p.title).collect()
     }
-{
-    path ["users", user_id, "posts"]
-}
 ```
 
 ## Route
@@ -172,7 +165,7 @@ header "x-client" = "v5"
 headers {
     "user-agent" = "Api/1.0"
     "x-debug" = debug
-    -"x-old"
+    -"x-trace"
 }
 ```
 
@@ -185,7 +178,7 @@ query {
     page
     "userId" = user_id
     "tag" += tag
-    -"old"
+    -"debug"
 }
 ```
 

@@ -87,20 +87,18 @@ POST CreatePost(body: Json<NewPost>)
     -> Json<Post>
 ```
 
-Endpoint with mapping and block:
+Endpoint with mapping:
 
 ```rust
 GET GetUserPosts(id: i32, user_id?: u32)
-    -> Json<Vec<Post>>
-    map Vec<String> {
-        IntoIterator::into_iter(r).map(|p| p.title).collect()
-    }
-{
     path [id, "posts"]
     query {
         "userId" = user_id
     }
-}
+    -> Json<Vec<Post>>
+    map Vec<String> {
+        IntoIterator::into_iter(r).map(|p| p.title).collect()
+    }
 ```
 
 ## Policy declarations

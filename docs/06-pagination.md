@@ -1,12 +1,10 @@
 # 6. Pagination
 
-Paginated endpoints declare pagination in the endpoint stanza block:
+Paginated endpoints declare pagination in the endpoint stanza:
 
 ```rust
 GET ListEvents(start: u64 = 0, count: u64 = 50, kind?: String)
     as list
-    -> Json<Vec<Event>>
-{
     query {
         start
         count
@@ -16,7 +14,7 @@ GET ListEvents(start: u64 = 0, count: u64 = 50, kind?: String)
         offset = start,
         limit = count
     }
-}
+    -> Json<Vec<Event>>
 ```
 
 Normal usage is facade-first:

@@ -121,7 +121,7 @@ Good compile-fail tests should cover:
 - unknown credential;
 - unknown retry/cache/rate-limit profile;
 - invalid rate-limit key;
-- unsupported old DSL syntax;
+- invalid DSL syntax;
 - unsupported custom auth;
 - unsupported auth any/all groups;
 - unsafe retry without idempotency if that rule is enforced.

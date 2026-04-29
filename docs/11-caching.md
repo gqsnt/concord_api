@@ -63,12 +63,10 @@ scope static_data {
 GET Cached
     as cached
     path ["cached"]
-    -> Json<String>
-{
     cache {
         ttl 60 seconds
     }
-}
+    -> Json<String>
 ```
 
 ## Turning cache off

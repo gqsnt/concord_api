@@ -59,17 +59,14 @@ Mapping transforms the decoded response into the endpoint output type.
 
 ```rust
 GET GetUserPosts(id: i32, user_id?: u32)
+    path [id, "posts"]
+    query {
+        "userId" = user_id
+    }
     -> Json<Vec<Post>>
     map Vec<String> {
         IntoIterator::into_iter(r).map(|p| p.title).collect()
     }
-{
-    path [id, "posts"]
-
-    query {
-        "userId" = user_id
-    }
-}
 ```
 
 The variable `r` is the decoded response body.
@@ -90,13 +87,11 @@ Endpoint-backed credentials commonly map login JSON into `AccessToken`.
 
 ```rust
 POST LoginForSession(body: Json<LoginRequest>)
+    path ["login"]
     -> Json<LoginResponse>
     map AccessToken {
         AccessToken::new(r.access_token)
     }
-{
-    path ["login"]
-}
 ```
 
 The endpoint output type is `AccessToken`.

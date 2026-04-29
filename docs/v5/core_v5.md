@@ -8,7 +8,7 @@ Generated endpoint code ends in:
 Endpoint::plan -> RequestPlan -> ApiClient::execute_plan
 ```
 
-The core must not know DSL syntax such as endpoint stanzas, `fmt[...]`, query shorthand, or legacy diagnostics.
+The core must not know DSL syntax such as endpoint stanzas, `fmt[...]`, query shorthand, or parser compatibility layers.
 
 `EndpointPlan` carries:
 

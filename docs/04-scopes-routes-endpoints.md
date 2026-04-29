@@ -152,16 +152,13 @@ If no alias is written, Concord derives a snake-case method from the endpoint na
 
 ```rust
 GET GetPosts(user_id?: u32, x_debug: bool = true)
-    -> Json<Vec<Post>>
-{
     query {
         "userId" = user_id
     }
-
     headers {
         "x-debug" = fmt["test:", x_debug]
     }
-}
+    -> Json<Vec<Post>>
 ```
 
 Parameter kinds:
@@ -195,7 +192,7 @@ Semicolon form is valid for simple endpoints without path/policy additions:
 POST CreatePost(body: Json<NewPost>) -> Json<Post>;
 ```
 
-Use a block when the endpoint needs path/query/headers/auth/cache/retry/rate-limit/pagination.
+Use stanza clauses when the endpoint needs path/query/headers/auth/cache/retry/rate-limit/pagination.
 
 ## Large API style
 
@@ -216,10 +213,7 @@ scope regional(region: RegionalRoute) {
             start: u64 = 0,
             count: u64 = 20,
         )
-            -> Json<Vec<String>>
-        {
             path ["by-puuid", puuid, "ids"]
-
             query {
                 queue
                 "startTime" = start_time
@@ -227,14 +221,12 @@ scope regional(region: RegionalRoute) {
                 start
                 count
             }
-
             paginate OffsetLimitPagination {
                 offset = start
                 limit = count
             }
-
             rate_limit match_v5_method
-        }
+            -> Json<Vec<String>>
     }
 }
 ```

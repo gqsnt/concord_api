@@ -38,12 +38,10 @@ Endpoint-level header:
 
 ```rust
 GET GetPosts(x_debug: bool = true)
-    -> Json<Vec<Post>>
-{
     headers {
         "x-debug" = fmt["test:", x_debug]
     }
-}
+    -> Json<Vec<Post>>
 ```
 
 ## Header removal
@@ -60,12 +58,10 @@ Use removal when an endpoint must opt out of an inherited header.
 
 ```rust
 GET GetPosts(user_id?: u32)
-    -> Json<Vec<Post>>
-{
     query {
         "userId" = user_id
     }
-}
+    -> Json<Vec<Post>>
 ```
 
 Optional values are omitted when `None`.
@@ -123,10 +119,8 @@ Endpoint override:
 
 ```rust
 GET Slow
-    -> Json<Value>
-{
     timeout std::time::Duration::from_secs(5)
-}
+    -> Json<Value>
 ```
 
 Runtime override:
