@@ -1,6 +1,6 @@
 # 2. DSL Overview
 
-This chapter summarizes the v4 DSL vocabulary.
+This chapter summarizes the v5 DSL vocabulary.
 
 ## Top-level shape
 
@@ -39,7 +39,7 @@ client Api {
     }
 
     retry read {
-        attempts 2
+        max_attempts 2
         methods [GET]
         on [429, 500]
         retry_after
@@ -108,7 +108,7 @@ GET GetUserPosts(id: i32, user_id?: u32)
 Single line:
 
 ```rust
-header "x-client" = "v4"
+header "x-client" = "v5"
 query "debug" = true
 auth bearer session
 retry read
@@ -131,9 +131,9 @@ query {
 }
 ```
 
-## v4 form
+## v5 form
 
-Use the v4 root/client/auth form:
+Use the v5 root/client/auth form:
 
 ```rust
 client Api {

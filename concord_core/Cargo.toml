@@ -22,6 +22,9 @@ moka = { workspace = true, default-features = false, features = [
 ], optional = true }
 http-cache-semantics = { workspace = true, default-features = false, optional = true }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
+
 
 [features]
 default = ["rate-limit-governor"]

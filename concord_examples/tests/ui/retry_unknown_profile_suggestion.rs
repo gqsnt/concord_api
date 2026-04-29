@@ -5,7 +5,7 @@ api! {
         base https "example.com"
 
         retry read {
-            attempts 2
+            max_attempts 2
             methods [GET]
             on [500]
         }

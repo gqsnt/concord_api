@@ -631,12 +631,10 @@ async fn cache_hit_skips_rate_limit_after_initial_store() {
             base https "example.com"
             default {
                 cache short
+                rate_limit app
             }
             cache short {
                     ttl 60 seconds
-            }
-            default {
-                rate_limit app
             }
             rate_limit app {
                     bucket application by [host] {
@@ -691,15 +689,13 @@ async fn cache_hit_skips_retry_and_transport_after_initial_store() {
             base https "example.com"
             default {
                 cache short
+                retry read
             }
             cache short {
                     ttl 60 seconds
             }
-            default {
-                retry read
-            }
             retry read {
-                    attempts 2
+                    max_attempts 2
                     methods [GET]
                     on [500]
             }
@@ -987,7 +983,7 @@ async fn revalidation_transport_errors_retry_before_cache_after_error_fallback()
                 retry read
             }
             retry read {
-                    attempts 2
+                    max_attempts 2
                     methods [GET]
                     on transport[Timeout]
             }

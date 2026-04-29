@@ -1,0 +1,13 @@
+error: old mapping syntax `-> Json<T> | Out => ...` was removed in v5; use `-> Json<T> map Out { ... }`
+ --> tests/v5/dsl/fail/fail_old_mapping_arrow.rs:9:25
+  |
+9 |         -> Json<String> | String => r
+  |                         ^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/v5/dsl/fail/fail_old_mapping_arrow.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

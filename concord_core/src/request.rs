@@ -49,6 +49,12 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     }
 
     #[inline]
+    pub fn map_endpoint(mut self, f: impl FnOnce(E) -> E) -> Self {
+        self.ep = f(self.ep);
+        self
+    }
+
+    #[inline]
     pub fn debug_level(mut self, level: DebugLevel) -> Self {
         self.opts.debug_level = Some(level);
         self

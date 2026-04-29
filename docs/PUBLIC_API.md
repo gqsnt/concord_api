@@ -1,6 +1,6 @@
 # Public API Boundary
 
-Concord v4 has three public layers.
+Concord v5 has three public layers.
 
 ## `concord_core::prelude`
 
@@ -37,4 +37,3 @@ This layer contains transport, cache, credential provider, runtime hook, retry, 
 Generated code uses this layer. Normal examples and docs should not import it.
 
 This layer contains request-plan plumbing such as `EndpointPlan`, `RequestPlan`, `ResolvedRoute`, `ResolvedPolicy`, `BodyPlan`, `ResponsePlan`, and low-level codec helpers.
-

@@ -47,7 +47,7 @@ impl<T: Transport> Transport for RecordingTransport<T> {
         &self,
         req: BuiltRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
-        // Record the final v4 plan-built request before forwarding.
+        // Record the final v5 plan-built request before forwarding.
         self.inner.send(req)
     }
 }
@@ -230,7 +230,7 @@ impl CacheStore for SharedCache {
 }
 ```
 
-## What is not stable v4
+## What is not stable v5
 
 Do not rely on these as stable extension points unless the current public API explicitly exposes them:
 

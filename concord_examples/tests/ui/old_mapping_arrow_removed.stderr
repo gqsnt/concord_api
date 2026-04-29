@@ -1,4 +1,4 @@
-error: old mapping syntax `-> Json<T> | Out => ...` was removed in v4; use `-> Json<T> map Out { ... }`
+error: old mapping syntax `-> Json<T> | Out => ...` was removed in v5; use `-> Json<T> map Out { ... }`
  --> tests/ui/old_mapping_arrow_removed.rs:9:30
   |
 9 |     GET Ping -> Json<String> | String => r;

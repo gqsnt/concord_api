@@ -1,4 +1,4 @@
-#[derive(Debug)]
+﻿#[derive(Debug)]
 pub struct RetryProfilesBlock {
     pub profiles: Vec<RetryProfileDef>,
     pub default: Option<Ident>,
@@ -20,7 +20,7 @@ pub enum RetrySpec {
 
 #[derive(Debug, Clone, Default)]
 pub struct RetryPatch {
-    pub attempts: Option<LitInt>,
+    pub max_attempts: Option<LitInt>,
     pub methods: Option<Vec<Ident>>,
     pub statuses: Option<Vec<LitInt>>,
     pub transport_errors: Option<Vec<Ident>>,

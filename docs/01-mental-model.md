@@ -1,6 +1,6 @@
 # 1. Mental Model
 
-Concord v4 is easiest to understand as an API tree.
+Concord v5 is easiest to understand as an API tree.
 
 ```text
 client Api
@@ -39,7 +39,7 @@ client Api {
     }
 
     retry read {
-        attempts 2
+        max_attempts 2
         methods [GET]
         on [503]
         retry_after

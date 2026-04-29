@@ -73,9 +73,8 @@ fn analyze_auth_credentials(
                 provider_ty,
                 provider,
             } => {
-                return Err(syn::Error::new(
+                return Err(unsupported_custom_auth_credential_error(
                     provider_ty.span().join(provider.span()).unwrap_or(provider_ty.span()),
-                    "custom auth credentials are not supported in v4 yet; implement a CredentialProvider plus bearer/header/query/basic/certificate placement instead",
                 ));
             }
         };
@@ -135,41 +134,17 @@ fn validate_required_secret(
 }
 
 fn resolve_auth_requirements(
-    uses: &[AuthUseDecl],
+    uses: &[NormAuthUse],
     credentials: &BTreeMap<String, AuthCredentialIr>,
     provenance: AuthUseProvenanceIr,
 ) -> Result<Vec<AuthUsePlanIr>> {
     let mut out = Vec::new();
     for u in uses {
-        match u {
-            AuthUseDecl::Single(kind) => {
-                out.push(AuthUsePlanIr::Use(Box::new(resolve_auth_use_kind(
-                    kind,
-                    credentials,
-                    provenance,
-                )?)));
-            }
-            AuthUseDecl::UnsupportedAllGroup(kinds) => {
-                return Err(syn::Error::new(
-                    kinds
-                        .first()
-                        .map(auth_use_credential_ident)
-                        .map(Ident::span)
-                        .unwrap_or_else(Span::call_site),
-                    "auth any/all groups are not supported in v4; write multiple auth lines for required auth",
-                ));
-            }
-            AuthUseDecl::UnsupportedAnyGroup(kinds) => {
-                return Err(syn::Error::new(
-                    kinds
-                        .first()
-                        .map(auth_use_credential_ident)
-                        .map(Ident::span)
-                        .unwrap_or_else(Span::call_site),
-                    "auth any/all groups are not supported in v4; write multiple auth lines for required auth",
-                ));
-            }
-        }
+        out.push(AuthUsePlanIr::Use(Box::new(resolve_auth_use_kind(
+            &u.kind,
+            credentials,
+            provenance,
+        )?)));
     }
     Ok(out)
 }
@@ -210,10 +185,7 @@ fn resolve_auth_use_kind(
             usage_ty, usage, ..
         } => {
             let _ = usage_ty;
-            return Err(syn::Error::new_spanned(
-                usage,
-                "custom auth placement is not supported in v4",
-            ));
+            return Err(unsupported_custom_auth_placement_error(usage.span()));
         }
     };
     Ok(AuthUseIr { kind, provenance })

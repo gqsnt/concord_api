@@ -1,18 +1,28 @@
-//! Semantic normalization and resolution for the v4 macro.
+//! Semantic normalization and resolution for the v5 macro.
 //!
-//! This layer walks the parsed API tree, validates names, resolves inherited
-//! route/policy/auth state, and produces `ResolvedApi` / `ResolvedEndpoint`.
-//! Codegen must consume this resolved model instead of raw parser structures.
+//! This layer normalizes the raw parser API tree, validates names, resolves
+//! inherited route/policy/auth state, and produces `ResolvedApi` /
+//! `ResolvedEndpoint`. Codegen must consume this resolved model instead of raw
+//! parser structures.
 
-use crate::ast::*;
+use crate::ast::{
+    AuthBlock, AuthCredentialKind, AuthUseKind, CacheDurationSpec, CacheOnErrorSpec, CachePatch,
+    CacheProfilesBlock, CacheSpec, CodecSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec,
+    PolicyBlock, PolicyBlocks, PolicyStmt, PolicyValue, RateLimitDurationUnit,
+    RateLimitKeyBindingSpec, RateLimitKeySpec, RateLimitPlanSpec, RateLimitProfilesBlock,
+    RateLimitSpec, RefScope, RetryIdempotencySpec, RetryPatch, RetryProfilesBlock, RetrySpec,
+    RouteAtom, SecretRef,
+};
 use crate::emit_helpers;
-use crate::model::{Scheme, SetOp};
+use crate::model::*;
 use proc_macro2::Span;
 use std::collections::BTreeMap;
 use syn::{Expr, Ident, LitStr, Result, Type, spanned::Spanned};
 
 include!("ir.rs");
 include!("profiles.rs");
+include!("diagnostics.rs");
+include!("normalize.rs");
 
 #[cfg(test)]
 pub(crate) fn analyze_tokens_for_test(input: proc_macro2::TokenStream) -> ResolvedApi {
@@ -20,14 +30,19 @@ pub(crate) fn analyze_tokens_for_test(input: proc_macro2::TokenStream) -> Resolv
     analyze(ast).expect("resolve api")
 }
 
-pub fn analyze(ast: ApiFile) -> Result<ResolvedApi> {
-    let client_name = ast.client.name.clone();
+pub fn analyze(ast: crate::ast::ApiFile) -> Result<ResolvedApi> {
+    let norm = normalize_api(ast)?;
+    resolve(norm)
+}
+
+fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
+    let client_name = norm.client.name.clone();
     let mod_name_str = emit_helpers::to_snake(&client_name.to_string());
     let mod_name = Ident::new(&mod_name_str, client_name.span());
 
     // client vars: explicit `vars {}` only.
     let mut client_vars_map: BTreeMap<String, VarInfo> = BTreeMap::new();
-    if let Some(vb) = &ast.client.vars {
+    if let Some(vb) = &norm.client.vars {
         for d in &vb.decls {
             upsert_var(
                 &mut client_vars_map,
@@ -41,7 +56,7 @@ pub fn analyze(ast: ApiFile) -> Result<ResolvedApi> {
 
     // secret vars: only from `secret {}`.
     let mut auth_vars_map: BTreeMap<String, VarInfo> = BTreeMap::new();
-    if let Some(vb) = &ast.client.auth_vars {
+    if let Some(vb) = &norm.client.auth_vars {
         for d in &vb.decls {
             upsert_var(
                 &mut auth_vars_map,
@@ -53,9 +68,9 @@ pub fn analyze(ast: ApiFile) -> Result<ResolvedApi> {
         }
     }
 
-    let endpoint_output_map = collect_endpoint_output_types(&ast.items)?;
+    let endpoint_output_map = collect_endpoint_output_types(&norm.items)?;
     let client_auth_credentials = analyze_auth_credentials(
-        ast.client.auth.as_ref(),
+        norm.client.auth.as_ref(),
         &auth_vars_map,
         &endpoint_output_map,
     )?;
@@ -64,41 +79,41 @@ pub fn analyze(ast: ApiFile) -> Result<ResolvedApi> {
         .map(|c| (c.name.to_string(), c.clone()))
         .collect();
     let client_auth = resolve_auth_requirements(
-        &ast.client.auth_uses,
+        &norm.client.auth_uses,
         &auth_credential_map,
         AuthUseProvenanceIr::Client,
     )?;
 
-    let cache_profiles = resolve_cache_profiles(ast.client.cache_profiles.as_ref())?;
-    let retry_profiles = resolve_retry_profiles(ast.client.retry_profiles.as_ref())?;
-    let rate_limit_profiles = resolve_rate_limit_profiles(ast.client.rate_limit.as_ref())?;
+    let cache_profiles = resolve_cache_profiles(norm.client.cache_profiles.as_ref())?;
+    let retry_profiles = resolve_retry_profiles(norm.client.retry_profiles.as_ref())?;
+    let rate_limit_profiles = resolve_rate_limit_profiles(norm.client.rate_limit.as_ref())?;
 
     // validate client policy + resolve
     let mut client_policy = resolve_policy_blocks(
-        &ast.client.policy,
+        &norm.client.policy,
         PolicyOwner::Client,
         &client_vars_map,
         &auth_vars_map,
         None,
     )?;
     client_policy.retry = resolve_client_retry(
-        ast.client.retry.as_ref(),
-        ast.client
+        norm.client.retry.as_ref(),
+        norm.client
             .retry_profiles
             .as_ref()
             .and_then(|block| block.default.as_ref()),
         &retry_profiles,
     )?;
     client_policy.cache = resolve_client_cache(
-        ast.client.cache.as_ref(),
-        ast.client
+        norm.client.cache.as_ref(),
+        norm.client
             .cache_profiles
             .as_ref()
             .and_then(|block| block.default.as_ref()),
         &cache_profiles,
     )?;
     client_policy.rate_limit = resolve_client_rate_limit(
-        ast.client.rate_limit.as_ref(),
+        norm.client.rate_limit.as_ref(),
         &rate_limit_profiles,
         &BTreeMap::new(),
         None,
@@ -123,7 +138,7 @@ pub fn analyze(ast: ApiFile) -> Result<ResolvedApi> {
         layers: &mut layers,
         endpoints: &mut endpoints,
     };
-    walk_items(&ast.items, &mut ancestry, &mut walk_ctx)?;
+    walk_items(&norm.items, &mut ancestry, &mut walk_ctx)?;
 
     let cache_store_enabled = policy_uses_cache(&client_policy)
         || layers.iter().any(|layer| policy_uses_cache(&layer.policy))
@@ -137,15 +152,15 @@ pub fn analyze(ast: ApiFile) -> Result<ResolvedApi> {
     Ok(ResolvedApi {
         mod_name,
         client_name,
-        scheme: ast.client.scheme,
-        domain: ast.client.host,
+        scheme: norm.client.scheme,
+        domain: norm.client.host,
         client_vars,
         client_auth_vars,
         client_auth_credentials,
         client_policy,
         cache_store_enabled,
         cache_store_config,
-        rate_limit_response_policy: ast
+        rate_limit_response_policy: norm
             .client
             .rate_limit
             .as_ref()
@@ -162,6 +177,67 @@ include!("cache.rs");
 include!("rate_limit.rs");
 include!("items.rs");
 include!("policy.rs");
+
+#[cfg(test)]
+fn debug_norm_tree(norm: &NormApiTree) -> String {
+    fn walk(items: &[NormNode], depth: usize, out: &mut String) {
+        for item in items {
+            let indent = "  ".repeat(depth);
+            match item {
+                NormNode::Layer(scope) => {
+                    out.push_str(&format!(
+                        "{indent}scope {:?} kind={:?} params={} auth={} headers={} query={} retry={} cache={} rate_limit={}\n",
+                        scope.scope_name.as_ref().map(ToString::to_string),
+                        scope.kind,
+                        scope.params.len(),
+                        scope.auth_uses.len(),
+                        scope.policy.headers.as_ref().map_or(0, |h| h.stmts.len()),
+                        scope.policy.query.as_ref().map_or(0, |q| q.stmts.len()),
+                        scope.retry.is_some(),
+                        scope.cache.is_some(),
+                        scope.rate_limit.is_some(),
+                    ));
+                    walk(&scope.items, depth + 1, out);
+                }
+                NormNode::Endpoint(endpoint) => {
+                    out.push_str(&format!(
+                        "{indent}endpoint {} method={} alias={:?} params={} body={} query={} paginate={} map={}\n",
+                        endpoint.name,
+                        endpoint.method,
+                        endpoint.alias.as_ref().map(ToString::to_string),
+                        endpoint.params.len(),
+                        endpoint.body.is_some(),
+                        endpoint.policy.query.as_ref().map_or(0, |q| q.stmts.len()),
+                        endpoint.paginate.is_some(),
+                        endpoint.map.is_some(),
+                    ));
+                }
+            }
+        }
+    }
+
+    let mut out = format!(
+        "client {} vars={} secrets={} auth={} retry_profiles={} cache_profiles={} rate_profiles={}\n",
+        norm.client.name,
+        norm.client.vars.as_ref().map_or(0, |v| v.decls.len()),
+        norm.client.auth_vars.as_ref().map_or(0, |v| v.decls.len()),
+        norm.client.auth_uses.len(),
+        norm.client
+            .retry_profiles
+            .as_ref()
+            .map_or(0, |v| v.profiles.len()),
+        norm.client
+            .cache_profiles
+            .as_ref()
+            .map_or(0, |v| v.profiles.len()),
+        norm.client
+            .rate_limit
+            .as_ref()
+            .map_or(0, |v| v.profiles.len()),
+    );
+    walk(&norm.items, 0, &mut out);
+    out
+}
 
 #[cfg(test)]
 fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
@@ -222,8 +298,53 @@ mod tests {
     use super::*;
 
     #[test]
+    fn normalized_tree_snapshot_contains_v5_shape_without_legacy_auth_groups() {
+        let ast: crate::ast::ApiFile = syn::parse_str(
+            r#"
+            client NormApi {
+                base https "example.com"
+                var tenant: String
+                secret token: String
+                credential key = api_key(secret.token)
+
+                retry read {
+                    max_attempts 2
+                    methods [GET]
+                }
+            }
+
+            scope protected(user_id: u64) {
+                path ["users", user_id]
+                auth header "X-Token" = key
+
+                GET Show(count: u64 = 20)
+                    as show
+                    path ["profile"]
+                    -> Json<String>
+                {
+                    query {
+                        count
+                    }
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let norm = normalize_api(ast).expect("normalization succeeds");
+        let snapshot = debug_norm_tree(&norm);
+
+        assert!(snapshot.contains("client NormApi"));
+        assert!(snapshot.contains("scope Some(\"protected\")"));
+        assert!(snapshot.contains("endpoint Show method=GET"));
+        assert!(snapshot.contains("alias=Some(\"show\")"));
+        assert!(snapshot.contains("query=1"));
+        assert!(!snapshot.contains("UnsupportedAnyGroup"));
+        assert!(!snapshot.contains("UnsupportedAllGroup"));
+    }
+
+    #[test]
     fn resolved_endpoint_debug_includes_inherited_tree_state() {
-        let ast: ApiFile = syn::parse_str(
+        let ast: crate::ast::ApiFile = syn::parse_str(
             r#"
             client Api {
                 base https "example.com"
@@ -255,7 +376,7 @@ mod tests {
 
     #[test]
     fn resolved_endpoint_snapshots_cover_v47_cases() {
-        let ast: ApiFile = syn::parse_str(
+        let ast: crate::ast::ApiFile = syn::parse_str(
             r#"
             client SnapshotApi {
                 base https "example.com"
@@ -268,7 +389,7 @@ mod tests {
                 }
 
                 retry read {
-                    attempts 2
+                    max_attempts 2
                     methods [GET]
                     on [429]
                     retry_after

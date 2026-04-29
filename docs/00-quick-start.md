@@ -1,6 +1,6 @@
 # 0. Quick Start
 
-This page shows the smallest useful Concord v4 API.
+This page shows the smallest useful Concord v5 API.
 
 ## Minimal client
 
@@ -146,7 +146,7 @@ client Api {
     }
 
     retry read {
-        attempts 2
+        max_attempts 2
         methods [GET, HEAD]
         on [429, 500, 502, 503, 504]
         retry_after

@@ -24,7 +24,7 @@ impl CacheKey {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct CachePrimaryKey(String);
 
-// impl CachePrimaryKey { 
+impl CachePrimaryKey {
     #[inline]
     pub fn new(v: String) -> Self {
         Self(v)

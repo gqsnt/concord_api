@@ -1,0 +1,15 @@
+error: unknown endpoint var `ep.cout`
+       did you mean `ep.count`?
+       available endpoint vars: `ep.count`
+  --> tests/v5/dsl/fail/fail_query_unknown.rs:10:13
+   |
+10 |             cout
+   |             ^^^^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/v5/dsl/fail/fail_query_unknown.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

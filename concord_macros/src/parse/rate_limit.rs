@@ -158,7 +158,7 @@ fn parse_rate_limit_key_spec(input: ParseStream<'_>) -> Result<RateLimitKeySpec>
     if input.peek(Token![.]) {
         return Err(syn::Error::new(
             first.span(),
-            "`route.host` was removed in v4 rate-limit keys; use `host`",
+            "`route.host` was removed in v5 rate-limit keys; use `host`",
         ));
     }
     match first_s.as_str() {

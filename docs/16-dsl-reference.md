@@ -1,6 +1,6 @@
 # 16. DSL Reference
 
-Compact reference for the Concord v4 DSL.
+Compact reference for the Concord v5 DSL.
 
 ## Root
 
@@ -43,7 +43,7 @@ client Api {
     }
 
     retry read {
-        attempts 2
+        max_attempts 2
         methods [GET]
         on [429, 500]
         retry_after
@@ -161,13 +161,13 @@ GET Titles(user_id: u64)
 ```rust
 host [region, "api"]
 path ["users", id]
-path ["prefix", part["user-", id]]
+path ["prefix", fmt["user-", id]]
 ```
 
 ## Headers
 
 ```rust
-header "x-client" = "v4"
+header "x-client" = "v5"
 
 headers {
     "user-agent" = "Api/1.0"
@@ -210,7 +210,7 @@ auth basic admin
 retry read
 
 retry read {
-    attempts 2
+    max_attempts 2
     methods [GET]
     on [429, 500]
     retry_after

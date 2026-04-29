@@ -54,7 +54,7 @@ api! {
             retry read
         }
         retry read {
-                attempts 2
+                max_attempts 2
                 methods [GET, HEAD]
                 on [429, 500, 502, 503, 504]
                 retry_after
@@ -75,7 +75,7 @@ api! {
                     "userId" = user_id
                 }
                 headers {
-                    "x-debug" = part["test:", x_debug]
+                    "x-debug" = fmt["test:", x_debug]
                 }
             }
 

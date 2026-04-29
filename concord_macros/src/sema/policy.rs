@@ -358,7 +358,7 @@ fn resolve_route_fmt_spec(
 }
 
 fn resolve_policy_value_kind(
-    v: &crate::ast::PolicyValue,
+    v: &PolicyValue,
     _owner: PolicyOwner,
     client_vars: &BTreeMap<String, VarInfo>,
     auth_vars: &BTreeMap<String, VarInfo>,
@@ -366,17 +366,15 @@ fn resolve_policy_value_kind(
     span: proc_macro2::Span,
 ) -> Result<ValueKind> {
     match v {
-        crate::ast::PolicyValue::Expr(e) => {
-            resolve_value_kind(e, client_vars, auth_vars, endpoint_vars, span)
-        }
-        crate::ast::PolicyValue::Fmt(fmt) => {
+        PolicyValue::Expr(e) => resolve_value_kind(e, client_vars, auth_vars, endpoint_vars, span),
+        PolicyValue::Fmt(fmt) => {
             let mut pieces: Vec<FmtResolvedPiece> = Vec::new();
             let mut has_optional = false;
 
             for p in &fmt.pieces {
                 match p {
-                    crate::ast::FmtPiece::Lit(s) => pieces.push(FmtResolvedPiece::Lit(s.clone())),
-                    crate::ast::FmtPiece::Ref(r) => match r.scope {
+                    FmtPiece::Lit(s) => pieces.push(FmtResolvedPiece::Lit(s.clone())),
+                    FmtPiece::Ref(r) => match r.scope {
                         RefScope::Cx => {
                             let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
                                 syn::Error::new(

@@ -2,8 +2,8 @@
 //!
 //! This module is intentionally syntax-shaped. It may contain historical
 //! fields or removed syntax forms when the parser needs them to emit precise
-//! v4 migration diagnostics. Codegen must never consume these types directly;
-//! `sema` is the boundary that normalizes them into resolved v4 data.
+//! v5 migration diagnostics. Codegen must never consume these types directly;
+//! `sema` is the boundary that normalizes them into resolved v5 data.
 
 use crate::model::{Scheme, SetOp};
 use proc_macro2::Span;
@@ -20,3 +20,4 @@ include!("rate_limit.rs");
 include!("pagination.rs");
 include!("mapping.rs");
 include!("policy.rs");
+include!("raw.rs");

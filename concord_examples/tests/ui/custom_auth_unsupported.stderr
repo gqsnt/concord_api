@@ -1,4 +1,4 @@
-error: custom auth credentials are not supported in v4 yet; implement a CredentialProvider plus bearer/header/query/basic/certificate placement instead
+error: custom auth credentials are not supported in v5 yet; implement a CredentialProvider plus bearer/header/query/basic/certificate placement instead
  --> tests/ui/custom_auth_unsupported.rs:9:33
   |
 9 |         credential key = custom<Provider>(Provider)

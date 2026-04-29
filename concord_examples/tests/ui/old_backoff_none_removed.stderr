@@ -1,4 +1,4 @@
-error: `backoff none` was removed in v4; remove the line
+error: `backoff none` was removed in v5; remove the line
   --> tests/ui/old_backoff_none_removed.rs:11:13
    |
 11 |             backoff none

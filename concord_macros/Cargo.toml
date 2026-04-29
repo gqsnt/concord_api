@@ -12,3 +12,10 @@ proc-macro2 = "1"
 quote = "1"
 syn = { version = "2", default-features = false, features = ["full", "visit","extra-traits", "parsing", "printing", "clone-impls"] }#//"parsing", "proc-macro", "printing",
 
+[dev-dependencies]
+concord_core = { path = "../concord_core", features = ["json"] }
+http.workspace = true
+serde = { workspace = true, features = ["derive"] }
+trybuild = "1"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+

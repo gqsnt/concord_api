@@ -1,7 +1,7 @@
 use http::{HeaderMap, StatusCode};
 use std::borrow::Cow;
 use std::error::Error;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use thiserror::Error;
 
 pub type FxError = Box<dyn Error + Send + Sync>;
@@ -112,6 +112,25 @@ pub enum HostLabelInvalidReason {
 
 impl ApiClientError {
     #[inline]
+    pub fn decode_error(
+        ctx: ErrorContext,
+        status: StatusCode,
+        content_type: Option<&str>,
+        error: impl Into<FxError>,
+    ) -> ApiClientError {
+        ApiClientError::Decode {
+            ctx,
+            source: Box::new(ContextualDecodeError {
+                status,
+                content_type: content_type
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| "<missing>".to_string()),
+                source: error.into(),
+            }),
+        }
+    }
+
+    #[inline]
     pub fn codec_error(ctx: ErrorContext, error: impl Into<FxError>) -> ApiClientError {
         ApiClientError::Codec {
             ctx,
@@ -171,6 +190,29 @@ impl ApiClientError {
             ApiClientError::HttpStatus { rate_limit, .. } => rate_limit.as_deref(),
             _ => None,
         }
+    }
+}
+
+#[derive(Debug)]
+struct ContextualDecodeError {
+    status: StatusCode,
+    content_type: String,
+    source: FxError,
+}
+
+impl Display for ContextualDecodeError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "status={} content-type={}: {}",
+            self.status, self.content_type, self.source
+        )
+    }
+}
+
+impl Error for ContextualDecodeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&*self.source)
     }
 }
 

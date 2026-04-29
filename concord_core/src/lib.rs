@@ -87,8 +87,8 @@ pub mod advanced {
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
         RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
         RateLimitKeyPart, RateLimitKeyValue, RateLimitPermit, RateLimitPlan,
-        RateLimitResponseAction, RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting,
-        RateLimitWindow, RateLimiter, parse_retry_after,
+        RateLimitResponseAction, RateLimitResponseContext, RateLimitResponsePolicy,
+        RateLimitScopeHint, RateLimitSetting, RateLimitWindow, RateLimiter, parse_retry_after,
     };
     pub use crate::retry::{
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,

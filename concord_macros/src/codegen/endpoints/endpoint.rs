@@ -7,6 +7,7 @@ fn emit_endpoint_def(
     let method = &ep.method;
     let endpoint_name_str = endpoint_qualified_name(ep);
     let endpoint_name = LitStr::new(&endpoint_name_str, ep.name.span());
+    let endpoint_docs = facade_endpoint_docs(ep);
 
     let mut fields_ts = Vec::new();
     let mut setters_ts = Vec::new();
@@ -16,15 +17,22 @@ fn emit_endpoint_def(
         if v.optional {
             fields_ts.push(quote! { pub(crate) #f: ::core::option::Option<#ty> });
             let clear = emit_helpers::ident(&format!("clear_{f}"), f.span());
+            let maybe = emit_helpers::ident(&format!("maybe_{f}"), f.span());
             setters_ts.push(quote! {
+                #[doc = "Set this optional request parameter."]
                 #[inline]
                 pub fn #f(mut self, v: #ty) -> Self { self.#f = ::core::option::Option::Some(v); self }
+                #[doc = "Set or clear this optional request parameter from an Option."]
+                #[inline]
+                pub fn #maybe(mut self, v: ::core::option::Option<#ty>) -> Self { self.#f = v; self }
+                #[doc = "Clear this optional request parameter."]
                 #[inline]
                 pub fn #clear(mut self) -> Self { self.#f = ::core::option::Option::None; self }
             });
         } else {
             fields_ts.push(quote! { pub(crate) #f: #ty });
             setters_ts.push(quote! {
+                #[doc = "Set this request parameter."]
                 #[inline]
                 pub fn #f(mut self, v: #ty) -> Self { self.#f = v; self }
             });
@@ -97,7 +105,13 @@ fn emit_endpoint_def(
             ctx: ::concord_core::error::ErrorContext,
         ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
             let decoded = <#response_dec as ::concord_core::internal::Decodes<#decoded_ty>>::decode(&resp.body)
-                .map_err(|e| ::concord_core::prelude::ApiClientError::Decode { ctx: ctx.clone(), source: e.into() })?;
+                .map_err(|e| {
+                    let content_type = resp
+                        .headers
+                        .get(::http::header::CONTENT_TYPE)
+                        .and_then(|value| value.to_str().ok());
+                    ::concord_core::prelude::ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e)
+                })?;
             #decode_body
             let out = ::concord_core::transport::DecodedResponse {
                 meta: resp.meta,
@@ -133,13 +147,76 @@ fn emit_endpoint_def(
     };
 
     let pagination_plan = emit_endpoint_pagination_plan(ep);
+    let pending_ext_trait = endpoint_pending_ext_trait_ident(ep);
+    let pending_setter_decls = ep
+        .vars
+        .iter()
+        .filter(|v| v.optional || v.default.is_some())
+        .map(|v| {
+            let f = &v.rust;
+            let ty = &v.ty;
+            if v.optional {
+                let maybe = emit_helpers::ident(&format!("maybe_{f}"), f.span());
+                let clear = emit_helpers::ident(&format!("clear_{f}"), f.span());
+                quote! {
+                    #[doc = "Set this optional request parameter."]
+                    fn #f(self, value: #ty) -> Self;
+                    #[doc = "Set or clear this optional request parameter from an Option."]
+                    fn #maybe(self, value: ::core::option::Option<#ty>) -> Self;
+                    #[doc = "Clear this optional request parameter."]
+                    fn #clear(self) -> Self;
+                }
+            } else {
+                quote! {
+                    #[doc = "Set this defaulted request parameter."]
+                    fn #f(self, value: #ty) -> Self;
+                }
+            }
+        });
+    let pending_setter_impls = ep
+        .vars
+        .iter()
+        .filter(|v| v.optional || v.default.is_some())
+        .map(|v| {
+            let f = &v.rust;
+            let ty = &v.ty;
+            if v.optional {
+                let maybe = emit_helpers::ident(&format!("maybe_{f}"), f.span());
+                let clear = emit_helpers::ident(&format!("clear_{f}"), f.span());
+                quote! {
+                    #[inline]
+                    fn #f(self, value: #ty) -> Self {
+                        self.map_endpoint(|ep| ep.#f(value))
+                    }
+
+                    #[inline]
+                    fn #maybe(self, value: ::core::option::Option<#ty>) -> Self {
+                        self.map_endpoint(|ep| ep.#maybe(value))
+                    }
+
+                    #[inline]
+                    fn #clear(self) -> Self {
+                        self.map_endpoint(|ep| ep.#clear())
+                    }
+                }
+            } else {
+                quote! {
+                    #[inline]
+                    fn #f(self, value: #ty) -> Self {
+                        self.map_endpoint(|ep| ep.#f(value))
+                    }
+                }
+            }
+        });
 
     quote! {
+        #( #[doc = #endpoint_docs] )*
         pub struct #ty_name {
             #( #struct_fields, )*
         }
 
         impl #ty_name {
+            #[doc = "Create this explicit endpoint request."]
             #[inline]
             pub fn new( #( #fn_args ),* ) -> Self {
                 Self { #( #init_parts, )* }
@@ -188,6 +265,19 @@ fn emit_endpoint_def(
                     overrides: ::concord_core::internal::RequestOverrides::default(),
                 })
             }
+        }
+
+        #[doc = "Request-builder extension methods for this endpoint."]
+        pub trait #pending_ext_trait: Sized {
+            #( #pending_setter_decls )*
+        }
+
+        impl<'a, T> #pending_ext_trait
+            for ::concord_core::prelude::PendingRequest<'a, super::#cx_ty, #ty_name, T>
+        where
+            T: ::concord_core::advanced::Transport,
+        {
+            #( #pending_setter_impls )*
         }
     }
 }
@@ -291,7 +381,7 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
             ValueKind::EpField(f) => quote! { ep.#f.clone() },
             ValueKind::LitStr(s) => quote! { ::std::borrow::Cow::from(#s) },
             ValueKind::CxField(f) => quote! { vars.#f.clone() },
-            ValueKind::AuthField(_) => quote! {{ compile_error!("paginate auth vars are not supported in v4 controller construction"); ::core::unreachable!() }},
+            ValueKind::AuthField(_) => quote! {{ compile_error!("paginate auth vars are not supported in v5 controller construction"); ::core::unreachable!() }},
             ValueKind::OtherExpr(e) => quote! { (#e) },
             ValueKind::Fmt(fmt) => {
                 let build = emit_fmt_build_string(fmt);

@@ -57,6 +57,75 @@ fn emit_client_wrapper(
     let mut ctor_args: Vec<TokenStream2> = Vec::new();
     ctor_args.extend(new_args.iter().cloned());
     ctor_args.extend(new_auth_args.iter().cloned());
+    let builder_ty = client_prefixed_ident(client_ty, "Builder");
+    let builder_var_fields = required.iter().map(|v| {
+        let f = &v.rust;
+        let ty = &v.ty;
+        quote! { #f: ::core::option::Option<#ty> }
+    });
+    let builder_auth_fields = required_auth.iter().map(|v| {
+        let f = &v.rust;
+        let ty = &v.ty;
+        quote! { #f: ::core::option::Option<#ty> }
+    });
+    let builder_var_defaults = required.iter().map(|v| {
+        let f = &v.rust;
+        quote! { #f: ::core::option::Option::None }
+    });
+    let builder_auth_defaults = required_auth.iter().map(|v| {
+        let f = &v.rust;
+        quote! { #f: ::core::option::Option::None }
+    });
+    let builder_var_setters = required.iter().map(|v| {
+        let f = &v.rust;
+        let ty = &v.ty;
+        quote! {
+            #[doc = "Set this required client variable."]
+            #[inline]
+            pub fn #f(mut self, value: #ty) -> Self {
+                self.#f = ::core::option::Option::Some(value);
+                self
+            }
+        }
+    });
+    let builder_auth_setters = required_auth.iter().map(|v| {
+        let f = &v.rust;
+        let ty = &v.ty;
+        quote! {
+            #[doc = "Set this required client secret."]
+            #[inline]
+            pub fn #f(mut self, value: #ty) -> Self {
+                self.#f = ::core::option::Option::Some(value);
+                self
+            }
+        }
+    });
+    let builder_var_unwraps = required.iter().map(|v| {
+        let f = &v.rust;
+        let label = LitStr::new(&format!("builder.{f}"), f.span());
+        quote! {
+            let #f = self.#f.ok_or_else(|| {
+                ::concord_core::prelude::ApiClientError::invalid_param(__ctx.clone(), #label)
+            })?;
+        }
+    });
+    let builder_auth_unwraps = required_auth.iter().map(|v| {
+        let f = &v.rust;
+        let label = LitStr::new(&format!("builder.{f}"), f.span());
+        quote! {
+            let #f = self.#f.ok_or_else(|| {
+                ::concord_core::prelude::ApiClientError::invalid_param(__ctx.clone(), #label)
+            })?;
+        }
+    });
+    let builder_var_args = required.iter().map(|v| {
+        let f = &v.rust;
+        quote! { #f }
+    });
+    let builder_auth_args = required_auth.iter().map(|v| {
+        let f = &v.rust;
+        quote! { #f }
+    });
 
     let var_setters = resolved_api.client_vars.iter().map(|v| {
         let f = &v.rust;
@@ -252,6 +321,7 @@ fn emit_client_wrapper(
         let trait_name = acquire_as_trait_ident(client_ty, name);
         Some(quote! {
             pub trait #trait_name<'a> {
+                #[doc = "Execute this request and store its response as the endpoint-backed credential."]
                 fn #method(
                     self,
                 ) -> ::core::pin::Pin<::std::boxed::Box<
@@ -285,11 +355,13 @@ fn emit_client_wrapper(
     let (facade_methods, facade_items) = emit_tree_facade(resolved_api, client_ty, cx_ty);
 
     quote! {
+        #[doc = "Generated API client."]
         #[derive(Clone)]
         pub struct #client_ty<T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
             inner: ::concord_core::prelude::ApiClient<#cx_ty, T>,
         }
         impl #client_ty<::concord_core::advanced::ReqwestTransport> {
+            #[doc = "Create a client with the default reqwest transport."]
             #[inline]
             pub fn new( #( #ctor_args ),* ) -> Self {
                let vars = #vars_ty::new( #( #new_pass ),* );
@@ -301,6 +373,7 @@ fn emit_client_wrapper(
             }
 
 
+            #[doc = "Create a client with a custom transport."]
             #[inline]
             pub fn new_with_transport<T2: ::concord_core::advanced::Transport>(
                 #( #ctor_args, )*
@@ -314,7 +387,45 @@ fn emit_client_wrapper(
                 #client_ty { inner: __inner }
             }
 
+            #[doc = "Create a builder for required client configuration."]
+            #[inline]
+            pub fn builder() -> #builder_ty {
+                #builder_ty::new()
+            }
 
+
+        }
+
+        #[doc = "Builder for required client configuration."]
+        pub struct #builder_ty {
+            #( #builder_var_fields, )*
+            #( #builder_auth_fields, )*
+        }
+
+        impl #builder_ty {
+            #[doc = "Create an empty client builder."]
+            #[inline]
+            pub fn new() -> Self {
+                Self {
+                    #( #builder_var_defaults, )*
+                    #( #builder_auth_defaults, )*
+                }
+            }
+
+            #( #builder_var_setters )*
+            #( #builder_auth_setters )*
+
+            #[doc = "Build the generated client."]
+            #[inline]
+            pub fn build(self) -> ::core::result::Result<#client_ty<::concord_core::advanced::ReqwestTransport>, ::concord_core::prelude::ApiClientError> {
+                let __ctx = ::concord_core::error::ErrorContext {
+                    endpoint: concat!(stringify!(#client_ty), "::builder"),
+                    method: ::http::Method::GET,
+                };
+                #( #builder_var_unwraps )*
+                #( #builder_auth_unwraps )*
+                ::core::result::Result::Ok(#client_ty::new( #( #builder_var_args, )* #( #builder_auth_args ),* ))
+            }
         }
 
         impl<T: ::concord_core::advanced::Transport> #client_ty<T> {
@@ -323,22 +434,34 @@ fn emit_client_wrapper(
             #( #credential_lifecycle_methods )*
             #auth_facade_methods
 
+            #[doc = "Return the current debug level."]
             #[inline]
             pub fn debug_level(&self) -> ::concord_core::prelude::DebugLevel { self.inner.debug_level() }
+            #[doc = "Set the debug level in place."]
             #[inline]
             pub fn set_debug_level(&mut self, level: ::concord_core::prelude::DebugLevel) { self.inner.set_debug_level(level); }
+            #[doc = "Return this client with a changed debug level."]
             #[inline]
             pub fn with_debug_level(mut self, level: ::concord_core::prelude::DebugLevel) -> Self { self.inner.set_debug_level(level); self }
+            #[doc = "Return the pagination caps."]
             #[inline]
             pub fn pagination_caps(&self) -> ::concord_core::advanced::Caps { self.inner.pagination_caps() }
+            #[doc = "Set pagination caps in place."]
             #[inline]
             pub fn set_pagination_caps(&mut self, caps: ::concord_core::advanced::Caps) { self.inner.set_pagination_caps(caps); }
+            #[doc = "Return this client with changed pagination caps."]
             #[inline]
             pub fn with_pagination_caps(mut self, caps: ::concord_core::advanced::Caps) -> Self { self.inner.set_pagination_caps(caps); self }
+            #[doc = "Mutate advanced runtime configuration and return this client."]
             #[inline]
-            pub fn configure(&mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> &mut Self { self.inner.configure(f); self }
+            pub fn configure(mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> Self { self.inner.configure(f); self }
+            #[doc = "Mutate advanced runtime configuration in place."]
+            #[inline]
+            pub fn configure_mut(&mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> &mut Self { self.inner.configure(f); self }
+            #[doc = "Mutate advanced runtime configuration and return this client."]
             #[inline]
             pub fn with_configure(mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> Self { self.inner.configure(f); self }
+            #[doc = "Create a pending request from an explicit endpoint value."]
             #[inline]
             pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E, T>
             where
@@ -722,7 +845,7 @@ fn emit_facade_endpoint_method(
         let ty = &body.ty;
         quote! { body: #ty }
     });
-    let call_args = ep
+    let call_args: Vec<TokenStream2> = ep
         .vars
         .iter()
         .filter(|v| !v.optional && v.default.is_none())
@@ -735,8 +858,9 @@ fn emit_facade_endpoint_method(
                 quote! { #name: #ty }
             }
         })
-        .filter(|tokens| !tokens.is_empty());
-    let new_args = ep
+        .filter(|tokens| !tokens.is_empty())
+        .collect();
+    let new_args: Vec<TokenStream2> = ep
         .vars
         .iter()
         .filter(|v| !v.optional && v.default.is_none())
@@ -748,8 +872,9 @@ fn emit_facade_endpoint_method(
                 quote! { #name }
             }
         })
-        .chain(body_arg.as_ref().map(|_| quote! { body }));
-    let captured_setters = captured.iter().filter(|v| v.optional || v.default.is_some()).map(|v| {
+        .chain(body_arg.as_ref().map(|_| quote! { body }))
+        .collect();
+    let captured_setters: Vec<TokenStream2> = captured.iter().filter(|v| v.optional || v.default.is_some()).map(|v| {
         let name = &v.rust;
         if v.optional {
             quote! {
@@ -760,7 +885,7 @@ fn emit_facade_endpoint_method(
         } else {
             quote! { __ep = __ep.#name(self.#name); }
         }
-    });
+    }).collect();
     let self_arg = if root {
         quote! { &self }
     } else {
@@ -769,7 +894,7 @@ fn emit_facade_endpoint_method(
     let client_expr = if root { quote! { self } } else { quote! { __client } };
     let lifetime = if root { quote! { '_ } } else { quote! { 'a } };
     let bind_client = if root { quote! {} } else { quote! { let __client = self.client; } };
-    let args = call_args.chain(body_arg);
+    let args: Vec<TokenStream2> = call_args.into_iter().chain(body_arg).collect();
     let docs = facade_endpoint_docs(ep);
 
     quote! {
@@ -847,5 +972,3 @@ fn endpoint_has_rate_limit(ep: &ResolvedEndpoint) -> bool {
         .any(|policy| policy.rate_limit.is_some())
         || ep.policy.endpoint.rate_limit.is_some()
 }
-
-

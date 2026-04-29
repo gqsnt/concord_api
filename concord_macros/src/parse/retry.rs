@@ -1,4 +1,4 @@
-enum RetryDecl {
+﻿enum RetryDecl {
     Spec(RetrySpec),
 }
 
@@ -16,7 +16,7 @@ fn parse_retry_decl(input: ParseStream<'_>) -> Result<RetryDecl> {
         if content.peek(kw::profile) || content.peek(kw::default) {
             return Err(syn::Error::new(
                 content.span(),
-                "`retry { profile ... }` was removed in v4; declare `retry name { ... }` in the client block",
+                "`retry { profile ... }` was removed in v5; declare `retry name { ... }` in the client block",
             ));
         }
         return Ok(RetryDecl::Spec(RetrySpec::Patch(parse_retry_patch_body(
@@ -50,11 +50,18 @@ fn parse_retry_patch_body(input: ParseStream<'_>) -> Result<RetryPatch> {
     while !input.is_empty() {
         if input.peek(kw::attempts) {
             input.parse::<kw::attempts>()?;
+            return Err(legacy_v5_renamed_error(
+                input.span(),
+                "`attempts`",
+                "`max_attempts`",
+            ));
+        } else if input.peek(kw::max_attempts) {
+            input.parse::<kw::max_attempts>()?;
             set_retry_patch_field(
-                &mut patch.attempts,
+                &mut patch.max_attempts,
                 input.parse::<LitInt>()?,
                 input.span(),
-                "attempts",
+                "max_attempts",
             )?;
         } else if input.peek(kw::methods) {
             input.parse::<kw::methods>()?;
@@ -110,7 +117,7 @@ fn parse_retry_patch_body(input: ParseStream<'_>) -> Result<RetryPatch> {
         } else if input.peek(kw::backoff) {
             return Err(syn::Error::new(
                 input.span(),
-                "`backoff none` was removed in v4; remove the line",
+                "`backoff none` was removed in v5; remove the line",
             ));
         } else {
             let tt: TokenTree = input.parse()?;

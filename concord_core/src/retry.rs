@@ -63,7 +63,7 @@ pub enum RetrySetting {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RetryConfig {
-    pub attempts: u32,
+    pub max_attempts: u32,
     pub methods: Vec<Method>,
     pub statuses: Vec<StatusCode>,
     pub transport_errors: Vec<TransportErrorKind>,
@@ -75,7 +75,7 @@ pub struct RetryConfig {
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
-            attempts: 1,
+            max_attempts: 1,
             methods: Vec::new(),
             statuses: Vec::new(),
             transport_errors: Vec::new(),
@@ -89,7 +89,7 @@ impl Default for RetryConfig {
 impl RetryConfig {
     #[inline]
     pub fn max_retries(&self) -> u32 {
-        self.attempts.saturating_sub(1)
+        self.max_attempts.saturating_sub(1)
     }
 
     pub fn decide(&self, ctx: &RetryContext<'_>) -> RetryDecision {
@@ -202,4 +202,72 @@ fn retry_after_delay(headers: &HeaderMap) -> Option<Duration> {
     let raw = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
     let seconds = raw.parse::<u64>().ok()?;
     Some(Duration::from_secs(seconds))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx<'a>(
+        method: &'a Method,
+        headers: &'a HeaderMap,
+        response_headers: Option<&'a HeaderMap>,
+        retry_count: u32,
+    ) -> RetryContext<'a> {
+        RetryContext {
+            endpoint: "RetryTest",
+            method,
+            url: "https://example.com",
+            attempt: retry_count,
+            retry_count,
+            page_index: 0,
+            idempotent: true,
+            request_headers: headers,
+            response_headers,
+            outcome: RetryOutcome::HttpStatus(StatusCode::TOO_MANY_REQUESTS),
+        }
+    }
+
+    #[test]
+    fn max_attempts_counts_the_first_send() {
+        let config = RetryConfig {
+            max_attempts: 1,
+            statuses: vec![StatusCode::TOO_MANY_REQUESTS],
+            methods: vec![Method::GET],
+            ..RetryConfig::default()
+        };
+        assert_eq!(config.max_retries(), 0);
+
+        let config = RetryConfig {
+            max_attempts: 2,
+            statuses: vec![StatusCode::TOO_MANY_REQUESTS],
+            methods: vec![Method::GET],
+            ..RetryConfig::default()
+        };
+        assert_eq!(config.max_retries(), 1);
+    }
+
+    #[test]
+    fn retry_after_is_honored_when_enabled() {
+        let mut response_headers = HeaderMap::new();
+        response_headers.insert(RETRY_AFTER, http::HeaderValue::from_static("3"));
+        let request_headers = HeaderMap::new();
+        let config = RetryConfig {
+            max_attempts: 2,
+            statuses: vec![StatusCode::TOO_MANY_REQUESTS],
+            methods: vec![Method::GET],
+            respect_retry_after: true,
+            ..RetryConfig::default()
+        };
+
+        assert_eq!(
+            config.decide(&ctx(
+                &Method::GET,
+                &request_headers,
+                Some(&response_headers),
+                0
+            )),
+            RetryDecision::RetryAfter(Duration::from_secs(3))
+        );
+    }
 }

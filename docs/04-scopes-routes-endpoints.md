@@ -159,7 +159,7 @@ GET GetPosts(user_id?: u32, x_debug: bool = true)
     }
 
     headers {
-        "x-debug" = part["test:", x_debug]
+        "x-debug" = fmt["test:", x_debug]
     }
 }
 ```

@@ -321,9 +321,9 @@ impl Parse for CodecSpec {
     }
 }
 
-fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
-    let part_kw: kw::part = input.parse()?;
-    let span = part_kw.span;
+fn parse_fmt_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
+    let fmt_kw: kw::fmt = input.parse()?;
+    let span = fmt_kw.span;
     let require_all = true;
 
     let content;
@@ -361,7 +361,7 @@ fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
             }
             return Err(syn::Error::new(
                 inner.span(),
-                "template parameter declarations are not supported in `part[...]`; use identifier or scoped refs (`vars.x`, `ep.y`, `secret.z`)",
+                "template parameter declarations are not supported in `fmt[...]`; use identifier or scoped refs (`vars.x`, `ep.y`, `secret.z`)",
             ));
         } else if content.peek(Ident) {
             let sr = parse_scoped_ref_from_ident(&content)?;
@@ -370,10 +370,14 @@ fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
             let tt: TokenTree = content.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "expected string literal, identifier, or scoped reference in `part[...]`",
+                "expected string literal, identifier, or scoped reference in `fmt[...]`",
             ));
         }
         let _ = content.parse::<Option<Token![,]>>()?;
+    }
+
+    if pieces.is_empty() {
+        return Err(syn::Error::new(span, "fmt[...] requires at least one piece"));
     }
 
     Ok(FmtSpec {
@@ -385,10 +389,13 @@ fn parse_part_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
 
 fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue> {
     if input.peek(kw::fmt) {
-        return Err(syn::Error::new(input.span(), "invalid policy value syntax"));
+        return Ok(PolicyValue::Fmt(parse_fmt_spec(input)?));
     }
     if input.peek(kw::part) {
-        return Ok(PolicyValue::Fmt(parse_part_spec(input)?));
+        return Err(syn::Error::new(
+            input.span(),
+            "part[...] was renamed to fmt[...] in v5",
+        ));
     }
 
     let expr: syn::Expr = input.parse()?;
@@ -397,10 +404,13 @@ fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue>
 
 fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
     if input.peek(kw::fmt) {
-        return Err(syn::Error::new(input.span(), "invalid route atom syntax"));
+        return Ok(RouteAtom::Fmt(parse_fmt_spec(input)?));
     }
     if input.peek(kw::part) {
-        return Ok(RouteAtom::Fmt(parse_part_spec(input)?));
+        return Err(syn::Error::new(
+            input.span(),
+            "part[...] was renamed to fmt[...] in v5",
+        ));
     }
     if input.peek(LitStr) {
         return Ok(RouteAtom::Static(input.parse::<LitStr>()?));
@@ -443,7 +453,7 @@ fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
     let tt: proc_macro2::TokenTree = input.parse()?;
     Err(syn::Error::new(
         tt.span(),
-        "expected string literal, identifier, scoped reference, or `part[...]` in route",
+        "expected string literal, identifier, scoped reference, or `fmt[...]` in route",
     ))
 }
 

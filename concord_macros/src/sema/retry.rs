@@ -77,10 +77,10 @@ fn resolve_retry_spec(
 
 fn resolve_retry_patch(patch: &RetryPatch) -> Result<RetryPatchResolved> {
     Ok(RetryPatchResolved {
-        attempts: patch
-            .attempts
+        max_attempts: patch
+            .max_attempts
             .as_ref()
-            .map(resolve_retry_attempts)
+            .map(resolve_retry_max_attempts)
             .transpose()?,
         methods: patch
             .methods
@@ -107,8 +107,8 @@ fn resolve_retry_patch(patch: &RetryPatch) -> Result<RetryPatchResolved> {
 }
 
 fn apply_retry_patch(config: &mut RetryConfigResolved, patch: &RetryPatchResolved) {
-    if let Some(attempts) = patch.attempts {
-        config.attempts = attempts;
+    if let Some(max_attempts) = patch.max_attempts {
+        config.max_attempts = max_attempts;
     }
     if let Some(methods) = &patch.methods {
         config.methods = methods.clone();
@@ -133,8 +133,8 @@ impl ProfileValue for RetryPatchResolved {
     }
 
     fn merge(mut parent: Self, child: Self) -> Self {
-        if child.attempts.is_some() {
-            parent.attempts = child.attempts;
+        if child.max_attempts.is_some() {
+            parent.max_attempts = child.max_attempts;
         }
         if child.methods.is_some() {
             parent.methods = child.methods;
@@ -159,15 +159,15 @@ impl ProfileValue for RetryPatchResolved {
     }
 }
 
-fn resolve_retry_attempts(lit: &syn::LitInt) -> Result<u32> {
-    let attempts = lit.base10_parse::<u32>()?;
-    if attempts == 0 {
+fn resolve_retry_max_attempts(lit: &syn::LitInt) -> Result<u32> {
+    let max_attempts = lit.base10_parse::<u32>()?;
+    if max_attempts == 0 {
         return Err(syn::Error::new(
             lit.span(),
-            "retry attempts must be at least 1",
+            "retry max_attempts must be at least 1",
         ));
     }
-    Ok(attempts)
+    Ok(max_attempts)
 }
 
 fn resolve_retry_methods(methods: &[Ident]) -> Result<Vec<Ident>> {

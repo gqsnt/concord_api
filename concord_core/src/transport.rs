@@ -55,6 +55,38 @@ pub struct DecodedResponse<T> {
     pub value: T,
 }
 
+impl<T> DecodedResponse<T> {
+    #[inline]
+    pub fn meta(&self) -> &RequestMeta {
+        &self.meta
+    }
+
+    #[inline]
+    pub fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    #[inline]
+    pub fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+
+    #[inline]
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
+    #[inline]
+    pub fn value(&self) -> &T {
+        &self.value
+    }
+
+    #[inline]
+    pub fn into_value(self) -> T {
+        self.value
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TransportErrorKind {
     Timeout,

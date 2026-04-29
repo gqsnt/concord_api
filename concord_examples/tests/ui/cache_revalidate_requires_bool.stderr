@@ -6,16 +6,3 @@ error[E0425]: cannot find type `Json` in this scope
    |
    = help: consider importing this struct:
            concord_core::prelude::Json
-
-error[E0282]: type annotations needed
-  --> tests/ui/cache_revalidate_requires_bool.rs:3:1
-   |
- 3 | / api! {
- 4 | |     client CacheRevalidateRequiresBool {
- 5 | |         base https "example.com"
- 6 | |         default {
-...  |
-20 | | }
-   | |_^ cannot infer type
-   |
-   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

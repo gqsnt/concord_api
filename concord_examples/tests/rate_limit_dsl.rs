@@ -477,7 +477,7 @@ async fn retry_does_not_duplicate_delay_when_rate_limiter_stores_cooldown() {
                 retry read
             }
             retry read {
-                    attempts 2
+                    max_attempts 2
                     methods [GET]
                     on [429]
                     retry_after

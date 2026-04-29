@@ -263,7 +263,7 @@ async fn scope_path_part_builds_single_segment_and_encodes() {
         GET One(v: String)
         -> Json<()>
         {
-            path ["x", part["p", v]]
+            path ["x", fmt["p", v]]
         }
     }
 
@@ -294,7 +294,7 @@ async fn scope_path_part_optional_omits_segment_when_missing() {
         GET One(v?: String)
         -> Json<()>
         {
-            path ["x", part["p", v], "y"]
+            path ["x", fmt["p", v], "y"]
         }
     }
 
@@ -374,7 +374,7 @@ async fn scope_host_part_adds_one_label() {
         }
 
         scope layer(id: String) {
-            host ["api", part["t", id]]
+            host ["api", fmt["t", id]]
 
             GET One
             -> Json<()>
@@ -410,7 +410,7 @@ async fn scope_host_part_optional_omits_label_when_missing() {
         }
 
         scope layer(id?: String) {
-            host ["api", part["t", id]]
+            host ["api", fmt["t", id]]
 
             GET One
             -> Json<()>
@@ -455,7 +455,7 @@ async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
         }
 
         scope layer(v: String) {
-            path ["api", part["p", v]]
+            path ["api", fmt["p", v]]
 
             GET One
             -> Json<()>
@@ -490,7 +490,7 @@ async fn scope_path_part_in_layer_optional_omits_segment_no_double_slash() {
         }
 
         scope layer(v?: String) {
-            path ["api", part["p", v], "z"]
+            path ["api", fmt["p", v], "z"]
 
             GET One
             -> Json<()>

@@ -1,6 +1,6 @@
-# Concord v4 Style
+# Concord v5 Style
 
-Concord v4 code should read as a tree:
+Concord v5 code should read as a tree:
 
 ```text
 client = root
@@ -30,7 +30,7 @@ client Api {
     }
 
     retry read {
-        attempts 2
+        max_attempts 2
         methods [GET]
         on [429, 500]
         retry_after
@@ -147,4 +147,3 @@ Explicit endpoint constructors remain available for tests and advanced usage:
 ```rust
 api.request(endpoints::GetUser::new(1)).execute().await?;
 ```
-

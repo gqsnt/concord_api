@@ -22,13 +22,13 @@ struct EndpointAnalysisCtx<'a> {
 }
 
 fn walk_items(
-    items: &[Item],
+    items: &[NormNode],
     ancestry: &mut Vec<usize>,
     ctx: &mut WalkItemsCtx<'_>,
 ) -> Result<()> {
     for it in items {
         match it {
-            Item::Layer(ld) => {
+            NormNode::Layer(ld) => {
                 let id = ctx.layers.len();
                 let (prefix_pieces, path_pieces, decls) = analyze_layer_route_and_decls(ld)?;
                 let key_bindings = resolve_rate_limit_key_bindings(&ld.rate_limit_keys, &decls)?;
@@ -72,7 +72,7 @@ fn walk_items(
                 walk_items(&ld.items, ancestry, ctx)?;
                 ancestry.pop();
             }
-            Item::Endpoint(ed) => {
+            NormNode::Endpoint(ed) => {
                 let analysis_ctx = EndpointAnalysisCtx {
                     client_vars: ctx.client_vars,
                     auth_vars: ctx.auth_vars,
@@ -97,14 +97,14 @@ fn reject_formatted_lit(lit: &LitStr, ctx: &'static str) -> Result<()> {
         return Err(syn::Error::new(
             lit.span(),
             format!(
-                "{ctx} string literals must not contain `{{` or `}}`; use separate route atoms such as \"a\", id, \"b\", or part[\"x\", id]"
+                "{ctx} string literals must not contain `{{` or `}}`; use separate route atoms such as \"a\", id, \"b\", or fmt[\"x\", id]"
             ),
         ));
     }
     Ok(())
 }
 
-fn collect_endpoint_output_types(items: &[Item]) -> Result<BTreeMap<String, Type>> {
+fn collect_endpoint_output_types(items: &[NormNode]) -> Result<BTreeMap<String, Type>> {
     let mut out = BTreeMap::new();
     let mut scope_stack: Vec<String> = Vec::new();
     collect_endpoint_output_types_into(items, &mut out, &mut scope_stack)?;
@@ -112,13 +112,13 @@ fn collect_endpoint_output_types(items: &[Item]) -> Result<BTreeMap<String, Type
 }
 
 fn collect_endpoint_output_types_into(
-    items: &[Item],
+    items: &[NormNode],
     out: &mut BTreeMap<String, Type>,
     scope_stack: &mut Vec<String>,
 ) -> Result<()> {
     for item in items {
         match item {
-            Item::Layer(layer) => {
+            NormNode::Layer(layer) => {
                 if let Some(name) = &layer.scope_name {
                     scope_stack.push(name.to_string());
                     collect_endpoint_output_types_into(&layer.items, out, scope_stack)?;
@@ -127,7 +127,7 @@ fn collect_endpoint_output_types_into(
                     collect_endpoint_output_types_into(&layer.items, out, scope_stack)?;
                 }
             }
-            Item::Endpoint(endpoint) => {
+            NormNode::Endpoint(endpoint) => {
                 let key = if scope_stack.is_empty() {
                     endpoint.name.to_string()
                 } else {
@@ -168,7 +168,7 @@ fn endpoint_scope_key(scope_modules: &[Ident], endpoint: &Ident) -> String {
 }
 
 fn analyze_layer_route_and_decls(
-    ld: &LayerDef,
+    ld: &NormScope,
 ) -> Result<(Vec<PrefixPiece>, Vec<PathPiece>, Vec<VarInfo>)> {
     let decls: Vec<VarInfo> = ld
         .params
@@ -184,7 +184,7 @@ fn analyze_layer_route_and_decls(
     let mut path_pieces: Vec<PathPiece> = Vec::new();
 
     match ld.kind {
-        LayerKind::Prefix => {
+        RouteLayerKind::Prefix => {
             for atom in &ld.route.atoms {
                 match atom {
                     RouteAtom::Static(lit) => {
@@ -229,7 +229,7 @@ fn analyze_layer_route_and_decls(
                 }
             }
         }
-        LayerKind::Path => {
+        RouteLayerKind::Path => {
             for atom in &ld.route.atoms {
                 match atom {
                     RouteAtom::Static(lit) => {
@@ -270,7 +270,7 @@ fn analyze_layer_route_and_decls(
 }
 
 fn analyze_endpoint(
-    ed: &EndpointDef,
+    ed: &NormEndpoint,
     ancestry: &[usize],
     ctx: &EndpointAnalysisCtx<'_>,
 ) -> syn::Result<ResolvedEndpoint> {
@@ -400,8 +400,8 @@ fn analyze_endpoint(
             facade_param_groups.push(layer.decls.clone());
         }
         match layer.kind {
-            LayerKind::Prefix => prefix_pieces.extend(layer.prefix_pieces.iter().cloned()),
-            LayerKind::Path => scope_path_pieces.extend(layer.path_pieces.iter().cloned()),
+            RouteLayerKind::Prefix => prefix_pieces.extend(layer.prefix_pieces.iter().cloned()),
+            RouteLayerKind::Path => scope_path_pieces.extend(layer.path_pieces.iter().cloned()),
         }
         scope_policies.push(layer.policy.clone());
     }

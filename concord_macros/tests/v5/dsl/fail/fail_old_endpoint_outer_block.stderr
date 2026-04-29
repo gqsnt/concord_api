@@ -1,0 +1,13 @@
+error: endpoint declarations must use `METHOD Name(...) -> Response { ... }` (or `METHOD Name -> Response { ... }`)
+ --> tests/v5/dsl/fail/fail_old_endpoint_outer_block.rs:7:16
+  |
+7 |     GET Broken {
+  |                ^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/v5/dsl/fail/fail_old_endpoint_outer_block.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

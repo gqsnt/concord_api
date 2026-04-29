@@ -41,7 +41,7 @@ GET GetPosts(x_debug: bool = true)
     -> Json<Vec<Post>>
 {
     headers {
-        "x-debug" = part["test:", x_debug]
+        "x-debug" = fmt["test:", x_debug]
     }
 }
 ```
@@ -85,21 +85,21 @@ query {
 
 Headers do not support `+=`.
 
-## `part[...]`
+## `fmt[...]`
 
-`part[...]` builds one value from several pieces.
+`fmt[...]` builds one value from several pieces.
 
 ```rust
 headers {
-    "x-debug" = part["test:", x_debug]
+    "x-debug" = fmt["test:", x_debug]
 }
 
 query {
-    "filter" = part["user:", user_id]
+    "filter" = fmt["user:", user_id]
 }
 ```
 
-If a `part[...]` references an optional value that is missing, the containing value is omitted.
+If a `fmt[...]` references an optional value that is missing, the containing value is omitted.
 
 ## Timeout
 

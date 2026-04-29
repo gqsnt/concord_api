@@ -11,7 +11,7 @@ async fn retry_profile_retries_status_then_endpoint_can_turn_it_off() {
                 retry read
             }
             retry read {
-                    attempts 2
+                    max_attempts 2
                     methods [GET, HEAD]
                     on [503]
             }
@@ -68,7 +68,7 @@ async fn retry_scope_profile_applies_to_child_endpoints() {
         client ApiDslRetryScope {
             base https "example.com"
             retry base {
-                    attempts 2
+                    max_attempts 2
                     methods [GET]
             }
             retry read extends base {
@@ -140,7 +140,7 @@ async fn retry_patch_honors_retry_after_status() {
         -> Json<()>
         {
             retry {
-                attempts 2
+                max_attempts 2
                 methods [GET]
                 on [429]
                 retry_after
@@ -177,7 +177,7 @@ async fn retry_post_requires_declared_idempotency_header() {
         client ApiDslRetryPost {
             base https "example.com"
             retry write {
-                    attempts 2
+                    max_attempts 2
                     methods [POST]
                     on [503]
                     idempotency header "Idempotency-Key"

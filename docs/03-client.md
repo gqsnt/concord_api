@@ -130,7 +130,7 @@ client Api {
     }
 
     retry read {
-        attempts 2
+        max_attempts 2
         methods [GET]
         on [503]
         retry_after

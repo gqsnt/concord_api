@@ -1,4 +1,4 @@
-//! Code generation for resolved v4 APIs.
+//! Code generation for resolved v5 APIs.
 //!
 //! This layer receives `ResolvedApi` and emits client wrappers, facade methods,
 //! auth state, endpoint structs, and endpoint `plan()` implementations. It must
@@ -118,6 +118,12 @@ pub fn emit(resolved_api: ResolvedApi) -> TokenStream2 {
                     pub use #mod_name::#trait_name;
                 })
             });
+    let pending_request_trait_imports = resolved_api.endpoints.iter().map(|ep| {
+        let trait_name = endpoint_pending_ext_trait_ident(ep);
+        quote! {
+            pub use #mod_name::#trait_name;
+        }
+    });
 
     quote! {
         mod #mod_name {
@@ -135,6 +141,7 @@ pub fn emit(resolved_api: ResolvedApi) -> TokenStream2 {
         }
 
         #( #acquire_trait_imports )*
+        #( #pending_request_trait_imports )*
     }
 }
 
@@ -147,6 +154,7 @@ include!("policy/mod.rs");
 mod tests {
     use super::*;
     use quote::quote;
+    use std::path::Path;
 
     fn expanded(input: TokenStream2) -> String {
         let resolved = crate::sema::analyze_tokens_for_test(input);
@@ -164,6 +172,58 @@ mod tests {
                 expanded.contains(&compact),
                 "expanded code did not contain `{snippet}`\n\nexpanded:\n{expanded}"
             );
+        }
+    }
+
+    #[test]
+    fn codegen_does_not_import_raw_ast_or_legacy_part_models() {
+        fn visit(path: &Path, contents: &mut Vec<(String, String)>) {
+            for entry in std::fs::read_dir(path).expect("read codegen dir") {
+                let entry = entry.expect("read codegen entry");
+                let path = entry.path();
+                if path.is_dir() {
+                    visit(&path, contents);
+                } else if path.extension().and_then(|v| v.to_str()) == Some("rs") {
+                    let mut body = std::fs::read_to_string(&path).expect("read codegen source");
+                    if path.file_name().and_then(|v| v.to_str()) == Some("mod.rs")
+                        && let Some((production, _tests)) = body.split_once("#[cfg(test)]")
+                    {
+                        body = production.to_string();
+                    }
+                    contents.push((path.display().to_string(), body));
+                }
+            }
+        }
+
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/codegen");
+        let mut files = Vec::new();
+        visit(&root, &mut files);
+
+        let forbidden = [
+            ["crate", "::", "ast"].concat(),
+            ["Client", "Def"].concat(),
+            ["Layer", "Def"].concat(),
+            ["Endpoint", "Def"].concat(),
+            ["Auth", "Block"].concat(),
+            ["Retry", "Profiles", "Block"].concat(),
+            ["Cache", "Profiles", "Block"].concat(),
+            ["Rate", "Limit", "Profiles", "Block"].concat(),
+            ["Legacy", "Syntax"].concat(),
+            ["Legacy", "Endpoint"].concat(),
+            ["Route", "Part"].concat(),
+            ["Policy", "Part"].concat(),
+            ["Auth", "Part"].concat(),
+            ["Body", "Part"].concat(),
+            ["Pagination", "Part"].concat(),
+        ];
+
+        for (path, body) in files {
+            for needle in &forbidden {
+                assert!(
+                    !body.contains(needle.as_str()),
+                    "codegen file `{path}` must not contain raw/legacy symbol `{needle}`"
+                );
+            }
         }
     }
 
@@ -191,6 +251,38 @@ mod tests {
                 ":: concord_core :: internal :: RequestPlan",
                 ":: concord_core :: internal :: EndpointPlan",
                 ":: concord_core :: internal :: ResponsePlan",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_rustdoc_snapshot_covers_client_endpoint_and_request_builder() {
+        let out = expanded(quote! {
+            client SnapshotDocs {
+                base https "example.com"
+            }
+
+            GET Search(count?: u64)
+                as search
+                path ["search"]
+                -> Json<String>
+            {
+                query {
+                    count
+                }
+            }
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "#[doc=\"Generated API client.\"]",
+                "#[doc=\"Create a client with the default reqwest transport.\"]",
+                "#[doc=\"Builder for required client configuration.\"]",
+                "#[doc=\"GET / search\"]",
+                "#[doc=\"Create this explicit endpoint request.\"]",
+                "#[doc=\"Set this optional request parameter.\"]",
+                "#[doc=\"Request-builder extension methods for this endpoint.\"]",
             ],
         );
     }

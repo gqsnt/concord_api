@@ -1,4 +1,4 @@
-# Concord v4 Documentation
+# Concord v5 Documentation
 
 Concord is a Rust API-client generator built around the `api!` macro.
 
@@ -31,25 +31,31 @@ use concord_macros::api;
 2. [Mental Model](01-mental-model.md)
 3. [Style Guide](STYLE.md)
 4. [DSL Overview](02-dsl-overview.md)
-5. [Client Blocks](03-client.md)
-6. [Scopes, Routes, and Endpoints](04-scopes-routes-endpoints.md)
-7. [Generated Client Usage](05-generated-client.md)
-8. [Policies: Headers, Query, Timeout](06-policies.md)
-9. [Authentication](07-authentication.md)
-10. [Bodies, Responses, and Mapping](08-bodies-responses-mapping.md)
-11. [Retry](09-retry.md)
-12. [Rate Limiting](10-rate-limiting.md)
-13. [Caching](11-caching.md)
-14. [Pagination](12-pagination.md)
-15. [Runtime and Request Lifecycle](13-runtime.md)
-16. [Extension Points](14-extension-points.md)
-17. [Testing and Debugging](15-testing-debugging.md)
-18. [DSL Reference](16-dsl-reference.md)
-19. [Public API Boundary](PUBLIC_API.md)
-20. [Macro Architecture](MACRO_ARCHITECTURE.md)
-21. [Migration Notes](17-migration-notes.md)
+5. [Generated Usage](03-generated-usage.md)
+6. [Runtime Config](04-runtime-config.md)
+7. [Authentication](05-auth.md)
+8. [Pagination](06-pagination.md)
+9. [Cache, Retry, Rate Limit](07-cache-retry-rate-limit.md)
+10. [Client Blocks](03-client.md)
+11. [Scopes, Routes, and Endpoints](04-scopes-routes-endpoints.md)
+12. [Detailed Generated Client Usage](05-generated-client.md)
+13. [Policies: Headers, Query, Timeout](06-policies.md)
+14. [Detailed Authentication](07-authentication.md)
+15. [Bodies, Responses, and Mapping](08-bodies-responses-mapping.md)
+16. [Retry](09-retry.md)
+17. [Rate Limiting](10-rate-limiting.md)
+18. [Caching](11-caching.md)
+19. [Detailed Pagination](12-pagination.md)
+20. [Runtime and Request Lifecycle](13-runtime.md)
+21. [Extension Points](14-extension-points.md)
+22. [Testing and Debugging](15-testing-debugging.md)
+23. [DSL Reference](16-dsl-reference.md)
+24. [Public API Boundary](PUBLIC_API.md)
+25. [Macro Architecture](MACRO_ARCHITECTURE.md)
+26. [Migration Notes](17-migration-notes.md)
+27. [v4 to v5 Migration](v5/migration_v4_to_v5.md)
 
-## Canonical v4 style
+## Canonical v5 style
 
 ```rust
 api! {
@@ -104,4 +110,4 @@ let me = api.protected().me().await?;
 ## Migration
 
 Removed syntax and replacement examples live in [Migration Notes](17-migration-notes.md).
-The stable v4 user-facing docs only show the canonical v4 DSL.
+The stable v5 user-facing docs only show the canonical v5 DSL.

@@ -106,7 +106,7 @@ fn parse_endpoint_response_spec(input: ParseStream<'_>) -> Result<(CodecSpec, Op
     let map = if input.peek(Token![|]) {
         return Err(syn::Error::new(
             input.span(),
-            "old mapping syntax `-> Json<T> | Out => ...` was removed in v4; use `-> Json<T> map Out { ... }`",
+            "old mapping syntax `-> Json<T> | Out => ...` was removed in v5; use `-> Json<T> map Out { ... }`",
         ));
     } else if input.peek(kw::map) {
         input.parse::<kw::map>()?;
@@ -209,7 +209,7 @@ fn parse_endpoint_block_parts(input: ParseStream<'_>, name: &Ident) -> Result<En
         } else if input.peek(kw::use_auth) {
             return Err(syn::Error::new(
                 input.span(),
-                "`use_auth` was removed in v4; use `auth ...`",
+                "`use_auth` was removed in v5; use `auth ...`",
             ));
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
@@ -330,7 +330,7 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
         } else if input.peek(kw::use_auth) {
             return Err(syn::Error::new(
                 input.span(),
-                "`use_auth` was removed in v4; use `auth ...`",
+                "`use_auth` was removed in v5; use `auth ...`",
             ));
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;

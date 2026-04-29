@@ -49,6 +49,7 @@ syn::custom_keyword!(minute);
 syn::custom_keyword!(minutes);
 syn::custom_keyword!(ttl);
 syn::custom_keyword!(attempts);
+syn::custom_keyword!(max_attempts);
 syn::custom_keyword!(methods);
 syn::custom_keyword!(on);
 syn::custom_keyword!(status);

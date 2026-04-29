@@ -1,6 +1,6 @@
 # 17. Migration Notes
 
-This page explains how to read older Concord documentation and translate it to v4.
+This page explains how to read older Concord documentation and translate it to v5.
 
 ## Client root
 
@@ -13,7 +13,7 @@ client Api {
 }
 ```
 
-v4:
+v5:
 
 ```rust
 client Api {
@@ -31,7 +31,7 @@ secret {
 }
 ```
 
-v4:
+v5:
 
 ```rust
 secret api_key: String
@@ -47,7 +47,7 @@ auth {
 }
 ```
 
-v4:
+v5:
 
 ```rust
 credential key = api_key(secret.api_key)
@@ -62,7 +62,7 @@ use_auth HeaderAuth("X-Api-Key", key)
 use_auth BearerAuth(session)
 ```
 
-v4:
+v5:
 
 ```rust
 auth header "X-Api-Key" = key
@@ -78,12 +78,12 @@ api.acquire_auth_session(endpoints::auth::LoginForSession::new(...)).await?;
 api.clear_auth_session().await;
 ```
 
-v4:
+v5:
 
 ```rust
-api.auth_state()
-   .session()
-   .acquire(api.auth_api().login_for_session(...))
+api.auth_api()
+   .login_for_session(...)
+   .acquire_as_session()
    .await?;
 
 api.auth_state().session().clear().await;
@@ -96,7 +96,7 @@ Old:
 ```rust
 retry {
     profile read {
-        attempts 2
+        max_attempts 2
         methods [GET]
         on status[429, 500]
         retry_after honor
@@ -106,7 +106,7 @@ retry {
 }
 ```
 
-v4:
+v5:
 
 ```rust
 default {
@@ -114,7 +114,7 @@ default {
 }
 
 retry read {
-    attempts 2
+    max_attempts 2
     methods [GET]
     on [429, 500]
     retry_after
@@ -139,7 +139,7 @@ rate_limit {
 }
 ```
 
-v4:
+v5:
 
 ```rust
 observe rate_limit RiotRateLimitHeaders
@@ -159,7 +159,7 @@ rate_limit app {
 
 Old code often used low-level target selection.
 
-v4 observer:
+v5 observer:
 
 ```rust
 impl RateLimitObserver for RiotRateLimitHeaders {
@@ -181,7 +181,7 @@ max_body 2 mib
 shared false
 ```
 
-v4 docs treat storage tuning as runtime/backend configuration.
+v5 docs treat storage tuning as runtime/backend configuration.
 
 DSL cache policy focuses on semantic behavior:
 
@@ -206,7 +206,7 @@ GET Titles -> Json<Vec<Post>> | Vec<String> => {
 }
 ```
 
-v4:
+v5:
 
 ```rust
 GET Titles
@@ -229,9 +229,9 @@ api.request(endpoints::users::GetUser::new(42))
     .await?;
 ```
 
-This still works.
+This still works as the advanced explicit endpoint API.
 
-v4 teaches the tree facade first:
+v5 teaches the tree facade first:
 
 ```rust
 api.users().get_user(42).await?;
@@ -239,7 +239,7 @@ api.users().get_user(42).await?;
 
 ## Unsupported or intentionally omitted
 
-v4 documentation does not present these as stable user-facing features:
+v5 documentation does not present these as stable user-facing features:
 
 - custom auth placement in the DSL;
 - `auth any` / `auth all`;

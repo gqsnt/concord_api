@@ -1,0 +1,13 @@
+error: `scheme:` was removed in v5; use `base https "example.com"`
+ --> tests/v5/dsl/fail/fail_old_client_scheme_host.rs:6:9
+  |
+6 |         scheme: https
+  |         ^^^^^^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/v5/dsl/fail/fail_old_client_scheme_host.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

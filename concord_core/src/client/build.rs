@@ -22,7 +22,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             source: e,
         })?;
         url.set_path(&plan.endpoint.route.path);
-        {
+        if !policy.query.is_empty() {
             let mut qp = url.query_pairs_mut();
             for (k, v) in policy.query.iter() {
                 qp.append_pair(k, v);

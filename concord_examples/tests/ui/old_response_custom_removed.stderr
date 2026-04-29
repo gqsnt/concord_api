@@ -1,4 +1,4 @@
-error: `response custom` was removed in v4; use `observe rate_limit MyObserver`
+error: `response custom` was removed in v5; use `observe rate_limit MyObserver`
  --> tests/ui/old_response_custom_removed.rs:8:9
   |
 8 |         response custom RiotRateLimitHeaders

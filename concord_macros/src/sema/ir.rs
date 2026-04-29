@@ -27,7 +27,7 @@ pub struct VarInfo {
 #[derive(Debug)]
 pub struct LayerIr {
     pub scope_name: Option<Ident>,
-    pub kind: LayerKind,
+    pub kind: RouteLayerKind,
     pub prefix_pieces: Vec<PrefixPiece>, // if Prefix
     pub path_pieces: Vec<PathPiece>,     // if Path
     pub policy: PolicyBlocksResolved,
@@ -249,7 +249,7 @@ pub struct RateLimitKeyBindingResolved {
 
 #[derive(Debug, Clone)]
 pub struct RetryConfigResolved {
-    pub attempts: u32,
+    pub max_attempts: u32,
     pub methods: Vec<Ident>,
     pub statuses: Vec<u16>,
     pub transport_errors: Vec<Ident>,
@@ -261,7 +261,7 @@ pub struct RetryConfigResolved {
 impl Default for RetryConfigResolved {
     fn default() -> Self {
         Self {
-            attempts: 1,
+            max_attempts: 1,
             methods: Vec::new(),
             statuses: Vec::new(),
             transport_errors: Vec::new(),
@@ -274,7 +274,7 @@ impl Default for RetryConfigResolved {
 
 #[derive(Debug, Clone, Default)]
 pub struct RetryPatchResolved {
-    pub attempts: Option<u32>,
+    pub max_attempts: Option<u32>,
     pub methods: Option<Vec<Ident>>,
     pub statuses: Option<Vec<u16>>,
     pub transport_errors: Option<Vec<Ident>>,

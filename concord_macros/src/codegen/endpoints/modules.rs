@@ -25,6 +25,11 @@ fn endpoint_internal_ident(ep: &ResolvedEndpoint) -> Ident {
     emit_helpers::ident(&name, ep.name.span())
 }
 
+fn endpoint_pending_ext_trait_ident(ep: &ResolvedEndpoint) -> Ident {
+    let internal = endpoint_internal_ident(ep);
+    emit_helpers::ident(&format!("__{internal}PendingRequestExt"), ep.name.span())
+}
+
 fn stable_endpoint_hash(value: &str) -> String {
     let mut hash: u64 = 0xcbf29ce484222325;
     for byte in value.as_bytes() {
@@ -63,6 +68,10 @@ fn emit_endpoints(resolved_api: &ResolvedApi, cx_ty: &Ident) -> TokenStream2 {
         let internal = endpoint_internal_ident(ep);
         Some(quote! { pub use super::__endpoints::#internal as #public; })
     });
+    let pending_ext_reexports = resolved_api.endpoints.iter().map(|ep| {
+        let ext = endpoint_pending_ext_trait_ident(ep);
+        quote! { pub use __endpoints::#ext; }
+    });
     let scope_modules = emit_endpoint_scope_modules(resolved_api);
     quote! {
         mod __endpoints {
@@ -74,6 +83,8 @@ fn emit_endpoints(resolved_api: &ResolvedApi, cx_ty: &Ident) -> TokenStream2 {
             #( #root_endpoint_reexports )*
             #scope_modules
         }
+
+        #( #pending_ext_reexports )*
     }
 }
 

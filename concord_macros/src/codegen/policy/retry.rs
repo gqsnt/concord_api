@@ -22,7 +22,7 @@ fn emit_retry_op(retry: &Option<RetryResolved>) -> Option<TokenStream2> {
 }
 
 fn emit_retry_config(config: &RetryConfigResolved) -> TokenStream2 {
-    let attempts = config.attempts;
+    let max_attempts = config.max_attempts;
     let methods = config
         .methods
         .iter()
@@ -39,7 +39,7 @@ fn emit_retry_config(config: &RetryConfigResolved) -> TokenStream2 {
 
     quote! {
         ::concord_core::advanced::RetryConfig {
-            attempts: #attempts,
+            max_attempts: #max_attempts,
             methods: ::std::vec![ #( #methods ),* ],
             statuses: ::std::vec![ #( #statuses ),* ],
             transport_errors: ::std::vec![ #( #transport_errors ),* ],
@@ -53,8 +53,8 @@ fn emit_retry_config(config: &RetryConfigResolved) -> TokenStream2 {
 fn emit_retry_patch_ops(patch: &RetryPatchResolved) -> Vec<TokenStream2> {
     let mut ops = Vec::new();
 
-    if let Some(attempts) = patch.attempts {
-        ops.push(quote! { __retry.attempts = #attempts; });
+    if let Some(max_attempts) = patch.max_attempts {
+        ops.push(quote! { __retry.max_attempts = #max_attempts; });
     }
     if let Some(methods) = &patch.methods {
         let methods = methods

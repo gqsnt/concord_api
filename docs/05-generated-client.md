@@ -1,6 +1,6 @@
 # 5. Generated Client Usage
 
-Concord v4 generates two usage layers:
+Concord v5 generates two usage layers:
 
 1. the tree facade;
 2. explicit endpoint structs.

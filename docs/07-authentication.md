@@ -1,6 +1,6 @@
 # 7. Authentication
 
-Concord v4 separates two concepts:
+Concord v5 separates two concepts:
 
 | Concept | Meaning |
 | --- | --- |
@@ -69,7 +69,7 @@ auth header "X-Api-Key" = key
 auth bearer session
 ```
 
-v4 does not document `auth any` / `auth all` groups as stable user-facing syntax.
+v5 does not document `auth any` / `auth all` groups as stable user-facing syntax.
 
 ## Header auth
 
@@ -156,12 +156,12 @@ Usage:
 ```rust
 let api = session_api::SessionApi::new("upstream-key".to_string());
 
-api.auth_state()
-    .session()
-    .acquire(api.auth_api().login_for_session(LoginRequest {
+api.auth_api()
+    .login_for_session(LoginRequest {
         username: "alice".to_string(),
         password: "secret".to_string(),
-    }))
+    })
+    .acquire_as_session()
     .await?;
 
 let me = api.protected().me().await?;
@@ -185,7 +185,7 @@ Credential providers are extension points under `concord_core::advanced`.
 
 Use custom providers for new ways of obtaining credential material.
 
-Custom auth placements are not documented as stable v4. Prefer built-in placements:
+Custom auth placements are not documented as stable v5. Prefer built-in placements:
 
 - bearer;
 - header;

@@ -112,7 +112,7 @@ async fn query_part_set_required_param() {
         -> Json<()>
         {
             path ["x"]
-            query { "q" = part["a:", v] }
+            query { "q" = fmt["a:", v] }
         }
     }
 
@@ -146,7 +146,7 @@ async fn query_part_optional_removes_key_when_missing() {
         -> Json<()>
         {
             path ["x"]
-            query { "q" = part["a:", v] }
+            query { "q" = fmt["a:", v] }
         }
     }
 
@@ -188,7 +188,7 @@ async fn query_part_push_appends_duplicate_keys_in_order() {
         {
             path ["x"]
             query {
-                "dup" += part["p:", v],
+                "dup" += fmt["p:", v],
                 "dup" += "s"
             }
         }

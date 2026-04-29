@@ -229,9 +229,14 @@ dependencies = [
 name = "concord_macros"
 version = "0.1.0"
 dependencies = [
+ "concord_core",
+ "http",
  "proc-macro2",
  "quote",
+ "serde",
  "syn",
+ "tokio",
+ "trybuild",
 ]
 
 [[package]]

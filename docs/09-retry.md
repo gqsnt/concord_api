@@ -5,7 +5,7 @@ Retry policy describes:
 - which methods can retry;
 - which statuses can retry;
 - which transport errors can retry;
-- how many attempts are allowed;
+- how many max_attempts are allowed;
 - whether `Retry-After` is honored.
 
 ## Basic retry profile
@@ -19,7 +19,7 @@ client Api {
     }
 
     retry read {
-        attempts 2
+        max_attempts 2
         methods [GET, HEAD]
         on [429, 500, 502, 503, 504]
         retry_after
@@ -27,7 +27,7 @@ client Api {
 }
 ```
 
-`attempts 2` means at most two attempts total: the original request and one retry.
+`max_attempts 2` means at most two max_attempts total: the original request and one retry.
 
 ## Scope retry
 
@@ -98,7 +98,7 @@ Example:
 
 ```rust
 retry write {
-    attempts 2
+    max_attempts 2
     methods [POST]
     on [500, 502, 503]
     idempotency header "Idempotency-Key"

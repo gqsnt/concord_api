@@ -17,7 +17,9 @@ struct LayerDefTaggedScope(LayerDef);
 
 impl Parse for LayerDefTaggedScope {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
-        input.parse::<kw::scope>()?;
+        let span = input.span();
+        let scope_kw: kw::scope = input.parse()?;
+        let scope_span = scope_kw.span;
         let name: Ident = input.parse()?;
         let params: Vec<VarDeclNoWire> = if input.peek(token::Paren) {
             parse_inline_var_decls(input, "scope param")?
@@ -27,6 +29,7 @@ impl Parse for LayerDefTaggedScope {
 
         let content;
         braced!(content in input);
+        let body_span = content.span();
 
         let mut policy = PolicyBlocks::default();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
@@ -94,7 +97,7 @@ impl Parse for LayerDefTaggedScope {
             } else if content.peek(kw::use_auth) {
                 return Err(syn::Error::new(
                     content.span(),
-                    "`use_auth` was removed in v4; use `auth ...`",
+                    "`use_auth` was removed in v5; use `auth ...`",
                 ));
             } else if content.peek(kw::auth) {
                 content.parse::<kw::auth>()?;
@@ -152,6 +155,9 @@ impl Parse for LayerDefTaggedScope {
         // Normalize `scope` into one or two nested internal layers.
         let outer = match (host_route, path_route) {
             (Some(host), Some(path)) => LayerDef {
+                span,
+                scope_span,
+                body_span,
                 scope_name: Some(name),
                 kind: LayerKind::Prefix,
                 route: host,
@@ -163,6 +169,9 @@ impl Parse for LayerDefTaggedScope {
                 rate_limit,
                 rate_limit_keys,
                 items: vec![Item::Layer(Box::new(LayerDef {
+                    span,
+                    scope_span,
+                    body_span,
                     scope_name: None,
                     kind: LayerKind::Path,
                     route: path,
@@ -177,6 +186,9 @@ impl Parse for LayerDefTaggedScope {
                 }))],
             },
             (Some(host), None) => LayerDef {
+                span,
+                scope_span,
+                body_span,
                 scope_name: Some(name),
                 kind: LayerKind::Prefix,
                 route: host,
@@ -190,6 +202,9 @@ impl Parse for LayerDefTaggedScope {
                 items,
             },
             (None, Some(path)) => LayerDef {
+                span,
+                scope_span,
+                body_span,
                 scope_name: Some(name),
                 kind: LayerKind::Path,
                 route: path,
@@ -203,6 +218,9 @@ impl Parse for LayerDefTaggedScope {
                 items,
             },
             (None, None) => LayerDef {
+                span,
+                scope_span,
+                body_span,
                 scope_name: Some(name),
                 kind: LayerKind::Path,
                 route: RouteExpr { atoms: Vec::new() },
@@ -223,6 +241,7 @@ impl Parse for LayerDefTaggedScope {
 
 impl Parse for EndpointDef {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let span = input.span();
         let method: Ident = input.parse()?;
         let name: Ident = input.parse()?;
         let (params, body) = if input.peek(token::Paren) {
@@ -253,66 +272,114 @@ impl Parse for EndpointDef {
 
         if input.peek(token::Semi) {
             let _semi: token::Semi = input.parse()?;
-            return Ok(Self {
+            return Ok(raw_endpoint(
+                span,
                 method,
                 name,
                 alias,
-                route: inline_parts.route,
+                inline_parts.route,
                 params,
-                policy: inline_parts.policy,
-                auth_uses: inline_parts.auth_uses,
-                cache: inline_parts.cache,
-                retry: inline_parts.retry,
-                rate_limit: inline_parts.rate_limit,
-                rate_limit_keys: inline_parts.rate_limit_keys,
-                paginate: inline_parts.paginate,
+                inline_parts.policy,
+                inline_parts.auth_uses,
+                inline_parts.cache,
+                inline_parts.retry,
+                inline_parts.rate_limit,
+                inline_parts.rate_limit_keys,
+                inline_parts.paginate,
                 body,
                 response,
                 map,
-            });
+            ));
         }
 
         if !input.peek(token::Brace) {
-            return Ok(Self {
+            return Ok(raw_endpoint(
+                span,
                 method,
                 name,
                 alias,
-                route: inline_parts.route,
+                inline_parts.route,
                 params,
-                policy: inline_parts.policy,
-                auth_uses: inline_parts.auth_uses,
-                cache: inline_parts.cache,
-                retry: inline_parts.retry,
-                rate_limit: inline_parts.rate_limit,
-                rate_limit_keys: inline_parts.rate_limit_keys,
-                paginate: inline_parts.paginate,
+                inline_parts.policy,
+                inline_parts.auth_uses,
+                inline_parts.cache,
+                inline_parts.retry,
+                inline_parts.rate_limit,
+                inline_parts.rate_limit_keys,
+                inline_parts.paginate,
                 body,
                 response,
                 map,
-            });
+            ));
         }
 
         let content;
         braced!(content in input);
         let parts = inline_parts.merge(parse_endpoint_block_parts(&content, &name)?, &name)?;
 
-        Ok(Self {
+        Ok(raw_endpoint(
+            span,
             method,
             name,
             alias,
-            route: parts.route,
+            parts.route,
             params,
-            policy: parts.policy,
-            auth_uses: parts.auth_uses,
-            cache: parts.cache,
-            retry: parts.retry,
-            rate_limit: parts.rate_limit,
-            rate_limit_keys: parts.rate_limit_keys,
-            paginate: parts.paginate,
+            parts.policy,
+            parts.auth_uses,
+            parts.cache,
+            parts.retry,
+            parts.rate_limit,
+            parts.rate_limit_keys,
+            parts.paginate,
             body,
             response,
             map,
-        })
+        ))
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn raw_endpoint(
+    span: Span,
+    method: Ident,
+    name: Ident,
+    alias: Option<Ident>,
+    route: RouteExpr,
+    params: Vec<VarDeclNoWire>,
+    policy: PolicyBlocks,
+    auth_uses: Vec<AuthUseDecl>,
+    cache: Option<CacheSpec>,
+    retry: Option<RetrySpec>,
+    rate_limit: Option<RateLimitSpec>,
+    rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
+    paginate: Option<PaginateSpec>,
+    body: Option<CodecSpec>,
+    response: CodecSpec,
+    map: Option<MapSpec>,
+) -> EndpointDef {
+    EndpointDef {
+        line: RawEndpointLine {
+            span,
+            method: method.clone(),
+            name: name.clone(),
+            alias: alias.clone(),
+        },
+        span,
+        method,
+        name,
+        alias,
+        route,
+        params,
+        policy,
+        auth_uses,
+        cache,
+        retry,
+        rate_limit,
+        rate_limit_keys,
+        paginate,
+        body,
+        response,
+        map,
     }
 }
 
