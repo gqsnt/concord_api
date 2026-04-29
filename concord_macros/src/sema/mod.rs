@@ -6,8 +6,8 @@
 //! parser structures.
 
 use crate::ast::{
-    AuthBlock, AuthCredentialKind, AuthUseKind, CacheDurationSpec, CacheOnErrorSpec, CachePatch,
-    CacheProfilesBlock, CacheSpec, CodecSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec,
+    AuthCredentialKind, AuthCredentials, AuthUseKind, CacheDurationSpec, CacheOnErrorSpec,
+    CachePatch, CacheProfilesBlock, CacheSpec, CodecSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec,
     PolicyBlock, PolicyBlocks, PolicyStmt, PolicyValue, RateLimitDurationUnit,
     RateLimitKeyBindingSpec, RateLimitKeySpec, RateLimitPlanSpec, RateLimitProfilesBlock,
     RateLimitSpec, RefScope, RetryIdempotencySpec, RetryPatch, RetryProfilesBlock, RetrySpec,
@@ -21,16 +21,15 @@ use syn::{Expr, Ident, LitStr, Result, Type, spanned::Spanned};
 
 include!("ir.rs");
 include!("profiles.rs");
-include!("diagnostics.rs");
 include!("normalize.rs");
 
 #[cfg(test)]
 pub(crate) fn analyze_tokens_for_test(input: proc_macro2::TokenStream) -> ResolvedApi {
-    let ast = syn::parse2::<crate::ast::ApiFile>(input).expect("parse api");
+    let ast = syn::parse2::<crate::ast::RawApi>(input).expect("parse api");
     analyze(ast).expect("resolve api")
 }
 
-pub fn analyze(ast: crate::ast::ApiFile) -> Result<ResolvedApi> {
+pub fn analyze(ast: crate::ast::RawApi) -> Result<ResolvedApi> {
     let norm = normalize_api(ast)?;
     resolve(norm)
 }
@@ -299,7 +298,7 @@ mod tests {
 
     #[test]
     fn normalized_tree_snapshot_contains_v5_shape_without_legacy_auth_groups() {
-        let ast: crate::ast::ApiFile = syn::parse_str(
+        let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client NormApi {
                 base https "example.com"
@@ -320,12 +319,10 @@ mod tests {
                 GET Show(count: u64 = 20)
                     as show
                     path ["profile"]
-                    -> Json<String>
-                {
                     query {
                         count
                     }
-                }
+                    -> Json<String>
             }
             "#,
         )
@@ -338,13 +335,11 @@ mod tests {
         assert!(snapshot.contains("endpoint Show method=GET"));
         assert!(snapshot.contains("alias=Some(\"show\")"));
         assert!(snapshot.contains("query=1"));
-        assert!(!snapshot.contains("UnsupportedAnyGroup"));
-        assert!(!snapshot.contains("UnsupportedAllGroup"));
     }
 
     #[test]
     fn resolved_endpoint_debug_includes_inherited_tree_state() {
-        let ast: crate::ast::ApiFile = syn::parse_str(
+        let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client Api {
                 base https "example.com"
@@ -356,9 +351,9 @@ mod tests {
                 path ["v1"]
                 auth header "X-Token" = key
 
-                GET Me -> Json<()> {
+                GET Me
                     path ["me"]
-                }
+                    -> Json<()>
             }
             "#,
         )
@@ -376,7 +371,7 @@ mod tests {
 
     #[test]
     fn resolved_endpoint_snapshots_cover_v47_cases() {
-        let ast: crate::ast::ApiFile = syn::parse_str(
+        let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client SnapshotApi {
                 base https "example.com"
@@ -420,8 +415,6 @@ mod tests {
             GET Search(count: u64 = 20, page?: u64)
                 as search
                 path ["search"]
-                -> Json<Vec<String>>
-            {
                 query {
                     count
                     page
@@ -430,15 +423,14 @@ mod tests {
                     page = page,
                     per_page = count
                 }
-            }
+                -> Json<Vec<String>>
 
-            POST Login(body: Json<LoginRequest>) -> Json<LoginResponse>
+            POST Login(body: Json<LoginRequest>)
+                path ["login"]
+                -> Json<LoginResponse>
                 map AccessToken {
                     AccessToken::new(r.access_token)
                 }
-            {
-                path ["login"]
-            }
             "#,
         )
         .expect("valid api syntax");

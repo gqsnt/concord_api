@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::advanced::*;
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -43,9 +44,9 @@ async fn inline_scope_params_and_nested_endpoint_modules_work() {
             scope status {
                 path ["status"]
 
-                GET Ping -> Json<()> {
+                GET Ping
                     path ["ping"]
-                }
+                    -> Json<()>
             }
         }
     }
@@ -75,12 +76,11 @@ async fn signature_style_endpoint_supports_params_body_and_mapping() {
             base https "example.com"
         }
 
-        POST CreatePost(id: String, body: Json<CreateBody>) -> Json<CreateBody>
-                map String {
-            r.id
-        }
-            {
+        POST CreatePost(id: String, body: Json<CreateBody>)
             path ["posts", id]
+            -> Json<CreateBody>
+            map String {
+            r.id
         }
     }
 
@@ -124,17 +124,17 @@ async fn same_endpoint_name_under_different_scopes_is_valid() {
         scope alpha {
             path ["alpha"]
 
-            GET Ping -> Json<()> {
+            GET Ping
                 path ["ping"]
-            }
+                -> Json<()>
         }
 
         scope beta {
             path ["beta"]
 
-            GET Ping -> Json<()> {
+            GET Ping
                 path ["ping"]
-            }
+                -> Json<()>
         }
     }
 
@@ -186,9 +186,9 @@ async fn generated_runtime_hooks_are_used_by_clones_when_installed_before_clone(
             base https "example.com"
         }
 
-        GET Ping -> Json<()> {
+        GET Ping
             path ["ping"]
-        }
+            -> Json<()>
     }
 
     use api_surface_hooks::*;
@@ -213,14 +213,14 @@ async fn generated_runtime_hooks_are_used_by_clones_when_installed_before_clone(
 }
 
 #[tokio::test]
-async fn v4_tree_facade_inline_leaf_and_await_work() {
+async fn tree_facade_inline_leaf_and_await_work() {
     api! {
-        client ApiSurfaceV4 {
+        client ApiSurfaceFacade {
             base https "example.com"
             secret api_key: String
             credential upstream = api_key(secret.api_key)
 
-            header "x-client" = "v3"
+            header "x-client" = "v5"
         }
 
         scope protected {
@@ -235,13 +235,13 @@ async fn v4_tree_facade_inline_leaf_and_await_work() {
         }
     }
 
-    use api_surface_v4::*;
+    use api_surface_facade::*;
 
     let (transport, h) = mock()
         .reply(MockReply::ok_json(json_bytes(&"alice".to_string())))
         .build();
 
-    let api = ApiSurfaceV4::new_with_transport("secret".to_string(), transport);
+    let api = ApiSurfaceFacade::new_with_transport("secret".to_string(), transport);
     let out = api.protected().me().await.unwrap();
 
     assert_eq!(out, "alice");
@@ -249,7 +249,7 @@ async fn v4_tree_facade_inline_leaf_and_await_work() {
     assert_request(&reqs[0])
         .path("/me/profile")
         .query_has("verbose", "true")
-        .header("x-client", "v3")
+        .header("x-client", "v5")
         .header("x-api-key", "secret");
 
     h.finish();

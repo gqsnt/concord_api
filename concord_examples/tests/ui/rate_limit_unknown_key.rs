@@ -6,14 +6,12 @@ api! {
     }
 
     GET Ping
-    -> Json<()>
-    {
         rate_limit {
             bucket method by [region, endpoint] { // ERROR: unknown key
                 30 / 10s
             }
         }
-    }
+    -> Json<()>
 }
 
 fn main() {}

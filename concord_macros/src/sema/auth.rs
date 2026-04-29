@@ -1,5 +1,5 @@
 fn analyze_auth_credentials(
-    block: Option<&AuthBlock>,
+    block: Option<&AuthCredentials>,
     auth_vars: &BTreeMap<String, VarInfo>,
     endpoint_outputs: &BTreeMap<String, Type>,
 ) -> Result<Vec<AuthCredentialIr>> {
@@ -68,14 +68,6 @@ fn analyze_auth_credentials(
                     endpoint_key,
                     output_ty: output_ty.clone(),
                 }
-            }
-            AuthCredentialKind::Custom {
-                provider_ty,
-                provider,
-            } => {
-                return Err(unsupported_custom_auth_credential_error(
-                    provider_ty.span().join(provider.span()).unwrap_or(provider_ty.span()),
-                ));
             }
         };
 
@@ -181,12 +173,6 @@ fn resolve_auth_use_kind(
         AuthUseKind::Certificate { credential } => AuthUseKindIr::Certificate {
             credential: credential.clone(),
         },
-        AuthUseKind::Custom {
-            usage_ty, usage, ..
-        } => {
-            let _ = usage_ty;
-            return Err(unsupported_custom_auth_placement_error(usage.span()));
-        }
     };
     Ok(AuthUseIr { kind, provenance })
 }
@@ -197,8 +183,7 @@ fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
         | AuthUseKind::Header { credential, .. }
         | AuthUseKind::Query { credential, .. }
         | AuthUseKind::Basic { credential }
-        | AuthUseKind::Certificate { credential }
-        | AuthUseKind::Custom { credential, .. } => credential,
+        | AuthUseKind::Certificate { credential } => credential,
     }
 }
 
@@ -255,7 +240,6 @@ fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<(
     };
 
     let fits = match u {
-        AuthUseKind::Custom { .. } => true,
         AuthUseKind::Bearer { .. } => {
             matches!(shape, MaterialShape::AccessToken | MaterialShape::Unknown)
         }
@@ -306,7 +290,6 @@ fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<(
                 cred.name
             ),
         )),
-        AuthUseKind::Custom { .. } => Ok(()),
     }
 }
 

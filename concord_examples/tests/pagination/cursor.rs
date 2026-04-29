@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
@@ -37,8 +38,6 @@ api! {
     }
 
     GET List(page_cursor?: String, page_size: u64 = 2)
-    -> Json<Page>
-    {
         path ["x"]
         query {
             "pageCursor" = page_cursor,
@@ -48,7 +47,7 @@ api! {
             cursor = page_cursor,
             per_page = page_size
         }
-    }
+    -> Json<Page>
 }
 
 #[tokio::test(flavor = "current_thread")]

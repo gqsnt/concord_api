@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
@@ -24,10 +25,8 @@ async fn query_set_remove_push_override_and_tostring() {
             }
 
             GET One
-            -> Json<()>
-            {
                 query { "dup" = "e1" }
-            }
+            -> Json<()>
         }
     }
 
@@ -61,15 +60,13 @@ async fn query_shorthand_supports_required_optional_default_and_mixed_entries() 
         }
 
         GET Search(count: u32 = 20, queue?: String, start: u64)
-        -> Json<()>
-        {
             path ["search"]
             query {
                 count
                 queue
                 "startTime" = start
             }
-        }
+        -> Json<()>
     }
 
     use api_query_shorthand::*;
@@ -109,11 +106,9 @@ async fn query_part_set_required_param() {
         }
 
         GET One(v: String)
-        -> Json<()>
-        {
             path ["x"]
             query { "q" = fmt["a:", v] }
-        }
+        -> Json<()>
     }
 
     use api_query_fmt_req::*;
@@ -143,11 +138,9 @@ async fn query_part_optional_removes_key_when_missing() {
         }
 
         GET One(v?: String)
-        -> Json<()>
-        {
             path ["x"]
             query { "q" = fmt["a:", v] }
-        }
+        -> Json<()>
     }
 
     use api_query_fmt_opt::*;
@@ -184,14 +177,12 @@ async fn query_part_push_appends_duplicate_keys_in_order() {
         }
 
         GET One(v: String)
-        -> Json<()>
-        {
             path ["x"]
             query {
                 "dup" += fmt["p:", v],
                 "dup" += "s"
             }
-        }
+        -> Json<()>
     }
 
     use api_query_fmt_push::*;
@@ -237,10 +228,8 @@ async fn headers_kebab_string_bind_remove_override() {
             }
 
             GET One
-            -> Json<()>
-            {
                 headers { -"x-flag" }
-            }
+            -> Json<()>
         }
     }
 
@@ -281,8 +270,6 @@ async fn header_value_from_vars_to_string_and_invalid_header_value_error() {
 
         GET One
         -> Json<()>
-        {
-        }
     }
 
     use api_header_invalid::*;
@@ -333,20 +320,14 @@ async fn accept_injection_runtime_vs_endpoint_explicit_and_remove() {
 
         GET A
         -> Json<()>
-        {
-        }
 
         GET B
-        -> Json<()>
-        {
             headers { "accept" = "text/plain" }
-        }
+        -> Json<()>
 
         GET C
-        -> Json<()>
-        {
             headers { -"accept" }
-        }
+        -> Json<()>
     }
 
     use api_accept::*;

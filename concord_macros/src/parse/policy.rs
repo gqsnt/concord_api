@@ -136,13 +136,9 @@ fn parse_inline_policy_stmt(
         input.parse::<Token![=]>()?;
         SetOp::Set
     };
-    let value = if input.peek(kw::part) {
-        parse_policy_value(input)?
-    } else {
-        PolicyValue::Expr(normalize_policy_expr(parse_expr_until_comma_or_endpoint_arrow(
-            input,
-        )?))
-    };
+    let value = PolicyValue::Expr(normalize_policy_expr(parse_expr_until_comma_or_endpoint_arrow(
+        input,
+    )?));
     Ok(PolicyStmt::Set { key, value, op })
 }
 
@@ -391,13 +387,6 @@ fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue>
     if input.peek(kw::fmt) {
         return Ok(PolicyValue::Fmt(parse_fmt_spec(input)?));
     }
-    if input.peek(kw::part) {
-        return Err(syn::Error::new(
-            input.span(),
-            "part[...] was renamed to fmt[...] in v5",
-        ));
-    }
-
     let expr: syn::Expr = input.parse()?;
     Ok(PolicyValue::Expr(normalize_policy_expr(expr)))
 }
@@ -405,12 +394,6 @@ fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue>
 fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
     if input.peek(kw::fmt) {
         return Ok(RouteAtom::Fmt(parse_fmt_spec(input)?));
-    }
-    if input.peek(kw::part) {
-        return Err(syn::Error::new(
-            input.span(),
-            "part[...] was renamed to fmt[...] in v5",
-        ));
     }
     if input.peek(LitStr) {
         return Ok(RouteAtom::Static(input.parse::<LitStr>()?));

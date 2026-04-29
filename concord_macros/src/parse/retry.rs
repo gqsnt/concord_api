@@ -16,7 +16,7 @@ fn parse_retry_decl(input: ParseStream<'_>) -> Result<RetryDecl> {
         if content.peek(kw::profile) || content.peek(kw::default) {
             return Err(syn::Error::new(
                 content.span(),
-                "`retry { profile ... }` was removed in v5; declare `retry name { ... }` in the client block",
+                "unexpected token in retry policy block",
             ));
         }
         return Ok(RetryDecl::Spec(RetrySpec::Patch(parse_retry_patch_body(
@@ -48,14 +48,7 @@ fn parse_retry_patch_body(input: ParseStream<'_>) -> Result<RetryPatch> {
     let mut patch = RetryPatch::default();
 
     while !input.is_empty() {
-        if input.peek(kw::attempts) {
-            input.parse::<kw::attempts>()?;
-            return Err(legacy_v5_renamed_error(
-                input.span(),
-                "`attempts`",
-                "`max_attempts`",
-            ));
-        } else if input.peek(kw::max_attempts) {
+        if input.peek(kw::max_attempts) {
             input.parse::<kw::max_attempts>()?;
             set_retry_patch_field(
                 &mut patch.max_attempts,
@@ -114,11 +107,6 @@ fn parse_retry_patch_body(input: ParseStream<'_>) -> Result<RetryPatch> {
                     "expected `header(\"...\")` after `idempotency`",
                 ));
             }
-        } else if input.peek(kw::backoff) {
-            return Err(syn::Error::new(
-                input.span(),
-                "`backoff none` was removed in v5; remove the line",
-            ));
         } else {
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(

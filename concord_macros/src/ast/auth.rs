@@ -1,5 +1,5 @@
 #[derive(Debug)]
-pub struct AuthBlock {
+pub struct AuthCredentials {
     pub credentials: Vec<AuthCredentialDecl>,
 }
 
@@ -30,10 +30,6 @@ pub enum AuthCredentialKind {
     Endpoint {
         endpoint: Path,
     },
-    Custom {
-        provider_ty: Box<Type>,
-        provider: Box<Expr>,
-    },
 }
 
 #[derive(Debug, Clone)]
@@ -44,8 +40,6 @@ pub struct SecretRef {
 #[derive(Debug, Clone)]
 pub enum AuthUseDecl {
     Single(Box<AuthUseKind>),
-    UnsupportedAllGroup(Vec<AuthUseKind>),
-    UnsupportedAnyGroup(Vec<AuthUseKind>),
 }
 
 #[derive(Debug, Clone)]
@@ -65,11 +59,6 @@ pub enum AuthUseKind {
         credential: Ident,
     },
     Certificate {
-        credential: Ident,
-    },
-    Custom {
-        usage_ty: Box<Type>,
-        usage: Box<Expr>,
         credential: Ident,
     },
 }

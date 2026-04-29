@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
@@ -35,8 +36,6 @@ async fn scope_host_default_and_override_and_order() {
 
             GET Ping
             -> Json<()>
-            {
-            }
         }
     }
 
@@ -85,8 +84,6 @@ async fn scope_host_optional_label_omitted_without_double_dot() {
 
             GET Ping
             -> Json<()>
-            {
-            }
         }
     }
 
@@ -135,8 +132,6 @@ async fn scope_host_label_validation_errors() {
 
             GET Ping
             -> Json<()>
-            {
-            }
         }
     }
 
@@ -229,10 +224,8 @@ async fn scope_path_concat_percent_encoding() {
             path ["lol"]
 
             GET GetMatch(match_id: String)
-            -> Json<()>
-            {
                 path ["matches", match_id]
-            }
+            -> Json<()>
         }
     }
 
@@ -261,10 +254,8 @@ async fn scope_path_part_builds_single_segment_and_encodes() {
         }
 
         GET One(v: String)
-        -> Json<()>
-        {
             path ["x", fmt["p", v]]
-        }
+        -> Json<()>
     }
 
     use api_path_fmt::*;
@@ -292,10 +283,8 @@ async fn scope_path_part_optional_omits_segment_when_missing() {
         }
 
         GET One(v?: String)
-        -> Json<()>
-        {
             path ["x", fmt["p", v], "y"]
-        }
+        -> Json<()>
     }
 
     use api_path_fmt_opt::*;
@@ -330,10 +319,8 @@ async fn scope_path_optional_item_omitted_no_double_slash() {
         }
 
         GET One(opt?: String)
-        -> Json<()>
-        {
             path ["x", opt, "y"]
-        }
+        -> Json<()>
     }
 
     use api_opt_seg::*;
@@ -377,10 +364,8 @@ async fn scope_host_part_adds_one_label() {
             host ["api", fmt["t", id]]
 
             GET One
-            -> Json<()>
-            {
                 path ["x"]
-            }
+            -> Json<()>
         }
     }
 
@@ -413,10 +398,8 @@ async fn scope_host_part_optional_omits_label_when_missing() {
             host ["api", fmt["t", id]]
 
             GET One
-            -> Json<()>
-            {
                 path ["x"]
-            }
+            -> Json<()>
         }
     }
 
@@ -458,10 +441,8 @@ async fn scope_path_part_in_layer_builds_single_segment_and_encodes() {
             path ["api", fmt["p", v]]
 
             GET One
-            -> Json<()>
-            {
                 path ["x"]
-            }
+            -> Json<()>
         }
     }
 
@@ -493,10 +474,8 @@ async fn scope_path_part_in_layer_optional_omits_segment_no_double_slash() {
             path ["api", fmt["p", v], "z"]
 
             GET One
-            -> Json<()>
-            {
                 path ["x"]
-            }
+            -> Json<()>
         }
     }
 

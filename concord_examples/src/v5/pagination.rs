@@ -28,8 +28,6 @@ api! {
 
         GET ListEvents(start: u64 = 0, count: u64 = 50, kind?: String)
             as list
-            -> Json<Vec<Event>>
-        {
             query {
                 start
                 count
@@ -39,7 +37,7 @@ api! {
                 offset = start,
                 limit = count
             }
-        }
+            -> Json<Vec<Event>>
     }
 }
 

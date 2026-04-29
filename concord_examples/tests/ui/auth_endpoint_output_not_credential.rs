@@ -11,19 +11,15 @@ api! {
 
     scope auth_api {
         POST LoginForSession
+            path ["login"]
         -> Json<()>
                 map NotCredential {
         NotCredential
-        }
-            {
-            path ["login"]
         }
     }
 
     GET Health
     -> Json<()>
-    {
-    }
 }
 
 fn main() {}

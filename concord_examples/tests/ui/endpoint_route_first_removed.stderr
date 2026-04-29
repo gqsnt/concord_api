@@ -1,5 +1,0 @@
-error: endpoint declarations must use `METHOD Name(...) -> Response { ... }` (or `METHOD Name -> Response { ... }`)
- --> tests/ui/endpoint_route_first_removed.rs:8:14
-  |
-8 |     GET Ping "health" -> Json<()>;
-  |              ^^^^^^^^

@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
@@ -8,8 +9,6 @@ api! {
     }
 
     GET List(start: u64 = 0, count: u64 = 2)
-    -> Json<Vec<String>>
-    {
         path ["x"]
         query {
             "start" = start,
@@ -19,7 +18,7 @@ api! {
             offset = start,
             limit = count
         }
-    }
+    -> Json<Vec<String>>
 }
 
 #[tokio::test(flavor = "current_thread")]

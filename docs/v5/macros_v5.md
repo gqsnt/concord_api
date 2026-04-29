@@ -5,35 +5,31 @@ The macro is a compiler pipeline:
 ```text
 tokens
   -> RawAst
-  -> legacy diagnostics / v5 validation
   -> NormApiTree
   -> ResolvedApi / ResolvedEndpoint
   -> codegen
 ```
 
-Raw AST may be syntax-shaped and may contain removed forms only to produce diagnostics.
+Raw AST is parser-owned. Codegen consumes resolved data only and must not import parser AST modules.
 
-Codegen must consume resolved data only. It must not import raw parser structures such as:
+## Codegen Inputs
 
-```text
-ClientDef
-LayerDef
-EndpointDef
-AuthBlock
-RetryProfilesBlock
-CacheProfilesBlock
-RateLimitProfilesBlock
-LegacySyntax
-```
+Codegen works from:
 
-Shared syntax-neutral primitives belong in a model module, not in raw AST.
+- `ResolvedApi` for client-level data;
+- `ResolvedEndpoint` for endpoint structs, facade methods, and `Endpoint::plan`;
+- resolved route, policy, auth, body, response, and pagination specs.
 
-Required macro contracts:
+## Required Contracts
 
 - endpoint stanzas are canonical;
 - `fmt[...]` is parsed and resolved as one atom;
 - query shorthand normalizes to explicit query assignment;
-- `max_attempts` is accepted and `attempts` is rejected;
+- `max_attempts` is the retry count field;
 - only one `default` block is allowed per node;
-- old syntax emits migration diagnostics;
-- facade, builders, auth acquire helpers, pagination, endpoint plans, and rustdoc are generated from resolved data.
+- facade, builders, auth acquire helpers, pagination, endpoint plans, and rustdoc are generated from resolved data;
+- generated endpoints implement `Endpoint::plan` and produce `RequestPlan`.
+
+## Boundary Rule
+
+Shared syntax-neutral primitives belong in the resolved model layer. Parser-only structures stay behind the parse/sema boundary.

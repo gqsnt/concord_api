@@ -155,12 +155,6 @@ fn parse_rate_limit_key_spec(input: ParseStream<'_>) -> Result<RateLimitKeySpec>
 
     let first: Ident = input.parse()?;
     let first_s = first.to_string();
-    if input.peek(Token![.]) {
-        return Err(syn::Error::new(
-            first.span(),
-            "`route.host` was removed in v5 rate-limit keys; use `host`",
-        ));
-    }
     match first_s.as_str() {
         "host" => Ok(RateLimitKeySpec::RouteHost),
         "endpoint" => Ok(RateLimitKeySpec::Endpoint),

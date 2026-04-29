@@ -2,8 +2,7 @@
 //!
 //! The implementation is intentionally staged:
 //!
-//! 1. `parse` accepts v5 syntax and legacy syntax only when it can emit a
-//!    precise migration diagnostic.
+//! 1. `parse` accepts strict v5 syntax.
 //! 2. `sema` normalizes and resolves the API tree into `ResolvedApi` and
 //!    `ResolvedEndpoint`.
 //! 3. `codegen` emits clients and endpoint `plan()` implementations from the
@@ -22,7 +21,7 @@ mod sema;
 #[proc_macro]
 pub fn api(input: TokenStream) -> TokenStream {
     let input2: proc_macro2::TokenStream = input.into();
-    let ast = match syn::parse2::<ast::ApiFile>(input2) {
+    let ast = match syn::parse2::<ast::RawApi>(input2) {
         Ok(v) => v,
         Err(e) => return e.to_compile_error().into(),
     };

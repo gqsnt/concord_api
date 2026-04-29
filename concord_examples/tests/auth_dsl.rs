@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_examples::auth_session::__SessionApiAcquireAsSessionExt as _;
 use concord_examples::auth_session::{SessionLoginRequest, SessionLoginResponse, SessionUser};

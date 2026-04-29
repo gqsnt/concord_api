@@ -1,5 +1,0 @@
-error: endpoint body blocks are not supported; declare body in `Name(body: Codec<...>)`
-  --> tests/ui/endpoint_body_block_removed.rs:11:10
-   |
-11 |     POST Create
-   |          ^^^^^^

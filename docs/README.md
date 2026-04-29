@@ -11,12 +11,7 @@ endpoint = leaf
 policy = inherited branch behavior
 ```
 
-Concord then generates:
-
-1. a typed client,
-2. a tree-shaped facade (`api.scope().endpoint().await?`),
-3. explicit endpoint structs for advanced use,
-4. a runtime pipeline that handles routing, auth, cache, rate limits, retry, pagination, transport and decoding.
+Concord generates a typed client, a tree-shaped facade, explicit endpoint structs for advanced use, and a plan-based runtime pipeline for routing, auth, cache, rate limits, retry, pagination, transport, and decoding.
 
 Most examples assume:
 
@@ -25,7 +20,7 @@ use concord_core::prelude::*;
 use concord_macros::api;
 ```
 
-## Recommended reading order
+## Recommended Reading Order
 
 1. [Quick Start](00-quick-start.md)
 2. [Mental Model](01-mental-model.md)
@@ -52,10 +47,8 @@ use concord_macros::api;
 23. [DSL Reference](16-dsl-reference.md)
 24. [Public API Boundary](PUBLIC_API.md)
 25. [Macro Architecture](MACRO_ARCHITECTURE.md)
-26. [Migration Notes](17-migration-notes.md)
-27. [v4 to v5 Migration](v5/migration_v4_to_v5.md)
 
-## Canonical v5 style
+## Canonical v5 Style
 
 ```rust
 api! {
@@ -70,14 +63,12 @@ api! {
 
     scope auth_api {
         POST LoginForSession(body: Json<LoginRequest>)
+            path ["login"]
+            auth header "X-Upstream-Key" = upstream
             -> Json<LoginResponse>
             map AccessToken {
                 AccessToken::new(r.access_token)
             }
-        {
-            path ["login"]
-            auth header "X-Upstream-Key" = upstream
-        }
     }
 
     scope protected {
@@ -106,8 +97,3 @@ api.auth_api()
 
 let me = api.protected().me().await?;
 ```
-
-## Migration
-
-Removed syntax and replacement examples live in [Migration Notes](17-migration-notes.md).
-The stable v5 user-facing docs only show the canonical v5 DSL.

@@ -1,5 +1,0 @@
-error: `use_auth` was removed in v5; use `auth header/query/bearer/basic/certificate ...`
- --> tests/ui/old_use_auth_removed.rs:9:9
-  |
-9 |         use_auth HeaderAuth("X-Api-Key", key)
-  |         ^^^^^^^^

@@ -44,13 +44,11 @@ api! {
         POST LoginForSession(body: Json<LoginRequest>)
             as login_for_session
             path ["login"]
+            auth header "X-Upstream-Key" = upstream
             -> Json<LoginResponse>
             map AccessToken {
                 AccessToken::new(r.access_token)
             }
-        {
-            auth header "X-Upstream-Key" = upstream
-        }
     }
 
     scope protected {

@@ -265,12 +265,10 @@ mod tests {
             GET Search(count?: u64)
                 as search
                 path ["search"]
-                -> Json<String>
-            {
                 query {
                     count
                 }
-            }
+                -> Json<String>
         });
 
         assert_contains_all(
@@ -299,14 +297,13 @@ mod tests {
             }
 
             scope auth_api {
-                POST LoginForSession(body: Json<LoginRequest>) -> Json<LoginResponse>
+                POST LoginForSession(body: Json<LoginRequest>)
+                    path ["login"]
+                    auth header "X-Upstream-Key" = upstream
+                    -> Json<LoginResponse>
                     map AccessToken {
                         AccessToken::new(r.access_token)
                     }
-                {
-                    path ["login"]
-                    auth header "X-Upstream-Key" = upstream
-                }
             }
 
             scope protected {
@@ -342,18 +339,15 @@ mod tests {
             GET List(start: u64 = 0, count: u64 = 20)
                 as list
                 path ["items"]
-                -> Json<Vec<String>>
-            {
                 query {
                     start
                     count
                 }
-
                 paginate OffsetLimitPagination {
                     offset = start,
                     limit = count
                 }
-            }
+                -> Json<Vec<String>>
         });
 
         assert_contains_all(
@@ -407,13 +401,12 @@ mod tests {
                 base https "example.com"
             }
 
-            POST Login(body: Json<LoginRequest>) -> Json<LoginResponse>
+            POST Login(body: Json<LoginRequest>)
+                path ["login"]
+                -> Json<LoginResponse>
                 map AccessToken {
                     AccessToken::new(r.access_token)
                 }
-            {
-                path ["login"]
-            }
         });
 
         assert_contains_all(

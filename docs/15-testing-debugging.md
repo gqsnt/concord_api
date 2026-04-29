@@ -71,7 +71,7 @@ Test that:
 - endpoint-specific buckets are added;
 - `rate_limit off` clears generated buckets;
 - fresh cache hits skip limiter acquisition;
-- retry attempts acquire again.
+- retry tries acquire again.
 
 ## Cache tests
 

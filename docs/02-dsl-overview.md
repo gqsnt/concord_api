@@ -144,5 +144,3 @@ client Api {
 
 auth header "X-Api-Key" = key
 ```
-
-Migration examples for removed syntax live in [Migration Notes](17-migration-notes.md).

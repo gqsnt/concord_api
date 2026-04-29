@@ -1,12 +1,12 @@
 //! Shared macro model primitives and normalized semantic tree.
 //!
 //! Raw parser structs stay in `ast`. `NormApiTree` is the first v5 semantic
-//! boundary: removed syntax and unsupported auth forms are rejected before
-//! semantic resolution consumes it. Generated code must depend only on resolved
-//! sema output plus neutral primitives such as `Scheme` and `SetOp`.
+//! boundary: parser-only details are normalized before semantic resolution
+//! consumes them. Generated code must depend only on resolved sema output plus
+//! neutral primitives such as `Scheme` and `SetOp`.
 
 use crate::ast::{
-    AuthBlock, AuthUseKind, CacheProfilesBlock, CacheSpec, CodecSpec, MapSpec, PaginateSpec,
+    AuthCredentials, AuthUseKind, CacheProfilesBlock, CacheSpec, CodecSpec, MapSpec, PaginateSpec,
     PolicyBlocks, RateLimitKeyBindingSpec, RateLimitProfilesBlock, RateLimitSpec,
     RetryProfilesBlock, RetrySpec, RouteExpr, VarDeclNoWire,
 };
@@ -27,8 +27,8 @@ pub(crate) enum SetOp {
 
 /// Normalized API tree consumed by semantic resolution.
 ///
-/// Raw parser-only details such as keyword spans and unsupported legacy auth
-/// forms are stripped or rejected before this model is produced.
+/// Raw parser-only details such as keyword spans are stripped before this model
+/// is produced.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) struct NormApiTree {
@@ -46,7 +46,7 @@ pub(crate) struct NormClient {
     pub policy: PolicyBlocks,
     pub vars: Option<NormVars>,
     pub auth_vars: Option<NormVars>,
-    pub auth: Option<AuthBlock>,
+    pub auth: Option<AuthCredentials>,
     pub auth_uses: Vec<NormAuthUse>,
     pub cache_profiles: Option<CacheProfilesBlock>,
     pub cache: Option<CacheSpec>,

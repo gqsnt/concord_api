@@ -267,7 +267,3 @@ paginate CursorPagination {
     per_page = page_size
 }
 ```
-
-## Migration
-
-Removed syntax and replacement examples are documented in [Migration Notes](17-migration-notes.md).

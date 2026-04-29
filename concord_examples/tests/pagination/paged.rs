@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
@@ -8,8 +9,6 @@ api! {
     }
 
     GET List(page: u32 = 1, page_size: u32 = 2)
-    -> Json<Vec<String>>
-    {
         path ["x"]
         query {
             "p" = page,
@@ -21,7 +20,7 @@ api! {
             page = page as u64,
             per_page = page_size as u64
         }
-    }
+    -> Json<Vec<String>>
 }
 
 #[tokio::test(flavor = "current_thread")]

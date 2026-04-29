@@ -6,10 +6,8 @@ api! {
     }
 
     GET One(id)
-    -> Json<()>
-    {
         path ["x", id]
-    }
+    -> Json<()>
 }
 
 fn main() {}

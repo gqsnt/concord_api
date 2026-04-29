@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
@@ -19,14 +20,10 @@ async fn retry_profile_retries_status_then_endpoint_can_turn_it_off() {
 
         GET Ping
         -> Json<()>
-        {
-        }
 
         GET NoRetry
-        -> Json<()>
-        {
             retry off
-        }
+        -> Json<()>
     }
 
     use api_dsl_retry_profile::*;
@@ -82,14 +79,10 @@ async fn retry_scope_profile_applies_to_child_endpoints() {
 
             GET Flaky
             -> Json<()>
-            {
-            }
 
             GET NoRetry
-            -> Json<()>
-            {
                 retry off
-            }
+            -> Json<()>
         }
     }
 
@@ -137,15 +130,13 @@ async fn retry_patch_honors_retry_after_status() {
         }
 
         GET Limited
-        -> Json<()>
-        {
             retry {
                 max_attempts 2
                 methods [GET]
                 on [429]
                 retry_after
             }
-        }
+        -> Json<()>
     }
 
     use api_dsl_retry_patch::*;
@@ -185,19 +176,15 @@ async fn retry_post_requires_declared_idempotency_header() {
         }
 
         POST Create(idempotency_key: String)
-        -> Json<()>
-        {
             retry write
             headers {
                 "Idempotency-Key" = idempotency_key
             }
-        }
+        -> Json<()>
 
         POST UnsafeCreate
-        -> Json<()>
-        {
             retry write
-        }
+        -> Json<()>
     }
 
     use api_dsl_retry_post::*;

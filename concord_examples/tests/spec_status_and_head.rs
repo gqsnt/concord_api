@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
@@ -11,16 +12,12 @@ async fn status_204_requires_no_content_response_spec() {
         }
 
         GET A
-        -> Json<()>
-        {
             path ["a"]
-        }
+        -> Json<()>
 
         GET B
-        -> NoContent<()>
-        {
             path ["b"]
-        }
+        -> NoContent<()>
     }
 
     use api_no_content::*;
@@ -67,16 +64,12 @@ async fn head_requires_no_content_response_spec() {
         }
 
         HEAD A
-        -> Json<()>
-        {
             path ["a"]
-        }
+        -> Json<()>
 
         HEAD B
-        -> NoContent<()>
-        {
             path ["b"]
-        }
+        -> NoContent<()>
     }
 
     use api_head::*;

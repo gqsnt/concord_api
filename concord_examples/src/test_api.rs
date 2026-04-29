@@ -69,15 +69,13 @@ api! {
 
             GET GetPosts(user_id?: u32, x_debug: bool = true)
                 as list
-                -> Json<Vec<models::Post>>
-            {
                 query {
                     "userId" = user_id
                 }
                 headers {
                     "x-debug" = fmt["test:", x_debug]
                 }
-            }
+                -> Json<Vec<models::Post>>
 
             GET GetPost(id: i32)
                 as by_id
@@ -105,15 +103,13 @@ api! {
             GET GetUserPosts(id: i32, user_id?: u32)
                 as posts
                 path [id, "posts"]
-                -> Json<Vec<models::Post>>
-                map Vec<String> {
-                IntoIterator::into_iter(r).map(|p| p.title).collect()
-            }
-            {
                 query {
                     "userId" = user_id
                 }
-            }
+                -> Json<Vec<models::Post>>
+                map Vec<String> {
+                    IntoIterator::into_iter(r).map(|p| p.title).collect()
+                }
         }
     }
 }

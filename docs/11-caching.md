@@ -83,7 +83,7 @@ GET Fresh
 
 ## Cache fields
 
-v4 DSL cache policy is about API semantics:
+v5 DSL cache policy is about API semantics:
 
 ```rust
 cache static_data {
@@ -104,7 +104,7 @@ Supported semantic fields:
 | `on_error ignore` | do not serve stale after error |
 | `on_error serve_stale` | serve stale after failed revalidation |
 
-Storage details such as capacity, max body size, sharing, and backend choice belong to runtime configuration or the cache store implementation, not the v4 DSL.
+Storage details such as capacity, max body size, sharing, and backend choice belong to runtime configuration or the cache store implementation, not the v5 DSL.
 
 ## Request cache mode
 

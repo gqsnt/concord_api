@@ -13,10 +13,8 @@ api! {
     }
 
     GET Cached
-    -> Json<String>
-    {
         path ["cached"]
-    }
+    -> Json<String>
 }
 
 fn main() {}

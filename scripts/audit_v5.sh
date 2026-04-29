@@ -1,21 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-normal_docs=(
-  docs/00-quick-start.md
-  docs/01-mental-model.md
-  docs/02-dsl-overview.md
-  docs/03-generated-usage.md
-  docs/04-runtime-config.md
-  docs/05-auth.md
-  docs/06-pagination.md
-  docs/07-cache-retry-rate-limit.md
-  docs/16-dsl-reference.md
-)
-
-canonical_examples=(
-  concord_examples/src/v5
-)
+public_docs=(docs)
+canonical_examples=(concord_examples/src/v5 concord_examples/src)
 
 run_cargo() {
   if [[ -n "${CARGO:-}" ]]; then
@@ -43,62 +30,50 @@ run_rg() {
   fi
 }
 
+fail_if_match() {
+  local label="$1"
+  local pattern="$2"
+  shift 2
+  echo "== $label =="
+  if run_rg "$pattern" "$@"; then
+    echo "$label failed" >&2
+    exit 1
+  fi
+}
+
 echo "== cargo fmt --check =="
 run_cargo fmt --check
 
 echo "== cargo test --all-features =="
 run_cargo test --all-features
 
+echo "== cargo test -p concord_examples --all-features =="
+run_cargo test -p concord_examples --all-features
+
 echo "== cargo clippy --all-targets --all-features -- -D warnings =="
 run_cargo clippy --all-targets --all-features -- -D warnings
+
+echo "== cargo clippy -p concord_examples --all-targets --all-features -- -D warnings =="
+run_cargo clippy -p concord_examples --all-targets --all-features -- -D warnings
 
 echo "== cargo doc --no-deps --all-features =="
 run_cargo doc --no-deps --all-features
 
-echo "== old DSL syntax in canonical examples / normal docs =="
-if run_rg 'scheme:|host:|use_auth|backoff none|response custom|route\.host|part\[' \
-  "${canonical_examples[@]}" "${normal_docs[@]}"; then
-  echo "old DSL syntax leaked into canonical v5 examples or normal docs" >&2
-  exit 1
-fi
-
-echo "== old formatting/retry syntax in production v5 surfaces =="
-if run_rg 'part\[|\battempts\b' \
-  concord_core/src concord_macros/src/codegen "${canonical_examples[@]}" "${normal_docs[@]}"; then
-  echo "old formatting/retry syntax leaked into production v5 surfaces" >&2
-  exit 1
-fi
-
-echo "== legacy runtime symbols =="
-if run_rg 'LegacyEndpoint|RoutePart|PolicyPart|AuthPart|BodyPart|PaginationPart|AuthController|AuthChain|OneOfAuth|UseCredential|execute_decoded_ref_with' \
-  concord_core/src concord_macros/src/codegen concord_examples/src; then
-  echo "legacy runtime symbol leaked into production code" >&2
-  exit 1
-fi
-
-echo "== codegen raw AST boundary =="
-if run_rg 'crate::ast|ClientDef|LayerDef|EndpointDef|AuthBlock|RetryProfilesBlock|CacheProfilesBlock|RateLimitProfilesBlock|LegacySyntax' \
-  concord_macros/src/codegen; then
-  echo "codegen depends on raw AST or legacy parser model" >&2
-  exit 1
-fi
-
-echo "== internal leakage in canonical examples / normal docs =="
-if run_rg 'use concord_core::internal' "${canonical_examples[@]}" "${normal_docs[@]}"; then
-  echo "internal import leaked into canonical examples or normal docs" >&2
-  exit 1
-fi
-
-if run_rg 'RequestPlan|EndpointPlan|AuthPlan|CredentialSlot|RateLimitPermit|CacheKey|runtime_state' \
-  "${canonical_examples[@]}" "${normal_docs[@]}"; then
-  echo "advanced/internal type leaked into canonical examples or normal docs" >&2
-  exit 1
-fi
+bad_docs="migr""ation|Migr""ation|depre""cated|rename""d|removed in ""v5|old syn""tax"
+fail_if_match "non-v5 docs wording" "$bad_docs" "${public_docs[@]}"
+bad_dsl="scheme"":|host"":|use_""auth|backoff ""none|response ""custom|route""\.host|part""\[|\battempt""s\b"
+fail_if_match "non-v5 DSL tokens in public docs/examples" "$bad_dsl" "${public_docs[@]}" "${canonical_examples[@]}"
+bad_macro="Client""Def|Layer""Def|Endpoint""Def|Auth""Block|Unsupported""AllGroup|Unsupported""AnyGroup|AuthUseKind::""Custom|AuthCredentialKind::""Custom|Legacy""Syntax"
+fail_if_match "non-v5 macro model names" "$bad_macro" concord_macros/src concord_macros/tests concord_examples/tests
+bad_runtime="Legacy""Endpoint|Route""Part|Policy""Part|Auth""Part|Body""Part|Pagination""Part|Auth""Controller|Auth""Chain|OneOf""Auth|Use""Credential|execute_decoded_ref_""with"
+fail_if_match "legacy runtime symbols" "$bad_runtime" concord_core/src concord_macros/src concord_examples/src concord_examples/tests
+fail_if_match "codegen raw AST boundary" 'crate::ast|use crate::ast' concord_macros/src/codegen
+fail_if_match "internal imports in public docs/examples" 'use concord_core::internal' "${public_docs[@]}" "${canonical_examples[@]}"
 
 echo "== explicit endpoint usage audit =="
-run_rg 'api\.request\(' "${canonical_examples[@]}" "${normal_docs[@]}" || true
+run_rg 'api\.request\(' "${canonical_examples[@]}" "${public_docs[@]}" || true
 
 echo "== auth session canonical usage =="
-run_rg 'acquire_as_' "${canonical_examples[@]}" docs
+run_rg 'acquire_as_' "${canonical_examples[@]}" "${public_docs[@]}"
 
 echo "v5 audit passed"

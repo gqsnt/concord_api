@@ -1,7 +1,7 @@
 //! Parser for raw DSL syntax.
 //!
-//! This layer is allowed to know about removed syntax, but only to reject it
-//! with v5 replacement diagnostics. It should not resolve inheritance or names.
+//! This layer accepts strict v5 syntax only. It should not resolve inheritance
+//! or names.
 
 use crate::ast::*;
 use crate::kw;
@@ -14,13 +14,13 @@ use syn::{
     parenthesized, token,
 };
 
-impl Parse for ApiFile {
+impl Parse for RawApi {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let span = input.span();
-        let client: ClientDef = input.parse()?;
+        let client: RawClient = input.parse()?;
         let mut items = Vec::new();
         while !input.is_empty() {
-            items.push(input.parse::<Item>()?);
+            items.push(input.parse::<RawItem>()?);
         }
         Ok(Self {
             span,
@@ -30,7 +30,7 @@ impl Parse for ApiFile {
     }
 }
 
-impl Parse for ClientDef {
+impl Parse for RawClient {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let span = input.span();
         let client_kw: kw::client = input.parse()?;
@@ -71,18 +71,6 @@ impl Parse for ClientDef {
                 });
                 host = Some(content.parse::<LitStr>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::scheme) {
-                return Err(legacy_v5_error(
-                    content.span(),
-                    "scheme:",
-                    "base https \"example.com\"",
-                ));
-            } else if content.peek(kw::vars) {
-                return Err(legacy_v5_error(
-                    content.span(),
-                    "vars {}",
-                    "one `var name: Type` declaration per variable",
-                ));
             } else if content.peek(kw::var) {
                 content.parse::<kw::var>()?;
                 let decl: VarDeclNoWire = content.parse()?;
@@ -92,45 +80,20 @@ impl Parse for ClientDef {
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::secret) {
                 content.parse::<kw::secret>()?;
-                if content.peek(token::Brace) {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "`secret {}` was removed in v5; use one `secret name: Type` declaration per secret",
-                    ));
-                } else {
-                    let decl: VarDeclNoWire = content.parse()?;
-                    auth_vars
-                        .get_or_insert_with(|| VarsBlock { decls: Vec::new() })
-                        .decls
-                        .push(decl);
-                }
+                let decl: VarDeclNoWire = content.parse()?;
+                auth_vars
+                    .get_or_insert_with(|| VarsBlock { decls: Vec::new() })
+                    .decls
+                    .push(decl);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::auth) {
                 content.parse::<kw::auth>()?;
-                if content.peek(token::Brace) {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "`auth { credential ... }` was removed in v5; use `credential name = ...` in the client body",
-                    ));
-                }
                 auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::credential) {
                 content.parse::<kw::credential>()?;
                 auth_credentials.push(parse_auth_credential_after_keyword(&content, true)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::use_auth) {
-                return Err(legacy_v5_error(
-                    content.span(),
-                    "use_auth",
-                    "auth header/query/bearer/basic/certificate ...",
-                ));
-            } else if content.peek(kw::response) {
-                return Err(legacy_v5_error(
-                    content.span(),
-                    "response custom",
-                    "observe rate_limit MyObserver",
-                ));
             } else if content.peek(kw::cache) {
                 content.parse::<kw::cache>()?;
                 cache_profiles
@@ -162,12 +125,6 @@ impl Parse for ClientDef {
                     .profiles
                     .push(parse_rate_limit_profile_decl_after_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::host) {
-                return Err(legacy_v5_error(
-                    content.span(),
-                    "host:",
-                    "base https \"example.com\" for the client root or `host [...]` in scopes",
-                ));
             } else if content.peek(kw::default) {
                 content.parse::<kw::default>()?;
                 if seen_default_block {
@@ -262,7 +219,7 @@ impl Parse for ClientDef {
             body_span,
             vars,
             auth_vars,
-            auth: (!auth_credentials.is_empty()).then_some(AuthBlock {
+            auth: (!auth_credentials.is_empty()).then_some(AuthCredentials {
                 credentials: auth_credentials,
             }),
             auth_uses,
@@ -359,8 +316,6 @@ fn parse_client_default_block(
                 ));
             }
             block.default = profiles;
-        } else if input.peek(kw::use_auth) {
-            return Err(legacy_v5_error(input.span(), "use_auth", "auth ..."));
         } else {
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(
@@ -374,7 +329,6 @@ fn parse_client_default_block(
 }
 
 // Keep feature-domain macro chunks in separate files without widening helper visibility.
-include!("legacy.rs");
 include!("auth.rs");
 include!("endpoints.rs");
 include!("retry.rs");
@@ -405,12 +359,10 @@ mod tests {
                 GET Show
                     as show
                     path ["profile"]
-                    -> Json<String>
-                {
                     query {
                         id
                     }
-                }
+                    -> Json<String>
             }
             "#,
         )
@@ -418,7 +370,7 @@ mod tests {
 
         assert_eq!(ast.client.name, "Api");
         assert_eq!(ast.items.len(), 1);
-        let Item::Layer(scope) = &ast.items[0] else {
+        let RawItem::Layer(scope) = &ast.items[0] else {
             panic!("expected scope");
         };
         assert_eq!(
@@ -430,7 +382,7 @@ mod tests {
             Some("users")
         );
         assert_eq!(scope.items.len(), 1);
-        let Item::Endpoint(endpoint) = &scope.items[0] else {
+        let RawItem::Endpoint(endpoint) = &scope.items[0] else {
             panic!("expected endpoint");
         };
         assert_eq!(endpoint.line.method, "GET");

@@ -6,15 +6,13 @@ api! {
     }
 
     GET Ping
-    -> Json<()>
-    {
         rate_limit {
             bucket method by [host] {
                 cost true // ERROR: expected integer literal
                 30 / 10s
             }
         }
-    }
+    -> Json<()>
 }
 
 fn main() {}

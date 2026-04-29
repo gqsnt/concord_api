@@ -1,5 +1,4 @@
-fn normalize_api(raw: crate::ast::ApiFile) -> Result<NormApiTree> {
-    reject_custom_credentials(raw.client.auth.as_ref())?;
+fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
     let client_auth_uses = normalize_auth_uses(raw.client.auth_uses)?;
 
     Ok(NormApiTree {
@@ -26,20 +25,20 @@ fn normalize_api(raw: crate::ast::ApiFile) -> Result<NormApiTree> {
     })
 }
 
-fn normalize_items(items: Vec<crate::ast::Item>) -> Result<Vec<NormNode>> {
+fn normalize_items(items: Vec<crate::ast::RawItem>) -> Result<Vec<NormNode>> {
     items.into_iter().map(normalize_item).collect()
 }
 
-fn normalize_item(item: crate::ast::Item) -> Result<NormNode> {
+fn normalize_item(item: crate::ast::RawItem) -> Result<NormNode> {
     match item {
-        crate::ast::Item::Layer(scope) => Ok(NormNode::Layer(Box::new(normalize_scope(*scope)?))),
-        crate::ast::Item::Endpoint(endpoint) => {
+        crate::ast::RawItem::Layer(scope) => Ok(NormNode::Layer(Box::new(normalize_scope(*scope)?))),
+        crate::ast::RawItem::Endpoint(endpoint) => {
             Ok(NormNode::Endpoint(Box::new(normalize_endpoint(*endpoint)?)))
         }
     }
 }
 
-fn normalize_scope(raw: crate::ast::LayerDef) -> Result<NormScope> {
+fn normalize_scope(raw: crate::ast::RawScope) -> Result<NormScope> {
     let auth_uses = normalize_auth_uses(raw.auth_uses)?;
     Ok(NormScope {
         span: raw.span,
@@ -57,7 +56,7 @@ fn normalize_scope(raw: crate::ast::LayerDef) -> Result<NormScope> {
     })
 }
 
-fn normalize_endpoint(raw: crate::ast::EndpointDef) -> Result<NormEndpoint> {
+fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEndpoint> {
     let auth_uses = normalize_auth_uses(raw.auth_uses)?;
     Ok(NormEndpoint {
         span: raw.span,
@@ -92,53 +91,14 @@ fn normalize_layer_kind(kind: crate::ast::LayerKind) -> RouteLayerKind {
     }
 }
 
-fn reject_custom_credentials(block: Option<&crate::ast::AuthBlock>) -> Result<()> {
-    let Some(block) = block else {
-        return Ok(());
-    };
-    for credential in &block.credentials {
-        if let crate::ast::AuthCredentialKind::Custom {
-            provider_ty,
-            provider,
-        } = &credential.kind
-        {
-            return Err(unsupported_custom_auth_credential_error(
-                provider_ty
-                    .span()
-                    .join(provider.span())
-                    .unwrap_or(provider_ty.span()),
-            ));
-        }
-    }
-    Ok(())
-}
-
 fn normalize_auth_uses(uses: Vec<crate::ast::AuthUseDecl>) -> Result<Vec<NormAuthUse>> {
     let mut out = Vec::with_capacity(uses.len());
     for auth_use in uses {
         match auth_use {
             crate::ast::AuthUseDecl::Single(kind) => {
-                reject_custom_auth_use(&kind)?;
                 out.push(NormAuthUse { kind: *kind });
-            }
-            crate::ast::AuthUseDecl::UnsupportedAllGroup(kinds)
-            | crate::ast::AuthUseDecl::UnsupportedAnyGroup(kinds) => {
-                return Err(unsupported_auth_group_error(
-                    kinds
-                        .first()
-                        .map(auth_use_credential_ident)
-                        .map(Ident::span)
-                        .unwrap_or_else(Span::call_site),
-                ));
             }
         }
     }
     Ok(out)
-}
-
-fn reject_custom_auth_use(kind: &crate::ast::AuthUseKind) -> Result<()> {
-    if let crate::ast::AuthUseKind::Custom { usage, .. } = kind {
-        return Err(unsupported_custom_auth_placement_error(usage.span()));
-    }
-    Ok(())
 }

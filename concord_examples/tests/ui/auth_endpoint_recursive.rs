@@ -8,18 +8,14 @@ api! {
 
     scope auth_api {
         POST LoginForSession
-        -> Json<()>
-        {
             path ["login"]
             auth bearer session // ERROR: recursive dependency
-        }
+        -> Json<()>
     }
 
     GET Me
-    -> Json<()>
-    {
         auth bearer session
-    }
+    -> Json<()>
 }
 
 fn main() {}

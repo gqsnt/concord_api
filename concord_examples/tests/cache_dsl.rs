@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 #![cfg(feature = "cache-moka")]
 
 use concord_core::advanced::*;
@@ -200,10 +201,8 @@ async fn cache_bypass_hits_transport_without_overwriting_cached_value() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_bypass_api::*;
@@ -256,10 +255,8 @@ async fn cache_refresh_hits_transport_and_updates_cached_value() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_refresh_api::*;
@@ -315,10 +312,8 @@ async fn cache_profile_revalidates_with_conditional_headers() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_no_revalidate_api::*;
@@ -373,10 +368,8 @@ async fn cache_profile_on_error_serve_stale_returns_stale_after_revalidation_err
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_serve_stale_api::*;
@@ -409,10 +402,8 @@ async fn revalidation_304_without_cache_merge_retries_once_with_unconditional_fe
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_revalidation_fallback_api::*;
@@ -459,10 +450,8 @@ async fn cache_profile_fresh_hit_skips_transport() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_fresh_api::*;
@@ -500,11 +489,9 @@ async fn endpoint_inline_cache_sets_up_default_backend_without_client_cache_bloc
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
             cache 60s
-        }
+        -> Json<String>
     }
 
     use endpoint_only_cache_api::*;
@@ -545,10 +532,8 @@ async fn cache_inline_patch_inherits_profile_ttl_and_overrides_max_body() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_inline_patch_api::*;
@@ -591,10 +576,8 @@ async fn cache_profile_http_semantics_are_honored() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_full_profile_api::*;
@@ -644,10 +627,8 @@ async fn cache_hit_skips_rate_limit_after_initial_store() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_rate_limit_api::*;
@@ -702,10 +683,8 @@ async fn cache_hit_skips_retry_and_transport_after_initial_store() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_retry_api::*;
@@ -749,10 +728,8 @@ async fn cache_control_no_store_is_not_stored() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_no_store_api::*;
@@ -800,11 +777,9 @@ async fn cache_vary_header_keeps_variants_separate() {
         }
 
         GET Localized(lang: String)
-        -> Json<String>
-        {
             path ["localized"]
             headers { "accept-language" = lang }
-        }
+        -> Json<String>
     }
 
     use cache_vary_api::*;
@@ -863,10 +838,8 @@ async fn authenticated_cache_keys_are_isolated_by_auth_identity() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_auth_api::*;
@@ -931,10 +904,8 @@ async fn stale_cache_revalidates_with_etag_and_uses_304_body() {
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_revalidate_api::*;
@@ -990,10 +961,8 @@ async fn revalidation_transport_errors_retry_before_cache_after_error_fallback()
         }
 
         GET Cached
-        -> Json<String>
-        {
             path ["cached"]
-        }
+        -> Json<String>
     }
 
     use cache_revalidation_error_api::*;
@@ -1032,11 +1001,9 @@ async fn cache_off_clears_inherited_cache() {
         }
 
         GET Uncached
-        -> Json<String>
-        {
             path ["uncached"]
             cache off
-        }
+        -> Json<String>
     }
 
     use cache_off_api::*;
@@ -1084,16 +1051,12 @@ async fn unsafe_success_invalidates_cached_get_for_same_uri() {
         }
 
         GET Read
-        -> Json<String>
-        {
             path ["resource"]
-        }
+        -> Json<String>
 
         POST Write
-        -> Json<String>
-        {
             path ["resource"]
-        }
+        -> Json<String>
     }
 
     use cache_invalidate_api::*;

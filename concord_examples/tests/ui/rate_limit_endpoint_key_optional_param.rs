@@ -11,11 +11,9 @@ api! {
     }
 
     GET Ping(region?: String)
-    -> Json<()>
-    {
         rate_limit key region = region // ERROR: optional param
         rate_limit regional
-    }
+    -> Json<()>
 }
 
 fn main() {}

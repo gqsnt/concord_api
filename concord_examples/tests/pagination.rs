@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 #[path = "pagination/cursor.rs"]
 mod cursor;
 #[path = "pagination/offset_limit.rs"]

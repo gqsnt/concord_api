@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
@@ -15,12 +16,10 @@ async fn mapping_closure_variant_maps_ids() {
         }
 
         GET Ids
+            path ["ids"]
         -> Json<Vec<Item>>
                 map Vec<String> {
         r.into_iter().map(|x| x.id).collect::<Vec<_>>()
-        }
-            {
-            path ["ids"]
         }
     }
 

@@ -7,10 +7,8 @@ api! {
     }
 
     GET Ping
-    -> Json<()>
-    {
         auth bearer session
-    }
+    -> Json<()>
 }
 
 fn main() {}

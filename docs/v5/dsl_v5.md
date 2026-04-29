@@ -1,8 +1,8 @@
 # Concord v5 DSL Contract
 
-The DSL describes the upstream API contract. It does not describe runtime deployment details.
+The DSL describes the upstream API contract. Runtime deployment details belong in generated configuration and core extension points, not in endpoint syntax.
 
-Canonical endpoint stanza:
+## Endpoint Stanza
 
 ```rust
 GET Me
@@ -20,7 +20,7 @@ GET GetUser(id: u64)
     -> Json<User>
 ```
 
-Optional and defaulted values are declared in the endpoint signature and become request setters:
+Optional and defaulted values are declared in the signature and become request setters:
 
 ```rust
 GET Search(q: String, page?: u32, count: u32 = 20)
@@ -34,6 +34,8 @@ GET Search(q: String, page?: u32, count: u32 = 20)
     -> Json<SearchResponse>
 ```
 
+## Structured Formatting
+
 `fmt[...]` is structured formatting. It creates one host label, path segment, query value, or header value:
 
 ```rust
@@ -43,7 +45,9 @@ query { "range" = fmt[start, "-", count] }
 headers { "x-trace" = fmt["trace-", trace_id] }
 ```
 
-Query shorthand is canonical when the key and value name match:
+## Query Shorthand
+
+Use shorthand when the key and value name match:
 
 ```rust
 query {
@@ -53,7 +57,9 @@ query {
 }
 ```
 
-Retry profiles use `max_attempts`:
+## Retry
+
+Retry profiles use `max_attempts`, which counts the initial request:
 
 ```rust
 retry read {
@@ -64,7 +70,9 @@ retry read {
 }
 ```
 
-Use one `default` block per client or node:
+## Defaults
+
+Use one `default` block per client or scope:
 
 ```rust
 default {
@@ -73,17 +81,11 @@ default {
 }
 ```
 
-Non-goals for v5 initial release:
+## Explicit Complexity
 
-- string path syntax such as `path "/users/{id}"`
-- Rust format-string parsing
-- `part[...]`; use `fmt[...]`
-- `auth any` / `auth all`
-- custom auth placement
-- generic middleware DSL
-- cache backend/storage DSL
-- automatic login or automatic pagination
-- rate-limit syntax redesign
-- generic `profiles { ... }` wrapper
+Supported complex behaviors are explicit:
 
-Old syntax is accepted only when needed to emit a migration diagnostic.
+- auth uses `auth bearer`, `auth header`, `auth query`, `auth basic`, or `auth certificate`;
+- pagination uses concrete `offset_limit`, `cursor`, or `paged` plans;
+- cache/retry/rate-limit are named policies or endpoint-local patches;
+- response mapping uses `map Type { ... }` after the response clause.

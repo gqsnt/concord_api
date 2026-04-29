@@ -20,7 +20,7 @@ pub struct RawClient {
     pub policy: PolicyBlocks,
     pub vars: Option<VarsBlock>,
     pub auth_vars: Option<VarsBlock>,
-    pub auth: Option<AuthBlock>,
+    pub auth: Option<AuthCredentials>,
     pub auth_uses: Vec<AuthUseDecl>,
     pub cache_profiles: Option<CacheProfilesBlock>,
     pub cache: Option<CacheSpec>,
@@ -88,11 +88,3 @@ pub struct RawEndpoint {
     pub response: CodecSpec,
     pub map: Option<MapSpec>,
 }
-
-// Transitional names used by the current semantic resolver. M5 replaces these
-// aliases with the normalized/resolved tree boundary described in the v5 plan.
-pub type ApiFile = RawApi;
-pub type ClientDef = RawClient;
-pub type Item = RawItem;
-pub type LayerDef = RawScope;
-pub type EndpointDef = RawEndpoint;

@@ -30,8 +30,6 @@ api! {
         GET Search(prefix: String, q?: String)
             as search
             path ["search", fmt["prefix-", prefix]]
-            -> Json<Vec<SearchHit>>
-        {
             query {
                 q
                 "trace" = fmt["tenant:", vars.tenant, ":prefix:", prefix]
@@ -39,7 +37,7 @@ api! {
             headers {
                 "x-tenant-prefix" = fmt[vars.tenant, ":", prefix]
             }
-        }
+            -> Json<Vec<SearchHit>>
     }
 }
 

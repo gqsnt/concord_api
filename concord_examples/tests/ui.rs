@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 #[test]
 fn ui_compile_fail() {
     let t = trybuild::TestCases::new();

@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::prelude::*;
 use concord_macros::api;
 use concord_test_support::*;
@@ -16,8 +17,6 @@ async fn vars_default_and_setter_affect_emitted_header() {
 
         GET Ping
         -> Json<()>
-        {
-        }
     }
 
     use api_vars_default::*;
@@ -56,8 +55,6 @@ async fn vars_required_ctor_arg_and_setter_affect_emitted_header() {
 
         GET Ping
         -> Json<()>
-        {
-        }
     }
 
     use api_vars_req::*;
@@ -100,8 +97,6 @@ async fn secret_required_and_setter_affect_emitted_header() {
 
             GET Ping
             -> Json<()>
-            {
-            }
         }
     }
 
@@ -147,8 +142,6 @@ async fn secret_invalid_header_value_reported_as_invalid_param_and_request_not_s
 
         GET Ping
         -> Json<()>
-        {
-        }
     }
 
     use api_secret_bad::*;

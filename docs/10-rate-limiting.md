@@ -126,7 +126,7 @@ bucket method by [host, endpoint] {
 
 ## Observing rate-limit responses
 
-v4 uses `RateLimitObserver`.
+v5 uses `RateLimitObserver`.
 
 Example:
 
@@ -170,7 +170,7 @@ A fresh cache hit skips rate-limit acquisition.
 
 A stale cache revalidation does acquire permits.
 
-Retry attempts pass through the limiter again.
+Retry tries pass through the limiter again.
 
 Inflight followers should not consume their own permit when they reuse a leader request.
 

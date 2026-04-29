@@ -141,7 +141,7 @@ Usage:
 
 ```rust
 api.platform(EUW1)
-   .summoner_v4()
+   .accounts()
    .by_puuid(puuid)
    .await?;
 ```

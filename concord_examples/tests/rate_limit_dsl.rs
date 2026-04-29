@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use bytes::Bytes;
 use concord_core::advanced::*;
 use concord_core::prelude::*;
@@ -297,16 +298,12 @@ async fn rate_limit_profiles_generate_request_plan_and_allow_custom_limiter() {
         }
 
         GET Ping
-        -> Json<()>
-        {
             rate_limit method_read
-        }
+        -> Json<()>
 
         GET NoLimit
-        -> Json<()>
-        {
             rate_limit off
-        }
+        -> Json<()>
     }
 
     use rate_limit_dsl_api::*;
@@ -364,10 +361,8 @@ async fn rate_limit_custom_response_policy_marks_limited_response() {
         }
 
         GET Limited
-        -> Json<()>
-        {
             rate_limit method_read
-        }
+        -> Json<()>
     }
 
     use rate_limit_custom_response_api::*;
@@ -417,10 +412,8 @@ async fn rate_limit_response_bucket_scope_falls_back_when_bucket_is_missing() {
         }
 
         GET NoBucket
-        -> Json<()>
-        {
             rate_limit off
-        }
+        -> Json<()>
     }
 
     use rate_limit_missing_bucket_fallback_api::*;
@@ -491,10 +484,8 @@ async fn retry_does_not_duplicate_delay_when_rate_limiter_stores_cooldown() {
         }
 
         GET Limited
-        -> Json<()>
-        {
             rate_limit method_read
-        }
+        -> Json<()>
     }
 
     use rate_limit_retry_coordination_api::*;
@@ -561,10 +552,8 @@ async fn rate_limit_scope_key_binding_materializes_param_key() {
             rate_limit key region = platform
 
             GET ByRegion
-            -> Json<()>
-            {
                 rate_limit regional_method
-            }
+            -> Json<()>
         }
     }
 
@@ -611,8 +600,6 @@ async fn inflight_followers_do_not_consume_rate_limit_permits() {
 
         GET Ping
         -> Json<()>
-        {
-        }
     }
 
     use rate_limit_inflight_api::*;
@@ -665,8 +652,6 @@ async fn cache_hits_do_not_consume_rate_limit_permits() {
 
         GET Cached
         -> Json<()>
-        {
-        }
     }
 
     use rate_limit_cache_api::*;
@@ -705,10 +690,8 @@ async fn duplicate_rate_limit_profiles_do_not_duplicate_buckets_after_canonicali
         }
 
         GET Ping
-        -> Json<()>
-        {
             rate_limit app
-        }
+        -> Json<()>
     }
 
     use rate_limit_canonicalization_api::*;
@@ -745,11 +728,9 @@ async fn endpoint_rate_limit_key_binding_materializes_scope_param_key() {
             host [platform, "api"]
 
             GET ByRegion
-            -> Json<()>
-            {
                 rate_limit key region = platform
                 rate_limit regional_method
-            }
+            -> Json<()>
         }
     }
 
@@ -797,8 +778,6 @@ async fn rate_limit_bucket_cost_is_emitted_to_runtime_plan() {
 
         GET Ping
         -> Json<()>
-        {
-        }
     }
 
     use rate_limit_cost_api::*;

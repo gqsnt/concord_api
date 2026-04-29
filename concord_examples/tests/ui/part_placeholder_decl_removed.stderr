@@ -1,5 +1,0 @@
-error: part[...] was renamed to fmt[...] in v5
-  --> tests/ui/part_placeholder_decl_removed.rs:10:19
-   |
-10 |             "q" = part["id:", {id: String}]
-   |                   ^^^^

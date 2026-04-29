@@ -1,32 +1,31 @@
 # Macro Architecture
 
-The v4 macro pipeline is:
+The v5 macro pipeline is:
 
 ```text
-parse raw syntax
-  -> normalize syntax-shaped scopes/endpoints
-  -> resolve inheritance and names
+RawAst
+  -> NormApiTree
   -> ResolvedApi / ResolvedEndpoint
   -> codegen
 ```
 
-The current implementation keeps normalization inside `parse` plus `sema` rather than a separate compiled module. The invariant is still strict: codegen consumes `ResolvedApi` and `ResolvedEndpoint`, not raw AST ancestry.
+The parser owns source syntax. Semantic resolution owns inheritance, names, facade paths, policy materialization, route materialization, auth plans, and pagination plans. Codegen consumes only the resolved model.
 
 ## Layers
 
 | Type | Layer | Purpose | Status |
 | --- | --- | --- | --- |
-| `ClientDef` | raw AST | Syntax accepted by the parser and old-syntax diagnostics | Parser only |
-| `LayerDef` | normalized raw tree | Scope route/policy node after parser normalization | Parser/sema only |
-| `EndpointDef` | raw leaf | Endpoint syntax before name and inheritance resolution | Parser/sema only |
-| `LayerIr` | resolver state | Internal route/policy/auth state while walking scopes | Sema only |
-| `ResolvedPolicySpec` | resolved model | Effective scope policy stack, endpoint policy, and auth plan inputs | Codegen input |
+| `RawApi` | raw AST | Source syntax accepted by the v5 parser | Parser only |
+| `RawScope` | raw AST | Scope syntax before inheritance resolution | Parser/sema only |
+| `RawEndpoint` | raw AST | Endpoint stanza syntax before resolution | Parser/sema only |
+| `NormApiTree` | normalized tree | Syntax-shaped tree after parser normalization | Sema only |
+| `ResolvedPolicySpec` | resolved model | Effective policy and auth plan inputs | Codegen input |
 | `ResolvedEndpoint` | resolved model | Final route pieces, facade path, params, policy, body, response, pagination | Codegen input |
 | `ResolvedApi` | resolved model | Final client-level model and endpoint collection | Codegen input |
 
 ## Ownership
 
-`parse` may recognize removed syntax only to produce v4 replacement errors.
+`parse` accepts strict v5 syntax.
 
 `sema` resolves:
 
@@ -47,4 +46,3 @@ The current implementation keeps normalization inside `parse` plus `sema` rather
 - request plans and pagination plans.
 
 Codegen must not walk raw AST ancestry or recompute inheritance.
-

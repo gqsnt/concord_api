@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use concord_core::advanced::{
     BuiltRequest, BuiltResponse, CacheConfig, CacheFuture, CacheStore, CredentialMaterial,
     CredentialProvider, RateLimitFuture, RateLimitPermit, RateLimitPlan, RateLimiter, RetryPolicy,

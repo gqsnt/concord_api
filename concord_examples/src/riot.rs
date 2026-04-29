@@ -152,13 +152,11 @@ api! {
 
                 GET GetTopChampionMasteriesByPuuid(encrypted_puuid: String, count?: u32)
                 path ["by-puuid", encrypted_puuid, "top"]
-                -> Json<Vec<models::ChampionMasteryDto>>
-                {
-                    query {
-                        count
-                    }
-                    rate_limit riot_high_volume_method
+                query {
+                    count
                 }
+                -> Json<Vec<models::ChampionMasteryDto>>
+                rate_limit riot_high_volume_method
             }
 
             scope scores {
@@ -232,13 +230,11 @@ api! {
                 GET GetLeagueEntries(queue: String, tier: String, division: String, page?: u32)
                 as by_queue
                 path [queue, tier, division]
-                -> Json<Vec<models::LeagueEntryDto>>
-                {
-                    query {
-                        page
-                    }
-                    rate_limit league_entries
+                query {
+                    page
                 }
+                -> Json<Vec<models::LeagueEntryDto>>
+                rate_limit league_entries
             }
         }
 
@@ -248,13 +244,11 @@ api! {
             GET GetLeagueExpEntries(queue: String, tier: String, division: String, page?: u32)
             as by_queue
             path [queue, tier, division]
-            -> Json<Vec<models::LeagueEntryDto>>
-            {
-                query {
-                    page
-                }
-                rate_limit league_entries
+            query {
+                page
             }
+            -> Json<Vec<models::LeagueEntryDto>>
+            rate_limit league_entries
         }
 
         scope clash_v1 {
@@ -296,13 +290,11 @@ api! {
 
             GET GetChallengeLeaderboardsByLevel(challenge_id: i64, level: String, limit?: u32)
             path ["challenges", challenge_id, "leaderboards", "by-level", level]
-            -> Json<serde_json::Value>
-            {
-                query {
-                    limit
-                }
-                rate_limit riot_high_volume_method
+            query {
+                limit
             }
+            -> Json<serde_json::Value>
+            rate_limit riot_high_volume_method
 
             GET GetChallengePercentilesByChallenge(challenge_id: i64)
             path ["challenges", challenge_id, "percentiles"]
@@ -407,21 +399,19 @@ api! {
             GET GetMatchIdsByPuuid(puuid: String, queue?: u16, start_time?: i64, end_time?: i64, start: u64 = 0, count: u64 = 20)
             as ids_by_puuid
             path ["by-puuid", puuid, "ids"]
-            -> Json<Vec<String>>
-            {
-                query {
-                    queue,
-                    "startTime" = start_time,
-                    "endTime" = end_time,
-                    start,
-                    count
-                }
-                paginate OffsetLimitPagination {
-                    offset = start,
-                    limit = count
-                }
-                rate_limit match_v5_method
+            query {
+                queue,
+                "startTime" = start_time,
+                "endTime" = end_time,
+                start,
+                count
             }
+            paginate OffsetLimitPagination {
+                offset = start,
+                limit = count
+            }
+            -> Json<Vec<String>>
+            rate_limit match_v5_method
 
             GET GetMatch(match_id: String)
             as by_id
@@ -447,14 +437,12 @@ api! {
 
             POST CreateTournamentStubCodes(tournament_id: i64, count?: u32, body: Json<serde_json::Value>)
             path ["codes"]
-            -> Json<Vec<String>>
-            {
-                query {
-                    "tournamentId" = tournament_id,
-                    count
-                }
-                rate_limit riot_high_volume_method
+            query {
+                "tournamentId" = tournament_id,
+                count
             }
+            -> Json<Vec<String>>
+            rate_limit riot_high_volume_method
 
             GET GetTournamentStubLobbyEventsByCode(tournament_code: String)
             path ["lobby-events", "by-code", tournament_code]

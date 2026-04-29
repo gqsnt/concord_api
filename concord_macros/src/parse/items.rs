@@ -1,4 +1,4 @@
-impl Parse for Item {
+impl Parse for RawItem {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(kw::prefix) || input.peek(kw::path) {
             Err(syn::Error::new(
@@ -6,16 +6,16 @@ impl Parse for Item {
                 "invalid top-level item; expected `scope` or endpoint",
             ))
         } else if input.peek(kw::scope) {
-            Ok(Item::Layer(Box::new(input.parse::<LayerDefTaggedScope>()?.0)))
+            Ok(RawItem::Layer(Box::new(input.parse::<RawScopeTaggedScope>()?.0)))
         } else {
-            Ok(Item::Endpoint(Box::new(input.parse::<EndpointDef>()?)))
+            Ok(RawItem::Endpoint(Box::new(input.parse::<RawEndpoint>()?)))
         }
     }
 }
 
-struct LayerDefTaggedScope(LayerDef);
+struct RawScopeTaggedScope(RawScope);
 
-impl Parse for LayerDefTaggedScope {
+impl Parse for RawScopeTaggedScope {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let span = input.span();
         let scope_kw: kw::scope = input.parse()?;
@@ -94,11 +94,6 @@ impl Parse for LayerDefTaggedScope {
                 let t = content.parse::<Expr>()?;
                 policy.timeout = Some(normalize_policy_expr(t));
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::use_auth) {
-                return Err(syn::Error::new(
-                    content.span(),
-                    "`use_auth` was removed in v5; use `auth ...`",
-                ));
             } else if content.peek(kw::auth) {
                 content.parse::<kw::auth>()?;
                 auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
@@ -143,18 +138,18 @@ impl Parse for LayerDefTaggedScope {
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::scope) {
-                items.push(content.parse::<Item>()?);
+                items.push(content.parse::<RawItem>()?);
             } else if content.peek(kw::prefix) {
                 return Err(syn::Error::new(content.span(), "invalid item in scope"));
             } else {
-                items.push(Item::Endpoint(Box::new(content.parse::<EndpointDef>()?)));
+                items.push(RawItem::Endpoint(Box::new(content.parse::<RawEndpoint>()?)));
             }
         }
 
         // The normalized model stores one route-kind per layer.
         // Normalize `scope` into one or two nested internal layers.
         let outer = match (host_route, path_route) {
-            (Some(host), Some(path)) => LayerDef {
+            (Some(host), Some(path)) => RawScope {
                 span,
                 scope_span,
                 body_span,
@@ -168,7 +163,7 @@ impl Parse for LayerDefTaggedScope {
                 retry,
                 rate_limit,
                 rate_limit_keys,
-                items: vec![Item::Layer(Box::new(LayerDef {
+                items: vec![RawItem::Layer(Box::new(RawScope {
                     span,
                     scope_span,
                     body_span,
@@ -185,7 +180,7 @@ impl Parse for LayerDefTaggedScope {
                     items,
                 }))],
             },
-            (Some(host), None) => LayerDef {
+            (Some(host), None) => RawScope {
                 span,
                 scope_span,
                 body_span,
@@ -201,7 +196,7 @@ impl Parse for LayerDefTaggedScope {
                 rate_limit_keys,
                 items,
             },
-            (None, Some(path)) => LayerDef {
+            (None, Some(path)) => RawScope {
                 span,
                 scope_span,
                 body_span,
@@ -217,7 +212,7 @@ impl Parse for LayerDefTaggedScope {
                 rate_limit_keys,
                 items,
             },
-            (None, None) => LayerDef {
+            (None, None) => RawScope {
                 span,
                 scope_span,
                 body_span,
@@ -239,7 +234,7 @@ impl Parse for LayerDefTaggedScope {
     }
 }
 
-impl Parse for EndpointDef {
+impl Parse for RawEndpoint {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let span = input.span();
         let method: Ident = input.parse()?;
@@ -292,45 +287,27 @@ impl Parse for EndpointDef {
             ));
         }
 
-        if !input.peek(token::Brace) {
-            return Ok(raw_endpoint(
-                span,
-                method,
-                name,
-                alias,
-                inline_parts.route,
-                params,
-                inline_parts.policy,
-                inline_parts.auth_uses,
-                inline_parts.cache,
-                inline_parts.retry,
-                inline_parts.rate_limit,
-                inline_parts.rate_limit_keys,
-                inline_parts.paginate,
-                body,
-                response,
-                map,
+        if input.peek(token::Brace) {
+            return Err(syn::Error::new(
+                input.span(),
+                "unexpected endpoint block; endpoint clauses must be written in the stanza",
             ));
         }
-
-        let content;
-        braced!(content in input);
-        let parts = inline_parts.merge(parse_endpoint_block_parts(&content, &name)?, &name)?;
 
         Ok(raw_endpoint(
             span,
             method,
             name,
             alias,
-            parts.route,
+            inline_parts.route,
             params,
-            parts.policy,
-            parts.auth_uses,
-            parts.cache,
-            parts.retry,
-            parts.rate_limit,
-            parts.rate_limit_keys,
-            parts.paginate,
+            inline_parts.policy,
+            inline_parts.auth_uses,
+            inline_parts.cache,
+            inline_parts.retry,
+            inline_parts.rate_limit,
+            inline_parts.rate_limit_keys,
+            inline_parts.paginate,
             body,
             response,
             map,
@@ -356,8 +333,8 @@ fn raw_endpoint(
     body: Option<CodecSpec>,
     response: CodecSpec,
     map: Option<MapSpec>,
-) -> EndpointDef {
-    EndpointDef {
+) -> RawEndpoint {
+    RawEndpoint {
         line: RawEndpointLine {
             span,
             method: method.clone(),

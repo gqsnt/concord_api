@@ -5,11 +5,11 @@ api! {
         base https "example.com"
     }
 
-    GET Search -> Json<()> {
+    GET Search
         query {
             missing
         }
-    }
+        -> Json<()>
 }
 
 fn main() {}

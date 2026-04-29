@@ -104,10 +104,7 @@ fn parse_endpoint_response_spec(input: ParseStream<'_>) -> Result<(CodecSpec, Op
     let response: CodecSpec = input.parse()?;
 
     let map = if input.peek(Token![|]) {
-        return Err(syn::Error::new(
-            input.span(),
-            "old mapping syntax `-> Json<T> | Out => ...` was removed in v5; use `-> Json<T> map Out { ... }`",
-        ));
+        return Err(syn::Error::new(input.span(), "unexpected token in endpoint stanza"));
     } else if input.peek(kw::map) {
         input.parse::<kw::map>()?;
         let out_ty: Type = input.parse()?;
@@ -168,120 +165,6 @@ fn parse_endpoint_signature_args(
     Ok((params, body))
 }
 
-fn parse_endpoint_block_parts(input: ParseStream<'_>, name: &Ident) -> Result<EndpointBlockParts> {
-    let mut parts = EndpointBlockParts::empty();
-
-    while !input.is_empty() {
-        if input.peek(kw::params) {
-            return Err(syn::Error::new(
-                name.span(),
-                "endpoint params blocks are not supported; declare params in `Name(...)`",
-            ));
-        } else if input.peek(kw::path) {
-            if !parts.route.atoms.is_empty() {
-                return Err(syn::Error::new(
-                    input.span(),
-                    "duplicate `path[...]` in endpoint",
-                ));
-            }
-            input.parse::<kw::path>()?;
-            parts.route = parse_route_expr_bracket(input)?;
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::headers) {
-            parts.policy.headers = Some(input.parse::<PolicyBlockTaggedHeaders>()?.0);
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::header) {
-            parts.policy.headers.get_or_insert_with(|| PolicyBlock { stmts: Vec::new() }).stmts.push(parse_inline_policy_stmt(input, PolicyBlockKind::Headers)?);
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::query) {
-            if input.peek2(token::Brace) {
-                parts.policy.query = Some(input.parse::<PolicyBlockTaggedQuery>()?.0);
-            } else {
-                parts.policy.query.get_or_insert_with(|| PolicyBlock { stmts: Vec::new() }).stmts.push(parse_inline_policy_stmt(input, PolicyBlockKind::Query)?);
-            }
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::timeout) {
-            input.parse::<kw::timeout>()?;
-            input.parse::<Token![:]>()?;
-            let t = parse_expr_until_comma_or_endpoint_arrow(input)?;
-            parts.policy.timeout = Some(normalize_policy_expr(t));
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::use_auth) {
-            return Err(syn::Error::new(
-                input.span(),
-                "`use_auth` was removed in v5; use `auth ...`",
-            ));
-        } else if input.peek(kw::auth) {
-            input.parse::<kw::auth>()?;
-            parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::cache) {
-            if parts.cache.is_some() {
-                return Err(syn::Error::new(
-                    name.span(),
-                    "duplicate cache policy in endpoint",
-                ));
-            }
-            match parse_cache_decl(input)? {
-                CacheDecl::Spec(spec) => parts.cache = Some(spec),
-            }
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::retry) {
-            match parse_retry_decl(input)? {
-                RetryDecl::Spec(spec) => {
-                    if parts.retry.is_some() {
-                        return Err(syn::Error::new(
-                            name.span(),
-                            "duplicate retry policy in endpoint",
-                        ));
-                    }
-                    parts.retry = Some(spec);
-                }
-            }
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::rate_limit) {
-            let fork = input.fork();
-            fork.parse::<kw::rate_limit>()?;
-            if fork.peek(kw::key) {
-                parts.rate_limit_keys.push(parse_rate_limit_key_binding(input)?);
-            } else {
-                if parts.rate_limit.is_some() {
-                    return Err(syn::Error::new(
-                        name.span(),
-                        "duplicate rate_limit policy in endpoint",
-                    ));
-                }
-                parts.rate_limit = Some(parse_rate_limit_spec(input)?);
-            }
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::paginate) {
-            if parts.paginate.is_some() {
-                return Err(syn::Error::new(name.span(), "duplicate `paginate`"));
-            }
-            parts.paginate = Some(input.parse::<PaginateSpec>()?);
-            let _ = input.parse::<Option<Token![,]>>()?;
-        } else if input.peek(kw::body) {
-            return Err(syn::Error::new(
-                name.span(),
-                "endpoint body blocks are not supported; declare body in `Name(body: Codec<...>)`",
-            ));
-        } else if input.peek(Token![->]) {
-            return Err(syn::Error::new(
-                name.span(),
-                "endpoint response blocks are not supported; declare response in endpoint header",
-            ));
-        } else {
-            let tt: proc_macro2::TokenTree = input.parse()?;
-            return Err(syn::Error::new(
-                tt.span(),
-                "unexpected token in endpoint block",
-            ));
-        }
-    }
-
-    Ok(parts)
-}
-
 fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<EndpointBlockParts> {
     let mut parts = EndpointBlockParts::empty();
     loop {
@@ -327,11 +210,6 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
             }
             let t = parse_expr_until_comma_or_endpoint_arrow(input)?;
             parts.policy.timeout = Some(normalize_policy_expr(t));
-        } else if input.peek(kw::use_auth) {
-            return Err(syn::Error::new(
-                input.span(),
-                "`use_auth` was removed in v5; use `auth ...`",
-            ));
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);

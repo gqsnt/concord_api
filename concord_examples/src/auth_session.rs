@@ -32,12 +32,10 @@ api! {
     scope auth_api {
         POST LoginForSession(body: Json<SessionLoginRequest>)
             path ["login"]
+            auth header "X-Upstream-Key" = upstream
             -> Json<SessionLoginResponse>
             map AccessToken {
             AccessToken::new(r.access_token)
-        }
-        {
-            auth header "X-Upstream-Key" = upstream
         }
     }
 

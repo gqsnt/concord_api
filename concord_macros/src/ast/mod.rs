@@ -1,9 +1,8 @@
 //! Raw parser AST for the Concord DSL.
 //!
-//! This module is intentionally syntax-shaped. It may contain historical
-//! fields or removed syntax forms when the parser needs them to emit precise
-//! v5 migration diagnostics. Codegen must never consume these types directly;
-//! `sema` is the boundary that normalizes them into resolved v5 data.
+//! This module is intentionally syntax-shaped, but it is v5-only. Codegen must
+//! never consume these types directly; `sema` is the boundary that normalizes
+//! them into resolved v5 data.
 
 use crate::model::{Scheme, SetOp};
 use proc_macro2::Span;

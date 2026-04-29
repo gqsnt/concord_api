@@ -6,10 +6,8 @@ api! {
     }
 
     GET A(id: u32, id: String)
-    -> Json<()>
-    {
         path ["x", id]
-    }
+    -> Json<()>
 }
 
 fn main() {}

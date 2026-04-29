@@ -66,29 +66,25 @@ scope protected {
 ## Route fragments compose
 
 ```rust
-client RiotClient {
-    base https "riotgames.com"
+client GameClient {
+    base https "api.example.com"
 }
 
 scope platform(platform: PlatformRoute) {
-    host [platform, "api"]
-    path ["lol"]
+    host [platform]
+    path ["accounts"]
 
-    scope summoner_v4 {
-        path ["summoner", "v4", "summoners"]
-
-        GET GetSummonerByPuuid(puuid: String)
-            as by_puuid
-            path ["by-puuid", puuid]
-            -> Json<SummonerDto>
-    }
+    GET GetAccountById(id: String)
+        as by_id
+        path [id]
+        -> Json<AccountDto>
 }
 ```
 
 For `platform = EUW1`, this builds:
 
 ```text
-https://euw1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{puuid}
+https://euw1.api.example.com/accounts/{id}
 ```
 
 ## Generated usage mirrors the tree
