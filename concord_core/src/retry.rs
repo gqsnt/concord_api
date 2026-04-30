@@ -88,6 +88,20 @@ impl Default for RetryConfig {
 
 impl RetryConfig {
     #[inline]
+    pub fn validate(
+        &self,
+        ctx: crate::error::ErrorContext,
+    ) -> Result<(), crate::error::ApiClientError> {
+        if self.max_attempts == 0 {
+            return Err(crate::error::ApiClientError::invalid_param(
+                ctx,
+                "retry.max_attempts must be at least 1",
+            ));
+        }
+        Ok(())
+    }
+
+    #[inline]
     pub fn max_retries(&self) -> u32 {
         self.max_attempts.saturating_sub(1)
     }
@@ -269,5 +283,21 @@ mod tests {
             )),
             RetryDecision::RetryAfter(Duration::from_secs(3))
         );
+    }
+
+    #[test]
+    fn zero_max_attempts_is_invalid() {
+        let config = RetryConfig {
+            max_attempts: 0,
+            ..RetryConfig::default()
+        };
+        let ctx = crate::error::ErrorContext {
+            endpoint: "RetryTest",
+            method: Method::GET,
+        };
+
+        let err = config.validate(ctx).expect_err("zero max_attempts fails");
+        assert_eq!(err.category(), crate::error::ErrorCategory::Config);
+        assert!(err.to_string().contains("retry.max_attempts"));
     }
 }

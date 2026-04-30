@@ -1,5 +1,0 @@
-error: unknown auth endpoint `auth_api::LoginMissing` in credential source
- --> tests/ui/auth_endpoint_unknown.rs:6:43
-  |
-6 |             credential session = endpoint auth_api::LoginMissing // ERROR: unknown endpoint reference
-  |                                           ^^^^^^^^

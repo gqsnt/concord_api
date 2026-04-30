@@ -30,7 +30,8 @@ fn walk_items(
         match it {
             NormNode::Layer(ld) => {
                 let id = ctx.layers.len();
-                let (prefix_pieces, path_pieces, decls) = analyze_layer_route_and_decls(ld)?;
+                let (prefix_pieces, path_pieces, decls) =
+                    analyze_layer_route_and_decls(ld, ancestry, ctx.layers, ctx.client_vars)?;
                 let key_bindings = resolve_rate_limit_key_bindings(&ld.rate_limit_keys, &decls)?;
                 let mut policy = resolve_policy_blocks(
                     &ld.policy,
@@ -169,6 +170,9 @@ fn endpoint_scope_key(scope_modules: &[Ident], endpoint: &Ident) -> String {
 
 fn analyze_layer_route_and_decls(
     ld: &NormScope,
+    ancestry: &[usize],
+    known_layers: &[LayerIr],
+    client_vars: &BTreeMap<String, VarInfo>,
 ) -> Result<(Vec<PrefixPiece>, Vec<PathPiece>, Vec<VarInfo>)> {
     let decls: Vec<VarInfo> = ld
         .params
@@ -180,6 +184,15 @@ fn analyze_layer_route_and_decls(
             default: d.default.clone(),
         })
         .collect();
+    let mut layer_vars: BTreeMap<String, VarInfo> = BTreeMap::new();
+    for &layer_id in ancestry {
+        for var in &known_layers[layer_id].decls {
+            layer_vars.insert(var.rust.to_string(), var.clone());
+        }
+    }
+    for var in &decls {
+        layer_vars.insert(var.rust.to_string(), var.clone());
+    }
     let mut prefix_pieces: Vec<PrefixPiece> = Vec::new();
     let mut path_pieces: Vec<PathPiece> = Vec::new();
 
@@ -202,18 +215,47 @@ fn analyze_layer_route_and_decls(
                         }
                     }
                     RouteAtom::Fmt(spec) => {
-                        let resolved = resolve_route_fmt_spec(spec, None, None)?;
+                        let resolved =
+                            resolve_route_fmt_spec(spec, Some(client_vars), Some(&layer_vars), false)?;
                         prefix_pieces.push(PrefixPiece::Fmt(resolved));
                     }
                     RouteAtom::Ref(r) => {
                         match r.scope {
                             RefScope::Cx => {
+                                let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                    syn::Error::new(
+                                        r.ident.span(),
+                                        unknown_scoped_name_message(
+                                            "client var",
+                                            "vars",
+                                            &r.ident,
+                                            client_vars,
+                                        ),
+                                    )
+                                })?;
                                 prefix_pieces.push(PrefixPiece::CxVar {
                                     field: r.ident.clone(),
-                                    optional: false, /* resolved later */
+                                    optional: v.optional,
                                 });
                             }
                             RefScope::Ep => {
+                                if r.explicit {
+                                    return Err(syn::Error::new(
+                                        r.ident.span(),
+                                        "`ep.*` is not allowed in scope routes; use the scope parameter name directly",
+                                    ));
+                                }
+                                let _v = layer_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                    syn::Error::new(
+                                        r.ident.span(),
+                                        unknown_scoped_name_message(
+                                            "scope param",
+                                            "scope",
+                                            &r.ident,
+                                            &layer_vars,
+                                        ),
+                                    )
+                                })?;
                                 prefix_pieces.push(PrefixPiece::EpVar {
                                     field: r.ident.clone(),
                                 });
@@ -237,18 +279,47 @@ fn analyze_layer_route_and_decls(
                         path_pieces.push(PathPiece::Static(lit.value()));
                     }
                     RouteAtom::Fmt(spec) => {
-                        let resolved = resolve_route_fmt_spec(spec, None, None)?;
+                        let resolved =
+                            resolve_route_fmt_spec(spec, Some(client_vars), Some(&layer_vars), false)?;
                         path_pieces.push(PathPiece::Fmt(resolved));
                     }
                     RouteAtom::Ref(r) => {
                         match r.scope {
                             RefScope::Cx => {
+                                let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                    syn::Error::new(
+                                        r.ident.span(),
+                                        unknown_scoped_name_message(
+                                            "client var",
+                                            "vars",
+                                            &r.ident,
+                                            client_vars,
+                                        ),
+                                    )
+                                })?;
                                 path_pieces.push(PathPiece::CxVar {
                                     field: r.ident.clone(),
-                                    optional: false, /* resolved later */
+                                    optional: v.optional,
                                 });
                             }
                             RefScope::Ep => {
+                                if r.explicit {
+                                    return Err(syn::Error::new(
+                                        r.ident.span(),
+                                        "`ep.*` is not allowed in scope routes; use the scope parameter name directly",
+                                    ));
+                                }
+                                let _v = layer_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                    syn::Error::new(
+                                        r.ident.span(),
+                                        unknown_scoped_name_message(
+                                            "scope param",
+                                            "scope",
+                                            &r.ident,
+                                            &layer_vars,
+                                        ),
+                                    )
+                                })?;
                                 path_pieces.push(PathPiece::EpVar {
                                     field: r.ident.clone(),
                                 });
@@ -310,7 +381,7 @@ fn analyze_endpoint(
 
             RouteAtom::Fmt(spec) => {
                 let resolved =
-                    resolve_route_fmt_spec(spec, Some(ctx.client_vars), Some(&ep_vars))?;
+                    resolve_route_fmt_spec(spec, Some(ctx.client_vars), Some(&ep_vars), true)?;
                 route_pieces.push(PathPiece::Fmt(resolved));
             }
             RouteAtom::Ref(r) => match r.scope {

@@ -55,6 +55,16 @@ pub trait DebugSink: Send + Sync + 'static {
     fn response_status(&self, dbg: DebugLevel, status: StatusCode, url: &str, ok: bool);
     fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap);
     fn response_body(&self, dbg: DebugLevel, body: &Bytes, format: Format, max_chars: usize);
+
+    fn stale_fallback(
+        &self,
+        _dbg: DebugLevel,
+        _method: &Method,
+        _url: &str,
+        _endpoint: &'static str,
+        _page_index: u32,
+    ) {
+    }
 }
 
 #[derive(Default)]
@@ -139,26 +149,29 @@ impl DebugSink for StderrDebugSink {
             preview
         );
     }
+
+    fn stale_fallback(
+        &self,
+        dbg: DebugLevel,
+        method: &Method,
+        url: &str,
+        endpoint: &'static str,
+        page_index: u32,
+    ) {
+        eprintln!(
+            "[client_api:{}] stale fallback {} {} ({}) page={}",
+            dbg, method, url, endpoint, page_index
+        );
+    }
 }
 
+#[allow(dead_code)]
 fn is_sensitive_header_name(name: &HeaderName) -> bool {
-    // HeaderName::as_str() is normalized to lowercase.
-    let n = name.as_str();
-    matches!(n, "authorization" | "proxy-authorization" | "cookie" | "set-cookie")
-        // Common vendor patterns
-        || n.contains("token")
-        || n.contains("secret")
-        || n.contains("api-key")
-        || n.contains("apikey")
-        || n.ends_with("-key")
+    crate::redaction::is_sensitive_name(name.as_str())
 }
 
 fn header_value_for_debug(name: &HeaderName, value: &HeaderValue) -> String {
-    if is_sensitive_header_name(name) {
-        "<redacted>".to_string()
-    } else {
-        value.to_str().unwrap_or("<non-utf8>").to_string()
-    }
+    crate::redaction::redacted_display_value(name.as_str(), value.to_str().unwrap_or("<non-utf8>"))
 }
 
 #[cfg(test)]

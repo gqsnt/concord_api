@@ -1,0 +1,8 @@
+custom extensibility generated snapshot
+
+- request body encoding calls BodyCodec::encode
+- response decoding calls ResponseCodec::decode
+- request content type comes from EncodedBody
+- response Accept comes from ResponseCodec::accept
+- custom pagination emits PaginationPlan::custom::<Controller, Page>()
+- custom controller receives PageRequest rather than runtime plan internals

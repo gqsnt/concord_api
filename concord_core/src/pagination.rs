@@ -2,7 +2,9 @@ pub mod cursor;
 pub mod offset_limit;
 pub mod paged;
 
+use crate::error::ApiClientError;
 pub use cursor::{CursorPagination, HasNextCursor};
+use http::{HeaderMap, HeaderName, HeaderValue};
 pub use offset_limit::OffsetLimitPagination;
 pub use paged::PagedPagination;
 
@@ -17,6 +19,87 @@ pub enum ProgressKey {
     U64(u64),
     Str(String),
     Bytes(Vec<u8>),
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum PageDecision {
+    Continue,
+    Stop,
+}
+
+impl From<PageDecision> for Control {
+    fn from(value: PageDecision) -> Self {
+        match value {
+            PageDecision::Continue => Self::Continue,
+            PageDecision::Stop => Self::Stop,
+        }
+    }
+}
+
+pub struct PageInit<'a> {
+    pub endpoint: &'a str,
+}
+
+pub struct PageAdvance<'a> {
+    pub endpoint: &'a str,
+    pub page_index: u64,
+    pub received_items: usize,
+}
+
+pub struct PageRequest<'a> {
+    query: &'a mut Vec<(String, String)>,
+    headers: &'a mut HeaderMap,
+}
+
+impl<'a> PageRequest<'a> {
+    #[doc(hidden)]
+    pub fn new(query: &'a mut Vec<(String, String)>, headers: &'a mut HeaderMap) -> Self {
+        Self { query, headers }
+    }
+
+    pub fn set_query<T>(&mut self, key: &'static str, value: T)
+    where
+        T: std::fmt::Display,
+    {
+        self.remove_query(key);
+        self.query.push((key.to_string(), value.to_string()));
+    }
+
+    pub fn remove_query(&mut self, key: &'static str) {
+        self.query.retain(|(existing, _)| existing != key);
+    }
+
+    pub fn set_header(&mut self, name: &'static str, value: HeaderValue) {
+        self.headers.insert(HeaderName::from_static(name), value);
+    }
+
+    pub fn remove_header(&mut self, name: &'static str) {
+        let _ = self.headers.remove(HeaderName::from_static(name));
+    }
+}
+
+pub trait PaginationController<Page>: Default + Send + Sync + 'static
+where
+    Page: PageItems,
+{
+    type State: Send + Sync + 'static;
+
+    fn init(&self, ctx: PageInit<'_>) -> Result<Self::State, ApiClientError>;
+
+    fn apply(
+        &self,
+        state: &Self::State,
+        request: &mut PageRequest<'_>,
+    ) -> Result<(), ApiClientError>;
+
+    fn advance(
+        &self,
+        state: &mut Self::State,
+        page: &Page,
+        ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError>;
+
+    fn progress_key(&self, state: &Self::State) -> Option<ProgressKey>;
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
@@ -59,29 +142,26 @@ impl Caps {
 }
 
 /// Items container returned by a paginated endpoint.
-///
-/// Contract:
-/// - `len()` must reflect the number of items returned in the page.
-/// - `into_iter()` must yield exactly those items (no extra allocation required).
 pub trait PageItems: Send + 'static {
     type Item: Send + 'static;
-    type IntoIter: IntoIterator<Item = Self::Item>;
 
-    fn len(&self) -> usize;
+    fn item_count(&self) -> usize;
 
     #[inline]
     fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.item_count() == 0
     }
-    fn inner_into_iter(self) -> Self::IntoIter;
+
+    fn into_items(self) -> Vec<Self::Item>;
 }
 impl<T: Send + 'static> PageItems for Vec<T> {
     type Item = T;
-    type IntoIter = std::vec::IntoIter<T>;
-    fn len(&self) -> usize {
+
+    fn item_count(&self) -> usize {
         Vec::len(self)
     }
-    fn inner_into_iter(self) -> Self::IntoIter {
-        <Vec<T> as IntoIterator>::into_iter(self)
+
+    fn into_items(self) -> Vec<Self::Item> {
+        self
     }
 }

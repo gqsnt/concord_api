@@ -1,6 +1,6 @@
 //! Parser for raw DSL syntax.
 //!
-//! This layer accepts strict v5 syntax only. It should not resolve inheritance
+//! This layer accepts current syntax only. It should not resolve inheritance
 //! or names.
 
 use crate::ast::*;
@@ -17,17 +17,28 @@ use syn::{
 impl Parse for RawApi {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let span = input.span();
-        let client: RawClient = input.parse()?;
-        let mut items = Vec::new();
-        while !input.is_empty() {
-            items.push(input.parse::<RawItem>()?);
+        if input.peek(kw::api) {
+            input.parse::<kw::api>()?;
+            input.parse::<Token![!]>()?;
+            let content;
+            braced!(content in input);
+            return parse_raw_api_body(&content, span);
         }
-        Ok(Self {
-            span,
-            client,
-            items,
-        })
+        parse_raw_api_body(input, span)
     }
+}
+
+fn parse_raw_api_body(input: ParseStream<'_>, span: Span) -> Result<RawApi> {
+    let client: RawClient = input.parse()?;
+    let mut items = Vec::new();
+    while !input.is_empty() {
+        items.push(input.parse::<RawItem>()?);
+    }
+    Ok(RawApi {
+        span,
+        client,
+        items,
+    })
 }
 
 impl Parse for RawClient {
@@ -58,18 +69,25 @@ impl Parse for RawClient {
         while !content.is_empty() {
             if content.peek(kw::base) {
                 content.parse::<kw::base>()?;
-                let v: Ident = content.parse()?;
-                scheme = Some(match v.to_string().as_str() {
-                    "http" => Scheme::Http,
-                    "https" => Scheme::Https,
-                    _ => {
-                        return Err(syn::Error::new(
-                            v.span(),
-                            "base scheme must be `http` or `https`",
-                        ));
-                    }
-                });
-                host = Some(content.parse::<LitStr>()?);
+                if content.peek(LitStr) {
+                    let base_url: LitStr = content.parse()?;
+                    let (parsed_scheme, parsed_host) = parse_base_url_literal(&base_url)?;
+                    scheme = Some(parsed_scheme);
+                    host = Some(LitStr::new(&parsed_host, base_url.span()));
+                } else {
+                    let v: Ident = content.parse()?;
+                    scheme = Some(match v.to_string().as_str() {
+                        "http" => Scheme::Http,
+                        "https" => Scheme::Https,
+                        _ => {
+                            return Err(syn::Error::new(
+                                v.span(),
+                                "base scheme must be `http` or `https`",
+                            ));
+                        }
+                    });
+                    host = Some(content.parse::<LitStr>()?);
+                }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::var) {
                 content.parse::<kw::var>()?;
@@ -130,7 +148,7 @@ impl Parse for RawClient {
                 if seen_default_block {
                     return Err(syn::Error::new(
                         content.span(),
-                        "multiple default blocks are not allowed in v5",
+                        "multiple default blocks are not allowed in the current DSL",
                     ));
                 }
                 seen_default_block = true;
@@ -189,7 +207,7 @@ impl Parse for RawClient {
             } else if content.peek(kw::timeout) {
                 content.parse::<kw::timeout>()?;
                 content.parse::<Token![:]>()?;
-                policy.timeout = Some(content.parse::<Expr>()?);
+                policy.timeout = Some(normalize_policy_expr_checked(content.parse::<Expr>()?)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else {
                 let tt: proc_macro2::TokenTree = content.parse()?;
@@ -236,6 +254,28 @@ impl Parse for RawClient {
     }
 }
 
+fn parse_base_url_literal(base_url: &LitStr) -> Result<(Scheme, String)> {
+    let raw = base_url.value();
+    let (scheme, rest) = if let Some(rest) = raw.strip_prefix("https://") {
+        (Scheme::Https, rest)
+    } else if let Some(rest) = raw.strip_prefix("http://") {
+        (Scheme::Http, rest)
+    } else {
+        return Err(syn::Error::new(
+            base_url.span(),
+            "base URL must start with `https://` or `http://`",
+        ));
+    };
+    let host = rest.trim_end_matches('/');
+    if host.is_empty() || host.contains('/') {
+        return Err(syn::Error::new(
+            base_url.span(),
+            "base URL must contain only scheme and host",
+        ));
+    }
+    Ok((scheme, host.to_string()))
+}
+
 fn parse_client_default_block(
     input: ParseStream<'_>,
     policy: &mut PolicyBlocks,
@@ -268,7 +308,7 @@ fn parse_client_default_block(
             if input.peek(Token![:]) {
                 input.parse::<Token![:]>()?;
             }
-            policy.timeout = Some(normalize_policy_expr(input.parse::<Expr>()?));
+            policy.timeout = Some(normalize_policy_expr_checked(input.parse::<Expr>()?)?);
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
@@ -342,7 +382,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_v5_api_into_raw_ast_with_endpoint_line_metadata() {
+    fn parses_current_api_into_raw_ast_with_endpoint_line_metadata() {
         let ast: RawApi = syn::parse_str(
             r#"
             client Api {
@@ -366,7 +406,7 @@ mod tests {
             }
             "#,
         )
-        .expect("v5 raw syntax parses");
+        .expect("current raw syntax parses");
 
         assert_eq!(ast.client.name, "Api");
         assert_eq!(ast.items.len(), 1);
@@ -397,5 +437,615 @@ mod tests {
             Some("show")
         );
         assert!(endpoint.policy.query.is_some());
+    }
+
+    #[test]
+    fn parses_current_api_wrapper_and_base_url_literal() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    path ["ping"]
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect("current wrapped api syntax parses");
+
+        assert_eq!(ast.client.name, "Api");
+        assert_eq!(ast.client.host.value(), "example.com");
+        assert_eq!(ast.items.len(), 1);
+    }
+
+    #[test]
+    fn parses_current_nested_scopes() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                scope org(org_id: u64) {
+                    path ["orgs", org_id]
+
+                    scope users {
+                        path ["users"]
+
+                        GET List
+                            path ["list"]
+                            -> Json<Vec<String>>
+                    }
+                }
+            }
+            "#,
+        )
+        .expect("nested current scopes parse");
+
+        assert_eq!(ast.items.len(), 1);
+    }
+
+    #[test]
+    fn parses_current_policy_profiles() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    default {
+                        retry read
+                        cache standard
+                        rate_limit app
+                    }
+
+                    retry read {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    cache standard {
+                        ttl 30s
+                        revalidate
+                    }
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+                }
+            }
+            "#,
+        )
+        .expect("current policy profiles parse");
+
+        assert!(ast.client.retry_profiles.is_some());
+        assert!(ast.client.cache_profiles.is_some());
+        assert!(ast.client.rate_limit.is_some());
+    }
+
+    #[test]
+    fn malformed_current_client_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "ftp://example.com"
+                }
+            }
+            "#,
+        )
+        .expect_err("invalid base URL scheme must fail");
+
+        assert!(err.to_string().contains("base URL must start"));
+    }
+
+    #[test]
+    fn endpoint_clauses_before_and_after_response_parse() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Search(q: String, page?: u32, count: u32 = 20)
+                    path ["search"]
+                    -> Json<String>
+                    query {
+                        q
+                        page
+                        count
+                    }
+                    timeout 10
+            }
+            "#,
+        )
+        .expect("endpoint clauses before and after response parse");
+
+        let RawItem::Endpoint(endpoint) = &ast.items[0] else {
+            panic!("expected endpoint");
+        };
+        assert_eq!(endpoint.params.len(), 3);
+        assert!(endpoint.policy.query.is_some());
+        assert!(endpoint.policy.timeout.is_some());
+    }
+
+    #[test]
+    fn endpoint_map_after_response_parses() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                POST Login(body: Json<LoginResponse>)
+                    path ["login"]
+                    -> Json<LoginResponse>
+                    map AccessToken {
+                        AccessToken::new(r.access_token)
+                    }
+            }
+            "#,
+        )
+        .expect("map after response parses");
+
+        let RawItem::Endpoint(endpoint) = &ast.items[0] else {
+            panic!("expected endpoint");
+        };
+        assert!(endpoint.body.is_some());
+        assert!(endpoint.map.is_some());
+    }
+
+    #[test]
+    fn endpoint_missing_response_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    path ["ping"]
+            }
+            "#,
+        )
+        .expect_err("missing endpoint response must fail");
+
+        assert!(err.to_string().contains("endpoint declarations must use"));
+    }
+
+    #[test]
+    fn endpoint_duplicate_response_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    path ["ping"]
+                    -> Json<String>
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("duplicate response must fail");
+
+        assert!(err.to_string().contains("duplicate endpoint response"));
+    }
+
+    #[test]
+    fn endpoint_map_before_response_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    map String { r }
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("map before response must fail");
+
+        assert!(err.to_string().contains("map clause must appear after"));
+    }
+
+    #[test]
+    fn endpoint_duplicate_map_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    -> Json<String>
+                    map String { r }
+                    map String { r }
+            }
+            "#,
+        )
+        .expect_err("duplicate map must fail");
+
+        assert!(err.to_string().contains("map clause must appear after"));
+    }
+
+    #[test]
+    fn endpoint_braced_block_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    -> Json<String>
+                    {
+                        path ["ping"]
+                    }
+            }
+            "#,
+        )
+        .expect_err("endpoint braced block must fail");
+
+        assert!(err.to_string().contains("DSL-002"));
+    }
+
+    #[test]
+    fn endpoint_unknown_clause_fails_with_code() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    frobnicate true
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("unknown endpoint clause must fail");
+
+        assert!(err.to_string().contains("DSL-001"));
+    }
+
+    #[test]
+    fn fmt_passes_in_host_path_query_and_header_contexts() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    var trace_id: String
+                }
+
+                scope tenant(tenant_id: String) {
+                    host [fmt["tenant-", tenant_id], "api"]
+                    path [fmt["tenant-", tenant_id]]
+
+                    GET Search(q: String)
+                        path ["search"]
+                        headers {
+                            "x-trace" = fmt["trace-", vars.trace_id]
+                        }
+                        query {
+                            "q" = fmt["prefix:", q]
+                        }
+                        -> Json<String>
+                }
+            }
+            "#,
+        )
+        .expect("fmt should parse in all supported contexts");
+
+        assert_eq!(ast.items.len(), 1);
+    }
+
+    #[test]
+    fn fmt_empty_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    path [fmt[]]
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("empty fmt should fail");
+
+        assert!(
+            err.to_string()
+                .contains("fmt[...] requires at least one piece")
+        );
+    }
+
+    #[test]
+    fn fmt_nested_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping(id: String)
+                    path [fmt["x", fmt[id]]]
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("nested fmt should fail");
+
+        assert!(err.to_string().contains("nested fmt"));
+    }
+
+    #[test]
+    fn fmt_path_slash_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping(id: String)
+                    path [fmt["users/", id]]
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("slash inside path fmt should fail");
+
+        assert!(err.to_string().contains("must not contain `/`"));
+    }
+
+    #[test]
+    fn fmt_secret_ref_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret api_key: String
+                }
+
+                GET Ping
+                    path ["ping"]
+                    query {
+                        "key" = fmt["secret-", secret.api_key]
+                    }
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("secret refs inside fmt should fail");
+
+        assert!(err.to_string().contains("secret.* is not allowed"));
+    }
+
+    #[test]
+    fn query_and_header_policy_operations_parse_in_order() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Search(q: String, cursor?: String, trace_id: String)
+                    path ["search"]
+                    query {
+                        q
+                        "cursor" = cursor
+                        "tag" += q,
+                        -"old"
+                    }
+                    headers {
+                        "x-trace" = trace_id,
+                        -"x-old"
+                    }
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect("query/header operations parse");
+
+        let RawItem::Endpoint(endpoint) = &ast.items[0] else {
+            panic!("expected endpoint");
+        };
+        assert_eq!(endpoint.policy.query.as_ref().unwrap().stmts.len(), 4);
+        assert_eq!(endpoint.policy.headers.as_ref().unwrap().stmts.len(), 2);
+    }
+
+    #[test]
+    fn header_identifier_key_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Search(trace_id: String)
+                    path ["search"]
+                    headers {
+                        x_trace = trace_id
+                    }
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("identifier header keys must fail");
+
+        assert!(
+            err.to_string()
+                .contains("header keys must be explicit string literals")
+        );
+    }
+
+    #[test]
+    fn boolean_query_flag_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Search
+                    path ["search"]
+                    query {
+                        "debug" = true
+                    }
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("boolean query flags must fail");
+
+        assert!(
+            err.to_string()
+                .contains("boolean query flags are not supported")
+        );
+    }
+
+    #[test]
+    fn unsupported_part_syntax_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    part["ping"]
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("part syntax must fail");
+
+        assert!(err.to_string().contains("`part[...]` is not supported"));
+    }
+
+    #[test]
+    fn unsupported_attempts_retry_field_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry read {
+                        attempts 2
+                    }
+                }
+
+                GET Ping
+                    path ["ping"]
+                    retry read
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("attempts syntax must fail");
+
+        assert!(err.to_string().contains("`attempts` is not supported"));
+    }
+
+    #[test]
+    fn unsupported_body_stanza_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                POST Create
+                    path ["items"]
+                    body Json<String>
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("body stanza syntax must fail");
+
+        assert!(
+            err.to_string()
+                .contains("body stanza lines are not supported")
+        );
+    }
+
+    #[test]
+    fn unsupported_auth_combinators_fail() {
+        for auth in ["none", "any", "all"] {
+            let source = format!(
+                r#"
+                api! {{
+                    client Api {{
+                        base "https://example.com"
+                    }}
+
+                    GET Ping
+                        path ["ping"]
+                        auth {auth}
+                        -> Json<String>
+                }}
+                "#
+            );
+            let err = syn::parse_str::<RawApi>(&source).expect_err("auth combinator must fail");
+            assert!(
+                err.to_string()
+                    .contains("auth none/any/all are not supported")
+            );
+        }
+    }
+
+    #[test]
+    fn direct_secret_policy_expression_fails() {
+        let err = syn::parse_str::<RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret api_key: String
+                }
+
+                GET Ping
+                    path ["ping"]
+                    headers {
+                        "x-api-key" = secret.api_key
+                    }
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect_err("direct secret policy expression must fail");
+
+        assert!(err.to_string().contains("DSL-010"));
     }
 }

@@ -406,6 +406,9 @@ api! {
                 start,
                 count
             }
+            headers {
+                "X-Riot-Puuid" = fmt["puuid:", puuid]
+            }
             paginate OffsetLimitPagination {
                 offset = start,
                 limit = count

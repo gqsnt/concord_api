@@ -4,8 +4,19 @@ fn resolve_paginate(
     auth_vars: &BTreeMap<String, VarInfo>,
     ep_vars: &BTreeMap<String, VarInfo>,
 ) -> Result<PaginateResolved> {
+    let built_in = is_builtin_paginate_controller(&p.ctrl_ty);
+    if !built_in && !p.assigns.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &p.ctrl_ty,
+            "custom pagination controllers use `paginate TypePath` without a configuration block",
+        ));
+    }
+    if built_in {
+        validate_paginate_controller(&p.ctrl_ty)?;
+    }
     let mut assigns = Vec::new();
     for a in &p.assigns {
+        validate_paginate_assignment_key(&p.ctrl_ty, &a.key)?;
         let vk = resolve_value_kind(
             &a.value,
             client_vars,
@@ -26,6 +37,78 @@ fn resolve_paginate(
         ctrl_ty: p.ctrl_ty.clone(),
         assigns,
     })
+}
+
+fn validate_paginate_controller(ctrl_ty: &Path) -> Result<()> {
+    if is_builtin_paginate_controller(ctrl_ty) {
+        return Ok(());
+    }
+    Err(syn::Error::new_spanned(
+        ctrl_ty,
+        "unknown pagination controller; expected OffsetLimitPagination, CursorPagination, or PagedPagination",
+    ))
+}
+
+fn is_builtin_paginate_controller(ctrl_ty: &Path) -> bool {
+    matches!(
+        paginate_controller_name(ctrl_ty).as_deref(),
+        Some("OffsetLimitPagination" | "CursorPagination" | "PagedPagination")
+    )
+}
+
+fn validate_paginate_assignment_key(ctrl_ty: &Path, key: &Ident) -> Result<()> {
+    let Some(controller) = paginate_controller_name(ctrl_ty) else {
+        return validate_paginate_controller(ctrl_ty);
+    };
+    let key_name = key.to_string();
+    let allowed = match controller.as_str() {
+        "OffsetLimitPagination" => [
+            "stop",
+            "offset_key",
+            "limit_key",
+            "offset",
+            "limit",
+            "stop_on_short_page",
+        ]
+        .as_slice(),
+        "CursorPagination" => [
+            "stop",
+            "cursor_key",
+            "per_page_key",
+            "cursor",
+            "per_page",
+            "send_cursor_on_first",
+            "stop_when_cursor_missing",
+        ]
+        .as_slice(),
+        "PagedPagination" => [
+            "stop",
+            "page_key",
+            "per_page_key",
+            "page",
+            "per_page",
+            "stop_on_short_page",
+        ]
+        .as_slice(),
+        _ => return validate_paginate_controller(ctrl_ty),
+    };
+    if allowed.contains(&key_name.as_str()) {
+        return Ok(());
+    }
+    Err(syn::Error::new(
+        key.span(),
+        format!(
+            "unknown pagination field `{key_name}` for {controller}; allowed fields: {}",
+            allowed.join(", ")
+        ),
+    ))
+}
+
+fn paginate_controller_name(ctrl_ty: &Path) -> Option<String> {
+    ctrl_ty
+        .segments
+        .last()
+        .map(|segment| segment.ident.to_string())
 }
 
 fn resolve_policy_blocks(
@@ -233,7 +316,42 @@ fn resolve_policy_block(
         }
     }
 
+    if kind == PolicyKeyKind::Header {
+        reject_duplicate_header_sets(&ops)?;
+    }
+
     Ok(ops)
+}
+
+fn reject_duplicate_header_sets(ops: &[PolicyOp]) -> Result<()> {
+    let mut seen: BTreeMap<String, Span> = BTreeMap::new();
+    for op in ops {
+        let PolicyOp::Set { key, .. } = op else {
+            continue;
+        };
+        let normalized = header_key_for_duplicate_check(key);
+        if seen.insert(normalized.clone(), key_resolved_span(key)).is_some() {
+            return Err(syn::Error::new(
+                key_resolved_span(key),
+                format!("duplicate header `{normalized}` in the same policy layer"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn header_key_for_duplicate_check(key: &KeyResolved) -> String {
+    match key {
+        KeyResolved::Static(lit) => lit.value().to_ascii_lowercase(),
+        KeyResolved::Ident(ident) => emit_helpers::to_kebab(ident).to_ascii_lowercase(),
+    }
+}
+
+fn key_resolved_span(key: &KeyResolved) -> Span {
+    match key {
+        KeyResolved::Static(lit) => lit.span(),
+        KeyResolved::Ident(ident) => ident.span(),
+    }
 }
 
 fn key_spec_span(k: &KeySpec) -> Span {
@@ -295,6 +413,7 @@ fn resolve_route_fmt_spec(
     spec: &FmtSpec,
     client_vars: Option<&BTreeMap<String, VarInfo>>,
     ep_vars: Option<&BTreeMap<String, VarInfo>>,
+    allow_explicit_ep: bool,
 ) -> Result<FmtResolved> {
     let mut pieces: Vec<FmtResolvedPiece> = Vec::new();
 
@@ -329,16 +448,25 @@ fn resolve_route_fmt_spec(
                     });
                 }
                 RefScope::Ep => {
-                    let ev_opt = ep_vars.and_then(|m| m.get(&r.ident.to_string()));
-                    let optional = if let Some(ev) = ev_opt {
-                        ev.optional
-                    } else {
-                        false
-                    };
+                    if r.explicit && !allow_explicit_ep {
+                        return Err(syn::Error::new(
+                            r.ident.span(),
+                            "`ep.*` is not allowed in scope route fmt[...] specs; use the scope parameter name directly",
+                        ));
+                    }
+                    let vars = ep_vars.ok_or_else(|| {
+                        syn::Error::new(r.ident.span(), "`ep.*` is not allowed here")
+                    })?;
+                    let ev = vars.get(&r.ident.to_string()).ok_or_else(|| {
+                        syn::Error::new(
+                            r.ident.span(),
+                            unknown_scoped_name_message("endpoint var", "ep", &r.ident, vars),
+                        )
+                    })?;
                     pieces.push(FmtResolvedPiece::Var {
                         source: FmtVarSource::Ep,
                         field: r.ident.clone(),
-                        optional,
+                        optional: ev.optional,
                     });
                 }
                 RefScope::Auth => {

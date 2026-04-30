@@ -26,5 +26,6 @@ pub enum RefScope {
 pub struct ScopedRef {
     pub scope: RefScope,
     pub ident: Ident,
+    pub explicit: bool,
 }
 

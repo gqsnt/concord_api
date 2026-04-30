@@ -1,5 +1,0 @@
-error: expected `:`
- --> tests/ui/missing_placeholder_type.rs:8:15
-  |
-8 |     GET One(id)
-  |               ^

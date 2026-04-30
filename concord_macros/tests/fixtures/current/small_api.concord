@@ -1,0 +1,9 @@
+api! {
+    client SmallApi {
+        base "https://example.com"
+
+        GET ping
+            path ["ping"]
+            -> Text<String>
+    }
+}

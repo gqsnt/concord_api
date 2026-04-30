@@ -1,0 +1,5 @@
+ResolvedEndpoint
+name: ping
+method: GET
+route: https://example.com/ping
+response: Text<String>

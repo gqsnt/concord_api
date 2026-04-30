@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AuthRuntimeConfig {
-    pub max_retries: u32,
+    pub(crate) max_retries: u32,
 }
 
 impl Default for AuthRuntimeConfig {
@@ -20,8 +20,9 @@ impl Default for AuthRuntimeConfig {
 
 #[derive(Clone)]
 pub struct DebugConfig {
-    pub level: DebugLevel,
-    pub sink: Arc<dyn DebugSink>,
+    pub(crate) level: DebugLevel,
+    pub(crate) sink: Arc<dyn DebugSink>,
+    pub(crate) body: bool,
 }
 
 impl Default for DebugConfig {
@@ -29,21 +30,22 @@ impl Default for DebugConfig {
         Self {
             level: DebugLevel::default(),
             sink: Arc::new(StderrDebugSink),
+            body: false,
         }
     }
 }
 
 #[derive(Clone)]
 pub struct RuntimeConfig {
-    pub hooks: Arc<dyn RuntimeHooks>,
-    pub cache_store: Arc<dyn CacheStore>,
-    pub inflight_policy: Arc<dyn InflightPolicy>,
-    pub inflight_registry: Arc<InflightRegistry>,
-    pub rate_limiter: Arc<dyn RateLimiter>,
-    pub retry_policy: Arc<dyn RetryPolicy>,
-    pub auth: AuthRuntimeConfig,
-    pub pagination: Caps,
-    pub debug: DebugConfig,
+    pub(crate) hooks: Arc<dyn RuntimeHooks>,
+    pub(crate) cache_store: Arc<dyn CacheStore>,
+    pub(crate) inflight_policy: Arc<dyn InflightPolicy>,
+    pub(crate) inflight_registry: Arc<InflightRegistry>,
+    pub(crate) rate_limiter: Arc<dyn RateLimiter>,
+    pub(crate) retry_policy: Arc<dyn RetryPolicy>,
+    pub(crate) auth: AuthRuntimeConfig,
+    pub(crate) pagination: Caps,
+    pub(crate) debug: DebugConfig,
 }
 
 impl Default for RuntimeConfig {
@@ -64,9 +66,20 @@ impl Default for RuntimeConfig {
 
 impl RuntimeConfig {
     #[inline]
-    pub fn debug(&mut self, level: DebugLevel) -> &mut Self {
+    pub fn debug_level(&mut self, level: DebugLevel) -> &mut Self {
         self.debug.level = level;
         self
+    }
+
+    #[inline]
+    pub fn debug_body(&mut self, enabled: bool) -> &mut Self {
+        self.debug.body = enabled;
+        self
+    }
+
+    #[inline]
+    pub fn debug(&mut self, level: DebugLevel) -> &mut Self {
+        self.debug_level(level)
     }
 
     #[inline]
@@ -94,6 +107,12 @@ impl RuntimeConfig {
     }
 
     #[inline]
+    pub fn inflight_registry(&mut self, registry: Arc<InflightRegistry>) -> &mut Self {
+        self.inflight_registry = registry;
+        self
+    }
+
+    #[inline]
     pub fn rate_limiter(&mut self, limiter: Arc<dyn RateLimiter>) -> &mut Self {
         self.rate_limiter = limiter;
         self
@@ -112,8 +131,23 @@ impl RuntimeConfig {
     }
 
     #[inline]
-    pub fn pagination(&mut self, caps: Caps) -> &mut Self {
+    pub fn pagination_caps(&mut self, caps: Caps) -> &mut Self {
         self.pagination = caps;
         self
+    }
+
+    #[inline]
+    pub fn pagination(&mut self, caps: Caps) -> &mut Self {
+        self.pagination_caps(caps)
+    }
+
+    #[inline]
+    pub fn debug_body_enabled(&self) -> bool {
+        self.debug.body
+    }
+
+    #[inline]
+    pub fn debug_level_value(&self) -> DebugLevel {
+        self.debug.level
     }
 }

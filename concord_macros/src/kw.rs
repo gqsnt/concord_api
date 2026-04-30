@@ -1,5 +1,6 @@
 // concord_macros/src/kw.rs
 syn::custom_keyword!(client);
+syn::custom_keyword!(api);
 syn::custom_keyword!(base);
 syn::custom_keyword!(var);
 syn::custom_keyword!(host);

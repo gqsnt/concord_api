@@ -62,6 +62,11 @@ impl MockReply {
         self.headers.insert(name, value);
         self
     }
+
+    pub fn with_body(mut self, body: Bytes) -> Self {
+        self.body = body;
+        self
+    }
 }
 
 struct OneShotBody {

@@ -1,0 +1,15 @@
+endpoint_plan.generated
+contract:
+- impl Endpoint<Cx> for endpoints::* type
+- fn plan(&self, ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError>
+- RequestPlan
+- EndpointPlan
+- EndpointMeta
+- ResolvedRoute
+- ResolvedPolicy
+- BodyPlan
+- ResponsePlan
+- PaginationPlan
+source-boundary:
+- generated from ResolvedApi/ResolvedEndpoint semantic model
+- no raw parser AST in codegen

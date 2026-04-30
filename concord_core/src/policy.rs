@@ -269,4 +269,48 @@ mod test {
         p.ensure_accept("application/json");
         assert!(p.headers().get(ACCEPT).is_none());
     }
+
+    #[test]
+    fn query_set_push_and_remove_preserve_expected_order() {
+        let mut p = Policy::new();
+        p.push_query("tag", "base");
+        p.set_query("q", "first");
+        p.push_query("tag", "endpoint");
+        p.set_query("q", "override");
+        p.remove_query("tag");
+        p.push_query("tag", "final");
+
+        assert_eq!(
+            p.query(),
+            &[
+                ("q".to_string(), "override".to_string()),
+                ("tag".to_string(), "final".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn header_override_and_remove_are_case_insensitive() {
+        let mut p = Policy::new();
+        p.insert_header(
+            HeaderName::from_static("x-trace"),
+            HeaderValue::from_static("one"),
+        );
+        p.insert_header(
+            HeaderName::from_static("x-trace"),
+            HeaderValue::from_static("two"),
+        );
+
+        assert_eq!(
+            p.headers()
+                .get(HeaderName::from_static("x-trace"))
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "two"
+        );
+
+        p.remove_header(HeaderName::from_static("x-trace"));
+        assert!(!p.headers().contains_key(HeaderName::from_static("x-trace")));
+    }
 }

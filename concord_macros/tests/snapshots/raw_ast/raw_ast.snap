@@ -1,0 +1,5 @@
+RawAst
+client: SmallApi
+items:
+  endpoint: GET ping
+spans: <normalized>

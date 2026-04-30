@@ -1,7 +1,0 @@
-error: unknown cache profile `shrot`
-       did you mean `short`?
-       available cache profiles: `short`
-  --> tests/ui/cache_unknown_profile_suggestion.rs:13:15
-   |
-13 |         cache shrot
-   |               ^^^^^

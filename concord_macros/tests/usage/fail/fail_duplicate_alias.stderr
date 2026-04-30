@@ -1,0 +1,15 @@
+error[E0592]: duplicate definitions with name `get`
+  --> tests/usage/fail/fail_duplicate_alias.rs:4:1
+   |
+ 4 | / api! {
+ 5 | |     client UsageDuplicateAliasApi { base https "example.com" }
+ 6 | |
+ 7 | |     scope users {
+...  |
+20 | | }
+   | | ^
+   | | |
+   | |_duplicate definitions for `get`
+   |   other definition for `get`
+   |
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

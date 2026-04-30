@@ -1,6 +1,5 @@
 use crate::transport::{BuiltRequest, BuiltResponse};
 use std::future::Future;
-use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -260,7 +259,11 @@ pub fn default_cache_key(req: &BuiltRequest) -> CacheKey {
 }
 
 fn default_cache_key_with_method(req: &BuiltRequest, method: &http::Method) -> CacheKey {
-    let mut key = format!("{} {}", method, sanitized_url_for_key(&req.url));
+    let mut key = format!(
+        "{} {}",
+        method,
+        crate::redaction::sanitized_url_for_key(&req.url)
+    );
     append_auth_identities(&mut key, &req.extensions.auth_identities);
     CacheKey::new(key)
 }
@@ -329,53 +332,6 @@ fn append_auth_identities(key: &mut String, identities: &[String]) {
         key.push_str(identity);
         key.push(';');
     }
-}
-
-fn sanitized_url_for_key(url: &url::Url) -> String {
-    if url.query().is_none() {
-        return url.to_string();
-    }
-    let mut out = url.clone();
-    out.query_pairs_mut().clear();
-    {
-        let mut pairs = out.query_pairs_mut();
-        for (k, v) in url.query_pairs() {
-            if is_sensitive_name(&k) {
-                pairs.append_pair(&k, &format!("<sensitive:{}>", hash_value(&v)));
-            } else {
-                pairs.append_pair(&k, &v);
-            }
-        }
-    }
-    out.to_string()
-}
-
-fn is_sensitive_name(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    matches!(
-        n.as_str(),
-        "authorization"
-            | "proxy-authorization"
-            | "access_token"
-            | "refresh_token"
-            | "api_key"
-            | "apikey"
-            | "key"
-            | "token"
-            | "secret"
-            | "password"
-    ) || n.contains("token")
-        || n.contains("secret")
-        || n.contains("api-key")
-        || n.contains("apikey")
-        || n.ends_with("_key")
-        || n.ends_with("-key")
-}
-
-fn hash_value(value: &str) -> String {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    value.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
 }
 
 #[cfg(test)]
@@ -597,7 +553,7 @@ mod moka_backend {
                         .get(&header_name)
                         .and_then(|value| value.to_str().ok())
                         .unwrap_or("");
-                    out.push_str(&hash_value(value));
+                    out.push_str(&crate::redaction::hash_value(value));
                 }
                 out.push(';');
             }

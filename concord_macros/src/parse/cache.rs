@@ -142,7 +142,7 @@ fn parse_cache_patch_body(input: ParseStream<'_>) -> Result<CachePatch> {
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "unexpected token in cache policy block; v5 cache DSL supports only `http`, `ttl`, `revalidate`, `stale_on_error`, and `on_error`",
+                "unexpected token in cache policy block; cache policy blocks support only `http`, `ttl`, `revalidate`, `stale_on_error`, and `on_error`",
             ));
         }
         let _ = input.parse::<Option<Token![,]>>()?;

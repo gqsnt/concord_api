@@ -9,6 +9,7 @@ mod inflight;
 mod pagination;
 mod policy;
 mod rate_limit;
+mod redaction;
 mod request;
 mod response_classify;
 mod retry;
@@ -24,7 +25,10 @@ pub mod internal {
     #[doc(hidden)]
     pub use crate::auth::{CredentialSlot, NoAuthState};
     #[doc(hidden)]
-    pub use crate::codec::{ContentType, Decodes, Encodes, Format, FormatType};
+    pub use crate::codec::{
+        BodyCodec, CodecError, ContentType, DecodeContext, Decodes, EncodeContext, EncodedBody,
+        Encodes, Format, FormatType, ResponseCodec,
+    };
     pub use crate::endpoint::{
         BodyPlan, ClientPlanContext, Decoded, EndpointMeta, EndpointPlan, Mapped, MappedResp,
         PaginationPlan, RequestArgs, RequestOverrides, RequestPlan, ResolvedRoute, ResponsePlan,
@@ -32,8 +36,8 @@ pub mod internal {
     };
     #[doc(hidden)]
     pub use crate::pagination::{
-        Control, CursorPagination, HasNextCursor, OffsetLimitPagination, PagedPagination,
-        ProgressKey,
+        Control, CursorPagination, HasNextCursor, OffsetLimitPagination, PageAdvance, PageDecision,
+        PageInit, PageRequest, PagedPagination, PaginationController, ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
     pub use crate::{cache::CacheSetting, retry::RetrySetting};
@@ -46,7 +50,7 @@ pub mod prelude {
     pub use crate::codec::{NoContent, text::Text};
     pub use crate::debug::DebugLevel;
     pub use crate::endpoint::Endpoint;
-    pub use crate::error::ApiClientError;
+    pub use crate::error::{ApiClientError, ErrorCategory};
     pub use crate::pagination::{
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination, Stop,
     };
@@ -58,6 +62,8 @@ pub mod prelude {
 }
 
 pub mod advanced {
+    #[cfg(feature = "json")]
+    pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::auth::{
         AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy, AuthDecision, AuthError,
         AuthErrorKind, AuthFuture, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse,
@@ -65,10 +71,9 @@ pub mod advanced {
         AuthRequirement, AuthRequirementId, AuthRetryReason, AuthStepPolicy, AuthUsageId,
         ClientCertificate, CredentialContext, CredentialId, CredentialLease, CredentialMaterial,
         CredentialProvider, CredentialRef, CredentialRefreshReason, CredentialSlot,
-        InvalidateReason, ManualCredentialProvider, OAuth2ClientCredentialsProvider,
-        SecretCredential, StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider,
-        TransportAuth, apply_basic_credential, apply_certificate_credential,
-        apply_secret_credential, invalidate_rejected_credential,
+        InvalidateReason, ManualCredentialProvider, SecretCredential, StaticApiKeyProvider,
+        StaticBasicProvider, StaticBearerProvider, TransportAuth, apply_basic_credential,
+        apply_certificate_credential, apply_secret_credential, invalidate_rejected_credential,
     };
     pub use crate::cache::{
         CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,
@@ -77,12 +82,18 @@ pub mod advanced {
     };
     #[cfg(feature = "cache-moka")]
     pub use crate::cache::{MokaCacheConfig, MokaCacheStore};
+    pub use crate::codec::{
+        BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
+    };
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::error::{ErrorContext, FxError};
     pub use crate::inflight::{
         InflightPolicy, InflightRegistry, NoopInflightPolicy, RequestKey, SafeMethodInflightPolicy,
     };
-    pub use crate::pagination::{Caps, Control, ProgressKey};
+    pub use crate::pagination::{
+        Caps, Control, HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
+        PaginationController, ProgressKey,
+    };
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
         RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,

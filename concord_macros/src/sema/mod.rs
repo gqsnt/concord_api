@@ -1,4 +1,4 @@
-//! Semantic normalization and resolution for the v5 macro.
+//! Semantic normalization and resolution for the Concord macro.
 //!
 //! This layer normalizes the raw parser API tree, validates names, resolves
 //! inherited route/policy/auth state, and produces `ResolvedApi` /
@@ -17,11 +17,13 @@ use crate::emit_helpers;
 use crate::model::*;
 use proc_macro2::Span;
 use std::collections::BTreeMap;
-use syn::{Expr, Ident, LitStr, Result, Type, spanned::Spanned};
+use syn::{Expr, Ident, LitStr, Path, Result, Type, spanned::Spanned};
 
 include!("ir.rs");
 include!("profiles.rs");
 include!("normalize.rs");
+#[path = "resolve.rs"]
+mod resolve_stage;
 
 #[cfg(test)]
 pub(crate) fn analyze_tokens_for_test(input: proc_macro2::TokenStream) -> ResolvedApi {
@@ -297,7 +299,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalized_tree_snapshot_contains_v5_shape_without_legacy_auth_groups() {
+    fn normalized_tree_snapshot_contains_current_shape_without_raw_auth_groups() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client NormApi {
@@ -338,6 +340,82 @@ mod tests {
     }
 
     #[test]
+    fn normalized_tree_contains_only_canonical_endpoint_constructs() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client NormCanonical {
+                    base "https://example.com"
+                    var trace_id: String
+                }
+
+                POST Create(q: String, tag?: String, body: Json<CreateBody>)
+                    as create
+                    path [fmt["items-", q]]
+                    query {
+                        q
+                        "tag" += tag
+                    }
+                    headers {
+                        "x-trace" = vars.trace_id
+                    }
+                    -> Json<CreateResponse>
+            }
+            "#,
+        )
+        .expect("valid current api syntax");
+        let norm = normalize_api(ast).expect("normalization succeeds");
+        let NormNode::Endpoint(endpoint) = &norm.items[0] else {
+            panic!("expected endpoint");
+        };
+
+        assert!(matches!(
+            endpoint.route.atoms.as_slice(),
+            [RouteAtom::Fmt(_)]
+        ));
+        assert!(
+            endpoint.body.is_some(),
+            "body is normalized from signature only"
+        );
+        assert_eq!(endpoint.params.len(), 2);
+
+        let query = endpoint.policy.query.as_ref().expect("query policy");
+        assert_eq!(query.stmts.len(), 2);
+        match &query.stmts[0] {
+            PolicyStmt::Set {
+                key: KeySpec::Ident(key),
+                value: PolicyValue::Expr(Expr::Field(field)),
+                op: SetOp::Set,
+            } => {
+                assert_eq!(key.to_string(), "q");
+                match &field.member {
+                    syn::Member::Named(member) => assert_eq!(member.to_string(), "q"),
+                    other => panic!("expected named query field, got {other:?}"),
+                }
+            }
+            other => panic!("query shorthand was not canonicalized: {other:?}"),
+        }
+        assert!(matches!(
+            &query.stmts[1],
+            PolicyStmt::Set {
+                key: KeySpec::Str(_),
+                op: SetOp::Push,
+                ..
+            }
+        ));
+
+        let headers = endpoint.policy.headers.as_ref().expect("headers policy");
+        assert!(matches!(
+            &headers.stmts[0],
+            PolicyStmt::Set {
+                key: KeySpec::Str(_),
+                op: SetOp::Set,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn resolved_endpoint_debug_includes_inherited_tree_state() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
@@ -367,6 +445,658 @@ mod tests {
         assert!(snapshot.contains("auth=1"));
         assert!(snapshot.contains("query=0"));
         assert!(snapshot.contains("facade=protected::Me"));
+    }
+
+    #[test]
+    fn route_resolution_accepts_scope_and_endpoint_params() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                scope users(tenant_id: String) {
+                    path ["tenants", tenant_id]
+
+                    GET Show(user_id: String)
+                        path ["users", user_id]
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let snapshot = debug_resolved_endpoints(&resolved_api);
+        let endpoint = &resolved_api.endpoints[0];
+
+        assert!(snapshot.contains("scope_path=[Static(\"tenants\"), EpVar"));
+        assert!(snapshot.contains("endpoint=[Static(\"users\"), EpVar"));
+        assert!(endpoint.vars.iter().any(|var| var.rust == "tenant_id"));
+        assert!(endpoint.vars.iter().any(|var| var.rust == "user_id"));
+    }
+
+    #[test]
+    fn explicit_ep_reference_in_scope_route_fails() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                scope users(user_id: String) {
+                    path [ep.user_id]
+
+                    GET Show
+                        path ["show"]
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("explicit ep refs in scope route must fail");
+
+        assert!(
+            err.to_string()
+                .contains("`ep.*` is not allowed in scope routes")
+        );
+    }
+
+    #[test]
+    fn unknown_route_reference_fails_during_resolution() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Show(user_id: String)
+                    path [fmt["user-", missing]]
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("unknown endpoint route refs must fail");
+
+        assert!(err.to_string().contains("unknown endpoint var"));
+    }
+
+    #[test]
+    fn optional_fmt_route_reference_resolves_as_optional() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Show(prefix?: String)
+                    path [fmt["user-", prefix]]
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let endpoint = &resolved_api.endpoints[0];
+        let PathPiece::Fmt(fmt) = &endpoint.route_pieces[0] else {
+            panic!("expected fmt route piece");
+        };
+
+        assert!(fmt.pieces.iter().any(|piece| matches!(
+            piece,
+            FmtResolvedPiece::Var {
+                source: FmtVarSource::Ep,
+                optional: true,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn resolved_query_and_header_ops_preserve_order_and_optional_conditions() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    var trace_id: String
+                }
+
+                GET Search(q: String, maybe?: String)
+                    path ["search"]
+                    query {
+                        "q" = q,
+                        "tag" += q,
+                        "maybe" = maybe,
+                        -"old"
+                    }
+                    headers {
+                        "x-trace" = vars.trace_id,
+                        -"x-old"
+                    }
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let endpoint_policy = &resolved_api.endpoints[0].policy.endpoint;
+
+        assert!(matches!(
+            &endpoint_policy.query[0],
+            PolicyOp::Set {
+                key: KeyResolved::Static(key),
+                op: SetOp::Set,
+                ..
+            } if key.value() == "q"
+        ));
+        assert!(matches!(
+            &endpoint_policy.query[1],
+            PolicyOp::Set {
+                key: KeyResolved::Static(key),
+                op: SetOp::Push,
+                ..
+            } if key.value() == "tag"
+        ));
+        assert!(matches!(
+            &endpoint_policy.query[2],
+            PolicyOp::Set {
+                key: KeyResolved::Static(key),
+                conditional_on_optional_ref: Some(OptionalRefKind::Ep),
+                ..
+            } if key.value() == "maybe"
+        ));
+        assert!(matches!(
+            &endpoint_policy.query[3],
+            PolicyOp::Remove {
+                key: KeyResolved::Static(key)
+            } if key.value() == "old"
+        ));
+        assert!(matches!(
+            &endpoint_policy.headers[0],
+            PolicyOp::Set {
+                key: KeyResolved::Static(key),
+                ..
+            } if key.value() == "x-trace"
+        ));
+        assert!(matches!(
+            &endpoint_policy.headers[1],
+            PolicyOp::Remove {
+                key: KeyResolved::Static(key)
+            } if key.value() == "x-old"
+        ));
+    }
+
+    #[test]
+    fn duplicate_header_names_in_same_layer_fail_case_insensitively() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Search
+                    path ["search"]
+                    headers {
+                        "X-Trace" = "one",
+                        "x-trace" = "two"
+                    }
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("duplicate header names must fail");
+
+        assert!(err.to_string().contains("duplicate header `x-trace`"));
+    }
+
+    #[test]
+    fn static_and_bearer_auth_credentials_resolve() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret api_key: String
+                    secret token: String
+                    credential key = api_key(secret.api_key)
+                    credential bearer_token = bearer(secret.token)
+                }
+
+                GET Search
+                    path ["search"]
+                    auth header "X-Api-Key" = key
+                    auth bearer bearer_token
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        assert!(matches!(
+            resolved_api.client_auth_credentials[0].kind,
+            AuthCredentialKindIr::ApiKey { .. }
+        ));
+        assert!(matches!(
+            resolved_api.client_auth_credentials[1].kind,
+            AuthCredentialKindIr::StaticBearer { .. }
+        ));
+        assert_eq!(resolved_api.endpoints[0].policy.auth.len(), 2);
+    }
+
+    #[test]
+    fn auth_requirements_combine_in_client_scope_endpoint_order() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret api_key: String
+                    secret token: String
+                    secret scope_key: String
+                    credential client_key = api_key(secret.api_key)
+                    credential scope_key = api_key(secret.scope_key)
+                    credential token = bearer(secret.token)
+                    auth header "X-Client" = client_key
+                }
+
+                scope protected {
+                    path ["protected"]
+                    auth query "scope_key" = scope_key
+
+                    GET Me
+                        path ["me"]
+                        auth bearer token
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let auth = &resolved_api.endpoints[0].policy.auth;
+
+        assert_eq!(auth.len(), 3);
+        let names = auth
+            .iter()
+            .map(|plan| {
+                let AuthUsePlanIr::Use(auth_use) = plan;
+                auth_use_credential_ident_ir(auth_use).to_string()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["client_key", "scope_key", "token"]);
+        let provenances = auth
+            .iter()
+            .map(|plan| {
+                let AuthUsePlanIr::Use(auth_use) = plan;
+                auth_use.provenance
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(provenances[0], AuthUseProvenanceIr::Client));
+        assert!(matches!(provenances[1], AuthUseProvenanceIr::Scope(_)));
+        assert!(matches!(provenances[2], AuthUseProvenanceIr::Endpoint));
+    }
+
+    #[test]
+    fn endpoint_backed_credential_resolves_to_endpoint_output() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret upstream_key: String
+                    credential upstream = api_key(secret.upstream_key)
+                    credential session = endpoint auth_api::Login
+                }
+
+                scope auth_api {
+                    path ["auth"]
+
+                    POST Login(body: Json<LoginRequest>)
+                        path ["login"]
+                        auth header "X-Upstream-Key" = upstream
+                        -> Json<LoginResponse>
+                        map AccessToken {
+                            AccessToken::new(r.access_token)
+                        }
+                }
+
+                scope protected {
+                    path ["protected"]
+                    auth bearer session
+
+                    GET Me
+                        path ["me"]
+                        -> Json<User>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let session = resolved_api
+            .client_auth_credentials
+            .iter()
+            .find(|credential| credential.name == "session")
+            .expect("session credential");
+
+        let AuthCredentialKindIr::Endpoint {
+            endpoint_key,
+            output_ty,
+            ..
+        } = &session.kind
+        else {
+            panic!("expected endpoint-backed credential");
+        };
+        assert_eq!(endpoint_key, "auth_api::Login");
+        assert!(
+            quote::quote!(#output_ty)
+                .to_string()
+                .contains("AccessToken")
+        );
+    }
+
+    #[test]
+    fn policy_profiles_defaults_and_endpoint_overrides_resolve() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    default {
+                        retry read_child
+                        cache standard
+                        rate_limit app
+                    }
+
+                    retry read {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    retry read_child extends read {
+                        on [429]
+                        retry_after
+                    }
+
+                    cache standard {
+                        ttl 30s
+                        revalidate
+                    }
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+                }
+
+                GET Ping
+                    path ["ping"]
+                    retry off
+                    cache off
+                    rate_limit only app
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
+            panic!("expected default client retry");
+        };
+        assert_eq!(client_retry.max_attempts, 2);
+        assert_eq!(client_retry.statuses, [429]);
+        assert!(client_retry.respect_retry_after);
+
+        let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
+            panic!("expected default client cache");
+        };
+        assert_eq!(client_cache.default_ttl_secs, Some(30));
+        assert_eq!(client_cache.revalidate, Some(true));
+
+        let Some(RateLimitResolved::Add(client_rate_limit)) =
+            &resolved_api.client_policy.rate_limit
+        else {
+            panic!("expected default client rate limit");
+        };
+        assert_eq!(client_rate_limit.buckets.len(), 1);
+
+        let endpoint_policy = &resolved_api.endpoints[0].policy.endpoint;
+        assert!(matches!(endpoint_policy.retry, Some(RetryResolved::Clear)));
+        assert!(matches!(endpoint_policy.cache, Some(CacheResolved::Clear)));
+        assert!(matches!(
+            endpoint_policy.rate_limit,
+            Some(RateLimitResolved::Replace(_))
+        ));
+    }
+
+    #[test]
+    fn unknown_policy_profile_fails_during_resolution() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Ping
+                    path ["ping"]
+                    retry missing
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("unknown retry profile must fail");
+
+        assert!(err.to_string().contains("unknown retry profile"));
+    }
+
+    #[test]
+    fn rate_limit_observer_path_is_resolved_on_api() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    observe rate_limit crate::Observer
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+                }
+
+                GET Ping
+                    path ["ping"]
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let observer = resolved_api
+            .rate_limit_response_policy
+            .as_ref()
+            .expect("rate limit observer");
+
+        assert!(quote::quote!(#observer).to_string().contains("Observer"));
+    }
+
+    #[test]
+    fn retry_attempts_rejected_before_resolution() {
+        let err = syn::parse_str::<crate::ast::RawApi>(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry read {
+                        attempts 2
+                    }
+                }
+            }
+            "#,
+        )
+        .expect_err("attempts syntax must fail");
+
+        assert!(err.to_string().contains("`attempts` is not supported"));
+    }
+
+    #[test]
+    fn body_signature_response_and_map_resolve_into_endpoint_model() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            client BodyApi {
+                base https "example.com"
+            }
+
+            POST Create(body: Json<CreateBody>)
+                as create
+                path ["items"]
+                -> Json<CreateResponse>
+                map Created {
+                    Created::from(r)
+                }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let endpoint = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Create")
+            .expect("Create endpoint");
+
+        let body = endpoint.body.as_ref().expect("body resolved");
+        let body_ty = &body.ty;
+        let response_ty = &endpoint.response.ty;
+        let map = endpoint.map.as_ref().expect("map resolved");
+        let map_ty = &map.out_ty;
+
+        assert_eq!(quote::quote!(#body_ty).to_string(), "CreateBody");
+        assert_eq!(quote::quote!(#response_ty).to_string(), "CreateResponse");
+        assert_eq!(quote::quote!(#map_ty).to_string(), "Created");
+    }
+
+    #[test]
+    fn pagination_controllers_resolve_into_endpoint_model() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            client PageApi {
+                base https "example.com"
+            }
+
+            GET Offset(start: u64 = 0, count: u64 = 20)
+                path ["offset"]
+                query {
+                    start
+                    count
+                }
+                paginate OffsetLimitPagination {
+                    offset = start,
+                    limit = count
+                }
+                -> Json<Vec<String>>
+
+            GET Cursor(cursor?: String, count: u64 = 20)
+                path ["cursor"]
+                query {
+                    cursor
+                    count
+                }
+                paginate CursorPagination {
+                    cursor = cursor,
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+
+            GET Paged(page: u64 = 1, count: u64 = 20)
+                path ["paged"]
+                query {
+                    page
+                    count
+                }
+                paginate PagedPagination {
+                    page = page,
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let controllers = resolved_api
+            .endpoints
+            .iter()
+            .map(|ep| {
+                let pagination = ep.paginate.as_ref().expect("pagination resolved");
+                (
+                    ep.name.to_string(),
+                    pagination
+                        .ctrl_ty
+                        .segments
+                        .last()
+                        .expect("controller type")
+                        .ident
+                        .to_string(),
+                    pagination.assigns.len(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            controllers,
+            vec![
+                ("Offset".to_string(), "OffsetLimitPagination".to_string(), 2),
+                ("Cursor".to_string(), "CursorPagination".to_string(), 2),
+                ("Paged".to_string(), "PagedPagination".to_string(), 2),
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_pagination_field_fails_resolution() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            client PageApi {
+                base https "example.com"
+            }
+
+            GET Offset(count: u64 = 20)
+                path ["offset"]
+                query {
+                    count
+                }
+                paginate OffsetLimitPagination {
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("unknown pagination assignment must fail");
+
+        assert!(
+            err.to_string()
+                .contains("unknown pagination field `per_page` for OffsetLimitPagination"),
+            "{err}"
+        );
     }
 
     #[test]

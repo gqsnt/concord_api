@@ -1,5 +1,0 @@
-error: var `id` redefined with different type
- --> tests/ui/duplicate_var_conflict.rs:8:20
-  |
-8 |     GET A(id: u32, id: String)
-  |                    ^^

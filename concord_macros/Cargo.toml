@@ -13,6 +13,7 @@ quote = "1"
 syn = { version = "2", default-features = false, features = ["full", "visit","extra-traits", "parsing", "printing", "clone-impls"] }#//"parsing", "proc-macro", "printing",
 
 [dev-dependencies]
+bytes.workspace = true
 concord_core = { path = "../concord_core", features = ["json"] }
 http.workspace = true
 serde = { workspace = true, features = ["derive"] }

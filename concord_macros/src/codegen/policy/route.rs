@@ -137,6 +137,20 @@ fn emit_value_expr(v: &ValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
     }
 }
 
+fn emit_dynamic_path_segment_push(value: TokenStream2, label: LitStr) -> TokenStream2 {
+    quote! {
+        {
+            let __segment = (#value).to_string();
+            if __segment.contains('/') || __segment.contains('\\') {
+                return ::core::result::Result::Err(
+                    ::concord_core::prelude::ApiClientError::invalid_param(ctx.clone(), #label)
+                );
+            }
+            route.path_mut().push_segment_encoded(&__segment);
+        }
+    }
+}
+
 fn emit_prefix_route_apply(
     pieces: &[PrefixPiece],
     ep_optionals: Option<&std::collections::BTreeMap<String, bool>>,
@@ -225,52 +239,60 @@ fn emit_path_route_apply(
                 ops.push(quote! { route.path_mut().push_raw(#lit); });
             }
             PathPiece::CxVar { field, optional } => {
+                let label = LitStr::new(&format!("vars.{field}"), Span::call_site());
                 if *optional {
+                    let push =
+                        emit_dynamic_path_segment_push(quote! { __v }, label.clone());
                     ops.push(quote! {
                         if let ::core::option::Option::Some(__v) = vars.#field.as_ref() {
-                            route.path_mut().push_segment_encoded(&__v.to_string());
+                            #push
                         }
                     });
                 } else {
-                    ops.push(
-                        quote! { route.path_mut().push_segment_encoded(&vars.#field.to_string()); },
-                    );
+                    ops.push(emit_dynamic_path_segment_push(
+                        quote! { &vars.#field },
+                        label,
+                    ));
                 }
             }
             PathPiece::EpVar { field } => {
                 let is_optional = ep_optionals
                     .and_then(|m| m.get(&field.to_string()).copied())
                     .unwrap_or(false);
+                let label = LitStr::new(&format!("ep.{field}"), Span::call_site());
                 if is_optional {
+                    let push =
+                        emit_dynamic_path_segment_push(quote! { __v }, label.clone());
                     ops.push(quote! {
                         if let ::core::option::Option::Some(__v) = ep.#field.as_ref() {
-                            route.path_mut().push_segment_encoded(&__v.to_string());
+                            #push
                         }
                     });
                 } else {
-                    ops.push(
-                        quote! { route.path_mut().push_segment_encoded(&ep.#field.to_string()); },
-                    );
+                    ops.push(emit_dynamic_path_segment_push(quote! { &ep.#field }, label));
                 }
             }
             PathPiece::Fmt(fmt) => {
                 let build = emit_fmt_build_string_with_ep_optionals(fmt, ep_optionals);
+                let label = LitStr::new("fmt", Span::call_site());
 
                 if fmt.require_all {
                     let guard = emit_fmt_require_all_guard_with_ep_optionals(fmt, ep_optionals);
+                    let push = emit_dynamic_path_segment_push(quote! { __fmt_s }, label.clone());
                     ops.push(quote! {
                         {
                             if { #guard } {
                                 let __fmt_s: ::std::string::String = { #build };
-                                route.path_mut().push_segment_encoded(&__fmt_s);
+                                #push
                             }
                         }
                     });
                 } else {
+                    let push = emit_dynamic_path_segment_push(quote! { __fmt_s }, label);
                     ops.push(quote! {
                         {
                             let __fmt_s: ::std::string::String = { #build };
-                            route.path_mut().push_segment_encoded(&__fmt_s);
+                            #push
                         }
                     });
                 }

@@ -1,0 +1,5 @@
+error: custom pagination controllers use `paginate TypePath` without a configuration block
+  --> tests/usage/fail/custom_pagination_block.rs:17:18
+   |
+17 |         paginate HeaderCursorPagination {
+   |                  ^^^^^^^^^^^^^^^^^^^^^^

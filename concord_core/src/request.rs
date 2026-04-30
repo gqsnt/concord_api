@@ -1,13 +1,16 @@
 use crate::cache::CacheRequestMode;
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
-use crate::endpoint::{Endpoint, PaginationPlan};
+use crate::endpoint::{CustomPaginationPlan, Endpoint, PaginationPlan};
 use crate::error::{ApiClientError, ErrorContext};
-use crate::pagination::{Caps, Control, HasNextCursor, PageItems, ProgressKey, Stop};
+use crate::pagination::{
+    Caps, Control, HasNextCursor, PageAdvance, PageInit, PageItems, PageRequest, ProgressKey, Stop,
+};
 use crate::timeout::TimeoutOverride;
-use crate::transport::DecodedResponse;
+use crate::transport::{BuiltResponse, DecodedResponse};
+use std::any::Any;
 use std::collections::HashSet;
-use std::future::{Future, IntoFuture};
+use std::future::{Future, IntoFuture, ready};
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -125,16 +128,29 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     }
 
     pub async fn execute_decoded(self) -> Result<DecodedResponse<E::Response>, ApiClientError> {
+        let client = self.client;
+        let plan = self.request_plan()?;
+        client.execute_plan::<E::Response>(plan).await
+    }
+
+    pub async fn execute_raw(self) -> Result<BuiltResponse, ApiClientError> {
+        let client = self.client;
+        let plan = self.request_plan()?;
+        client.execute_plan_raw(plan).await
+    }
+
+    fn request_plan(self) -> Result<crate::endpoint::RequestPlan, ApiClientError> {
         let mut plan = self.ep.plan(&self.client.plan_context())?;
         plan.overrides.timeout = match self.opts.timeout_override {
             TimeoutOverride::Inherit => plan.overrides.timeout,
             TimeoutOverride::Clear => None,
             TimeoutOverride::Set(d) => Some(d),
         };
+        plan.overrides.debug_level = self.opts.debug_level;
         plan.overrides.attempt = self.opts.attempt;
         plan.overrides.page_index = 0;
         plan.overrides.cache_mode = self.opts.cache_mode;
-        self.client.execute_plan::<E::Response>(plan).await
+        Ok(plan)
     }
 
     #[inline]
@@ -203,25 +219,25 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         self
     }
 
-    pub async fn for_each_page<F>(self, mut f: F) -> Result<(), ApiClientError>
+    pub async fn for_each_page<F, Fut>(self, mut f: F) -> Result<(), ApiClientError>
     where
         E::Response: PageItems + HasNextCursor,
         T: crate::transport::Transport,
-        F: FnMut(DecodedResponse<E::Response>) -> Result<Control, ApiClientError>,
+        F: FnMut(DecodedResponse<E::Response>) -> Fut,
+        Fut: Future<Output = Result<(), ApiClientError>>,
     {
         let first_plan = self.pending.ep.plan(&self.pending.client.plan_context())?;
         let mut runner =
             PaginationRunner::new(first_plan.endpoint.pagination.clone(), &first_plan)?;
+        let ctx = crate::error::ErrorContext {
+            endpoint: first_plan.endpoint.meta.name,
+            method: first_plan.endpoint.meta.method.clone(),
+        };
         let mut first_plan = Some(first_plan);
         let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
             Some(HashSet::new())
         } else {
             None
-        };
-
-        let ctx = crate::error::ErrorContext {
-            endpoint: std::any::type_name::<E>(),
-            method: http::Method::GET,
         };
 
         let mut items_count: u64 = 0;
@@ -246,10 +262,11 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
                 TimeoutOverride::Clear => None,
                 TimeoutOverride::Set(d) => Some(d),
             };
+            plan.overrides.debug_level = self.pending.opts.debug_level;
             plan.overrides.attempt = self.pending.opts.attempt;
             plan.overrides.page_index = page_index;
             plan.overrides.cache_mode = self.pending.opts.cache_mode;
-            runner.apply_query(&mut plan);
+            runner.apply_query(&mut plan)?;
             let resp: DecodedResponse<E::Response> = self
                 .pending
                 .client
@@ -257,7 +274,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
                 .await?;
 
             let control_ctrl = runner.on_page(&resp, &ctx)?;
-            let page_len = resp.value.len() as u64;
+            let page_len = resp.value.item_count() as u64;
             if page_len > 0 {
                 let new_total = items_count.checked_add(page_len).ok_or_else(|| {
                     ApiClientError::Pagination {
@@ -269,8 +286,8 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
                     return Err(ApiClientError::PaginationLimit {
                         ctx: ctx.clone(),
                         msg: format!(
-                            "max_items reached (max={} seen={})",
-                            self.caps.max_items, new_total
+                            "max_items reached (max={} seen={} page_index={})",
+                            self.caps.max_items, new_total, page_index
                         )
                         .into(),
                     });
@@ -278,13 +295,8 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
                 items_count = new_total;
             }
 
-            let control_user = f(resp)?;
-            let control = match (control_ctrl, control_user) {
-                (Control::Stop, _) => Control::Stop,
-                (_, Control::Stop) => Control::Stop,
-                _ => Control::Continue,
-            };
-            match control {
+            f(resp).await?;
+            match control_ctrl {
                 Control::Continue => continue,
                 Control::Stop => return Ok(()),
             }
@@ -293,8 +305,8 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         Err(ApiClientError::PaginationLimit {
             ctx,
             msg: format!(
-                "max_pages reached (max_pages={} seen_items={})",
-                self.caps.max_pages, items_count
+                "max_pages reached (max_pages={} seen_items={} page_index={})",
+                self.caps.max_pages, items_count, self.caps.max_pages
             )
             .into(),
         })
@@ -307,15 +319,14 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     {
         let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
         self.for_each_page(|resp| {
-            out.extend(<E::Response as PageItems>::inner_into_iter(resp.value));
-            Ok(Control::Continue)
+            out.extend(<E::Response as PageItems>::into_items(resp.value));
+            ready(Ok(()))
         })
         .await?;
         Ok(out)
     }
 }
 
-#[derive(Clone, Debug)]
 enum PaginationRunner {
     OffsetLimit {
         offset_key: String,
@@ -342,6 +353,10 @@ enum PaginationRunner {
         per_page: u64,
         stop_on_short_page: bool,
         stop: Stop,
+    },
+    Custom {
+        plan: CustomPaginationPlan,
+        state: Box<dyn Any + Send + Sync>,
     },
 }
 
@@ -442,6 +457,15 @@ impl PaginationRunner {
                     stop,
                 })
             }
+            Some(PaginationPlan::Custom(custom)) => {
+                let state = (custom.init)(PageInit {
+                    endpoint: request.endpoint.meta.name,
+                })?;
+                Ok(Self::Custom {
+                    plan: custom,
+                    state,
+                })
+            }
             None => Err(ApiClientError::Pagination {
                 ctx,
                 msg: "endpoint is not paginated".into(),
@@ -449,7 +473,10 @@ impl PaginationRunner {
         }
     }
 
-    fn apply_query(&self, plan: &mut crate::endpoint::RequestPlan) {
+    fn apply_query(
+        &mut self,
+        plan: &mut crate::endpoint::RequestPlan,
+    ) -> Result<(), ApiClientError> {
         match self {
             Self::OffsetLimit {
                 offset_key,
@@ -468,6 +495,7 @@ impl PaginationRunner {
                     limit_key,
                     limit.to_string(),
                 );
+                Ok(())
             }
             Self::Cursor {
                 cursor_key,
@@ -492,6 +520,7 @@ impl PaginationRunner {
                         remove_query(&mut plan.endpoint.policy.query, cursor_key);
                     }
                 }
+                Ok(())
             }
             Self::Paged {
                 page_key,
@@ -506,6 +535,17 @@ impl PaginationRunner {
                     per_page_key,
                     per_page.to_string(),
                 );
+                Ok(())
+            }
+            Self::Custom {
+                plan: custom,
+                state,
+            } => {
+                let mut request = PageRequest::new(
+                    &mut plan.endpoint.policy.query,
+                    &mut plan.endpoint.policy.headers,
+                );
+                (custom.apply)(state.as_ref(), &mut request)
             }
         }
     }
@@ -526,10 +566,10 @@ impl PaginationRunner {
                 stop,
                 ..
             } => {
-                if matches!(stop, Stop::OnEmpty) && resp.value.len() == 0 {
+                if matches!(stop, Stop::OnEmpty) && resp.value.item_count() == 0 {
                     return Ok(Control::Stop);
                 }
-                if *stop_on_short_page && (resp.value.len() as u64) < *limit {
+                if *stop_on_short_page && (resp.value.item_count() as u64) < *limit {
                     return Ok(Control::Stop);
                 }
                 *offset = offset
@@ -548,7 +588,7 @@ impl PaginationRunner {
                 ..
             } => {
                 *started = true;
-                if matches!(stop, Stop::OnEmpty) && resp.value.len() == 0 {
+                if matches!(stop, Stop::OnEmpty) && resp.value.item_count() == 0 {
                     return Ok(Control::Stop);
                 }
                 *cursor = resp
@@ -568,10 +608,10 @@ impl PaginationRunner {
                 stop,
                 ..
             } => {
-                if matches!(stop, Stop::OnEmpty) && resp.value.len() == 0 {
+                if matches!(stop, Stop::OnEmpty) && resp.value.item_count() == 0 {
                     return Ok(Control::Stop);
                 }
-                if *stop_on_short_page && (resp.value.len() as u64) < *per_page {
+                if *stop_on_short_page && (resp.value.item_count() as u64) < *per_page {
                     return Ok(Control::Stop);
                 }
                 *page = page
@@ -582,6 +622,18 @@ impl PaginationRunner {
                     })?;
                 Ok(Control::Continue)
             }
+            Self::Custom { plan, state } => {
+                let decision = (plan.advance)(
+                    state.as_mut(),
+                    &resp.value as &(dyn Any + Send),
+                    PageAdvance {
+                        endpoint: ctx.endpoint,
+                        page_index: resp.meta.page_index as u64,
+                        received_items: resp.value.item_count(),
+                    },
+                )?;
+                Ok(decision.into())
+            }
         }
     }
 
@@ -590,6 +642,7 @@ impl PaginationRunner {
             Self::OffsetLimit { offset, .. } => Some(ProgressKey::U64(*offset)),
             Self::Cursor { cursor, .. } => cursor.clone().map(ProgressKey::Str),
             Self::Paged { page, .. } => Some(ProgressKey::U64(*page)),
+            Self::Custom { plan, state } => (plan.progress_key)(state.as_ref()),
         }
     }
 }

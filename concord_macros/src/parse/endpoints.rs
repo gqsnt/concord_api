@@ -176,7 +176,7 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
                 return Err(syn::Error::new(input.span(), "duplicate `path[...]` in endpoint"));
             }
             input.parse::<kw::path>()?;
-            parts.route = parse_route_expr_bracket(input)?;
+            parts.route = parse_path_route_expr_bracket(input)?;
         } else if input.peek(kw::headers) {
             if parts.policy.headers.is_some() {
                 return Err(syn::Error::new(input.span(), "duplicate headers policy in endpoint"));
@@ -209,7 +209,7 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
                 input.parse::<Token![:]>()?;
             }
             let t = parse_expr_until_comma_or_endpoint_arrow(input)?;
-            parts.policy.timeout = Some(normalize_policy_expr(t));
+            parts.policy.timeout = Some(normalize_policy_expr_checked(t)?);
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
@@ -245,6 +245,27 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
                 return Err(syn::Error::new(name.span(), "duplicate `paginate`"));
             }
             parts.paginate = Some(input.parse::<PaginateSpec>()?);
+        } else if input.peek(kw::map) {
+            return Err(syn::Error::new(
+                input.span(),
+                "map clause must appear after endpoint response",
+            ));
+        } else if input.peek(kw::body) {
+            let body: kw::body = input.parse()?;
+            return Err(syn::Error::new(
+                body.span,
+                "body stanza lines are not supported; declare body as an endpoint signature argument",
+            ));
+        } else if input.peek(Ident) {
+            let fork = input.fork();
+            let ident: Ident = fork.parse()?;
+            if ident == "part" {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    "`part[...]` is not supported; use `fmt[...]` route atoms",
+                ));
+            }
+            break;
         } else {
             break;
         }

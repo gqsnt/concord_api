@@ -1,0 +1,17 @@
+NormApiTree
+client: SmallApi
+base: https://example.com
+items:
+  endpoint: ping
+    method: GET
+    route: [static:"ping"]
+    params: []
+    query: []
+    headers: []
+    body: none
+    response: Json<String>
+canonical:
+  endpoint_stanzas: normalized
+  query_shorthand: normalized-to-policy-set
+  headers: explicit-string-keys
+  fmt: one-route-atom

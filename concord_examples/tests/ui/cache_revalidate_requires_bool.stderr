@@ -1,8 +1,0 @@
-error[E0425]: cannot find type `Json` in this scope
-  --> tests/ui/cache_revalidate_requires_bool.rs:17:8
-   |
-17 |     -> Json<String>
-   |        ^^^^ not found in this scope
-   |
-   = help: consider importing this struct:
-           concord_core::prelude::Json

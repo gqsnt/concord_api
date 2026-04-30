@@ -1,0 +1,19 @@
+error[E0599]: no method named `with_configure` found for struct `UsageWithConfigureApi<T>` in the current scope
+  --> tests/usage/fail/fail_with_configure.rs:16:42
+   |
+ 5 | / api! {
+ 6 | |     client UsageWithConfigureApi {
+ 7 | |         base https "example.com"
+...  |
+12 | |         -> Json<String>
+13 | | }
+   | |_- method `with_configure` not found for this struct
+...
+16 |       let _ = UsageWithConfigureApi::new().with_configure(|_cfg| {});
+   |                                            ^^^^^^^^^^^^^^
+   |
+help: there is a method `configure` with a similar name
+   |
+16 -     let _ = UsageWithConfigureApi::new().with_configure(|_cfg| {});
+16 +     let _ = UsageWithConfigureApi::new().configure(|_cfg| {});
+   |

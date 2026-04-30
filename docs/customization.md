@@ -1,0 +1,199 @@
+# Customization
+
+Concord keeps the common path small, but the advanced API exposes two stable extension points for projects that need formats or pagination styles outside the built-ins.
+
+Use these extension points when the protocol is part of your API contract. Do not use them to change runtime pipeline order or to bypass redaction.
+
+## Custom Codecs
+
+A request body codec implements `BodyCodec`. A response codec implements `ResponseCodec`.
+
+```rust
+use bytes::Bytes;
+use concord_core::advanced::{
+    BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
+};
+use std::marker::PhantomData;
+
+pub struct Compact<T>(PhantomData<T>);
+
+pub struct CreateUser {
+    pub name: String,
+}
+
+pub struct User {
+    pub id: u64,
+    pub name: String,
+}
+
+impl BodyCodec for Compact<CreateUser> {
+    type Value = CreateUser;
+
+    fn content_type() -> &'static str {
+        "application/x-compact"
+    }
+
+    fn encode(value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
+        Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(value.name.as_bytes()))
+            .with_content_type(Self::content_type()))
+    }
+}
+
+impl ResponseCodec for Compact<User> {
+    type Value = User;
+
+    fn accept() -> &'static str {
+        "application/x-compact"
+    }
+
+    fn decode(bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
+        let text = std::str::from_utf8(bytes)
+            .map_err(|source| CodecError::with_source("compact response is not utf-8", source))?;
+        let (id, name) = text
+            .split_once(':')
+            .ok_or_else(|| CodecError::new("compact response must be `id:name`"))?;
+        Ok(User {
+            id: id
+                .parse()
+                .map_err(|source| CodecError::with_source("compact id is invalid", source))?,
+            name: name.to_string(),
+        })
+    }
+}
+```
+
+Use the marker type directly in the DSL:
+
+```rust
+api! {
+    client ExampleApi { base https "example.com" }
+
+    POST CreateUser(body: Compact<CreateUser>)
+        as create_user
+        path ["users"]
+        -> Compact<User>
+}
+```
+
+Codec rules:
+
+- `content_type()` controls the request `Content-Type` header for encoded bodies.
+- `accept()` controls the response `Accept` header unless endpoint policy explicitly sets or removes it.
+- `EncodeContext` and `DecodeContext` provide endpoint metadata for contextual errors.
+- `CodecError` messages must be safe to display. Never include secrets or raw credentials.
+- Built-in `Json<T>`, `Text<String>`, and `NoContent` use the same trait path.
+
+## Page-Shape Traits
+
+Paginated responses expose their items by implementing `PageItems`.
+
+```rust
+use concord_core::prelude::PageItems;
+
+pub struct Page<T> {
+    pub items: Vec<T>,
+}
+
+impl<T: Send + 'static> PageItems for Page<T> {
+    type Item = T;
+
+    fn item_count(&self) -> usize {
+        self.items.len()
+    }
+
+    fn into_items(self) -> Vec<Self::Item> {
+        self.items
+    }
+}
+```
+
+Cursor-based built-ins also require `HasNextCursor`.
+
+```rust
+use concord_core::prelude::HasNextCursor;
+
+impl<T: Send + 'static> HasNextCursor for Page<T> {
+    type Cursor = String;
+
+    fn next_cursor(&self) -> Option<Self::Cursor> {
+        None
+    }
+}
+```
+
+## Custom Pagination Controllers
+
+A custom controller implements `PaginationController<Page>`. The controller owns pagination state, mutates the next page request through `PageRequest`, and decides whether to continue after each page.
+
+```rust
+use concord_core::advanced::{
+    PageAdvance, PageDecision, PageInit, PageRequest, PaginationController, ProgressKey,
+};
+use concord_core::prelude::ApiClientError;
+
+#[derive(Default)]
+pub struct HeaderCursorPagination;
+
+#[derive(Default)]
+pub struct HeaderCursorState {
+    page: u64,
+}
+
+impl PaginationController<Page<String>> for HeaderCursorPagination {
+    type State = HeaderCursorState;
+
+    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
+        Ok(HeaderCursorState::default())
+    }
+
+    fn apply(
+        &self,
+        state: &Self::State,
+        request: &mut PageRequest<'_>,
+    ) -> Result<(), ApiClientError> {
+        request.set_query("page", state.page);
+        Ok(())
+    }
+
+    fn advance(
+        &self,
+        state: &mut Self::State,
+        page: &Page<String>,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        if page.item_count() == 0 {
+            return Ok(PageDecision::Stop);
+        }
+        state.page += 1;
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(state.page))
+    }
+}
+```
+
+Declare it without a configuration block:
+
+```rust
+api! {
+    client ExampleApi { base https "example.com" }
+
+    GET ListItems
+        as list_items
+        path ["items"]
+        paginate HeaderCursorPagination
+        -> Json<Page<String>>
+}
+```
+
+Controller rules:
+
+- Built-in pagination keeps using configuration blocks.
+- Custom pagination uses `paginate TypePath` without a block.
+- `PageRequest` can set or remove query parameters and headers.
+- `progress_key` is used for loop detection when enabled.
+- Runtime retry, cache, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
+
+Complete examples live in `concord_examples/src/custom_codec.rs` and `concord_examples/src/custom_pagination.rs`.

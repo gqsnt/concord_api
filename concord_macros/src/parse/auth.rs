@@ -213,6 +213,10 @@ fn parse_auth_use_decl_after_auth_keyword(input: ParseStream<'_>) -> Result<Auth
 fn parse_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
     let usage: Ident = input.parse()?;
     match usage.to_string().as_str() {
+        "none" | "any" | "all" => Err(syn::Error::new(
+            usage.span(),
+            "auth none/any/all are not supported; declare explicit credential usage",
+        )),
         "bearer" => Ok(AuthUseKind::Bearer {
             credential: input.parse()?,
         }),

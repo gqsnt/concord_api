@@ -229,6 +229,7 @@ dependencies = [
 name = "concord_macros"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "concord_core",
  "http",
  "proc-macro2",

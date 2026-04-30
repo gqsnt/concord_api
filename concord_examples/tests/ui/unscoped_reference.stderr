@@ -1,5 +1,0 @@
-error: ep.* is not allowed here
- --> tests/ui/unscoped_reference.rs:7:19
-  |
-7 |             "x" = token // ERROR: unscoped
-  |                   ^^^^^

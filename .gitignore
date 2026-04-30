@@ -8,3 +8,7 @@ docs.txt
 *_output_*.txt
 /agent
 docs_*.txt
+concord_macros/target
+concord_examples/target
+concord_core/target
+concord_test_support/target

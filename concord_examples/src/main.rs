@@ -1,9 +1,5 @@
-use concord_examples::riot::test_riot;
-use concord_examples::test_api::test_api;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    test_api().await?;
-    test_riot().await?;
-    Ok(())
+fn main() {
+    println!(
+        "Concord examples are available as library modules and integration tests: minimal, auth_session, pagination, policy_stack, explicit_endpoint, and riot."
+    );
 }

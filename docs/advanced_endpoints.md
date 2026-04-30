@@ -1,0 +1,30 @@
+# Advanced Endpoints
+
+The facade-first client is the normal API. Advanced endpoint structs are available under `endpoints::*` for focused tests, reusable endpoint values, and explicit request construction.
+
+```rust
+let endpoint = example_api::endpoints::GetUser::new(42);
+let user = api.request(endpoint).execute().await?;
+```
+
+Endpoint setters are available on explicit endpoint values too.
+
+```rust
+let endpoint = example_api::endpoints::ListItems::new()
+    .count(50)
+    .count_opt(Some(100))
+    .clear_count();
+
+let items = api.request(endpoint).paginate().collect().await?;
+```
+
+Use `.execute_raw()` when a test or diagnostic needs the classified raw response before endpoint decoding.
+
+```rust
+let raw = api
+    .request(example_api::endpoints::GetUser::new(42))
+    .execute_raw()
+    .await?;
+```
+
+Normal application code should prefer facade methods because they preserve the intended high-level API shape.

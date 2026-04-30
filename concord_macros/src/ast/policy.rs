@@ -40,6 +40,7 @@ pub struct VarDeclNoWire {
 /// `Json<T>` (encoding type = `Json`, decoded/body type = `T`)
 #[derive(Debug, Clone)]
 pub struct CodecSpec {
+    pub marker: Type,
     pub enc: Path,
     pub ty: Type,
 }

@@ -1,6 +1,0 @@
-error: unknown endpoint var `ep.missing`
-       no endpoint vars are declared
-  --> tests/ui/query_shorthand_unknown.rs:10:13
-   |
-10 |             missing
-   |             ^^^^^^^

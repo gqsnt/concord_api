@@ -1,0 +1,5 @@
+FacadeIr
+client: SmallApi
+methods:
+  - ping()
+setters: []

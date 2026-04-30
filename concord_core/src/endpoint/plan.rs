@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
 use crate::error::{ApiClientError, ErrorContext};
+use crate::pagination::{
+    PageAdvance, PageDecision, PageInit, PageItems, PageRequest, PaginationController, ProgressKey,
+};
 use crate::policy::ResolvedPolicy;
 use crate::transport::RequestMeta;
 use bytes::Bytes;
@@ -46,6 +49,7 @@ pub struct RequestArgs {
 
 #[derive(Clone, Debug, Default)]
 pub struct RequestOverrides {
+    pub debug_level: Option<crate::debug::DebugLevel>,
     pub timeout: Option<std::time::Duration>,
     pub attempt: u32,
     pub page_index: u32,
@@ -131,7 +135,7 @@ impl fmt::Debug for ResponsePlan {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum PaginationPlan {
     OffsetLimit {
         offset_key: String,
@@ -158,4 +162,110 @@ pub enum PaginationPlan {
         stop_on_short_page: bool,
         stop: crate::pagination::Stop,
     },
+    Custom(CustomPaginationPlan),
+}
+
+pub type CustomPaginationInitFn =
+    for<'a> fn(PageInit<'a>) -> Result<Box<dyn Any + Send + Sync>, ApiClientError>;
+pub type CustomPaginationApplyFn =
+    for<'a> fn(&dyn Any, &mut PageRequest<'a>) -> Result<(), ApiClientError>;
+pub type CustomPaginationAdvanceFn = for<'a> fn(
+    &mut dyn Any,
+    &(dyn Any + Send),
+    PageAdvance<'a>,
+) -> Result<PageDecision, ApiClientError>;
+pub type CustomPaginationProgressKeyFn = fn(&dyn Any) -> Option<ProgressKey>;
+
+#[derive(Clone, Debug)]
+pub struct CustomPaginationPlan {
+    pub controller: &'static str,
+    pub init: CustomPaginationInitFn,
+    pub apply: CustomPaginationApplyFn,
+    pub advance: CustomPaginationAdvanceFn,
+    pub progress_key: CustomPaginationProgressKeyFn,
+}
+
+impl PaginationPlan {
+    pub fn custom<C, Page>() -> Self
+    where
+        C: PaginationController<Page>,
+        Page: PageItems,
+    {
+        Self::Custom(CustomPaginationPlan {
+            controller: std::any::type_name::<C>(),
+            init: custom_pagination_init::<C, Page>,
+            apply: custom_pagination_apply::<C, Page>,
+            advance: custom_pagination_advance::<C, Page>,
+            progress_key: custom_pagination_progress_key::<C, Page>,
+        })
+    }
+}
+
+fn custom_pagination_init<C, Page>(
+    ctx: PageInit<'_>,
+) -> Result<Box<dyn Any + Send + Sync>, ApiClientError>
+where
+    C: PaginationController<Page>,
+    Page: PageItems,
+{
+    let controller = C::default();
+    let state = controller.init(ctx)?;
+    Ok(Box::new(state))
+}
+
+fn custom_pagination_apply<C, Page>(
+    state: &dyn Any,
+    request: &mut PageRequest<'_>,
+) -> Result<(), ApiClientError>
+where
+    C: PaginationController<Page>,
+    Page: PageItems,
+{
+    let Some(state) = state.downcast_ref::<C::State>() else {
+        return Err(custom_pagination_error(
+            "custom pagination state type mismatch",
+        ));
+    };
+    C::default().apply(state, request)
+}
+
+fn custom_pagination_advance<C, Page>(
+    state: &mut dyn Any,
+    page: &(dyn Any + Send),
+    ctx: PageAdvance<'_>,
+) -> Result<PageDecision, ApiClientError>
+where
+    C: PaginationController<Page>,
+    Page: PageItems,
+{
+    let Some(state) = state.downcast_mut::<C::State>() else {
+        return Err(custom_pagination_error(
+            "custom pagination state type mismatch",
+        ));
+    };
+    let Some(page) = page.downcast_ref::<Page>() else {
+        return Err(custom_pagination_error(
+            "custom pagination page type mismatch",
+        ));
+    };
+    C::default().advance(state, page, ctx)
+}
+
+fn custom_pagination_progress_key<C, Page>(state: &dyn Any) -> Option<ProgressKey>
+where
+    C: PaginationController<Page>,
+    Page: PageItems,
+{
+    let state = state.downcast_ref::<C::State>()?;
+    C::default().progress_key(state)
+}
+
+fn custom_pagination_error(msg: &'static str) -> ApiClientError {
+    ApiClientError::Pagination {
+        ctx: ErrorContext {
+            endpoint: "custom pagination",
+            method: Method::GET,
+        },
+        msg: msg.into(),
+    }
 }

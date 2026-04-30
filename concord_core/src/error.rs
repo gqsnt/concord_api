@@ -98,6 +98,22 @@ pub enum ApiClientError {
     },
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ErrorCategory {
+    Config,
+    MissingCredential,
+    AuthRejected,
+    Transport,
+    Timeout,
+    HttpStatus,
+    Decode,
+    Pagination,
+    RateLimit,
+    Cache,
+    InternalInvariant,
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum HostLabelInvalidReason {
     Empty,
@@ -167,6 +183,80 @@ impl ApiClientError {
     }
 
     #[inline]
+    pub fn category(&self) -> ErrorCategory {
+        match self {
+            ApiClientError::InvalidParam { .. }
+            | ApiClientError::BuildUrl { .. }
+            | ApiClientError::InvalidHostLabel { .. } => ErrorCategory::Config,
+            ApiClientError::Transport { source, .. }
+                if source.kind() == crate::transport::TransportErrorKind::Timeout =>
+            {
+                ErrorCategory::Timeout
+            }
+            ApiClientError::Transport { .. } => ErrorCategory::Transport,
+            ApiClientError::HttpStatus { rate_limit, .. } if rate_limit.is_some() => {
+                ErrorCategory::RateLimit
+            }
+            ApiClientError::HttpStatus { .. } => ErrorCategory::HttpStatus,
+            ApiClientError::Decode { .. }
+            | ApiClientError::HeadRequiresNoContent { .. }
+            | ApiClientError::Transform { .. }
+            | ApiClientError::NoContentStatusRequiresNoContent { .. }
+            | ApiClientError::Codec { .. } => ErrorCategory::Decode,
+            ApiClientError::Pagination { .. } | ApiClientError::PaginationLimit { .. } => {
+                ErrorCategory::Pagination
+            }
+            ApiClientError::Auth { source, .. }
+                if source.kind == crate::auth::AuthErrorKind::MissingCredential =>
+            {
+                ErrorCategory::MissingCredential
+            }
+            ApiClientError::Auth { source, .. }
+                if source.kind == crate::auth::AuthErrorKind::RejectedCredential =>
+            {
+                ErrorCategory::AuthRejected
+            }
+            ApiClientError::Auth { .. } => ErrorCategory::AuthRejected,
+            ApiClientError::PolicyViolation { .. } => ErrorCategory::InternalInvariant,
+        }
+    }
+
+    #[inline]
+    pub fn endpoint(&self) -> &'static str {
+        self.context().endpoint
+    }
+
+    #[inline]
+    pub fn method(&self) -> &http::Method {
+        &self.context().method
+    }
+
+    #[inline]
+    pub fn redacted_url(&self) -> Option<&str> {
+        None
+    }
+
+    #[inline]
+    pub fn phase(&self) -> Option<&'static str> {
+        None
+    }
+
+    #[inline]
+    pub fn page_index(&self) -> Option<u32> {
+        None
+    }
+
+    #[inline]
+    pub fn attempt_index(&self) -> Option<u32> {
+        None
+    }
+
+    #[inline]
+    pub fn attempt_count(&self) -> Option<u32> {
+        None
+    }
+
+    #[inline]
     pub fn http_status(&self) -> Option<StatusCode> {
         match self {
             ApiClientError::HttpStatus { status, .. } => Some(*status),
@@ -178,6 +268,26 @@ impl ApiClientError {
     pub fn http_headers(&self) -> Option<&HeaderMap> {
         match self {
             ApiClientError::HttpStatus { headers, .. } => Some(headers.as_ref()),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn decode_status(&self) -> Option<StatusCode> {
+        match self {
+            ApiClientError::Decode { source, .. } => source
+                .downcast_ref::<ContextualDecodeError>()
+                .map(|err| err.status),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn decode_content_type(&self) -> Option<&str> {
+        match self {
+            ApiClientError::Decode { source, .. } => source
+                .downcast_ref::<ContextualDecodeError>()
+                .map(|err| err.content_type.as_str()),
             _ => None,
         }
     }
@@ -248,5 +358,58 @@ mod tests {
             Some(&http::HeaderValue::from_static("1"))
         );
         assert!(err.rate_limit_response_action().is_some());
+    }
+
+    #[test]
+    fn category_and_context_accessors_are_structured() {
+        let ctx = ErrorContext {
+            endpoint: "Ping",
+            method: http::Method::GET,
+        };
+        let err = ApiClientError::invalid_param(ctx, "id");
+
+        assert_eq!(err.category(), ErrorCategory::Config);
+        assert_eq!(err.endpoint(), "Ping");
+        assert_eq!(*err.method(), http::Method::GET);
+        assert_eq!(err.redacted_url(), None);
+    }
+
+    #[test]
+    fn decode_accessors_include_status_and_content_type() {
+        let ctx = ErrorContext {
+            endpoint: "GetUser",
+            method: http::Method::GET,
+        };
+        let err = ApiClientError::decode_error(
+            ctx,
+            StatusCode::BAD_GATEWAY,
+            Some("application/json"),
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "bad json"),
+        );
+
+        assert_eq!(err.category(), ErrorCategory::Decode);
+        assert_eq!(err.decode_status(), Some(StatusCode::BAD_GATEWAY));
+        assert_eq!(err.decode_content_type(), Some("application/json"));
+        assert!(err.to_string().contains("GET GetUser"));
+        assert!(err.to_string().contains("content-type=application/json"));
+    }
+
+    #[test]
+    fn missing_credential_category_is_distinct() {
+        let ctx = ErrorContext {
+            endpoint: "Protected",
+            method: http::Method::GET,
+        };
+        let err = ApiClientError::Auth {
+            ctx,
+            source: crate::auth::AuthError::new(
+                crate::auth::AuthErrorKind::MissingCredential,
+                "missing credential 'session'",
+            ),
+        };
+
+        assert_eq!(err.category(), ErrorCategory::MissingCredential);
+        assert!(err.to_string().contains("GET Protected"));
+        assert!(err.to_string().contains("session"));
     }
 }

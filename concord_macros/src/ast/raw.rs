@@ -88,3 +88,17 @@ pub struct RawEndpoint {
     pub response: CodecSpec,
     pub map: Option<MapSpec>,
 }
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct RawAst {
+    pub api: RawApi,
+    pub diagnostics: RawDiagnostics,
+}
+
+#[derive(Debug, Default)]
+#[allow(dead_code)]
+pub struct RawDiagnostics {
+    pub source_name: Option<String>,
+    pub parser_notes: Vec<String>,
+}

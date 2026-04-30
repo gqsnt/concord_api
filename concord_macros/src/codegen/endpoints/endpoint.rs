@@ -7,7 +7,7 @@ fn emit_endpoint_def(
     let method = &ep.method;
     let endpoint_name_str = endpoint_qualified_name(ep);
     let endpoint_name = LitStr::new(&endpoint_name_str, ep.name.span());
-    let endpoint_docs = facade_endpoint_docs(ep);
+    let endpoint_docs = facade_endpoint_docs(ep, &resolved_api.client_policy);
 
     let mut fields_ts = Vec::new();
     let mut setters_ts = Vec::new();
@@ -17,25 +17,43 @@ fn emit_endpoint_def(
         if v.optional {
             fields_ts.push(quote! { pub(crate) #f: ::core::option::Option<#ty> });
             let clear = emit_helpers::ident(&format!("clear_{f}"), f.span());
-            let maybe = emit_helpers::ident(&format!("maybe_{f}"), f.span());
+            let opt = emit_helpers::ident(&format!("{f}_opt"), f.span());
+            let set_doc = endpoint_setter_doc(ep, v, SetterDocKind::SetOptional);
+            let opt_doc = endpoint_setter_doc(ep, v, SetterDocKind::SetOptionalOption);
+            let clear_doc = endpoint_setter_doc(ep, v, SetterDocKind::ClearOptional);
             setters_ts.push(quote! {
-                #[doc = "Set this optional request parameter."]
+                #[doc = #set_doc]
                 #[inline]
                 pub fn #f(mut self, v: #ty) -> Self { self.#f = ::core::option::Option::Some(v); self }
-                #[doc = "Set or clear this optional request parameter from an Option."]
+                #[doc = #opt_doc]
                 #[inline]
-                pub fn #maybe(mut self, v: ::core::option::Option<#ty>) -> Self { self.#f = v; self }
-                #[doc = "Clear this optional request parameter."]
+                pub fn #opt(mut self, v: ::core::option::Option<#ty>) -> Self { self.#f = v; self }
+                #[doc = #clear_doc]
                 #[inline]
                 pub fn #clear(mut self) -> Self { self.#f = ::core::option::Option::None; self }
             });
         } else {
             fields_ts.push(quote! { pub(crate) #f: #ty });
-            setters_ts.push(quote! {
-                #[doc = "Set this request parameter."]
-                #[inline]
-                pub fn #f(mut self, v: #ty) -> Self { self.#f = v; self }
-            });
+            if let Some(default) = &v.default {
+                let opt = emit_helpers::ident(&format!("{f}_opt"), f.span());
+                let clear = emit_helpers::ident(&format!("clear_{f}"), f.span());
+                let set_doc = endpoint_setter_doc(ep, v, SetterDocKind::SetDefaulted);
+                let opt_doc = endpoint_setter_doc(ep, v, SetterDocKind::SetDefaultedOption);
+                let clear_doc = endpoint_setter_doc(ep, v, SetterDocKind::ClearDefaulted);
+                setters_ts.push(quote! {
+                    #[doc = #set_doc]
+                    #[inline]
+                    pub fn #f(mut self, v: #ty) -> Self { self.#f = v; self }
+                    #[doc = #opt_doc]
+                    #[inline]
+                    pub fn #opt(mut self, v: ::core::option::Option<#ty>) -> Self { self.#f = v.unwrap_or_else(|| #default); self }
+                    #[doc = #clear_doc]
+                    #[inline]
+                    pub fn #clear(mut self) -> Self { self.#f = #default; self }
+                });
+            } else {
+                setters_ts.push(quote! {});
+            }
         }
     }
 
@@ -81,7 +99,7 @@ fn emit_endpoint_def(
         init_parts.push(quote! { body });
     }
 
-    let response_dec = &ep.response.enc;
+    let response_dec = &ep.response.marker;
     let decoded_ty = &ep.response.ty;
     let final_response_ty = ep
         .map
@@ -104,7 +122,19 @@ fn emit_endpoint_def(
             resp: ::concord_core::transport::BuiltResponse,
             ctx: ::concord_core::error::ErrorContext,
         ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-            let decoded = <#response_dec as ::concord_core::internal::Decodes<#decoded_ty>>::decode(&resp.body)
+            let decoded: #decoded_ty = <#response_dec as ::concord_core::advanced::ResponseCodec>::decode(
+                &resp.body,
+                ::concord_core::advanced::DecodeContext {
+                    endpoint: ctx.endpoint,
+                    method: ctx.method.clone(),
+                    status: resp.status,
+                    content_type: resp
+                        .headers
+                        .get(::http::header::CONTENT_TYPE)
+                        .and_then(|value| value.to_str().ok())
+                        .map(::std::string::ToString::to_string),
+                },
+            )
                 .map_err(|e| {
                     let content_type = resp
                         .headers
@@ -128,14 +158,20 @@ fn emit_endpoint_def(
         emit_endpoint_plan_route_policy(ep, method, &endpoint_name, cx_ty, response_dec);
     let auth_plan = emit_endpoint_auth_plan(resolved_api, ep);
     let body_plan = if let Some(body) = &ep.body {
-        let enc = &body.enc;
-        let ty = &body.ty;
+        let enc = &body.marker;
         quote! {
-            let __body_bytes = <#enc as ::concord_core::internal::Encodes<#ty>>::encode(&self.body)
+            let __encoded_body = <#enc as ::concord_core::advanced::BodyCodec>::encode(
+                &self.body,
+                ::concord_core::advanced::EncodeContext {
+                    endpoint: ctx_err.endpoint,
+                    method: ctx_err.method.clone(),
+                },
+            )
                 .map_err(|e| ::concord_core::prelude::ApiClientError::codec_error(ctx_err.clone(), e))?;
+            let (__body_bytes, __body_content_type, __body_format) = __encoded_body.into_parts();
             let __body_plan = ::concord_core::internal::BodyPlan::Encoded {
-                content_type: <#enc as ::concord_core::internal::ContentType>::CONTENT_TYPE,
-                format: <#enc as ::concord_core::internal::FormatType>::FORMAT_TYPE,
+                content_type: __body_content_type,
+                format: __body_format,
             };
             let __request_args = ::concord_core::internal::RequestArgs { body: ::core::option::Option::Some(__body_bytes) };
         }
@@ -156,20 +192,32 @@ fn emit_endpoint_def(
             let f = &v.rust;
             let ty = &v.ty;
             if v.optional {
-                let maybe = emit_helpers::ident(&format!("maybe_{f}"), f.span());
+                let opt = emit_helpers::ident(&format!("{f}_opt"), f.span());
                 let clear = emit_helpers::ident(&format!("clear_{f}"), f.span());
+                let set_doc = endpoint_setter_doc(ep, v, SetterDocKind::SetOptional);
+                let opt_doc = endpoint_setter_doc(ep, v, SetterDocKind::SetOptionalOption);
+                let clear_doc = endpoint_setter_doc(ep, v, SetterDocKind::ClearOptional);
                 quote! {
-                    #[doc = "Set this optional request parameter."]
+                    #[doc = #set_doc]
                     fn #f(self, value: #ty) -> Self;
-                    #[doc = "Set or clear this optional request parameter from an Option."]
-                    fn #maybe(self, value: ::core::option::Option<#ty>) -> Self;
-                    #[doc = "Clear this optional request parameter."]
+                    #[doc = #opt_doc]
+                    fn #opt(self, value: ::core::option::Option<#ty>) -> Self;
+                    #[doc = #clear_doc]
                     fn #clear(self) -> Self;
                 }
             } else {
+                let opt = emit_helpers::ident(&format!("{f}_opt"), f.span());
+                let clear = emit_helpers::ident(&format!("clear_{f}"), f.span());
+                let set_doc = endpoint_setter_doc(ep, v, SetterDocKind::SetDefaulted);
+                let opt_doc = endpoint_setter_doc(ep, v, SetterDocKind::SetDefaultedOption);
+                let clear_doc = endpoint_setter_doc(ep, v, SetterDocKind::ClearDefaulted);
                 quote! {
-                    #[doc = "Set this defaulted request parameter."]
+                    #[doc = #set_doc]
                     fn #f(self, value: #ty) -> Self;
+                    #[doc = #opt_doc]
+                    fn #opt(self, value: ::core::option::Option<#ty>) -> Self;
+                    #[doc = #clear_doc]
+                    fn #clear(self) -> Self;
                 }
             }
         });
@@ -180,43 +228,35 @@ fn emit_endpoint_def(
         .map(|v| {
             let f = &v.rust;
             let ty = &v.ty;
-            if v.optional {
-                let maybe = emit_helpers::ident(&format!("maybe_{f}"), f.span());
-                let clear = emit_helpers::ident(&format!("clear_{f}"), f.span());
-                quote! {
-                    #[inline]
-                    fn #f(self, value: #ty) -> Self {
-                        self.map_endpoint(|ep| ep.#f(value))
-                    }
-
-                    #[inline]
-                    fn #maybe(self, value: ::core::option::Option<#ty>) -> Self {
-                        self.map_endpoint(|ep| ep.#maybe(value))
-                    }
-
-                    #[inline]
-                    fn #clear(self) -> Self {
-                        self.map_endpoint(|ep| ep.#clear())
-                    }
+            let opt = emit_helpers::ident(&format!("{f}_opt"), f.span());
+            let clear = emit_helpers::ident(&format!("clear_{f}"), f.span());
+            quote! {
+                #[inline]
+                fn #f(self, value: #ty) -> Self {
+                    self.map_endpoint(|ep| ep.#f(value))
                 }
-            } else {
-                quote! {
-                    #[inline]
-                    fn #f(self, value: #ty) -> Self {
-                        self.map_endpoint(|ep| ep.#f(value))
-                    }
+
+                #[inline]
+                fn #opt(self, value: ::core::option::Option<#ty>) -> Self {
+                    self.map_endpoint(|ep| ep.#opt(value))
+                }
+
+                #[inline]
+                fn #clear(self) -> Self {
+                    self.map_endpoint(|ep| ep.#clear())
                 }
             }
         });
 
     quote! {
         #( #[doc = #endpoint_docs] )*
+        #[doc = "Advanced explicit endpoint request. Prefer facade methods for normal use."]
         pub struct #ty_name {
             #( #struct_fields, )*
         }
 
         impl #ty_name {
-            #[doc = "Create this explicit endpoint request."]
+            #[doc = "Create this advanced explicit endpoint request."]
             #[inline]
             pub fn new( #( #fn_args ),* ) -> Self {
                 Self { #( #init_parts, )* }
@@ -254,9 +294,9 @@ fn emit_endpoint_def(
                         policy: __resolved_policy,
                         body: __body_plan,
                         response: ::concord_core::internal::ResponsePlan {
-                            accept: <#response_dec as ::concord_core::internal::ContentType>::CONTENT_TYPE,
-                            no_content: <#response_dec as ::concord_core::internal::ContentType>::IS_NO_CONTENT,
-                            format: <#response_dec as ::concord_core::internal::FormatType>::FORMAT_TYPE,
+                            accept: <#response_dec as ::concord_core::advanced::ResponseCodec>::accept(),
+                            no_content: <#response_dec as ::concord_core::advanced::ResponseCodec>::is_no_content(),
+                            format: <#response_dec as ::concord_core::advanced::ResponseCodec>::format(),
                             decode: #decode_fn,
                         },
                         pagination: __pagination_plan,
@@ -287,7 +327,7 @@ fn emit_endpoint_plan_route_policy(
     method: &Ident,
     _endpoint_name: &LitStr,
     cx_ty: &Ident,
-    response_dec: &syn::Path,
+    response_dec: &syn::Type,
 ) -> TokenStream2 {
     let ep_opt = ep_optionals(ep);
     let prefix_layer_route_ops = emit_prefix_route_apply(&ep.prefix_pieces, Some(&ep_opt));
@@ -327,9 +367,9 @@ fn emit_endpoint_plan_route_policy(
         }
         policy.set_layer(::concord_core::internal::PolicyLayer::Runtime);
         if ::http::Method::#method != ::http::Method::HEAD
-            && !<#response_dec as ::concord_core::internal::ContentType>::IS_NO_CONTENT
+            && !<#response_dec as ::concord_core::advanced::ResponseCodec>::is_no_content()
         {
-            policy.ensure_accept(<#response_dec as ::concord_core::internal::ContentType>::CONTENT_TYPE);
+            policy.ensure_accept(<#response_dec as ::concord_core::advanced::ResponseCodec>::accept());
         }
         let (headers, query, timeout, cache, retry, mut rate_limit) = policy.into_parts();
         rate_limit.canonicalize();
@@ -357,6 +397,18 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
     let is_cursor = ctrl_last == "CursorPagination";
     let is_offset_limit = ctrl_last == "OffsetLimitPagination";
     let is_paged = ctrl_last == "PagedPagination";
+    if !is_cursor && !is_offset_limit && !is_paged {
+        let page_ty = ep
+            .map
+            .as_ref()
+            .map(|m| m.out_ty.clone())
+            .unwrap_or_else(|| ep.response.ty.clone());
+        return quote! {
+            let __pagination_plan = ::core::option::Option::Some(
+                ::concord_core::internal::PaginationPlan::custom::<#ctrl_ty, #page_ty>()
+            );
+        };
+    }
     let auto_key_assigns = p.assigns.iter().filter_map(|(k, v)| {
         let ValueKind::EpField(f) = v else { return None; };
         let key_res = find_query_key_for_ep_field(ep, f)?;
@@ -381,7 +433,7 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
             ValueKind::EpField(f) => quote! { ep.#f.clone() },
             ValueKind::LitStr(s) => quote! { ::std::borrow::Cow::from(#s) },
             ValueKind::CxField(f) => quote! { vars.#f.clone() },
-            ValueKind::AuthField(_) => quote! {{ compile_error!("paginate auth vars are not supported in v5 controller construction"); ::core::unreachable!() }},
+            ValueKind::AuthField(_) => quote! {{ compile_error!("paginate auth vars are not supported in pagination controller construction"); ::core::unreachable!() }},
             ValueKind::OtherExpr(e) => quote! { (#e) },
             ValueKind::Fmt(fmt) => {
                 let build = emit_fmt_build_string(fmt);
@@ -397,6 +449,132 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
         #( #auto_key_assigns )*
         #( #assigns )*
         let __pagination_plan = ::core::option::Option::Some(::concord_core::internal::PaginationPlan::from(ctrl));
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SetterDocKind {
+    SetOptional,
+    SetOptionalOption,
+    ClearOptional,
+    SetDefaulted,
+    SetDefaultedOption,
+    ClearDefaulted,
+}
+
+fn endpoint_setter_doc(ep: &ResolvedEndpoint, var: &VarInfo, kind: SetterDocKind) -> LitStr {
+    let field = var.rust.to_string();
+    let role = endpoint_var_role(ep, &var.rust);
+    let default = var
+        .default
+        .as_ref()
+        .map(|expr| quote::quote!(#expr).to_string());
+    let message = match kind {
+        SetterDocKind::SetOptional => {
+            format!("Set optional {role} parameter `{field}`.")
+        }
+        SetterDocKind::SetOptionalOption => {
+            format!("Set or clear optional {role} parameter `{field}` from an Option; None clears it.")
+        }
+        SetterDocKind::ClearOptional => {
+            format!("Clear optional {role} parameter `{field}`.")
+        }
+        SetterDocKind::SetDefaulted => {
+            format!(
+                "Set defaulted {role} parameter `{field}`{}.",
+                default
+                    .as_ref()
+                    .map(|value| format!(" (default: `{value}`)"))
+                    .unwrap_or_default()
+            )
+        }
+        SetterDocKind::SetDefaultedOption => {
+            format!(
+                "Set defaulted {role} parameter `{field}` from an Option; None resets to the default{}.",
+                default
+                    .as_ref()
+                    .map(|value| format!(" `{value}`"))
+                    .unwrap_or_default()
+            )
+        }
+        SetterDocKind::ClearDefaulted => {
+            format!(
+                "Reset defaulted {role} parameter `{field}` to its default{}.",
+                default
+                    .as_ref()
+                    .map(|value| format!(" `{value}`"))
+                    .unwrap_or_default()
+            )
+        }
+    };
+    LitStr::new(&message, var.rust.span())
+}
+
+fn endpoint_var_role(ep: &ResolvedEndpoint, field: &Ident) -> &'static str {
+    if route_pieces_use_ep_field(&ep.scope_path_pieces, field)
+        || route_pieces_use_ep_field(&ep.route_pieces, field)
+    {
+        return "path";
+    }
+    if policy_ops_use_ep_field(&ep.policy.endpoint.query, field)
+        || ep
+            .policy
+            .scopes
+            .iter()
+            .any(|policy| policy_ops_use_ep_field(&policy.query, field))
+    {
+        return "query";
+    }
+    if policy_ops_use_ep_field(&ep.policy.endpoint.headers, field)
+        || ep
+            .policy
+            .scopes
+            .iter()
+            .any(|policy| policy_ops_use_ep_field(&policy.headers, field))
+    {
+        return "header";
+    }
+    "request"
+}
+
+fn route_pieces_use_ep_field(pieces: &[PathPiece], field: &Ident) -> bool {
+    pieces.iter().any(|piece| match piece {
+        PathPiece::EpVar { field: candidate } => candidate == field,
+        PathPiece::Fmt(fmt) => fmt.pieces.iter().any(|piece| {
+            matches!(
+                piece,
+                FmtResolvedPiece::Var {
+                    source: FmtVarSource::Ep,
+                    field: candidate,
+                    ..
+                } if candidate == field
+            )
+        }),
+        _ => false,
+    })
+}
+
+fn policy_ops_use_ep_field(ops: &[PolicyOp], field: &Ident) -> bool {
+    ops.iter().any(|op| match op {
+        PolicyOp::Set { value, .. } => value_kind_uses_ep_field(value, field),
+        PolicyOp::Remove { .. } => false,
+    })
+}
+
+fn value_kind_uses_ep_field(value: &ValueKind, field: &Ident) -> bool {
+    match value {
+        ValueKind::EpField(candidate) => candidate == field,
+        ValueKind::Fmt(fmt) => fmt.pieces.iter().any(|piece| {
+            matches!(
+                piece,
+                FmtResolvedPiece::Var {
+                    source: FmtVarSource::Ep,
+                    field: candidate,
+                    ..
+                } if candidate == field
+            )
+        }),
+        _ => false,
     }
 }
 

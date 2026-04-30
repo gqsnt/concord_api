@@ -5,6 +5,7 @@ pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = ReqwestTransport>
     auth_vars: Cx::AuthVars,
     auth_state: Arc<RwLock<Arc<Cx::AuthState>>>,
     debug_level: DebugLevel,
+    debug_body: bool,
     pagination_caps: Caps,
     debug_sink: Arc<dyn DebugSink>,
     runtime_state: Arc<ClientRuntimeState>,
@@ -31,6 +32,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             auth_vars,
             auth_state: Arc::new(RwLock::new(Arc::new(auth_state))),
             debug_level: DebugLevel::default(),
+            debug_body: false,
             pagination_caps: Caps::default(),
             debug_sink: Arc::new(StderrDebugSink),
             runtime_state: Arc::new(ClientRuntimeState::default()),
@@ -98,8 +100,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
+    pub fn debug_body(&self) -> bool {
+        self.debug_body
+    }
+
+    #[inline]
     pub fn set_debug_level(&mut self, level: DebugLevel) {
         self.debug_level = level;
+    }
+
+    #[inline]
+    pub fn set_debug_body(&mut self, enabled: bool) {
+        self.debug_body = enabled;
     }
 
     #[inline]
@@ -242,6 +254,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
+    pub fn with_debug_body(mut self, enabled: bool) -> Self {
+        self.debug_body = enabled;
+        self
+    }
+
+    #[inline]
     pub fn configure(&mut self, f: impl FnOnce(&mut crate::runtime::RuntimeConfig)) -> &mut Self {
         let mut config = crate::runtime::RuntimeConfig {
             hooks: self.runtime_state.hooks().clone(),
@@ -257,19 +275,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             debug: crate::runtime::DebugConfig {
                 level: self.debug_level,
                 sink: self.debug_sink.clone(),
+                body: self.debug_body,
             },
         };
         f(&mut config);
         self.debug_level = config.debug.level;
+        self.debug_body = config.debug.body;
         self.debug_sink = config.debug.sink.clone();
         self.pagination_caps = config.pagination;
         Arc::make_mut(&mut self.runtime_state).apply_config(config);
-        self
-    }
-
-    #[inline]
-    pub fn with_configure(mut self, f: impl FnOnce(&mut crate::runtime::RuntimeConfig)) -> Self {
-        self.configure(f);
         self
     }
 

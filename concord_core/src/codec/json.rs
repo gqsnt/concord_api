@@ -2,8 +2,9 @@ use crate::codec::*;
 use bytes::Bytes;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::marker::PhantomData;
 
-pub struct Json;
+pub struct Json<T = ()>(PhantomData<T>);
 
 impl ContentType for Json {
     const CONTENT_TYPE: &'static str = "application/json";
@@ -30,5 +31,50 @@ where
     type Error = serde_json::Error;
     fn decode(bytes: &Bytes) -> Result<T, Self::Error> {
         serde_json::from_slice(bytes)
+    }
+}
+
+impl<T> BodyCodec for Json<T>
+where
+    T: Serialize + Send + Sync + 'static,
+{
+    type Value = T;
+
+    fn content_type() -> &'static str {
+        <Json as ContentType>::CONTENT_TYPE
+    }
+
+    fn format() -> Format {
+        <Json as FormatType>::FORMAT_TYPE
+    }
+
+    fn encode(value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
+        <Json as Encodes<T>>::encode(value)
+            .map(|bytes| {
+                EncodedBody::from_bytes(bytes)
+                    .with_content_type(<Json as ContentType>::CONTENT_TYPE)
+                    .text()
+            })
+            .map_err(|err| CodecError::with_source("json encode failed", err))
+    }
+}
+
+impl<T> ResponseCodec for Json<T>
+where
+    T: DeserializeOwned + Send + Sync + 'static,
+{
+    type Value = T;
+
+    fn accept() -> &'static str {
+        <Json as ContentType>::CONTENT_TYPE
+    }
+
+    fn format() -> Format {
+        <Json as FormatType>::FORMAT_TYPE
+    }
+
+    fn decode(bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
+        <Json as Decodes<T>>::decode(bytes)
+            .map_err(|err| CodecError::with_source("json decode failed", err))
     }
 }

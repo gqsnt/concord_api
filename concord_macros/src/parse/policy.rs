@@ -46,6 +46,8 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
             content.parse()?
         };
 
+        validate_policy_stmt_for_block(kind, &stmt)?;
+
         // 1.2: `+=` is query-only. Forbid in `headers {}` with a direct diagnostic.
         if kind == PolicyBlockKind::Headers
             && let PolicyStmt::Set {
@@ -80,6 +82,34 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
     Ok(PolicyBlock { stmts })
 }
 
+fn validate_policy_stmt_for_block(kind: PolicyBlockKind, stmt: &PolicyStmt) -> Result<()> {
+    match (kind, stmt) {
+        (PolicyBlockKind::Headers, PolicyStmt::Remove { key })
+        | (PolicyBlockKind::Headers, PolicyStmt::Set { key, .. }) => {
+            if matches!(key, KeySpec::Ident(_)) {
+                return Err(syn::Error::new(
+                    key_spec_span(key),
+                    "header keys must be explicit string literals",
+                ));
+            }
+        }
+        (
+            PolicyBlockKind::Query,
+            PolicyStmt::Set {
+                value: PolicyValue::Expr(Expr::Lit(expr_lit)),
+                ..
+            },
+        ) if matches!(expr_lit.lit, syn::Lit::Bool(_)) => {
+            return Err(syn::Error::new(
+                expr_lit.span(),
+                "boolean query flags are not supported; use an explicit typed parameter",
+            ));
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn parse_query_policy_stmt(input: ParseStream<'_>) -> Result<PolicyStmt> {
     if input.peek(Ident) {
         let fork = input.fork();
@@ -99,7 +129,9 @@ fn parse_query_policy_stmt(input: ParseStream<'_>) -> Result<PolicyStmt> {
             });
         }
     }
-    input.parse()
+    let stmt: PolicyStmt = input.parse()?;
+    validate_policy_stmt_for_block(PolicyBlockKind::Query, &stmt)?;
+    Ok(stmt)
 }
 
 fn parse_inline_policy_stmt(
@@ -136,10 +168,12 @@ fn parse_inline_policy_stmt(
         input.parse::<Token![=]>()?;
         SetOp::Set
     };
-    let value = PolicyValue::Expr(normalize_policy_expr(parse_expr_until_comma_or_endpoint_arrow(
-        input,
-    )?));
-    Ok(PolicyStmt::Set { key, value, op })
+    let value = PolicyValue::Expr(normalize_policy_expr_checked(
+        parse_expr_until_comma_or_endpoint_arrow(input)?,
+    )?);
+    let stmt = PolicyStmt::Set { key, value, op };
+    validate_policy_stmt_for_block(kind, &stmt)?;
+    Ok(stmt)
 }
 
 impl Parse for PolicyStmt {
@@ -248,6 +282,7 @@ impl Parse for CodecSpec {
             ));
         }
 
+        let marker = Type::Path(tp.clone());
         let mut path = tp.path;
 
         if path.segments.is_empty() {
@@ -313,7 +348,11 @@ impl Parse for CodecSpec {
         // Strip `<T>` from the encoding path so codegen can use `Decoded<Enc, T>`.
         last.arguments = syn::PathArguments::None;
 
-        Ok(Self { enc: path, ty })
+        Ok(Self {
+            marker,
+            enc: path,
+            ty,
+        })
     }
 }
 
@@ -329,6 +368,11 @@ fn parse_fmt_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
     while !content.is_empty() {
         if content.peek(LitStr) {
             pieces.push(FmtPiece::Lit(content.parse::<LitStr>()?));
+        } else if content.peek(kw::fmt) {
+            return Err(syn::Error::new(
+                content.span(),
+                "nested fmt[...] is not allowed",
+            ));
         } else if content.peek(token::Brace) {
             let inner;
             braced!(inner in content);
@@ -343,7 +387,17 @@ fn parse_fmt_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
                         inner.parse::<Token![.]>()?;
                         let name: Ident = inner.parse()?;
                         let scope = resolve_scoped_ref_base(&base)?;
-                        pieces.push(FmtPiece::Ref(ScopedRef { scope, ident: name }));
+                        if matches!(scope, RefScope::Auth) {
+                            return Err(syn::Error::new(
+                                name.span(),
+                                "secret.* is not allowed in fmt[...]",
+                            ));
+                        }
+                        pieces.push(FmtPiece::Ref(ScopedRef {
+                            scope,
+                            ident: name,
+                            explicit: true,
+                        }));
                         if !inner.is_empty() {
                             return Err(syn::Error::new(
                                 inner.span(),
@@ -361,6 +415,12 @@ fn parse_fmt_spec(input: ParseStream<'_>) -> Result<FmtSpec> {
             ));
         } else if content.peek(Ident) {
             let sr = parse_scoped_ref_from_ident(&content)?;
+            if matches!(sr.scope, RefScope::Auth) {
+                return Err(syn::Error::new(
+                    sr.ident.span(),
+                    "secret.* is not allowed in fmt[...]",
+                ));
+            }
             pieces.push(FmtPiece::Ref(sr));
         } else {
             let tt: TokenTree = content.parse()?;
@@ -388,7 +448,7 @@ fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue>
         return Ok(PolicyValue::Fmt(parse_fmt_spec(input)?));
     }
     let expr: syn::Expr = input.parse()?;
-    Ok(PolicyValue::Expr(normalize_policy_expr(expr)))
+    Ok(PolicyValue::Expr(normalize_policy_expr_checked(expr)?))
 }
 
 fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
@@ -424,7 +484,11 @@ fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
                         ));
                     }
                     let scope = resolve_scoped_ref_base(&base)?;
-                    return Ok(RouteAtom::Ref(ScopedRef { scope, ident: name }));
+                    return Ok(RouteAtom::Ref(ScopedRef {
+                        scope,
+                        ident: name,
+                        explicit: true,
+                    }));
                 }
             }
         }
@@ -461,6 +525,23 @@ fn parse_route_expr_bracket(input: ParseStream<'_>) -> Result<RouteExpr> {
     Ok(RouteExpr { atoms })
 }
 
+fn parse_path_route_expr_bracket(input: ParseStream<'_>) -> Result<RouteExpr> {
+    let route = parse_route_expr_bracket(input)?;
+    for atom in &route.atoms {
+        if let RouteAtom::Fmt(spec) = atom {
+            for piece in &spec.pieces {
+                if let FmtPiece::Lit(lit) = piece && lit.value().contains('/') {
+                    return Err(syn::Error::new(
+                        lit.span(),
+                        "path fmt string literals must not contain `/`; use separate path atoms",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(route)
+}
+
 fn resolve_scoped_ref_base(base: &Ident) -> Result<RefScope> {
     if *base == "vars" {
         return Ok(RefScope::Cx);
@@ -486,11 +567,13 @@ fn parse_scoped_ref_from_ident(input: ParseStream<'_>) -> Result<ScopedRef> {
         Ok(ScopedRef {
             scope,
             ident: second,
+            explicit: true,
         })
     } else {
         Ok(ScopedRef {
             scope: RefScope::Ep,
             ident: first,
+            explicit: false,
         })
     }
 }
@@ -563,6 +646,65 @@ fn normalize_policy_expr(expr: Expr) -> Expr {
             Expr::Binary(b)
         }
         other => other,
+    }
+}
+
+fn normalize_policy_expr_checked(expr: Expr) -> Result<Expr> {
+    reject_direct_secret_expr(&expr)?;
+    Ok(normalize_policy_expr(expr))
+}
+
+fn reject_direct_secret_expr(expr: &Expr) -> Result<()> {
+    match expr {
+        Expr::Field(field) => {
+            if let Expr::Path(base_path) = &*field.base
+                && base_path.qself.is_none()
+                && base_path.path.segments.len() == 1
+                && base_path.path.segments[0].ident == "secret"
+            {
+                return Err(syn::Error::new(
+                    field.member.span(),
+                    "DSL-010 direct `secret.*` is not allowed in policy expressions; declare an auth credential",
+                ));
+            }
+            reject_direct_secret_expr(&field.base)
+        }
+        Expr::Path(path)
+            if path.qself.is_none()
+                && path
+                    .path
+                    .segments
+                    .first()
+                    .is_some_and(|segment| segment.ident == "secret") =>
+        {
+            Err(syn::Error::new(
+                path.path.segments[0].ident.span(),
+                "DSL-010 direct `secret.*` is not allowed in policy expressions; declare an auth credential",
+            ))
+        }
+        Expr::Cast(cast) => reject_direct_secret_expr(&cast.expr),
+        Expr::Paren(paren) => reject_direct_secret_expr(&paren.expr),
+        Expr::Reference(reference) => reject_direct_secret_expr(&reference.expr),
+        Expr::Unary(unary) => reject_direct_secret_expr(&unary.expr),
+        Expr::Binary(binary) => {
+            reject_direct_secret_expr(&binary.left)?;
+            reject_direct_secret_expr(&binary.right)
+        }
+        Expr::MethodCall(call) => {
+            reject_direct_secret_expr(&call.receiver)?;
+            for arg in &call.args {
+                reject_direct_secret_expr(arg)?;
+            }
+            Ok(())
+        }
+        Expr::Call(call) => {
+            reject_direct_secret_expr(&call.func)?;
+            for arg in &call.args {
+                reject_direct_secret_expr(arg)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 

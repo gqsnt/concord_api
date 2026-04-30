@@ -1,20 +1,4 @@
 fn endpoint_internal_ident(ep: &ResolvedEndpoint) -> Ident {
-    fn pascalize(raw: &str) -> String {
-        raw.split('_')
-            .filter(|part| !part.is_empty())
-            .map(|part| {
-                let mut chars = part.chars();
-                let Some(first) = chars.next() else {
-                    return String::new();
-                };
-                let mut out = String::new();
-                out.extend(first.to_uppercase());
-                out.push_str(chars.as_str());
-                out
-            })
-            .collect::<String>()
-    }
-
     let mut name = String::from("Ep");
     for scope in &ep.scope_modules {
         name.push_str(&pascalize(&scope.to_string()));
@@ -26,8 +10,29 @@ fn endpoint_internal_ident(ep: &ResolvedEndpoint) -> Ident {
 }
 
 fn endpoint_pending_ext_trait_ident(ep: &ResolvedEndpoint) -> Ident {
-    let internal = endpoint_internal_ident(ep);
-    emit_helpers::ident(&format!("__{internal}PendingRequestExt"), ep.name.span())
+    let mut name = String::new();
+    for scope in &ep.scope_modules {
+        name.push_str(&pascalize(&scope.to_string()));
+    }
+    name.push_str(&pascalize(&ep.name.to_string()));
+    name.push_str("RequestExt");
+    emit_helpers::ident(&name, ep.name.span())
+}
+
+fn pascalize(raw: &str) -> String {
+    raw.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            let Some(first) = chars.next() else {
+                return String::new();
+            };
+            let mut out = String::new();
+            out.extend(first.to_uppercase());
+            out.push_str(chars.as_str());
+            out
+        })
+        .collect::<String>()
 }
 
 fn stable_endpoint_hash(value: &str) -> String {

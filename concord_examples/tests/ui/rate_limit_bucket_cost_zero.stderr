@@ -1,5 +1,0 @@
-error: rate_limit bucket cost must be greater than zero
-  --> tests/ui/rate_limit_bucket_cost_zero.rs:11:22
-   |
-11 |                 cost 0 // ERROR: cost must be > 0
-   |                      ^

@@ -1,7 +1,0 @@
-error: unknown retry profile `raed`
-       did you mean `read`?
-       available retry profiles: `read`
-  --> tests/ui/retry_unknown_profile_suggestion.rs:15:15
-   |
-15 |         retry raed
-   |               ^^^^

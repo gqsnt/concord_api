@@ -1,0 +1,3 @@
+request_builders.generated
+builder: PingRequest
+execute: await | execute | execute_decoded | execute_raw

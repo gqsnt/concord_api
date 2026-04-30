@@ -6,13 +6,28 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     where
         R: Send + 'static,
     {
-        let dbg = self.debug_level();
+        let ctx = ErrorContext {
+            endpoint: plan.endpoint.meta.name,
+            method: plan.endpoint.meta.method.clone(),
+        };
+        let resp = self.execute_plan_raw(plan.clone()).await?;
+        Self::decode_planned_response::<R>(&plan, resp, ctx)
+    }
+
+    pub async fn execute_plan_raw(
+        &self,
+        plan: RequestPlan,
+    ) -> Result<BuiltResponse, ApiClientError> {
+        let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
         };
+        if let RetrySetting::Config(config) = &plan.endpoint.policy.retry {
+            config.validate(ctx.clone())?;
+        }
         let base_attempt: u32 = plan.overrides.attempt;
         let max_auth_retries = self.runtime_state.max_auth_retries();
         let auth_state_snapshot = self.auth_state();
@@ -38,7 +53,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let url_str = built.url.as_str().to_string();
             let cache_revalidation = match self.prepare_cache_before_request(&mut built).await {
                 CacheBeforeOutcome::Hit(cached) => {
-                    return Self::decode_planned_response::<R>(&plan, cached, ctx.clone());
+                    return Ok(cached);
                 }
                 CacheBeforeOutcome::Continue(cache_revalidation) => cache_revalidation,
             };
@@ -107,7 +122,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     }
                     let resp = cache_after.response;
                     self.debug_planned_response(dbg, &plan, &resp, &url_str);
-                    return Self::decode_planned_response::<R>(&plan, resp, ctx.clone());
+                    return Ok(resp);
                 }
                 Err(err) => {
                     if let ApiClientError::HttpStatus { status, headers, .. } = &err {
@@ -159,7 +174,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                                 .after_error(&built_for_cache, &err, cache_revalidation.clone())
                                 .await
                         {
-                            return Self::decode_planned_response::<R>(&plan, cached, ctx.clone());
+                            if dbg.is_verbose() {
+                                self.debug_sink.stale_fallback(
+                                    dbg,
+                                    &built_for_cache.meta.method,
+                                    &url_str,
+                                    built_for_cache.meta.endpoint,
+                                    built_for_cache.meta.page_index,
+                                );
+                            }
+                            return Ok(cached);
                         }
                         return Err(err);
                     };
@@ -360,7 +384,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
         if dbg.is_very_verbose() {
             self.debug_sink.request_headers(dbg, &built.headers);
-            if let Some(body) = built.body.as_ref() {
+            if self.debug_body {
+                let Some(body) = built.body.as_ref() else {
+                    return;
+                };
                 const MAX_CHARS: usize = 32 * 1024;
                 let fmt = match &plan.endpoint.body {
                     BodyPlan::Encoded { format, .. } => *format,
@@ -378,8 +405,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         if dbg.is_very_verbose() {
             const MAX_CHARS: usize = 32 * 1024;
             self.debug_sink.response_headers(dbg, &resp.headers);
-            self.debug_sink
-                .response_body(dbg, &resp.body, plan.endpoint.response.format, MAX_CHARS);
+            if self.debug_body {
+                self.debug_sink
+                    .response_body(dbg, &resp.body, plan.endpoint.response.format, MAX_CHARS);
+            }
         }
     }
 }

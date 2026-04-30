@@ -14,19 +14,25 @@ impl RequestKey {
     pub fn new(v: String) -> Self {
         Self(v)
     }
+
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 pub fn default_request_key(req: &BuiltRequest) -> RequestKey {
-    let mut s = format!("{} {}", req.meta.method, sanitized_url_for_key(&req.url));
+    let mut s = format!(
+        "{} {}",
+        req.meta.method,
+        crate::redaction::sanitized_url_for_key(&req.url)
+    );
     let mut headers: Vec<(String, String)> = req
         .headers
         .iter()
         .map(|(k, v)| {
-            let value = if is_sensitive_name(k.as_str()) {
-                format!(
-                    "<sensitive:{}>",
-                    hash_value(v.to_str().unwrap_or("<non-utf8>"))
-                )
+            let value = if crate::redaction::is_sensitive_name(k.as_str()) {
+                crate::redaction::hashed_sensitive_value(v.to_str().unwrap_or("<non-utf8>"))
             } else {
                 v.to_str().unwrap_or("<non-utf8>").to_string()
             };
@@ -54,55 +60,6 @@ pub fn default_request_key(req: &BuiltRequest) -> RequestKey {
         }
     }
     RequestKey::new(s)
-}
-
-fn sanitized_url_for_key(url: &url::Url) -> String {
-    if url.query().is_none() {
-        return url.to_string();
-    }
-    let mut out = url.clone();
-    out.query_pairs_mut().clear();
-    {
-        let mut pairs = out.query_pairs_mut();
-        for (k, v) in url.query_pairs() {
-            if is_sensitive_name(&k) {
-                pairs.append_pair(&k, &format!("<sensitive:{}>", hash_value(&v)));
-            } else {
-                pairs.append_pair(&k, &v);
-            }
-        }
-    }
-    out.to_string()
-}
-
-fn is_sensitive_name(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    matches!(
-        n.as_str(),
-        "authorization"
-            | "proxy-authorization"
-            | "cookie"
-            | "set-cookie"
-            | "access_token"
-            | "refresh_token"
-            | "api_key"
-            | "apikey"
-            | "key"
-            | "token"
-            | "secret"
-            | "password"
-    ) || n.contains("token")
-        || n.contains("secret")
-        || n.contains("api-key")
-        || n.contains("apikey")
-        || n.ends_with("_key")
-        || n.ends_with("-key")
-}
-
-fn hash_value(value: &str) -> String {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    value.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
 }
 
 pub trait InflightPolicy: Send + Sync + 'static {
@@ -289,5 +246,55 @@ impl JoinHandle {
 
     pub async fn complete(self, registry: &InflightRegistry, result: SharedSendResult) {
         registry.complete(&self.key, &self.entry, result).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::RequestExtensions;
+    use crate::cache::{CacheRequestMode, CacheSetting};
+    use crate::rate_limit::RateLimitPlan;
+    use crate::retry::RetrySetting;
+    use crate::transport::RequestMeta;
+
+    fn request(url: &str) -> BuiltRequest {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            http::HeaderValue::from_static("Bearer raw-secret"),
+        );
+        BuiltRequest {
+            meta: RequestMeta {
+                endpoint: "Test",
+                method: http::Method::GET,
+                idempotent: true,
+                attempt: 0,
+                page_index: 0,
+            },
+            url: url.parse().expect("valid url"),
+            headers,
+            body: None,
+            timeout: None,
+            retry: RetrySetting::Inherit,
+            rate_limit: RateLimitPlan::new(),
+            cache: CacheSetting::Off,
+            cache_mode: CacheRequestMode::Default,
+            cache_revalidation: None,
+            extensions: RequestExtensions::default(),
+        }
+    }
+
+    #[test]
+    fn request_key_hashes_sensitive_url_and_header_values() {
+        let key = default_request_key(&request(
+            "https://example.com/items?api_key=query-secret&visible=plain",
+        ));
+
+        assert!(key.as_str().contains("visible=plain"));
+        assert!(key.as_str().contains("api_key=%3Csensitive%3A"));
+        assert!(key.as_str().contains("authorization=<sensitive:"));
+        assert!(!key.as_str().contains("query-secret"));
+        assert!(!key.as_str().contains("raw-secret"));
     }
 }

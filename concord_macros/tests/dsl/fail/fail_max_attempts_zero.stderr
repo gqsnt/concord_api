@@ -1,0 +1,13 @@
+error: retry max_attempts must be at least 1
+ --> tests/dsl/fail/fail_max_attempts_zero.rs:9:26
+  |
+9 |             max_attempts 0
+  |                          ^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/dsl/fail/fail_max_attempts_zero.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

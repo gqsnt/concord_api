@@ -7,14 +7,14 @@ use std::borrow::Cow;
 /// - expose items (PageItems)
 /// - expose a "next cursor" value (HasNextCursor)
 pub trait HasNextCursor {
-    type Cursor: ToString + Send + Sync + 'static;
-    fn next_cursor(&self) -> Option<&Self::Cursor>;
+    type Cursor: Clone + Eq + std::hash::Hash + ToString + Send + 'static;
+    fn next_cursor(&self) -> Option<Self::Cursor>;
 }
 
 impl<T: Send + 'static> HasNextCursor for Vec<T> {
     type Cursor = String;
 
-    fn next_cursor(&self) -> Option<&Self::Cursor> {
+    fn next_cursor(&self) -> Option<Self::Cursor> {
         None
     }
 }

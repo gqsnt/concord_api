@@ -1,8 +1,8 @@
-//! Proc-macro entry point for the Concord v5 DSL.
+//! Proc-macro entry point for the Concord DSL.
 //!
 //! The implementation is intentionally staged:
 //!
-//! 1. `parse` accepts strict v5 syntax.
+//! 1. `parse` accepts current syntax.
 //! 2. `sema` normalizes and resolves the API tree into `ResolvedApi` and
 //!    `ResolvedEndpoint`.
 //! 3. `codegen` emits clients and endpoint `plan()` implementations from the

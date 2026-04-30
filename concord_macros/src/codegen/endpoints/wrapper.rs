@@ -458,9 +458,6 @@ fn emit_client_wrapper(
             #[doc = "Mutate advanced runtime configuration in place."]
             #[inline]
             pub fn configure_mut(&mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> &mut Self { self.inner.configure(f); self }
-            #[doc = "Mutate advanced runtime configuration and return this client."]
-            #[inline]
-            pub fn with_configure(mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> Self { self.inner.configure(f); self }
             #[doc = "Create a pending request from an explicit endpoint value."]
             #[inline]
             pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E, T>
@@ -484,7 +481,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
         .endpoints
         .iter()
         .any(|ep| ep.scope_modules.first().is_some_and(|scope| scope == "auth"));
-    let auth_ty = emit_helpers::ident(&format!("__{}Auth", client_ty), client_ty.span());
+    let auth_ty = emit_helpers::ident(&format!("{}Auth", client_ty), client_ty.span());
     let handle_items = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
         let AuthCredentialKindIr::Endpoint {
             endpoint: _,
@@ -495,7 +492,10 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
             return None;
         };
         let name = &credential.name;
-        let handle_ty = emit_helpers::ident(&format!("__{}Auth{}", client_ty, name), name.span());
+        let handle_ty = emit_helpers::ident(
+            &format!("{}{}Auth", client_ty, pascalize(&name.to_string())),
+            name.span(),
+        );
         Some(quote! {
             pub struct #handle_ty<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
                 client: &'a #client_ty<T>,
@@ -578,7 +578,10 @@ fn emit_auth_accessor_methods(resolved_api: &ResolvedApi, client_ty: &Ident) -> 
             return None;
         }
         let name = &credential.name;
-        let handle_ty = emit_helpers::ident(&format!("__{}Auth{}", client_ty, name), name.span());
+        let handle_ty = emit_helpers::ident(
+            &format!("{}{}Auth", client_ty, pascalize(&name.to_string())),
+            name.span(),
+        );
         Some(quote! {
             #[inline]
             pub fn #name(&self) -> #handle_ty<'a, T> {
@@ -613,22 +616,31 @@ fn pascal_to_snake(raw: &str) -> String {
     out
 }
 
-fn facade_scope_struct(path: &[Ident]) -> Ident {
-    let name = path
+fn pascalize_ident_path(path: &[Ident]) -> String {
+    path
         .iter()
         .map(ToString::to_string)
         .map(|s| {
-            let mut chars = s.chars();
-            let Some(first) = chars.next() else {
-                return String::new();
-            };
-            let mut out = String::new();
-            out.extend(first.to_uppercase());
-            out.push_str(chars.as_str());
-            out
+            s.split('_')
+                .filter(|part| !part.is_empty())
+                .map(|part| {
+                    let mut chars = part.chars();
+                    let Some(first) = chars.next() else {
+                        return String::new();
+                    };
+                    let mut out = String::new();
+                    out.extend(first.to_uppercase());
+                    out.push_str(chars.as_str());
+                    out
+                })
+                .collect::<String>()
         })
-        .collect::<String>();
-    emit_helpers::ident(&format!("__Facade{name}"), path.last().unwrap().span())
+        .collect::<String>()
+}
+
+fn facade_scope_struct(client_ty: &Ident, path: &[Ident]) -> Ident {
+    let name = pascalize_ident_path(path);
+    emit_helpers::ident(&format!("{client_ty}{name}Scope"), path.last().unwrap().span())
 }
 
 fn required_vars(vars: &[VarInfo]) -> Vec<&VarInfo> {
@@ -670,7 +682,9 @@ fn emit_tree_facade(resolved_api: &ResolvedApi, client_ty: &Ident, cx_ty: &Ident
         .endpoints
         .iter()
         .filter(|ep| ep.scope_modules.is_empty())
-        .map(|ep| emit_facade_endpoint_method(ep, client_ty, cx_ty, &[], true));
+        .map(|ep| {
+            emit_facade_endpoint_method(ep, &resolved_api.client_policy, client_ty, cx_ty, &[], true)
+        });
     let scope_structs = scopes
         .iter()
         .map(|scope| emit_facade_scope_struct(resolved_api, client_ty, cx_ty, scope, &scopes));
@@ -687,11 +701,23 @@ fn emit_tree_facade(resolved_api: &ResolvedApi, client_ty: &Ident, cx_ty: &Ident
 
 fn emit_scope_ctor_method(
     scope: &FacadeScopeInfo,
-    _client_ty: &Ident,
+    client_ty: &Ident,
     parent_scope: Option<&FacadeScopeInfo>,
 ) -> TokenStream2 {
     let method = scope.path.last().unwrap();
-    let struct_name = facade_scope_struct(&scope.path);
+    let struct_name = facade_scope_struct(client_ty, &scope.path);
+    let doc = LitStr::new(
+        &format!(
+            "Enter the `{}` facade scope.",
+            scope
+                .path
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("::")
+        ),
+        method.span(),
+    );
     let parent_decl_count = parent_scope.map_or(0, |s| s.decls.len());
     let new_decls = &scope.decls[parent_decl_count..];
     let args = required_vars(new_decls).into_iter().map(|v| {
@@ -737,6 +763,7 @@ fn emit_scope_ctor_method(
     };
 
     quote! {
+        #[doc = #doc]
         #[inline]
         pub fn #method(#receiver, #( #args ),*) -> #struct_name<#lifetime, T> {
             #struct_name {
@@ -755,7 +782,19 @@ fn emit_facade_scope_struct(
     scope: &FacadeScopeInfo,
     scopes: &[FacadeScopeInfo],
 ) -> TokenStream2 {
-    let struct_name = facade_scope_struct(&scope.path);
+    let struct_name = facade_scope_struct(client_ty, &scope.path);
+    let doc = LitStr::new(
+        &format!(
+            "Facade handle for the `{}` scope.",
+            scope
+                .path
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("::")
+        ),
+        scope.path.last().unwrap().span(),
+    );
     let fields = scope.decls.iter().map(|v| {
         let name = &v.rust;
         let ty = &v.ty;
@@ -800,7 +839,16 @@ fn emit_facade_scope_struct(
         .endpoints
         .iter()
         .filter(|ep| ep.scope_modules == scope.path)
-        .map(|ep| emit_facade_endpoint_method(ep, client_ty, cx_ty, &scope.decls, false));
+        .map(|ep| {
+            emit_facade_endpoint_method(
+                ep,
+                &resolved_api.client_policy,
+                client_ty,
+                cx_ty,
+                &scope.decls,
+                false,
+            )
+        });
     let auth_accessor_methods = if scope.path.len() == 1 && scope.path[0] == "auth" {
         emit_auth_accessor_methods(resolved_api, client_ty)
     } else {
@@ -808,7 +856,7 @@ fn emit_facade_scope_struct(
     };
 
     quote! {
-        #[allow(non_camel_case_types)]
+        #[doc = #doc]
         pub struct #struct_name<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
             client: &'a #client_ty<T>,
             #( #fields, )*
@@ -825,6 +873,7 @@ fn emit_facade_scope_struct(
 
 fn emit_facade_endpoint_method(
     ep: &ResolvedEndpoint,
+    client_policy: &PolicyBlocksResolved,
     _client_ty: &Ident,
     cx_ty: &Ident,
     captured: &[VarInfo],
@@ -895,7 +944,7 @@ fn emit_facade_endpoint_method(
     let lifetime = if root { quote! { '_ } } else { quote! { 'a } };
     let bind_client = if root { quote! {} } else { quote! { let __client = self.client; } };
     let args: Vec<TokenStream2> = call_args.into_iter().chain(body_arg).collect();
-    let docs = facade_endpoint_docs(ep);
+    let docs = facade_endpoint_docs(ep, client_policy);
 
     quote! {
         #( #[doc = #docs] )*
@@ -909,12 +958,38 @@ fn emit_facade_endpoint_method(
     }
 }
 
-fn facade_endpoint_docs(ep: &ResolvedEndpoint) -> Vec<LitStr> {
+fn facade_endpoint_docs(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> Vec<LitStr> {
     let mut docs = Vec::new();
     docs.push(LitStr::new(
         &format!("{} {}", ep.method, doc_path(ep)),
         ep.name.span(),
     ));
+    let required = ep
+        .vars
+        .iter()
+        .filter(|var| !var.optional && var.default.is_none())
+        .map(|var| format!("`{}`", var.rust))
+        .collect::<Vec<_>>();
+    if !required.is_empty() {
+        docs.push(LitStr::new(
+            &format!("Required params: {}", required.join(", ")),
+            ep.name.span(),
+        ));
+    }
+    let query = doc_policy_keys(ep, client_policy, PolicyKeyKind::Query);
+    if !query.is_empty() {
+        docs.push(LitStr::new(
+            &format!("Query params: {}", query.join(", ")),
+            ep.name.span(),
+        ));
+    }
+    let headers = doc_policy_keys(ep, client_policy, PolicyKeyKind::Header);
+    if !headers.is_empty() {
+        docs.push(LitStr::new(
+            &format!("Headers: {}", headers.join(", ")),
+            ep.name.span(),
+        ));
+    }
     if !ep.policy.auth.is_empty() {
         docs.push(LitStr::new("", ep.name.span()));
         docs.push(LitStr::new("Auth:", ep.name.span()));
@@ -926,11 +1001,67 @@ fn facade_endpoint_docs(ep: &ResolvedEndpoint) -> Vec<LitStr> {
             ));
         }
     }
-    if endpoint_has_rate_limit(ep) {
-        docs.push(LitStr::new("", ep.name.span()));
+    if endpoint_has_cache(ep, client_policy) {
+        docs.push(LitStr::new("Cache: configured", ep.name.span()));
+    }
+    if endpoint_has_retry(ep, client_policy) {
+        docs.push(LitStr::new("Retry: configured", ep.name.span()));
+    }
+    if endpoint_has_rate_limit(ep, client_policy) {
         docs.push(LitStr::new("Rate limit: configured", ep.name.span()));
     }
+    if let Some(pagination) = &ep.paginate {
+        let controller = pagination
+            .ctrl_ty
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string())
+            .unwrap_or_else(|| "configured".to_string());
+        docs.push(LitStr::new(
+            &format!("Pagination: {controller}"),
+            ep.name.span(),
+        ));
+    }
+    if let Some(body) = &ep.body {
+        docs.push(LitStr::new(
+            &format!("Body: {}", doc_codec(&body.enc, &body.ty)),
+            ep.name.span(),
+        ));
+    }
+    docs.push(LitStr::new(
+        &format!("Response: {}", doc_codec(&ep.response.enc, &ep.response.ty)),
+        ep.name.span(),
+    ));
     docs
+}
+
+fn doc_policy_keys(
+    ep: &ResolvedEndpoint,
+    client_policy: &PolicyBlocksResolved,
+    kind: PolicyKeyKind,
+) -> Vec<String> {
+    let mut keys = std::collections::BTreeSet::new();
+    let policies = std::iter::once(client_policy)
+        .chain(ep.policy.scopes.iter())
+        .chain(std::iter::once(&ep.policy.endpoint));
+    for policy in policies {
+        let ops = match kind {
+            PolicyKeyKind::Header => &policy.headers,
+            PolicyKeyKind::Query => &policy.query,
+        };
+        for op in ops {
+            let key = match op {
+                PolicyOp::Set { key, .. } | PolicyOp::Remove { key } => key,
+            };
+            let (key, _, _) = emit_key_string(key, kind);
+            keys.insert(format!("`{key}`"));
+        }
+    }
+    keys.into_iter().collect()
+}
+
+fn doc_codec(enc: &syn::Path, ty: &syn::Type) -> String {
+    format!("{}<{}>", quote::quote!(#enc), quote::quote!(#ty))
 }
 
 fn doc_path(ep: &ResolvedEndpoint) -> String {
@@ -965,10 +1096,32 @@ fn doc_auth_use(auth: &AuthUseIr) -> String {
     }
 }
 
-fn endpoint_has_rate_limit(ep: &ResolvedEndpoint) -> bool {
-    ep.policy
-        .scopes
-        .iter()
-        .any(|policy| policy.rate_limit.is_some())
+fn endpoint_has_rate_limit(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> bool {
+    client_policy.rate_limit.is_some()
+        || ep
+            .policy
+            .scopes
+            .iter()
+            .any(|policy| policy.rate_limit.is_some())
         || ep.policy.endpoint.rate_limit.is_some()
+}
+
+fn endpoint_has_cache(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> bool {
+    client_policy.cache.is_some()
+        || ep
+            .policy
+            .scopes
+            .iter()
+            .any(|policy| policy.cache.is_some())
+        || ep.policy.endpoint.cache.is_some()
+}
+
+fn endpoint_has_retry(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> bool {
+    client_policy.retry.is_some()
+        || ep
+            .policy
+            .scopes
+            .iter()
+            .any(|policy| policy.retry.is_some())
+        || ep.policy.endpoint.retry.is_some()
 }

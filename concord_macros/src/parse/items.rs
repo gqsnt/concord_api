@@ -65,7 +65,7 @@ impl Parse for RawScopeTaggedScope {
                     ));
                 }
                 content.parse::<kw::path>()?;
-                path_route = Some(parse_route_expr_bracket(&content)?);
+                path_route = Some(parse_path_route_expr_bracket(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::headers) {
                 policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
@@ -255,6 +255,10 @@ impl Parse for RawEndpoint {
         let leading_parts = parse_endpoint_inline_parts(input, &name)?;
 
         if !input.peek(Token![->]) {
+            if !input.is_empty() && !input.peek(token::Brace) && !input.peek(token::Semi) {
+                let tt: TokenTree = input.parse()?;
+                return Err(unsupported_endpoint_clause_error(tt));
+            }
             return Err(syn::Error::new(
                 input.span(),
                 "endpoint declarations must use `METHOD Name(...) -> Response { ... }` (or `METHOD Name -> Response { ... }`)",
@@ -265,6 +269,15 @@ impl Parse for RawEndpoint {
         let trailing_parts = parse_endpoint_inline_parts(input, &name)?;
         let inline_parts = leading_parts.merge(trailing_parts, &name)?;
 
+        if input.peek(Token![->]) {
+            return Err(syn::Error::new(
+                input.span(),
+                "duplicate endpoint response marker",
+            ));
+        }
+        if input.peek(kw::map) {
+            return Err(syn::Error::new(input.span(), "duplicate endpoint map clause"));
+        }
         if input.peek(token::Semi) {
             let _semi: token::Semi = input.parse()?;
             return Ok(raw_endpoint(
@@ -290,7 +303,7 @@ impl Parse for RawEndpoint {
         if input.peek(token::Brace) {
             return Err(syn::Error::new(
                 input.span(),
-                "unexpected endpoint block; endpoint clauses must be written in the stanza",
+                "DSL-002 endpoint braced blocks are not supported; endpoint clauses must be written in the stanza",
             ));
         }
 
@@ -360,10 +373,35 @@ fn raw_endpoint(
     }
 }
 
+fn unsupported_endpoint_clause_error(tt: TokenTree) -> syn::Error {
+    if let TokenTree::Ident(ident) = &tt {
+        if ident == "part" {
+            return syn::Error::new(
+                tt.span(),
+                "`part[...]` is not supported; use `fmt[...]` route atoms",
+            );
+        }
+        if ident == "body" {
+            return syn::Error::new(
+                tt.span(),
+                "body stanza lines are not supported; declare body as an endpoint signature argument",
+            );
+        }
+    }
+    syn::Error::new(tt.span(), "DSL-001 unknown endpoint clause")
+}
+
 impl Parse for PaginateSpec {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::paginate>()?;
         let ctrl_ty: Path = input.parse()?;
+
+        if !input.peek(token::Brace) {
+            return Ok(Self {
+                ctrl_ty,
+                assigns: Vec::new(),
+            });
+        }
 
         let content;
         braced!(content in input);
@@ -389,7 +427,7 @@ impl Parse for PaginateSpec {
             }
             let key: Ident = content.parse()?;
             content.parse::<Token![=]>()?;
-            let value: Expr = normalize_policy_expr(content.parse()?);
+            let value: Expr = normalize_policy_expr_checked(content.parse()?)?;
             assigns.push(PaginateAssign { key, value });
             first = false;
         }

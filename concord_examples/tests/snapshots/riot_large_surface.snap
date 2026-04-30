@@ -1,0 +1,4 @@
+riot_fixture_summary:
+clients: RiotClient, DDragonClient
+features: nested_scopes, aliases, path_query_header_fmt, auth, rate_limit_profiles, offset_pagination
+facade_paths: platform(...).summoner_v4().by_puuid, regional(...).match_v5_matches().ids_by_puuid().paginate, ddragon(...).cdn_versioned(...).data_localized(...).champion().get_champion_list

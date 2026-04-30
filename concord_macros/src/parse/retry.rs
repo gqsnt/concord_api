@@ -109,6 +109,14 @@ fn parse_retry_patch_body(input: ParseStream<'_>) -> Result<RetryPatch> {
             }
         } else {
             let tt: TokenTree = input.parse()?;
+            if let TokenTree::Ident(ident) = &tt
+                && ident == "attempts"
+            {
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "`attempts` is not supported; use `max_attempts`",
+                ));
+            }
             return Err(syn::Error::new(
                 tt.span(),
                 "unexpected token in retry policy block",

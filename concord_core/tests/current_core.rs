@@ -1,0 +1,16 @@
+#[path = "current_core/auth.rs"]
+mod auth;
+#[path = "current_core/cache.rs"]
+mod cache;
+#[path = "current_core/common.rs"]
+mod common;
+#[path = "current_core/inflight.rs"]
+mod inflight;
+#[path = "current_core/pagination.rs"]
+mod pagination;
+#[path = "current_core/public_api.rs"]
+mod public_api;
+#[path = "current_core/rate_limit.rs"]
+mod rate_limit;
+#[path = "current_core/runtime_order.rs"]
+mod runtime_order;
