@@ -1,6 +1,7 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use bytes::Bytes;
+use http::HeaderValue;
 use std::fmt;
 
 #[cfg(feature = "json")]
@@ -89,7 +90,7 @@ pub trait ContentType {
 
 pub trait Decodes<T>: ContentType + FormatType {
     type Error: std::error::Error + Send + Sync + 'static;
-    fn decode(bytes: &Bytes) -> Result<T, Self::Error>;
+    fn decode_owned(bytes: Bytes) -> Result<T, Self::Error>;
 }
 
 pub trait Encodes<T>: ContentType + FormatType {
@@ -101,39 +102,83 @@ pub trait Encodes<T>: ContentType + FormatType {
 ///
 /// This type is part of the stable advanced API and intentionally contains
 /// only request metadata, not internal request plans.
-#[derive(Clone, Debug)]
-pub struct EncodeContext {
-    pub endpoint: &'static str,
-    pub method: http::Method,
+#[derive(Clone, Copy, Debug)]
+pub struct EncodeContext<'a> {
+    endpoint: &'a str,
+    method: &'a http::Method,
+}
+
+impl<'a> EncodeContext<'a> {
+    pub fn new(endpoint: &'a str, method: &'a http::Method) -> Self {
+        Self { endpoint, method }
+    }
+
+    pub fn endpoint(&self) -> &'a str {
+        self.endpoint
+    }
+
+    pub fn method(&self) -> &'a http::Method {
+        self.method
+    }
 }
 
 /// Context provided to a custom response codec.
 ///
 /// This type is part of the stable advanced API and intentionally contains
 /// only response metadata, not internal response plans.
-#[derive(Clone, Debug)]
-pub struct DecodeContext {
-    pub endpoint: &'static str,
-    pub method: http::Method,
-    pub status: http::StatusCode,
-    pub content_type: Option<String>,
+#[derive(Clone, Copy, Debug)]
+pub struct DecodeContext<'a> {
+    endpoint: &'a str,
+    method: &'a http::Method,
+    status: http::StatusCode,
+    content_type: Option<&'a str>,
+}
+
+impl<'a> DecodeContext<'a> {
+    pub fn new(
+        endpoint: &'a str,
+        method: &'a http::Method,
+        status: http::StatusCode,
+        content_type: Option<&'a str>,
+    ) -> Self {
+        Self {
+            endpoint,
+            method,
+            status,
+            content_type,
+        }
+    }
+
+    pub fn endpoint(&self) -> &'a str {
+        self.endpoint
+    }
+
+    pub fn method(&self) -> &'a http::Method {
+        self.method
+    }
+
+    pub fn status(&self) -> http::StatusCode {
+        self.status
+    }
+
+    pub fn content_type(&self) -> Option<&'a str> {
+        self.content_type
+    }
 }
 
 /// Encoded request body returned by a [`BodyCodec`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EncodedBody {
     bytes: Bytes,
-    content_type: &'static str,
     format: Format,
 }
 
 impl EncodedBody {
-    /// Create a binary encoded body with `application/octet-stream`.
+    /// Create a binary encoded body.
     #[inline]
     pub fn from_bytes(bytes: impl Into<Bytes>) -> Self {
         Self {
             bytes: bytes.into(),
-            content_type: "application/octet-stream",
             format: Format::Binary,
         }
     }
@@ -143,16 +188,8 @@ impl EncodedBody {
     pub fn empty() -> Self {
         Self {
             bytes: Bytes::new(),
-            content_type: "",
             format: Format::Text,
         }
-    }
-
-    /// Override the content type attached to this body.
-    #[inline]
-    pub fn with_content_type(mut self, content_type: &'static str) -> Self {
-        self.content_type = content_type;
-        self
     }
 
     /// Mark this body as text for debug previews.
@@ -162,16 +199,16 @@ impl EncodedBody {
         self
     }
 
-    /// Number of encoded bytes.
+    /// Known number of encoded bytes.
     #[inline]
-    pub fn content_len(&self) -> usize {
-        self.bytes.len()
+    pub fn content_len(&self) -> Option<u64> {
+        Some(self.bytes.len() as u64)
     }
 
-    /// Split into bytes, content type, and debug format.
+    /// Split into bytes and debug format.
     #[inline]
-    pub fn into_parts(self) -> (Bytes, &'static str, Format) {
-        (self.bytes, self.content_type, self.format)
+    pub fn into_parts(self) -> (Bytes, Format) {
+        (self.bytes, self.format)
     }
 }
 
@@ -227,7 +264,7 @@ pub trait BodyCodec: Send + Sync + 'static {
     type Value: Send + 'static;
 
     /// Content type applied to requests encoded by this codec.
-    fn content_type() -> &'static str;
+    fn content_type() -> Option<HeaderValue>;
 
     /// Debug formatting mode for encoded request bytes.
     fn format() -> Format {
@@ -235,7 +272,7 @@ pub trait BodyCodec: Send + Sync + 'static {
     }
 
     /// Encode a request body value.
-    fn encode(value: &Self::Value, ctx: EncodeContext) -> Result<EncodedBody, CodecError>;
+    fn encode(value: Self::Value, ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError>;
 }
 
 /// Stable advanced trait for response codecs.
@@ -246,7 +283,7 @@ pub trait ResponseCodec: Send + Sync + 'static {
     type Value: Send + 'static;
 
     /// Accept header value for responses decoded by this codec.
-    fn accept() -> &'static str;
+    fn accept() -> Option<HeaderValue>;
 
     /// Whether this codec expects no response body.
     fn is_no_content() -> bool {
@@ -259,7 +296,7 @@ pub trait ResponseCodec: Send + Sync + 'static {
     }
 
     /// Decode response bytes.
-    fn decode(bytes: &Bytes, ctx: DecodeContext) -> Result<Self::Value, CodecError>;
+    fn decode(bytes: Bytes, ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError>;
 }
 
 pub struct NoContent;
@@ -282,7 +319,7 @@ impl Encodes<()> for NoContent {
 
 impl Decodes<()> for NoContent {
     type Error = std::convert::Infallible;
-    fn decode(_bytes: &Bytes) -> Result<(), Self::Error> {
+    fn decode_owned(_bytes: Bytes) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -290,15 +327,15 @@ impl Decodes<()> for NoContent {
 impl BodyCodec for NoContent {
     type Value = ();
 
-    fn content_type() -> &'static str {
-        <Self as ContentType>::CONTENT_TYPE
+    fn content_type() -> Option<HeaderValue> {
+        None
     }
 
     fn format() -> Format {
         <Self as FormatType>::FORMAT_TYPE
     }
 
-    fn encode(_value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
+    fn encode(_value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
         Ok(EncodedBody::empty())
     }
 }
@@ -306,8 +343,8 @@ impl BodyCodec for NoContent {
 impl ResponseCodec for NoContent {
     type Value = ();
 
-    fn accept() -> &'static str {
-        <Self as ContentType>::CONTENT_TYPE
+    fn accept() -> Option<HeaderValue> {
+        None
     }
 
     fn is_no_content() -> bool {
@@ -318,7 +355,7 @@ impl ResponseCodec for NoContent {
         <Self as FormatType>::FORMAT_TYPE
     }
 
-    fn decode(_bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
+    fn decode(_bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         Ok(())
     }
 }

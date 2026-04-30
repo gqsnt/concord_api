@@ -3,6 +3,7 @@ use concord_core::advanced::{
     BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
 use concord_macros::api;
+use http::HeaderValue;
 use std::marker::PhantomData;
 
 use self::custom_codec_both_api::CustomCodecBothApi;
@@ -22,30 +23,29 @@ pub struct User {
 impl BodyCodec for Cbor<CreateUser> {
     type Value = CreateUser;
 
-    fn content_type() -> &'static str {
-        "application/cbor"
+    fn content_type() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/cbor"))
     }
 
-    fn encode(value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
-        Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(value.name.as_bytes()))
-            .with_content_type(Self::content_type()))
+    fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
+        Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(value.name.as_bytes())))
     }
 }
 
 impl ResponseCodec for Cbor<User> {
     type Value = User;
 
-    fn accept() -> &'static str {
-        "application/cbor"
+    fn accept() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/cbor"))
     }
 
-    fn decode(_bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
+    fn decode(_bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         Ok(User { id: 7 })
     }
 }
 
 api! {
-    client CustomCodecBothApi { base https "example.com" }
+    client CustomCodecBothApi { base "https://example.com" }
 
     POST Create(body: Cbor<CreateUser>)
         as create

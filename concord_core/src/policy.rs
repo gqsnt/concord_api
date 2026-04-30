@@ -175,15 +175,12 @@ impl Policy {
     /// - Applied at runtime (after endpoint policy).
     /// - Overrides base/prefix/path Accept.
     /// - Does NOT override if endpoint policy explicitly set OR removed Accept.
-    pub fn ensure_accept(&mut self, ct: &'static str) {
-        if ct.is_empty() {
-            return;
-        }
+    pub fn ensure_accept(&mut self, value: HeaderValue) {
         if self.accept_explicit_by_endpoint || self.accept_explicit_by_runtime {
             return;
         }
         // Always override whatever was there (base/prefix/path), because decoder owns Accept.
-        self.headers.insert(ACCEPT, HeaderValue::from_static(ct));
+        self.headers.insert(ACCEPT, value);
     }
 
     // ---------------- Query helpers ----------------
@@ -242,7 +239,7 @@ mod test {
         let mut p = Policy::new();
         p.insert_header(ACCEPT, HeaderValue::from_static("text/plain"));
         p.set_layer(PolicyLayer::Runtime);
-        p.ensure_accept("application/json");
+        p.ensure_accept(HeaderValue::from_static("application/json"));
         assert_eq!(
             p.headers().get(ACCEPT).unwrap().to_str().unwrap(),
             "application/json"
@@ -254,7 +251,7 @@ mod test {
         p.set_layer(PolicyLayer::Endpoint);
         p.insert_header(ACCEPT, HeaderValue::from_static("application/custom"));
         p.set_layer(PolicyLayer::Runtime);
-        p.ensure_accept("application/json");
+        p.ensure_accept(HeaderValue::from_static("application/json"));
         assert_eq!(
             p.headers().get(ACCEPT).unwrap().to_str().unwrap(),
             "application/custom"
@@ -266,7 +263,7 @@ mod test {
         p.set_layer(PolicyLayer::Endpoint);
         p.remove_header(ACCEPT);
         p.set_layer(PolicyLayer::Runtime);
-        p.ensure_accept("application/json");
+        p.ensure_accept(HeaderValue::from_static("application/json"));
         assert!(p.headers().get(ACCEPT).is_none());
     }
 

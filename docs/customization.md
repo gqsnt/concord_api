@@ -13,6 +13,7 @@ use bytes::Bytes;
 use concord_core::advanced::{
     BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
+use http::HeaderValue;
 use std::marker::PhantomData;
 
 pub struct Compact<T>(PhantomData<T>);
@@ -29,25 +30,24 @@ pub struct User {
 impl BodyCodec for Compact<CreateUser> {
     type Value = CreateUser;
 
-    fn content_type() -> &'static str {
-        "application/x-compact"
+    fn content_type() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/x-compact"))
     }
 
-    fn encode(value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
-        Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(value.name.as_bytes()))
-            .with_content_type(Self::content_type()))
+    fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
+        Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(value.name.as_bytes())))
     }
 }
 
 impl ResponseCodec for Compact<User> {
     type Value = User;
 
-    fn accept() -> &'static str {
-        "application/x-compact"
+    fn accept() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/x-compact"))
     }
 
-    fn decode(bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
-        let text = std::str::from_utf8(bytes)
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        let text = std::str::from_utf8(&bytes)
             .map_err(|source| CodecError::with_source("compact response is not utf-8", source))?;
         let (id, name) = text
             .split_once(':')
@@ -66,7 +66,7 @@ Use the marker type directly in the DSL:
 
 ```rust
 api! {
-    client ExampleApi { base https "example.com" }
+    client ExampleApi { base "https://example.com" }
 
     POST CreateUser(body: Compact<CreateUser>)
         as create_user
@@ -77,8 +77,8 @@ api! {
 
 Codec rules:
 
-- `content_type()` controls the request `Content-Type` header for encoded bodies.
-- `accept()` controls the response `Accept` header unless endpoint policy explicitly sets or removes it.
+- `content_type()` controls the request `Content-Type` header for encoded bodies. Return `None` to omit it.
+- `accept()` controls the response `Accept` header unless endpoint policy explicitly sets or removes it. Return `None` to omit it.
 - `EncodeContext` and `DecodeContext` provide endpoint metadata for contextual errors.
 - `CodecError` messages must be safe to display. Never include secrets or raw credentials.
 - Built-in `Json<T>`, `Text<String>`, and `NoContent` use the same trait path.
@@ -96,10 +96,6 @@ pub struct Page<T> {
 
 impl<T: Send + 'static> PageItems for Page<T> {
     type Item = T;
-
-    fn item_count(&self) -> usize {
-        self.items.len()
-    }
 
     fn into_items(self) -> Vec<Self::Item> {
         self.items
@@ -124,6 +120,8 @@ impl<T: Send + 'static> HasNextCursor for Page<T> {
 ## Custom Pagination Controllers
 
 A custom controller implements `PaginationController<Page>`. The controller owns pagination state, mutates the next page request through `PageRequest`, and decides whether to continue after each page.
+
+`paginate TypePath` constructs the controller through `Default`, so custom controller marker types must implement `Default + PaginationController<Page>`. This keeps the DSL closed: the DSL names a Rust type, not a runtime object or request-plan hook.
 
 ```rust
 use concord_core::advanced::{
@@ -161,7 +159,7 @@ impl PaginationController<Page<String>> for HeaderCursorPagination {
         page: &Page<String>,
         _ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError> {
-        if page.item_count() == 0 {
+        if page.items.is_empty() {
             return Ok(PageDecision::Stop);
         }
         state.page += 1;
@@ -178,7 +176,7 @@ Declare it without a configuration block:
 
 ```rust
 api! {
-    client ExampleApi { base https "example.com" }
+    client ExampleApi { base "https://example.com" }
 
     GET ListItems
         as list_items
@@ -192,6 +190,7 @@ Controller rules:
 
 - Built-in pagination keeps using configuration blocks.
 - Custom pagination uses `paginate TypePath` without a block.
+- Custom pagination controller types must implement `Default`.
 - `PageRequest` can set or remove query parameters and headers.
 - `progress_key` is used for loop detection when enabled.
 - Runtime retry, cache, auth, rate-limit, and redaction behavior still follow the fixed pipeline.

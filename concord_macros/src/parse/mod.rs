@@ -69,25 +69,16 @@ impl Parse for RawClient {
         while !content.is_empty() {
             if content.peek(kw::base) {
                 content.parse::<kw::base>()?;
-                if content.peek(LitStr) {
-                    let base_url: LitStr = content.parse()?;
-                    let (parsed_scheme, parsed_host) = parse_base_url_literal(&base_url)?;
-                    scheme = Some(parsed_scheme);
-                    host = Some(LitStr::new(&parsed_host, base_url.span()));
-                } else {
-                    let v: Ident = content.parse()?;
-                    scheme = Some(match v.to_string().as_str() {
-                        "http" => Scheme::Http,
-                        "https" => Scheme::Https,
-                        _ => {
-                            return Err(syn::Error::new(
-                                v.span(),
-                                "base scheme must be `http` or `https`",
-                            ));
-                        }
-                    });
-                    host = Some(content.parse::<LitStr>()?);
+                if !content.peek(LitStr) {
+                    return Err(syn::Error::new(
+                        content.span(),
+                        "base must use a single URL literal: `base \"https://example.com\"`",
+                    ));
                 }
+                let base_url: LitStr = content.parse()?;
+                let (parsed_scheme, parsed_host) = parse_base_url_literal(&base_url)?;
+                scheme = Some(parsed_scheme);
+                host = Some(LitStr::new(&parsed_host, base_url.span()));
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::var) {
                 content.parse::<kw::var>()?;
@@ -221,13 +212,13 @@ impl Parse for RawClient {
         let scheme = scheme.ok_or_else(|| {
             syn::Error::new(
                 name.span(),
-                "missing `base https \"example.com\"` in client",
+                "missing `base \"https://example.com\"` in client",
             )
         })?;
         let host = host.ok_or_else(|| {
             syn::Error::new(
                 name.span(),
-                "missing `base https \"example.com\"` in client",
+                "missing `base \"https://example.com\"` in client",
             )
         })?;
 
@@ -386,7 +377,7 @@ mod tests {
         let ast: RawApi = syn::parse_str(
             r#"
             client Api {
-                base https "example.com"
+                base "https://example.com"
                 retry read {
                     max_attempts 2
                     methods [GET]

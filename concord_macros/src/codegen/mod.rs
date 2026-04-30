@@ -7,7 +7,8 @@
 use crate::emit_helpers;
 use crate::model::SetOp;
 use crate::model::facade::{
-    FacadeArg, FacadeDoc, FacadeEndpoint, FacadeIr, FacadeSetter, SetterForm,
+    FacadeCredentialMethods, FacadeDoc, FacadeEndpoint, FacadeIr, FacadeMethod, FacadeScope,
+    FacadeSetter, build_facade_ir,
 };
 use crate::sema::*;
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -77,85 +78,11 @@ fn ep_optionals(ep: &ResolvedEndpoint) -> std::collections::BTreeMap<String, boo
 }
 
 pub fn emit(resolved_api: ResolvedApi) -> TokenStream2 {
-    let facade_ir = facade_ir_from_resolved_api(&resolved_api);
+    let facade_ir = build_facade_ir(&resolved_api);
     emit_resolved(resolved_api, &facade_ir)
 }
 
-fn facade_ir_from_resolved_api(resolved_api: &ResolvedApi) -> FacadeIr {
-    let endpoints = resolved_api
-        .endpoints
-        .iter()
-        .map(facade_endpoint_from_resolved)
-        .collect();
-    FacadeIr {
-        client_name: resolved_api.client_name.to_string(),
-        scopes: Vec::new(),
-        endpoints,
-        docs: Vec::new(),
-    }
-}
-
-fn facade_endpoint_from_resolved(ep: &ResolvedEndpoint) -> FacadeEndpoint {
-    let captured = ep
-        .facade_param_groups
-        .iter()
-        .flatten()
-        .map(|var| var.rust.to_string())
-        .collect::<std::collections::BTreeSet<_>>();
-    let mut required_args = ep
-        .vars
-        .iter()
-        .filter(|var| !captured.contains(&var.rust.to_string()))
-        .filter(|var| !var.optional && var.default.is_none())
-        .map(|var| {
-            let ty = &var.ty;
-            FacadeArg {
-                name: var.rust.to_string(),
-                ty: quote::quote!(#ty).to_string(),
-            }
-        })
-        .collect::<Vec<_>>();
-    if let Some(body) = &ep.body {
-        let ty = &body.ty;
-        required_args.push(FacadeArg {
-            name: "body".to_string(),
-            ty: quote::quote!(#ty).to_string(),
-        });
-    }
-    let setters = ep
-        .vars
-        .iter()
-        .filter(|var| !captured.contains(&var.rust.to_string()))
-        .filter(|var| var.optional || var.default.is_some())
-        .map(|var| {
-            let ty = &var.ty;
-            let mut forms = vec![SetterForm::Set];
-            if var.optional {
-                forms.push(SetterForm::SetOptional);
-                forms.push(SetterForm::Clear);
-            }
-            FacadeSetter {
-                field: var.rust.to_string(),
-                ty: quote::quote!(#ty).to_string(),
-                forms,
-            }
-        })
-        .collect();
-    let public_method = ep.alias.as_ref().unwrap_or(&ep.name).to_string();
-    FacadeEndpoint {
-        target_endpoint: endpoint_qualified_name(ep),
-        public_method: pascal_to_snake(&public_method),
-        scope_path: ep.scope_modules.iter().map(ToString::to_string).collect(),
-        required_args,
-        setters,
-        docs: vec![FacadeDoc {
-            summary: format!("{} {}", ep.method, endpoint_qualified_name(ep)),
-            details: Vec::new(),
-        }],
-    }
-}
-
-fn emit_resolved(resolved_api: ResolvedApi, _facade_ir: &FacadeIr) -> TokenStream2 {
+fn emit_resolved(resolved_api: ResolvedApi, facade_ir: &FacadeIr) -> TokenStream2 {
     let mod_name = resolved_api.mod_name.clone();
     let scheme = emit_scheme(resolved_api.scheme);
     let domain = resolved_api.domain.clone();
@@ -183,9 +110,10 @@ fn emit_resolved(resolved_api: ResolvedApi, _facade_ir: &FacadeIr) -> TokenStrea
         auth_state_ty: &auth_state_ty,
         cx_ty: &cx_ty,
     });
-    let client_wrapper = emit_client_wrapper(&resolved_api, &vars_ty, &auth_vars_ty, &cx_ty);
+    let client_wrapper =
+        emit_client_wrapper(&resolved_api, facade_ir, &vars_ty, &auth_vars_ty, &cx_ty);
     let internal_mod = emit_internal(&resolved_api, &vars_ty, &auth_vars_ty, &cx_ty);
-    let endpoints_mod = emit_endpoints(&resolved_api, &cx_ty);
+    let endpoints_mod = emit_endpoints(&resolved_api, facade_ir, &cx_ty);
     let acquire_trait_imports =
         resolved_api
             .client_auth_credentials
@@ -235,6 +163,7 @@ include!("policy/mod.rs");
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::facade::SetterForm;
     use quote::quote;
     use std::path::Path;
 
@@ -353,7 +282,7 @@ mod tests {
     fn facade_ir_contains_endpoint_target_metadata() {
         let resolved = crate::sema::analyze_tokens_for_test(quote! {
             client FacadeMeta {
-                base https "example.com"
+                base "https://example.com"
             }
 
             scope teams(team_id: u64) {
@@ -368,7 +297,7 @@ mod tests {
                     -> Json<CreateResponse>
             }
         });
-        let ir = facade_ir_from_resolved_api(&resolved);
+        let ir = build_facade_ir(&resolved);
 
         assert_eq!(ir.client_name, "FacadeMeta");
         assert_eq!(ir.endpoints.len(), 1);
@@ -406,10 +335,173 @@ mod tests {
     }
 
     #[test]
+    fn facade_ir_contains_scope_method_metadata() {
+        let resolved = crate::sema::analyze_tokens_for_test(quote! {
+            client ScopeMeta {
+                base "https://example.com"
+            }
+
+            scope regional(region: String, locale?: String) {
+                path ["regional", region]
+
+                scope teams(team_id: u64) {
+                    path ["teams", team_id]
+
+                    GET Show
+                        as show
+                        path ["show"]
+                        -> Json<String>
+                }
+            }
+        });
+        let ir = build_facade_ir(&resolved);
+        let regional = ir
+            .scopes
+            .iter()
+            .find(|scope| scope.path == ["regional"])
+            .expect("regional scope metadata");
+        assert_eq!(regional.public_method, "regional");
+        assert_eq!(regional.rust_type_name, "ScopeMetaRegionalScope");
+        assert_eq!(regional.parent_path, Vec::<String>::new());
+        assert_eq!(
+            regional
+                .decls
+                .iter()
+                .map(|var| var.rust.to_string())
+                .collect::<Vec<_>>(),
+            vec!["region", "locale"]
+        );
+        let locale = regional
+            .setters
+            .iter()
+            .find(|setter| setter.field == "locale")
+            .expect("scope setter metadata");
+        assert_eq!(locale.set_name, "locale");
+        assert_eq!(locale.clear_name, "clear_locale");
+        assert!(locale.set_doc.contains("scope parameter"));
+        assert_eq!(regional.methods.len(), 1);
+        assert_eq!(regional.methods[0].public_name, "teams");
+        assert_eq!(
+            regional.methods[0].target_scope_path,
+            vec!["regional".to_string(), "teams".to_string()]
+        );
+        assert_eq!(
+            regional.methods[0].target_scope_type_name,
+            "ScopeMetaRegionalTeamsScope"
+        );
+        assert!(
+            regional.methods[0].docs[0]
+                .summary
+                .contains("regional::teams")
+        );
+    }
+
+    #[test]
+    fn facade_ir_contains_endpoint_setter_metadata() {
+        let resolved = crate::sema::analyze_tokens_for_test(quote! {
+            client SetterMeta {
+                base "https://example.com"
+            }
+
+            GET Search(filter?: String, count: u64 = 20)
+                as search
+                path ["search"]
+                query { filter, count }
+                -> Json<Vec<String>>
+        });
+        let ir = build_facade_ir(&resolved);
+        let endpoint = ir
+            .endpoints
+            .iter()
+            .find(|endpoint| endpoint.target_endpoint == "Search")
+            .expect("search endpoint metadata");
+        let filter = endpoint
+            .setters
+            .iter()
+            .find(|setter| setter.field == "filter")
+            .expect("filter setter metadata");
+        assert_eq!(filter.set_name, "filter");
+        assert_eq!(filter.set_optional_name, "filter_opt");
+        assert_eq!(filter.clear_name, "clear_filter");
+        assert!(filter.set_doc.contains("optional query parameter"));
+
+        let count = endpoint
+            .setters
+            .iter()
+            .find(|setter| setter.field == "count")
+            .expect("count setter metadata");
+        assert_eq!(count.set_optional_name, "count_opt");
+        assert_eq!(count.clear_name, "clear_count");
+        assert!(count.clear_doc.contains("default `20`"));
+    }
+
+    #[test]
+    fn generated_setter_names_and_docs_come_from_facade_ir() {
+        let resolved = crate::sema::analyze_tokens_for_test(quote! {
+            client SetterSource {
+                base "https://example.com"
+            }
+
+            GET Search(filter?: String)
+                as search
+                path ["search"]
+                query { filter }
+                -> Json<Vec<String>>
+        });
+        let mut ir = build_facade_ir(&resolved);
+        let setter = ir.endpoints[0]
+            .setters
+            .iter_mut()
+            .find(|setter| setter.field == "filter")
+            .expect("filter setter metadata");
+        setter.set_name = "with_filter_from_ir".to_string();
+        setter.set_optional_name = "with_filter_opt_from_ir".to_string();
+        setter.clear_name = "without_filter_from_ir".to_string();
+        setter.set_doc = "IR supplied set doc.".to_string();
+
+        let out = emit_resolved(resolved, &ir)
+            .to_string()
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect::<String>();
+        assert_contains_all(
+            &out,
+            &[
+                "pub fn with_filter_from_ir ( mut self , v : String ) -> Self",
+                "fn with_filter_opt_from_ir ( self , value : :: core :: option :: Option < String > ) -> Self",
+                "fn without_filter_from_ir ( self ) -> Self",
+                "#[doc = \"IR supplied set doc.\"]",
+            ],
+        );
+        assert!(!out.contains("filter_opt(self"));
+        assert!(!out.contains("clear_filter(self"));
+    }
+
+    #[test]
+    fn codegen_does_not_recompute_endpoint_setter_names() {
+        let endpoint_codegen =
+            std::fs::read_to_string("src/codegen/endpoints/endpoint.rs").expect("endpoint codegen");
+        let wrapper_codegen =
+            std::fs::read_to_string("src/codegen/endpoints/wrapper.rs").expect("wrapper codegen");
+        let facade_codegen = format!("{endpoint_codegen}\n{wrapper_codegen}");
+        for forbidden in [
+            "format!(\"{}_opt\"",
+            "format!(\"{f}_opt\"",
+            "format!(\"clear_{}\"",
+            "format!(\"clear_{f}\"",
+        ] {
+            assert!(
+                !facade_codegen.contains(forbidden),
+                "facade codegen must get public setter names from FacadeIr, found `{forbidden}`"
+            );
+        }
+    }
+
+    #[test]
     fn generated_client_construction_snapshot_contains_current_api_only() {
         let out = expanded(quote! {
             client ConstructApi {
-                base https "example.com"
+                base "https://example.com"
                 var tenant: String
                 secret api_key: String
                 credential key = api_key(secret.api_key)
@@ -447,7 +539,7 @@ mod tests {
     fn generated_facade_scopes_use_clean_public_names_and_rustdoc() {
         let out = expanded(quote! {
             client CleanFacadeApi {
-                base https "example.com"
+                base "https://example.com"
             }
 
             scope regional(region: String) {
@@ -494,7 +586,7 @@ mod tests {
     fn generated_endpoint_setters_use_field_opt_and_clear_names() {
         let out = expanded(quote! {
             client SetterApi {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Search(q: String, filter?: String, count: u32 = 20)
@@ -534,7 +626,7 @@ mod tests {
     fn generated_explicit_endpoint_api_is_clean_and_matches_facade_target() {
         let out = expanded(quote! {
             client ExplicitApi {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Get(id: u64, filter?: String, count: u32 = 20)
@@ -575,7 +667,7 @@ mod tests {
     fn generated_facade_methods_return_core_pending_request_surface() {
         let out = expanded(quote! {
             client PendingApi {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Ping
@@ -615,7 +707,7 @@ mod tests {
     fn generated_minimal_api_snapshot_contains_facade_and_endpoint_plan() {
         let out = expanded(quote! {
             client SnapshotMinimal {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Ping
@@ -643,7 +735,7 @@ mod tests {
     fn generated_endpoint_plan_snapshot_contains_plan_based_core_contract() {
         let out = expanded(quote! {
             client PlanApi {
-                base https "example.com"
+                base "https://example.com"
                 var tenant: String
                 secret token: String
                 credential key = api_key(secret.token)
@@ -688,7 +780,7 @@ mod tests {
     fn generated_route_snapshot_builds_resolved_route_from_semantic_pieces() {
         let out = expanded(quote! {
             client RoutePlanApi {
-                base https "example.com"
+                base "https://example.com"
                 var region: String
             }
 
@@ -722,7 +814,7 @@ mod tests {
     fn generated_policy_snapshot_materializes_resolved_policy() {
         let out = expanded(quote! {
             client PolicyPlanApi {
-                base https "example.com"
+                base "https://example.com"
                 var tenant: String
                 secret token: String
                 credential key = api_key(secret.token)
@@ -767,7 +859,7 @@ mod tests {
     fn generated_response_snapshot_contains_decode_and_body_plan() {
         let out = expanded(quote! {
             client ResponsePlanApi {
-                base https "example.com"
+                base "https://example.com"
             }
 
             POST Login(body: Json<LoginRequest>)
@@ -786,10 +878,11 @@ mod tests {
                 "< Json < LoginResponse > as :: concord_core :: advanced :: ResponseCodec > :: decode",
                 "let r : LoginResponse = decoded",
                 "let value : AccessToken = (AccessToken :: new (r . access_token))",
-                "< Json < LoginRequest > as :: concord_core :: advanced :: BodyCodec > :: encode (& self . body",
+                "let __body_value = self . body . lock ()",
+                "< Json < LoginRequest > as :: concord_core :: advanced :: BodyCodec > :: encode (__body_value",
                 "BodyPlan :: Encoded",
-                "let (__body_bytes , __body_content_type , __body_format) = __encoded_body . into_parts ()",
-                "content_type : __body_content_type",
+                "let (__body_bytes , __body_format) = __encoded_body . into_parts ()",
+                "content_type : < Json < LoginRequest > as :: concord_core :: advanced :: BodyCodec > :: content_type ()",
                 "format : __body_format",
                 "ResponsePlan",
                 "decode : __decode_",
@@ -801,7 +894,7 @@ mod tests {
     fn generated_pagination_plan_snapshot_contains_all_controller_shapes() {
         let out = expanded(quote! {
             client PaginationPlanApi {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Offset(start: u64 = 0, count: u64 = 20)
@@ -861,7 +954,7 @@ mod tests {
     fn generated_rustdoc_snapshot_covers_client_endpoint_and_request_builder() {
         let out = expanded(quote! {
             client SnapshotDocs {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Search(count?: u64)
@@ -897,7 +990,7 @@ mod tests {
     fn generated_rustdoc_snapshot_includes_endpoint_contract_without_secret_values() {
         let out = expanded(quote! {
             client SnapshotRichDocs {
-                base https "example.com"
+                base "https://example.com"
                 var tenant: String
                 secret api_key: String
                 credential key = api_key(secret.api_key)
@@ -970,7 +1063,7 @@ mod tests {
     fn generated_auth_session_snapshot_contains_auth_state_and_acquire_sugar() {
         let out = expanded(quote! {
             client SnapshotAuth {
-                base https "example.com"
+                base "https://example.com"
                 secret upstream_key: String
 
                 credential upstream = api_key(secret.upstream_key)
@@ -1024,7 +1117,7 @@ mod tests {
     fn generated_pagination_snapshot_contains_pagination_plan() {
         let out = expanded(quote! {
             client SnapshotPagination {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET List(start: u64 = 0, count: u64 = 20)
@@ -1056,7 +1149,7 @@ mod tests {
     fn generated_route_snapshot_rejects_dynamic_slash_segments() {
         let out = expanded(quote! {
             client SnapshotRouteGuard {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Show(id: String, prefix?: String)
@@ -1080,7 +1173,7 @@ mod tests {
     fn generated_query_snapshot_contains_optional_and_empty_string_semantics() {
         let out = expanded(quote! {
             client SnapshotQueryPolicy {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Search(maybe?: String)
@@ -1107,7 +1200,7 @@ mod tests {
     fn generated_rate_limit_snapshot_contains_runtime_plan() {
         let out = expanded(quote! {
             client SnapshotRateLimit {
-                base https "example.com"
+                base "https://example.com"
 
                 default {
                     rate_limit app
@@ -1140,7 +1233,7 @@ mod tests {
     fn generated_mapping_snapshot_contains_final_response_type_and_transform() {
         let out = expanded(quote! {
             client SnapshotMapping {
-                base https "example.com"
+                base "https://example.com"
             }
 
             POST Login(body: Json<LoginRequest>)

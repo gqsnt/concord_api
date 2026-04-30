@@ -107,7 +107,7 @@ where
     }
 }
 
-/// Primary v4 endpoint model: generated endpoints produce a request plan.
+/// Endpoint model used by generated Concord clients.
 pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
     type Response: Send + 'static;
 

@@ -16,8 +16,8 @@ pub struct LoginRequest;
 pub struct LoginResponse { access_token: String }
 
 api! {
-    client V5EndpointStanzaApi {
-        base https "example.com"
+    client CurrentEndpointStanzaApi {
+        base "https://example.com"
         secret upstream_key: String
         credential upstream = api_key(secret.upstream_key)
     }

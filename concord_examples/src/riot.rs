@@ -14,7 +14,7 @@ impl RateLimitObserver for RiotRateLimitHeaders {
 
 api! {
     client RiotClient {
-        base https "riotgames.com"
+        base "https://riotgames.com"
         secret api_key: String
         credential riot_api_key = api_key(secret.api_key)
         headers {
@@ -472,7 +472,7 @@ api! {
 
 api! {
     client DDragonClient {
-        base https "leagueoflegends.com"
+        base "https://leagueoflegends.com"
         headers {
             "user-agent" = "ClientApiDDragonExample/1.0"
         }
@@ -528,7 +528,7 @@ api! {
                     -> Json<serde_json::Value>
 
                     GET GetChampionDetail(champion: String)
-                    path [champion]
+                    path [fmt[champion, ".json"]]
                     -> Json<models::ChampionDetailDto>
                 }
 
@@ -547,6 +547,8 @@ api! {
         }
     }
 }
+
+use crate::riot::d_dragon_client::DDragonClient;
 
 pub use self::riot_client::{RiotClient, endpoints as riot_endpoints};
 /// Platform routing values (LoL).
@@ -926,6 +928,35 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
         .collect()
         .await?;
     println!("match_ids Len: {:?}", match_ids.len());
+
+    let ddragon = DDragonClient::new().configure(|config| {
+        config.debug(DebugLevel::VV);
+    });
+    let version = ddragon
+        .ddragon()
+        .api_root()
+        .get_versions()
+        .await?
+        .first()
+        .map(|v| v.clone())
+        .unwrap_or_default();
+    let champion = ddragon
+        .ddragon()
+        .cdn_versioned(version.clone())
+        .data_localized()
+        .locale("Fr-fr".into())
+        .champion()
+        .get_champion_detail("Vayne".into())
+        .await?;
+    let champions = ddragon
+        .ddragon()
+        .cdn_versioned(version.clone())
+        .data_localized()
+        .locale("Fr-fr".into())
+        .champion()
+        .get_champion_list()
+        .await?;
+    println!("champions Len: {:?}", champions.data.keys().len());
 
     Ok(())
 }

@@ -2,7 +2,7 @@ error: endpoint declarations must use `METHOD Name(...) -> Response { ... }` (or
  --> tests/dsl/fail/fail_endpoint_missing_response.rs:4:1
   |
 4 | / api! {
-5 | |     client MissingResponseApi { base https "example.com" }
+5 | |     client MissingResponseApi { base "https://example.com" }
 6 | |
 7 | |     GET Broken
 8 | |         path ["broken"]

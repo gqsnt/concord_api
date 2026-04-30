@@ -6,7 +6,7 @@ use self::usage_config_api::UsageConfigApi;
 
 api! {
     client UsageConfigApi {
-        base https "example.com"
+        base "https://example.com"
         var tenant: String
         secret api_key: String
         credential key = api_key(secret.api_key)

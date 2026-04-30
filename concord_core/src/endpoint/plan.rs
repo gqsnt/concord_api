@@ -7,6 +7,7 @@ use crate::pagination::{
 use crate::policy::ResolvedPolicy;
 use crate::transport::RequestMeta;
 use bytes::Bytes;
+use http::HeaderValue;
 use http::Method;
 use std::any::Any;
 use std::fmt;
@@ -107,7 +108,7 @@ pub enum BodyPlan {
     #[default]
     None,
     Encoded {
-        content_type: &'static str,
+        content_type: Option<HeaderValue>,
         format: crate::codec::Format,
     },
 }
@@ -119,7 +120,7 @@ pub type PlanDecodeFn = fn(
 
 #[derive(Clone)]
 pub struct ResponsePlan {
-    pub accept: &'static str,
+    pub accept: Option<HeaderValue>,
     pub no_content: bool,
     pub format: crate::codec::Format,
     pub decode: PlanDecodeFn,
@@ -188,7 +189,7 @@ pub struct CustomPaginationPlan {
 impl PaginationPlan {
     pub fn custom<C, Page>() -> Self
     where
-        C: PaginationController<Page>,
+        C: PaginationController<Page> + Default,
         Page: PageItems,
     {
         Self::Custom(CustomPaginationPlan {
@@ -205,7 +206,7 @@ fn custom_pagination_init<C, Page>(
     ctx: PageInit<'_>,
 ) -> Result<Box<dyn Any + Send + Sync>, ApiClientError>
 where
-    C: PaginationController<Page>,
+    C: PaginationController<Page> + Default,
     Page: PageItems,
 {
     let controller = C::default();
@@ -218,7 +219,7 @@ fn custom_pagination_apply<C, Page>(
     request: &mut PageRequest<'_>,
 ) -> Result<(), ApiClientError>
 where
-    C: PaginationController<Page>,
+    C: PaginationController<Page> + Default,
     Page: PageItems,
 {
     let Some(state) = state.downcast_ref::<C::State>() else {
@@ -235,7 +236,7 @@ fn custom_pagination_advance<C, Page>(
     ctx: PageAdvance<'_>,
 ) -> Result<PageDecision, ApiClientError>
 where
-    C: PaginationController<Page>,
+    C: PaginationController<Page> + Default,
     Page: PageItems,
 {
     let Some(state) = state.downcast_mut::<C::State>() else {
@@ -253,7 +254,7 @@ where
 
 fn custom_pagination_progress_key<C, Page>(state: &dyn Any) -> Option<ProgressKey>
 where
-    C: PaginationController<Page>,
+    C: PaginationController<Page> + Default,
     Page: PageItems,
 {
     let state = state.downcast_ref::<C::State>()?;

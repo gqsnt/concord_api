@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct Item;
 
 api! {
-    client V5FmtApi {
-        base https "example.com"
+    client CurrentFmtApi {
+        base "https://example.com"
         var tenant_id: String
         var trace_id: String
     }

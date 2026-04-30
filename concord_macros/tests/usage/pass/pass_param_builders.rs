@@ -3,7 +3,7 @@ use concord_macros::api;
 use self::usage_params_api::UsageParamsApi;
 
 api! {
-    client UsageParamsApi { base https "example.com" }
+    client UsageParamsApi { base "https://example.com" }
 
     scope users {
         path ["users"]

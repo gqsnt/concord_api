@@ -3,6 +3,7 @@ use concord_core::advanced::{
     BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
 use concord_core::prelude::{ApiClientError, Json, NoContent, Text};
+use http::HeaderValue;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
@@ -12,12 +13,12 @@ struct RequestOnly;
 impl BodyCodec for RequestOnly {
     type Value = String;
 
-    fn content_type() -> &'static str {
-        "application/x-request-only"
+    fn content_type() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/x-request-only"))
     }
 
-    fn encode(value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
-        Ok(EncodedBody::from_bytes(value.clone()).with_content_type(Self::content_type()))
+    fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
+        Ok(EncodedBody::from_bytes(value))
     }
 }
 
@@ -27,11 +28,11 @@ struct ResponseOnly;
 impl ResponseCodec for ResponseOnly {
     type Value = String;
 
-    fn accept() -> &'static str {
-        "application/x-response-only"
+    fn accept() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/x-response-only"))
     }
 
-    fn decode(bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         String::from_utf8(bytes.to_vec())
             .map_err(|err| CodecError::with_source("response-only decode failed", err))
     }
@@ -46,69 +47,68 @@ where
 {
     type Value = T;
 
-    fn content_type() -> &'static str {
-        "application/x-both"
+    fn content_type() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/x-both"))
     }
 
-    fn encode(value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
-        Ok(
-            EncodedBody::from_bytes(Bytes::copy_from_slice(value.as_ref()))
-                .with_content_type(Self::content_type()),
-        )
+    fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
+        Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(
+            value.as_ref(),
+        )))
     }
 }
 
 impl ResponseCodec for Both<String> {
     type Value = String;
 
-    fn accept() -> &'static str {
-        "application/x-both"
+    fn accept() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/x-both"))
     }
 
-    fn decode(bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         String::from_utf8(bytes.to_vec())
             .map_err(|err| CodecError::with_source("both decode failed", err))
     }
 }
 
-fn encode_ctx() -> EncodeContext {
-    EncodeContext {
-        endpoint: "Test",
-        method: http::Method::POST,
-    }
+fn encode_ctx() -> EncodeContext<'static> {
+    static METHOD: http::Method = http::Method::POST;
+    EncodeContext::new("Test", &METHOD)
 }
 
-fn decode_ctx() -> DecodeContext {
-    DecodeContext {
-        endpoint: "Test",
-        method: http::Method::GET,
-        status: http::StatusCode::OK,
-        content_type: Some("text/plain".to_string()),
-    }
+fn decode_ctx() -> DecodeContext<'static> {
+    static METHOD: http::Method = http::Method::GET;
+    DecodeContext::new("Test", &METHOD, http::StatusCode::OK, Some("text/plain"))
 }
 
 #[test]
 fn custom_request_only_codec_implements_public_body_trait() {
-    let body = RequestOnly::encode(&"hello".to_string(), encode_ctx()).expect("encode");
+    let body = RequestOnly::encode("hello".to_string(), encode_ctx()).expect("encode");
 
-    assert_eq!(body.content_len(), 5);
-    assert_eq!(RequestOnly::content_type(), "application/x-request-only");
+    assert_eq!(body.content_len(), Some(5));
+    assert_eq!(
+        RequestOnly::content_type(),
+        Some(HeaderValue::from_static("application/x-request-only"))
+    );
 }
 
 #[test]
 fn custom_response_only_codec_implements_public_response_trait() {
-    let value = ResponseOnly::decode(&Bytes::from_static(b"hello"), decode_ctx()).expect("decode");
+    let value = ResponseOnly::decode(Bytes::from_static(b"hello"), decode_ctx()).expect("decode");
 
     assert_eq!(value, "hello");
-    assert_eq!(ResponseOnly::accept(), "application/x-response-only");
+    assert_eq!(
+        ResponseOnly::accept(),
+        Some(HeaderValue::from_static("application/x-response-only"))
+    );
 }
 
 #[test]
 fn custom_bidirectional_codec_can_use_generic_marker_type() {
-    let body = Both::<Vec<u8>>::encode(&b"abc".to_vec(), encode_ctx()).expect("encode");
-    let value = Both::<String>::decode(&Bytes::from_static(b"abc"), decode_ctx()).expect("decode");
+    let body = Both::<Vec<u8>>::encode(b"abc".to_vec(), encode_ctx()).expect("encode");
+    let value = Both::<String>::decode(Bytes::from_static(b"abc"), decode_ctx()).expect("decode");
 
-    assert_eq!(body.content_len(), 3);
+    assert_eq!(body.content_len(), Some(3));
     assert_eq!(value, "abc");
 }
 
@@ -133,16 +133,16 @@ struct JsonValue {
 
 #[test]
 fn built_in_json_text_and_no_content_use_codec_traits() {
-    let json = Json::<JsonValue>::encode(&JsonValue { id: 7 }, encode_ctx()).expect("json encode");
+    let json = Json::<JsonValue>::encode(JsonValue { id: 7 }, encode_ctx()).expect("json encode");
     let decoded =
-        Json::<JsonValue>::decode(&Bytes::from_static(br#"{"id":7}"#), decode_ctx()).expect("json");
-    let text = Text::<String>::encode(&"hello".to_string(), encode_ctx()).expect("text encode");
+        Json::<JsonValue>::decode(Bytes::from_static(br#"{"id":7}"#), decode_ctx()).expect("json");
+    let text = Text::<String>::encode("hello".to_string(), encode_ctx()).expect("text encode");
     let decoded_text =
-        Text::<String>::decode(&Bytes::from_static(b"hello"), decode_ctx()).expect("text decode");
-    NoContent::decode(&Bytes::new(), decode_ctx()).expect("no content");
+        Text::<String>::decode(Bytes::from_static(b"hello"), decode_ctx()).expect("text decode");
+    NoContent::decode(Bytes::new(), decode_ctx()).expect("no content");
 
-    assert_eq!(json.content_len(), 8);
+    assert_eq!(json.content_len(), Some(8));
     assert_eq!(decoded, JsonValue { id: 7 });
-    assert_eq!(text.content_len(), 5);
+    assert_eq!(text.content_len(), Some(5));
     assert_eq!(decoded_text, "hello");
 }

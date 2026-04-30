@@ -3,7 +3,7 @@ use concord_macros::api;
 
 api! {
     client FmtSecretPathApi {
-        base https "example.com"
+        base "https://example.com"
         secret api_key: String
     }
 

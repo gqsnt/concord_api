@@ -2,7 +2,7 @@ use concord_core::prelude::*;
 use concord_macros::api;
 
 api! {
-    client MapBeforeResponseApi { base https "example.com" }
+    client MapBeforeResponseApi { base "https://example.com" }
 
     GET Broken
         path ["broken"]

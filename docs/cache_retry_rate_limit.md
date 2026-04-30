@@ -6,7 +6,7 @@ Cache, retry, and rate-limit behavior is declared as named profiles and attached
 
 ```rust
 client PolicyApi {
-    base https "example.com"
+    base "https://example.com"
 
     default {
         retry read
@@ -117,15 +117,19 @@ GET Uncached
 The runtime order is fixed:
 
 1. Build and validate the request plan.
-2. Apply auth.
-3. Check cache.
-4. Apply inflight coordination.
-5. Acquire rate-limit permits.
-6. Send transport request.
-7. Classify response.
-8. Observe rate-limit response.
-9. Decide auth refresh and retry.
-10. Store or fallback through cache.
-11. Decode the endpoint response.
+2. Resolve required credentials. Missing credentials fail here, before cache lookup or transport.
+3. Apply auth to the request.
+4. Compute cache and inflight identity after auth injection, so authenticated requests do not collide across credentials.
+5. Return a fresh cache hit before inflight coordination, rate-limit acquisition, or transport.
+6. Join an existing inflight request when applicable. Followers do not acquire rate-limit permits.
+7. Acquire rate-limit permits for the request that will actually be sent.
+8. Send the transport request.
+9. Classify the response or transport failure.
+10. Observe rate-limit response headers after classification.
+11. Handle auth rejection and bounded auth refresh before normal retry decisions.
+12. Apply normal retry policy. Retryable send failures or retryable statuses are retried before decode.
+13. Consider stale cache fallback only after retry declines or the retry budget is exhausted.
+14. Cache successful eligible raw responses after classification.
+15. Decode the endpoint response. Decode failures do not retry transport.
 
 This order is not user-configurable.

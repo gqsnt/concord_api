@@ -15,7 +15,7 @@ use self::pagination_helper_api::PaginationHelperApi;
 
 api! {
     client PaginationHelperApi {
-        base https "example.com"
+        base "https://example.com"
     }
 
     GET List(filter?: String, start: u64 = 0, count: u64 = 2)

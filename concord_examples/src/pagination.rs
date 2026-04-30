@@ -16,8 +16,8 @@ pub struct CursorPage {
 impl PageItems for CursorPage {
     type Item = Item;
 
-    fn item_count(&self) -> usize {
-        self.items.len()
+    fn item_count_hint(&self) -> Option<usize> {
+        Some(self.items.len())
     }
 
     fn into_items(self) -> Vec<Self::Item> {
@@ -35,7 +35,7 @@ impl HasNextCursor for CursorPage {
 
 api! {
     client PaginationApi {
-        base https "example.com"
+        base "https://example.com"
     }
 
     GET ListOffset(start: u64 = 0, count: u64 = 2)
@@ -67,7 +67,7 @@ api! {
 
 api! {
     client PaginationAuthApi {
-        base https "example.com"
+        base "https://example.com"
         secret token: String
         credential session = bearer(secret.token)
     }

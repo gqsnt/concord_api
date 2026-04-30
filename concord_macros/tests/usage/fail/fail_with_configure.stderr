@@ -3,7 +3,7 @@ error[E0599]: no method named `with_configure` found for struct `UsageWithConfig
    |
  5 | / api! {
  6 | |     client UsageWithConfigureApi {
- 7 | |         base https "example.com"
+ 7 | |         base "https://example.com"
 ...  |
 12 | |         -> Json<String>
 13 | | }

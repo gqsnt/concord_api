@@ -31,7 +31,7 @@ error[E0277]: the trait bound `MissingResponse<User>: ResponseCodec` is not sati
   --> tests/usage/fail/response_codec_missing_trait.rs:9:1
    |
  9 | / api! {
-10 | |     client MissingResponseCodecApi { base https "example.com" }
+10 | |     client MissingResponseCodecApi { base "https://example.com" }
 11 | |
 12 | |     GET GetUser
 ...  |

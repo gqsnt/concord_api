@@ -3,6 +3,7 @@ use concord_core::advanced::{
     BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
 use concord_macros::api;
+use http::HeaderValue;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -21,27 +22,26 @@ pub struct Compact<T>(PhantomData<T>);
 impl BodyCodec for Compact<CreateUser> {
     type Value = CreateUser;
 
-    fn content_type() -> &'static str {
-        "application/x-concord-compact"
+    fn content_type() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/x-concord-compact"))
     }
 
-    fn encode(value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
-        Ok(
-            EncodedBody::from_bytes(Bytes::copy_from_slice(value.name.as_bytes()))
-                .with_content_type(Self::content_type()),
-        )
+    fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
+        Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(
+            value.name.as_bytes(),
+        )))
     }
 }
 
 impl ResponseCodec for Compact<User> {
     type Value = User;
 
-    fn accept() -> &'static str {
-        "application/x-concord-compact"
+    fn accept() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/x-concord-compact"))
     }
 
-    fn decode(bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
-        let text = std::str::from_utf8(bytes)
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        let text = std::str::from_utf8(&bytes)
             .map_err(|source| CodecError::with_source("compact response is not utf-8", source))?;
         let (id, name) = text
             .split_once(':')
@@ -58,7 +58,7 @@ impl ResponseCodec for Compact<User> {
 
 api! {
     client CustomCodecApi {
-        base https "example.com"
+        base "https://example.com"
     }
 
     POST CreateUser(body: Compact<CreateUser>)

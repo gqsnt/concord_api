@@ -17,6 +17,7 @@ user_docs=(
 )
 
 public_examples=(concord_examples/src)
+public_macro_pass=(concord_macros/tests/usage/pass concord_macros/tests/dsl/pass)
 
 run_cargo() {
   if [[ -n "${CARGO:-}" ]]; then
@@ -89,6 +90,21 @@ fail_if_match \
   "part\\[|\\battempts\\b|with_configure|auth none|auth any|auth all|maybe_\\w+\\(|reset_\\w+\\(|collect_pages" \
   "${user_docs[@]}" "${public_examples[@]}"
 
+fail_if_match \
+  "public docs must not use version/migration/backcompat framing" \
+  "\\bv5\\b|\\bv6\\b|migration|legacy|backwards compatibility|backward compatibility|backcompat" \
+  "${user_docs[@]}"
+
+fail_if_match \
+  "split base syntax in public docs/examples/compile-pass fixtures" \
+  "base +(http|https) +\"" \
+  "${user_docs[@]}" "${public_examples[@]}" "${public_macro_pass[@]}"
+
+require_match \
+  "split base syntax has compile-fail fixtures" \
+  "base +(http|https) +\"" \
+  concord_macros/tests/dsl/fail
+
 echo "== secret namespace restricted to credential declarations =="
 secret_hits="$(mktemp)"
 if run_rg "secret\\." "${user_docs[@]}" "${public_examples[@]}" >"$secret_hits"; then
@@ -111,6 +127,16 @@ fail_if_match \
   concord_macros/src/codegen
 
 fail_if_match \
+  "ignored FacadeIr in codegen" \
+  "(^|[^A-Za-z0-9])_facade_ir([^A-Za-z0-9]|$)" \
+  concord_macros/src/codegen
+
+fail_if_match \
+  "facade codegen must not recompute public setter names" \
+  "format!\\(\\\".*_opt|format!\\(\\\"clear_" \
+  concord_macros/src/codegen/endpoints/endpoint.rs concord_macros/src/codegen/endpoints/wrapper.rs
+
+fail_if_match \
   "legacy endpoint/part traits" \
   "LegacyEndpoint|RoutePart|PolicyPart|AuthPart|BodyPart|PaginationPart" \
   concord_core concord_macros
@@ -119,6 +145,17 @@ fail_if_match \
   "versioned Concord diagnostics in user-facing implementation" \
   "V6-|V5-|v6-|v5-" \
   concord_core/src concord_macros/src
+
+source_version_hits="$(mktemp)"
+if run_rg "(^|[^[:alnum:]_])v[0-9]+([^[:alnum:]_]|$)|(^|[^[:alnum:]_])v5([^[:alnum:]_]|$)|(^|[^[:alnum:]_])v6([^[:alnum:]_]|$)|migration|legacy|backwards compatibility|backward compatibility|backcompat" \
+  concord_core/src concord_macros/src > "$source_version_hits"; then
+  if grep -E -v 'path \["v1"\]|scope_path=\[Static\(\\?"v1\\?"\)\]|route\.path_mut\(\)\.push_raw\(\\?"v1\\?"\)' "$source_version_hits"; then
+    echo "Versioned Concord language found in source comments/docs" >&2
+    rm -f "$source_version_hits"
+    exit 1
+  fi
+fi
+rm -f "$source_version_hits"
 
 fail_if_match \
   "hidden generated names in public docs/examples" \
@@ -129,6 +166,11 @@ require_match \
   "custom codec API documented" \
   "BodyCodec|ResponseCodec" \
   docs/customization.md
+
+fail_if_match \
+  "old custom codec signatures" \
+  "fn content_type\\(\\) -> &.static str|fn accept\\(\\) -> &.static str|fn encode\\(value: &Self::Value|fn decode\\(bytes: &Bytes" \
+  concord_core/src docs concord_examples concord_macros/tests/usage/pass
 
 require_match \
   "custom pagination API documented" \
@@ -144,5 +186,25 @@ fail_if_match \
   "custom pagination cannot mutate internal plans" \
   "fn apply\\([^\\n]*(RequestPlan|EndpointPlan)|&mut[[:space:]]+(RequestPlan|EndpointPlan)" \
   concord_core/src concord_macros/src docs concord_examples/src
+
+fail_if_match \
+  "PageItems implementors must not define item_count" \
+  "fn item_count\\(&self\\)" \
+  concord_core/src/pagination.rs docs/customization.md concord_examples/src/custom_pagination.rs
+
+fail_if_match \
+  "PaginationController trait must not require Default" \
+  "trait PaginationController<.*Default" \
+  concord_core/src
+
+require_match \
+  "custom pagination Default policy documented" \
+  "Default \\+ PaginationController|must implement \`Default\`" \
+  docs/customization.md
+
+require_match \
+  "custom pagination missing Default compile-fail fixture" \
+  "struct HeaderCursorPagination" \
+  concord_macros/tests/usage/fail/custom_pagination_missing_default.rs
 
 echo "current audit passed"

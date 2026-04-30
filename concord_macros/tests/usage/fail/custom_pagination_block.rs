@@ -9,7 +9,7 @@ pub struct Page {
 pub struct HeaderCursorPagination;
 
 api! {
-    client BadCustomPaginationApi { base https "example.com" }
+    client BadCustomPaginationApi { base "https://example.com" }
 
     GET List
         as list

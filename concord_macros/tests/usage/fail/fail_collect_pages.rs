@@ -4,7 +4,7 @@ use self::usage_collect_pages_api::UsageCollectPagesApi;
 
 api! {
     client UsageCollectPagesApi {
-        base https "example.com"
+        base "https://example.com"
     }
 
     GET List(start: u64 = 0, count: u64 = 20)

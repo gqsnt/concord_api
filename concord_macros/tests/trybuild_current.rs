@@ -23,6 +23,9 @@ fn current_trybuild_fixtures_match_expected_results() {
 
     for path in [
         "tests/dsl/fail/fail_duplicate_default.rs",
+        "tests/dsl/fail/fail_base_malformed_url.rs",
+        "tests/dsl/fail/fail_base_split_http.rs",
+        "tests/dsl/fail/fail_base_split_https.rs",
         "tests/dsl/fail/fail_endpoint_duplicate_response.rs",
         "tests/dsl/fail/fail_endpoint_missing_response.rs",
         "tests/dsl/fail/fail_fmt_empty.rs",
@@ -32,6 +35,7 @@ fn current_trybuild_fixtures_match_expected_results() {
         "tests/dsl/fail/fail_query_unknown.rs",
         "tests/usage/fail/body_codec_missing_trait.rs",
         "tests/usage/fail/custom_pagination_block.rs",
+        "tests/usage/fail/custom_pagination_missing_default.rs",
         "tests/usage/fail/fail_collect_pages.rs",
         "tests/usage/fail/fail_duplicate_alias.rs",
         "tests/usage/fail/fail_maybe_field.rs",

@@ -31,7 +31,7 @@ use self::auth_helper_api::AuthHelperApi;
 
 api! {
     client AuthHelperApi {
-        base https "example.com"
+        base "https://example.com"
         secret upstream_key: String
         credential upstream = api_key(secret.upstream_key)
         credential session = endpoint auth_api::LoginForSession

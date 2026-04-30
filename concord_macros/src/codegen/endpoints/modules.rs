@@ -60,10 +60,11 @@ fn endpoint_qualified_name(ep: &ResolvedEndpoint) -> String {
     }
 }
 
-fn emit_endpoints(resolved_api: &ResolvedApi, cx_ty: &Ident) -> TokenStream2 {
+fn emit_endpoints(resolved_api: &ResolvedApi, facade_ir: &FacadeIr, cx_ty: &Ident) -> TokenStream2 {
     let endpoint_defs = resolved_api.endpoints.iter().map(|ep| {
         let internal = endpoint_internal_ident(ep);
-        emit_endpoint_def(resolved_api, ep, &internal, cx_ty)
+        let facade = facade_ir_for_endpoint(facade_ir, ep);
+        emit_endpoint_def(resolved_api, facade, ep, &internal, cx_ty)
     });
     let root_endpoint_reexports = resolved_api.endpoints.iter().filter_map(|ep| {
         if !ep.scope_modules.is_empty() {

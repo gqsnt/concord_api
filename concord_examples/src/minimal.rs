@@ -10,7 +10,7 @@ pub struct User {
 
 api! {
     client MinimalApi {
-        base https "api.example.com"
+        base "https://api.example.com"
     }
 
     scope users {

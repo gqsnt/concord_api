@@ -2,7 +2,7 @@ use concord_core::prelude::*;
 use concord_macros::api;
 
 api! {
-    client UsageDuplicateAliasApi { base https "example.com" }
+    client UsageDuplicateAliasApi { base "https://example.com" }
 
     scope users {
         path ["users"]

@@ -13,7 +13,7 @@ use self::usage_execution_api::UsageExecutionApi;
 
 api! {
     client UsageExecutionApi {
-        base https "example.com"
+        base "https://example.com"
         secret upstream_key: String
         credential upstream = api_key(secret.upstream_key)
         credential session = endpoint auth_api::LoginForSession

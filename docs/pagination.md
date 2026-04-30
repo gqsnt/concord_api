@@ -45,15 +45,14 @@ pub struct CursorPage {
 
 impl PageItems for CursorPage {
     type Item = Item;
-    type IntoIter = std::vec::IntoIter<Item>;
 
-    fn len(&self) -> usize { self.items.len() }
-    fn inner_into_iter(self) -> Self::IntoIter { self.items.into_iter() }
+    fn item_count_hint(&self) -> Option<usize> { Some(self.items.len()) }
+    fn into_items(self) -> Vec<Self::Item> { self.items }
 }
 
 impl HasNextCursor for CursorPage {
     type Cursor = String;
-    fn next_cursor(&self) -> Option<&Self::Cursor> { self.next_cursor.as_ref() }
+    fn next_cursor(&self) -> Option<Self::Cursor> { self.next_cursor.clone() }
 }
 ```
 

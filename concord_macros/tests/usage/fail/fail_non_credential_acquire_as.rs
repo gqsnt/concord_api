@@ -13,7 +13,7 @@ pub struct LoginResponse {
 
 api! {
     client UsageNonCredentialAcquireApi {
-        base https "example.com"
+        base "https://example.com"
         credential session = endpoint auth_api::LoginForSession
     }
 

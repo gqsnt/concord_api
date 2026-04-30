@@ -4,7 +4,7 @@ use self::usage_non_paginated_api::UsageNonPaginatedApi;
 
 api! {
     client UsageNonPaginatedApi {
-        base https "example.com"
+        base "https://example.com"
     }
 
     GET Ping

@@ -78,7 +78,7 @@ impl<'a> PageRequest<'a> {
     }
 }
 
-pub trait PaginationController<Page>: Default + Send + Sync + 'static
+pub trait PaginationController<Page>: Send + Sync + 'static
 where
     Page: PageItems,
 {
@@ -145,11 +145,13 @@ impl Caps {
 pub trait PageItems: Send + 'static {
     type Item: Send + 'static;
 
-    fn item_count(&self) -> usize;
+    fn item_count_hint(&self) -> Option<usize> {
+        None
+    }
 
     #[inline]
     fn is_empty(&self) -> bool {
-        self.item_count() == 0
+        self.item_count_hint() == Some(0)
     }
 
     fn into_items(self) -> Vec<Self::Item>;
@@ -157,8 +159,8 @@ pub trait PageItems: Send + 'static {
 impl<T: Send + 'static> PageItems for Vec<T> {
     type Item = T;
 
-    fn item_count(&self) -> usize {
-        Vec::len(self)
+    fn item_count_hint(&self) -> Option<usize> {
+        Some(Vec::len(self))
     }
 
     fn into_items(self) -> Vec<Self::Item> {

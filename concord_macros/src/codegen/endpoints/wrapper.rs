@@ -1,5 +1,6 @@
 fn emit_client_wrapper(
     resolved_api: &ResolvedApi,
+    facade_ir: &FacadeIr,
     vars_ty: &Ident,
     auth_vars_ty: &Ident,
     cx_ty: &Ident,
@@ -127,12 +128,17 @@ fn emit_client_wrapper(
         quote! { #f }
     });
 
-    let var_setters = resolved_api.client_vars.iter().map(|v| {
+    let var_setters = facade_ir.client_setters.iter().map(|setter| {
+        let v = resolved_api
+            .client_vars
+            .iter()
+            .find(|var| var.rust == setter.field.as_str())
+            .expect("FacadeIr client setter must target a resolved client var");
         let f = &v.rust;
         let ty = &v.ty;
-        let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
+        let set_name = emit_helpers::ident(&setter.set_name, f.span());
         if v.optional {
-            let clear_name = emit_helpers::ident(&format!("clear_{f}"), f.span());
+            let clear_name = emit_helpers::ident(&setter.clear_name, f.span());
             quote! {
                 #[inline]
                 pub fn #set_name(&mut self, v: #ty) -> &mut Self {
@@ -198,72 +204,77 @@ fn emit_client_wrapper(
     } else {
         quote! {}
     };
-    let auth_setters = resolved_api.client_auth_vars.iter().map(|v| {
+    let auth_setters = facade_ir.auth_setters.iter().map(|setter| {
+        let v = resolved_api
+            .client_auth_vars
+            .iter()
+            .find(|var| var.rust == setter.field.as_str())
+            .expect("FacadeIr auth setter must target a resolved auth var");
         let f = &v.rust;
-        let set_name = emit_helpers::ident(&format!("set_{f}"), f.span());
+        let set_name = emit_helpers::ident(&setter.set_name, f.span());
         let rebuild_auth_state =
             has_custom_credentials || credential_secret_names.contains(&f.to_string());
         if v.optional {
-            let clear_name = emit_helpers::ident(&format!("clear_{f}"), f.span());
+            let clear_name = emit_helpers::ident(&setter.clear_name, f.span());
             if rebuild_auth_state {
                 quote! {
-            #[inline]
-            pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> &mut Self {
-                {
-                    let mut __g = self.inner.auth_vars().write().unwrap();
-                    __g.#f = ::core::option::Option::Some(v.into());
+                    #[inline]
+                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> &mut Self {
+                        {
+                            let mut __g = self.inner.auth_vars().write().unwrap();
+                            __g.#f = ::core::option::Option::Some(v.into());
+                        }
+                        self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
+                        self
+                    }
+                    #[inline]
+                    pub fn #clear_name(&mut self) -> &mut Self {
+                        {
+                            let mut __g = self.inner.auth_vars().write().unwrap();
+                            __g.#f = ::core::option::Option::None;
+                        }
+                        self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
+                        self
+                    }
                 }
-                self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
-                self
-            }
-            #[inline]
-            pub fn #clear_name(&mut self) -> &mut Self {
-                {
-                    let mut __g = self.inner.auth_vars().write().unwrap();
-                    __g.#f = ::core::option::Option::None;
-                }
-                self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
-                self
-            }
-        }
             } else {
                 quote! {
-            #[inline]
-            pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
-                let mut __g = self.inner.auth_vars().write().unwrap();
-                __g.#f = ::core::option::Option::Some(v.into());
-                self
-            }
-            #[inline]
-            pub fn #clear_name(&self) -> &Self {
-                let mut __g = self.inner.auth_vars().write().unwrap();
-                __g.#f = ::core::option::Option::None;
-                self
-            }
-        }
+                    #[inline]
+                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
+                        let mut __g = self.inner.auth_vars().write().unwrap();
+                        __g.#f = ::core::option::Option::Some(v.into());
+                        self
+                    }
+                    #[inline]
+                    pub fn #clear_name(&self) -> &Self {
+                        let mut __g = self.inner.auth_vars().write().unwrap();
+                        __g.#f = ::core::option::Option::None;
+                        self
+                    }
+                }
             }
         } else {
             if rebuild_auth_state {
                 quote! {
-            #[inline]
-            pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> &mut Self {
-                {
-                    let mut __g = self.inner.auth_vars().write().unwrap();
-                    __g.#f = v.into();
+                    #[inline]
+                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> &mut Self {
+                        {
+                            let mut __g = self.inner.auth_vars().write().unwrap();
+                            __g.#f = v.into();
+                        }
+                        self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
+                        self
+                    }
                 }
-                self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
-                self
-            }
-        }
             } else {
                 quote! {
-            #[inline]
-            pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
-               let mut __g = self.inner.auth_vars().write().unwrap();
-                __g.#f = v.into();
-                self
-            }
-        }
+                    #[inline]
+                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
+                        let mut __g = self.inner.auth_vars().write().unwrap();
+                        __g.#f = v.into();
+                        self
+                    }
+                }
             }
         }
     });
@@ -277,10 +288,11 @@ fn emit_client_wrapper(
         else {
             return None;
         };
-        let acquire_name = emit_helpers::ident(&format!("acquire_auth_{name}"), name.span());
-        let set_name = emit_helpers::ident(&format!("set_auth_{name}_value"), name.span());
-        let clear_name = emit_helpers::ident(&format!("clear_auth_{name}"), name.span());
-        let has_name = emit_helpers::ident(&format!("has_auth_{name}"), name.span());
+        let methods = facade_credential_methods_for(facade_ir, name);
+        let acquire_name = emit_helpers::ident(&methods.acquire_name, name.span());
+        let set_name = emit_helpers::ident(&methods.set_name, name.span());
+        let clear_name = emit_helpers::ident(&methods.clear_name, name.span());
+        let has_name = emit_helpers::ident(&methods.has_name, name.span());
         Some(quote! {
             #[inline]
             pub async fn #acquire_name(
@@ -317,7 +329,8 @@ fn emit_client_wrapper(
         let AuthCredentialKindIr::Endpoint { endpoint, .. } = &credential.kind else {
             return None;
         };
-        let method = emit_helpers::ident(&format!("acquire_as_{name}"), name.span());
+        let methods = facade_credential_methods_for(facade_ir, name);
+        let method = emit_helpers::ident(&methods.pending_method, name.span());
         let trait_name = acquire_as_trait_ident(client_ty, name);
         Some(quote! {
             pub trait #trait_name<'a> {
@@ -352,7 +365,7 @@ fn emit_client_wrapper(
         })
     });
     let (auth_facade_methods, auth_facade_items) = emit_auth_facade(resolved_api, client_ty);
-    let (facade_methods, facade_items) = emit_tree_facade(resolved_api, client_ty, cx_ty);
+    let (facade_methods, facade_items) = emit_tree_facade(resolved_api, facade_ir, client_ty, cx_ty);
 
     quote! {
         #[doc = "Generated API client."]
@@ -592,102 +605,37 @@ fn emit_auth_accessor_methods(resolved_api: &ResolvedApi, client_ty: &Ident) -> 
     quote! { #( #methods )* }
 }
 
-#[derive(Clone)]
-struct FacadeScopeInfo {
-    path: Vec<Ident>,
-    decls: Vec<VarInfo>,
-}
-
-fn pascal_to_snake(raw: &str) -> String {
-    let mut out = String::new();
-    let mut prev_lower_or_digit = false;
-    for ch in raw.chars() {
-        if ch.is_ascii_uppercase() {
-            if prev_lower_or_digit {
-                out.push('_');
-            }
-            out.push(ch.to_ascii_lowercase());
-            prev_lower_or_digit = false;
-        } else {
-            out.push(ch);
-            prev_lower_or_digit = ch.is_ascii_lowercase() || ch.is_ascii_digit();
-        }
-    }
-    out
-}
-
-fn pascalize_ident_path(path: &[Ident]) -> String {
-    path
-        .iter()
-        .map(ToString::to_string)
-        .map(|s| {
-            s.split('_')
-                .filter(|part| !part.is_empty())
-                .map(|part| {
-                    let mut chars = part.chars();
-                    let Some(first) = chars.next() else {
-                        return String::new();
-                    };
-                    let mut out = String::new();
-                    out.extend(first.to_uppercase());
-                    out.push_str(chars.as_str());
-                    out
-                })
-                .collect::<String>()
-        })
-        .collect::<String>()
-}
-
-fn facade_scope_struct(client_ty: &Ident, path: &[Ident]) -> Ident {
-    let name = pascalize_ident_path(path);
-    emit_helpers::ident(&format!("{client_ty}{name}Scope"), path.last().unwrap().span())
-}
-
 fn required_vars(vars: &[VarInfo]) -> Vec<&VarInfo> {
     vars.iter()
         .filter(|v| !v.optional && v.default.is_none())
         .collect()
 }
 
-fn collect_facade_scopes(resolved_api: &ResolvedApi) -> Vec<FacadeScopeInfo> {
-    let mut scopes: Vec<FacadeScopeInfo> = Vec::new();
-    for ep in &resolved_api.endpoints {
-        for idx in 0..ep.scope_modules.len() {
-            let path = ep.scope_modules[..=idx].to_vec();
-            if scopes.iter().any(|scope| scope.path == path) {
-                continue;
-            }
-            let decls = ep
-                .facade_param_groups
-                .iter()
-                .take(idx + 1)
-                .flat_map(|group| group.iter().cloned())
-                .collect();
-            scopes.push(FacadeScopeInfo {
-                path,
-                decls,
-            });
-        }
-    }
-    scopes
-}
-
-fn emit_tree_facade(resolved_api: &ResolvedApi, client_ty: &Ident, cx_ty: &Ident) -> (TokenStream2, TokenStream2) {
-    let scopes = collect_facade_scopes(resolved_api);
-    let root_scope_methods = scopes
+fn emit_tree_facade(
+    resolved_api: &ResolvedApi,
+    facade_ir: &FacadeIr,
+    client_ty: &Ident,
+    cx_ty: &Ident,
+) -> (TokenStream2, TokenStream2) {
+    let root_scope_methods = facade_ir
+        .scopes
         .iter()
         .filter(|scope| scope.path.len() == 1)
-        .map(|scope| emit_scope_ctor_method(scope, client_ty, None));
+        .map(|scope| emit_scope_ctor_method(scope, None, None));
     let root_endpoint_methods = resolved_api
         .endpoints
         .iter()
         .filter(|ep| ep.scope_modules.is_empty())
         .map(|ep| {
-            emit_facade_endpoint_method(ep, &resolved_api.client_policy, client_ty, cx_ty, &[], true)
+            let facade = facade_ir_for_endpoint(facade_ir, ep);
+            emit_facade_endpoint_method(ep, facade, client_ty, cx_ty, &[], true)
         });
-    let scope_structs = scopes
+    let scope_structs = facade_ir
+        .scopes
         .iter()
-        .map(|scope| emit_facade_scope_struct(resolved_api, client_ty, cx_ty, scope, &scopes));
+        .map(|scope| {
+            emit_facade_scope_struct(resolved_api, facade_ir, client_ty, cx_ty, scope)
+        });
 
     let methods = quote! {
         #( #root_scope_methods )*
@@ -700,26 +648,18 @@ fn emit_tree_facade(resolved_api: &ResolvedApi, client_ty: &Ident, cx_ty: &Ident
 }
 
 fn emit_scope_ctor_method(
-    scope: &FacadeScopeInfo,
-    client_ty: &Ident,
-    parent_scope: Option<&FacadeScopeInfo>,
+    scope_ir: &FacadeScope,
+    parent_scope: Option<&FacadeScope>,
+    method_ir: Option<&FacadeMethod>,
 ) -> TokenStream2 {
-    let method = scope.path.last().unwrap();
-    let struct_name = facade_scope_struct(client_ty, &scope.path);
-    let doc = LitStr::new(
-        &format!(
-            "Enter the `{}` facade scope.",
-            scope
-                .path
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("::")
-        ),
-        method.span(),
-    );
+    let method_name = method_ir.map_or(&scope_ir.public_method, |method| &method.public_name);
+    let span = Span::call_site();
+    let method = emit_helpers::ident(method_name, span);
+    let struct_name = emit_helpers::ident(&scope_ir.rust_type_name, span);
+    let docs = method_ir.map_or(&scope_ir.constructor_docs, |method| &method.docs);
+    let docs = facade_docs_to_lit(docs, span);
     let parent_decl_count = parent_scope.map_or(0, |s| s.decls.len());
-    let new_decls = &scope.decls[parent_decl_count..];
+    let new_decls = &scope_ir.decls[parent_decl_count..];
     let args = required_vars(new_decls).into_iter().map(|v| {
         let name = &v.rust;
         let ty = &v.ty;
@@ -763,7 +703,7 @@ fn emit_scope_ctor_method(
     };
 
     quote! {
-        #[doc = #doc]
+        #( #[doc = #docs] )*
         #[inline]
         pub fn #method(#receiver, #( #args ),*) -> #struct_name<#lifetime, T> {
             #struct_name {
@@ -777,25 +717,15 @@ fn emit_scope_ctor_method(
 
 fn emit_facade_scope_struct(
     resolved_api: &ResolvedApi,
+    facade_ir: &FacadeIr,
     client_ty: &Ident,
     cx_ty: &Ident,
-    scope: &FacadeScopeInfo,
-    scopes: &[FacadeScopeInfo],
+    scope_ir: &FacadeScope,
 ) -> TokenStream2 {
-    let struct_name = facade_scope_struct(client_ty, &scope.path);
-    let doc = LitStr::new(
-        &format!(
-            "Facade handle for the `{}` scope.",
-            scope
-                .path
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("::")
-        ),
-        scope.path.last().unwrap().span(),
-    );
-    let fields = scope.decls.iter().map(|v| {
+    let span = Span::call_site();
+    let struct_name = emit_helpers::ident(&scope_ir.rust_type_name, span);
+    let docs = facade_docs_to_lit(&scope_ir.docs, span);
+    let fields = scope_ir.decls.iter().map(|v| {
         let name = &v.rust;
         let ty = &v.ty;
         if v.optional {
@@ -804,59 +734,44 @@ fn emit_facade_scope_struct(
             quote! { #name: #ty }
         }
     });
-    let setters = scope.decls.iter().filter(|v| v.optional || v.default.is_some()).map(|v| {
-        let name = &v.rust;
-        let ty = &v.ty;
-        if v.optional {
-            let clear = emit_helpers::ident(&format!("clear_{name}"), name.span());
-            quote! {
-                #[inline]
-                pub fn #name(mut self, value: #ty) -> Self {
-                    self.#name = ::core::option::Option::Some(value);
-                    self
-                }
-                #[inline]
-                pub fn #clear(mut self) -> Self {
-                    self.#name = ::core::option::Option::None;
-                    self
-                }
-            }
-        } else {
-            quote! {
-                #[inline]
-                pub fn #name(mut self, value: #ty) -> Self {
-                    self.#name = value;
-                    self
-                }
-            }
-        }
+    let setters = scope_ir.setters.iter().filter_map(|setter| {
+        let var = scope_ir
+            .decls
+            .iter()
+            .find(|var| var.rust == setter.field.as_str())?;
+        Some(emit_scope_setter(setter, var))
     });
-    let child_methods = scopes
-        .iter()
-        .filter(|child| child.path.len() == scope.path.len() + 1 && child.path.starts_with(&scope.path))
-        .map(|child| emit_scope_ctor_method(child, client_ty, Some(scope)));
+    let child_methods = scope_ir.methods.iter().map(|method| {
+        let child_ir = facade_scope_ir_for_path(facade_ir, &method.target_scope_path);
+        emit_scope_ctor_method(child_ir, Some(scope_ir), Some(method))
+    });
     let endpoint_methods = resolved_api
         .endpoints
         .iter()
-        .filter(|ep| ep.scope_modules == scope.path)
-        .map(|ep| {
+        .filter_map(|ep| {
+            let facade = facade_ir_for_endpoint(facade_ir, ep);
+            if facade.scope_path != scope_ir.path {
+                return None;
+            }
+            Some(
             emit_facade_endpoint_method(
                 ep,
-                &resolved_api.client_policy,
+                facade,
                 client_ty,
                 cx_ty,
-                &scope.decls,
+                &scope_ir.decls,
                 false,
             )
+            )
         });
-    let auth_accessor_methods = if scope.path.len() == 1 && scope.path[0] == "auth" {
+    let auth_accessor_methods = if scope_ir.path.len() == 1 && scope_ir.path[0] == "auth" {
         emit_auth_accessor_methods(resolved_api, client_ty)
     } else {
         quote! {}
     };
 
     quote! {
-        #[doc = #doc]
+        #( #[doc = #docs] )*
         pub struct #struct_name<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
             client: &'a #client_ty<T>,
             #( #fields, )*
@@ -873,7 +788,7 @@ fn emit_facade_scope_struct(
 
 fn emit_facade_endpoint_method(
     ep: &ResolvedEndpoint,
-    client_policy: &PolicyBlocksResolved,
+    facade: &FacadeEndpoint,
     _client_ty: &Ident,
     cx_ty: &Ident,
     captured: &[VarInfo],
@@ -884,20 +799,24 @@ fn emit_facade_endpoint_method(
     });
     let endpoint_name = &ep.name;
     let endpoint_path = quote! { #endpoint_ty::#endpoint_name };
-    let method_name_raw = ep.alias.as_ref().unwrap_or(&ep.name).to_string();
-    let method = emit_helpers::ident(&pascal_to_snake(&method_name_raw), ep.name.span());
+    let method = emit_helpers::ident(&facade.public_method, ep.name.span());
     let captured_names = captured
         .iter()
         .map(|v| v.rust.to_string())
         .collect::<std::collections::BTreeSet<_>>();
-    let body_arg = ep.body.as_ref().map(|body| {
-        let ty = &body.ty;
-        quote! { body: #ty }
-    });
+    let body_arg = facade
+        .required_args
+        .iter()
+        .find(|arg| arg.name == "body")
+        .and(ep.body.as_ref())
+        .map(|body| {
+            let ty = &body.ty;
+            quote! { body: #ty }
+        });
     let call_args: Vec<TokenStream2> = ep
         .vars
         .iter()
-        .filter(|v| !v.optional && v.default.is_none())
+        .filter(|v| facade.required_args.iter().any(|arg| v.rust == arg.name))
         .map(|v| {
             let name = &v.rust;
             let ty = &v.ty;
@@ -944,7 +863,7 @@ fn emit_facade_endpoint_method(
     let lifetime = if root { quote! { '_ } } else { quote! { 'a } };
     let bind_client = if root { quote! {} } else { quote! { let __client = self.client; } };
     let args: Vec<TokenStream2> = call_args.into_iter().chain(body_arg).collect();
-    let docs = facade_endpoint_docs(ep, client_policy);
+    let docs = facade_ir_endpoint_docs(facade, ep.name.span());
 
     quote! {
         #( #[doc = #docs] )*
@@ -956,6 +875,77 @@ fn emit_facade_endpoint_method(
             #client_expr.request(__ep)
         }
     }
+}
+
+fn emit_scope_setter(setter: &FacadeSetter, var: &VarInfo) -> TokenStream2 {
+    let span = var.rust.span();
+    let name = emit_helpers::ident(&setter.set_name, span);
+    let ty = &var.ty;
+    if var.optional {
+        let clear = emit_helpers::ident(&setter.clear_name, span);
+        quote! {
+            #[inline]
+            pub fn #name(mut self, value: #ty) -> Self {
+                self.#name = ::core::option::Option::Some(value);
+                self
+            }
+            #[inline]
+            pub fn #clear(mut self) -> Self {
+                self.#name = ::core::option::Option::None;
+                self
+            }
+        }
+    } else {
+        quote! {
+            #[inline]
+            pub fn #name(mut self, value: #ty) -> Self {
+                self.#name = value;
+                self
+            }
+        }
+    }
+}
+
+fn facade_ir_for_endpoint<'a>(facade_ir: &'a FacadeIr, ep: &ResolvedEndpoint) -> &'a FacadeEndpoint {
+    let target = endpoint_qualified_name(ep);
+    facade_ir
+        .endpoints
+        .iter()
+        .find(|candidate| candidate.target_endpoint == target)
+        .expect("FacadeIr must contain one public endpoint entry per resolved endpoint")
+}
+
+fn facade_credential_methods_for<'a>(
+    facade_ir: &'a FacadeIr,
+    name: &Ident,
+) -> &'a FacadeCredentialMethods {
+    facade_ir
+        .credential_methods
+        .iter()
+        .find(|methods| name == methods.credential.as_str())
+        .expect("FacadeIr must contain one public method set per endpoint-backed credential")
+}
+
+fn facade_ir_endpoint_docs(facade: &FacadeEndpoint, span: Span) -> Vec<LitStr> {
+    facade_docs_to_lit(&facade.docs, span)
+}
+
+fn facade_docs_to_lit(docs: &[FacadeDoc], span: Span) -> Vec<LitStr> {
+    docs
+        .iter()
+        .flat_map(|doc| {
+            std::iter::once(doc.summary.as_str()).chain(doc.details.iter().map(String::as_str))
+        })
+        .map(|line| LitStr::new(line, span))
+        .collect()
+}
+
+fn facade_scope_ir_for_path<'a>(facade_ir: &'a FacadeIr, path: &[String]) -> &'a FacadeScope {
+    facade_ir
+        .scopes
+        .iter()
+        .find(|scope| scope.path == path)
+        .expect("FacadeIr must contain one scope entry per resolved facade scope")
 }
 
 fn facade_endpoint_docs(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> Vec<LitStr> {
@@ -1035,6 +1025,7 @@ fn facade_endpoint_docs(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResol
     docs
 }
 
+#[allow(dead_code)]
 fn doc_policy_keys(
     ep: &ResolvedEndpoint,
     client_policy: &PolicyBlocksResolved,
@@ -1082,6 +1073,7 @@ fn doc_path(ep: &ResolvedEndpoint) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn doc_auth_use(auth: &AuthUseIr) -> String {
     match &auth.kind {
         AuthUseKindIr::Bearer { credential } => format!("bearer `{credential}`"),
@@ -1096,6 +1088,7 @@ fn doc_auth_use(auth: &AuthUseIr) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn endpoint_has_rate_limit(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> bool {
     client_policy.rate_limit.is_some()
         || ep
@@ -1106,6 +1099,7 @@ fn endpoint_has_rate_limit(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksRe
         || ep.policy.endpoint.rate_limit.is_some()
 }
 
+#[allow(dead_code)]
 fn endpoint_has_cache(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> bool {
     client_policy.cache.is_some()
         || ep
@@ -1116,6 +1110,7 @@ fn endpoint_has_cache(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolve
         || ep.policy.endpoint.cache.is_some()
 }
 
+#[allow(dead_code)]
 fn endpoint_has_retry(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> bool {
     client_policy.retry.is_some()
         || ep

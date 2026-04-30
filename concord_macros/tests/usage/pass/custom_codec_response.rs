@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use concord_core::advanced::{CodecError, DecodeContext, ResponseCodec};
 use concord_macros::api;
+use http::HeaderValue;
 use std::marker::PhantomData;
 
 use self::custom_codec_response_api::CustomCodecResponseApi;
@@ -15,17 +16,17 @@ pub struct User {
 impl ResponseCodec for Cbor<User> {
     type Value = User;
 
-    fn accept() -> &'static str {
-        "application/cbor"
+    fn accept() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static("application/cbor"))
     }
 
-    fn decode(_bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
+    fn decode(_bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         Ok(User { id: 7 })
     }
 }
 
 api! {
-    client CustomCodecResponseApi { base https "example.com" }
+    client CustomCodecResponseApi { base "https://example.com" }
 
     GET GetUser
         as get_user

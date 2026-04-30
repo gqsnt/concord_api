@@ -33,7 +33,7 @@ error[E0277]: the trait bound `MissingBody<CreateUser>: BodyCodec` is not satisf
   --> tests/usage/fail/body_codec_missing_trait.rs:10:1
    |
 10 | / api! {
-11 | |     client MissingBodyCodecApi { base https "example.com" }
+11 | |     client MissingBodyCodecApi { base "https://example.com" }
 12 | |
 13 | |     POST Create(body: MissingBody<CreateUser>)
 ...  |

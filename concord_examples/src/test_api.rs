@@ -42,7 +42,7 @@ pub mod models {
 
 api! {
     client Client {
-        base https "typicode.com"
+        base "https://typicode.com"
         var subdomain: String = "jsonplaceholder".to_string()
         var client_trace: bool
 

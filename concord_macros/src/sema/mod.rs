@@ -303,7 +303,7 @@ mod tests {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client NormApi {
-                base https "example.com"
+                base "https://example.com"
                 var tenant: String
                 secret token: String
                 credential key = api_key(secret.token)
@@ -420,7 +420,7 @@ mod tests {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client Api {
-                base https "example.com"
+                base "https://example.com"
                 secret token: String
                 credential key = api_key(secret.token)
             }
@@ -962,7 +962,7 @@ mod tests {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client BodyApi {
-                base https "example.com"
+                base "https://example.com"
             }
 
             POST Create(body: Json<CreateBody>)
@@ -998,7 +998,7 @@ mod tests {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client PageApi {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Offset(start: u64 = 0, count: u64 = 20)
@@ -1075,7 +1075,7 @@ mod tests {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client PageApi {
-                base https "example.com"
+                base "https://example.com"
             }
 
             GET Offset(count: u64 = 20)
@@ -1104,7 +1104,7 @@ mod tests {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client SnapshotApi {
-                base https "example.com"
+                base "https://example.com"
                 secret token: String
                 credential key = api_key(secret.token)
 

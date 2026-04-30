@@ -1,0 +1,13 @@
+error: base must use a single URL literal: `base "https://example.com"`
+ --> tests/dsl/fail/fail_base_split_https.rs:5:33
+  |
+5 |     client SplitHttpsApi { base https "example.com" }
+  |                                 ^^^^^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/dsl/fail/fail_base_split_https.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct Pong;
 
 api! {
-    client V5RetryDefaultApi {
-        base https "example.com"
+    client CurrentRetryDefaultApi {
+        base "https://example.com"
 
         default {
             retry read

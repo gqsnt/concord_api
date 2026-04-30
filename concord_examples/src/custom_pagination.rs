@@ -18,10 +18,6 @@ pub struct HeaderCursorPage {
 impl PageItems for HeaderCursorPage {
     type Item = Item;
 
-    fn item_count(&self) -> usize {
-        self.items.len()
-    }
-
     fn into_items(self) -> Vec<Self::Item> {
         self.items
     }
@@ -83,7 +79,7 @@ impl PaginationController<HeaderCursorPage> for HeaderCursorPagination {
 
 api! {
     client CustomPaginationApi {
-        base https "example.com"
+        base "https://example.com"
     }
 
     GET ListItems

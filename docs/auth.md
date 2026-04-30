@@ -8,7 +8,7 @@ Secrets are client inputs. Credentials adapt those secrets into auth material.
 
 ```rust
 client SessionApi {
-    base https "example.com"
+    base "https://example.com"
 
     secret upstream_key: String
     secret bearer_token: String
@@ -36,7 +36,7 @@ An endpoint can produce a credential for later requests. Declare the credential 
 
 ```rust
 client SessionApi {
-    base https "example.com"
+    base "https://example.com"
     secret upstream_key: String
 
     credential upstream = api_key(secret.upstream_key)

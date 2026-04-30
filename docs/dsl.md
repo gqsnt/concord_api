@@ -7,7 +7,7 @@ Concord describes an HTTP API as a typed tree. The tree has one `client` root, o
 ```rust
 api! {
     client ExampleApi {
-        base https "api.example.com"
+        base "https://api.example.com"
     }
 
     scope users {
@@ -31,7 +31,7 @@ A client declares its base scheme and domain with `base`.
 
 ```rust
 client ExampleApi {
-    base https "api.example.com"
+    base "https://api.example.com"
 }
 ```
 
@@ -176,7 +176,7 @@ Declare secrets and credentials in the client block.
 
 ```rust
 client ExampleApi {
-    base https "api.example.com"
+    base "https://api.example.com"
     secret api_key: String
     secret token: String
 
@@ -197,7 +197,7 @@ Endpoint-backed credentials store the output of one endpoint as a credential for
 
 ```rust
 client SessionApi {
-    base https "example.com"
+    base "https://example.com"
     secret upstream_key: String
     credential upstream = api_key(secret.upstream_key)
     credential session = endpoint auth_api::LoginForSession
@@ -226,7 +226,7 @@ Named profiles live in the client block. Attach them with defaults, scope polici
 
 ```rust
 client PolicyApi {
-    base https "example.com"
+    base "https://example.com"
 
     default {
         retry read

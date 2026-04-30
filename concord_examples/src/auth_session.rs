@@ -21,7 +21,7 @@ pub struct SessionUser {
 
 api! {
     client SessionApi {
-        base https "example.com"
+        base "https://example.com"
 
         secret upstream_key: String
 

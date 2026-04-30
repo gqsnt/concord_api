@@ -1,5 +1,6 @@
 use crate::codec::*;
 use bytes::Bytes;
+use http::HeaderValue;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::marker::PhantomData;
@@ -29,8 +30,8 @@ where
     T: DeserializeOwned,
 {
     type Error = serde_json::Error;
-    fn decode(bytes: &Bytes) -> Result<T, Self::Error> {
-        serde_json::from_slice(bytes)
+    fn decode_owned(bytes: Bytes) -> Result<T, Self::Error> {
+        serde_json::from_slice(&bytes)
     }
 }
 
@@ -40,21 +41,19 @@ where
 {
     type Value = T;
 
-    fn content_type() -> &'static str {
-        <Json as ContentType>::CONTENT_TYPE
+    fn content_type() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static(
+            <Json as ContentType>::CONTENT_TYPE,
+        ))
     }
 
     fn format() -> Format {
         <Json as FormatType>::FORMAT_TYPE
     }
 
-    fn encode(value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
-        <Json as Encodes<T>>::encode(value)
-            .map(|bytes| {
-                EncodedBody::from_bytes(bytes)
-                    .with_content_type(<Json as ContentType>::CONTENT_TYPE)
-                    .text()
-            })
+    fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
+        <Json as Encodes<T>>::encode(&value)
+            .map(|bytes| EncodedBody::from_bytes(bytes).text())
             .map_err(|err| CodecError::with_source("json encode failed", err))
     }
 }
@@ -65,16 +64,18 @@ where
 {
     type Value = T;
 
-    fn accept() -> &'static str {
-        <Json as ContentType>::CONTENT_TYPE
+    fn accept() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static(
+            <Json as ContentType>::CONTENT_TYPE,
+        ))
     }
 
     fn format() -> Format {
         <Json as FormatType>::FORMAT_TYPE
     }
 
-    fn decode(bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
-        <Json as Decodes<T>>::decode(bytes)
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        <Json as Decodes<T>>::decode_owned(bytes)
             .map_err(|err| CodecError::with_source("json decode failed", err))
     }
 }

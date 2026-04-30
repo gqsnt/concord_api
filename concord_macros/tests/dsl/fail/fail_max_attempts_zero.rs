@@ -3,7 +3,7 @@ use concord_macros::api;
 
 api! {
     client MaxAttemptsZeroApi {
-        base https "example.com"
+        base "https://example.com"
 
         retry read {
             max_attempts 0

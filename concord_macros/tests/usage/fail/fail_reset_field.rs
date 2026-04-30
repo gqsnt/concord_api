@@ -4,7 +4,7 @@ use self::usage_reset_field_api::UsageResetFieldApi;
 
 api! {
     client UsageResetFieldApi {
-        base https "example.com"
+        base "https://example.com"
     }
 
     GET Search(count: u32 = 20)

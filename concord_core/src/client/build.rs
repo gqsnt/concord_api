@@ -32,9 +32,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut headers = policy.headers.clone();
         if !headers.contains_key(CONTENT_TYPE)
             && let BodyPlan::Encoded { content_type, .. } = &plan.endpoint.body
-            && !content_type.is_empty()
+            && let Some(content_type) = content_type
         {
-            headers.insert(CONTENT_TYPE, http::HeaderValue::from_static(content_type));
+            headers.insert(CONTENT_TYPE, content_type.clone());
         }
 
         Ok(BuiltRequest {

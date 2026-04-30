@@ -3,6 +3,7 @@ use crate::codec::{
 };
 use crate::codec::{ContentType, Decodes, Encodes, Format, FormatType};
 use bytes::Bytes;
+use http::HeaderValue;
 use std::marker::PhantomData;
 use std::str::Utf8Error;
 
@@ -28,8 +29,8 @@ where
 
 impl Decodes<String> for Text {
     type Error = Utf8Error;
-    fn decode(bytes: &Bytes) -> Result<String, Self::Error> {
-        Ok(std::str::from_utf8(bytes)?.to_string())
+    fn decode_owned(bytes: Bytes) -> Result<String, Self::Error> {
+        Ok(std::str::from_utf8(&bytes)?.to_string())
     }
 }
 
@@ -39,21 +40,19 @@ where
 {
     type Value = T;
 
-    fn content_type() -> &'static str {
-        <Text as ContentType>::CONTENT_TYPE
+    fn content_type() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static(
+            <Text as ContentType>::CONTENT_TYPE,
+        ))
     }
 
     fn format() -> Format {
         <Text as FormatType>::FORMAT_TYPE
     }
 
-    fn encode(value: &Self::Value, _ctx: EncodeContext) -> Result<EncodedBody, CodecError> {
-        <Text as Encodes<T>>::encode(value)
-            .map(|bytes| {
-                EncodedBody::from_bytes(bytes)
-                    .with_content_type(<Text as ContentType>::CONTENT_TYPE)
-                    .text()
-            })
+    fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
+        <Text as Encodes<T>>::encode(&value)
+            .map(|bytes| EncodedBody::from_bytes(bytes).text())
             .map_err(|err| CodecError::with_source("text encode failed", err))
     }
 }
@@ -61,16 +60,18 @@ where
 impl ResponseCodec for Text<String> {
     type Value = String;
 
-    fn accept() -> &'static str {
-        <Text as ContentType>::CONTENT_TYPE
+    fn accept() -> Option<HeaderValue> {
+        Some(HeaderValue::from_static(
+            <Text as ContentType>::CONTENT_TYPE,
+        ))
     }
 
     fn format() -> Format {
         <Text as FormatType>::FORMAT_TYPE
     }
 
-    fn decode(bytes: &Bytes, _ctx: DecodeContext) -> Result<Self::Value, CodecError> {
-        <Text as Decodes<String>>::decode(bytes)
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        <Text as Decodes<String>>::decode_owned(bytes)
             .map_err(|err| CodecError::with_source("text decode failed", err))
     }
 }

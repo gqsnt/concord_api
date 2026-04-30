@@ -4,7 +4,7 @@ use self::usage_maybe_field_api::UsageMaybeFieldApi;
 
 api! {
     client UsageMaybeFieldApi {
-        base https "example.com"
+        base "https://example.com"
     }
 
     GET Search(filter?: String)

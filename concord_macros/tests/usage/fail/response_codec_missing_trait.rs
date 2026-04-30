@@ -7,7 +7,7 @@ pub struct MissingResponse<T>(PhantomData<T>);
 pub struct User;
 
 api! {
-    client MissingResponseCodecApi { base https "example.com" }
+    client MissingResponseCodecApi { base "https://example.com" }
 
     GET GetUser
         as get_user

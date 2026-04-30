@@ -3,7 +3,7 @@ use concord_macros::api;
 use self::usage_missing_required_param_api::UsageMissingRequiredParamApi;
 
 api! {
-    client UsageMissingRequiredParamApi { base https "example.com" }
+    client UsageMissingRequiredParamApi { base "https://example.com" }
 
     scope users {
         path ["users"]

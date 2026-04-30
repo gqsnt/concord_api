@@ -2,7 +2,7 @@ error[E0592]: duplicate definitions with name `get`
   --> tests/usage/fail/fail_duplicate_alias.rs:4:1
    |
  4 | / api! {
- 5 | |     client UsageDuplicateAliasApi { base https "example.com" }
+ 5 | |     client UsageDuplicateAliasApi { base "https://example.com" }
  6 | |
  7 | |     scope users {
 ...  |

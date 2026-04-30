@@ -8,7 +8,7 @@ pub struct MissingBody<T>(PhantomData<T>);
 pub struct CreateUser;
 
 api! {
-    client MissingBodyCodecApi { base https "example.com" }
+    client MissingBodyCodecApi { base "https://example.com" }
 
     POST Create(body: MissingBody<CreateUser>)
         as create

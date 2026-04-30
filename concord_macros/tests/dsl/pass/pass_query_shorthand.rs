@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 pub struct SearchResponse;
 
 api! {
-    client V5QueryApi {
-        base https "example.com"
+    client CurrentQueryApi {
+        base "https://example.com"
         var tenant: String
     }
 

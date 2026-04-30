@@ -210,8 +210,8 @@ pub struct CursorItems {
 impl PageItems for CursorItems {
     type Item = String;
 
-    fn item_count(&self) -> usize {
-        self.items.len()
+    fn item_count_hint(&self) -> Option<usize> {
+        Some(self.items.len())
     }
 
     fn into_items(self) -> Vec<Self::Item> {
@@ -271,7 +271,7 @@ pub fn request_plan(
             policy,
             body: BodyPlan::None,
             response: ResponsePlan {
-                accept: "text/plain",
+                accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
                 decode,

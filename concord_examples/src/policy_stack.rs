@@ -3,7 +3,7 @@ use concord_macros::api;
 
 api! {
     client PolicyApi {
-        base https "example.com"
+        base "https://example.com"
 
         default {
             retry read

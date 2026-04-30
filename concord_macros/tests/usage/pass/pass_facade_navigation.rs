@@ -7,7 +7,7 @@ pub struct MatchDto;
 use self::usage_facade_api::UsageFacadeApi;
 
 api! {
-    client UsageFacadeApi { base https "example.com" }
+    client UsageFacadeApi { base "https://example.com" }
 
     scope regional(region: String) {
         host [region, "api"]

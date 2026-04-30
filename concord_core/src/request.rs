@@ -274,8 +274,9 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
                 .await?;
 
             let control_ctrl = runner.on_page(&resp, &ctx)?;
-            let page_len = resp.value.item_count() as u64;
-            if page_len > 0 {
+            if let Some(page_len) = resp.value.item_count_hint().map(|len| len as u64)
+                && page_len > 0
+            {
                 let new_total = items_count.checked_add(page_len).ok_or_else(|| {
                     ApiClientError::Pagination {
                         ctx: ctx.clone(),
@@ -566,10 +567,15 @@ impl PaginationRunner {
                 stop,
                 ..
             } => {
-                if matches!(stop, Stop::OnEmpty) && resp.value.item_count() == 0 {
+                if matches!(stop, Stop::OnEmpty) && resp.value.item_count_hint() == Some(0) {
                     return Ok(Control::Stop);
                 }
-                if *stop_on_short_page && (resp.value.item_count() as u64) < *limit {
+                if *stop_on_short_page
+                    && resp
+                        .value
+                        .item_count_hint()
+                        .is_some_and(|len| (len as u64) < *limit)
+                {
                     return Ok(Control::Stop);
                 }
                 *offset = offset
@@ -588,7 +594,7 @@ impl PaginationRunner {
                 ..
             } => {
                 *started = true;
-                if matches!(stop, Stop::OnEmpty) && resp.value.item_count() == 0 {
+                if matches!(stop, Stop::OnEmpty) && resp.value.item_count_hint() == Some(0) {
                     return Ok(Control::Stop);
                 }
                 *cursor = resp
@@ -608,10 +614,15 @@ impl PaginationRunner {
                 stop,
                 ..
             } => {
-                if matches!(stop, Stop::OnEmpty) && resp.value.item_count() == 0 {
+                if matches!(stop, Stop::OnEmpty) && resp.value.item_count_hint() == Some(0) {
                     return Ok(Control::Stop);
                 }
-                if *stop_on_short_page && (resp.value.item_count() as u64) < *per_page {
+                if *stop_on_short_page
+                    && resp
+                        .value
+                        .item_count_hint()
+                        .is_some_and(|len| (len as u64) < *per_page)
+                {
                     return Ok(Control::Stop);
                 }
                 *page = page
@@ -629,7 +640,7 @@ impl PaginationRunner {
                     PageAdvance {
                         endpoint: ctx.endpoint,
                         page_index: resp.meta.page_index as u64,
-                        received_items: resp.value.item_count(),
+                        received_items: resp.value.item_count_hint().unwrap_or(0),
                     },
                 )?;
                 Ok(decision.into())
