@@ -478,6 +478,35 @@ mod tests {
     }
 
     #[test]
+    fn generated_scope_default_capture_is_applied_without_public_endpoint_setter() {
+        let out = expanded(quote! {
+            client ScopeDefaultCapture {
+                base "https://example.com"
+            }
+
+            scope localized(locale: String = "en_US".to_string()) {
+                path ["data", locale]
+
+                GET List
+                    as list
+                    path ["list.json"]
+                    -> Json<Vec<String>>
+            }
+        })
+        .to_string();
+
+        assert!(
+            out.contains("__ep . locale = self . locale")
+                || out.contains("__ep.locale=self.locale"),
+            "captured defaulted scope params must be assigned internally"
+        );
+        assert!(
+            !out.contains("__ep = __ep . locale") && !out.contains("__ep=__ep.locale"),
+            "captured defaulted scope params must not call public endpoint setters"
+        );
+    }
+
+    #[test]
     fn codegen_does_not_recompute_endpoint_setter_names() {
         let endpoint_codegen =
             std::fs::read_to_string("src/codegen/endpoints/endpoint.rs").expect("endpoint codegen");

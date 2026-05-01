@@ -948,6 +948,10 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
         .champion()
         .get_champion_detail("Vayne".into())
         .await?;
+    println!(
+        "champion detail fields: {:?}",
+        champion.raw.as_object().map(|o| o.len())
+    );
     let champions = ddragon
         .ddragon()
         .cdn_versioned(version.clone())

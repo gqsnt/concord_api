@@ -847,11 +847,11 @@ fn emit_facade_endpoint_method(
         if v.optional {
             quote! {
                 if let ::core::option::Option::Some(value) = self.#name {
-                    __ep = __ep.#name(value);
+                    __ep.#name = ::core::option::Option::Some(value);
                 }
             }
         } else {
-            quote! { __ep = __ep.#name(self.#name); }
+            quote! { __ep.#name = self.#name; }
         }
     }).collect();
     let self_arg = if root {
