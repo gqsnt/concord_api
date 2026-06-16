@@ -58,6 +58,7 @@ fn parse_rate_limit_key_binding(input: ParseStream<'_>) -> Result<RateLimitKeyBi
 
 fn parse_rate_limit_profile_list(input: ParseStream<'_>) -> Result<Vec<Ident>> {
     if input.peek(token::Bracket) {
+        let list_span = input.span();
         let content;
         bracketed!(content in input);
         let mut out = Vec::new();
@@ -73,6 +74,13 @@ fn parse_rate_limit_profile_list(input: ParseStream<'_>) -> Result<Vec<Ident>> {
             }
             out.push(ident);
             let _ = content.parse::<Option<Token![,]>>()?;
+        }
+
+        if out.is_empty() {
+            return Err(syn::Error::new(
+                list_span,
+                "empty rate_limit list; expected at least one profile name",
+            ));
         }
 
         return Ok(out);

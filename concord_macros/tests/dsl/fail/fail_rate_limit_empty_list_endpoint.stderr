@@ -1,0 +1,5 @@
+error: empty rate_limit list; expected at least one profile name
+  --> tests/dsl/fail/fail_rate_limit_empty_list_endpoint.rs:10:16
+   |
+10 |     rate_limit []
+   |                ^
