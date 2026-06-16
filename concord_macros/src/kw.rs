@@ -10,6 +10,7 @@ syn::custom_keyword!(headers);
 syn::custom_keyword!(query);
 syn::custom_keyword!(timeout);
 syn::custom_keyword!(cache);
+syn::custom_keyword!(behavior);
 syn::custom_keyword!(http);
 syn::custom_keyword!(capacity);
 syn::custom_keyword!(entries);

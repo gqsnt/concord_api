@@ -27,6 +27,7 @@ pub struct RawClient {
     pub retry_profiles: Option<RetryProfilesBlock>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitProfilesBlock>,
+    pub behavior_profiles: Option<BehaviorProfilesBlock>,
 }
 
 #[derive(Debug)]
@@ -47,6 +48,7 @@ pub struct RawScope {
     pub route: RouteExpr,
     pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
+    pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<AuthUseDecl>,
     pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,
@@ -76,6 +78,7 @@ pub struct RawEndpoint {
     pub params: Vec<VarDeclNoWire>,
 
     pub policy: PolicyBlocks,
+    pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<AuthUseDecl>,
     pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,

@@ -1,0 +1,5 @@
+error: invalid item in behavior
+ --> tests/dsl/fail/fail_behavior_invalid_item.rs:8:13
+  |
+8 |             path ["users"]
+  |             ^^^^

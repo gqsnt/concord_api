@@ -20,6 +20,7 @@ fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
             retry_profiles: raw.client.retry_profiles,
             retry: raw.client.retry,
             rate_limit: raw.client.rate_limit,
+            behavior_profiles: raw.client.behavior_profiles,
         },
         items: normalize_items(raw.items)?,
     })
@@ -47,6 +48,7 @@ fn normalize_scope(raw: crate::ast::RawScope) -> Result<NormScope> {
         route: raw.route,
         params: raw.params,
         policy: raw.policy,
+        behavior_uses: raw.behavior_uses,
         auth_uses,
         cache: raw.cache,
         retry: raw.retry,
@@ -72,6 +74,7 @@ fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEndpoint> {
         route: raw.route,
         params: raw.params,
         policy: raw.policy,
+        behavior_uses: raw.behavior_uses,
         auth_uses,
         cache: raw.cache,
         retry: raw.retry,

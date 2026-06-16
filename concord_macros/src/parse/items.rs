@@ -32,6 +32,7 @@ impl Parse for RawScopeTaggedScope {
         let body_span = content.span();
 
         let mut policy = PolicyBlocks::default();
+        let mut behavior_uses = Vec::new();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut cache: Option<CacheSpec> = None;
         let mut retry: Option<RetrySpec> = None;
@@ -93,6 +94,9 @@ impl Parse for RawScopeTaggedScope {
                 content.parse::<Token![:]>()?;
                 let t = content.parse::<Expr>()?;
                 policy.timeout = Some(normalize_policy_expr(t));
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::behavior) {
+                behavior_uses.push(parse_behavior_use_spec(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::auth) {
                 content.parse::<kw::auth>()?;
@@ -158,6 +162,7 @@ impl Parse for RawScopeTaggedScope {
                 route: host,
                 params,
                 policy,
+                behavior_uses,
                 auth_uses,
                 cache,
                 retry,
@@ -172,6 +177,7 @@ impl Parse for RawScopeTaggedScope {
                     route: path,
                     params: Vec::new(),
                     policy: PolicyBlocks::default(),
+                    behavior_uses: Vec::new(),
                     auth_uses: Vec::new(),
                     cache: None,
                     retry: None,
@@ -189,6 +195,7 @@ impl Parse for RawScopeTaggedScope {
                 route: host,
                 params,
                 policy,
+                behavior_uses,
                 auth_uses,
                 cache,
                 retry,
@@ -205,6 +212,7 @@ impl Parse for RawScopeTaggedScope {
                 route: path,
                 params,
                 policy,
+                behavior_uses,
                 auth_uses,
                 cache,
                 retry,
@@ -221,6 +229,7 @@ impl Parse for RawScopeTaggedScope {
                 route: RouteExpr { atoms: Vec::new() },
                 params,
                 policy,
+                behavior_uses,
                 auth_uses,
                 cache,
                 retry,
@@ -288,6 +297,7 @@ impl Parse for RawEndpoint {
                 inline_parts.route,
                 params,
                 inline_parts.policy,
+                inline_parts.behavior_uses,
                 inline_parts.auth_uses,
                 inline_parts.cache,
                 inline_parts.retry,
@@ -315,6 +325,7 @@ impl Parse for RawEndpoint {
             inline_parts.route,
             params,
             inline_parts.policy,
+            inline_parts.behavior_uses,
             inline_parts.auth_uses,
             inline_parts.cache,
             inline_parts.retry,
@@ -337,6 +348,7 @@ fn raw_endpoint(
     route: RouteExpr,
     params: Vec<VarDeclNoWire>,
     policy: PolicyBlocks,
+    behavior_uses: Vec<BehaviorUseSpec>,
     auth_uses: Vec<AuthUseDecl>,
     cache: Option<CacheSpec>,
     retry: Option<RetrySpec>,
@@ -361,6 +373,7 @@ fn raw_endpoint(
         route,
         params,
         policy,
+        behavior_uses,
         auth_uses,
         cache,
         retry,

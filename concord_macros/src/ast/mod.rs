@@ -16,6 +16,7 @@ include!("routing.rs");
 include!("cache.rs");
 include!("retry.rs");
 include!("rate_limit.rs");
+include!("behavior.rs");
 include!("pagination.rs");
 include!("mapping.rs");
 include!("policy.rs");

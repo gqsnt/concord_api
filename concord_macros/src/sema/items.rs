@@ -6,6 +6,7 @@ struct WalkItemsCtx<'a> {
     cache_profiles: &'a BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
+    behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
     layers: &'a mut Vec<LayerIr>,
     endpoints: &'a mut Vec<ResolvedEndpoint>,
 }
@@ -18,6 +19,7 @@ struct EndpointAnalysisCtx<'a> {
     cache_profiles: &'a BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
+    behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
     layers: &'a [LayerIr],
 }
 
@@ -33,6 +35,7 @@ fn walk_items(
                 let (prefix_pieces, path_pieces, decls) =
                     analyze_layer_route_and_decls(ld, ancestry, ctx.layers, ctx.client_vars)?;
                 let key_bindings = resolve_rate_limit_key_bindings(&ld.rate_limit_keys, &decls)?;
+                let behavior = resolve_behavior_uses(&ld.behavior_uses, ctx.behavior_profiles)?;
                 let mut policy = resolve_policy_blocks(
                     &ld.policy,
                     PolicyOwner::Layer,
@@ -40,20 +43,37 @@ fn walk_items(
                     ctx.auth_vars,
                     None, // endpoint vars not known at layer-level alone (validated per endpoint)
                 )?;
-                policy.retry = resolve_retry_spec(ld.retry.as_ref(), ctx.retry_profiles)?;
-                policy.cache = resolve_cache_spec(ld.cache.as_ref(), ctx.cache_profiles)?;
+                policy.retry = if ld.retry.is_some() {
+                    resolve_retry_spec(ld.retry.as_ref(), ctx.retry_profiles)?
+                } else {
+                    behavior.policy.retry.clone()
+                };
+                policy.cache = if ld.cache.is_some() {
+                    resolve_cache_spec(ld.cache.as_ref(), ctx.cache_profiles)?
+                } else {
+                    behavior.policy.cache.clone()
+                };
                 let mut visible_keys = rate_limit_key_bindings_for_ancestry(ancestry, ctx.layers);
                 for binding in &key_bindings {
                     visible_keys.insert(binding.name.clone(), binding.clone());
                 }
-                policy.rate_limit = resolve_rate_limit_spec(
+                let behavior_rate_limit = resolve_behavior_rate_limit_specs(
+                    &behavior.rate_limit_specs,
+                    ctx.rate_limit_profiles,
+                    &visible_keys,
+                    None,
+                )?;
+                let explicit_rate_limit = resolve_rate_limit_spec(
                     ld.rate_limit.as_ref(),
                     ctx.rate_limit_profiles,
                     &visible_keys,
                     None,
                 )?;
+                policy.rate_limit = merge_rate_limit_resolved(behavior_rate_limit, explicit_rate_limit);
+                let mut auth_uses = behavior.auth_uses;
+                auth_uses.extend(ld.auth_uses.iter().cloned());
                 let auth = resolve_auth_requirements(
-                    &ld.auth_uses,
+                    &auth_uses,
                     ctx.auth_credentials,
                     AuthUseProvenanceIr::Scope(id),
                 )?;
@@ -82,6 +102,7 @@ fn walk_items(
                     cache_profiles: ctx.cache_profiles,
                     retry_profiles: ctx.retry_profiles,
                     rate_limit_profiles: ctx.rate_limit_profiles,
+                    behavior_profiles: ctx.behavior_profiles,
                     layers: ctx.layers.as_slice(),
                 };
                 let endpoint_ir = analyze_endpoint(ed, ancestry, &analysis_ctx)?;
@@ -431,8 +452,17 @@ fn analyze_endpoint(
         ctx.auth_vars,
         Some(&ep_vars),
     )?;
-    policy.retry = resolve_retry_spec(ed.retry.as_ref(), ctx.retry_profiles)?;
-    policy.cache = resolve_cache_spec(ed.cache.as_ref(), ctx.cache_profiles)?;
+    let behavior = resolve_behavior_uses(&ed.behavior_uses, ctx.behavior_profiles)?;
+    policy.retry = if ed.retry.is_some() {
+        resolve_retry_spec(ed.retry.as_ref(), ctx.retry_profiles)?
+    } else {
+        behavior.policy.retry.clone()
+    };
+    policy.cache = if ed.cache.is_some() {
+        resolve_cache_spec(ed.cache.as_ref(), ctx.cache_profiles)?
+    } else {
+        behavior.policy.cache.clone()
+    };
     let endpoint_decls = ep_var_order
         .iter()
         .filter_map(|key| ep_vars.get(key))
@@ -444,18 +474,27 @@ fn analyze_endpoint(
     for binding in endpoint_key_bindings {
         visible_keys.insert(binding.name.clone(), binding);
     }
-    policy.rate_limit = resolve_rate_limit_spec(
+    let behavior_rate_limit = resolve_behavior_rate_limit_specs(
+        &behavior.rate_limit_specs,
+        ctx.rate_limit_profiles,
+        &visible_keys,
+        Some(&ep_vars),
+    )?;
+    let explicit_rate_limit = resolve_rate_limit_spec(
         ed.rate_limit.as_ref(),
         ctx.rate_limit_profiles,
         &visible_keys,
         Some(&ep_vars),
     )?;
+    policy.rate_limit = merge_rate_limit_resolved(behavior_rate_limit, explicit_rate_limit);
     let mut auth = ctx.client_auth.to_vec();
     for &lid in ancestry {
         auth.extend(ctx.layers[lid].auth.iter().cloned());
     }
+    let mut auth_uses = behavior.auth_uses;
+    auth_uses.extend(ed.auth_uses.iter().cloned());
     auth.extend(resolve_auth_requirements(
-        &ed.auth_uses,
+        &auth_uses,
         ctx.auth_credentials,
         AuthUseProvenanceIr::Endpoint,
     )?);

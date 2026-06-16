@@ -22,6 +22,7 @@ fn parse_inline_var_decls(input: ParseStream<'_>, ctx: &'static str) -> Result<V
 struct EndpointBlockParts {
     route: RouteExpr,
     policy: PolicyBlocks,
+    behavior_uses: Vec<BehaviorUseSpec>,
     auth_uses: Vec<AuthUseDecl>,
     cache: Option<CacheSpec>,
     retry: Option<RetrySpec>,
@@ -35,6 +36,7 @@ impl EndpointBlockParts {
         Self {
             route: RouteExpr { atoms: Vec::new() },
             policy: PolicyBlocks::default(),
+            behavior_uses: Vec::new(),
             auth_uses: Vec::new(),
             cache: None,
             retry: None,
@@ -70,6 +72,7 @@ impl EndpointBlockParts {
             self.policy.timeout = other.policy.timeout;
         }
         self.auth_uses.extend(other.auth_uses);
+        self.behavior_uses.extend(other.behavior_uses);
         if other.cache.is_some() {
             if self.cache.is_some() {
                 return Err(syn::Error::new(name.span(), "duplicate cache policy in endpoint"));
@@ -210,6 +213,8 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
             }
             let t = parse_expr_until_comma_or_endpoint_arrow(input)?;
             parts.policy.timeout = Some(normalize_policy_expr_checked(t)?);
+        } else if input.peek(kw::behavior) {
+            parts.behavior_uses.push(parse_behavior_use_spec(input)?);
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);

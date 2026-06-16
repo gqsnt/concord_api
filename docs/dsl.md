@@ -285,6 +285,48 @@ client PolicyApi {
 
 Use `cache off`, `retry off`, or `rate_limit off` on a narrower layer to clear an inherited policy. Use `rate_limit [a, b]` to add multiple rate-limit profiles to the same endpoint.
 
+## Behavior Profiles
+
+Behavior profiles give a semantic name to cross-cutting request behavior.
+
+```rust
+behavior protected_read {
+    auth bearer session
+    retry read
+    cache standard
+    rate_limit app
+}
+```
+
+Attach behavior profiles to scopes or endpoints:
+
+```rust
+scope users {
+    path ["users"]
+    behavior protected_read
+
+    GET Me
+    path ["me"]
+    -> Json<User>
+}
+```
+
+A behavior can extend another behavior:
+
+```rust
+behavior protected_read extends read {
+    auth bearer session
+}
+```
+
+Behavior profiles are resolved by the macro into existing auth, cache, retry, and rate-limit policy data. The core runtime does not know about behavior syntax.
+
+In this version, behavior profiles can contain `auth`, `retry`, `cache`, and `rate_limit` clauses.
+
+Behavior `rate_limit` clauses are resolved where the behavior is attached. This means they can use rate-limit key bindings visible at that scope or endpoint.
+
+When a behavior supplies a rate-limit profile and a narrower scope or endpoint adds another plain `rate_limit` profile, the profiles are combined. Use `rate_limit off` to clear inherited rate-limit behavior.
+
 ## Pagination
 
 Pagination is declared on endpoints with a controller and controller field assignments.

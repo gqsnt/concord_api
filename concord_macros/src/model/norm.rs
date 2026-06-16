@@ -1,9 +1,9 @@
 //! Canonical macro model produced by raw syntax normalization.
 
 use crate::ast::{
-    AuthCredentials, AuthUseKind, CacheProfilesBlock, CacheSpec, CodecSpec, MapSpec, PaginateSpec,
-    PolicyBlocks, RateLimitKeyBindingSpec, RateLimitProfilesBlock, RateLimitSpec,
-    RetryProfilesBlock, RetrySpec, RouteExpr, VarDeclNoWire,
+    AuthCredentials, AuthUseKind, BehaviorProfilesBlock, BehaviorUseSpec, CacheProfilesBlock,
+    CacheSpec, CodecSpec, MapSpec, PaginateSpec, PolicyBlocks, RateLimitKeyBindingSpec,
+    RateLimitProfilesBlock, RateLimitSpec, RetryProfilesBlock, RetrySpec, RouteExpr, VarDeclNoWire,
 };
 use crate::model::Scheme;
 use proc_macro2::Span;
@@ -37,6 +37,7 @@ pub(crate) struct NormClient {
     pub retry_profiles: Option<RetryProfilesBlock>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitProfilesBlock>,
+    pub behavior_profiles: Option<BehaviorProfilesBlock>,
 }
 
 #[derive(Debug)]
@@ -61,6 +62,7 @@ pub(crate) struct NormScope {
     pub route: RouteExpr,
     pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
+    pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<NormAuthUse>,
     pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,
@@ -95,6 +97,7 @@ pub(crate) struct NormEndpoint {
     pub route: RouteExpr,
     pub params: Vec<VarDeclNoWire>,
     pub policy: PolicyBlocks,
+    pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<NormAuthUse>,
     pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,
@@ -106,7 +109,7 @@ pub(crate) struct NormEndpoint {
     pub map: Option<MapSpec>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub(crate) struct NormAuthUse {
     pub kind: AuthUseKind,
@@ -133,6 +136,7 @@ mod tests {
             retry_profiles: None,
             retry: None,
             rate_limit: None,
+            behavior_profiles: None,
         };
 
         let tree = NormApiTree {

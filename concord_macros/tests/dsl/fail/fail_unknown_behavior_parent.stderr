@@ -1,0 +1,5 @@
+error: unknown behavior parent `missing`
+ --> tests/dsl/fail/fail_unknown_behavior_parent.rs:7:32
+  |
+7 |         behavior child extends missing {
+  |                                ^^^^^^^

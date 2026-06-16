@@ -63,6 +63,7 @@ impl Parse for RawClient {
         let mut retry_profiles: Option<RetryProfilesBlock> = None;
         let mut retry: Option<RetrySpec> = None;
         let mut rate_limit: Option<RateLimitProfilesBlock> = None;
+        let mut behavior_profiles: Option<BehaviorProfilesBlock> = None;
         let mut policy = PolicyBlocks::default();
         let mut seen_default_block = false;
 
@@ -133,6 +134,15 @@ impl Parse for RawClient {
                     })
                     .profiles
                     .push(parse_rate_limit_profile_decl_after_keyword(&content)?);
+                let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::behavior) {
+                content.parse::<kw::behavior>()?;
+                behavior_profiles
+                    .get_or_insert_with(|| BehaviorProfilesBlock {
+                        profiles: Vec::new(),
+                    })
+                    .profiles
+                    .push(parse_behavior_profile_decl_after_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::default) {
                 content.parse::<kw::default>()?;
@@ -241,6 +251,7 @@ impl Parse for RawClient {
             retry_profiles,
             retry,
             rate_limit,
+            behavior_profiles,
         })
     }
 }
@@ -365,6 +376,7 @@ include!("endpoints.rs");
 include!("retry.rs");
 include!("cache.rs");
 include!("rate_limit.rs");
+include!("behavior.rs");
 include!("items.rs");
 include!("policy.rs");
 

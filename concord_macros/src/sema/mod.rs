@@ -6,12 +6,12 @@
 //! parser structures.
 
 use crate::ast::{
-    AuthCredentialKind, AuthCredentials, AuthUseKind, CacheDurationSpec, CacheOnErrorSpec,
-    CachePatch, CacheProfilesBlock, CacheSpec, CodecSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec,
-    PolicyBlock, PolicyBlocks, PolicyStmt, PolicyValue, RateLimitDurationUnit,
-    RateLimitKeyBindingSpec, RateLimitKeySpec, RateLimitPlanSpec, RateLimitProfilesBlock,
-    RateLimitSpec, RefScope, RetryIdempotencySpec, RetryPatch, RetryProfilesBlock, RetrySpec,
-    RouteAtom, SecretRef,
+    AuthCredentialKind, AuthCredentials, AuthUseKind, BehaviorProfileDef, BehaviorProfilesBlock,
+    BehaviorUseSpec, CacheDurationSpec, CacheOnErrorSpec, CachePatch, CacheProfilesBlock,
+    CacheSpec, CodecSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec, PolicyBlock, PolicyBlocks,
+    PolicyStmt, PolicyValue, RateLimitDurationUnit, RateLimitKeyBindingSpec, RateLimitKeySpec,
+    RateLimitPlanSpec, RateLimitProfilesBlock, RateLimitSpec, RefScope, RetryIdempotencySpec,
+    RetryPatch, RetryProfilesBlock, RetrySpec, RouteAtom, SecretRef,
 };
 use crate::emit_helpers;
 use crate::model::*;
@@ -21,6 +21,7 @@ use syn::{Expr, Ident, LitStr, Path, Result, Type, spanned::Spanned};
 
 include!("ir.rs");
 include!("profiles.rs");
+include!("behavior.rs");
 include!("normalize.rs");
 #[path = "resolve.rs"]
 mod resolve_stage;
@@ -88,6 +89,11 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
     let cache_profiles = resolve_cache_profiles(norm.client.cache_profiles.as_ref())?;
     let retry_profiles = resolve_retry_profiles(norm.client.retry_profiles.as_ref())?;
     let rate_limit_profiles = resolve_rate_limit_profiles(norm.client.rate_limit.as_ref())?;
+    let behavior_profiles = resolve_behavior_profiles(
+        norm.client.behavior_profiles.as_ref(),
+        &cache_profiles,
+        &retry_profiles,
+    )?;
 
     // validate client policy + resolve
     let mut client_policy = resolve_policy_blocks(
@@ -136,6 +142,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         cache_profiles: &cache_profiles,
         retry_profiles: &retry_profiles,
         rate_limit_profiles: &rate_limit_profiles,
+        behavior_profiles: &behavior_profiles,
         layers: &mut layers,
         endpoints: &mut endpoints,
     };
@@ -880,6 +887,217 @@ mod tests {
             endpoint_policy.rate_limit,
             Some(RateLimitResolved::Replace(_))
         ));
+    }
+
+    #[test]
+    fn behavior_cache_profile_resolves_before_local_override() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry read {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    cache standard {
+                        ttl 30s
+                    }
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+
+                    behavior protected_read {
+                        retry read
+                        cache standard
+                        rate_limit app
+                    }
+                }
+
+                scope users {
+                    path ["users"]
+                    behavior protected_read
+
+                    GET Me
+                        path ["me"]
+                        cache off
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let endpoint = &resolved_api.endpoints[0];
+
+        assert!(matches!(
+            endpoint
+                .policy
+                .scopes
+                .first()
+                .and_then(|scope| scope.cache.as_ref()),
+            Some(CacheResolved::Set(_))
+        ));
+        assert!(matches!(
+            endpoint.policy.endpoint.cache,
+            Some(CacheResolved::Clear)
+        ));
+    }
+
+    #[test]
+    fn behavior_rate_limit_merges_with_local_rate_limit() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+
+                    rate_limit users {
+                        bucket method by [host, endpoint] {
+                            5 / 1s
+                        }
+                    }
+
+                    behavior base_read {
+                        rate_limit app
+                    }
+                }
+
+                scope users {
+                    path ["users"]
+                    behavior base_read
+                    rate_limit users
+
+                    GET List
+                    path []
+                    -> Json<()>
+                }
+
+                GET RootList
+                path ["root"]
+                behavior base_read
+                rate_limit users
+                -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let scope_endpoint = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "List")
+            .expect("scope endpoint");
+        let scope_rate_limit = scope_endpoint
+            .policy
+            .scopes
+            .first()
+            .and_then(|scope| scope.rate_limit.as_ref())
+            .expect("scope rate limit");
+        let scope_bucket_names = match scope_rate_limit {
+            RateLimitResolved::Add(plan) | RateLimitResolved::Replace(plan) => plan
+                .buckets
+                .iter()
+                .map(|bucket| bucket.name.clone())
+                .collect::<Vec<_>>(),
+            RateLimitResolved::Clear => panic!("expected merged scope rate limit"),
+        };
+        assert_eq!(
+            scope_bucket_names,
+            vec!["app_0".to_string(), "users_0".to_string()]
+        );
+
+        let root_endpoint = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "RootList")
+            .expect("root endpoint");
+        let root_rate_limit = root_endpoint
+            .policy
+            .endpoint
+            .rate_limit
+            .as_ref()
+            .expect("endpoint rate limit");
+        let root_bucket_names = match root_rate_limit {
+            RateLimitResolved::Add(plan) | RateLimitResolved::Replace(plan) => plan
+                .buckets
+                .iter()
+                .map(|bucket| bucket.name.clone())
+                .collect::<Vec<_>>(),
+            RateLimitResolved::Clear => panic!("expected merged endpoint rate limit"),
+        };
+        assert_eq!(
+            root_bucket_names,
+            vec!["app_0".to_string(), "users_0".to_string()]
+        );
+    }
+
+    #[test]
+    fn behavior_rate_limit_resolves_with_scope_key_binding() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    rate_limit tenant_bucket {
+                        bucket method by [tenant_key] {
+                            5 / 1s
+                        }
+                    }
+
+                    behavior tenant_read {
+                        rate_limit tenant_bucket
+                    }
+                }
+
+                scope tenants(tenant: String) {
+                    path ["tenants", tenant]
+                    rate_limit key tenant_key = tenant
+                    behavior tenant_read
+
+                    GET List
+                    path ["items"]
+                    -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let endpoint = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "List")
+            .expect("List endpoint");
+        let scope_policy = endpoint.policy.scopes.first().expect("scope policy");
+        let rate_limit = scope_policy
+            .rate_limit
+            .as_ref()
+            .expect("resolved scope rate limit");
+        let plan = match rate_limit {
+            RateLimitResolved::Add(plan) | RateLimitResolved::Replace(plan) => plan,
+            RateLimitResolved::Clear => panic!("expected resolved rate limit"),
+        };
+        assert_eq!(plan.buckets.len(), 1);
+        let bucket = &plan.buckets[0];
+        assert!(bucket.key.iter().any(|key| matches!(
+            key,
+            RateLimitKeyResolved::EpField { name, field }
+                if name == "tenant_key" && field.to_string() == "tenant"
+        )));
     }
 
     #[test]
