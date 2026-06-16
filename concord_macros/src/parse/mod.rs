@@ -91,19 +91,24 @@ impl Parse for RawClient {
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::secret) {
                 content.parse::<kw::secret>()?;
-                let decl: VarDeclNoWire = content.parse()?;
-                auth_vars
-                    .get_or_insert_with(|| VarsBlock { decls: Vec::new() })
-                    .decls
-                    .push(decl);
+                parse_client_secret_decl_into(&content, &mut auth_vars)?;
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::auth) {
-                content.parse::<kw::auth>()?;
-                auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
+                let fork = content.fork();
+                fork.parse::<kw::auth>()?;
+                if fork.peek(token::Brace) {
+                    content.parse::<kw::auth>()?;
+                    let auth_content;
+                    braced!(auth_content in content);
+                    parse_client_auth_group(&auth_content, &mut auth_vars, &mut auth_credentials)?;
+                } else {
+                    content.parse::<kw::auth>()?;
+                    auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
+                }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::credential) {
                 content.parse::<kw::credential>()?;
-                auth_credentials.push(parse_auth_credential_after_keyword(&content, true)?);
+                parse_client_credential_decl_into(&content, &mut auth_credentials)?;
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::cache) {
                 content.parse::<kw::cache>()?;
@@ -303,6 +308,51 @@ fn parse_base_url_literal(base_url: &LitStr) -> Result<(Scheme, String)> {
         ));
     }
     Ok((scheme, host.to_string()))
+}
+
+fn parse_client_auth_group(
+    input: ParseStream<'_>,
+    auth_vars: &mut Option<VarsBlock>,
+    auth_credentials: &mut Vec<AuthCredentialDecl>,
+) -> Result<()> {
+    while !input.is_empty() {
+        if input.peek(kw::secret) {
+            input.parse::<kw::secret>()?;
+            parse_client_secret_decl_into(input, auth_vars)?;
+        } else if input.peek(kw::credential) {
+            input.parse::<kw::credential>()?;
+            parse_client_credential_decl_into(input, auth_credentials)?;
+        } else {
+            let tt: TokenTree = input.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "invalid item in auth block; expected secret or credential",
+            ));
+        }
+
+        let _ = input.parse::<Option<Token![,]>>()?;
+    }
+    Ok(())
+}
+
+fn parse_client_secret_decl_into(
+    input: ParseStream<'_>,
+    auth_vars: &mut Option<VarsBlock>,
+) -> Result<()> {
+    let decl: VarDeclNoWire = input.parse()?;
+    auth_vars
+        .get_or_insert_with(|| VarsBlock { decls: Vec::new() })
+        .decls
+        .push(decl);
+    Ok(())
+}
+
+fn parse_client_credential_decl_into(
+    input: ParseStream<'_>,
+    auth_credentials: &mut Vec<AuthCredentialDecl>,
+) -> Result<()> {
+    auth_credentials.push(parse_auth_credential_after_keyword(input, true)?);
+    Ok(())
 }
 
 fn parse_client_default_block(

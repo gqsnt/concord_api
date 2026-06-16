@@ -248,6 +248,21 @@ scope protected {
 }
 ```
 
+### Grouped Auth Configuration
+
+For larger clients, secrets and credentials can be grouped:
+
+```rust
+auth {
+    secret token: String
+    credential session = bearer(secret.token)
+}
+```
+
+This is equivalent to writing `secret` and `credential` directly in the client block.
+
+Auth use clauses such as `auth bearer session` still belong in defaults, scopes, endpoints, or behavior profiles; they are not part of the grouped `auth { ... }` section.
+
 ## Cache, Retry, And Rate Limit Profiles
 
 Named profiles live in the client block. Attach them with defaults, scope policies, or endpoint policies.

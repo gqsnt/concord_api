@@ -15,8 +15,10 @@ impl RateLimitObserver for RiotRateLimitHeaders {
 api! {
     client RiotClient {
         base "https://riotgames.com"
-        secret api_key: String
-        credential riot_api_key = api_key(secret.api_key)
+        auth {
+            secret api_key: String
+            credential riot_api_key = api_key(secret.api_key)
+        }
         headers {
             "user-agent" = "ClientApiRiotExample/1.0",
             "x-client-trace" = false

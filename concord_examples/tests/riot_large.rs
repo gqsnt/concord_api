@@ -116,6 +116,23 @@ fn riot_uses_default_riot_read_behavior() {
 }
 
 #[test]
+fn riot_groups_secret_and_credential_auth_config() {
+    let source = include_str!("../src/riot.rs");
+
+    assert!(source_contains_in_order(
+        source,
+        &[
+            "auth {",
+            "secret api_key: String",
+            "credential riot_api_key = api_key(secret.api_key)",
+            "behaviors {",
+            "behavior riot_read {",
+            "auth header \"X-Riot-Token\" = riot_api_key",
+        ],
+    ));
+}
+
+#[test]
 fn riot_lifts_uniform_behavior_to_scopes() {
     let source = include_str!("../src/riot.rs");
 
