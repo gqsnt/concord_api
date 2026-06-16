@@ -90,7 +90,32 @@ fn riot_endpoints_do_not_place_policy_after_response() {
 }
 
 #[test]
-fn riot_lifts_uniform_rate_limits_to_scopes() {
+fn riot_uses_default_riot_read_behavior() {
+    let source = include_str!("../src/riot.rs");
+
+    assert!(source_contains_in_order(
+        source,
+        &[
+            "behavior riot_read {",
+            "auth header \"X-Riot-Token\" = riot_api_key",
+            "retry read",
+            "rate_limit app",
+            "default {",
+            "behavior riot_read",
+        ],
+    ));
+
+    assert_eq!(
+        source
+            .matches("auth header \"X-Riot-Token\" = riot_api_key")
+            .count(),
+        1,
+        "X-Riot-Token auth should be declared once in behavior riot_read"
+    );
+}
+
+#[test]
+fn riot_lifts_uniform_behavior_to_scopes() {
     let source = include_str!("../src/riot.rs");
 
     assert!(source_contains_in_order(
@@ -98,7 +123,7 @@ fn riot_lifts_uniform_rate_limits_to_scopes() {
         &[
             "scope champion_masteries",
             "path [\"champion-masteries\"]",
-            "rate_limit riot_high_volume_method",
+            "behavior high_volume_read",
             "GET GetChampionMasteriesBySummoner",
             "-> Json<Vec<models::ChampionMasteryDto>>",
         ],
@@ -109,7 +134,7 @@ fn riot_lifts_uniform_rate_limits_to_scopes() {
         &[
             "scope scores",
             "path [\"scores\"]",
-            "rate_limit riot_high_volume_method",
+            "behavior high_volume_read",
             "GET GetChampionMasteryScore",
             "-> Json<i32>",
         ],
@@ -120,7 +145,7 @@ fn riot_lifts_uniform_rate_limits_to_scopes() {
         &[
             "scope challenges_v1",
             "path [\"challenges\", \"v1\"]",
-            "rate_limit riot_high_volume_method",
+            "behavior high_volume_read",
             "GET GetChallengePercentiles",
             "-> Json<serde_json::Value>",
         ],
@@ -131,7 +156,7 @@ fn riot_lifts_uniform_rate_limits_to_scopes() {
         &[
             "scope account_v1_accounts",
             "path [\"riot\", \"account\", \"v1\", \"accounts\"]",
-            "rate_limit [account_standard_method, riot_high_volume_method]",
+            "behavior account_standard_read",
             "GET GetAccountByRiotId",
             "-> Json<models::AccountDto>",
         ],
@@ -142,9 +167,33 @@ fn riot_lifts_uniform_rate_limits_to_scopes() {
         &[
             "scope tournament_stub_v5",
             "path [\"lol\", \"tournament-stub\", \"v5\"]",
-            "rate_limit riot_high_volume_method",
+            "behavior high_volume_read",
             "POST CreateTournamentStubCodes",
             "-> Json<Vec<String>>",
+        ],
+    ));
+}
+
+#[test]
+fn riot_keeps_mixed_match_v5_behaviors_explicit() {
+    let source = include_str!("../src/riot.rs");
+
+    assert!(source_contains_in_order(
+        source,
+        &[
+            "scope match_v5_matches",
+            "GET GetMatchIdsByPuuid",
+            "behavior match_v5_read",
+            "-> Json<Vec<String>>",
+            "GET GetMatch",
+            "behavior match_v5_read",
+            "-> Json<models::MatchDto>",
+            "GET GetTimeline",
+            "behavior match_v5_read",
+            "-> Json<models::TimelineDto>",
+            "GET GetMatchReplaysByPuuid",
+            "behavior high_volume_read",
+            "-> Json<serde_json::Value>",
         ],
     ));
 }
