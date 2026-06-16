@@ -3,6 +3,7 @@ struct WalkItemsCtx<'a> {
     auth_vars: &'a BTreeMap<String, VarInfo>,
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
+    client_default_behavior_names: &'a [String],
     cache_profiles: &'a BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
@@ -16,6 +17,7 @@ struct EndpointAnalysisCtx<'a> {
     auth_vars: &'a BTreeMap<String, VarInfo>,
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
+    client_default_behavior_names: &'a [String],
     cache_profiles: &'a BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
@@ -36,6 +38,7 @@ fn walk_items(
                     analyze_layer_route_and_decls(ld, ancestry, ctx.layers, ctx.client_vars)?;
                 let key_bindings = resolve_rate_limit_key_bindings(&ld.rate_limit_keys, &decls)?;
                 let behavior = resolve_behavior_uses(&ld.behavior_uses, ctx.behavior_profiles)?;
+                let behavior_names = behavior_use_names(&ld.behavior_uses);
                 let mut policy = resolve_policy_blocks(
                     &ld.policy,
                     PolicyOwner::Layer,
@@ -86,6 +89,7 @@ fn walk_items(
                     policy,
                     auth,
                     rate_limit_key_bindings: key_bindings,
+                    behavior_names,
                     decls,
                 });
 
@@ -99,6 +103,7 @@ fn walk_items(
                     auth_vars: ctx.auth_vars,
                     auth_credentials: ctx.auth_credentials,
                     client_auth: ctx.client_auth,
+                    client_default_behavior_names: ctx.client_default_behavior_names,
                     cache_profiles: ctx.cache_profiles,
                     retry_profiles: ctx.retry_profiles,
                     rate_limit_profiles: ctx.rate_limit_profiles,
@@ -498,6 +503,12 @@ fn analyze_endpoint(
         ctx.auth_credentials,
         AuthUseProvenanceIr::Endpoint,
     )?);
+    let mut behavior_doc_names = Vec::new();
+    behavior_doc_names.extend(ctx.client_default_behavior_names.iter().cloned());
+    for &lid in ancestry {
+        behavior_doc_names.extend(ctx.layers[lid].behavior_names.iter().cloned());
+    }
+    behavior_doc_names.extend(behavior_use_names(&ed.behavior_uses));
     let mut scope_modules = Vec::new();
     let mut facade_param_groups = Vec::new();
     let mut prefix_pieces = Vec::new();
@@ -567,6 +578,9 @@ fn analyze_endpoint(
             scopes: scope_policies,
             endpoint: policy,
             auth,
+        },
+        behavior_doc: BehaviorDocMeta {
+            names: behavior_doc_names,
         },
         paginate,
         map,

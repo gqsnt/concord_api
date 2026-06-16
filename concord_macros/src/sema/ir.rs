@@ -33,7 +33,13 @@ pub struct LayerIr {
     pub policy: PolicyBlocksResolved,
     pub auth: Vec<AuthUsePlanIr>,
     pub rate_limit_key_bindings: Vec<RateLimitKeyBindingResolved>,
+    pub behavior_names: Vec<String>,
     pub decls: Vec<VarInfo>, // endpoint vars declared by this layer
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BehaviorDocMeta {
+    pub names: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -57,6 +63,7 @@ pub struct ResolvedEndpoint {
     pub response: CodecSpec,
 
     pub policy: ResolvedPolicySpec,
+    pub behavior_doc: BehaviorDocMeta,
 
     pub paginate: Option<PaginateResolved>,
     pub map: Option<MapResolved>,

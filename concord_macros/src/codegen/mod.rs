@@ -1016,6 +1016,55 @@ mod tests {
     }
 
     #[test]
+    fn behavior_doc_line_formats_labels_in_order() {
+        assert_eq!(
+            behavior_doc_line(&["client_read".to_string(), "endpoint_read".to_string()]),
+            Some("Behavior: `client_read`, `endpoint_read`".to_string())
+        );
+        assert_eq!(behavior_doc_line(&[]), None);
+    }
+
+    #[test]
+    fn generated_rustdoc_snapshot_includes_behavior_names() {
+        let out = expanded(quote! {
+            client BehaviorDocs {
+                base "https://example.com"
+
+                behavior client_read {
+                    retry off
+                }
+
+                behavior scope_read {
+                    retry off
+                }
+
+                behavior endpoint_read {
+                    retry off
+                }
+
+                defaults {
+                    behavior client_read
+                }
+            }
+
+            scope users {
+                path ["users"]
+                behavior scope_read
+
+                GET Me
+                    path ["me"]
+                    behavior endpoint_read
+                    -> Json<()>
+            }
+        });
+
+        assert_contains_all(
+            &out,
+            &["#[doc=\"Behavior: `client_read`, `scope_read`, `endpoint_read`\"]"],
+        );
+    }
+
+    #[test]
     fn generated_rustdoc_snapshot_includes_endpoint_contract_without_secret_values() {
         let out = expanded(quote! {
             client SnapshotRichDocs {

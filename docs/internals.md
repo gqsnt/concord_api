@@ -18,6 +18,8 @@ tokens
 
 Code generation consumes resolved semantic data. Parser structures stay on the parsing and normalization side of the boundary.
 
+Behavior use names are preserved as endpoint documentation metadata even though behavior semantics are lowered into ordinary auth/cache/retry/rate-limit policy data.
+
 ## Runtime Pipeline
 
 ```text

@@ -948,6 +948,21 @@ fn facade_scope_ir_for_path<'a>(facade_ir: &'a FacadeIr, path: &[String]) -> &'a
         .expect("FacadeIr must contain one scope entry per resolved facade scope")
 }
 
+fn behavior_doc_line(names: &[String]) -> Option<String> {
+    if names.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "Behavior: {}",
+        names
+            .iter()
+            .map(|name| format!("`{name}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
 fn facade_endpoint_docs(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> Vec<LitStr> {
     let mut docs = Vec::new();
     docs.push(LitStr::new(
@@ -999,6 +1014,9 @@ fn facade_endpoint_docs(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResol
     }
     if endpoint_has_rate_limit(ep, client_policy) {
         docs.push(LitStr::new("Rate limit: configured", ep.name.span()));
+    }
+    if let Some(line) = behavior_doc_line(&ep.behavior_doc.names) {
+        docs.push(LitStr::new(&line, ep.name.span()));
     }
     if let Some(pagination) = &ep.paginate {
         let controller = pagination

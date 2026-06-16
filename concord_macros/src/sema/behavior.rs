@@ -133,6 +133,13 @@ fn resolve_behavior_uses(
     Ok(out)
 }
 
+pub(crate) fn behavior_use_names(uses: &[BehaviorUseSpec]) -> Vec<String> {
+    uses.iter()
+        .flat_map(|use_spec| use_spec.names.iter())
+        .map(ToString::to_string)
+        .collect()
+}
+
 fn resolve_behavior_rate_limit_specs(
     specs: &[RateLimitSpec],
     rate_limit_profiles: &BTreeMap<String, RateLimitPlanResolved>,

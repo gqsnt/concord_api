@@ -89,6 +89,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         &cache_profiles,
         &retry_profiles,
     )?;
+    let client_default_behavior_names = behavior_use_names(&norm.client.default_behavior_uses);
     let default_behavior =
         resolve_behavior_uses(&norm.client.default_behavior_uses, &behavior_profiles)?;
     let default_behavior_rate_limit = resolve_behavior_rate_limit_specs(
@@ -159,6 +160,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         auth_vars: &auth_vars_map,
         auth_credentials: &auth_credential_map,
         client_auth: &client_auth,
+        client_default_behavior_names: &client_default_behavior_names,
         cache_profiles: &cache_profiles,
         retry_profiles: &retry_profiles,
         rate_limit_profiles: &rate_limit_profiles,
@@ -1298,6 +1300,57 @@ mod tests {
             "session"
         );
         assert!(matches!(auth_use.provenance, AuthUseProvenanceIr::Client));
+    }
+
+    #[test]
+    fn behavior_doc_names_preserve_client_scope_endpoint_order() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    behavior client_read {
+                        retry off
+                    }
+
+                    behavior scope_read {
+                        retry off
+                    }
+
+                    behavior endpoint_read {
+                        retry off
+                    }
+
+                    defaults {
+                        behavior client_read
+                    }
+                }
+
+                scope users {
+                    path ["users"]
+                    behavior scope_read
+
+                    GET Me
+                        path ["me"]
+                        behavior endpoint_read
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let endpoint = &resolved_api.endpoints[0];
+
+        assert_eq!(
+            endpoint.behavior_doc.names,
+            vec![
+                "client_read".to_string(),
+                "scope_read".to_string(),
+                "endpoint_read".to_string(),
+            ]
+        );
     }
 
     #[test]
