@@ -1,0 +1,6 @@
+error: unknown retry profile `missing`
+       no retry profiles are declared
+  --> tests/dsl/fail/fail_unknown_retry_profile_endpoint.rs:10:11
+   |
+10 |     retry missing
+   |           ^^^^^^^
