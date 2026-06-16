@@ -58,7 +58,24 @@ fn parse_rate_limit_key_binding(input: ParseStream<'_>) -> Result<RateLimitKeyBi
 
 fn parse_rate_limit_profile_list(input: ParseStream<'_>) -> Result<Vec<Ident>> {
     if input.peek(token::Bracket) {
-        return parse_ident_list(input);
+        let content;
+        bracketed!(content in input);
+        let mut out = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+
+        while !content.is_empty() {
+            let ident: Ident = content.parse()?;
+            if !seen.insert(ident.to_string()) {
+                return Err(syn::Error::new(
+                    ident.span(),
+                    format!("duplicate rate_limit profile `{ident}` in rate_limit list"),
+                ));
+            }
+            out.push(ident);
+            let _ = content.parse::<Option<Token![,]>>()?;
+        }
+
+        return Ok(out);
     }
 
     Ok(vec![input.parse()?])
