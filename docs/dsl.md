@@ -63,6 +63,34 @@ POST CreateUser(account_id: u64, body: Json<CreateUser>)
 
 `as` sets the generated facade method name. Without `as`, the endpoint name is converted to snake_case.
 
+## Endpoint Clause Order
+
+Recommended endpoint order:
+
+```rust
+GET Name(params)
+as facade_name
+path [...]
+query { ... }
+headers { ... }
+paginate Controller {
+    field = value
+}
+cache/retry/rate_limit/auth clauses
+-> Json<Response>
+```
+
+The response line should normally be the final line of the endpoint contract. This keeps endpoint leaves visually closed by their return type.
+
+Response mapping is the exception when used:
+
+```rust
+GET Login
+path ["login"]
+-> Json<LoginResponse>
+map AccessToken { AccessToken::new(r.access_token) }
+```
+
 ## Endpoint Arguments
 
 Required arguments are direct facade method arguments.

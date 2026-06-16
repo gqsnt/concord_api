@@ -53,3 +53,25 @@ fn riot_like_large_fixture_facade_paths_typecheck_cleanly() {
 
     handle.finish();
 }
+
+#[test]
+fn riot_endpoints_do_not_place_policy_after_response() {
+    let source = include_str!("../src/riot.rs");
+    let mut previous_response_line = false;
+
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+
+        if previous_response_line {
+            assert!(
+                !trimmed.starts_with("rate_limit ")
+                    && !trimmed.starts_with("retry ")
+                    && !trimmed.starts_with("cache ")
+                    && !trimmed.starts_with("auth "),
+                "policy clause appears immediately after endpoint response line: {trimmed}"
+            );
+        }
+
+        previous_response_line = trimmed.starts_with("-> ");
+    }
+}
