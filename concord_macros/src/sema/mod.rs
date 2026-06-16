@@ -209,6 +209,51 @@ include!("items.rs");
 include!("policy.rs");
 
 #[cfg(test)]
+fn analyze_source(source: &str) -> ResolvedApi {
+    let ast: crate::ast::RawApi = syn::parse_str(source).expect("valid api syntax");
+    analyze(ast).expect("analysis succeeds")
+}
+
+#[cfg(test)]
+fn endpoint_by_name<'a>(api: &'a ResolvedApi, name: &str) -> &'a ResolvedEndpoint {
+    api.endpoints
+        .iter()
+        .find(|endpoint| endpoint.name == name)
+        .unwrap_or_else(|| panic!("missing endpoint `{name}`"))
+}
+
+#[cfg(test)]
+fn rate_limit_plan(rate_limit: &RateLimitResolved) -> &RateLimitPlanResolved {
+    match rate_limit {
+        RateLimitResolved::Add(plan) | RateLimitResolved::Replace(plan) => plan,
+        RateLimitResolved::Clear => panic!("expected resolved rate limit"),
+    }
+}
+
+#[cfg(test)]
+fn effective_endpoint_rate_limit_bucket_names(
+    api: &ResolvedApi,
+    endpoint: &ResolvedEndpoint,
+) -> Vec<String> {
+    let mut bucket_names = Vec::new();
+    let mut apply = |layer: &Option<RateLimitResolved>| match layer {
+        Some(RateLimitResolved::Add(plan)) | Some(RateLimitResolved::Replace(plan)) => {
+            bucket_names.extend(plan.buckets.iter().map(|bucket| bucket.name.clone()));
+        }
+        Some(RateLimitResolved::Clear) => bucket_names.clear(),
+        None => {}
+    };
+
+    apply(&api.client_policy.rate_limit);
+    for scope in &endpoint.policy.scopes {
+        apply(&scope.rate_limit);
+    }
+    apply(&endpoint.policy.endpoint.rate_limit);
+
+    bucket_names
+}
+
+#[cfg(test)]
 fn debug_norm_tree(norm: &NormApiTree) -> String {
     fn walk(items: &[NormNode], depth: usize, out: &mut String) {
         for item in items {
@@ -1120,6 +1165,461 @@ mod tests {
             RateLimitKeyResolved::EpField { name, field }
                 if name == "tenant_key" && field.to_string() == "tenant"
         )));
+    }
+
+    #[test]
+    fn client_default_behavior_applies_to_endpoint_policy() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry read {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+
+                    behavior read_behavior {
+                        retry read
+                        rate_limit app
+                    }
+
+                    defaults {
+                        behavior read_behavior
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    -> Json<()>
+            }
+            "#,
+        );
+        let endpoint = endpoint_by_name(&resolved_api, "Me");
+
+        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
+            panic!("expected client default behavior retry");
+        };
+        assert_eq!(client_retry.max_attempts, 2);
+        assert_eq!(
+            effective_endpoint_rate_limit_bucket_names(&resolved_api, endpoint),
+            vec!["app_0".to_string()]
+        );
+    }
+
+    #[test]
+    fn explicit_default_retry_and_cache_override_default_behavior() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry behavior_retry {
+                        max_attempts 5
+                        methods [GET]
+                    }
+
+                    retry explicit_retry {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    cache behavior_cache {
+                        ttl 30s
+                    }
+
+                    cache explicit_cache {
+                        ttl 45s
+                    }
+
+                    behavior read_behavior {
+                        retry behavior_retry
+                        cache behavior_cache
+                    }
+
+                    defaults {
+                        behavior read_behavior
+                        retry explicit_retry
+                        cache explicit_cache
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    -> Json<()>
+            }
+            "#,
+        );
+
+        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
+            panic!("expected explicit default retry");
+        };
+        assert_eq!(client_retry.max_attempts, 2);
+
+        let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
+            panic!("expected explicit default cache");
+        };
+        assert_eq!(client_cache.default_ttl_secs, Some(45));
+    }
+
+    #[test]
+    fn endpoint_explicit_retry_and_cache_override_endpoint_behavior() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry behavior_retry {
+                        max_attempts 5
+                        methods [GET]
+                    }
+
+                    retry explicit_retry {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    cache behavior_cache {
+                        ttl 30s
+                    }
+
+                    cache explicit_cache {
+                        ttl 45s
+                    }
+
+                    behavior read_behavior {
+                        retry behavior_retry
+                        cache behavior_cache
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    behavior read_behavior
+                    retry explicit_retry
+                    cache explicit_cache
+                    -> Json<()>
+            }
+            "#,
+        );
+        let endpoint = endpoint_by_name(&resolved_api, "Me");
+
+        let Some(RetryResolved::Set(endpoint_retry)) = &endpoint.policy.endpoint.retry else {
+            panic!("expected explicit endpoint retry");
+        };
+        assert_eq!(endpoint_retry.max_attempts, 2);
+
+        let Some(CacheResolved::Set(endpoint_cache)) = &endpoint.policy.endpoint.cache else {
+            panic!("expected explicit endpoint cache");
+        };
+        assert_eq!(endpoint_cache.default_ttl_secs, Some(45));
+    }
+
+    #[test]
+    fn endpoint_behavior_rate_limit_combines_with_explicit_rate_limit() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+
+                    rate_limit method {
+                        bucket method by [host, endpoint] {
+                            5 / 1s
+                        }
+                    }
+
+                    behavior read_behavior {
+                        rate_limit app
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    behavior read_behavior
+                    rate_limit method
+                    -> Json<()>
+            }
+            "#,
+        );
+        let endpoint = endpoint_by_name(&resolved_api, "Me");
+
+        assert_eq!(
+            effective_endpoint_rate_limit_bucket_names(&resolved_api, endpoint),
+            vec!["app_0".to_string(), "method_0".to_string()]
+        );
+    }
+
+    #[test]
+    fn scope_behavior_rate_limit_combines_with_endpoint_rate_limit() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+
+                    rate_limit method {
+                        bucket method by [host, endpoint] {
+                            5 / 1s
+                        }
+                    }
+
+                    behavior scope_read {
+                        rate_limit app
+                    }
+                }
+
+                scope users {
+                    path ["users"]
+                    behavior scope_read
+
+                    GET Me
+                        path ["me"]
+                        rate_limit method
+                        -> Json<()>
+                }
+            }
+            "#,
+        );
+        let endpoint = endpoint_by_name(&resolved_api, "Me");
+
+        assert_eq!(
+            effective_endpoint_rate_limit_bucket_names(&resolved_api, endpoint),
+            vec!["app_0".to_string(), "method_0".to_string()]
+        );
+    }
+
+    #[test]
+    fn rate_limit_off_clears_inherited_behavior_rate_limit() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+
+                    behavior read_behavior {
+                        rate_limit app
+                    }
+
+                    defaults {
+                        behavior read_behavior
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    rate_limit off
+                    -> Json<()>
+            }
+            "#,
+        );
+        let endpoint = endpoint_by_name(&resolved_api, "Me");
+
+        assert!(effective_endpoint_rate_limit_bucket_names(&resolved_api, endpoint).is_empty());
+        assert!(matches!(
+            endpoint.policy.endpoint.rate_limit,
+            Some(RateLimitResolved::Clear)
+        ));
+    }
+
+    #[test]
+    fn scope_behavior_is_inherited_by_nested_endpoint() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry read {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    behavior scope_read {
+                        retry read
+                    }
+                }
+
+                scope users {
+                    path ["users"]
+                    behavior scope_read
+
+                    GET Me
+                        path ["me"]
+                        -> Json<()>
+                }
+            }
+            "#,
+        );
+        let endpoint = endpoint_by_name(&resolved_api, "Me");
+
+        let Some(scope_policy) = endpoint.policy.scopes.first() else {
+            panic!("expected scope policy");
+        };
+        let Some(RetryResolved::Set(scope_retry)) = &scope_policy.retry else {
+            panic!("expected inherited scope retry");
+        };
+        assert_eq!(scope_retry.max_attempts, 2);
+    }
+
+    #[test]
+    fn endpoint_behavior_adds_policy_without_losing_inherited_auth() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret token: String
+                    credential session = bearer(secret.token)
+
+                    behavior default_auth {
+                        auth bearer session
+                    }
+
+                    retry endpoint_retry {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    behavior endpoint_read {
+                        retry endpoint_retry
+                    }
+
+                    defaults {
+                        behavior default_auth
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    behavior endpoint_read
+                    -> Json<()>
+            }
+            "#,
+        );
+        let endpoint = endpoint_by_name(&resolved_api, "Me");
+
+        assert_eq!(endpoint.policy.auth.len(), 1);
+        let AuthUsePlanIr::Use(auth_use) = &endpoint.policy.auth[0];
+        assert_eq!(
+            auth_use_credential_ident_ir(auth_use).to_string(),
+            "session"
+        );
+        assert!(matches!(auth_use.provenance, AuthUseProvenanceIr::Client));
+        assert!(matches!(
+            endpoint.policy.endpoint.retry,
+            Some(RetryResolved::Set(_))
+        ));
+    }
+
+    #[test]
+    fn behavior_rate_limit_key_binding_resolves_at_endpoint_attachment() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    rate_limit match_bucket {
+                        bucket method by [match_key] {
+                            5 / 1s
+                        }
+                    }
+
+                    behavior match_read {
+                        rate_limit match_bucket
+                    }
+                }
+
+                GET Match(match_id: String)
+                    path ["match", match_id]
+                    rate_limit key match_key = match_id
+                    behavior match_read
+                    -> Json<()>
+            }
+            "#,
+        );
+        let endpoint = endpoint_by_name(&resolved_api, "Match");
+        let rate_limit = endpoint
+            .policy
+            .endpoint
+            .rate_limit
+            .as_ref()
+            .expect("endpoint rate limit");
+        let plan = rate_limit_plan(rate_limit);
+        assert_eq!(plan.buckets.len(), 1);
+        let bucket = &plan.buckets[0];
+        assert!(matches!(
+            bucket.key.as_slice(),
+            [RateLimitKeyResolved::EpField { name, field }]
+                if name == "match_key" && field.to_string() == "match_id"
+        ));
+    }
+
+    #[test]
+    fn default_behavior_rate_limit_requiring_endpoint_key_fails() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    rate_limit match_bucket {
+                        bucket method by [match_key] {
+                            5 / 1s
+                        }
+                    }
+
+                    behavior match_read {
+                        rate_limit match_bucket
+                    }
+
+                    defaults {
+                        behavior match_read
+                    }
+                }
+
+                GET Match(match_id: String)
+                    path ["match", match_id]
+                    rate_limit key match_key = match_id
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("default behavior rate limit should fail");
+        let msg = err.to_string();
+
+        assert!(msg.contains("rate_limit key"));
+        assert!(msg.contains("match_key"));
+        assert!(msg.contains("requires endpoint/scope params"));
     }
 
     #[test]
