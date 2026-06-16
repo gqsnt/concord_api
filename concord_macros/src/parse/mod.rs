@@ -141,6 +141,17 @@ impl Parse for RawClient {
                     .profiles
                     .push(parse_rate_limit_profile_decl_after_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::policies) {
+                content.parse::<kw::policies>()?;
+                let policy_content;
+                braced!(policy_content in content);
+                parse_client_policies_group(
+                    &policy_content,
+                    &mut cache_profiles,
+                    &mut retry_profiles,
+                    &mut rate_limit,
+                )?;
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::behavior) {
                 content.parse::<kw::behavior>()?;
                 behavior_profiles
@@ -352,6 +363,152 @@ fn parse_client_credential_decl_into(
     auth_credentials: &mut Vec<AuthCredentialDecl>,
 ) -> Result<()> {
     auth_credentials.push(parse_auth_credential_after_keyword(input, true)?);
+    Ok(())
+}
+
+fn parse_client_policies_group(
+    input: ParseStream<'_>,
+    cache_profiles: &mut Option<CacheProfilesBlock>,
+    retry_profiles: &mut Option<RetryProfilesBlock>,
+    rate_limit: &mut Option<RateLimitProfilesBlock>,
+) -> Result<()> {
+    while !input.is_empty() {
+        if input.peek(kw::retry) {
+            let fork = input.fork();
+            fork.parse::<kw::retry>()?;
+            if fork.peek(kw::off) {
+                return Err(syn::Error::new(
+                    fork.span(),
+                    "default retry policy is not allowed in policies block; use default { ... }",
+                ));
+            }
+            if !fork.peek(Ident) {
+                let tt: TokenTree = input.parse()?;
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "invalid item in policies block; expected retry, cache, rate_limit, or observe",
+                ));
+            }
+            fork.parse::<Ident>()?;
+            if fork.peek(kw::extends) {
+                fork.parse::<kw::extends>()?;
+                fork.parse::<Ident>()?;
+            }
+            if !fork.peek(token::Brace) {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "default retry policy is not allowed in policies block; use default { ... }",
+                ));
+            }
+
+            input.parse::<kw::retry>()?;
+            retry_profiles
+                .get_or_insert_with(|| RetryProfilesBlock {
+                    profiles: Vec::new(),
+                    default: None,
+                })
+                .profiles
+                .push(parse_retry_profile_decl_after_keyword(input)?);
+        } else if input.peek(kw::cache) {
+            let fork = input.fork();
+            fork.parse::<kw::cache>()?;
+            if fork.peek(kw::off) {
+                return Err(syn::Error::new(
+                    fork.span(),
+                    "default cache policy is not allowed in policies block; use default { ... }",
+                ));
+            }
+            if !fork.peek(Ident) {
+                let tt: TokenTree = input.parse()?;
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "invalid item in policies block; expected retry, cache, rate_limit, or observe",
+                ));
+            }
+            fork.parse::<Ident>()?;
+            if fork.peek(kw::extends) {
+                fork.parse::<kw::extends>()?;
+                fork.parse::<Ident>()?;
+            }
+            if !fork.peek(token::Brace) {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "default cache policy is not allowed in policies block; use default { ... }",
+                ));
+            }
+
+            input.parse::<kw::cache>()?;
+            cache_profiles
+                .get_or_insert_with(|| CacheProfilesBlock {
+                    profiles: Vec::new(),
+                    default: None,
+                })
+                .profiles
+                .push(parse_cache_profile_decl_after_keyword(input)?);
+        } else if input.peek(kw::rate_limit) {
+            let fork = input.fork();
+            fork.parse::<kw::rate_limit>()?;
+            if fork.peek(kw::off) || fork.peek(kw::only) {
+                return Err(syn::Error::new(
+                    fork.span(),
+                    "default rate_limit policy is not allowed in policies block; use default { ... }",
+                ));
+            }
+            if !fork.peek(Ident) {
+                let tt: TokenTree = input.parse()?;
+                return Err(syn::Error::new(
+                    tt.span(),
+                    "invalid item in policies block; expected retry, cache, rate_limit, or observe",
+                ));
+            }
+            fork.parse::<Ident>()?;
+            if fork.peek(kw::extends) {
+                fork.parse::<kw::extends>()?;
+                fork.parse::<Ident>()?;
+            }
+            if !fork.peek(token::Brace) {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "default rate_limit policy is not allowed in policies block; use default { ... }",
+                ));
+            }
+
+            input.parse::<kw::rate_limit>()?;
+            rate_limit
+                .get_or_insert_with(|| RateLimitProfilesBlock {
+                    profiles: Vec::new(),
+                    default: Vec::new(),
+                    response_policy: None,
+                })
+                .profiles
+                .push(parse_rate_limit_profile_decl_after_keyword(input)?);
+        } else if input.peek(kw::observe) {
+            input.parse::<kw::observe>()?;
+            input.parse::<kw::rate_limit>()?;
+            let observer: Path = input.parse()?;
+            let block = rate_limit.get_or_insert_with(|| RateLimitProfilesBlock {
+                profiles: Vec::new(),
+                default: Vec::new(),
+                response_policy: None,
+            });
+            if block.response_policy.is_some() {
+                return Err(syn::Error::new(
+                    observer.span(),
+                    "duplicate rate_limit observer",
+                ));
+            }
+            block.response_policy = Some(observer);
+        } else {
+            let tt: TokenTree = input.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "invalid item in policies block; expected retry, cache, rate_limit, or observe",
+            ));
+        }
+
+        let _ = input.parse::<Option<Token![,]>>()?;
+    }
+
     Ok(())
 }
 
@@ -606,6 +763,43 @@ mod tests {
             "#,
         )
         .expect("current policy profiles parse");
+
+        assert!(ast.client.retry_profiles.is_some());
+        assert!(ast.client.cache_profiles.is_some());
+        assert!(ast.client.rate_limit.is_some());
+    }
+
+    #[test]
+    fn parses_grouped_policy_profiles() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    policies {
+                        retry read {
+                            max_attempts 2
+                            methods [GET]
+                        }
+
+                        cache standard {
+                            ttl 60s
+                        }
+
+                        rate_limit app {
+                            bucket application by [host] {
+                                10 / 1s
+                            }
+                        }
+
+                        observe rate_limit ExampleObserver
+                    }
+                }
+            }
+            "#,
+        )
+        .expect("grouped policy profiles parse");
 
         assert!(ast.client.retry_profiles.is_some());
         assert!(ast.client.cache_profiles.is_some());

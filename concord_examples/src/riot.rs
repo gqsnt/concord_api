@@ -23,65 +23,67 @@ api! {
             "user-agent" = "ClientApiRiotExample/1.0",
             "x-client-trace" = false
         }
-        retry read {
-                max_attempts 2
-                methods [GET]
-                on [429, 500, 502, 503, 504]
-                retry_after
-        }
-        observe rate_limit RiotRateLimitHeaders
-        rate_limit app {
-                bucket application by [host] {
-                    500 / 10s
-                    30000 / 10m
-                }
-        }
-        rate_limit summoner_by_puuid {
-                bucket method by [host, endpoint] {
-                    1600 / 1m
-                }
-        }
-        rate_limit league_queue_slow {
-                bucket method by [host, endpoint] {
-                    30 / 10s
-                    500 / 10m
-                }
-        }
-        rate_limit league_by_id {
-                bucket method by [host, endpoint] {
-                    500 / 10s
-                }
-        }
-        rate_limit league_entries {
-                bucket method by [host, endpoint] {
-                    50 / 10s
-                }
-        }
-        rate_limit clash_team_or_by_team {
-                bucket method by [host, endpoint] {
-                    200 / 1m
-                }
-        }
-        rate_limit clash_tournament_lookup {
-                bucket method by [host, endpoint] {
-                    10 / 1m
-                }
-        }
-        rate_limit account_standard_method {
-                bucket method by [host, endpoint] {
-                    1000 / 1m
-                }
-        }
-        rate_limit riot_high_volume_method {
-                bucket method by [host, endpoint] {
-                    20000 / 10s
-                    1200000 / 10m
-                }
-        }
-        rate_limit match_v5_method {
-                bucket method by [host, endpoint] {
-                    2000 / 10s
-                }
+        policies {
+            retry read {
+                    max_attempts 2
+                    methods [GET]
+                    on [429, 500, 502, 503, 504]
+                    retry_after
+            }
+            observe rate_limit RiotRateLimitHeaders
+            rate_limit app {
+                    bucket application by [host] {
+                        500 / 10s
+                        30000 / 10m
+                    }
+            }
+            rate_limit summoner_by_puuid {
+                    bucket method by [host, endpoint] {
+                        1600 / 1m
+                    }
+            }
+            rate_limit league_queue_slow {
+                    bucket method by [host, endpoint] {
+                        30 / 10s
+                        500 / 10m
+                    }
+            }
+            rate_limit league_by_id {
+                    bucket method by [host, endpoint] {
+                        500 / 10s
+                    }
+            }
+            rate_limit league_entries {
+                    bucket method by [host, endpoint] {
+                        50 / 10s
+                    }
+            }
+            rate_limit clash_team_or_by_team {
+                    bucket method by [host, endpoint] {
+                        200 / 1m
+                    }
+            }
+            rate_limit clash_tournament_lookup {
+                    bucket method by [host, endpoint] {
+                        10 / 1m
+                    }
+            }
+            rate_limit account_standard_method {
+                    bucket method by [host, endpoint] {
+                        1000 / 1m
+                    }
+            }
+            rate_limit riot_high_volume_method {
+                    bucket method by [host, endpoint] {
+                        20000 / 10s
+                        1200000 / 10m
+                    }
+            }
+            rate_limit match_v5_method {
+                    bucket method by [host, endpoint] {
+                        2000 / 10s
+                    }
+            }
         }
 
         behaviors {

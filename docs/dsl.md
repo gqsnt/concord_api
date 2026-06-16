@@ -300,6 +300,31 @@ client PolicyApi {
 
 Use `cache off`, `retry off`, or `rate_limit off` on a narrower layer to clear an inherited policy. Use `rate_limit [a, b]` to add multiple rate-limit profiles to the same endpoint.
 
+### Grouped Policy Configuration
+
+For larger clients, retry, cache, rate-limit profile declarations and observers can be grouped:
+
+```rust
+policies {
+    retry read {
+        max_attempts 2
+        methods [GET]
+    }
+
+    rate_limit app {
+        bucket application by [host] {
+            10 / 1s
+        }
+    }
+
+    observe rate_limit MyObserver
+}
+```
+
+This is equivalent to writing those declarations directly in the client block.
+
+Default policy attachments such as `retry read`, `cache standard`, or `rate_limit app` still belong in `default { ... }`, not in `policies { ... }`.
+
 ## Behavior Profiles
 
 Behavior profiles give a semantic name to cross-cutting request behavior.

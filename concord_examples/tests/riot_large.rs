@@ -133,6 +133,23 @@ fn riot_groups_secret_and_credential_auth_config() {
 }
 
 #[test]
+fn riot_groups_policy_profiles() {
+    let source = include_str!("../src/riot.rs");
+
+    assert!(source_contains_in_order(
+        source,
+        &[
+            "policies {",
+            "retry read {",
+            "observe rate_limit RiotRateLimitHeaders",
+            "rate_limit app {",
+            "rate_limit match_v5_method {",
+            "behaviors {",
+        ],
+    ));
+}
+
+#[test]
 fn riot_lifts_uniform_behavior_to_scopes() {
     let source = include_str!("../src/riot.rs");
 
