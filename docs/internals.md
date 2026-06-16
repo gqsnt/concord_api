@@ -2,6 +2,10 @@
 
 This page describes the implementation model for maintainers.
 
+## Design Invariants
+
+Maintainers should read `design_invariants.md` before changing DSL syntax, semantic resolution, code generation, or runtime pipeline behavior.
+
 ## Compiler Pipeline
 
 ```text

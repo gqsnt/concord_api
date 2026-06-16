@@ -12,3 +12,4 @@ concord_macros/target
 concord_examples/target
 concord_core/target
 concord_test_support/target
+/git_diff

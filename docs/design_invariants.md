@@ -1,0 +1,90 @@
+# Design Invariants
+
+Concord is a Rust API-tree DSL and contract compiler.
+
+This page records the design rules that should stay true while the DSL, macro compiler, and runtime evolve.
+
+## API Shape
+
+Concord represents an HTTP API as a typed tree:
+
+```text
+client root
+  scope/layer branches
+    endpoint leaves
+```
+
+The client owns base identity, shared variables, credentials, defaults, named profiles, and runtime configuration.
+
+Scopes refine route, host, auth, and policy context.
+
+Endpoint stanzas describe individual HTTP operations.
+
+The inverse shapes are not the Concord model. Endpoints do not own clients. Layers do not own clients. A client owns the API contract, layers refine it, and endpoints are the leaves.
+
+## Endpoint Purity
+
+Endpoint leaves should primarily describe endpoint contracts:
+
+* HTTP method
+* endpoint name
+* typed parameters
+* path projection
+* query projection
+* request body codec
+* pagination declaration
+* response codec
+* optional response mapping
+
+Cross-cutting behavior should be inherited from scopes or named profiles whenever possible.
+
+## Response Terminator
+
+`-> Codec<Response>` is the visual endpoint terminator.
+
+Normal Concord style should avoid placing policy clauses after the response line. This keeps endpoint leaves visually closed by their return contract.
+
+## Macro And Core Boundary
+
+The macro parses and resolves DSL syntax into semantic request data.
+
+The core executes syntax-neutral request plans.
+
+Core runtime code must not depend on raw DSL syntax.
+
+## Runtime Pipeline
+
+The runtime pipeline order is fixed.
+
+DSL improvements should compile to existing semantic concepts such as auth requirements, cache settings, retry settings, rate-limit plans, codecs, pagination plans, and request plans.
+
+Changing runtime order requires dedicated tests and a dedicated PR.
+
+## Simple Path Preservation
+
+Minimal clients must remain short:
+
+```rust
+api! {
+    client ExampleApi {
+        base "https://api.example.com"
+    }
+
+    GET Ping
+    path ["ping"]
+    -> Text<String>
+}
+```
+
+Advanced behavior must not make simple APIs noisy.
+
+## Readability Rule
+
+The API tree must remain readable without understanding every low-level policy mechanism.
+
+A reader should be able to scan a Concord client in this order:
+
+1. API shape.
+2. Endpoint contracts.
+3. Named behavior and policy attachment.
+4. Low-level mechanism details.

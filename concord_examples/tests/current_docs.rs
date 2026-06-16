@@ -10,10 +10,12 @@ fn current_public_docs_exist() {
     for rel in [
         "docs/quick_start.md",
         "docs/mental_model.md",
+        "docs/design_invariants.md",
         "docs/dsl.md",
         "docs/generated_client.md",
         "docs/auth.md",
         "docs/pagination.md",
+        "docs/customization.md",
         "docs/cache_retry_rate_limit.md",
         "docs/runtime_config.md",
         "docs/advanced_endpoints.md",
