@@ -2,6 +2,19 @@ use concord_examples::riot::{PlatformRoute, RegionalRoute, RiotClient};
 use concord_test_support::mock;
 use std::path::PathBuf;
 
+fn source_contains_in_order(source: &str, snippets: &[&str]) -> bool {
+    let mut search_from = 0;
+
+    for snippet in snippets {
+        let Some(relative) = source[search_from..].find(snippet) else {
+            return false;
+        };
+        search_from += relative + snippet.len();
+    }
+
+    true
+}
+
 #[test]
 fn riot_like_large_fixture_snapshot_is_bounded() {
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -74,4 +87,64 @@ fn riot_endpoints_do_not_place_policy_after_response() {
 
         previous_response_line = trimmed.starts_with("-> ");
     }
+}
+
+#[test]
+fn riot_lifts_uniform_rate_limits_to_scopes() {
+    let source = include_str!("../src/riot.rs");
+
+    assert!(source_contains_in_order(
+        source,
+        &[
+            "scope champion_masteries",
+            "path [\"champion-masteries\"]",
+            "rate_limit riot_high_volume_method",
+            "GET GetChampionMasteriesBySummoner",
+            "-> Json<Vec<models::ChampionMasteryDto>>",
+        ],
+    ));
+
+    assert!(source_contains_in_order(
+        source,
+        &[
+            "scope scores",
+            "path [\"scores\"]",
+            "rate_limit riot_high_volume_method",
+            "GET GetChampionMasteryScore",
+            "-> Json<i32>",
+        ],
+    ));
+
+    assert!(source_contains_in_order(
+        source,
+        &[
+            "scope challenges_v1",
+            "path [\"challenges\", \"v1\"]",
+            "rate_limit riot_high_volume_method",
+            "GET GetChallengePercentiles",
+            "-> Json<serde_json::Value>",
+        ],
+    ));
+
+    assert!(source_contains_in_order(
+        source,
+        &[
+            "scope account_v1_accounts",
+            "path [\"riot\", \"account\", \"v1\", \"accounts\"]",
+            "rate_limit [account_standard_method, riot_high_volume_method]",
+            "GET GetAccountByRiotId",
+            "-> Json<models::AccountDto>",
+        ],
+    ));
+
+    assert!(source_contains_in_order(
+        source,
+        &[
+            "scope tournament_stub_v5",
+            "path [\"lol\", \"tournament-stub\", \"v5\"]",
+            "rate_limit riot_high_volume_method",
+            "POST CreateTournamentStubCodes",
+            "-> Json<Vec<String>>",
+        ],
+    ));
 }
