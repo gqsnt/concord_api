@@ -145,6 +145,30 @@ impl Parse for RawClient {
                     .profiles
                     .push(parse_behavior_profile_decl_after_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::behaviors) {
+                content.parse::<kw::behaviors>()?;
+                let behavior_content;
+                braced!(behavior_content in content);
+                while !behavior_content.is_empty() {
+                    if !behavior_content.peek(kw::behavior) {
+                        let tt: TokenTree = behavior_content.parse()?;
+                        return Err(syn::Error::new(
+                            tt.span(),
+                            "invalid item in behaviors block; expected behavior profile",
+                        ));
+                    }
+                    behavior_content.parse::<kw::behavior>()?;
+                    behavior_profiles
+                        .get_or_insert_with(|| BehaviorProfilesBlock {
+                            profiles: Vec::new(),
+                        })
+                        .profiles
+                        .push(parse_behavior_profile_decl_after_keyword(
+                            &behavior_content,
+                        )?);
+                    let _ = behavior_content.parse::<Option<Token![,]>>()?;
+                }
+                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::default) {
                 content.parse::<kw::default>()?;
                 if seen_default_block {

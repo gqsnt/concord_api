@@ -7,6 +7,7 @@ syn::custom_keyword!(host);
 syn::custom_keyword!(auth);
 syn::custom_keyword!(secret);
 syn::custom_keyword!(headers);
+syn::custom_keyword!(behaviors);
 syn::custom_keyword!(query);
 syn::custom_keyword!(timeout);
 syn::custom_keyword!(cache);

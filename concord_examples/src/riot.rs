@@ -82,46 +82,48 @@ api! {
                 }
         }
 
-        behavior riot_read {
-            auth header "X-Riot-Token" = riot_api_key
-            retry read
-            rate_limit app
-        }
+        behaviors {
+            behavior riot_read {
+                auth header "X-Riot-Token" = riot_api_key
+                retry read
+                rate_limit app
+            }
 
-        behavior league_queue_read {
-            rate_limit league_queue_slow
-        }
+            behavior league_queue_read {
+                rate_limit league_queue_slow
+            }
 
-        behavior summoner_by_puuid_read {
-            rate_limit summoner_by_puuid
-        }
+            behavior summoner_by_puuid_read {
+                rate_limit summoner_by_puuid
+            }
 
-        behavior high_volume_read {
-            rate_limit riot_high_volume_method
-        }
+            behavior high_volume_read {
+                rate_limit riot_high_volume_method
+            }
 
-        behavior league_by_id_read {
-            rate_limit league_by_id
-        }
+            behavior league_by_id_read {
+                rate_limit league_by_id
+            }
 
-        behavior league_entries_read {
-            rate_limit league_entries
-        }
+            behavior league_entries_read {
+                rate_limit league_entries
+            }
 
-        behavior clash_team_read {
-            rate_limit clash_team_or_by_team
-        }
+            behavior clash_team_read {
+                rate_limit clash_team_or_by_team
+            }
 
-        behavior clash_tournament_read {
-            rate_limit clash_tournament_lookup
-        }
+            behavior clash_tournament_read {
+                rate_limit clash_tournament_lookup
+            }
 
-        behavior account_standard_read {
-            rate_limit [account_standard_method, riot_high_volume_method]
-        }
+            behavior account_standard_read {
+                rate_limit [account_standard_method, riot_high_volume_method]
+            }
 
-        behavior match_v5_read {
-            rate_limit match_v5_method
+            behavior match_v5_read {
+                rate_limit match_v5_method
+            }
         }
 
         default {

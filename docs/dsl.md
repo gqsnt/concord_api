@@ -323,6 +323,19 @@ Behavior profiles are resolved by the macro into existing auth, cache, retry, an
 
 In this version, behavior profiles can contain `auth`, `retry`, `cache`, and `rate_limit` clauses.
 
+For larger clients, behavior declarations may be grouped:
+
+```rust
+behaviors {
+    behavior protected_read {
+        auth bearer session
+        retry read
+    }
+}
+```
+
+This is equivalent to writing the behavior profiles directly in the client block.
+
 Behavior `rate_limit` clauses are resolved where the behavior is attached. This means they can use rate-limit key bindings visible at that scope or endpoint.
 
 When a behavior supplies a rate-limit profile and a narrower scope or endpoint adds another plain `rate_limit` profile, the profiles are combined. Use `rate_limit off` to clear inherited rate-limit behavior.

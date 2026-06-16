@@ -96,6 +96,7 @@ fn riot_uses_default_riot_read_behavior() {
     assert!(source_contains_in_order(
         source,
         &[
+            "behaviors {",
             "behavior riot_read {",
             "auth header \"X-Riot-Token\" = riot_api_key",
             "retry read",
