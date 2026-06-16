@@ -61,6 +61,7 @@ syn::custom_keyword!(api_key);
 syn::custom_keyword!(access_token);
 syn::custom_keyword!(endpoint);
 syn::custom_keyword!(observe);
+syn::custom_keyword!(defaults);
 
 syn::custom_keyword!(prefix);
 syn::custom_keyword!(path);

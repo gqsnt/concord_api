@@ -101,7 +101,7 @@ fn riot_uses_default_riot_read_behavior() {
             "auth header \"X-Riot-Token\" = riot_api_key",
             "retry read",
             "rate_limit app",
-            "default {",
+            "defaults {",
             "behavior riot_read",
         ],
     ));

@@ -390,6 +390,9 @@ default {
 
 A default behavior applies before explicit default `cache`, `retry`, and `rate_limit` clauses. Attach behavior at a scope or endpoint instead when it needs rate-limit key bindings declared in that scope or endpoint.
 
+For larger clients, `defaults { ... }` is accepted as an alias for the client `default { ... }` block.
+Only one default/defaults block is allowed per client.
+
 ## Pagination
 
 Pagination is declared on endpoints with a controller and controller field assignments.

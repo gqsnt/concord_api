@@ -185,11 +185,15 @@ impl Parse for RawClient {
                     let _ = behavior_content.parse::<Option<Token![,]>>()?;
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::default) {
-                content.parse::<kw::default>()?;
+            } else if content.peek(kw::default) || content.peek(kw::defaults) {
+                let default_span = if content.peek(kw::default) {
+                    content.parse::<kw::default>()?.span
+                } else {
+                    content.parse::<kw::defaults>()?.span
+                };
                 if seen_default_block {
                     return Err(syn::Error::new(
-                        content.span(),
+                        default_span,
                         "multiple default blocks are not allowed in the current DSL",
                     ));
                 }

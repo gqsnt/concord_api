@@ -130,7 +130,7 @@ api! {
             }
         }
 
-        default {
+        defaults {
             behavior riot_read
         }
     }
