@@ -1,0 +1,5 @@
+error: duplicate rate_limit policy in behavior
+  --> tests/dsl/fail/fail_behavior_duplicate_rate_limit.rs:15:13
+   |
+15 |             rate_limit off
+   |             ^^^^^^^^^^

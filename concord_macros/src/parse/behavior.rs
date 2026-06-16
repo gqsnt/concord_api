@@ -50,8 +50,11 @@ fn parse_behavior_patch_body(input: ParseStream<'_>) -> Result<BehaviorPatch> {
             }
             patch.rate_limit = Some(parse_rate_limit_spec(input)?);
         } else {
-            let tt: TokenTree = input.parse()?; 
-            return Err(syn::Error::new(tt.span(), "invalid item in behavior"));
+            let tt: TokenTree = input.parse()?;
+            return Err(syn::Error::new(
+                tt.span(),
+                "invalid item in behavior; expected auth, cache, retry, or rate_limit",
+            ));
         }
         let _ = input.parse::<Option<Token![,]>>()?;
     }
@@ -62,12 +65,19 @@ fn parse_behavior_use_spec(input: ParseStream<'_>) -> Result<BehaviorUseSpec> {
     let span = input.span();
     input.parse::<kw::behavior>()?;
     let names = if input.peek(token::Bracket) {
+        let list_span = input.span();
         let content;
         bracketed!(content in input);
         let mut names = Vec::new();
         while !content.is_empty() {
             names.push(content.parse()?);
             let _ = content.parse::<Option<Token![,]>>()?;
+        }
+        if names.is_empty() {
+            return Err(syn::Error::new(
+                list_span,
+                "empty behavior list; expected at least one behavior name",
+            ));
         }
         names
     } else {
