@@ -2,9 +2,8 @@ use bytes::Bytes;
 use concord_core::advanced::{
     BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
-use concord_core::prelude::{ApiClientError, Json, NoContent, Text};
+use concord_core::prelude::ApiClientError;
 use http::HeaderValue;
-use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 #[derive(Debug)]
@@ -126,11 +125,20 @@ fn codec_error_converts_into_api_client_error() {
     assert!(err.to_string().contains("bad codec"));
 }
 
+#[cfg(feature = "json")]
+use concord_core::prelude::Json;
+#[cfg(feature = "json")]
+use concord_core::prelude::{NoContent, Text};
+#[cfg(feature = "json")]
+use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "json")]
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct JsonValue {
     id: u64,
 }
 
+#[cfg(feature = "json")]
 #[test]
 fn built_in_json_text_and_no_content_use_codec_traits() {
     let json = Json::<JsonValue>::encode(JsonValue { id: 7 }, encode_ctx()).expect("json encode");

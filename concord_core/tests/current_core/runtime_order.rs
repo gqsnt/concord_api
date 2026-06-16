@@ -8,13 +8,20 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 
 #[tokio::test]
-async fn auth_is_applied_before_cache_lookup() -> Result<(), ApiClientError> {
+async fn fresh_cache_hit_bypasses_inflight_rate_limit_and_transport() -> Result<(), ApiClientError>
+{
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "ok")],
+        vec![MockResponse::text(StatusCode::OK, "transport")],
     );
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let sent_transport = transport.clone();
+    let cache = Arc::new(RecordingCache::hit(
+        events.clone(),
+        built_response("Text", StatusCode::OK, "cached"),
+    ));
+    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let inflight_events = Arc::new(StdMutex::new(Vec::new()));
     let mut client = client(
         TestAuthVars {
             token: Some("secret-token".to_string()),
@@ -22,21 +29,33 @@ async fn auth_is_applied_before_cache_lookup() -> Result<(), ApiClientError> {
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
+    client.set_inflight_policy(Arc::new(RecordingInflightPolicy::new(
+        inflight_events.clone(),
+    )));
+    configure_runtime(&mut client, Some(cache), Some(limiter), false, None);
 
+    let mut policy = cache_policy();
+    policy.auth = auth_policy(AuthPlacement::Bearer).auth;
     let endpoint = TextEndpoint {
-        policy: auth_policy(AuthPlacement::Bearer),
+        policy,
         ..Default::default()
     };
     let decoded = client.request(endpoint).execute_decoded().await?;
 
-    assert_eq!(decoded.value(), "ok");
+    assert_eq!(decoded.value(), "cached");
+    assert_eq!(sent_transport.sent_count().await, 0);
     let events = events.lock().await.clone();
-    let cache_before = events
-        .iter()
-        .find(|event| event.starts_with("cache_before:"))
-        .expect("cache was consulted");
-    assert!(cache_before.contains("Bearer secret-token"));
+    assert!(events.iter().any(|event| event == "cache_hit"));
+    assert!(
+        events
+            .iter()
+            .any(|event| event == "cache_before:Bearer secret-token")
+    );
+    assert!(!events.iter().any(|event| event == "pre_send"));
+    assert!(!events.iter().any(|event| event == "rate_acquire"));
+    assert!(!events.iter().any(|event| event == "transport"));
+    assert!(inflight_events.lock().expect("inflight events").is_empty());
     Ok(())
 }
 

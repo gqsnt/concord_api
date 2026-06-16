@@ -3,9 +3,11 @@ use concord_core::advanced::{
     AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind, AuthIdentity, AuthPlacement,
     AuthProvenance, AuthRequirement, AuthUsageId, BuiltRequest, BuiltResponse, CacheAfter,
     CacheBefore, CacheConfig, CacheFuture, CacheKey, CacheRevalidation, CacheStore,
-    DecodedResponse, InflightRegistry, RateLimitContext, RateLimitFuture, RateLimitPermit,
-    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestMeta,
-    SafeMethodInflightPolicy, Transport, TransportBody, TransportError, TransportResponse,
+    DecodedResponse, InflightPolicy, InflightRegistry, PostResponseHookContext, PreSendHookContext,
+    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter, RequestKey, RequestMeta, RuntimeHooks,
+    SafeMethodInflightPolicy, Transport, TransportBody, TransportError, TransportErrorHookContext,
+    TransportResponse,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
@@ -530,6 +532,82 @@ impl RateLimiter for RecordingRateLimiter {
     }
 }
 
+#[derive(Default)]
+pub struct RecordingInflightPolicy {
+    pub events: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl RecordingInflightPolicy {
+    pub fn new(events: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl InflightPolicy for RecordingInflightPolicy {
+    fn key_for(&self, req: &BuiltRequest) -> Option<RequestKey> {
+        self.events
+            .lock()
+            .expect("recording inflight policy poisoned")
+            .push("inflight_key_for".to_string());
+        if req.body.is_some() {
+            return None;
+        }
+        if matches!(req.meta.method, Method::GET | Method::HEAD) {
+            Some(RequestKey::new(format!(
+                "{} {}",
+                req.meta.method,
+                req.url.as_str()
+            )))
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct RecordingRuntimeHooks {
+    pub events: Arc<Mutex<Vec<String>>>,
+}
+
+impl RecordingRuntimeHooks {
+    pub fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl RuntimeHooks for RecordingRuntimeHooks {
+    fn pre_send<'a>(
+        &'a self,
+        _ctx: PreSendHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ApiClientError>> + Send + 'a>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events.lock().await.push("pre_send".to_string());
+            Ok(())
+        })
+    }
+
+    fn post_response<'a>(
+        &'a self,
+        _ctx: PostResponseHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events.lock().await.push("classify_response".to_string());
+        })
+    }
+
+    fn transport_error<'a>(
+        &'a self,
+        _ctx: TransportErrorHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events.lock().await.push("transport_error".to_string());
+        })
+    }
+}
+
 pub struct RecordingCache {
     pub before: CacheBefore,
     pub events: Arc<Mutex<Vec<String>>>,
@@ -606,6 +684,9 @@ impl CacheStore for RecordingCache {
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("<none>")
             ));
+            if matches!(self.before, CacheBefore::Hit(_)) {
+                self.events.lock().await.push("cache_hit".to_string());
+            }
             self.before.clone()
         })
     }

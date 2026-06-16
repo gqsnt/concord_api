@@ -5,7 +5,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[tokio::test]
-async fn rate_limit_acquire_before_send_and_observe_after_response() -> Result<(), ApiClientError> {
+async fn rate_limit_observation_happens_after_response_classification() -> Result<(), ApiClientError>
+{
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
@@ -13,6 +14,7 @@ async fn rate_limit_acquire_before_send_and_observe_after_response() -> Result<(
         vec![MockResponse::text(StatusCode::OK, "ok")],
     );
     let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
     configure_runtime(&mut client, None, Some(limiter), false, None);
 
     client
@@ -29,11 +31,16 @@ async fn rate_limit_acquire_before_send_and_observe_after_response() -> Result<(
         .iter()
         .position(|event| event == "transport")
         .expect("transport sent");
+    let classify = events
+        .iter()
+        .position(|event| event == "classify_response")
+        .expect("response classified");
     let observe = events
         .iter()
         .position(|event| event == "rate_response")
         .expect("rate limiter observed response");
     assert!(acquire < transport);
-    assert!(transport < observe);
+    assert!(transport < classify);
+    assert!(classify < observe);
     Ok(())
 }

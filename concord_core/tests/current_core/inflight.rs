@@ -2,7 +2,7 @@ use super::common::*;
 use concord_core::advanced::{AuthPlacement, InflightRegistry};
 use concord_core::prelude::ApiClientError;
 use http::StatusCode;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::Mutex;
 
@@ -55,7 +55,8 @@ async fn inflight_dedupe_does_not_merge_different_auth_identities() -> Result<()
 }
 
 #[tokio::test]
-async fn inflight_follower_does_not_acquire_rate_limit_permit() -> Result<(), ApiClientError> {
+async fn inflight_follower_joins_sender_without_rate_limit_or_transport()
+-> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events.clone(),
@@ -65,16 +66,23 @@ async fn inflight_follower_does_not_acquire_rate_limit_permit() -> Result<(), Ap
     let sent = transport.clone();
     let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let registry = Arc::new(InflightRegistry::default());
+    let inflight_events = Arc::new(StdMutex::new(Vec::new()));
     let mut client_a = client(TestAuthVars::default(), transport.clone());
     let mut client_b = client(TestAuthVars::default(), transport);
     configure_runtime(
         &mut client_a,
         None,
         Some(limiter.clone()),
-        true,
+        false,
         Some(registry.clone()),
     );
-    configure_runtime(&mut client_b, None, Some(limiter), true, Some(registry));
+    configure_runtime(&mut client_b, None, Some(limiter), false, Some(registry));
+    client_a.set_inflight_policy(Arc::new(RecordingInflightPolicy::new(
+        inflight_events.clone(),
+    )));
+    client_b.set_inflight_policy(Arc::new(RecordingInflightPolicy::new(
+        inflight_events.clone(),
+    )));
 
     let (a, b) = tokio::join!(
         client_a.request(TextEndpoint::default()).execute_decoded(),
@@ -92,6 +100,7 @@ async fn inflight_follower_does_not_acquire_rate_limit_permit() -> Result<(), Ap
             .count(),
         1
     );
+    assert_eq!(inflight_events.lock().expect("inflight events").len(), 2);
     Ok(())
 }
 

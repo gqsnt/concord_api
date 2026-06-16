@@ -100,7 +100,7 @@ async fn stale_is_not_returned_before_retry_exhaustion() -> Result<(), ApiClient
 }
 
 #[tokio::test]
-async fn stale_is_returned_after_retry_exhaustion() -> Result<(), ApiClientError> {
+async fn stale_cache_fallback_happens_after_retry_exhaustion() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let stale = built_response("Text", StatusCode::OK, "stale");
     let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
@@ -115,6 +115,7 @@ async fn stale_is_returned_after_retry_exhaustion() -> Result<(), ApiClientError
             MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "still-failing"),
         ],
     );
+    let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     configure_runtime(&mut client, Some(cache), None, false, None);
 
@@ -131,6 +132,7 @@ async fn stale_is_returned_after_retry_exhaustion() -> Result<(), ApiClientError
     let decoded = client.request(endpoint).execute_decoded().await?;
 
     assert_eq!(decoded.value(), "stale");
+    assert_eq!(sent_transport.sent_count().await, 2);
     assert_eq!(*after_error_count.lock().await, 1);
     Ok(())
 }
