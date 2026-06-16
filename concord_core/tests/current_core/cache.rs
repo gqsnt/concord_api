@@ -1,6 +1,9 @@
 use super::common::*;
 use bytes::Bytes;
-use concord_core::advanced::DebugSink;
+use concord_core::advanced::{
+    BuiltResponse, CacheAfter, CacheBefore, CacheFuture, CacheKey, CacheRevalidation, CacheStore,
+    DebugSink,
+};
 use concord_core::prelude::{ApiClientError, DebugLevel};
 use http::{HeaderMap, Method, StatusCode};
 use std::sync::Arc;
@@ -60,6 +63,48 @@ async fn stale_revalidation_goes_through_rate_limit_and_transport() -> Result<()
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event == "rate_acquire"));
     assert!(events.iter().any(|event| event == "transport"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn not_modified_revalidation_runs_post_response_before_rate_limit_observation()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cached = built_response("Text", StatusCode::OK, "cached");
+    let cache = Arc::new(NotModifiedRevalidationCache {
+        cached: cached.clone(),
+    });
+    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::NOT_MODIFIED, "")],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, Some(cache), Some(limiter), false, None);
+
+    let endpoint = TextEndpoint {
+        policy: cache_policy(),
+        ..Default::default()
+    };
+    let decoded = client.request(endpoint).execute_decoded().await?;
+
+    assert_eq!(decoded.value(), "cached");
+    let events = events.lock().await.clone();
+    let transport = events
+        .iter()
+        .position(|event| event == "transport")
+        .expect("transport sent");
+    let classify = events
+        .iter()
+        .position(|event| event == "classify_response")
+        .expect("response classified");
+    let observe = events
+        .iter()
+        .position(|event| event == "rate_response")
+        .expect("rate limiter observed response");
+    assert!(transport < classify);
+    assert!(classify < observe);
     Ok(())
 }
 
@@ -198,6 +243,53 @@ async fn stale_decode_failure_includes_endpoint_context() {
 
     assert!(msg.contains("GET Text"));
     assert!(msg.contains("decode error"));
+}
+
+#[derive(Clone)]
+struct NotModifiedRevalidationCache {
+    cached: BuiltResponse,
+}
+
+impl CacheStore for NotModifiedRevalidationCache {
+    fn before_request<'a>(
+        &'a self,
+        _request: &'a concord_core::advanced::BuiltRequest,
+    ) -> CacheFuture<'a, CacheBefore> {
+        Box::pin(async move {
+            CacheBefore::Revalidate {
+                request_headers: HeaderMap::new(),
+                cached: CacheRevalidation {
+                    key: CacheKey::new("revalidate-304".to_string()),
+                    cached_response: self.cached.clone(),
+                },
+            }
+        })
+    }
+
+    fn after_response<'a>(
+        &'a self,
+        _request: &'a concord_core::advanced::BuiltRequest,
+        response: &'a BuiltResponse,
+        revalidation: Option<CacheRevalidation>,
+    ) -> CacheFuture<'a, CacheAfter> {
+        Box::pin(async move {
+            if response.status == StatusCode::NOT_MODIFIED {
+                if let Some(revalidation) = revalidation {
+                    return CacheAfter::Updated(Box::new(revalidation.cached_response));
+                }
+            }
+            CacheAfter::Stored
+        })
+    }
+
+    fn after_error<'a>(
+        &'a self,
+        _request: &'a concord_core::advanced::BuiltRequest,
+        _error: &'a ApiClientError,
+        _revalidation: Option<CacheRevalidation>,
+    ) -> CacheFuture<'a, Option<BuiltResponse>> {
+        Box::pin(async move { None })
+    }
 }
 
 #[tokio::test]

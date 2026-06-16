@@ -1,4 +1,114 @@
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
+    fn build_attempt_request(
+        &self,
+        plan: &RequestPlan,
+        meta: RequestMeta,
+        cache_mode: CacheRequestMode,
+    ) -> Result<BuiltRequest, ApiClientError> {
+        self.build_request_from_plan(plan, meta, cache_mode)
+    }
+
+    async fn prepare_auth(
+        &self,
+        plan: &RequestPlan,
+        auth_state: &Cx::AuthState,
+        executor: &dyn AuthHttpExecutor,
+        built: &mut BuiltRequest,
+    ) -> Result<crate::auth::AuthAttemptSummary, ApiClientError> {
+        self.prepare_auth_plan(plan, auth_state, executor, built).await
+    }
+
+    async fn check_fresh_cache(&self, built: &mut BuiltRequest) -> CacheBeforeOutcome {
+        self.prepare_cache_before_request(built).await
+    }
+
+    async fn send_or_join_inflight(
+        &self,
+        built: BuiltRequest,
+        inflight_key: Option<RequestKey>,
+        send_ctx: SendClassifyCtx<'_>,
+    ) -> Result<BuiltResponse, ApiClientError> {
+        self.send_and_classify_with_inflight(built, inflight_key, send_ctx)
+            .await
+    }
+
+    async fn handle_auth_rejection(
+        &self,
+        plan: &RequestPlan,
+        auth_state: &Cx::AuthState,
+        auth_http: &ClientAuthHttpExecutor<'_, Cx, T>,
+        meta: &RequestMeta,
+        status: StatusCode,
+        headers: &http::HeaderMap,
+        auth_attempt: &crate::auth::AuthAttemptSummary,
+    ) -> Result<bool, ApiClientError> {
+        self.auth_retry_requested(plan, auth_state, auth_http, meta, status, headers, auth_attempt)
+            .await
+    }
+
+    fn decide_retry(
+        &self,
+        err: &ApiClientError,
+        retry_config: &RetrySetting,
+        retry_ctx: &RetryContext<'_>,
+        retry_count: u32,
+    ) -> Option<Duration> {
+        let mut delay = self.retry_delay(retry_config, retry_ctx, retry_count)?;
+        if Self::rate_limit_action_from_error(err)
+            .is_some_and(|action| action.delay_handled_by_rate_limiter())
+        {
+            delay = Duration::ZERO;
+        }
+        Some(delay)
+    }
+
+    async fn maybe_serve_stale(
+        &self,
+        built_for_cache: &BuiltRequest,
+        err: &ApiClientError,
+        cache_revalidation: Option<CacheRevalidation>,
+        dbg: DebugLevel,
+        url_str: &str,
+    ) -> Result<Option<BuiltResponse>, ApiClientError> {
+        if built_for_cache.cache_mode != CacheRequestMode::Default {
+            return Ok(None);
+        }
+        let Some(cached) = self
+            .runtime_state
+            .cache_store()
+            .after_error(built_for_cache, err, cache_revalidation)
+            .await
+        else {
+            return Ok(None);
+        };
+        if dbg.is_verbose() {
+            self.debug_sink.stale_fallback(
+                dbg,
+                &built_for_cache.meta.method,
+                url_str,
+                built_for_cache.meta.endpoint,
+                built_for_cache.meta.page_index,
+            );
+        }
+        Ok(Some(cached))
+    }
+
+    async fn maybe_write_cache(
+        &self,
+        built_for_cache: &BuiltRequest,
+        resp: BuiltResponse,
+        cache_revalidation: Option<CacheRevalidation>,
+        used_revalidation_refetch: bool,
+    ) -> CacheAfterOutcome {
+        self.apply_cache_after_response(
+            built_for_cache,
+            resp,
+            cache_revalidation,
+            used_revalidation_refetch,
+        )
+        .await
+    }
+
     pub async fn execute_plan<R>(
         &self,
         plan: RequestPlan,
@@ -46,12 +156,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             } else {
                 plan.overrides.cache_mode
             };
-            let mut built = self.build_request_from_plan(&plan, meta, cache_mode)?;
+            let mut built = self.build_attempt_request(&plan, meta, cache_mode)?;
             let auth_attempt = self
-                .prepare_auth_plan(&plan, &auth_state_snapshot, &auth_http, &mut built)
+                .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
             let url_str = built.url.as_str().to_string();
-            let cache_revalidation = match self.prepare_cache_before_request(&mut built).await {
+            let cache_revalidation = match self.check_fresh_cache(&mut built).await {
                 CacheBeforeOutcome::Hit(cached) => {
                     return Ok(cached);
                 }
@@ -64,7 +174,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let retry_request_headers = built.headers.clone();
             let built_for_cache = built.clone();
             let send_result = self
-                .send_and_classify_with_inflight(
+                .send_or_join_inflight(
                     built,
                     inflight_key,
                     SendClassifyCtx {
@@ -80,7 +190,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             match send_result {
                 Ok(resp) => {
                     if self
-                        .auth_retry_requested(
+                        .handle_auth_rejection(
                             &plan,
                             &auth_state_snapshot,
                             &auth_http,
@@ -107,7 +217,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         continue;
                     }
                     let cache_after = self
-                        .apply_cache_after_response(
+                        .maybe_write_cache(
                             &built_for_cache,
                             resp,
                             cache_revalidation,
@@ -131,7 +241,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             .meta
                             .request_meta(base_attempt.saturating_add(attempt_index), plan.overrides.page_index);
                         if self
-                            .auth_retry_requested(
+                            .handle_auth_rejection(
                                 &plan,
                                 &auth_state_snapshot,
                                 &auth_http,
@@ -164,34 +274,26 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         response_headers,
                         outcome,
                     };
-                    let Some(mut delay) =
-                        self.retry_delay(&retry_config, &retry_ctx, transport_retry_index)
-                    else {
-                        if built_for_cache.cache_mode == CacheRequestMode::Default
-                            && let Some(cached) = self
-                                .runtime_state
-                                .cache_store()
-                                .after_error(&built_for_cache, &err, cache_revalidation.clone())
-                                .await
+                    let Some(delay) = self.decide_retry(
+                        &err,
+                        &retry_config,
+                        &retry_ctx,
+                        transport_retry_index,
+                    ) else {
+                        if let Some(cached) = self
+                            .maybe_serve_stale(
+                                &built_for_cache,
+                                &err,
+                                cache_revalidation.clone(),
+                                dbg,
+                                &url_str,
+                            )
+                            .await?
                         {
-                            if dbg.is_verbose() {
-                                self.debug_sink.stale_fallback(
-                                    dbg,
-                                    &built_for_cache.meta.method,
-                                    &url_str,
-                                    built_for_cache.meta.endpoint,
-                                    built_for_cache.meta.page_index,
-                                );
-                            }
                             return Ok(cached);
                         }
                         return Err(err);
                     };
-                    if Self::rate_limit_action_from_error(&err)
-                        .is_some_and(|action| action.delay_handled_by_rate_limiter())
-                    {
-                        delay = Duration::ZERO;
-                    }
                     if !delay.is_zero() {
                         tokio::time::sleep(delay).await;
                     }

@@ -1,4 +1,104 @@
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
+    async fn run_post_response_hook(
+        &self,
+        endpoint: &'static str,
+        method: &http::Method,
+        url: &str,
+        attempt: u32,
+        page_index: u32,
+        idempotent: bool,
+        status: http::StatusCode,
+        headers: &http::HeaderMap,
+    ) {
+        let hook_meta = HookMeta {
+            endpoint,
+            method,
+            url,
+            attempt,
+            page_index,
+            idempotent,
+        };
+        self.runtime_state
+            .hooks()
+            .post_response(PostResponseHookContext {
+                meta: hook_meta,
+                status,
+                headers,
+            })
+            .await;
+    }
+
+    async fn acquire_rate_limit_and_send(
+        &self,
+        built: BuiltRequest,
+        send_ctx: SendClassifyCtx<'_>,
+    ) -> Result<TransportResponse, ApiClientError> {
+        let rate_limit_meta = RateLimitContext {
+            endpoint: built.meta.endpoint,
+            method: &built.meta.method,
+            url: built.url.as_str(),
+            url_host: built.url.host_str(),
+            attempt: built.meta.attempt,
+            page_index: built.meta.page_index,
+            idempotent: built.meta.idempotent,
+            plan: &built.rate_limit,
+        };
+        let _permit = self
+            .runtime_state
+            .rate_limiter()
+            .acquire(rate_limit_meta)
+            .await?;
+        let pre_send_meta = HookMeta {
+            endpoint: built.meta.endpoint,
+            method: &built.meta.method,
+            url: built.url.as_str(),
+            attempt: built.meta.attempt,
+            page_index: built.meta.page_index,
+            idempotent: built.meta.idempotent,
+        };
+        self.runtime_state
+            .hooks()
+            .pre_send(PreSendHookContext {
+                meta: pre_send_meta,
+                headers: &built.headers,
+            })
+            .await?;
+        self.send_built_request(built, send_ctx.error_ctx).await
+    }
+
+    async fn observe_rate_limit_response(
+        &self,
+        endpoint: &'static str,
+        method: http::Method,
+        url: String,
+        url_host: Option<String>,
+        attempt: u32,
+        page_index: u32,
+        idempotent: bool,
+        plan: crate::rate_limit::RateLimitPlan,
+        status: http::StatusCode,
+        headers: http::HeaderMap,
+    ) -> Result<RateLimitResponseAction, ApiClientError> {
+        let rate_limit_meta = RateLimitContext {
+            endpoint,
+            method: &method,
+            url: &url,
+            url_host: url_host.as_deref(),
+            attempt,
+            page_index,
+            idempotent,
+            plan: &plan,
+        };
+        self.runtime_state
+            .rate_limiter()
+            .on_response(RateLimitResponseContext {
+                meta: rate_limit_meta,
+                status,
+                headers: &headers,
+        })
+        .await
+    }
+
     async fn send_built_request(
         &self,
         built: BuiltRequest,
@@ -46,40 +146,30 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         url_str: &str,
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let hook_meta = HookMeta {
-            endpoint: resp.meta.endpoint,
-            method: &resp.meta.method,
-            url: resp.url.as_str(),
-            attempt: resp.meta.attempt,
-            page_index: resp.meta.page_index,
-            idempotent: resp.meta.idempotent,
-        };
-        self.runtime_state
-            .hooks()
-            .post_response(PostResponseHookContext {
-                meta: hook_meta,
-                status: resp.status,
-                headers: &resp.headers,
-            })
-            .await;
-        let rate_limit_meta = RateLimitContext {
-            endpoint: resp.meta.endpoint,
-            method: &resp.meta.method,
-            url: resp.url.as_str(),
-            url_host: resp.url.host_str(),
-            attempt: resp.meta.attempt,
-            page_index: resp.meta.page_index,
-            idempotent: resp.meta.idempotent,
-            plan: &resp.rate_limit,
-        };
+        self.run_post_response_hook(
+            resp.meta.endpoint,
+            &resp.meta.method,
+            resp.url.as_str(),
+            resp.meta.attempt,
+            resp.meta.page_index,
+            resp.meta.idempotent,
+            resp.status,
+            &resp.headers,
+        )
+        .await;
         let rate_limit_action = self
-            .runtime_state
-            .rate_limiter()
-            .on_response(RateLimitResponseContext {
-                meta: rate_limit_meta,
-                status: resp.status,
-                headers: &resp.headers,
-            })
+            .observe_rate_limit_response(
+                resp.meta.endpoint,
+                resp.meta.method.clone(),
+                resp.url.as_str().to_owned(),
+                resp.url.host_str().map(ToOwned::to_owned),
+                resp.meta.attempt,
+                resp.meta.page_index,
+                resp.meta.idempotent,
+                resp.rate_limit.clone(),
+                resp.status,
+                resp.headers.clone(),
+            )
             .await?;
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
@@ -155,71 +245,32 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         send_ctx: SendClassifyCtx<'_>,
     ) -> Result<BuiltResponse, ApiClientError> {
         let has_cache_revalidation = built.cache_revalidation.is_some();
-        let rate_limit_meta = RateLimitContext {
-            endpoint: built.meta.endpoint,
-            method: &built.meta.method,
-            url: built.url.as_str(),
-            url_host: built.url.host_str(),
-            attempt: built.meta.attempt,
-            page_index: built.meta.page_index,
-            idempotent: built.meta.idempotent,
-            plan: &built.rate_limit,
-        };
-        let _permit = self
-            .runtime_state
-            .rate_limiter()
-            .acquire(rate_limit_meta)
-            .await?;
-        let pre_send_meta = HookMeta {
-            endpoint: built.meta.endpoint,
-            method: &built.meta.method,
-            url: built.url.as_str(),
-            attempt: built.meta.attempt,
-            page_index: built.meta.page_index,
-            idempotent: built.meta.idempotent,
-        };
-        self.runtime_state
-            .hooks()
-            .pre_send(PreSendHookContext {
-                meta: pre_send_meta,
-                headers: &built.headers,
-            })
-            .await?;
-        let transport_resp = self.send_built_request(built, send_ctx.error_ctx).await?;
+        let transport_resp = self.acquire_rate_limit_and_send(built, send_ctx).await?;
         if transport_resp.status == http::StatusCode::NOT_MODIFIED && has_cache_revalidation {
-            let hook_meta = HookMeta {
-                endpoint: transport_resp.meta.endpoint,
-                method: &transport_resp.meta.method,
-                url: transport_resp.url.as_str(),
-                attempt: transport_resp.meta.attempt,
-                page_index: transport_resp.meta.page_index,
-                idempotent: transport_resp.meta.idempotent,
-            };
-            self.runtime_state
-                .hooks()
-                .post_response(PostResponseHookContext {
-                    meta: hook_meta,
-                    status: transport_resp.status,
-                    headers: &transport_resp.headers,
-                })
-                .await;
-            let rate_limit_meta = RateLimitContext {
-                endpoint: transport_resp.meta.endpoint,
-                method: &transport_resp.meta.method,
-                url: transport_resp.url.as_str(),
-                url_host: transport_resp.url.host_str(),
-                attempt: transport_resp.meta.attempt,
-                page_index: transport_resp.meta.page_index,
-                idempotent: transport_resp.meta.idempotent,
-                plan: &transport_resp.rate_limit,
-            };
-            self.runtime_state
-                .rate_limiter()
-                .on_response(RateLimitResponseContext {
-                    meta: rate_limit_meta,
-                    status: transport_resp.status,
-                    headers: &transport_resp.headers,
-                })
+            self.run_post_response_hook(
+                transport_resp.meta.endpoint,
+                &transport_resp.meta.method,
+                transport_resp.url.as_str(),
+                transport_resp.meta.attempt,
+                transport_resp.meta.page_index,
+                transport_resp.meta.idempotent,
+                transport_resp.status,
+                &transport_resp.headers,
+            )
+            .await;
+            let _ = self
+                .observe_rate_limit_response(
+                    transport_resp.meta.endpoint,
+                    transport_resp.meta.method.clone(),
+                    transport_resp.url.as_str().to_owned(),
+                    transport_resp.url.host_str().map(ToOwned::to_owned),
+                    transport_resp.meta.attempt,
+                    transport_resp.meta.page_index,
+                    transport_resp.meta.idempotent,
+                    transport_resp.rate_limit.clone(),
+                    transport_resp.status,
+                    transport_resp.headers.clone(),
+                )
                 .await?;
             return Ok(BuiltResponse {
                 meta: transport_resp.meta.clone(),
