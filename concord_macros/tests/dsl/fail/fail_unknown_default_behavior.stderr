@@ -1,0 +1,5 @@
+error: unknown behavior `missing`
+ --> tests/dsl/fail/fail_unknown_default_behavior.rs:8:22
+  |
+8 |             behavior missing
+  |                      ^^^^^^^

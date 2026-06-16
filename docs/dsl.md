@@ -327,6 +327,16 @@ Behavior `rate_limit` clauses are resolved where the behavior is attached. This 
 
 When a behavior supplies a rate-limit profile and a narrower scope or endpoint adds another plain `rate_limit` profile, the profiles are combined. Use `rate_limit off` to clear inherited rate-limit behavior.
 
+Behavior profiles can also be used from the client default block:
+
+```rust
+default {
+    behavior protected_read
+}
+```
+
+A default behavior applies before explicit default `cache`, `retry`, and `rate_limit` clauses. Attach behavior at a scope or endpoint instead when it needs rate-limit key bindings declared in that scope or endpoint.
+
 ## Pagination
 
 Pagination is declared on endpoints with a controller and controller field assignments.

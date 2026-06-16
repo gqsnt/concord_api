@@ -80,11 +80,6 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         .iter()
         .map(|c| (c.name.to_string(), c.clone()))
         .collect();
-    let client_auth = resolve_auth_requirements(
-        &norm.client.auth_uses,
-        &auth_credential_map,
-        AuthUseProvenanceIr::Client,
-    )?;
 
     let cache_profiles = resolve_cache_profiles(norm.client.cache_profiles.as_ref())?;
     let retry_profiles = resolve_retry_profiles(norm.client.retry_profiles.as_ref())?;
@@ -93,6 +88,21 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         norm.client.behavior_profiles.as_ref(),
         &cache_profiles,
         &retry_profiles,
+    )?;
+    let default_behavior =
+        resolve_behavior_uses(&norm.client.default_behavior_uses, &behavior_profiles)?;
+    let default_behavior_rate_limit = resolve_behavior_rate_limit_specs(
+        &default_behavior.rate_limit_specs,
+        &rate_limit_profiles,
+        &BTreeMap::new(),
+        None,
+    )?;
+    let mut client_auth_uses = default_behavior.auth_uses;
+    client_auth_uses.extend(norm.client.auth_uses.iter().cloned());
+    let client_auth = resolve_auth_requirements(
+        &client_auth_uses,
+        &auth_credential_map,
+        AuthUseProvenanceIr::Client,
     )?;
 
     // validate client policy + resolve
@@ -103,7 +113,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         &auth_vars_map,
         None,
     )?;
-    client_policy.retry = resolve_client_retry(
+    let explicit_client_retry = resolve_client_retry(
         norm.client.retry.as_ref(),
         norm.client
             .retry_profiles
@@ -111,7 +121,11 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
             .and_then(|block| block.default.as_ref()),
         &retry_profiles,
     )?;
-    client_policy.cache = resolve_client_cache(
+    client_policy.retry = match explicit_client_retry {
+        Some(_) => explicit_client_retry,
+        None => default_behavior.policy.retry.clone(),
+    };
+    let explicit_client_cache = resolve_client_cache(
         norm.client.cache.as_ref(),
         norm.client
             .cache_profiles
@@ -119,12 +133,18 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
             .and_then(|block| block.default.as_ref()),
         &cache_profiles,
     )?;
-    client_policy.rate_limit = resolve_client_rate_limit(
+    client_policy.cache = match explicit_client_cache {
+        Some(_) => explicit_client_cache,
+        None => default_behavior.policy.cache.clone(),
+    };
+    let explicit_default_rate_limit = resolve_client_rate_limit(
         norm.client.rate_limit.as_ref(),
         &rate_limit_profiles,
         &BTreeMap::new(),
         None,
     )?;
+    client_policy.rate_limit =
+        merge_rate_limit_resolved(default_behavior_rate_limit, explicit_default_rate_limit);
 
     let client_vars: Vec<VarInfo> = client_vars_map.values().cloned().collect();
     let client_auth_vars: Vec<VarInfo> = auth_vars_map.values().cloned().collect();
@@ -1098,6 +1118,186 @@ mod tests {
             RateLimitKeyResolved::EpField { name, field }
                 if name == "tenant_key" && field.to_string() == "tenant"
         )));
+    }
+
+    #[test]
+    fn default_behavior_applies_to_client_policy() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry read {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+
+                    behavior protected_read {
+                        retry read
+                        rate_limit app
+                    }
+
+                    default {
+                        behavior protected_read
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
+            panic!("expected default behavior retry");
+        };
+        assert_eq!(client_retry.max_attempts, 2);
+
+        let Some(RateLimitResolved::Add(client_rate_limit)) =
+            &resolved_api.client_policy.rate_limit
+        else {
+            panic!("expected default behavior rate limit");
+        };
+        assert_eq!(client_rate_limit.buckets.len(), 1);
+    }
+
+    #[test]
+    fn explicit_default_cache_overrides_default_behavior_cache() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    cache standard {
+                        ttl 30s
+                    }
+
+                    behavior cached {
+                        cache standard
+                    }
+
+                    default {
+                        behavior cached
+                        cache off
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        assert!(matches!(
+            resolved_api.client_policy.cache,
+            Some(CacheResolved::Clear)
+        ));
+    }
+
+    #[test]
+    fn explicit_default_retry_and_cache_still_override_default_behavior() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry from_behavior {
+                        max_attempts 5
+                        methods [GET]
+                    }
+
+                    retry explicit {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    cache standard {
+                        ttl 30s
+                    }
+
+                    behavior cached_read {
+                        retry from_behavior
+                        cache standard
+                    }
+
+                    default {
+                        behavior cached_read
+                        retry explicit
+                        cache off
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
+            panic!("expected explicit default retry");
+        };
+        assert_eq!(client_retry.max_attempts, 2);
+
+        assert!(matches!(
+            resolved_api.client_policy.cache,
+            Some(CacheResolved::Clear)
+        ));
+    }
+
+    #[test]
+    fn default_behavior_auth_applies_to_endpoint() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret token: String
+                    credential session = bearer(secret.token)
+
+                    behavior protected {
+                        auth bearer session
+                    }
+
+                    default {
+                        behavior protected
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let endpoint = &resolved_api.endpoints[0];
+
+        assert_eq!(endpoint.policy.auth.len(), 1);
+        let AuthUsePlanIr::Use(auth_use) = &endpoint.policy.auth[0];
+        assert_eq!(
+            auth_use_credential_ident_ir(auth_use).to_string(),
+            "session"
+        );
+        assert!(matches!(auth_use.provenance, AuthUseProvenanceIr::Client));
     }
 
     #[test]

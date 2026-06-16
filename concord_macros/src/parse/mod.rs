@@ -58,6 +58,7 @@ impl Parse for RawClient {
         let mut auth_vars: Option<VarsBlock> = None;
         let mut auth_credentials: Vec<AuthCredentialDecl> = Vec::new();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
+        let mut default_behavior_uses: Vec<BehaviorUseSpec> = Vec::new();
         let mut cache_profiles: Option<CacheProfilesBlock> = None;
         let mut cache: Option<CacheSpec> = None;
         let mut retry_profiles: Option<RetryProfilesBlock> = None;
@@ -159,6 +160,7 @@ impl Parse for RawClient {
                     &default_content,
                     &mut policy,
                     &mut auth_uses,
+                    &mut default_behavior_uses,
                     &mut cache,
                     &mut retry,
                     &mut rate_limit,
@@ -242,6 +244,7 @@ impl Parse for RawClient {
                 credentials: auth_credentials,
             }),
             auth_uses,
+            default_behavior_uses,
             cache_profiles,
             cache,
             name,
@@ -282,6 +285,7 @@ fn parse_client_default_block(
     input: ParseStream<'_>,
     policy: &mut PolicyBlocks,
     auth_uses: &mut Vec<AuthUseDecl>,
+    default_behavior_uses: &mut Vec<BehaviorUseSpec>,
     cache: &mut Option<CacheSpec>,
     retry: &mut Option<RetrySpec>,
     rate_limit: &mut Option<RateLimitProfilesBlock>,
@@ -314,6 +318,8 @@ fn parse_client_default_block(
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
+        } else if input.peek(kw::behavior) {
+            default_behavior_uses.push(parse_behavior_use_spec(input)?);
         } else if input.peek(kw::cache) {
             if cache.is_some() {
                 return Err(syn::Error::new(

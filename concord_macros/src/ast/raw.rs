@@ -22,6 +22,7 @@ pub struct RawClient {
     pub auth_vars: Option<VarsBlock>,
     pub auth: Option<AuthCredentials>,
     pub auth_uses: Vec<AuthUseDecl>,
+    pub default_behavior_uses: Vec<BehaviorUseSpec>,
     pub cache_profiles: Option<CacheProfilesBlock>,
     pub cache: Option<CacheSpec>,
     pub retry_profiles: Option<RetryProfilesBlock>,

@@ -15,6 +15,7 @@ fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
                 .map(|vars| NormVars { decls: vars.decls }),
             auth: raw.client.auth,
             auth_uses: client_auth_uses,
+            default_behavior_uses: raw.client.default_behavior_uses,
             cache_profiles: raw.client.cache_profiles,
             cache: raw.client.cache,
             retry_profiles: raw.client.retry_profiles,
