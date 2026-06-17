@@ -1,8 +1,8 @@
 # DSL
 
-Concord describes an HTTP API as a typed tree. The tree has one `client` root, optional `scope` branches, and endpoint stanza leaves. The macro turns that tree into a facade-first Rust client and endpoint request plans.
+Concord describes an HTTP API as a typed tree. The tree has a `client` root, optional `scope` branches, and endpoint leaves. The macro turns that tree into a facade-first Rust client and endpoint request plans.
 
-## API Tree
+## Shape
 
 ```rust
 api! {
@@ -21,13 +21,88 @@ api! {
 }
 ```
 
-- `client` defines the root type, base URL, root variables, credentials, defaults, and named policy profiles.
-- `scope` groups route, host, auth, and policy fragments. A scope can take parameters.
-- An endpoint stanza defines one HTTP operation and its typed response.
+The tree is the mental model to keep in mind:
 
-## Base URL
+- `client` defines the root type, base URL, root variables, credentials, grouped config, and reusable profiles.
+- `scope` groups route fragments, host fragments, auth, behaviors, and policy attachments.
+- An endpoint leaf defines one HTTP operation and its typed response.
 
-A client declares its base scheme and domain with `base`.
+## Client configuration
+
+Client-level configuration is where reusable declarations live. Attachments happen later, at defaults, scope, or endpoint sites.
+
+### Declarations and attachments
+
+Use declarations to define reusable profiles:
+
+- `secret token: String`
+- `credential session = bearer(secret.token)`
+- `retry read { ... }`
+- `cache standard { ... }`
+- `rate_limit app { ... }`
+- `behavior read { ... }`
+
+Use attachments to apply those profiles:
+
+- `auth bearer session`
+- `retry read`
+- `cache standard`
+- `rate_limit app`
+- `behavior read`
+
+Declarations belong in client-level config, usually grouped under `auth { ... }`, `policies { ... }`, or `behaviors { ... }`. Attachments belong in `default { ... }` / `defaults { ... }`, scopes, or endpoints. `policies { ... }` is for declarations and observers, not default attachments.
+
+### Canonical client example
+
+```rust
+api! {
+    client ExampleApi {
+        base "https://api.example.com"
+
+        auth {
+            secret token: String
+            credential api_token = bearer(secret.token)
+        }
+
+        policies {
+            retry read {
+                max_attempts 2
+                methods [GET]
+                on [429, 500, 502, 503, 504]
+                retry_after
+            }
+
+            rate_limit app {
+                bucket application by [host] {
+                    100 / 1m
+                }
+            }
+
+            observe rate_limit ExampleRateLimitHeaders
+        }
+
+        behaviors {
+            behavior read {
+                auth bearer api_token
+                retry read
+                rate_limit app
+            }
+        }
+
+        defaults {
+            behavior read
+        }
+    }
+
+    GET Me
+    path ["me"]
+    -> Json<User>
+}
+```
+
+### Base URL
+
+`base` declares the scheme and root domain.
 
 ```rust
 client ExampleApi {
@@ -35,9 +110,161 @@ client ExampleApi {
 }
 ```
 
-Use `http` or `https` for the scheme. Dynamic host labels are added with `host [...]` in scopes.
+### Authentication
 
-## Host And Path
+Secrets and credentials can be written directly in the client block or grouped under `auth { ... }`.
+
+```rust
+client ExampleApi {
+    base "https://api.example.com"
+
+    auth {
+        secret token: String
+        credential session = bearer(secret.token)
+    }
+}
+```
+
+This is equivalent to writing `secret` and `credential` directly in the client block. Auth use clauses such as `auth bearer session` do not belong in `auth { ... }`; they belong in defaults, scopes, endpoints, or behavior profiles.
+
+### Policies
+
+Retry, cache, rate-limit profile declarations, and policy observers can be grouped under `policies { ... }`.
+
+```rust
+client PolicyApi {
+    base "https://example.com"
+
+    policies {
+        retry read {
+            max_attempts 2
+            methods [GET]
+            on [429, 500, 502, 503, 504]
+            retry_after
+        }
+
+        cache standard {
+            ttl 60s
+            revalidate
+            on_error serve_stale
+        }
+
+        rate_limit app {
+            bucket application by [host] {
+                100 / 1s
+            }
+        }
+
+        observe rate_limit MyObserver
+    }
+}
+```
+
+Flat declarations still work when they are clearer. `policies { ... }` is the preferred grouped form for larger clients.
+
+### Behaviors
+
+Behavior profiles are semantic bundles over auth, cache, retry, and rate-limit policy.
+
+```rust
+client ExampleApi {
+    base "https://api.example.com"
+
+    behaviors {
+        behavior read {
+            auth bearer session
+            retry read
+            rate_limit app
+        }
+    }
+}
+```
+
+Behavior profiles are a name layer over ordinary policy attachments. They do not change runtime semantics; they make repeated request behavior easier to read and move.
+
+Merge rules:
+
+- client defaults apply first
+- scope policies apply from outer to inner
+- endpoint policies apply last
+- explicit `retry` and `cache` override behavior-provided `retry` and `cache` at the same attachment site
+- behavior-provided `rate_limit` combines with explicit local `rate_limit`
+- `rate_limit off` clears inherited rate-limit policy
+- behavior rate-limit key bindings are resolved where the behavior is attached
+
+Behavior profiles can also be grouped:
+
+```rust
+behaviors {
+    behavior read {
+        retry read
+        rate_limit app
+    }
+}
+```
+
+This is equivalent to writing the behavior profiles directly in the client block. Flat behavior declarations still work.
+
+Behavior `rate_limit` clauses are resolved where the behavior is attached. This lets a behavior carry the rate-limit profile while the endpoint supplies a contextual key binding.
+
+```rust
+rate_limit match_bucket {
+    bucket method by [match_key] {
+        5 / 1s
+    }
+}
+
+behavior match_read {
+    rate_limit match_bucket
+}
+
+GET Match(match_id: String)
+path ["matches", match_id]
+rate_limit key match_key = match_id
+behavior match_read
+-> Json<MatchDto>
+```
+
+Attaching the same behavior as a client default would fail because endpoint variables are not available at the client level.
+
+### Defaults
+
+Default attachments can be written with either `default { ... }` or `defaults { ... }`. The singular form is valid; the plural form is the preferred grouped form for larger clients.
+
+```rust
+defaults {
+    behavior read
+    retry read
+    cache standard
+    rate_limit app
+    auth bearer session
+}
+```
+
+`default` / `defaults` applies client-wide defaults before scope and endpoint attachments. A default behavior applies before explicit default `cache`, `retry`, and `rate_limit` clauses.
+
+Use `rate_limit off`, `retry off`, or `cache off` on a narrower layer to clear inherited policy.
+
+Only one default/defaults block is allowed per client.
+
+## Scopes
+
+Scopes shape the tree below the client root. They add route fragments, host fragments, and inherited attachments for their children.
+
+```rust
+scope users {
+    path ["users"]
+    behavior scope_read
+
+    GET Me
+    path ["me"]
+    -> Json<User>
+}
+```
+
+Scope-level attachments apply to all nested endpoints. Nested scopes inherit outer scopes, so scope policies flow from outer to inner before endpoint attachments are applied.
+
+### Host and path
 
 `host [...]` appends host labels before the base domain. `path [...]` appends path atoms.
 
@@ -50,86 +277,9 @@ scope tenant(tenant_id: String) {
 
 Path atoms are encoded segment-by-segment. Split fixed path pieces into separate string atoms.
 
-## Endpoint Stanza
+### Formatting with `fmt`
 
-An endpoint stanza starts with an HTTP method and Rust endpoint name, followed by arguments in parentheses.
-
-```rust
-POST CreateUser(account_id: u64, body: Json<CreateUser>)
-    as create
-    path ["accounts", account_id, "users"]
-    -> Json<User>
-```
-
-`as` sets the generated facade method name. Without `as`, the endpoint name is converted to snake_case.
-
-## Endpoint Clause Order
-
-Recommended endpoint order:
-
-```rust
-GET Name(params)
-as facade_name
-path [...]
-query { ... }
-headers { ... }
-paginate Controller {
-    field = value
-}
-cache/retry/rate_limit/auth clauses
--> Json<Response>
-```
-
-The response line should normally be the final line of the endpoint contract. This keeps endpoint leaves visually closed by their return type.
-
-Response mapping is the exception when used:
-
-```rust
-GET Login
-path ["login"]
--> Json<LoginResponse>
-map AccessToken { AccessToken::new(r.access_token) }
-```
-
-## Endpoint Arguments
-
-Required arguments are direct facade method arguments.
-
-```rust
-GET GetUser(id: u64)
-    path ["users", id]
-    -> Json<User>
-```
-
-Optional arguments use `?` and default to absent.
-
-```rust
-GET Search(q?: String)
-    path ["search"]
-    query { q }
-    -> Json<Vec<User>>
-```
-
-Defaulted arguments use `=` and are initialized before fluent setters run.
-
-```rust
-GET List(start: u64 = 0, count: u64 = 20)
-    path ["items"]
-    query { start, count }
-    -> Json<Vec<Item>>
-```
-
-Bodies are endpoint signature arguments. The argument name must be `body`, and the codec wraps the Rust body type.
-
-```rust
-POST Create(body: Json<CreateItem>)
-    path ["items"]
-    -> Json<Item>
-```
-
-## Formatting With fmt
-
-`fmt[...]` builds one wire atom from string literals and variables.
+`fmt[...]` builds one wire atom from literals and variables.
 
 ```rust
 path [fmt["org-", org_id]]
@@ -137,13 +287,9 @@ headers { "X-Trace" = fmt["trace-", vars.trace_id] }
 query { "range" = fmt[start, "-", count] }
 ```
 
-Use `fmt[...]` when one host label, path segment, query value, or header value needs multiple pieces.
+### Query
 
-## Query
-
-Query policies live in `query { ... }` blocks.
-
-Shorthand uses the Rust field as both key and value:
+Shorthand uses the Rust argument name as both key and value.
 
 ```rust
 query {
@@ -151,7 +297,7 @@ query {
 }
 ```
 
-Explicit keys use string literals:
+Explicit keys use string literals.
 
 ```rust
 query {
@@ -160,7 +306,7 @@ query {
 }
 ```
 
-Append repeated query values with `+=`:
+Append repeated values with `+=`.
 
 ```rust
 query {
@@ -169,7 +315,7 @@ query {
 }
 ```
 
-Remove an inherited query key with `-`:
+Remove an inherited query key with `-`.
 
 ```rust
 query {
@@ -179,7 +325,7 @@ query {
 
 Optional argument values remove their query key when absent.
 
-## Headers
+### Headers
 
 Header keys are explicit string literals.
 
@@ -190,7 +336,7 @@ headers {
 }
 ```
 
-Setting the same header in a narrower layer overrides the inherited value. Remove an inherited header with `-`.
+A narrower layer overrides inherited headers. Remove an inherited header with `-`.
 
 ```rust
 headers {
@@ -198,202 +344,78 @@ headers {
 }
 ```
 
-## Auth
+## Endpoints
 
-Declare secrets and credentials in the client block.
-
-```rust
-client ExampleApi {
-    base "https://api.example.com"
-    secret api_key: String
-    secret token: String
-
-    credential key = api_key(secret.api_key)
-    credential session = bearer(secret.token)
-}
-```
-
-Attach credentials as auth requirements at the client, scope, or endpoint layer.
+Endpoint leaves should be ordered as:
 
 ```rust
-auth header "X-Api-Key" = key
-auth query "api_key" = key
-auth bearer session
+GET EndpointName(args...)
+as optional_alias
+path [...]
+query { ... }
+headers { ... }
+paginate ...
+behavior ...
+cache/retry/rate_limit/auth ...
+-> Json<Response>
 ```
 
-Endpoint-backed credentials store the output of one endpoint as a credential for later requests.
+Request bodies are endpoint signature arguments named `body`, for example `POST Create(body: Json<CreateUser>)`.
+
+The response line should normally be the final line of the endpoint contract. Policy and behavior attachments come before the response line so the endpoint leaf stays visually closed by its return type.
+
+Low-level policy details should be lifted into profiles or behaviors when they repeat.
+
+### Arguments
+
+Required arguments are direct facade method arguments.
 
 ```rust
-client SessionApi {
-    base "https://example.com"
-    secret upstream_key: String
-    credential upstream = api_key(secret.upstream_key)
-    credential session = endpoint auth_api::LoginForSession
-}
-
-scope auth_api {
-    POST LoginForSession(body: Json<LoginRequest>)
-        path ["login"]
-        auth header "X-Upstream-Key" = upstream
-        -> Json<LoginResponse>
-        map AccessToken { AccessToken::new(r.access_token) }
-}
-
-scope protected {
-    auth bearer session
-
-    GET Me
-        path ["me"]
-        -> Json<User>
-}
+GET GetUser(id: u64)
+path ["users", id]
+-> Json<User>
 ```
 
-### Grouped Auth Configuration
-
-For larger clients, secrets and credentials can be grouped:
+Optional arguments use `?` and default to absent.
 
 ```rust
-auth {
-    secret token: String
-    credential session = bearer(secret.token)
-}
+GET Search(q?: String)
+path ["search"]
+query { q }
+-> Json<Vec<User>>
 ```
 
-This is equivalent to writing `secret` and `credential` directly in the client block.
-
-Auth use clauses such as `auth bearer session` still belong in defaults, scopes, endpoints, or behavior profiles; they are not part of the grouped `auth { ... }` section.
-
-## Cache, Retry, And Rate Limit Profiles
-
-Named profiles live in the client block. Attach them with defaults, scope policies, or endpoint policies.
+Defaulted arguments use `=`.
 
 ```rust
-client PolicyApi {
-    base "https://example.com"
-
-    default {
-        retry read
-        cache standard
-        rate_limit app
-    }
-
-    retry read {
-        max_attempts 2
-        methods [GET]
-        on [429, 500, 502, 503, 504]
-        retry_after
-    }
-
-    cache standard {
-        ttl 60s
-        revalidate
-        on_error serve_stale
-    }
-
-    rate_limit app {
-        bucket application by [host] {
-            100 / 1s
-        }
-    }
-}
+GET List(start: u64 = 0, count: u64 = 20)
+path ["items"]
+query { start, count }
+-> Json<Vec<Item>>
 ```
 
-Use `cache off`, `retry off`, or `rate_limit off` on a narrower layer to clear an inherited policy. Use `rate_limit [a, b]` to add multiple rate-limit profiles to the same endpoint.
+### Bodies
 
-### Grouped Policy Configuration
-
-For larger clients, retry, cache, rate-limit profile declarations and observers can be grouped:
+Bodies are endpoint signature arguments. The argument name must be `body`, and the codec wraps the Rust body type.
 
 ```rust
-policies {
-    retry read {
-        max_attempts 2
-        methods [GET]
-    }
-
-    rate_limit app {
-        bucket application by [host] {
-            10 / 1s
-        }
-    }
-
-    observe rate_limit MyObserver
-}
+POST Create(body: Json<CreateItem>)
+path ["items"]
+-> Json<Item>
 ```
 
-This is equivalent to writing those declarations directly in the client block.
+### Response mapping
 
-Default policy attachments such as `retry read`, `cache standard`, or `rate_limit app` still belong in `default { ... }`, not in `policies { ... }`.
-
-## Behavior Profiles
-
-Behavior profiles give a semantic name to cross-cutting request behavior.
+Response mapping is the exception when used:
 
 ```rust
-behavior protected_read {
-    auth bearer session
-    retry read
-    cache standard
-    rate_limit app
-}
+GET Login
+path ["login"]
+-> Json<LoginResponse>
+map AccessToken { AccessToken::new(r.access_token) }
 ```
 
-Attach behavior profiles to scopes or endpoints:
-
-```rust
-scope users {
-    path ["users"]
-    behavior protected_read
-
-    GET Me
-    path ["me"]
-    -> Json<User>
-}
-```
-
-A behavior can extend another behavior:
-
-```rust
-behavior protected_read extends read {
-    auth bearer session
-}
-```
-
-Behavior profiles are resolved by the macro into existing auth, cache, retry, and rate-limit policy data. The core runtime does not know about behavior syntax.
-
-In this version, behavior profiles can contain `auth`, `retry`, `cache`, and `rate_limit` clauses.
-
-For larger clients, behavior declarations may be grouped:
-
-```rust
-behaviors {
-    behavior protected_read {
-        auth bearer session
-        retry read
-    }
-}
-```
-
-This is equivalent to writing the behavior profiles directly in the client block.
-
-Behavior `rate_limit` clauses are resolved where the behavior is attached. This means they can use rate-limit key bindings visible at that scope or endpoint.
-
-When a behavior supplies a rate-limit profile and a narrower scope or endpoint adds another plain `rate_limit` profile, the profiles are combined. Use `rate_limit off` to clear inherited rate-limit behavior.
-
-Behavior profiles can also be used from the client default block:
-
-```rust
-default {
-    behavior protected_read
-}
-```
-
-A default behavior applies before explicit default `cache`, `retry`, and `rate_limit` clauses. Attach behavior at a scope or endpoint instead when it needs rate-limit key bindings declared in that scope or endpoint.
-
-For larger clients, `defaults { ... }` is accepted as an alias for the client `default { ... }` block.
-Only one default/defaults block is allowed per client.
-
-Generated endpoint documentation includes the behavior names attached through client defaults, scopes, and endpoints. This keeps semantic labels visible after macro expansion.
+Behavior names also appear on endpoint docs. Generated endpoint documentation includes attached behavior names from client defaults, scopes, and endpoints. For example, a generated line can read: Behavior: `read`, `match_read`.
 
 ## Pagination
 
@@ -401,37 +423,40 @@ Pagination is declared on endpoints with a controller and controller field assig
 
 ```rust
 GET ListItems(start: u64 = 0, count: u64 = 20)
-    path ["items"]
-    query { start, count }
-    paginate OffsetLimitPagination {
-        offset = start,
-        limit = count
-    }
-    -> Json<Vec<Item>>
+path ["items"]
+query { start, count }
+paginate OffsetLimitPagination {
+    offset = start,
+    limit = count
+}
+-> Json<Vec<Item>>
 ```
 
-Cursor pagination uses a response type that exposes items and a next cursor.
+Cursor pagination can use an optional cursor argument.
 
 ```rust
 GET ListCursor(cursor?: String, count: u64 = 20)
-    path ["cursor-items"]
-    query { cursor, count }
-    paginate CursorPagination {
-        cursor = cursor,
-        per_page = count
-    }
-    -> Json<CursorPage>
-```
-
-## Defaults
-
-`default { ... }` applies named policies to every endpoint in that layer unless a narrower layer overrides or clears them.
-
-```rust
-scope protected {
-    auth bearer session
-    default { retry read }
+path ["cursor-items"]
+query { cursor, count }
+paginate CursorPagination {
+    cursor = cursor,
+    per_page = count
 }
+-> Json<CursorPage>
 ```
 
-Defaults are inherited through the API tree in client, scope, endpoint order.
+Pagination remains an endpoint concern. It is not part of grouped policy or behavior declarations.
+
+## Generated documentation
+
+Generated endpoint documentation is derived from the resolved semantic model, not from raw syntax. That is why behavior names remain visible in rustdoc even though behavior semantics are lowered into ordinary auth, cache, retry, and rate-limit data.
+
+## Design rules
+
+- Keep endpoint leaves readable.
+- Keep the response line last in normal endpoints.
+- Prefer grouped client config for large clients: `auth { ... }`, `policies { ... }`, `behaviors { ... }`, and `defaults { ... }`.
+- Keep `default { ... }` valid, but prefer `defaults { ... }` when the block is meant to read as grouped configuration.
+- Attach behaviors and policies at the narrowest scope that needs them.
+- Use behaviors for semantic request patterns, not for mechanical details that are already covered by a reusable policy profile.
+- See `docs/design_invariants.md` for the more detailed design invariants that should stay true as the DSL evolves.
