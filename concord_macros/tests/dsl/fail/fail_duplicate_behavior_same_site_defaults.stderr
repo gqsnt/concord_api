@@ -1,0 +1,5 @@
+error: duplicate behavior `read` at this attachment site
+  --> tests/dsl/fail/fail_duplicate_behavior_same_site_defaults.rs:13:22
+   |
+13 |             behavior read
+   |                      ^^^^

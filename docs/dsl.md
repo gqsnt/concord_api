@@ -727,7 +727,7 @@ behavior protected_read
 behavior [read, protected_read]
 ```
 
-Behavior lists must contain at least one behavior and cannot contain a duplicate name within the same list. Reusing a behavior across separate defaults, scopes, or endpoints remains valid.
+Behavior lists must contain at least one behavior and cannot contain a duplicate name within the same list. The same behavior also cannot be attached more than once at the same defaults, scope, or endpoint site, even across separate `behavior` clauses. Reusing a behavior across separate layers remains valid.
 
 ### Request policy clauses
 

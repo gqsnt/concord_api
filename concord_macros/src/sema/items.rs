@@ -37,6 +37,7 @@ fn walk_items(
                 let (prefix_pieces, path_pieces, decls) =
                     analyze_layer_route_and_decls(ld, ancestry, ctx.layers, ctx.client_vars)?;
                 let key_bindings = resolve_rate_limit_key_bindings(&ld.rate_limit_keys, &decls)?;
+                validate_behavior_uses_unique_at_site(&ld.behavior_uses)?;
                 let behavior = resolve_behavior_uses(&ld.behavior_uses, ctx.behavior_profiles)?;
                 let behavior_names = behavior_use_names(&ld.behavior_uses);
                 let mut policy = resolve_policy_blocks(
@@ -457,6 +458,7 @@ fn analyze_endpoint(
         ctx.auth_vars,
         Some(&ep_vars),
     )?;
+    validate_behavior_uses_unique_at_site(&ed.behavior_uses)?;
     let behavior = resolve_behavior_uses(&ed.behavior_uses, ctx.behavior_profiles)?;
     policy.retry = if ed.retry.is_some() {
         resolve_retry_spec(ed.retry.as_ref(), ctx.retry_profiles)?

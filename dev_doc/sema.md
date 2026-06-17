@@ -53,6 +53,8 @@ Behavior profiles are resolved in sema and lowered into normal auth/cache/retry/
 
 Behavior rate-limit specs are intentionally resolved at the attachment site, not at declaration time. This is required because `rate_limit key name = arg` bindings are contextual and may be visible only at a scope or endpoint.
 
+Sema rejects duplicate behavior names across multiple `behavior` clauses at one attachment site: one client defaults block, one scope body, or one endpoint body. The parser already rejects duplicates inside a single `behavior [...]` list. Cross-layer reuse remains valid.
+
 Behavior use order is:
 
 ```text

@@ -58,3 +58,5 @@ The parser intentionally rejects:
 - duplicate names inside one `behavior [...]` or `rate_limit [...]` list
 
 Parser diagnostics should point at the offending token or list site when practical. Diagnostics PRs should update trybuild stderr snapshots intentionally.
+
+Same-site duplicate behavior attachments across multiple `behavior` clauses are rejected in sema rather than the parser, because a site is represented as a collected `Vec<BehaviorUseSpec>`.

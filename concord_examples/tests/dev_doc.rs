@@ -30,7 +30,12 @@ fn dev_doc_files_exist_and_cover_architecture() {
     );
     assert_doc(
         "dev_doc/macro_parser.md",
-        &["auth { ... }", "policies { ... }", "response"],
+        &[
+            "auth { ... }",
+            "policies { ... }",
+            "response",
+            "Vec<BehaviorUseSpec>",
+        ],
     );
     assert_doc(
         "dev_doc/sema.md",
@@ -39,6 +44,7 @@ fn dev_doc_files_exist_and_cover_architecture() {
             "outer scopes",
             "endpoint",
             "max_body N unit",
+            "Cross-layer reuse remains valid",
         ],
     );
     assert_doc(
@@ -55,6 +61,7 @@ fn dev_doc_files_exist_and_cover_architecture() {
             "declarations from attachments",
             "behavior",
             "capacity entries",
+            "same behavior more than once",
         ],
     );
     assert_doc(

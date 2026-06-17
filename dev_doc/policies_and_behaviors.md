@@ -45,6 +45,8 @@ Behavior merge rules:
 - explicit local rate-limit combines with behavior rate-limit
 - `rate_limit off` clears inherited rate-limit policy
 
+Parser diagnostics reject duplicate names inside one `behavior [...]` list. Sema also rejects attaching the same behavior more than once at one defaults, scope, or endpoint site, while still allowing the same behavior to be reused across different layers.
+
 Behavior names are preserved as rustdoc labels. Labels are deduped in stable first-seen order so repeated attachments do not make docs noisy.
 
 Behavior is not a runtime concept. By the time codegen builds request plans, behavior semantics have been lowered into ordinary policy/auth data.

@@ -76,6 +76,8 @@ fn dsl_reference_mentions_auth_retry_cache_and_rate_limit_surface() {
         "rate_limit key",
         "duplicate",
         "empty",
+        "same behavior also cannot be attached more than once",
+        "Reusing a behavior across separate layers remains valid",
     ] {
         assert!(
             combined.contains(snippet),

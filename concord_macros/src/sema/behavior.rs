@@ -133,6 +133,23 @@ fn resolve_behavior_uses(
     Ok(out)
 }
 
+pub(crate) fn validate_behavior_uses_unique_at_site(uses: &[BehaviorUseSpec]) -> Result<()> {
+    let mut seen = std::collections::BTreeSet::new();
+
+    for use_spec in uses {
+        for name in &use_spec.names {
+            if !seen.insert(name.to_string()) {
+                return Err(syn::Error::new(
+                    name.span(),
+                    format!("duplicate behavior `{name}` at this attachment site"),
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn behavior_use_names(uses: &[BehaviorUseSpec]) -> Vec<String> {
     uses.iter()
         .flat_map(|use_spec| use_spec.names.iter())

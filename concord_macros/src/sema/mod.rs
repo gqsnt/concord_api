@@ -90,6 +90,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         &cache_profiles,
         &retry_profiles,
     )?;
+    validate_behavior_uses_unique_at_site(&norm.client.default_behavior_uses)?;
     let client_default_behavior_names = behavior_use_names(&norm.client.default_behavior_uses);
     let default_behavior =
         resolve_behavior_uses(&norm.client.default_behavior_uses, &behavior_profiles)?;
@@ -2068,6 +2069,42 @@ mod tests {
             endpoint.behavior_doc.names,
             vec!["read".to_string(), "match_read".to_string()]
         );
+    }
+
+    #[test]
+    fn duplicate_behavior_across_layers_remains_allowed() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    behavior read {
+                        retry off
+                    }
+
+                    defaults {
+                        behavior read
+                    }
+                }
+
+                scope users {
+                    path ["users"]
+                    behavior read
+
+                    GET Me
+                        path ["me"]
+                        behavior read
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("cross-layer behavior reuse remains valid");
+        let endpoint = &resolved_api.endpoints[0];
+
+        assert_eq!(endpoint.behavior_doc.names, vec!["read".to_string()]);
     }
 
     #[test]
