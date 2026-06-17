@@ -43,6 +43,7 @@ fn current_trybuild_fixtures_match_expected_results() {
         "tests/dsl/fail/fail_base_split_http.rs",
         "tests/dsl/fail/fail_base_split_https.rs",
         "tests/dsl/fail/fail_duplicate_behavior.rs",
+        "tests/dsl/fail/fail_duplicate_behavior_in_list.rs",
         "tests/dsl/fail/fail_unknown_behavior_use.rs",
         "tests/dsl/fail/fail_unknown_behavior_parent.rs",
         "tests/dsl/fail/fail_behavior_self_extends.rs",

@@ -133,6 +133,13 @@ api! {
     rate_limit key match_key = match_id
     behavior match_read
     -> Json<MatchDto>
+
+    GET Search(region?: String = "euw1".to_string())
+    path ["search"]
+    query {
+        region
+    }
+    -> Json<Vec<User>>
 }
 
 api! {

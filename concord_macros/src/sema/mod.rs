@@ -1854,6 +1854,49 @@ mod tests {
     }
 
     #[test]
+    fn behavior_doc_names_are_deduped_in_stable_order() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    behavior read {
+                        retry off
+                    }
+
+                    behavior match_read {
+                        retry off
+                    }
+
+                    defaults {
+                        behavior read
+                    }
+                }
+
+                scope users {
+                    path ["users"]
+                    behavior read
+
+                    GET Me
+                        path ["me"]
+                        behavior match_read
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("duplicate behavior across layers remains allowed");
+        let endpoint = &resolved_api.endpoints[0];
+
+        assert_eq!(
+            endpoint.behavior_doc.names,
+            vec!["read".to_string(), "match_read".to_string()]
+        );
+    }
+
+    #[test]
     fn unknown_policy_profile_fails_during_resolution() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"

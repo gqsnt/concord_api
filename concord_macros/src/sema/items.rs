@@ -509,6 +509,8 @@ fn analyze_endpoint(
         behavior_doc_names.extend(ctx.layers[lid].behavior_names.iter().cloned());
     }
     behavior_doc_names.extend(behavior_use_names(&ed.behavior_uses));
+    let mut seen_behavior_doc_names = std::collections::BTreeSet::new();
+    behavior_doc_names.retain(|name| seen_behavior_doc_names.insert(name.clone()));
     let mut scope_modules = Vec::new();
     let mut facade_param_groups = Vec::new();
     let mut prefix_pieces = Vec::new();

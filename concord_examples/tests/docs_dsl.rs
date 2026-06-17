@@ -80,6 +80,7 @@ fn dsl_docs_cover_compiled_body_mapping_and_pagination_shapes() {
         "map ",
         "paginate OffsetLimitPagination",
         "paginate CursorPagination",
+        "region?: String =",
     ] {
         assert!(
             docs.contains(snippet),
@@ -90,6 +91,17 @@ fn dsl_docs_cover_compiled_body_mapping_and_pagination_shapes() {
             "docs_dsl.rs should contain `{snippet}`"
         );
     }
+}
+
+#[test]
+fn dsl_docs_cover_behavior_extends_and_optional_defaults() {
+    let docs = dsl_docs();
+    let source = include_str!("../src/docs_dsl.rs");
+
+    assert!(docs.contains("extends"));
+    assert!(docs.contains("Some(default)"));
+    assert!(docs.contains("region?: String ="));
+    assert!(source.contains("region?: String ="));
 }
 
 #[test]

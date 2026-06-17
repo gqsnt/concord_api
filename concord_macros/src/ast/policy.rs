@@ -64,7 +64,7 @@ impl PolicyValue {
 #[derive(Debug, Clone)]
 pub struct FmtSpec {
     pub span: Span,
-    pub require_all: bool,     // fmt? => true
+    pub require_all: bool,     // all referenced optional pieces must be present
     pub pieces: Vec<FmtPiece>, // ["...", vars.x, ...]
 }
 

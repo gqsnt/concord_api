@@ -1,4 +1,4 @@
-error: default rate_limit policy is not allowed in policies block; use default { ... }
+error: default rate_limit policy is not allowed in policies block; use defaults { ... } or default { ... }
   --> tests/dsl/fail/fail_policies_rejects_default_rate_limit.rs:14:13
    |
 14 |             rate_limit app

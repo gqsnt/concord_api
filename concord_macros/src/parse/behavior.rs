@@ -69,8 +69,16 @@ fn parse_behavior_use_spec(input: ParseStream<'_>) -> Result<BehaviorUseSpec> {
         let content;
         bracketed!(content in input);
         let mut names = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
         while !content.is_empty() {
-            names.push(content.parse()?);
+            let name: Ident = content.parse()?;
+            if !seen.insert(name.to_string()) {
+                return Err(syn::Error::new(
+                    name.span(),
+                    format!("duplicate behavior `{name}` in behavior list"),
+                ));
+            }
+            names.push(name);
             let _ = content.parse::<Option<Token![,]>>()?;
         }
         if names.is_empty() {

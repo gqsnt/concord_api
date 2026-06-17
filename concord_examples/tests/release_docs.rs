@@ -15,6 +15,8 @@ fn release_docs_describe_current_grouped_config_model() {
     let mental_model = workspace_doc("docs/mental_model.md");
 
     assert!(dsl.contains("## Compatibility syntax"));
+    assert!(dsl.contains("extends"));
+    assert!(dsl.contains("Some(default)"));
     assert!(auth.contains("auth {"));
     assert!(auth.contains("For compact examples"));
     assert!(policies.contains("policies {"));

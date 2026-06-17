@@ -207,6 +207,19 @@ behaviors {
 
 This is equivalent to writing the behavior profiles directly in the client block. Flat behavior declarations still work.
 
+A behavior can extend another behavior. Parent auth uses are inherited, parent rate-limit profiles are combined, and child `retry` / `cache` override parent `retry` / `cache`.
+
+```rust
+behavior read {
+    retry read
+    rate_limit app
+}
+
+behavior protected_read extends read {
+    auth bearer session
+}
+```
+
 Behavior `rate_limit` clauses are resolved where the behavior is attached. This lets a behavior carry the rate-limit profile while the endpoint supplies a contextual key binding.
 
 ```rust
@@ -394,6 +407,15 @@ GET List(start: u64 = 0, count: u64 = 20)
 path ["items"]
 query { start, count }
 -> Json<Vec<Item>>
+```
+
+Optional arguments may also have defaults. They initialize as `Some(default)` and can still be cleared.
+
+```rust
+GET Search(region?: String = "euw1".to_string())
+path ["search"]
+query { region }
+-> Json<SearchResult>
 ```
 
 ### Bodies

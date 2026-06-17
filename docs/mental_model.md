@@ -22,6 +22,8 @@ client root
 
 For larger clients, client configuration is usually grouped into `auth { ... }`, `policies { ... }`, `behaviors { ... }`, and `defaults { ... }`. Behavior profiles give semantic names to repeated auth/cache/retry/rate-limit combinations while lowering to ordinary policy data before code generation.
 
+Behavior profiles may extend other behavior profiles; inheritance is resolved during semantic analysis before code generation.
+
 ## Planning And Execution
 
 Generated endpoint code creates a request plan. The core runtime executes that plan with fixed ordering:

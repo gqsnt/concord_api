@@ -383,7 +383,7 @@ fn parse_client_policies_group(
             if fork.peek(kw::off) {
                 return Err(syn::Error::new(
                     fork.span(),
-                    "default retry policy is not allowed in policies block; use default { ... }",
+                    "default retry policy is not allowed in policies block; use defaults { ... } or default { ... }",
                 ));
             }
             if !fork.peek(Ident) {
@@ -401,7 +401,7 @@ fn parse_client_policies_group(
             if !fork.peek(token::Brace) {
                 return Err(syn::Error::new(
                     input.span(),
-                    "default retry policy is not allowed in policies block; use default { ... }",
+                    "default retry policy is not allowed in policies block; use defaults { ... } or default { ... }",
                 ));
             }
 
@@ -419,7 +419,7 @@ fn parse_client_policies_group(
             if fork.peek(kw::off) {
                 return Err(syn::Error::new(
                     fork.span(),
-                    "default cache policy is not allowed in policies block; use default { ... }",
+                    "default cache policy is not allowed in policies block; use defaults { ... } or default { ... }",
                 ));
             }
             if !fork.peek(Ident) {
@@ -437,7 +437,7 @@ fn parse_client_policies_group(
             if !fork.peek(token::Brace) {
                 return Err(syn::Error::new(
                     input.span(),
-                    "default cache policy is not allowed in policies block; use default { ... }",
+                    "default cache policy is not allowed in policies block; use defaults { ... } or default { ... }",
                 ));
             }
 
@@ -455,7 +455,7 @@ fn parse_client_policies_group(
             if fork.peek(kw::off) || fork.peek(kw::only) {
                 return Err(syn::Error::new(
                     fork.span(),
-                    "default rate_limit policy is not allowed in policies block; use default { ... }",
+                    "default rate_limit policy is not allowed in policies block; use defaults { ... } or default { ... }",
                 ));
             }
             if !fork.peek(Ident) {
@@ -473,7 +473,7 @@ fn parse_client_policies_group(
             if !fork.peek(token::Brace) {
                 return Err(syn::Error::new(
                     input.span(),
-                    "default rate_limit policy is not allowed in policies block; use default { ... }",
+                    "default rate_limit policy is not allowed in policies block; use defaults { ... } or default { ... }",
                 ));
             }
 
