@@ -69,4 +69,5 @@ The `concord_examples` crate contains current examples for:
 - offset and cursor pagination
 - cache, retry, and rate-limit policy profiles
 - explicit endpoint requests
-- a Riot-like large API fixture
+- a compiled public DSL guide example in `concord_examples/src/docs_dsl.rs`
+- a Riot-like large API fixture in `concord_examples/src/riot.rs`
