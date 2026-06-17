@@ -60,6 +60,8 @@ let user = api.users().get_user(42).await?;
 - [Advanced Endpoints](docs/advanced_endpoints.md)
 - [Internals](docs/internals.md)
 
+Developer architecture notes live in [`dev_doc/`](dev_doc/).
+
 ## Examples
 
 The `concord_examples` crate contains current examples for:

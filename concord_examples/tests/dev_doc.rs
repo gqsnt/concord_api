@@ -1,0 +1,67 @@
+fn workspace_doc(path: &str) -> String {
+    let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("examples crate has workspace parent")
+        .to_path_buf();
+
+    std::fs::read_to_string(workspace.join(path)).expect("read workspace doc")
+}
+
+fn assert_doc(path: &str, anchors: &[&str]) {
+    let doc = workspace_doc(path);
+    for anchor in anchors {
+        assert!(doc.contains(anchor), "{path} should contain `{anchor}`");
+    }
+}
+
+#[test]
+fn dev_doc_files_exist_and_cover_architecture() {
+    assert_doc(
+        "dev_doc/README.md",
+        &["Developer documentation", "architecture.md"],
+    );
+    assert_doc(
+        "dev_doc/architecture.md",
+        &["concord_macros", "concord_core", "concord_examples"],
+    );
+    assert_doc(
+        "dev_doc/dsl_pipeline.md",
+        &["raw parser AST", "semantic model", "codegen"],
+    );
+    assert_doc(
+        "dev_doc/macro_parser.md",
+        &["auth { ... }", "policies { ... }", "response"],
+    );
+    assert_doc(
+        "dev_doc/sema.md",
+        &["client defaults", "outer scopes", "endpoint"],
+    );
+    assert_doc(
+        "dev_doc/codegen.md",
+        &["facade", "endpoints::*", "request plan"],
+    );
+    assert_doc(
+        "dev_doc/core_runtime.md",
+        &["fresh cache", "rate-limit observation", "decode"],
+    );
+    assert_doc(
+        "dev_doc/policies_and_behaviors.md",
+        &["declarations from attachments", "behavior"],
+    );
+    assert_doc(
+        "dev_doc/auth_runtime.md",
+        &["credential slots", "endpoint-backed credentials"],
+    );
+    assert_doc(
+        "dev_doc/pagination_and_codecs.md",
+        &["BodyCodec", "PaginationController"],
+    );
+    assert_doc(
+        "dev_doc/testing.md",
+        &["trybuild", "New DSL feature checklist"],
+    );
+    assert_doc(
+        "dev_doc/release_checklist.md",
+        &["cargo clippy", "cargo doc"],
+    );
+}

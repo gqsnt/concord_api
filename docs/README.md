@@ -16,3 +16,5 @@ Concord is a Rust API-tree DSL and contract compiler that generates a facade-fir
 - [Runtime Config](runtime_config.md)
 - [Advanced Endpoints](advanced_endpoints.md)
 - [Internals](internals.md)
+
+Developer architecture notes live in [`../dev_doc/`](../dev_doc/).
