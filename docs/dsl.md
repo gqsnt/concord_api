@@ -100,6 +100,8 @@ api! {
 }
 ```
 
+A compile-checked version of the guide examples lives in `concord_examples/src/docs_dsl.rs`.
+
 ### Base URL
 
 `base` declares the scheme and root domain.
