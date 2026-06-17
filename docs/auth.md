@@ -10,13 +10,17 @@ Secrets are client inputs. Credentials adapt those secrets into auth material.
 client SessionApi {
     base "https://example.com"
 
-    secret upstream_key: String
-    secret bearer_token: String
+    auth {
+        secret upstream_key: String
+        secret bearer_token: String
 
-    credential upstream = api_key(secret.upstream_key)
-    credential session = bearer(secret.bearer_token)
+        credential upstream = api_key(secret.upstream_key)
+        credential session = bearer(secret.bearer_token)
+    }
 }
 ```
+
+For compact examples, `secret` and `credential` may still be written directly in the client block. For larger clients, prefer grouping them under `auth { ... }`.
 
 ## Auth Clauses
 
@@ -37,10 +41,14 @@ An endpoint can produce a credential for later requests. Declare the credential 
 ```rust
 client SessionApi {
     base "https://example.com"
-    secret upstream_key: String
 
-    credential upstream = api_key(secret.upstream_key)
-    credential session = endpoint auth_api::LoginForSession
+    auth {
+        secret upstream_key: String
+
+        credential upstream = api_key(secret.upstream_key)
+        credential session = endpoint auth_api::LoginForSession
+    }
+
 }
 
 scope auth_api {

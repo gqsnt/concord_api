@@ -86,3 +86,27 @@ struct CacheAfterOutcome {
     response: BuiltResponse,
     needs_revalidation_refetch: bool,
 }
+
+struct AuthRejectionCtx<'a, Cx: ClientContext, T: Transport> {
+    plan: &'a RequestPlan,
+    auth_state: &'a Cx::AuthState,
+    auth_http: &'a ClientAuthHttpExecutor<'a, Cx, T>,
+    meta: &'a RequestMeta,
+    status: StatusCode,
+    headers: &'a http::HeaderMap,
+    auth_attempt: &'a crate::auth::AuthAttemptSummary,
+}
+
+#[derive(Clone, Copy)]
+struct ResponseObservationCtx<'a> {
+    endpoint: &'static str,
+    method: &'a http::Method,
+    url: &'a str,
+    url_host: Option<&'a str>,
+    attempt: u32,
+    page_index: u32,
+    idempotent: bool,
+    plan: &'a RateLimitPlan,
+    status: StatusCode,
+    headers: &'a http::HeaderMap,
+}

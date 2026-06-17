@@ -273,10 +273,10 @@ impl CacheStore for NotModifiedRevalidationCache {
         revalidation: Option<CacheRevalidation>,
     ) -> CacheFuture<'a, CacheAfter> {
         Box::pin(async move {
-            if response.status == StatusCode::NOT_MODIFIED {
-                if let Some(revalidation) = revalidation {
-                    return CacheAfter::Updated(Box::new(revalidation.cached_response));
-                }
+            if response.status == StatusCode::NOT_MODIFIED
+                && let Some(revalidation) = revalidation
+            {
+                return CacheAfter::Updated(Box::new(revalidation.cached_response));
             }
             CacheAfter::Stored
         })

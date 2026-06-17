@@ -8,32 +8,36 @@ Cache, retry, and rate-limit behavior is declared as named profiles and attached
 client PolicyApi {
     base "https://example.com"
 
-    default {
+    policies {
+        retry read {
+            max_attempts 2
+            methods [GET]
+            on [429, 500, 502, 503, 504]
+            retry_after
+        }
+
+        cache standard {
+            ttl 60s
+            revalidate
+            on_error serve_stale
+        }
+
+        rate_limit app {
+            bucket application by [host] {
+                100 / 1s
+            }
+        }
+    }
+
+    defaults {
         retry read
         cache standard
         rate_limit app
     }
-
-    retry read {
-        max_attempts 2
-        methods [GET]
-        on [429, 500, 502, 503, 504]
-        retry_after
-    }
-
-    cache standard {
-        ttl 60s
-        revalidate
-        on_error serve_stale
-    }
-
-    rate_limit app {
-        bucket application by [host] {
-            100 / 1s
-        }
-    }
 }
 ```
+
+Flat `retry`, `cache`, and `rate_limit` profile declarations remain valid. `policies { ... }` and `defaults { ... }` are the preferred grouped form for larger clients.
 
 ## Retry
 

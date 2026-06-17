@@ -20,6 +20,8 @@ client root
 - `scope` is a branch and can add host/path/auth/policy context.
 - An endpoint stanza is a leaf and describes one HTTP operation.
 
+For larger clients, client configuration is usually grouped into `auth { ... }`, `policies { ... }`, `behaviors { ... }`, and `defaults { ... }`. Behavior profiles give semantic names to repeated auth/cache/retry/rate-limit combinations while lowering to ordinary policy data before code generation.
+
 ## Planning And Execution
 
 Generated endpoint code creates a request plan. The core runtime executes that plan with fixed ordering:

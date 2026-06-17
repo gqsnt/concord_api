@@ -1,29 +1,22 @@
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn run_post_response_hook(
         &self,
-        endpoint: &'static str,
-        method: &http::Method,
-        url: &str,
-        attempt: u32,
-        page_index: u32,
-        idempotent: bool,
-        status: http::StatusCode,
-        headers: &http::HeaderMap,
+        ctx: ResponseObservationCtx<'_>,
     ) {
         let hook_meta = HookMeta {
-            endpoint,
-            method,
-            url,
-            attempt,
-            page_index,
-            idempotent,
+            endpoint: ctx.endpoint,
+            method: ctx.method,
+            url: ctx.url,
+            attempt: ctx.attempt,
+            page_index: ctx.page_index,
+            idempotent: ctx.idempotent,
         };
         self.runtime_state
             .hooks()
             .post_response(PostResponseHookContext {
                 meta: hook_meta,
-                status,
-                headers,
+                status: ctx.status,
+                headers: ctx.headers,
             })
             .await;
     }
@@ -68,35 +61,26 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     async fn observe_rate_limit_response(
         &self,
-        endpoint: &'static str,
-        method: http::Method,
-        url: String,
-        url_host: Option<String>,
-        attempt: u32,
-        page_index: u32,
-        idempotent: bool,
-        plan: crate::rate_limit::RateLimitPlan,
-        status: http::StatusCode,
-        headers: http::HeaderMap,
+        ctx: ResponseObservationCtx<'_>,
     ) -> Result<RateLimitResponseAction, ApiClientError> {
         let rate_limit_meta = RateLimitContext {
-            endpoint,
-            method: &method,
-            url: &url,
-            url_host: url_host.as_deref(),
-            attempt,
-            page_index,
-            idempotent,
-            plan: &plan,
+            endpoint: ctx.endpoint,
+            method: ctx.method,
+            url: ctx.url,
+            url_host: ctx.url_host,
+            attempt: ctx.attempt,
+            page_index: ctx.page_index,
+            idempotent: ctx.idempotent,
+            plan: ctx.plan,
         };
         self.runtime_state
             .rate_limiter()
             .on_response(RateLimitResponseContext {
                 meta: rate_limit_meta,
-                status,
-                headers: &headers,
-        })
-        .await
+                status: ctx.status,
+                headers: ctx.headers,
+            })
+            .await
     }
 
     async fn send_built_request(
@@ -146,31 +130,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         url_str: &str,
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
-        self.run_post_response_hook(
-            resp.meta.endpoint,
-            &resp.meta.method,
-            resp.url.as_str(),
-            resp.meta.attempt,
-            resp.meta.page_index,
-            resp.meta.idempotent,
-            resp.status,
-            &resp.headers,
-        )
-        .await;
-        let rate_limit_action = self
-            .observe_rate_limit_response(
-                resp.meta.endpoint,
-                resp.meta.method.clone(),
-                resp.url.as_str().to_owned(),
-                resp.url.host_str().map(ToOwned::to_owned),
-                resp.meta.attempt,
-                resp.meta.page_index,
-                resp.meta.idempotent,
-                resp.rate_limit.clone(),
-                resp.status,
-                resp.headers.clone(),
-            )
-            .await?;
+        let observe_ctx = Self::response_observation_ctx(&resp);
+        self.run_post_response_hook(observe_ctx).await;
+        let rate_limit_action = self.observe_rate_limit_response(observe_ctx).await?;
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
@@ -247,38 +209,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let has_cache_revalidation = built.cache_revalidation.is_some();
         let transport_resp = self.acquire_rate_limit_and_send(built, send_ctx).await?;
         if transport_resp.status == http::StatusCode::NOT_MODIFIED && has_cache_revalidation {
-            self.run_post_response_hook(
-                transport_resp.meta.endpoint,
-                &transport_resp.meta.method,
-                transport_resp.url.as_str(),
-                transport_resp.meta.attempt,
-                transport_resp.meta.page_index,
-                transport_resp.meta.idempotent,
-                transport_resp.status,
-                &transport_resp.headers,
-            )
-            .await;
-            let _ = self
-                .observe_rate_limit_response(
-                    transport_resp.meta.endpoint,
-                    transport_resp.meta.method.clone(),
-                    transport_resp.url.as_str().to_owned(),
-                    transport_resp.url.host_str().map(ToOwned::to_owned),
-                    transport_resp.meta.attempt,
-                    transport_resp.meta.page_index,
-                    transport_resp.meta.idempotent,
-                    transport_resp.rate_limit.clone(),
-                    transport_resp.status,
-                    transport_resp.headers.clone(),
-                )
-                .await?;
+            let observe_ctx = Self::response_observation_ctx(&transport_resp);
+            self.run_post_response_hook(observe_ctx).await;
+            let _ = self.observe_rate_limit_response(observe_ctx).await?;
             return Ok(BuiltResponse {
-                meta: transport_resp.meta.clone(),
-                url: transport_resp.url.clone(),
+                meta: transport_resp.meta,
+                url: transport_resp.url,
                 status: transport_resp.status,
-                headers: transport_resp.headers.clone(),
+                headers: transport_resp.headers,
                 body: Bytes::new(),
-                rate_limit: transport_resp.rate_limit.clone(),
+                rate_limit: transport_resp.rate_limit,
             });
         }
         self.classify_transport_response(
@@ -290,6 +230,21 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             send_ctx.error_ctx,
         )
         .await
+    }
+
+    fn response_observation_ctx(resp: &TransportResponse) -> ResponseObservationCtx<'_> {
+        ResponseObservationCtx {
+            endpoint: resp.meta.endpoint,
+            method: &resp.meta.method,
+            url: resp.url.as_str(),
+            url_host: resp.url.host_str(),
+            attempt: resp.meta.attempt,
+            page_index: resp.meta.page_index,
+            idempotent: resp.meta.idempotent,
+            plan: &resp.rate_limit,
+            status: resp.status,
+            headers: &resp.headers,
+        }
     }
 
 }

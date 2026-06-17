@@ -34,16 +34,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     async fn handle_auth_rejection(
         &self,
-        plan: &RequestPlan,
-        auth_state: &Cx::AuthState,
-        auth_http: &ClientAuthHttpExecutor<'_, Cx, T>,
-        meta: &RequestMeta,
-        status: StatusCode,
-        headers: &http::HeaderMap,
-        auth_attempt: &crate::auth::AuthAttemptSummary,
+        ctx: AuthRejectionCtx<'_, Cx, T>,
     ) -> Result<bool, ApiClientError> {
-        self.auth_retry_requested(plan, auth_state, auth_http, meta, status, headers, auth_attempt)
-            .await
+        self.auth_retry_requested(ctx).await
     }
 
     fn decide_retry(
@@ -191,13 +184,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Ok(resp) => {
                     if self
                         .handle_auth_rejection(
-                            &plan,
-                            &auth_state_snapshot,
-                            &auth_http,
-                            &resp.meta,
-                            resp.status,
-                            &resp.headers,
-                            &auth_attempt,
+                            AuthRejectionCtx {
+                                plan: &plan,
+                                auth_state: &auth_state_snapshot,
+                                auth_http: &auth_http,
+                                meta: &resp.meta,
+                                status: resp.status,
+                                headers: &resp.headers,
+                                auth_attempt: &auth_attempt,
+                            },
                         )
                         .await?
                     {
@@ -242,13 +237,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             .request_meta(base_attempt.saturating_add(attempt_index), plan.overrides.page_index);
                         if self
                             .handle_auth_rejection(
-                                &plan,
-                                &auth_state_snapshot,
-                                &auth_http,
-                                &response_meta,
-                                *status,
-                                headers.as_ref(),
-                                &auth_attempt,
+                                AuthRejectionCtx {
+                                    plan: &plan,
+                                    auth_state: &auth_state_snapshot,
+                                    auth_http: &auth_http,
+                                    meta: &response_meta,
+                                    status: *status,
+                                    headers: headers.as_ref(),
+                                    auth_attempt: &auth_attempt,
+                                },
                             )
                             .await?
                         {
@@ -340,19 +337,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(summary)
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn auth_retry_requested(
         &self,
-        plan: &RequestPlan,
-        auth_state: &Cx::AuthState,
-        executor: &dyn AuthHttpExecutor,
-        meta: &RequestMeta,
-        status: StatusCode,
-        headers: &http::HeaderMap,
-        attempt: &crate::auth::AuthAttemptSummary,
+        ctx: AuthRejectionCtx<'_, Cx, T>,
     ) -> Result<bool, ApiClientError> {
-        for applied in &attempt.applied {
-            let Some(requirement) = plan.endpoint.policy.auth.requirements.iter().find(|req| {
+        for applied in &ctx.auth_attempt.applied {
+            let Some(requirement) = ctx.plan.endpoint.policy.auth.requirements.iter().find(|req| {
                 req.credential.id == applied.credential_id && req.step_id == applied.step_id
             }) else {
                 continue;
@@ -362,17 +352,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 applied,
                 self.vars(),
                 self.auth_vars(),
-                auth_state,
-                executor,
-                meta,
-                status,
-                headers,
+                ctx.auth_state,
+                ctx.auth_http,
+                ctx.meta,
+                ctx.status,
+                ctx.headers,
             )
             .await
             .map_err(|source| ApiClientError::Auth {
                 ctx: ErrorContext {
-                    endpoint: meta.endpoint,
-                    method: meta.method.clone(),
+                    endpoint: ctx.meta.endpoint,
+                    method: ctx.meta.method.clone(),
                 },
                 source,
             })? {
@@ -381,8 +371,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 AuthDecision::Fail => {
                     return Err(ApiClientError::Auth {
                         ctx: ErrorContext {
-                            endpoint: meta.endpoint,
-                            method: meta.method.clone(),
+                            endpoint: ctx.meta.endpoint,
+                            method: ctx.meta.method.clone(),
                         },
                         source: AuthError::new(AuthErrorKind::ProviderRejected, "auth challenge rejected"),
                     });

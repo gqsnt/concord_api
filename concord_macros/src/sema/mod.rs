@@ -1163,7 +1163,7 @@ mod tests {
         assert!(bucket.key.iter().any(|key| matches!(
             key,
             RateLimitKeyResolved::EpField { name, field }
-                if name == "tenant_key" && field.to_string() == "tenant"
+                if name == "tenant_key" && *field == "tenant"
         )));
     }
 
@@ -1579,7 +1579,7 @@ mod tests {
         assert!(matches!(
             bucket.key.as_slice(),
             [RateLimitKeyResolved::EpField { name, field }]
-                if name == "match_key" && field.to_string() == "match_id"
+                if name == "match_key" && *field == "match_id"
         ));
     }
 

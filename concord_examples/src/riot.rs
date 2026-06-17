@@ -969,7 +969,7 @@ pub async fn test_riot() -> Result<(), ApiClientError> {
         .get_versions()
         .await?
         .first()
-        .map(|v| v.clone())
+        .cloned()
         .unwrap_or_default();
     let champion = ddragon
         .ddragon()

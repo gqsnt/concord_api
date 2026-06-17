@@ -453,6 +453,17 @@ Pagination remains an endpoint concern. It is not part of grouped policy or beha
 
 Generated endpoint documentation is derived from the resolved semantic model, not from raw syntax. That is why behavior names remain visible in rustdoc even though behavior semantics are lowered into ordinary auth, cache, retry, and rate-limit data.
 
+## Compatibility syntax
+
+The grouped form is preferred for larger clients, but the flat form remains valid:
+
+- `secret` and `credential` may be written directly in `client`
+- `retry`, `cache`, and `rate_limit` profile declarations may be written directly in `client`
+- `behavior` profiles may be written directly in `client`
+- `default { ... }` remains valid beside the preferred `defaults { ... }`
+
+Use grouped config when the client has enough policy/auth/behavior declarations that structure improves readability.
+
 ## Design rules
 
 - Keep endpoint leaves readable.
