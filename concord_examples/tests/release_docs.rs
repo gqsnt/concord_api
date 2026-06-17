@@ -23,6 +23,8 @@ fn release_docs_describe_current_grouped_config_model() {
     assert!(policies.contains("defaults {"));
     assert!(policies.contains("Flat `retry`, `cache`, and `rate_limit`"));
     assert!(mental_model.contains("behaviors {") || mental_model.contains("Behavior profiles"));
+    assert!(dsl.contains("## Keyword reference"));
+    assert!(dsl.contains("## Unsupported or reserved syntax"));
 }
 
 #[test]
@@ -30,4 +32,5 @@ fn examples_binary_mentions_compiled_public_dsl_guide() {
     let main_rs = include_str!("../src/main.rs");
 
     assert!(main_rs.contains("docs_dsl"));
+    assert!(main_rs.contains("docs_advanced_dsl"));
 }

@@ -7,7 +7,7 @@ Concord is a Rust API-tree DSL and contract compiler that generates a facade-fir
 - [Quick Start](quick_start.md)
 - [Mental Model](mental_model.md)
 - [Design Invariants](design_invariants.md)
-- [DSL](dsl.md)
+- [DSL](dsl.md) - complete public DSL reference
 - [Generated Client](generated_client.md)
 - [Auth](auth.md)
 - [Pagination](pagination.md)

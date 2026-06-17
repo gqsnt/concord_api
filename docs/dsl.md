@@ -100,7 +100,7 @@ api! {
 }
 ```
 
-A compile-checked version of the guide examples lives in `concord_examples/src/docs_dsl.rs`.
+A compile-checked version of the guide examples lives in `concord_examples/src/docs_dsl.rs`. Less common public syntax is compile-checked in `concord_examples/src/docs_advanced_dsl.rs`.
 
 ### Base URL
 
@@ -290,6 +290,8 @@ scope tenant(tenant_id: String) {
 }
 ```
 
+`host [...]` is a scope-level route fragment. Use a scope when a group of endpoints needs dynamic or additional host labels.
+
 Path atoms are encoded segment-by-segment. Split fixed path pieces into separate string atoms.
 
 ### Formatting with `fmt`
@@ -475,6 +477,314 @@ Pagination remains an endpoint concern. It is not part of grouped policy or beha
 
 Generated endpoint documentation is derived from the resolved semantic model, not from raw syntax. That is why behavior names remain visible in rustdoc even though behavior semantics are lowered into ordinary auth, cache, retry, and rate-limit data.
 
+## Keyword reference
+
+This section is the compact v1 reference for public DSL syntax. Focused guides such as `docs/auth.md`, `docs/cache_retry_rate_limit.md`, `docs/pagination.md`, and `docs/customization.md` expand on these forms.
+
+### Tree and routing
+
+- `api! { ... }` wraps one API tree.
+- `client Name { ... }` declares the generated client root.
+- `base "https://api.example.com"` declares the scheme and root domain.
+- `scope name(args...) { ... }` groups route fragments and inherited attachments.
+- `host [...]` appends scope-level host labels before the base domain.
+- `path [...]` appends encoded path segments.
+- Endpoint methods use HTTP method identifiers such as `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, and `OPTIONS`.
+
+`host` is scope-level v1 syntax. `host` and `path` atoms may be string literals, variables, or `fmt[...]` atoms.
+
+### Client configuration
+
+Preferred large-client grouping:
+
+- `auth { ... }` contains `secret` and `credential` declarations.
+- `policies { ... }` contains `retry`, `cache`, and `rate_limit` profile declarations plus `observe rate_limit`.
+- `behaviors { ... }` contains `behavior` declarations.
+- `defaults { ... }` contains client-wide attachments.
+
+Compatibility forms remain valid:
+
+- `secret`, `credential`, `retry`, `cache`, `rate_limit`, and `behavior` declarations may be written directly in `client`.
+- `default { ... }` is accepted as an alias for `defaults { ... }`.
+
+### Variables and arguments
+
+- `var name: Type` declares a client variable available as `vars.name`.
+- `secret name: Type` declares a redacted client input available to credential declarations as `secret.name`.
+- Scope and endpoint arguments are written in the signature: `scope users(region: String)` or `GET User(id: u64)`.
+- Optional arguments use `?`, for example `cursor?: String`.
+- Defaulted arguments use `=`, for example `count: u64 = 20`.
+- Optional defaulted arguments are supported, for example `region?: String = "euw1".to_string()`.
+- Request bodies are endpoint arguments named `body`, for example `POST Create(body: Json<CreateItem>)`.
+
+### Auth
+
+Credential declarations:
+
+```rust
+auth {
+    secret token: String
+    secret username: String
+    secret password: String
+    secret client_id: String
+    secret client_secret: String
+
+    credential api = api_key(secret.token)
+    credential session = bearer(secret.token)
+    credential login = basic(secret.username, secret.password)
+    credential oauth = oauth2_client {
+        token_url: "https://auth.example.com/oauth/token",
+        client_id: secret.client_id,
+        client_secret: secret.client_secret,
+        scope: "read",
+    }
+    credential acquired = endpoint auth_api::Login
+}
+```
+
+Auth attachments:
+
+```rust
+auth bearer session
+auth header "X-Api-Key" = api
+auth query "api_key" = api
+auth basic login
+auth certificate client_cert
+```
+
+`auth certificate` is an attachment form for client-certificate credential material. The DSL does not provide a `certificate(secret...)` constructor in v1; use endpoint-backed or runtime-provided credential material when certificate auth is needed.
+
+### Retry
+
+Retry profiles may be declared flat or inside `policies { ... }`.
+
+```rust
+retry write {
+    max_attempts 3
+    methods [POST, PUT]
+    on [409, 429, 500]
+    on transport [Timeout, Connect]
+    retry_after
+    idempotency header "Idempotency-Key"
+}
+```
+
+Supported retry fields:
+
+- `max_attempts N`
+- `methods [GET, POST, ...]`
+- `on [429, 500, ...]`
+- `on transport [Timeout, Connect, Tls, Dns, Io, Request, Other]`
+- `retry_after`
+- `idempotency header "Header-Name"`
+
+Attachments:
+
+```rust
+retry read
+retry off
+retry {
+    max_attempts 1
+}
+```
+
+Retry profiles may use `extends parent`.
+
+### Cache
+
+Cache profiles may be declared flat or inside `policies { ... }`.
+
+```rust
+cache standard {
+    http
+    ttl 60s
+    revalidate
+    on_error serve_stale
+}
+```
+
+Supported cache profile fields:
+
+- `http`
+- `ttl 60s`, `ttl 1m`, or spelled duration units such as `ttl 1 minute`
+- `revalidate`
+- `on_error ignore`
+- `on_error serve_stale`
+
+Attachments and shorthand forms:
+
+```rust
+cache standard
+cache only standard
+cache off
+cache http
+cache 5m
+cache revalidate
+cache stale_on_error
+```
+
+`cache stale_on_error` is shorthand for a local patch whose `on_error` behavior serves stale data. Cache profiles may use `extends parent`.
+
+### Rate limit
+
+Rate-limit profiles may be declared flat or inside `policies { ... }`.
+
+```rust
+rate_limit tenant {
+    bucket method by [host, endpoint, method, "tenant", tenant_key] {
+        cost 2
+        10 / 1s
+    }
+}
+```
+
+Supported rate-limit keys:
+
+- `host`
+- `endpoint`
+- `method`
+- named keys from `rate_limit key name = arg`
+- static string key atoms such as `"tenant"`
+
+Buckets support `cost N` and shorthand windows such as `10 / 1s` or `100 / 1m`.
+
+Attachments:
+
+```rust
+rate_limit app
+rate_limit [app, method]
+rate_limit only app
+rate_limit off
+rate_limit {
+    bucket endpoint by [endpoint] {
+        5 / 1s
+    }
+}
+```
+
+`rate_limit [a, b]` lists must contain at least one profile and cannot contain a duplicate name within the same list. Reusing a rate-limit profile across separate defaults, scopes, endpoints, or behaviors remains valid.
+
+Contextual key bindings are declared where the variables are visible:
+
+```rust
+rate_limit key tenant_key = tenant_id
+```
+
+Observers are client policy declarations:
+
+```rust
+observe rate_limit ProviderRateLimitHeaders
+```
+
+Rate-limit profiles may use `extends parent`.
+
+### Behaviors
+
+Behavior declarations may be flat or grouped:
+
+```rust
+behaviors {
+    behavior protected_read extends read {
+        auth bearer session
+        cache standard
+        retry read
+        rate_limit [app, method]
+    }
+}
+```
+
+Behavior bodies support only `auth`, `cache`, `retry`, and `rate_limit`. Behavior use syntax:
+
+```rust
+behavior protected_read
+behavior [read, protected_read]
+```
+
+Behavior lists must contain at least one behavior and cannot contain a duplicate name within the same list. Reusing a behavior across separate defaults, scopes, or endpoints remains valid.
+
+### Request policy clauses
+
+`query` and `headers` blocks can appear in clients, scopes, and endpoints.
+
+```rust
+query {
+    count
+    "startTime" = start_time
+    "tag" += primary_tag
+    -"debug"
+}
+
+headers {
+    "User-Agent" = "ExampleApi/1.0"
+    "X-Trace" = fmt["trace-", trace_id]
+    -"X-Debug"
+}
+```
+
+Inline forms are also supported:
+
+```rust
+query "tenant" = tenant_id
+query "tag" += tag
+query "debug" -
+header "X-Request-Id" = request_id
+header "X-Debug" -
+```
+
+Query shorthand uses the Rust argument name as both key and value. Optional query values remove the key when absent. `+=` is query-only; headers support set and remove, not append.
+
+`fmt[...]` builds one wire atom from literals and variables. Optional pieces inside `fmt[...]` require all referenced optional values to be present.
+
+```rust
+path [fmt["org-", org_id]]
+query { "range" = fmt[start, "-", count] }
+headers { "X-Trace" = fmt["trace-", trace_id] }
+```
+
+`timeout` can be attached at a scope or endpoint.
+
+```rust
+timeout: std::time::Duration::from_secs(5)
+```
+
+### Endpoint clauses
+
+Endpoint leaves support:
+
+- `as alias`
+- `path [...]`
+- `query { ... }` or inline `query ...`
+- `headers { ... }` or inline `header ...`
+- `timeout: expr`
+- `rate_limit key name = arg`
+- `paginate Controller { ... }`
+- `behavior ...`
+- `auth ...`
+- `retry ...`
+- `cache ...`
+- `rate_limit ...`
+- `-> Codec<T>`
+- `map Type { expr }` after the response line
+
+The response line closes the normal endpoint contract. `map` is the documented exception because it transforms the decoded response into credential or facade output material.
+
+### Pagination
+
+Built-in controllers:
+
+- `OffsetLimitPagination`
+- `CursorPagination`
+
+Custom controllers are Rust type paths implementing the pagination traits.
+
+```rust
+paginate custom::HeaderCursorPagination {
+    cursor = cursor
+}
+```
+
+Response page types can implement `PageItems`; cursor page types also implement `HasNextCursor`.
+
 ## Compatibility syntax
 
 The grouped form is preferred for larger clients, but the flat form remains valid:
@@ -485,6 +795,19 @@ The grouped form is preferred for larger clients, but the flat form remains vali
 - `default { ... }` remains valid beside the preferred `defaults { ... }`
 
 Use grouped config when the client has enough policy/auth/behavior declarations that structure improves readability.
+
+## Unsupported or reserved syntax
+
+- There is no `body ...` endpoint clause. Request bodies are endpoint signature arguments named `body`.
+- `params { ... }` blocks are not supported; scope parameters are declared in `scope name(...)`.
+- `prefix` is not public v1 syntax.
+- `part[...]` is not public syntax; use `fmt[...]`.
+- `auth none`, `auth any`, and `auth all` are reserved and rejected.
+- `behaviors { ... }` accepts only `behavior` declarations.
+- `auth { ... }` accepts only `secret` and `credential` declarations.
+- `policies { ... }` accepts policy/profile declarations and `observe`; default attachments belong in `defaults { ... }` or `default { ... }`.
+- Cache sizing keywords `capacity`, `entries`, `bytes`, `kb`, `kib`, `mb`, `mib`, `gb`, `gib`, `max_body`, and `shared` are reserved for future cache configuration and are not public v1 cache fields.
+- `profile` and `access_token` are reserved/internal keywords, not standalone public DSL clauses.
 
 ## Design rules
 

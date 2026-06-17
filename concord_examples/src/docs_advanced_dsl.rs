@@ -1,0 +1,100 @@
+use concord_core::prelude::*;
+use concord_macros::api;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdvancedUser {
+    pub id: u64,
+}
+
+#[derive(Default)]
+pub struct AdvancedRateLimitHeaders;
+
+impl RateLimitObserver for AdvancedRateLimitHeaders {
+    fn observe(&self, ctx: RateLimitResponseContext<'_>) -> RateLimitObservation {
+        ctx.on_429()
+            .scope_header("x-rate-limit-scope")
+            .retry_after()
+    }
+}
+
+api! {
+    client DocsAdvancedDslApi {
+        base "https://api.example.com"
+
+        auth {
+            secret username: String
+            secret password: String
+            secret client_id: String
+            secret client_secret: String
+
+            credential basic_login = basic(secret.username, secret.password)
+            credential oauth_session = oauth2_client {
+                token_url: "https://auth.example.com/oauth/token",
+                client_id: secret.client_id,
+                client_secret: secret.client_secret,
+                scope: "read:users",
+            }
+        }
+
+        policies {
+            retry write {
+                max_attempts 3
+                methods [POST, PUT]
+                on [409, 429, 500]
+                on transport [Timeout, Connect]
+                retry_after
+                idempotency header "Idempotency-Key"
+            }
+
+            cache short {
+                http
+                ttl 30s
+                revalidate
+                on_error ignore
+            }
+
+            rate_limit tenant {
+                bucket method by [host, endpoint, method, "tenant", tenant_key] {
+                    cost 2
+                    10 / 1s
+                }
+            }
+
+            observe rate_limit AdvancedRateLimitHeaders
+        }
+
+        behaviors {
+            behavior basic_write {
+                auth basic basic_login
+                retry write
+                cache short
+            }
+
+            behavior tenant_read {
+                auth bearer oauth_session
+                rate_limit tenant
+            }
+        }
+
+    }
+
+    scope tenants(tenant_id: String) {
+        path ["tenants", tenant_id]
+        rate_limit key tenant_key = tenant_id
+
+        GET ListUsers(request_id: String)
+        path ["users"]
+        header "X-Request-Id" = request_id,
+        query "tenant" = tenant_id,
+        cache stale_on_error
+        rate_limit only tenant
+        behavior tenant_read
+        -> Json<Vec<AdvancedUser>>
+
+        POST CreateUser(body: Json<AdvancedUser>)
+        path ["users"]
+        behavior basic_write
+        -> Json<AdvancedUser>
+    }
+}

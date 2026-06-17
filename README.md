@@ -51,7 +51,7 @@ let user = api.users().get_user(42).await?;
 
 - [Quick Start](docs/quick_start.md)
 - [Mental Model](docs/mental_model.md)
-- [DSL](docs/dsl.md)
+- [DSL](docs/dsl.md) - complete public DSL reference
 - [Generated Client](docs/generated_client.md)
 - [Auth](docs/auth.md)
 - [Pagination](docs/pagination.md)
@@ -70,4 +70,5 @@ The `concord_examples` crate contains current examples for:
 - cache, retry, and rate-limit policy profiles
 - explicit endpoint requests
 - a compiled public DSL guide example in `concord_examples/src/docs_dsl.rs`
+- compiled advanced DSL syntax examples in `concord_examples/src/docs_advanced_dsl.rs`
 - a Riot-like large API fixture in `concord_examples/src/riot.rs`

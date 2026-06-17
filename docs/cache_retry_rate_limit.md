@@ -48,9 +48,13 @@ retry read {
     max_attempts 2
     methods [GET]
     on [429, 500]
+    on transport [Timeout, Connect]
     retry_after
+    idempotency header "Idempotency-Key"
 }
 ```
+
+Supported transport retry kinds are `Timeout`, `Connect`, `Tls`, `Dns`, `Io`, `Request`, and `Other`.
 
 ## Cache
 
@@ -58,6 +62,7 @@ A cache profile can set a TTL, request revalidation, and allow stale fallback af
 
 ```rust
 cache standard {
+    http
     ttl 60s
     revalidate
     on_error serve_stale
@@ -66,13 +71,30 @@ cache standard {
 
 A fresh cache hit returns before rate-limit acquisition and transport. Stale fallback is considered only after retry declines or the retry budget is exhausted.
 
+Local cache attachments can use profile names, `only`, `off`, or shorthand patches.
+
+```rust
+cache standard
+cache only standard
+cache off
+cache http
+cache 5m
+cache revalidate
+cache stale_on_error
+```
+
+`on_error ignore` disables stale fallback for that cache policy. `on_error serve_stale` enables stale fallback after retry is exhausted. The `cache stale_on_error` attachment is shorthand for serving stale data on error.
+
+Cache sizing keywords such as `capacity`, `entries`, `bytes`, `kb`, `kib`, `mb`, `mib`, `gb`, `gib`, `max_body`, and `shared` are reserved for future cache configuration and are not public v1 cache fields.
+
 ## Rate Limit
 
 Rate-limit profiles define buckets and keys.
 
 ```rust
 rate_limit app {
-    bucket application by [host] {
+    bucket application by [host, endpoint, method, "static"] {
+        cost 1
         100 / 1s
     }
 }
@@ -103,6 +125,31 @@ impl RateLimitObserver for ProviderRateLimitHeaders {
 ```rust
 observe rate_limit ProviderRateLimitHeaders
 ```
+
+Named rate-limit keys are bound where their source variables are visible.
+
+```rust
+rate_limit tenant_bucket {
+    bucket method by [tenant_key] {
+        5 / 1s
+    }
+}
+
+scope tenants(tenant_id: String) {
+    path ["tenants", tenant_id]
+    rate_limit key tenant_key = tenant_id
+}
+```
+
+Narrower layers can add profiles, replace with `only`, or clear with `off`.
+
+```rust
+rate_limit [app, tenant_bucket]
+rate_limit only tenant_bucket
+rate_limit off
+```
+
+`rate_limit [...]` lists must not be empty and must not contain a duplicate profile name within the same list. Reusing a profile across separate defaults, scopes, endpoints, or behaviors remains valid.
 
 ## Overrides
 

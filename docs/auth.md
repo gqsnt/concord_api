@@ -13,14 +13,27 @@ client SessionApi {
     auth {
         secret upstream_key: String
         secret bearer_token: String
+        secret username: String
+        secret password: String
+        secret client_id: String
+        secret client_secret: String
 
         credential upstream = api_key(secret.upstream_key)
         credential session = bearer(secret.bearer_token)
+        credential login = basic(secret.username, secret.password)
+        credential oauth = oauth2_client {
+            token_url: "https://auth.example.com/oauth/token",
+            client_id: secret.client_id,
+            client_secret: secret.client_secret,
+            scope: "read",
+        }
     }
 }
 ```
 
 For compact examples, `secret` and `credential` may still be written directly in the client block. For larger clients, prefer grouping them under `auth { ... }`.
+
+See `docs/dsl.md` for the complete public DSL reference.
 
 ## Auth Clauses
 
@@ -30,9 +43,33 @@ Attach credentials at the client, scope, or endpoint layer.
 auth header "X-Upstream-Key" = upstream
 auth query "api_key" = upstream
 auth bearer session
+auth basic login
+auth certificate client_cert
 ```
 
 Inherited auth applies to every endpoint below the layer where it is declared.
+
+`auth certificate` is an advanced attachment form for client-certificate credential material. The DSL does not provide a `certificate(secret...)` credential constructor in v1; use endpoint-backed or runtime-provided credential material when certificate auth is needed.
+
+OAuth2 client-credentials auth uses the `oauth2_client { ... }` credential declaration and is normally attached as bearer auth.
+
+```rust
+auth {
+    secret client_id: String
+    secret client_secret: String
+
+    credential oauth = oauth2_client {
+        token_url: "https://auth.example.com/oauth/token",
+        client_id: secret.client_id,
+        client_secret: secret.client_secret,
+        scope: "read:users",
+    }
+}
+
+defaults {
+    auth bearer oauth
+}
+```
 
 ## Endpoint-Backed Credentials
 
