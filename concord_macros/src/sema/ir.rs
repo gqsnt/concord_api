@@ -195,6 +195,9 @@ pub struct CacheConfigResolved {
     pub default_ttl_secs: Option<u64>,
     pub revalidate: Option<bool>,
     pub failure_mode: Option<CacheFailureModeResolved>,
+    pub capacity_entries: Option<u64>,
+    pub max_body_bytes: Option<usize>,
+    pub shared: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -203,6 +206,9 @@ pub struct CacheConfigPatchResolved {
     pub default_ttl_secs: Option<u64>,
     pub revalidate: Option<bool>,
     pub failure_mode: Option<CacheFailureModeResolved>,
+    pub capacity_entries: Option<u64>,
+    pub max_body_bytes: Option<usize>,
+    pub shared: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy)]

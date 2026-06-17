@@ -1,0 +1,5 @@
+error: expected cache size unit after max_body; expected bytes, kb, kib, mb, mib, gb, or gib
+ --> tests/dsl/fail/fail_cache_max_body_missing_unit.rs:8:22
+  |
+8 |             max_body 10
+  |                      ^^

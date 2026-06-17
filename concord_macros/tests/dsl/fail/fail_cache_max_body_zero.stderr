@@ -1,0 +1,5 @@
+error: cache max_body must be greater than zero
+ --> tests/dsl/fail/fail_cache_max_body_zero.rs:8:22
+  |
+8 |             max_body 0 bytes
+  |                      ^

@@ -15,7 +15,7 @@ Attachments apply those profiles through `defaults { ... }`, scopes, or endpoint
 
 Retry profiles describe retry attempts, methods, status codes, transport errors, retry-after behavior, and idempotency header behavior.
 
-Cache profiles describe HTTP cache mode, TTL, revalidation, and stale-on-error behavior.
+Cache profiles describe HTTP cache mode, TTL, revalidation, stale-on-error behavior, and runtime-backed sizing fields: capacity entries, max body bytes, and shared cache mode.
 
 Rate-limit profiles describe bucket sets, keys, costs, and windows. Rate-limit observers translate response headers into runtime observations.
 

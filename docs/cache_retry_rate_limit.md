@@ -20,6 +20,9 @@ client PolicyApi {
             ttl 60s
             revalidate
             on_error serve_stale
+            capacity 10_000 entries
+            max_body 2 mib
+            shared
         }
 
         rate_limit app {
@@ -66,6 +69,9 @@ cache standard {
     ttl 60s
     revalidate
     on_error serve_stale
+    capacity 10_000 entries
+    max_body 2 mib
+    shared
 }
 ```
 
@@ -81,11 +87,30 @@ cache http
 cache 5m
 cache revalidate
 cache stale_on_error
+cache {
+    max_body 128 kib
+}
 ```
 
 `on_error ignore` disables stale fallback for that cache policy. `on_error serve_stale` enables stale fallback after retry is exhausted. The `cache stale_on_error` attachment is shorthand for serving stale data on error.
 
-Cache sizing keywords such as `capacity`, `entries`, `bytes`, `kb`, `kib`, `mb`, `mib`, `gb`, `gib`, `max_body`, and `shared` are reserved for future cache configuration and are not public v1 cache fields.
+Cache sizing fields are public v1 syntax and map to runtime-backed cache configuration.
+
+```rust
+cache standard {
+    capacity 10_000 entries
+    max_body 512 kib
+    shared
+}
+```
+
+- `capacity N entries` limits the maximum number of cache entries.
+- `max_body N bytes|kb|kib|mb|mib|gb|gib` limits the cached response body size.
+- `shared` enables shared cache mode.
+
+Decimal units are `kb`, `mb`, and `gb`; binary units are `kib`, `mib`, and `gib`. `bytes` uses a multiplier of 1.
+
+Child cache profiles override only the sizing fields they set. Local `cache { ... }` patches change only the provided fields and preserve inherited cache config.
 
 ## Rate Limit
 

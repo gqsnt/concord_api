@@ -1,0 +1,5 @@
+error: duplicate cache shared mode
+ --> tests/dsl/fail/fail_cache_shared_duplicate.rs:9:13
+  |
+9 |             shared
+  |             ^^^^^^

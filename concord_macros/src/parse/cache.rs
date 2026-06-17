@@ -138,16 +138,106 @@ fn parse_cache_patch_body(input: ParseStream<'_>) -> Result<CachePatch> {
                     "expected `ignore` or `serve_stale` after `on_error`",
                 ));
             });
+        } else if input.peek(kw::capacity) {
+            if patch.capacity.is_some() {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "duplicate cache capacity",
+                ));
+            }
+            input.parse::<kw::capacity>()?;
+            let amount: LitInt = input.parse()?;
+            let unit = parse_cache_capacity_unit(input, &amount)?;
+            patch.capacity = Some(CacheCapacitySpec { amount, unit });
+        } else if input.peek(kw::max_body) {
+            if patch.max_body.is_some() {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "duplicate cache max_body",
+                ));
+            }
+            input.parse::<kw::max_body>()?;
+            let amount: LitInt = input.parse()?;
+            let unit = parse_cache_size_unit(input, &amount)?;
+            patch.max_body = Some(CacheSizeSpec { amount, unit });
+        } else if input.peek(kw::shared) {
+            if patch.shared.is_some() {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "duplicate cache shared mode",
+                ));
+            }
+            let token = input.parse::<kw::shared>()?;
+            patch.shared = Some(token.span);
         } else {
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "unexpected token in cache policy block; cache policy blocks support only `http`, `ttl`, `revalidate`, `stale_on_error`, and `on_error`",
+                "unexpected token in cache policy block; cache policy blocks support only `http`, `ttl`, `revalidate`, `stale_on_error`, `on_error`, `capacity`, `max_body`, and `shared`",
             ));
         }
         let _ = input.parse::<Option<Token![,]>>()?;
     }
     Ok(patch)
+}
+
+fn parse_cache_capacity_unit(
+    input: ParseStream<'_>,
+    amount: &LitInt,
+) -> Result<CacheCapacityUnit> {
+    if input.is_empty() {
+        return Err(syn::Error::new(
+            amount.span(),
+            "expected `entries` after cache capacity amount",
+        ));
+    }
+    if input.peek(kw::entries) {
+        input.parse::<kw::entries>()?;
+        Ok(CacheCapacityUnit::Entries)
+    } else {
+        let tt: TokenTree = input.parse()?;
+        Err(syn::Error::new(
+            tt.span(),
+            "expected `entries` after cache capacity amount",
+        ))
+    }
+}
+
+fn parse_cache_size_unit(input: ParseStream<'_>, amount: &LitInt) -> Result<CacheSizeUnit> {
+    if input.is_empty() {
+        return Err(syn::Error::new(
+            amount.span(),
+            "expected cache size unit after max_body; expected bytes, kb, kib, mb, mib, gb, or gib",
+        ));
+    }
+    if input.peek(kw::bytes) {
+        input.parse::<kw::bytes>()?;
+        Ok(CacheSizeUnit::Bytes)
+    } else if input.peek(kw::kb) {
+        input.parse::<kw::kb>()?;
+        Ok(CacheSizeUnit::Kb)
+    } else if input.peek(kw::kib) {
+        input.parse::<kw::kib>()?;
+        Ok(CacheSizeUnit::Kib)
+    } else if input.peek(kw::mb) {
+        input.parse::<kw::mb>()?;
+        Ok(CacheSizeUnit::Mb)
+    } else if input.peek(kw::mib) {
+        input.parse::<kw::mib>()?;
+        Ok(CacheSizeUnit::Mib)
+    } else if input.peek(kw::gb) {
+        input.parse::<kw::gb>()?;
+        Ok(CacheSizeUnit::Gb)
+    } else if input.peek(kw::gib) {
+        input.parse::<kw::gib>()?;
+        Ok(CacheSizeUnit::Gib)
+    } else {
+        let tt: TokenTree = input.parse()?;
+        Err(syn::Error::new(
+            tt.span(),
+            "expected cache size unit after max_body; expected bytes, kb, kib, mb, mib, gb, or gib",
+        ))
+    }
 }
 
 fn parse_rate_limit_duration_unit_from_lit_or_stream(

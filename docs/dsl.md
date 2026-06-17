@@ -600,6 +600,9 @@ cache standard {
     ttl 60s
     revalidate
     on_error serve_stale
+    capacity 10_000 entries
+    max_body 2 mib
+    shared
 }
 ```
 
@@ -610,6 +613,9 @@ Supported cache profile fields:
 - `revalidate`
 - `on_error ignore`
 - `on_error serve_stale`
+- `capacity N entries`
+- `max_body N bytes|kb|kib|mb|mib|gb|gib`
+- `shared`
 
 Attachments and shorthand forms:
 
@@ -621,9 +627,30 @@ cache http
 cache 5m
 cache revalidate
 cache stale_on_error
+cache {
+    max_body 128 kib
+}
 ```
 
 `cache stale_on_error` is shorthand for a local patch whose `on_error` behavior serves stale data. Cache profiles may use `extends parent`.
+
+Cache sizing fields are runtime-backed:
+
+- `capacity N entries` limits the maximum number of cache entries.
+- `max_body N unit` limits the cached response body size.
+- `shared` enables shared cache mode.
+
+Size units are decimal for `kb`, `mb`, and `gb`, and binary for `kib`, `mib`, and `gib`:
+
+- `bytes = 1`
+- `kb = 1_000`
+- `kib = 1_024`
+- `mb = 1_000_000`
+- `mib = 1_048_576`
+- `gb = 1_000_000_000`
+- `gib = 1_073_741_824`
+
+Child cache profiles override sizing fields they set and inherit fields they omit. Local cache patches change only the provided fields.
 
 ### Rate limit
 
@@ -806,7 +833,6 @@ Use grouped config when the client has enough policy/auth/behavior declarations 
 - `behaviors { ... }` accepts only `behavior` declarations.
 - `auth { ... }` accepts only `secret` and `credential` declarations.
 - `policies { ... }` accepts policy/profile declarations and `observe`; default attachments belong in `defaults { ... }` or `default { ... }`.
-- Cache sizing keywords `capacity`, `entries`, `bytes`, `kb`, `kib`, `mb`, `mib`, `gb`, `gib`, `max_body`, and `shared` are reserved for future cache configuration and are not public v1 cache fields.
 - `profile` and `access_token` are reserved/internal keywords, not standalone public DSL clauses.
 
 ## Design rules

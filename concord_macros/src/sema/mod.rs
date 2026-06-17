@@ -7,11 +7,12 @@
 
 use crate::ast::{
     AuthCredentialKind, AuthCredentials, AuthUseKind, BehaviorProfileDef, BehaviorProfilesBlock,
-    BehaviorUseSpec, CacheDurationSpec, CacheOnErrorSpec, CachePatch, CacheProfilesBlock,
-    CacheSpec, CodecSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec, PolicyBlock, PolicyBlocks,
-    PolicyStmt, PolicyValue, RateLimitDurationUnit, RateLimitKeyBindingSpec, RateLimitKeySpec,
-    RateLimitPlanSpec, RateLimitProfilesBlock, RateLimitSpec, RefScope, RetryIdempotencySpec,
-    RetryPatch, RetryProfilesBlock, RetrySpec, RouteAtom, SecretRef,
+    BehaviorUseSpec, CacheCapacitySpec, CacheCapacityUnit, CacheDurationSpec, CacheOnErrorSpec,
+    CachePatch, CacheProfilesBlock, CacheSizeSpec, CacheSizeUnit, CacheSpec, CodecSpec, FmtPiece,
+    FmtSpec, KeySpec, PaginateSpec, PolicyBlock, PolicyBlocks, PolicyStmt, PolicyValue,
+    RateLimitDurationUnit, RateLimitKeyBindingSpec, RateLimitKeySpec, RateLimitPlanSpec,
+    RateLimitProfilesBlock, RateLimitSpec, RefScope, RetryIdempotencySpec, RetryPatch,
+    RetryProfilesBlock, RetrySpec, RouteAtom, SecretRef,
 };
 use crate::emit_helpers;
 use crate::model::*;
@@ -1109,6 +1110,179 @@ mod tests {
             root_bucket_names,
             vec!["app_0".to_string(), "users_0".to_string()]
         );
+    }
+
+    #[test]
+    fn cache_sizing_fields_resolve_and_inherit() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    cache base {
+                        http
+                        ttl 30s
+                        revalidate
+                        on_error serve_stale
+                        capacity 10_000 entries
+                        max_body 2 mib
+                        shared
+                    }
+
+                    cache child extends base {
+                        capacity 1_000 entries
+                        max_body 512 kib
+                    }
+
+                    defaults {
+                        cache child
+                    }
+                }
+
+                GET Ping
+                path ["ping"]
+                -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
+            panic!("expected client cache");
+        };
+        assert!(client_cache.http);
+        assert_eq!(client_cache.default_ttl_secs, Some(30));
+        assert_eq!(client_cache.revalidate, Some(true));
+        assert!(matches!(
+            client_cache.failure_mode,
+            Some(CacheFailureModeResolved::ServeStaleOnError)
+        ));
+        assert_eq!(client_cache.capacity_entries, Some(1_000));
+        assert_eq!(client_cache.max_body_bytes, Some(512 * 1_024));
+        assert_eq!(client_cache.shared, Some(true));
+    }
+
+    #[test]
+    fn cache_max_body_units_resolve_to_bytes() {
+        for (unit, expected) in [
+            ("kb", 2_000usize),
+            ("kib", 2_048usize),
+            ("mb", 2_000_000usize),
+            ("mib", 2_097_152usize),
+        ] {
+            let source = format!(
+                r#"
+                api! {{
+                    client Api {{
+                        base "https://example.com"
+
+                        cache standard {{
+                            max_body 2 {unit}
+                        }}
+
+                        defaults {{
+                            cache standard
+                        }}
+                    }}
+
+                    GET Ping
+                    path ["ping"]
+                    -> Json<()>
+                }}
+                "#
+            );
+            let ast: crate::ast::RawApi = syn::parse_str(&source).expect("valid api syntax");
+            let resolved_api = analyze(ast).expect("analysis succeeds");
+            let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
+                panic!("expected client cache");
+            };
+            assert_eq!(client_cache.max_body_bytes, Some(expected), "unit {unit}");
+        }
+    }
+
+    #[test]
+    fn local_cache_patch_preserves_inherited_sizing_and_updates_specified_fields() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    cache standard {
+                        capacity 10_000 entries
+                        max_body 2 mib
+                        shared
+                    }
+
+                    defaults {
+                        cache standard
+                    }
+                }
+
+                GET Ping
+                path ["ping"]
+                cache {
+                    max_body 128 kib
+                }
+                -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
+            panic!("expected client cache");
+        };
+        assert_eq!(client_cache.capacity_entries, Some(10_000));
+        assert_eq!(client_cache.max_body_bytes, Some(2 * 1_048_576));
+        assert_eq!(client_cache.shared, Some(true));
+
+        let Some(CacheResolved::Patch(endpoint_patch)) =
+            &resolved_api.endpoints[0].policy.endpoint.cache
+        else {
+            panic!("expected endpoint cache patch");
+        };
+        assert_eq!(endpoint_patch.capacity_entries, None);
+        assert_eq!(endpoint_patch.max_body_bytes, Some(128 * 1_024));
+        assert_eq!(endpoint_patch.shared, None);
+    }
+
+    #[test]
+    fn cache_off_still_clears_inherited_sizing_config() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    cache standard {
+                        capacity 10_000 entries
+                        max_body 2 mib
+                        shared
+                    }
+
+                    defaults {
+                        cache standard
+                    }
+                }
+
+                GET Ping
+                path ["ping"]
+                cache off
+                -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        assert!(matches!(
+            resolved_api.endpoints[0].policy.endpoint.cache,
+            Some(CacheResolved::Clear)
+        ));
     }
 
     #[test]

@@ -34,11 +34,16 @@ fn dev_doc_files_exist_and_cover_architecture() {
     );
     assert_doc(
         "dev_doc/sema.md",
-        &["client defaults", "outer scopes", "endpoint"],
+        &[
+            "client defaults",
+            "outer scopes",
+            "endpoint",
+            "max_body N unit",
+        ],
     );
     assert_doc(
         "dev_doc/codegen.md",
-        &["facade", "endpoints::*", "request plan"],
+        &["facade", "endpoints::*", "request plan", "max body bytes"],
     );
     assert_doc(
         "dev_doc/core_runtime.md",
@@ -46,7 +51,11 @@ fn dev_doc_files_exist_and_cover_architecture() {
     );
     assert_doc(
         "dev_doc/policies_and_behaviors.md",
-        &["declarations from attachments", "behavior"],
+        &[
+            "declarations from attachments",
+            "behavior",
+            "capacity entries",
+        ],
     );
     assert_doc(
         "dev_doc/auth_runtime.md",

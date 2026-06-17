@@ -100,6 +100,15 @@ fn resolve_cache_patch(patch: &CachePatch) -> Result<CacheConfigPatchResolved> {
             CacheOnErrorSpec::ServeStale => CacheFailureModeResolved::ServeStaleOnError,
         });
     }
+    if let Some(capacity) = &patch.capacity {
+        out.capacity_entries = Some(resolve_cache_capacity_entries(capacity)?);
+    }
+    if let Some(max_body) = &patch.max_body {
+        out.max_body_bytes = Some(resolve_cache_size_bytes(max_body)?);
+    }
+    if patch.shared.is_some() {
+        out.shared = Some(true);
+    }
     Ok(out)
 }
 
@@ -115,6 +124,15 @@ fn apply_cache_patch_resolved(config: &mut CacheConfigResolved, patch: &CacheCon
     }
     if let Some(failure_mode) = patch.failure_mode {
         config.failure_mode = Some(failure_mode);
+    }
+    if let Some(capacity_entries) = patch.capacity_entries {
+        config.capacity_entries = Some(capacity_entries);
+    }
+    if let Some(max_body_bytes) = patch.max_body_bytes {
+        config.max_body_bytes = Some(max_body_bytes);
+    }
+    if let Some(shared) = patch.shared {
+        config.shared = Some(shared);
     }
 }
 
@@ -135,6 +153,15 @@ impl ProfileValue for CacheConfigPatchResolved {
         }
         if child.failure_mode.is_some() {
             parent.failure_mode = child.failure_mode;
+        }
+        if child.capacity_entries.is_some() {
+            parent.capacity_entries = child.capacity_entries;
+        }
+        if child.max_body_bytes.is_some() {
+            parent.max_body_bytes = child.max_body_bytes;
+        }
+        if child.shared.is_some() {
+            parent.shared = child.shared;
         }
         parent
     }
@@ -163,6 +190,50 @@ fn resolve_cache_duration_secs(ttl: &CacheDurationSpec) -> Result<u64> {
         RateLimitDurationUnit::Minutes => 60,
     };
     Ok(amount.saturating_mul(multiplier))
+}
+
+fn resolve_cache_capacity_entries(capacity: &CacheCapacitySpec) -> Result<u64> {
+    let amount = capacity.amount.base10_parse::<u64>()?;
+    if amount == 0 {
+        return Err(syn::Error::new(
+            capacity.amount.span(),
+            "cache capacity must be greater than zero",
+        ));
+    }
+    match capacity.unit {
+        CacheCapacityUnit::Entries => Ok(amount),
+    }
+}
+
+fn resolve_cache_size_bytes(size: &CacheSizeSpec) -> Result<usize> {
+    let amount = size.amount.base10_parse::<u64>()?;
+    if amount == 0 {
+        return Err(syn::Error::new(
+            size.amount.span(),
+            "cache max_body must be greater than zero",
+        ));
+    }
+    let multiplier = match size.unit {
+        CacheSizeUnit::Bytes => 1,
+        CacheSizeUnit::Kb => 1_000,
+        CacheSizeUnit::Kib => 1_024,
+        CacheSizeUnit::Mb => 1_000_000,
+        CacheSizeUnit::Mib => 1_048_576,
+        CacheSizeUnit::Gb => 1_000_000_000,
+        CacheSizeUnit::Gib => 1_073_741_824,
+    };
+    let bytes = amount.checked_mul(multiplier).ok_or_else(|| {
+        syn::Error::new(
+            size.amount.span(),
+            "cache max_body byte size overflowed u64",
+        )
+    })?;
+    usize::try_from(bytes).map_err(|_| {
+        syn::Error::new(
+            size.amount.span(),
+            "cache max_body byte size overflowed u64",
+        )
+    })
 }
 
 

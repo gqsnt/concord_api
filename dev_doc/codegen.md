@@ -30,6 +30,8 @@ Codegen emits resolved route/query/header logic from semantic data. It should no
 
 Body codec encoding is emitted from the endpoint signature `body: Codec<T>`. Response codec decoding is emitted from `-> Codec<T>`.
 
+Resolved cache sizing fields are emitted through core cache config builders for capacity entries, max body bytes, and shared mode. Runtime cache order is unchanged by these fields.
+
 ## Mapping
 
 `map Type { expr }` is generated after response decode. The decoded response value is available as `r` inside the map expression.

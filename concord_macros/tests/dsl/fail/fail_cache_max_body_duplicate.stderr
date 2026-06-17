@@ -1,0 +1,5 @@
+error: duplicate cache max_body
+ --> tests/dsl/fail/fail_cache_max_body_duplicate.rs:9:13
+  |
+9 |             max_body 20 kb
+  |             ^^^^^^^^

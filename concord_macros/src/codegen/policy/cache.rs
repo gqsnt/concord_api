@@ -44,6 +44,21 @@ fn emit_cache_config(config: &CacheConfigResolved) -> TokenStream2 {
             __cache = __cache.with_failure_mode(#failure_mode);
         });
     }
+    if let Some(capacity_entries) = config.capacity_entries {
+        ops.push(quote! {
+            __cache = __cache.with_capacity_entries(#capacity_entries);
+        });
+    }
+    if let Some(max_body_bytes) = config.max_body_bytes {
+        ops.push(quote! {
+            __cache = __cache.with_max_body_bytes(#max_body_bytes);
+        });
+    }
+    if let Some(shared) = config.shared {
+        ops.push(quote! {
+            __cache = __cache.with_shared(#shared);
+        });
+    }
     quote! {{
         let mut __cache = ::concord_core::advanced::CacheConfig::new();
         #( #ops )*
@@ -72,6 +87,21 @@ fn emit_cache_patch_ops(patch: &CacheConfigPatchResolved) -> Vec<TokenStream2> {
         let failure_mode = emit_cache_failure_mode(failure_mode);
         ops.push(quote! {
             __cache = __cache.with_failure_mode(#failure_mode);
+        });
+    }
+    if let Some(capacity_entries) = patch.capacity_entries {
+        ops.push(quote! {
+            __cache = __cache.with_capacity_entries(#capacity_entries);
+        });
+    }
+    if let Some(max_body_bytes) = patch.max_body_bytes {
+        ops.push(quote! {
+            __cache = __cache.with_max_body_bytes(#max_body_bytes);
+        });
+    }
+    if let Some(shared) = patch.shared {
+        ops.push(quote! {
+            __cache = __cache.with_shared(#shared);
         });
     }
     ops

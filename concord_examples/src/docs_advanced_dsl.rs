@@ -52,6 +52,9 @@ api! {
                 ttl 30s
                 revalidate
                 on_error ignore
+                capacity 1_000 entries
+                max_body 512 kib
+                shared
             }
 
             rate_limit tenant {

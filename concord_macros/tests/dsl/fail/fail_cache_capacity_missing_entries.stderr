@@ -1,0 +1,5 @@
+error: expected `entries` after cache capacity amount
+ --> tests/dsl/fail/fail_cache_capacity_missing_entries.rs:8:22
+  |
+8 |             capacity 10
+  |                      ^^

@@ -45,6 +45,8 @@ At each attachment site, behavior is applied before explicit local clauses. That
 - Auth uses append in inherited/source order.
 - Query and header operations preserve order after resolution.
 
+Cache sizing units are resolved in sema. The parser records `capacity N entries`, `max_body N unit`, and `shared`; sema validates positive values, converts max body units to bytes, and stores numeric capacity/max-body/shared fields in the resolved cache config.
+
 ## Behavior expansion
 
 Behavior profiles are resolved in sema and lowered into normal auth/cache/retry/rate-limit policy data. Behavior is not emitted as a runtime concept.
