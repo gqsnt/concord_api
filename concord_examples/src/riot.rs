@@ -861,3 +861,271 @@ pub mod models {
         pub raw: Value,
     }
 }
+
+pub async fn riot_test() -> Result<(), ApiClientError> {
+    dotenvy::dotenv().ok();
+
+    let api_key = dotenvy::var("RIOT_API_KEY")
+        .expect("RIOT_API_KEY missing; set it in the environment or .env before running riot_test");
+
+    let riot = RiotClient::new(api_key);
+
+    let account = riot
+        .regional(RegionalRoute::Europe)
+        .account_v1_accounts()
+        .by_riot_id("DISC OF THE SUN".to_string(), "EUW".to_string())
+        .await?;
+
+    println!(
+        "Riot account: {}#{} puuid={}",
+        account.game_name.as_deref().unwrap_or("<missing-gameName>"),
+        account.tag_line.as_deref().unwrap_or("<missing-tagLine>"),
+        account.puuid
+    );
+
+    let account_by_puuid = riot
+        .regional(RegionalRoute::Europe)
+        .account_v1_accounts()
+        .by_puuid(account.puuid.clone())
+        .await?;
+
+    println!(
+        "Account by PUUID: gameName_present={} tagLine_present={}",
+        account_by_puuid.game_name.is_some(),
+        account_by_puuid.tag_line.is_some()
+    );
+
+    match riot
+        .regional(RegionalRoute::Europe)
+        .account_v1_region()
+        .by_game_and_puuid("lol".to_string(), account.puuid.clone())
+        .await
+    {
+        Ok(region) => {
+            println!(
+                "Active region lookup: available fields={:?}",
+                region.raw.as_object().map(|object| object.len())
+            );
+        }
+        Err(err) => {
+            println!("Active region lookup: unavailable: {err}");
+        }
+    }
+
+    let summoner = riot
+        .platform(PlatformRoute::EUW1)
+        .summoner_v4()
+        .by_puuid(account.puuid.clone())
+        .await?;
+
+    println!(
+        "Summoner: puuid={} level={} icon={} revision={}",
+        summoner.puuid, summoner.summoner_level, summoner.profile_icon_id, summoner.revision_date
+    );
+    println!(
+        "Summoner legacy ids: id={:?} account_id={:?}",
+        summoner.id, summoner.account_id
+    );
+
+    match riot
+        .platform(PlatformRoute::EUW1)
+        .league_v4()
+        .entries()
+        .by_puuid(account.puuid.clone())
+        .await
+    {
+        Ok(league_entries) => {
+            println!("League entries: {}", league_entries.len());
+            for entry in &league_entries {
+                println!(
+                    "Rank: queue={} {} {} {}LP wins={} losses={} hot_streak={} veteran={} inactive={}",
+                    entry.queue_type,
+                    entry.tier,
+                    entry.rank,
+                    entry.league_points,
+                    entry.wins,
+                    entry.losses,
+                    entry.hot_streak,
+                    entry.veteran,
+                    entry.inactive
+                );
+            }
+        }
+        Err(err) => {
+            println!("League entries: unavailable: {err}");
+        }
+    }
+
+    match riot
+        .platform(PlatformRoute::EUW1)
+        .champion_mastery_v4()
+        .by_puuid(account.puuid.clone())
+        .await
+    {
+        Ok(masteries) => println!("Champion mastery entries: {}", masteries.len()),
+        Err(err) => println!("Champion mastery entries: unavailable: {err}"),
+    }
+
+    match riot
+        .platform(PlatformRoute::EUW1)
+        .champion_mastery_v4()
+        .score_by_puuid(account.puuid.clone())
+        .await
+    {
+        Ok(score) => println!("Champion mastery score: {score}"),
+        Err(err) => println!("Champion mastery score: unavailable: {err}"),
+    }
+
+    match riot
+        .platform(PlatformRoute::EUW1)
+        .champion_mastery_v4()
+        .top_by_puuid(account.puuid.clone())
+        .count(5)
+        .await
+    {
+        Ok(top_masteries) => {
+            println!("Top champion masteries: {}", top_masteries.len());
+            if let Some(first) = top_masteries.first() {
+                println!(
+                    "Top mastery first: champion_id={} points={}",
+                    first.champion_id, first.champion_points
+                );
+            }
+        }
+        Err(err) => println!("Top champion masteries: unavailable: {err}"),
+    }
+
+    match riot
+        .platform(PlatformRoute::EUW1)
+        .champion_v3()
+        .rotations()
+        .await
+    {
+        Ok(rotations) => {
+            println!(
+                "Champion rotations: free={} new_player_free={}",
+                rotations.free_champion_ids.len(),
+                rotations.free_champion_ids_for_new_players.len()
+            );
+        }
+        Err(err) => println!("Champion rotations: unavailable: {err}"),
+    }
+
+    match riot
+        .platform(PlatformRoute::EUW1)
+        .status_v4()
+        .platform_data()
+        .await
+    {
+        Ok(status) => {
+            println!(
+                "Platform status: fields={:?}",
+                status.raw.as_object().map(|object| object.len())
+            );
+        }
+        Err(err) => println!("Platform status: unavailable: {err}"),
+    }
+
+    match riot
+        .platform(PlatformRoute::EUW1)
+        .challenges_v1()
+        .player_data(account.puuid.clone())
+        .await
+    {
+        Ok(challenge_player_data) => {
+            println!(
+                "Challenge player data: fields={:?}",
+                challenge_player_data.as_object().map(|object| object.len())
+            );
+        }
+        Err(err) => println!("Challenge player data: unavailable: {err}"),
+    }
+
+    match riot
+        .platform(PlatformRoute::EUW1)
+        .clash_v1()
+        .players_by_puuid(account.puuid.clone())
+        .await
+    {
+        Ok(clash_players) => println!("Clash player registrations: {}", clash_players.len()),
+        Err(err) => println!("Clash player registrations: unavailable: {err}"),
+    }
+
+    let match_ids: Vec<String> = riot
+        .regional(RegionalRoute::Europe)
+        .match_v5_matches()
+        .ids_by_puuid(account.puuid.clone())
+        .count(20)
+        .paginate()
+        .max_items(60)
+        .collect()
+        .await?;
+
+    println!("Recent match ids: {}", match_ids.len());
+
+    for match_id in match_ids.iter().take(2) {
+        let match_detail = riot
+            .regional(RegionalRoute::Europe)
+            .match_v5_matches()
+            .by_id(match_id.clone())
+            .await;
+
+        match match_detail {
+            Ok(detail) => {
+                println!(
+                    "Match {match_id}: detail decoded metadata_fields={} info_fields={}",
+                    detail.metadata.len(),
+                    detail.info.len()
+                );
+            }
+            Err(err) => println!("Match {match_id}: detail unavailable: {err}"),
+        }
+
+        let timeline = riot
+            .regional(RegionalRoute::Europe)
+            .match_v5_matches()
+            .timeline(match_id.clone())
+            .await;
+
+        match timeline {
+            Ok(timeline) => {
+                println!(
+                    "Match {match_id}: timeline decoded fields={:?}",
+                    timeline.raw.as_object().map(|object| object.len())
+                );
+            }
+            Err(err) => println!("Match {match_id}: timeline unavailable: {err}"),
+        }
+    }
+
+    match riot
+        .regional(RegionalRoute::Europe)
+        .match_v5_matches()
+        .replays_by_puuid(account.puuid.clone())
+        .await
+    {
+        Ok(replays) => {
+            println!(
+                "Match replays: available fields={:?}",
+                replays.as_object().map(|object| object.len())
+            );
+        }
+        Err(err) => println!("Match replays: unavailable: {err}"),
+    }
+
+    match riot
+        .platform(PlatformRoute::EUW1)
+        .spectator_v5()
+        .active_game_by_puuid(account.puuid.clone())
+        .await
+    {
+        Ok(_) => {
+            println!("Live game: active game found");
+        }
+        Err(err) => {
+            println!("Live game: unavailable or not currently in game: {err}");
+        }
+    }
+
+    Ok(())
+}

@@ -165,3 +165,50 @@ pub mod models {
         pub raw: Value,
     }
 }
+
+pub async fn ddragon_test() -> Result<(), ApiClientError> {
+    let ddragon = DDragonClient::new();
+
+    let versions = ddragon.ddragon().api().versions().await?;
+
+    let version = versions
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "latest".to_string());
+
+    println!("Data Dragon latest version: {version}");
+
+    let languages = ddragon.ddragon().languages().await?;
+
+    println!("Data Dragon languages: {}", languages.len());
+
+    let realm = ddragon.ddragon().realm("euw".to_string()).await?;
+
+    println!(
+        "Data Dragon EUW realm: version={} cdn={}",
+        realm.v, realm.cdn
+    );
+
+    let champions = ddragon
+        .ddragon()
+        .cdn_versioned(version.clone())
+        .data_localized()
+        .champion_list()
+        .await?;
+
+    println!("Data Dragon champions: {}", champions.data.len());
+
+    let champion = ddragon
+        .ddragon()
+        .cdn_versioned(version)
+        .data_localized()
+        .champion_detail("Aatrox".to_string())
+        .await?;
+
+    println!(
+        "Data Dragon champion detail fields: {:?}",
+        champion.raw.as_object().map(|object| object.len())
+    );
+
+    Ok(())
+}

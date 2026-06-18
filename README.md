@@ -77,3 +77,5 @@ The `concord_examples` crate contains current examples for:
 - compiled advanced DSL syntax examples in `concord_examples/src/docs_advanced_dsl.rs`
 - a Riot Web API large fixture in `concord_examples/src/riot.rs`
 - a Data Dragon fixture in `concord_examples/src/ddragon.rs`
+
+The Riot and Data Dragon fixtures include manual smoke functions gated by environment variables. They are not run by tests or normal example execution.
