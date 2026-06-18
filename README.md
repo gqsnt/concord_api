@@ -69,6 +69,8 @@ The `concord_examples` crate contains current examples for:
 - minimal client usage
 - endpoint-backed auth
 - offset and cursor pagination
+- custom pagination
+- custom codecs
 - cache, retry, and rate-limit policy profiles
 - explicit endpoint requests
 - a compiled public DSL guide example in `concord_examples/src/docs_dsl.rs`

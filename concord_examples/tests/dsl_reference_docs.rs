@@ -139,7 +139,9 @@ fn compiled_advanced_example_covers_less_common_public_syntax() {
 
     for snippet in [
         "credential basic_login = basic",
+        "credential query_key = api_key",
         "credential oauth_session = oauth2_client",
+        "auth query \"api_key\" = query_key",
         "on transport [Timeout, Connect]",
         "idempotency header \"Idempotency-Key\"",
         "cache short",

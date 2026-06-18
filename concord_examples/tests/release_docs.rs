@@ -31,6 +31,21 @@ fn release_docs_describe_current_grouped_config_model() {
 fn examples_binary_mentions_compiled_public_dsl_guide() {
     let main_rs = include_str!("../src/main.rs");
 
-    assert!(main_rs.contains("docs_dsl"));
-    assert!(main_rs.contains("docs_advanced_dsl"));
+    for snippet in [
+        "minimal",
+        "docs_dsl",
+        "docs_advanced_dsl",
+        "auth_session",
+        "pagination",
+        "custom_pagination",
+        "custom_codec",
+        "policy_stack",
+        "explicit_endpoint",
+        "riot",
+    ] {
+        assert!(
+            main_rs.contains(snippet),
+            "main.rs should mention `{snippet}`"
+        );
+    }
 }

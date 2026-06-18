@@ -25,10 +25,12 @@ api! {
         auth {
             secret username: String
             secret password: String
+            secret query_key: String
             secret client_id: String
             secret client_secret: String
 
             credential basic_login = basic(secret.username, secret.password)
+            credential query_key = api_key(secret.query_key)
             credential oauth_session = oauth2_client {
                 token_url: "https://auth.example.com/oauth/token",
                 client_id: secret.client_id,
@@ -78,6 +80,10 @@ api! {
                 auth bearer oauth_session
                 rate_limit tenant
             }
+
+            behavior query_authenticated {
+                auth query "api_key" = query_key
+            }
         }
 
     }
@@ -95,9 +101,24 @@ api! {
         behavior tenant_read
         -> Json<Vec<AdvancedUser>>
 
+        GET SearchTaggedUsers(request_id: String, tag: String)
+        path ["users", "tagged"]
+        header "X-Request-Id" = request_id,
+        header "X-Debug" -
+        query "tag" += tag,
+        query "debug" -
+        timeout: std::time::Duration::from_secs(5),
+        behavior tenant_read
+        -> Json<Vec<AdvancedUser>>
+
         POST CreateUser(body: Json<AdvancedUser>)
         path ["users"]
         behavior basic_write
         -> Json<AdvancedUser>
     }
+
+    GET QueryAuthenticated
+    path ["query-authenticated"]
+    behavior query_authenticated
+    -> Json<AdvancedUser>
 }

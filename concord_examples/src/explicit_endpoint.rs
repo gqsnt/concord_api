@@ -1,7 +1,15 @@
 use crate::minimal::{MinimalApi, User, endpoints};
+use concord_core::advanced::BuiltResponse;
 use concord_core::prelude::*;
 
 pub async fn explicit_endpoint_example(api: MinimalApi) -> Result<User, ApiClientError> {
     let endpoint = endpoints::users::GetUser::new(42);
     api.request(endpoint).execute().await
+}
+
+pub async fn explicit_endpoint_raw_example(
+    api: MinimalApi,
+) -> Result<BuiltResponse, ApiClientError> {
+    let endpoint = endpoints::users::GetUser::new(42);
+    api.request(endpoint).execute_raw().await
 }
