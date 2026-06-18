@@ -312,28 +312,32 @@ fn emit_client_auth_response_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
         let name_lit = LitStr::new(&name.to_string(), name.span());
         quote! {
             if requirement.credential.id == ::concord_core::advanced::CredentialId::new(#client_ns, #name_lit) {
-                let signal = if status == ::http::StatusCode::UNAUTHORIZED {
-                    ::core::option::Option::Some((::concord_core::advanced::InvalidateReason::Unauthorized, ::concord_core::advanced::AuthRetryReason::Unauthorized))
-                } else if status == ::http::StatusCode::FORBIDDEN {
-                    ::core::option::Option::Some((::concord_core::advanced::InvalidateReason::Forbidden, ::concord_core::advanced::AuthRetryReason::Forbidden))
-                } else {
-                    ::core::option::Option::None
-                };
-                if let ::core::option::Option::Some((invalidate_reason, retry_reason)) = signal {
-                    ::concord_core::advanced::invalidate_rejected_credential(
-                        auth_state.#name.as_ref(),
-                        vars,
-                        auth,
-                        auth_state,
-                        executor,
+                if let ::core::option::Option::Some(decision) =
+                    ::concord_core::advanced::auth_decision_for_status(
+                        status,
+                        requirement,
                         applied,
-                        invalidate_reason,
-                    ).await?;
-                    return ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::RetryAfterRefresh {
-                        credential: requirement.credential.clone(),
-                        generation: applied.generation,
-                        reason: retry_reason,
-                    });
+                        ::concord_core::advanced::AuthStepPolicy::default(),
+                    )
+                {
+                    if let ::core::option::Option::Some(invalidate_reason) = decision.invalidate_reason {
+                        ::concord_core::advanced::invalidate_rejected_credential(
+                            auth_state.#name.as_ref(),
+                            vars,
+                            auth,
+                            auth_state,
+                            executor,
+                            applied,
+                            invalidate_reason,
+                        ).await?;
+                    }
+                    if let ::core::option::Option::Some(retry_reason) = decision.retry_reason {
+                        return ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::RetryAfterRefresh {
+                            credential: requirement.credential.clone(),
+                            generation: applied.generation,
+                            reason: retry_reason,
+                        });
+                    }
                 }
                 return ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::Continue);
             }

@@ -1,4 +1,6 @@
-use super::{AuthIdentity, AuthProvenance, AuthUsageId, CredentialId};
+use super::{
+    AuthIdentity, AuthProvenance, AuthStepPolicy, AuthUsageId, CredentialId, InvalidateReason,
+};
 use std::fmt;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -108,6 +110,53 @@ pub enum AuthRetryReason {
     Unauthorized,
     Forbidden,
     ChallengeRejected,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthRejectionDecision {
+    pub invalidate_reason: Option<InvalidateReason>,
+    pub retry_reason: Option<AuthRetryReason>,
+}
+
+pub fn auth_decision_for_status(
+    status: http::StatusCode,
+    requirement: &AuthRequirement,
+    _applied: &AuthAppliedCredential,
+    policy: AuthStepPolicy,
+) -> Option<AuthRejectionDecision> {
+    if matches!(requirement.challenge, AuthChallengePolicy::NeverRefresh) {
+        return None;
+    }
+
+    if status == http::StatusCode::UNAUTHORIZED {
+        let retry_reason = policy
+            .retry_on_unauthorized
+            .then_some(AuthRetryReason::Unauthorized);
+        let invalidate_reason = policy
+            .invalidate_on_unauthorized
+            .then_some(InvalidateReason::Unauthorized);
+        if retry_reason.is_some() || invalidate_reason.is_some() {
+            return Some(AuthRejectionDecision {
+                invalidate_reason,
+                retry_reason,
+            });
+        }
+    } else if status == http::StatusCode::FORBIDDEN {
+        let retry_reason = policy
+            .retry_on_forbidden
+            .then_some(AuthRetryReason::Forbidden);
+        let invalidate_reason = policy
+            .invalidate_on_forbidden
+            .then_some(InvalidateReason::Forbidden);
+        if retry_reason.is_some() || invalidate_reason.is_some() {
+            return Some(AuthRejectionDecision {
+                invalidate_reason,
+                retry_reason,
+            });
+        }
+    }
+
+    None
 }
 
 pub fn apply_secret_credential<M: crate::auth::SecretCredential>(

@@ -22,8 +22,9 @@ pub use ids::{AuthIdentity, AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential, ClientCertificate};
 pub use plan::{
     AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy, AuthDecision, AuthPlacement,
-    AuthPlan, AuthRequirement, AuthRetryReason, CredentialRef, apply_basic_credential,
-    apply_certificate_credential, apply_secret_credential, invalidate_rejected_credential,
+    AuthPlan, AuthRejectionDecision, AuthRequirement, AuthRetryReason, CredentialRef,
+    apply_basic_credential, apply_certificate_credential, apply_secret_credential,
+    auth_decision_for_status, invalidate_rejected_credential,
 };
 #[cfg(feature = "json")]
 pub use providers::OAuth2ClientCredentialsProvider;
