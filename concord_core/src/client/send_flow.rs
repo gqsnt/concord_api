@@ -93,7 +93,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let attempt = built.meta.attempt;
         let page_index = built.meta.page_index;
         let idempotent = built.meta.idempotent;
-        let url = built.url.as_str().to_owned();
+        let url = crate::redaction::sanitize_url_for_debug(
+            &built.url,
+            built.extensions.sensitive_query_keys.iter(),
+        );
 
         match self.transport.send(built).await {
             Ok(resp) => Ok(resp),

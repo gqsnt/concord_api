@@ -1138,6 +1138,80 @@ mod tests {
     }
 
     #[test]
+    fn generated_rustdoc_redaction_does_not_render_secret_literals() {
+        let out = expanded(quote! {
+            client SnapshotSecretDocs {
+                base "https://example.com"
+
+                auth {
+                    secret api_key: String
+                    secret bearer_token: String
+                    secret username: String
+                    secret password: String
+                    secret client_id: String
+                    secret client_secret: String
+
+                    credential upstream = api_key(secret.api_key)
+                    credential session = bearer(secret.bearer_token)
+                    credential login = basic(secret.username, secret.password)
+                    credential oauth = oauth2_client {
+                        token_url: "https://auth.example.com/token",
+                        client_id: secret.client_id,
+                        client_secret: secret.client_secret,
+                    }
+                }
+
+                behaviors {
+                    behavior protected_read {
+                        auth bearer session
+                    }
+                }
+            }
+
+            GET GetBearerDoc
+                path ["bearer"]
+                behavior protected_read
+                -> Json<()>
+
+            GET GetHeaderDoc
+                path ["header"]
+                auth header "X-Api-Key" = upstream
+                -> Json<()>
+
+            GET GetBasicDoc
+                path ["basic"]
+                auth basic login
+                -> Json<()>
+
+            GET GetOAuthDoc
+                path ["oauth"]
+                auth bearer oauth
+                -> Json<()>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "#[doc=\"Behavior: `protected_read`\"]",
+                "#[doc=\"- bearer `session`\"]",
+                "#[doc=\"- header `X-Api-Key` = `upstream`\"]",
+                "#[doc=\"- basic `login`\"]",
+                "#[doc=\"- bearer `oauth`\"]",
+            ],
+        );
+        for secret in [
+            "LEAK_SENTINEL_API_KEY_123",
+            "LEAK_SENTINEL_BEARER_456",
+            "LEAK_SENTINEL_PASSWORD_789",
+            "LEAK_SENTINEL_CLIENT_SECRET_ABC",
+        ] {
+            assert_generated_doc_attrs_do_not_contain(&out, secret);
+        }
+        assert_generated_doc_attrs_do_not_contain(&out, "client_secret value");
+        assert_generated_doc_attrs_do_not_contain(&out, "password value");
+    }
+
+    #[test]
     fn generated_auth_session_snapshot_contains_auth_state_and_acquire_sugar() {
         let out = expanded(quote! {
             client SnapshotAuth {

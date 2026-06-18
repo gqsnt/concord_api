@@ -180,7 +180,7 @@ mod test {
     use http::header::{ACCEPT, AUTHORIZATION, COOKIE};
 
     #[test]
-    fn redacts_sensitive_headers_by_name() {
+    fn redaction_redacts_sensitive_headers_by_name() {
         assert!(is_sensitive_header_name(&AUTHORIZATION));
         assert!(is_sensitive_header_name(&COOKIE));
         assert!(is_sensitive_header_name(&HeaderName::from_static(
@@ -200,5 +200,27 @@ mod test {
             header_value_for_debug(&ACCEPT, &HeaderValue::from_static("application/json")),
             "application/json"
         );
+    }
+
+    #[test]
+    fn redaction_redacts_bearer_api_key_and_basic_headers_for_debug_output() {
+        for (name, value) in [
+            (
+                AUTHORIZATION,
+                HeaderValue::from_static("Bearer LEAK_SENTINEL_BEARER_456"),
+            ),
+            (
+                AUTHORIZATION,
+                HeaderValue::from_static("Basic dXNlcjpMRUFLX1NFTlRJTkVMX1BBU1NXT1JEXzc4OQ=="),
+            ),
+            (
+                HeaderName::from_static("x-api-key"),
+                HeaderValue::from_static("LEAK_SENTINEL_API_KEY_123"),
+            ),
+        ] {
+            let rendered = header_value_for_debug(&name, &value);
+            assert_eq!(rendered, "<redacted>");
+            assert!(!rendered.contains("LEAK_SENTINEL"));
+        }
     }
 }
