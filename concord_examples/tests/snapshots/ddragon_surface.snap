@@ -1,0 +1,4 @@
+ddragon_fixture_summary:
+client: DDragonClient
+features: ddragon_host, versions, realms, localized_data
+facade_paths: ddragon().api().versions, ddragon().cdn_versioned(...).data_localized().champion_list

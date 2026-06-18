@@ -60,6 +60,7 @@ fn v1_examples_cover_core_user_paths() {
             "policy_stack",
             "explicit_endpoint",
             "riot",
+            "ddragon",
         ],
     );
 }

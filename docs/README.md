@@ -19,4 +19,4 @@ Concord is a Rust API-tree DSL and contract compiler that generates a facade-fir
 
 Developer architecture notes live in [`../dev_doc/`](../dev_doc/).
 
-Compile-checked public DSL examples live in [`../concord_examples/src/docs_dsl.rs`](../concord_examples/src/docs_dsl.rs) and [`../concord_examples/src/docs_advanced_dsl.rs`](../concord_examples/src/docs_advanced_dsl.rs). The Riot fixture in [`../concord_examples/src/riot.rs`](../concord_examples/src/riot.rs) remains the large real-world example.
+Compile-checked public DSL examples live in [`../concord_examples/src/docs_dsl.rs`](../concord_examples/src/docs_dsl.rs) and [`../concord_examples/src/docs_advanced_dsl.rs`](../concord_examples/src/docs_advanced_dsl.rs). The Riot Web API fixture in [`../concord_examples/src/riot.rs`](../concord_examples/src/riot.rs) and the Data Dragon fixture in [`../concord_examples/src/ddragon.rs`](../concord_examples/src/ddragon.rs) remain the large real-world examples.

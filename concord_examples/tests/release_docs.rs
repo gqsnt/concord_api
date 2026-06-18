@@ -42,6 +42,7 @@ fn examples_binary_mentions_compiled_public_dsl_guide() {
         "policy_stack",
         "explicit_endpoint",
         "riot",
+        "ddragon",
     ] {
         assert!(
             main_rs.contains(snippet),

@@ -3,6 +3,7 @@
 pub mod auth_session;
 pub mod custom_codec;
 pub mod custom_pagination;
+pub mod ddragon;
 pub mod docs_advanced_dsl;
 pub mod docs_dsl;
 pub mod explicit_endpoint;

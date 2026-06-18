@@ -75,4 +75,5 @@ The `concord_examples` crate contains current examples for:
 - explicit endpoint requests
 - a compiled public DSL guide example in `concord_examples/src/docs_dsl.rs`
 - compiled advanced DSL syntax examples in `concord_examples/src/docs_advanced_dsl.rs`
-- a Riot-like large API fixture in `concord_examples/src/riot.rs`
+- a Riot Web API large fixture in `concord_examples/src/riot.rs`
+- a Data Dragon fixture in `concord_examples/src/ddragon.rs`

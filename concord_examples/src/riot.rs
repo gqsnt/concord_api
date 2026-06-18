@@ -1,4 +1,3 @@
-// Path: ".\\concord_examples\\src\\riot.rs" (DSL migrated to evolution-style scope/params/host/path)
 use concord_core::prelude::*;
 use concord_macros::api;
 use serde::{Deserialize, Serialize};
@@ -8,6 +7,8 @@ pub struct RiotRateLimitHeaders;
 
 impl RateLimitObserver for RiotRateLimitHeaders {
     fn observe(&self, ctx: RateLimitResponseContext<'_>) -> RateLimitObservation {
+        // Static DSL buckets are the primary limiter. Riot response headers refine
+        // 429 handling by scope and Retry-After when the platform sends them.
         ctx.on_429().scope_header("x-rate-limit-type").retry_after()
     }
 }
@@ -15,74 +16,155 @@ impl RateLimitObserver for RiotRateLimitHeaders {
 api! {
     client RiotClient {
         base "https://riotgames.com"
+
         auth {
             secret api_key: String
             credential riot_api_key = api_key(secret.api_key)
         }
+
         headers {
-            "user-agent" = "ClientApiRiotExample/1.0",
-            "x-client-trace" = false
+            "user-agent" = "ConcordRiotExample/1.0"
         }
+
         policies {
             retry read {
-                    max_attempts 2
-                    methods [GET]
-                    on [429, 500, 502, 503, 504]
-                    retry_after
+                max_attempts 2
+                methods [GET]
+                on [429, 500, 502, 503, 504]
+                retry_after
             }
+
             observe rate_limit RiotRateLimitHeaders
+
+            cache live_game_1m {
+                http
+                ttl 60s
+            }
+
             rate_limit app {
-                    bucket application by [host] {
-                        500 / 10s
-                        30000 / 10m
-                    }
+                bucket application by [host] {
+                    500 / 10s
+                    30000 / 10m
+                }
             }
+
             rate_limit summoner_by_puuid {
-                    bucket method by [host, endpoint] {
-                        1600 / 1m
-                    }
+                bucket method by [host, endpoint] {
+                    1600 / 1m
+                }
             }
-            rate_limit league_queue_slow {
-                    bucket method by [host, endpoint] {
-                        30 / 10s
-                        500 / 10m
-                    }
+
+            rate_limit league_apex_by_queue {
+                bucket method by [host, endpoint] {
+                    30 / 10s
+                    500 / 10m
+                }
             }
-            rate_limit league_by_id {
-                    bucket method by [host, endpoint] {
-                        500 / 10s
-                    }
+
+            rate_limit league_entries_page {
+                bucket method by [host, endpoint] {
+                    50 / 10s
+                }
             }
-            rate_limit league_entries {
-                    bucket method by [host, endpoint] {
-                        50 / 10s
-                    }
+
+            rate_limit league_entries_by_puuid {
+                bucket method by [host, endpoint] {
+                    20000 / 10s
+                    1200000 / 10m
+                }
             }
-            rate_limit clash_team_or_by_team {
-                    bucket method by [host, endpoint] {
-                        200 / 1m
-                    }
+
+            rate_limit league_exp_entries_page {
+                bucket method by [host, endpoint] {
+                    50 / 10s
+                }
             }
-            rate_limit clash_tournament_lookup {
-                    bucket method by [host, endpoint] {
-                        10 / 1m
-                    }
+
+            rate_limit clash_team {
+                bucket method by [host, endpoint] {
+                    200 / 1m
+                }
             }
-            rate_limit account_standard_method {
-                    bucket method by [host, endpoint] {
-                        1000 / 1m
-                    }
+
+            rate_limit clash_tournament {
+                bucket method by [host, endpoint] {
+                    10 / 1m
+                }
             }
-            rate_limit riot_high_volume_method {
-                    bucket method by [host, endpoint] {
-                        20000 / 10s
-                        1200000 / 10m
-                    }
+
+            rate_limit clash_players_by_puuid {
+                bucket method by [host, endpoint] {
+                    20000 / 10s
+                    1200000 / 10m
+                }
             }
-            rate_limit match_v5_method {
-                    bucket method by [host, endpoint] {
-                        2000 / 10s
-                    }
+
+            rate_limit account_standard_lookup {
+                bucket method by [host, endpoint] {
+                    1000 / 1m
+                }
+            }
+
+            rate_limit account_high_volume {
+                bucket method by [host, endpoint] {
+                    20000 / 10s
+                    1200000 / 10m
+                }
+            }
+
+            rate_limit status_platform_data {
+                bucket method by [host, endpoint] {
+                    20000 / 10s
+                    1200000 / 10m
+                }
+            }
+
+            rate_limit match_v5_standard {
+                bucket method by [host, endpoint] {
+                    2000 / 10s
+                }
+            }
+
+            rate_limit match_v5_replays {
+                bucket method by [host, endpoint] {
+                    20000 / 10s
+                    1200000 / 10m
+                }
+            }
+
+            rate_limit challenges_high_volume {
+                bucket method by [host, endpoint] {
+                    20000 / 10s
+                    1200000 / 10m
+                }
+            }
+
+            rate_limit champion_mastery_high_volume {
+                bucket method by [host, endpoint] {
+                    20000 / 10s
+                    1200000 / 10m
+                }
+            }
+
+            rate_limit tournament_stub_high_volume {
+                bucket method by [host, endpoint] {
+                    20000 / 10s
+                    1200000 / 10m
+                }
+            }
+
+            rate_limit spectator_live_game {
+                bucket method by [host, endpoint] {
+                    3000 / 10s
+                    180000 / 10m
+                }
+            }
+
+            rate_limit champion_rotation_high_volume {
+                bucket method by [host, endpoint] {
+                    20000 / 10s
+                    1200000 / 10m
+                }
             }
         }
 
@@ -93,40 +175,77 @@ api! {
                 rate_limit app
             }
 
-            behavior league_queue_read {
-                rate_limit league_queue_slow
-            }
-
             behavior summoner_by_puuid_read {
                 rate_limit summoner_by_puuid
             }
 
-            behavior high_volume_read {
-                rate_limit riot_high_volume_method
+            behavior league_apex_read {
+                rate_limit league_apex_by_queue
             }
 
-            behavior league_by_id_read {
-                rate_limit league_by_id
+            behavior league_entries_page_read {
+                rate_limit league_entries_page
             }
 
-            behavior league_entries_read {
-                rate_limit league_entries
+            behavior league_entries_by_puuid_read {
+                rate_limit league_entries_by_puuid
+            }
+
+            behavior league_exp_entries_page_read {
+                rate_limit league_exp_entries_page
             }
 
             behavior clash_team_read {
-                rate_limit clash_team_or_by_team
+                rate_limit clash_team
             }
 
             behavior clash_tournament_read {
-                rate_limit clash_tournament_lookup
+                rate_limit clash_tournament
+            }
+
+            behavior clash_players_by_puuid_read {
+                rate_limit clash_players_by_puuid
             }
 
             behavior account_standard_read {
-                rate_limit [account_standard_method, riot_high_volume_method]
+                rate_limit account_standard_lookup
             }
 
-            behavior match_v5_read {
-                rate_limit match_v5_method
+            behavior account_high_volume_read {
+                rate_limit account_high_volume
+            }
+
+            behavior status_platform_data_read {
+                rate_limit status_platform_data
+            }
+
+            behavior match_v5_standard_read {
+                rate_limit match_v5_standard
+            }
+
+            behavior match_v5_replays_read {
+                rate_limit match_v5_replays
+            }
+
+            behavior challenges_high_volume_read {
+                rate_limit challenges_high_volume
+            }
+
+            behavior champion_mastery_high_volume_read {
+                rate_limit champion_mastery_high_volume
+            }
+
+            behavior tournament_stub_high_volume_read {
+                rate_limit tournament_stub_high_volume
+            }
+
+            behavior champion_rotation_high_volume_read {
+                rate_limit champion_rotation_high_volume
+            }
+
+            behavior spectator_live_game_read {
+                rate_limit spectator_live_game
+                cache live_game_1m
             }
         }
 
@@ -145,75 +264,18 @@ api! {
             GET GetChampionRotations
             as rotations
             path ["champion-rotations"]
-            behavior league_queue_read
+            behavior champion_rotation_high_volume_read
             -> Json<models::ChampionRotationsDto>
         }
 
         scope summoner_v4 {
             path ["summoner", "v4", "summoners"]
 
-            GET GetSummonerByPuuid(puuid: String)
+            GET GetSummonerByPuuid(encrypted_puuid: String)
             as by_puuid
-            path ["by-puuid", puuid]
+            path ["by-puuid", encrypted_puuid]
             behavior summoner_by_puuid_read
             -> Json<models::SummonerDto>
-
-            GET GetSummonerById(summoner_id: String)
-            as by_id
-            path [summoner_id]
-            -> Json<models::SummonerDto>
-
-            GET GetSummonerByName(summoner_name: String)
-            as by_name
-            path ["by-name", summoner_name]
-            -> Json<models::SummonerDto>
-        }
-
-        scope champion_mastery_v4 {
-            path ["champion-mastery", "v4"]
-
-            scope champion_masteries {
-                path ["champion-masteries"]
-                behavior high_volume_read
-
-                GET GetChampionMasteriesBySummoner(summoner_id: String)
-                path ["by-summoner", summoner_id]
-                -> Json<Vec<models::ChampionMasteryDto>>
-
-                GET GetChampionMasteryByChampion(summoner_id: String, champion_id: i64)
-                path ["by-summoner", summoner_id, "by-champion", champion_id]
-                -> Json<models::ChampionMasteryDto>
-
-                GET GetChampionMasteriesByPuuid(encrypted_puuid: String)
-                as by_puuid
-                path ["by-puuid", encrypted_puuid]
-                -> Json<Vec<models::ChampionMasteryDto>>
-
-                GET GetChampionMasteryByPuuidAndChampion(encrypted_puuid: String, champion_id: i64)
-                path ["by-puuid", encrypted_puuid, "by-champion", champion_id]
-                -> Json<models::ChampionMasteryDto>
-
-                GET GetTopChampionMasteriesByPuuid(encrypted_puuid: String, count?: u32)
-                path ["by-puuid", encrypted_puuid, "top"]
-                query {
-                    count
-                }
-                -> Json<Vec<models::ChampionMasteryDto>>
-            }
-
-            scope scores {
-                path ["scores"]
-                behavior high_volume_read
-
-                GET GetChampionMasteryScore(summoner_id: String)
-                as score
-                path ["by-summoner", summoner_id]
-                -> Json<i32>
-
-                GET GetChampionMasteryScoreByPuuid(encrypted_puuid: String)
-                path ["by-puuid", encrypted_puuid]
-                -> Json<i32>
-            }
         }
 
         scope league_v4 {
@@ -223,8 +285,9 @@ api! {
                 path ["challengerleagues"]
 
                 GET GetChallengerLeagueByQueue(queue: LeagueQueue)
+                as by_queue
                 path ["by-queue", queue]
-                behavior league_queue_read
+                behavior league_apex_read
                 -> Json<models::LeagueListDto>
             }
 
@@ -232,8 +295,9 @@ api! {
                 path ["grandmasterleagues"]
 
                 GET GetGrandmasterLeagueByQueue(queue: LeagueQueue)
+                as by_queue
                 path ["by-queue", queue]
-                behavior league_queue_read
+                behavior league_apex_read
                 -> Json<models::LeagueListDto>
             }
 
@@ -241,40 +305,28 @@ api! {
                 path ["masterleagues"]
 
                 GET GetMasterLeagueByQueue(queue: LeagueQueue)
+                as by_queue
                 path ["by-queue", queue]
-                behavior league_queue_read
-                -> Json<models::LeagueListDto>
-            }
-
-            scope leagues {
-                path ["leagues"]
-
-                GET GetLeagueById(league_id: String)
-                path [league_id]
-                behavior league_by_id_read
+                behavior league_apex_read
                 -> Json<models::LeagueListDto>
             }
 
             scope entries {
                 path ["entries"]
 
-                GET GetLeagueEntriesBySummoner(summoner_id: String)
-                path ["by-summoner", summoner_id]
-                behavior high_volume_read
-                -> Json<Vec<models::LeagueEntryDto>>
-
-                GET GetLeagueEntriesByPuuid(encrypted_puuid: String)
-                path ["by-puuid", encrypted_puuid]
-                behavior high_volume_read
-                -> Json<Vec<models::LeagueEntryDto>>
-
-                GET GetLeagueEntries(queue: String, tier: String, division: String, page?: u32)
+                GET GetLeagueEntries(queue: LeagueQueue, tier: LeagueTier, division: LeagueDivision, page?: u32 = 1)
                 as by_queue
                 path [queue, tier, division]
                 query {
                     page
                 }
-                behavior league_entries_read
+                behavior league_entries_page_read
+                -> Json<Vec<models::LeagueEntryDto>>
+
+                GET GetLeagueEntriesByPuuid(encrypted_puuid: String)
+                as by_puuid
+                path ["by-puuid", encrypted_puuid]
+                behavior league_entries_by_puuid_read
                 -> Json<Vec<models::LeagueEntryDto>>
             }
         }
@@ -282,13 +334,13 @@ api! {
         scope league_exp_v4 {
             path ["league-exp", "v4", "entries"]
 
-            GET GetLeagueExpEntries(queue: String, tier: String, division: String, page?: u32)
+            GET GetLeagueExpEntries(queue: LeagueQueue, tier: LeagueTier, division: LeagueDivision, page?: u32 = 1)
             as by_queue
             path [queue, tier, division]
             query {
                 page
             }
-            behavior league_entries_read
+            behavior league_exp_entries_page_read
             -> Json<Vec<models::LeagueEntryDto>>
         }
 
@@ -296,89 +348,34 @@ api! {
             path ["clash", "v1"]
 
             GET GetClashTeam(team_id: String)
+            as team
             path ["teams", team_id]
             behavior clash_team_read
             -> Json<models::ClashTeamDto>
 
             GET GetClashTournament(tournament_id: i64)
+            as tournament
             path ["tournaments", tournament_id]
             behavior clash_tournament_read
             -> Json<models::ClashTournamentDto>
 
             GET GetClashTournamentByTeam(team_id: String)
+            as tournament_by_team
             path ["tournaments", "by-team", team_id]
             behavior clash_team_read
             -> Json<models::ClashTournamentDto>
 
             GET GetClashTournaments
+            as tournaments
             path ["tournaments"]
             behavior clash_tournament_read
             -> Json<Vec<models::ClashTournamentDto>>
 
             GET GetClashPlayersByPuuid(puuid: String)
+            as players_by_puuid
             path ["players", "by-puuid", puuid]
-            behavior high_volume_read
+            behavior clash_players_by_puuid_read
             -> Json<Vec<models::ClashPlayerDto>>
-        }
-
-        scope challenges_v1 {
-            path ["challenges", "v1"]
-            behavior high_volume_read
-
-            GET GetChallengePercentiles
-            path ["challenges", "percentiles"]
-            -> Json<serde_json::Value>
-
-            GET GetChallengeLeaderboardsByLevel(challenge_id: i64, level: String, limit?: u32)
-            path ["challenges", challenge_id, "leaderboards", "by-level", level]
-            query {
-                limit
-            }
-            -> Json<serde_json::Value>
-
-            GET GetChallengePercentilesByChallenge(challenge_id: i64)
-            path ["challenges", challenge_id, "percentiles"]
-            -> Json<serde_json::Value>
-
-            GET GetChallengeConfig(challenge_id: i64)
-            path ["challenges", challenge_id, "config"]
-            -> Json<serde_json::Value>
-
-            GET GetChallengePlayerData(puuid: String)
-            path ["player-data", puuid]
-            -> Json<serde_json::Value>
-
-            GET GetChallengeConfigs
-            path ["challenges", "config"]
-            -> Json<serde_json::Value>
-        }
-
-        scope spectator_v4 {
-            path ["spectator", "v4"]
-
-            scope featured_games {
-                path ["featured-games"]
-
-                GET GetFeaturedGames
-                -> Json<models::FeaturedGamesDto>;
-            }
-
-            scope active_games_by_summoner {
-                path ["active-games", "by-summoner"]
-
-                GET GetCurrentGameInfoBySummoner(summoner_id: String)
-                path [summoner_id]
-                -> Json<models::CurrentGameInfoDto>
-            }
-        }
-
-        scope spectator_v5 {
-            path ["spectator", "v5", "active-games"]
-
-            GET GetSpectatorV5ActiveGameBySummoner(encrypted_puuid: String)
-            path ["by-summoner", encrypted_puuid]
-            behavior high_volume_read
-            -> Json<models::CurrentGameInfoDto>
         }
 
         scope status_v4 {
@@ -387,8 +384,84 @@ api! {
             GET GetPlatformData
             as platform_data
             path ["platform-data"]
-            behavior high_volume_read
+            behavior status_platform_data_read
             -> Json<models::PlatformDataDto>
+        }
+
+        scope challenges_v1 {
+            path ["challenges", "v1"]
+            behavior challenges_high_volume_read
+
+            GET GetChallengePercentiles
+            as percentiles
+            path ["challenges", "percentiles"]
+            -> Json<serde_json::Value>
+
+            GET GetChallengeLeaderboardsByLevel(challenge_id: i64, level: String, limit?: u32)
+            as leaderboards_by_level
+            path ["challenges", challenge_id, "leaderboards", "by-level", level]
+            query {
+                limit
+            }
+            -> Json<serde_json::Value>
+
+            GET GetChallengePercentilesByChallenge(challenge_id: i64)
+            as percentiles_by_challenge
+            path ["challenges", challenge_id, "percentiles"]
+            -> Json<serde_json::Value>
+
+            GET GetChallengeConfig(challenge_id: i64)
+            as config
+            path ["challenges", challenge_id, "config"]
+            -> Json<serde_json::Value>
+
+            GET GetChallengePlayerData(puuid: String)
+            as player_data
+            path ["player-data", puuid]
+            -> Json<serde_json::Value>
+
+            GET GetChallengeConfigs
+            as configs
+            path ["challenges", "config"]
+            -> Json<serde_json::Value>
+        }
+
+        scope champion_mastery_v4 {
+            path ["champion-mastery", "v4"]
+            behavior champion_mastery_high_volume_read
+
+            GET GetChampionMasteriesByPuuid(encrypted_puuid: String)
+            as by_puuid
+            path ["champion-masteries", "by-puuid", encrypted_puuid]
+            -> Json<Vec<models::ChampionMasteryDto>>
+
+            GET GetChampionMasteryByPuuidAndChampion(encrypted_puuid: String, champion_id: i64)
+            as by_puuid_and_champion
+            path ["champion-masteries", "by-puuid", encrypted_puuid, "by-champion", champion_id]
+            -> Json<models::ChampionMasteryDto>
+
+            GET GetChampionMasteryScoreByPuuid(encrypted_puuid: String)
+            as score_by_puuid
+            path ["scores", "by-puuid", encrypted_puuid]
+            -> Json<i32>
+
+            GET GetTopChampionMasteriesByPuuid(encrypted_puuid: String, count?: u32)
+            as top_by_puuid
+            path ["champion-masteries", "by-puuid", encrypted_puuid, "top"]
+            query {
+                count
+            }
+            -> Json<Vec<models::ChampionMasteryDto>>
+        }
+
+        scope spectator_v5 {
+            path ["spectator", "v5"]
+
+            GET GetActiveGameByPuuid(encrypted_puuid: String)
+            as active_game_by_puuid
+            path ["active-games", "by-summoner", encrypted_puuid]
+            behavior spectator_live_game_read
+            -> Json<models::CurrentGameInfo>
         }
     }
 
@@ -397,16 +470,17 @@ api! {
 
         scope account_v1_accounts {
             path ["riot", "account", "v1", "accounts"]
-            behavior account_standard_read
 
             GET GetAccountByRiotId(game_name: String, tag_line: String)
             as by_riot_id
             path ["by-riot-id", game_name, tag_line]
+            behavior account_standard_read
             -> Json<models::AccountDto>
 
             GET GetAccountByPuuid(puuid: String)
             as by_puuid
             path ["by-puuid", puuid]
+            behavior account_standard_read
             -> Json<models::AccountDto>
         }
 
@@ -414,67 +488,58 @@ api! {
             path ["riot", "account", "v1", "region"]
 
             GET GetAccountRegionByGameAndPuuid(game: String, puuid: String)
+            as by_game_and_puuid
             path ["by-game", game, "by-puuid", puuid]
-            behavior high_volume_read
+            behavior account_high_volume_read
             -> Json<models::AccountRegionDto>
-        }
-
-        scope account_v1_active_shards {
-            path ["riot", "account", "v1", "active-shards"]
-
-            GET GetActiveShardByGameAndPuuid(game: String, puuid: String)
-            path ["by-game", game, "by-puuid", puuid]
-            behavior high_volume_read
-            -> Json<models::ActiveShardDto>
         }
 
         scope match_v5_matches {
             path ["lol", "match", "v5", "matches"]
 
-            GET GetMatchIdsByPuuid(puuid: String, queue?: u16, start_time?: i64, end_time?: i64, start: u64 = 0, count: u64 = 20)
+            GET GetMatchIdsByPuuid(puuid: String, queue?: u16, match_type?: String, start_time?: i64, end_time?: i64, start: u64 = 0, count: u64 = 20)
             as ids_by_puuid
             path ["by-puuid", puuid, "ids"]
             query {
                 queue,
+                "type" = match_type,
                 "startTime" = start_time,
                 "endTime" = end_time,
                 start,
                 count
             }
-            headers {
-                "X-Riot-Puuid" = fmt["puuid:", puuid]
-            }
             paginate OffsetLimitPagination {
                 offset = start,
                 limit = count
             }
-            behavior match_v5_read
+            behavior match_v5_standard_read
             -> Json<Vec<String>>
 
             GET GetMatch(match_id: String)
             as by_id
             path [match_id]
-            behavior match_v5_read
+            behavior match_v5_standard_read
             -> Json<models::MatchDto>
 
             GET GetTimeline(match_id: String)
             as timeline
             path [match_id, "timeline"]
-            behavior match_v5_read
+            behavior match_v5_standard_read
             -> Json<models::TimelineDto>
 
             GET GetMatchReplaysByPuuid(puuid: String)
             as replays_by_puuid
             path ["by-puuid", puuid, "replays"]
-            behavior high_volume_read
+            behavior match_v5_replays_read
             -> Json<serde_json::Value>
         }
 
         scope tournament_stub_v5 {
             path ["lol", "tournament-stub", "v5"]
-            behavior high_volume_read
+            behavior tournament_stub_high_volume_read
 
             POST CreateTournamentStubCodes(tournament_id: i64, count?: u32, body: Json<serde_json::Value>)
+            as create_codes
             path ["codes"]
             query {
                 "tournamentId" = tournament_id,
@@ -483,107 +548,30 @@ api! {
             -> Json<Vec<String>>
 
             GET GetTournamentStubLobbyEventsByCode(tournament_code: String)
+            as lobby_events_by_code
             path ["lobby-events", "by-code", tournament_code]
             -> Json<serde_json::Value>
 
             GET GetTournamentStubCode(tournament_code: String)
+            as code
             path ["codes", tournament_code]
             -> Json<serde_json::Value>
 
             POST RegisterTournamentStubProvider(body: Json<serde_json::Value>)
+            as register_provider
             path ["providers"]
             -> Json<i32>
 
             POST RegisterTournamentStubTournament(body: Json<serde_json::Value>)
+            as register_tournament
             path ["tournaments"]
             -> Json<i32>
         }
     }
 }
 
-api! {
-    client DDragonClient {
-        base "https://leagueoflegends.com"
-        headers {
-            "user-agent" = "ClientApiDDragonExample/1.0"
-        }
-        default {
-            retry read
-        }
-        retry read {
-                max_attempts 2
-                methods [GET]
-                on [429, 500, 502, 503, 504]
-                retry_after
-        }
-    }
-
-    scope ddragon {
-        host ["ddragon"]
-
-        scope api_root {
-            path ["api"]
-
-            GET GetVersions
-            path ["versions.json"]
-            -> Json<Vec<String>>
-
-            GET GetRealmByRegion(region: String)
-            path ["realms", region]
-            -> Json<models::RealmDto>
-        }
-
-        scope cdn_root {
-            path ["cdn"]
-
-            GET GetLanguages
-            path ["languages.json"]
-            -> Json<Vec<String>>
-        }
-
-        scope cdn_versioned(version: String) {
-            path ["cdn", version]
-
-            scope data_localized(locale: String = "en_US".to_string()) {
-                path ["data", locale]
-
-                scope champion {
-                    path ["champion"]
-
-                    GET GetChampionList
-                    path ["champion.json"]
-                    -> Json<models::ChampionListDto>
-
-                    GET GetChampionFull
-                    path ["championFull.json"]
-                    -> Json<serde_json::Value>
-
-                    GET GetChampionDetail(champion: String)
-                    path [fmt[champion, ".json"]]
-                    -> Json<models::ChampionDetailDto>
-                }
-
-                GET GetSummonerSpells
-                path ["summoner.json"]
-                -> Json<models::SummonerSpellListDto>
-
-                GET GetItems
-                path ["item.json"]
-                -> Json<models::ItemListDto>
-
-                GET GetRunesReforged
-                path ["runesReforged.json"]
-                -> Json<models::RunesReforgedDto>
-            }
-        }
-    }
-}
-
-use crate::riot::d_dragon_client::DDragonClient;
-
 pub use self::riot_client::{RiotClient, endpoints as riot_endpoints};
-/// Platform routing values (LoL).
-/// Ex: euw1.api.riotgames.com
+
 #[derive(Clone, Copy, Debug)]
 pub enum PlatformRoute {
     BR1,
@@ -595,15 +583,15 @@ pub enum PlatformRoute {
     LA2,
     NA1,
     OC1,
-    PH2,
+    TR1,
     RU,
+    PH2,
     SG2,
     TH2,
-    TR1,
     TW2,
     VN2,
-    // ME1, // décommenter si nécessaire (selon jeu/API)
 }
+
 impl core::fmt::Display for PlatformRoute {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let s = match self {
@@ -616,11 +604,11 @@ impl core::fmt::Display for PlatformRoute {
             PlatformRoute::LA2 => "la2",
             PlatformRoute::NA1 => "na1",
             PlatformRoute::OC1 => "oc1",
-            PlatformRoute::PH2 => "ph2",
+            PlatformRoute::TR1 => "tr1",
             PlatformRoute::RU => "ru",
+            PlatformRoute::PH2 => "ph2",
             PlatformRoute::SG2 => "sg2",
             PlatformRoute::TH2 => "th2",
-            PlatformRoute::TR1 => "tr1",
             PlatformRoute::TW2 => "tw2",
             PlatformRoute::VN2 => "vn2",
         };
@@ -628,34 +616,33 @@ impl core::fmt::Display for PlatformRoute {
     }
 }
 
-/// Regional routing values for account/match routes.
-/// Ex: europe.api.riotgames.com
 #[derive(Clone, Copy, Debug)]
 pub enum RegionalRoute {
     Americas,
-    Europe,
     Asia,
+    Europe,
     Sea,
 }
+
 impl core::fmt::Display for RegionalRoute {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let s = match self {
             RegionalRoute::Americas => "americas",
-            RegionalRoute::Europe => "europe",
             RegionalRoute::Asia => "asia",
+            RegionalRoute::Europe => "europe",
             RegionalRoute::Sea => "sea",
         };
         f.write_str(s)
     }
 }
 
-/// Quelques queues utiles pour league-v4.
 #[derive(Clone, Copy, Debug)]
 pub enum LeagueQueue {
     RankedSolo5x5,
     RankedFlexSr,
     RankedFlexTt,
 }
+
 impl core::fmt::Display for LeagueQueue {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let s = match self {
@@ -667,28 +654,67 @@ impl core::fmt::Display for LeagueQueue {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum LeagueTier {
+    Iron,
+    Bronze,
+    Silver,
+    Gold,
+    Platinum,
+    Emerald,
+    Diamond,
+}
+
+impl core::fmt::Display for LeagueTier {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            LeagueTier::Iron => "IRON",
+            LeagueTier::Bronze => "BRONZE",
+            LeagueTier::Silver => "SILVER",
+            LeagueTier::Gold => "GOLD",
+            LeagueTier::Platinum => "PLATINUM",
+            LeagueTier::Emerald => "EMERALD",
+            LeagueTier::Diamond => "DIAMOND",
+        };
+        f.write_str(s)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum LeagueDivision {
+    I,
+    II,
+    III,
+    IV,
+}
+
+impl core::fmt::Display for LeagueDivision {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            LeagueDivision::I => "I",
+            LeagueDivision::II => "II",
+            LeagueDivision::III => "III",
+            LeagueDivision::IV => "IV",
+        };
+        f.write_str(s)
+    }
+}
+
 pub mod models {
     use super::*;
     use serde_json::Value;
     use std::collections::HashMap;
 
-    // ---------------------------
-    // ACCOUNT (regional routing)
-    // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct AccountDto {
         pub puuid: String,
-        pub game_name: String,
-        pub tag_line: String,
-    }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ActiveShardDto {
-        pub puuid: String,
-        pub game: String,
-        pub active_shard: String,
+        #[serde(default)]
+        pub game_name: Option<String>,
+
+        #[serde(default)]
+        pub tag_line: Option<String>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -697,9 +723,6 @@ pub mod models {
         pub raw: Value,
     }
 
-    // ---------------------------
-    // CHAMPION-V3
-    // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct ChampionRotationsDto {
@@ -708,24 +731,21 @@ pub mod models {
         pub max_new_player_level: i64,
     }
 
-    // ---------------------------
-    // SUMMONER-V4 (platform routing)
-    // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct SummonerDto {
-        pub id: String,         // encryptedSummonerId
-        pub account_id: String, // encryptedAccountId
-        pub puuid: String,
-        pub name: String,
         pub profile_icon_id: u32,
         pub revision_date: i64,
+        pub puuid: String,
         pub summoner_level: u64,
+
+        #[serde(default)]
+        pub id: Option<String>,
+
+        #[serde(default)]
+        pub account_id: Option<String>,
     }
 
-    // ---------------------------
-    // CHAMPION-MASTERY-V4
-    // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct ChampionMasteryDto {
@@ -738,16 +758,11 @@ pub mod models {
         pub chest_granted: bool,
         pub tokens_earned: i32,
         #[serde(default)]
-        pub summoner_id: Option<String>,
-        #[serde(default)]
         pub puuid: Option<String>,
         #[serde(flatten)]
         pub extra: HashMap<String, Value>,
     }
 
-    // ---------------------------
-    // LEAGUE-V4
-    // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct MiniSeriesDto {
@@ -760,9 +775,10 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct LeagueEntryDto {
-        pub league_id: String,
-        pub summoner_id: String,
-        pub summoner_name: String,
+        #[serde(default)]
+        pub league_id: Option<String>,
+        #[serde(default)]
+        pub puuid: Option<String>,
         pub queue_type: String,
         pub tier: String,
         pub rank: String,
@@ -779,8 +795,8 @@ pub mod models {
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct LeagueItemDto {
-        pub summoner_id: String,
-        pub summoner_name: String,
+        #[serde(default)]
+        pub puuid: Option<String>,
         pub league_points: i32,
         pub rank: String,
         pub wins: i32,
@@ -802,9 +818,6 @@ pub mod models {
         pub entries: Vec<LeagueItemDto>,
     }
 
-    // ---------------------------
-    // CLASH
-    // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct ClashTeamDto {
         #[serde(flatten)]
@@ -823,33 +836,18 @@ pub mod models {
         pub raw: Value,
     }
 
-    // ---------------------------
-    // SPECTATOR-V4 (réponses larges => Value)
-    // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct FeaturedGamesDto {
+    pub struct CurrentGameInfo {
         #[serde(flatten)]
         pub raw: Value,
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct CurrentGameInfoDto {
-        #[serde(flatten)]
-        pub raw: Value,
-    }
-
-    // ---------------------------
-    // STATUS-V4 (réponse large => Value)
-    // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct PlatformDataDto {
         #[serde(flatten)]
         pub raw: Value,
     }
 
-    // ---------------------------
-    // MATCH-V5 (très large => top-level + Value)
-    // ---------------------------
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
     pub struct MatchDto {
@@ -862,136 +860,4 @@ pub mod models {
         #[serde(flatten)]
         pub raw: Value,
     }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct RealmDto {
-        pub v: String,
-        pub l: String,
-        pub cdn: String,
-        pub dd: String,
-        pub lg: String,
-        pub css: String,
-        pub profileiconmax: u32,
-        pub store: Option<String>,
-    }
-
-    // /cdn/{version}/data/{locale}/champion.json
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ChampionListDto {
-        #[serde(rename = "type")]
-        pub ty: String,
-        pub format: String,
-        pub version: String,
-        pub data: HashMap<String, ChampionBriefDto>,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ChampionBriefDto {
-        pub version: String,
-        pub id: String,
-        pub key: String,
-        pub name: String,
-        pub title: String,
-        pub blurb: String,
-        #[serde(default)]
-        pub tags: Vec<String>,
-        #[serde(default)]
-        pub info: Option<Value>,
-        #[serde(default)]
-        pub image: Option<Value>,
-    }
-
-    // /cdn/{version}/data/{locale}/champion/{champion}.json (très large)
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ChampionDetailDto {
-        #[serde(flatten)]
-        pub raw: Value,
-    }
-
-    // /cdn/{version}/data/{locale}/summoner.json
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    pub struct SummonerSpellListDto {
-        #[serde(rename = "type")]
-        pub ty: String,
-        pub version: String,
-        pub data: HashMap<String, Value>,
-    }
-
-    // /cdn/{version}/data/{locale}/item.json (très large)
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct ItemListDto {
-        #[serde(flatten)]
-        pub raw: Value,
-    }
-
-    // /cdn/{version}/data/{locale}/runesReforged.json
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RunesReforgedDto(pub Value);
-}
-
-pub async fn test_riot() -> Result<(), ApiClientError> {
-    dotenvy::dotenv().ok();
-    let api_key = dotenvy::var("RIOT_API_KEY").expect("RIOT_API_KEY missing");
-
-    let riot = riot_client::RiotClient::new(api_key);
-    let default_region = RegionalRoute::Europe;
-
-    let account = riot
-        .regional(default_region)
-        .account_v1_accounts()
-        .by_riot_id("Random Iron".to_string(), "EUVV".to_string())
-        .await?;
-    println!(
-        "Account: {}#{} puuid={}",
-        account.game_name, account.tag_line, account.puuid
-    );
-
-    let match_ids: Vec<String> = riot
-        .regional(default_region)
-        .match_v5_matches()
-        .ids_by_puuid(account.puuid.clone())
-        .paginate()
-        .max_items(10_000)
-        .collect()
-        .await?;
-    println!("match_ids Len: {:?}", match_ids.len());
-
-    let ddragon = DDragonClient::new().configure(|config| {
-        config.debug(DebugLevel::VV);
-    });
-    let version = ddragon
-        .ddragon()
-        .api_root()
-        .get_versions()
-        .await?
-        .first()
-        .cloned()
-        .unwrap_or_default();
-    let champion = ddragon
-        .ddragon()
-        .cdn_versioned(version.clone())
-        .data_localized()
-        .locale("Fr-fr".into())
-        .champion()
-        .get_champion_detail("Vayne".into())
-        .await?;
-    println!(
-        "champion detail fields: {:?}",
-        champion.raw.as_object().map(|o| o.len())
-    );
-    let champions = ddragon
-        .ddragon()
-        .cdn_versioned(version.clone())
-        .data_localized()
-        .locale("Fr-fr".into())
-        .champion()
-        .get_champion_list()
-        .await?;
-    println!("champions Len: {:?}", champions.data.keys().len());
-
-    Ok(())
 }
