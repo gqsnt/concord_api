@@ -17,6 +17,9 @@ fn v1_release_gate_script_contains_required_commands() {
 
     for command in [
         "cargo fmt --check",
+        "cargo test -p concord_core redaction",
+        "cargo test -p concord_core auth_runtime",
+        "cargo test -p concord_examples live_smoke",
         "cargo test -p concord_core",
         "cargo test -p concord_macros",
         "cargo test -p concord_examples",
@@ -48,6 +51,11 @@ fn v1_release_checklist_links_local_gate_and_manual_audit() {
         "Public DSL docs are complete",
         "Cache sizing syntax",
         "Same-site duplicate behavior",
+        "Live smoke examples are environment-gated",
+        "does not require external credentials",
+        "Query auth redaction tests pass",
+        "No auth secret appears in debug output tests",
+        "`401`/`403` auth rejection behavior",
         "No crates.io publishing",
     ] {
         assert!(

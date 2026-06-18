@@ -14,6 +14,9 @@ The script runs:
 
 ```bash
 cargo fmt --check
+cargo test -p concord_core redaction
+cargo test -p concord_core auth_runtime
+cargo test -p concord_examples live_smoke
 cargo test -p concord_core
 cargo test -p concord_macros
 cargo test -p concord_examples
@@ -28,6 +31,9 @@ Run:
 
 ```bash
 cargo fmt
+cargo test -p concord_core redaction
+cargo test -p concord_core auth_runtime
+cargo test -p concord_examples live_smoke
 cargo test -p concord_core
 cargo test -p concord_macros
 cargo test -p concord_examples
@@ -67,7 +73,11 @@ and verify that public docs/examples do not describe rejected or removed DSL for
 - Unsupported/reserved syntax is explicitly documented.
 - Cache sizing syntax is documented and compile-checked.
 - Same-site duplicate behavior rejection is documented and tested.
+- Live smoke examples are environment-gated.
+- The release gate does not require external credentials or network access by default.
 - Query auth secrets are redacted from debug URLs.
+- Query auth redaction tests pass.
+- No auth secret appears in debug output tests.
 - `401`/`403` auth rejection behavior matches `AuthStepPolicy` defaults.
 - Redaction tests cover debug output, errors, wrappers, OAuth client secrets, and generated docs.
 - Runtime order tests still pass.

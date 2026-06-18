@@ -35,6 +35,10 @@ fn function_body<'a>(source: &'a str, signature: &str) -> &'a str {
     &rest[..end]
 }
 
+fn occurrences(source: &str, needle: &str) -> usize {
+    source.match_indices(needle).count()
+}
+
 #[test]
 fn riot_manual_smoke_entrypoint_is_opt_in_and_bounded() {
     let riot = workspace_file("concord_examples/src/riot.rs");
@@ -129,4 +133,27 @@ fn examples_main_gates_live_smoke_calls_by_environment() {
             "concord_examples::ddragon::ddragon_test().await?",
         ],
     ));
+
+    assert_eq!(
+        occurrences(&main, "concord_examples::riot::riot_test().await?"),
+        1,
+        "riot_test should only be called from the gated branch"
+    );
+    assert_eq!(
+        occurrences(&main, "concord_examples::ddragon::ddragon_test().await?"),
+        1,
+        "ddragon_test should only be called from the gated branch"
+    );
+
+    for forbidden in [
+        "let _ = concord_examples::riot::riot_test().await",
+        "let _ = concord_examples::ddragon::ddragon_test().await",
+        "concord_examples::riot::riot_test().await?;\n\n    if std::env::var_os",
+        "concord_examples::ddragon::ddragon_test().await?;\n\n    if std::env::var_os",
+    ] {
+        assert!(
+            !main.contains(forbidden),
+            "main.rs must not contain an unconditional live smoke call matching `{forbidden}`"
+        );
+    }
 }
