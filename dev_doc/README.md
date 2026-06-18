@@ -16,4 +16,4 @@ These documents describe how Concord is built internally. Public DSL usage lives
 - [auth_runtime.md](auth_runtime.md): secrets, credentials, auth state, endpoint-backed auth, refresh, and identity isolation.
 - [pagination_and_codecs.md](pagination_and_codecs.md): codec and pagination extension points.
 - [testing.md](testing.md): test strategy and the checklist for adding DSL features.
-- [release_checklist.md](release_checklist.md): release verification commands and manual audit list.
+- [release_checklist.md](release_checklist.md): local v1 gate, release verification commands, and manual audit list.
