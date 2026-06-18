@@ -153,7 +153,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let auth_attempt = self
                 .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
-            let url_str = built.url.as_str().to_string();
+            let url_str = crate::redaction::sanitize_url_for_debug(
+                &built.url,
+                built.extensions.sensitive_query_keys.iter(),
+            );
             let cache_revalidation = match self.check_fresh_cache(&mut built).await {
                 CacheBeforeOutcome::Hit(cached) => {
                     return Ok(cached);

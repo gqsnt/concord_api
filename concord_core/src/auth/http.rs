@@ -81,6 +81,7 @@ pub trait AuthHttpExecutor: Send + Sync {
 pub struct RequestExtensions {
     pub auth_identities: Vec<String>,
     pub transport_auth: Option<TransportAuth>,
+    pub sensitive_query_keys: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

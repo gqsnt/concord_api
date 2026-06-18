@@ -147,6 +147,17 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
                 .url
                 .query_pairs_mut()
                 .append_pair(name, material.secret_value());
+            if !request
+                .extensions
+                .sensitive_query_keys
+                .iter()
+                .any(|key| key.eq_ignore_ascii_case(name))
+            {
+                request
+                    .extensions
+                    .sensitive_query_keys
+                    .push(name.to_string());
+            }
         }
         _ => {
             return Err(crate::auth::AuthError::new(
