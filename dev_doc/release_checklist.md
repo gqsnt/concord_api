@@ -67,6 +67,9 @@ and verify that public docs/examples do not describe rejected or removed DSL for
 - Unsupported/reserved syntax is explicitly documented.
 - Cache sizing syntax is documented and compile-checked.
 - Same-site duplicate behavior rejection is documented and tested.
+- Query auth secrets are redacted from debug URLs.
+- `401`/`403` auth rejection behavior matches `AuthStepPolicy` defaults.
+- Redaction tests cover debug output, errors, wrappers, OAuth client secrets, and generated docs.
 - Runtime order tests still pass.
 - No stale DSL syntax in docs/examples/tests.
 - No broad clippy allows.

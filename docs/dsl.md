@@ -554,6 +554,10 @@ auth certificate client_cert
 
 `auth certificate` is an attachment form for client-certificate credential material. The DSL does not provide a `certificate(secret...)` constructor in v1; use endpoint-backed or runtime-provided credential material when certificate auth is needed.
 
+Default protected-request refresh behavior is intentionally conservative: `401 Unauthorized` invalidates and retries after refresh, while `403 Forbidden` does not invalidate or retry by default. Refresh attempts are bounded. See `docs/auth.md` for the full auth runtime behavior.
+
+Secret-bearing auth values are redacted from debug/display output and diagnostics. The actual outbound request still carries the required credential material.
+
 ### Retry
 
 Retry profiles may be declared flat or inside `policies { ... }`.

@@ -126,6 +126,8 @@ let me = api.protected().me().await?;
 
 Protected calls fail before transport if a required endpoint-backed credential has not been acquired.
 
+Rejected credential refresh only applies after a credential exists and has been applied to the protected request. If the slot is empty, Concord reports the missing credential before sending the request.
+
 ## Auth State
 
 Generated auth state accessors expose explicit checks and clearing.
@@ -136,6 +138,31 @@ if api.auth_state().session().is_set().await {
 }
 ```
 
+Endpoint-backed credential slots track generations. If a stale response tries to invalidate an older generation after a newer credential was acquired, the newer credential is not cleared by that stale invalidation.
+
+## Rejection And Refresh
+
+By default, protected requests may refresh credentials after `401 Unauthorized`.
+
+`403 Forbidden` does not trigger credential refresh by default because it usually means the credential was accepted but lacks permission.
+
+Credential refresh is bounded. Concord will not refresh indefinitely.
+
+Default rejection behavior:
+
+| Status | Invalidate credential | Retry after refresh |
+| --- | --- | --- |
+| `401 Unauthorized` | yes | yes |
+| `403 Forbidden` | no | no |
+
+Normal retry policy still runs separately. Auth rejection handling happens before normal retry classification, so a `401` refresh path is tried before any ordinary retry decision.
+
+`AuthChallengePolicy::NeverRefresh` is available in the advanced core API for runtime integrations that must never refresh on a protected response. It is not a public DSL clause in v1.
+
 ## Redaction
 
-Secret values are wrapped before storage. User-facing errors and diagnostics should identify the credential or header by name, not render raw secret values.
+Secret values are wrapped before storage. User-facing errors and diagnostics should identify the credential, header, query key, or auth usage by name, not render raw secret values.
+
+Concord redacts secret values from debug and diagnostic output. Header values, bearer tokens, passwords, OAuth client secrets, and query-auth values are not rendered directly.
+
+The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug/display output, diagnostics, cache/debug keys, and generated documentation, not to the request sent over transport.

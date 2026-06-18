@@ -66,7 +66,13 @@ fn dev_doc_files_exist_and_cover_architecture() {
     );
     assert_doc(
         "dev_doc/auth_runtime.md",
-        &["credential slots", "endpoint-backed credentials"],
+        &[
+            "credential slots",
+            "endpoint-backed credentials",
+            "`401 Unauthorized`",
+            "`403 Forbidden`",
+            "AuthChallengePolicy::NeverRefresh",
+        ],
     );
     assert_doc(
         "dev_doc/pagination_and_codecs.md",
@@ -78,6 +84,12 @@ fn dev_doc_files_exist_and_cover_architecture() {
     );
     assert_doc(
         "dev_doc/release_checklist.md",
-        &["cargo clippy", "cargo doc"],
+        &[
+            "cargo clippy",
+            "cargo doc",
+            "Query auth secrets are redacted",
+            "`401`/`403` auth rejection behavior",
+            "Redaction tests cover debug output",
+        ],
     );
 }

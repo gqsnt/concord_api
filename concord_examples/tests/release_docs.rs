@@ -19,6 +19,11 @@ fn release_docs_describe_current_grouped_config_model() {
     assert!(dsl.contains("Some(default)"));
     assert!(auth.contains("auth {"));
     assert!(auth.contains("For compact examples"));
+    assert!(auth.contains("## Rejection And Refresh"));
+    assert!(auth.contains("`401 Unauthorized` | yes | yes"));
+    assert!(auth.contains("`403 Forbidden` | no | no"));
+    assert!(auth.contains("AuthChallengePolicy::NeverRefresh"));
+    assert!(auth.contains("Concord redacts secret values"));
     assert!(policies.contains("policies {"));
     assert!(policies.contains("defaults {"));
     assert!(policies.contains("Flat `retry`, `cache`, and `rate_limit`"));
