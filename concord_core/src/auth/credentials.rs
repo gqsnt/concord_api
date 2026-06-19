@@ -1,4 +1,4 @@
-use super::errors::{AuthError, CredentialRefreshReason, InvalidateReason};
+use super::errors::{AuthError, AuthErrorKind, CredentialRefreshReason, InvalidateReason};
 use super::future::AuthFuture;
 use super::http::AuthHttpExecutor;
 use super::ids::{AuthIdentity, CredentialId};
@@ -298,10 +298,10 @@ where
             .await
     }
 
-    pub async fn set_manual(&self, value: P::Credential) {
+    pub async fn set_manual(&self, value: P::Credential) -> Result<(), AuthError> {
         let notify = {
             let mut state = self.state.lock().await;
-            let generation = next_generation(&*state);
+            let generation = next_generation(&*state)?;
             let notify = match &*state {
                 CredentialSlotState::Refreshing { notify, .. } => Some(notify.clone()),
                 _ => None,
@@ -312,6 +312,7 @@ where
         if let Some(notify) = notify {
             notify.notify_waiters();
         }
+        Ok(())
     }
 
     pub async fn clear_manual(&self) {
@@ -354,7 +355,12 @@ where
         let mut state = self.state.lock().await;
         match result {
             Ok(value) => {
-                let generation = previous_generation.saturating_add(1);
+                let generation = previous_generation.checked_add(1).ok_or_else(|| {
+                    AuthError::new(
+                        AuthErrorKind::AcquireFailed,
+                        "credential generation counter overflowed",
+                    )
+                })?;
                 *state = CredentialSlotState::Valid {
                     value: value.clone(),
                     generation,
@@ -391,11 +397,39 @@ fn credential_refresh_reason<T: CredentialMaterial>(
     })
 }
 
-fn next_generation<T>(state: &CredentialSlotState<T>) -> u64 {
+fn next_generation<T>(state: &CredentialSlotState<T>) -> Result<u64, AuthError> {
     match state {
-        CredentialSlotState::Empty => 1,
+        CredentialSlotState::Empty => Ok(1),
         CredentialSlotState::Valid { generation, .. }
         | CredentialSlotState::Refreshing { generation, .. }
-        | CredentialSlotState::Failed { generation, .. } => generation.saturating_add(1),
+        | CredentialSlotState::Failed { generation, .. } => {
+            generation.checked_add(1).ok_or_else(|| {
+                AuthError::new(
+                    AuthErrorKind::AcquireFailed,
+                    "credential generation counter overflowed",
+                )
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn credential_generation_overflow_returns_auth_error() {
+        let state = CredentialSlotState::<()>::Valid {
+            value: (),
+            generation: u64::MAX,
+        };
+
+        let err = next_generation(&state)
+            .expect_err("overflowing credential generation should return auth error");
+        assert_eq!(err.kind, AuthErrorKind::AcquireFailed);
+        assert!(
+            err.to_string()
+                .contains("credential generation counter overflowed")
+        );
     }
 }

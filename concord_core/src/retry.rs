@@ -103,7 +103,11 @@ impl RetryConfig {
 
     #[inline]
     pub fn max_retries(&self) -> u32 {
-        self.max_attempts.saturating_sub(1)
+        if self.max_attempts == 0 {
+            0
+        } else {
+            self.max_attempts - 1
+        }
     }
 
     pub fn decide(&self, ctx: &RetryContext<'_>) -> RetryDecision {

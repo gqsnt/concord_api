@@ -121,9 +121,17 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         >,
     {
         let client = self.client;
-        let value = self.execute().await?;
+        let plan = self.request_plan()?;
+        let ctx = ErrorContext {
+            endpoint: plan.endpoint.meta.name,
+            method: plan.endpoint.meta.method.clone(),
+        };
+        let value = client.execute_plan::<E::Response>(plan).await?.value;
         let auth_state = client.auth_state();
-        slot(auth_state.as_ref()).set_manual(value).await;
+        slot(auth_state.as_ref())
+            .set_manual(value)
+            .await
+            .map_err(|source| ApiClientError::Auth { ctx, source })?;
         Ok(())
     }
 

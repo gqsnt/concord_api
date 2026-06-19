@@ -40,6 +40,10 @@ Auth preparation does not receive `BuiltRequest` directly. Endpoint auth prepara
 
 `TransportRequest` is materialized only immediately before `Transport::send`. It is the boundary where bearer values, arbitrary auth headers, query-auth values, basic auth headers, and certificate transport metadata are inserted. Concord drops it after send and does not store it in `BuiltResponse` or `DecodedResponse<T>`. Custom transports receive real credentials and must not log them.
 
+Rate-limit keying is strict. A bucket keyed by `[host]` requires the logical request URL to have a host and fails before permit acquisition or transport if it does not. The runtime must not invent fallback key values such as `"<unknown-host>"`; endpoint, method, static, and named key parts remain valid without host data when used alone.
+
+Semantic numeric state uses explicit failure instead of silent saturation. Cache TTL conversions are checked during macro semantic analysis, and request/auth attempt counters return typed errors if they overflow.
+
 Post-response hooks precede rate-limit observation. The `304 NOT_MODIFIED` revalidation path must preserve the same hook then observation ordering before returning the revalidated cached response.
 
 Auth rejection handling happens before normal retry. Bounded auth refresh is the first recovery path for configured auth rejection responses.

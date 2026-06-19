@@ -112,6 +112,8 @@ Decimal units are `kb`, `mb`, and `gb`; binary units are `kib`, `mib`, and `gib`
 
 Child cache profiles override only the sizing fields they set. Local `cache { ... }` patches change only the provided fields and preserve inherited cache config.
 
+Cache TTL values use checked arithmetic during semantic analysis. Overflowing duration conversions are rejected at compile time instead of saturating to a different value.
+
 ## Rate Limit
 
 Rate-limit profiles define buckets and keys.
@@ -175,6 +177,8 @@ rate_limit off
 ```
 
 `rate_limit [...]` lists must not be empty and must not contain a duplicate profile name within the same list. Reusing a profile across separate defaults, scopes, endpoints, or behaviors remains valid.
+
+`[host]` is a strict key part. If a bucket uses `[host]`, the request URL must have a host; otherwise execution fails before rate-limit permit acquisition and before transport. Concord does not invent fallback host values such as `"<unknown-host>"`. Endpoint, method, static string, and named key parts do not require a URL host unless they are combined with `[host]`.
 
 ## Overrides
 

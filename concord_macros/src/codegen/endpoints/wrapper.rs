@@ -299,16 +299,18 @@ fn emit_client_wrapper(
                 &self,
                 ep: endpoints::#endpoint,
             ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
-                let value: #output_ty = self.request(ep).execute().await?;
-                let __auth_state = self.inner.auth_state();
-                __auth_state.#name.set_manual(value).await;
-                Ok(())
+                self.request(ep)
+                    .execute_and_store_manual(|__auth_state| __auth_state.#name.as_ref())
+                    .await
             }
 
             #[inline]
-            pub async fn #set_name(&self, value: #output_ty) {
+            pub async fn #set_name(
+                &self,
+                value: #output_ty,
+            ) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
                 let __auth_state = self.inner.auth_state();
-                __auth_state.#name.set_manual(value).await;
+                __auth_state.#name.set_manual(value).await
             }
 
             #[inline]
@@ -497,7 +499,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
     let auth_ty = emit_helpers::ident(&format!("{}Auth", client_ty), client_ty.span());
     let handle_items = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
         let AuthCredentialKindIr::Endpoint {
-            endpoint: _,
+            endpoint,
             output_ty,
             ..
         } = &credential.kind
@@ -525,14 +527,24 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
                 {
                     let value: #output_ty = request.await?;
                     let __auth_state = self.client.inner.auth_state();
-                    __auth_state.#name.set_manual(value).await;
-                    Ok(())
+                    __auth_state.#name.set_manual(value).await.map_err(|source| {
+                        ::concord_core::prelude::ApiClientError::Auth {
+                            ctx: ::concord_core::advanced::ErrorContext {
+                                endpoint: stringify!(#endpoint),
+                                method: ::http::Method::GET,
+                            },
+                            source,
+                        }
+                    })
                 }
 
                 #[inline]
-                pub async fn set(&self, value: #output_ty) {
+                pub async fn set(
+                    &self,
+                    value: #output_ty,
+                ) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
                     let __auth_state = self.client.inner.auth_state();
-                    __auth_state.#name.set_manual(value).await;
+                    __auth_state.#name.set_manual(value).await
                 }
 
                 #[inline]

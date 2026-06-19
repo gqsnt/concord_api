@@ -14,3 +14,5 @@ mod public_api;
 mod rate_limit;
 #[path = "current_core/runtime_order.rs"]
 mod runtime_order;
+#[path = "current_core/strictness.rs"]
+mod strictness;

@@ -141,11 +141,11 @@ impl GovernorRateLimiter {
         }
     }
 
-    async fn wait_cooldown(&self, ctx: &RateLimitContext<'_>) {
+    async fn wait_cooldown(&self, ctx: &RateLimitContext<'_>) -> Result<(), ApiClientError> {
         loop {
             let now = Instant::now();
             let delay = {
-                let keys = cooldown_keys_for_acquire(ctx);
+                let keys = cooldown_keys_for_acquire(ctx)?;
                 let mut guard = self.cooldowns.lock().expect("rate limit cooldown lock");
                 guard.retain(|_, until| *until > now);
                 keys.into_iter()
@@ -155,10 +155,10 @@ impl GovernorRateLimiter {
             };
 
             let Some(delay) = delay else {
-                return;
+                return Ok(());
             };
             if delay.is_zero() {
-                return;
+                return Ok(());
             }
             tokio::time::sleep(delay).await;
         }
@@ -168,23 +168,23 @@ impl GovernorRateLimiter {
         &self,
         ctx: &RateLimitResponseContext<'_>,
         observation: RateLimitObservation,
-    ) -> RateLimitResponseAction {
+    ) -> Result<RateLimitResponseAction, ApiClientError> {
         if !observation.limited {
-            return RateLimitResponseAction::Continue;
+            return Ok(RateLimitResponseAction::Continue);
         }
 
         let mut cooldown_stored = false;
         if let Some(delay) = observation.delay
             && !delay.is_zero()
         {
-            cooldown_stored = self.store_cooldown(&ctx.meta, &observation.target, delay);
+            cooldown_stored = self.store_cooldown(&ctx.meta, &observation.target, delay)?;
         }
 
-        RateLimitResponseAction::Limited {
+        Ok(RateLimitResponseAction::Limited {
             retry_after: observation.delay,
             target: observation.target,
             cooldown_stored,
-        }
+        })
     }
 
     fn store_cooldown(
@@ -192,10 +192,10 @@ impl GovernorRateLimiter {
         ctx: &RateLimitContext<'_>,
         target: &RateLimitTarget,
         delay: std::time::Duration,
-    ) -> bool {
-        let keys = cooldown_keys_for_target(ctx, target);
+    ) -> Result<bool, ApiClientError> {
+        let keys = cooldown_keys_for_target(ctx, target)?;
         if keys.is_empty() {
-            return false;
+            return Ok(false);
         }
 
         let until = Instant::now() + delay;
@@ -206,7 +206,7 @@ impl GovernorRateLimiter {
                 *entry = until;
             }
         }
-        true
+        Ok(true)
     }
 }
 
@@ -216,10 +216,10 @@ impl RateLimiter for GovernorRateLimiter {
         ctx: RateLimitContext<'a>,
     ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
         Box::pin(async move {
-            self.wait_cooldown(&ctx).await;
+            self.wait_cooldown(&ctx).await?;
 
             for bucket in ctx.plan.buckets() {
-                let key = resolve_key(&ctx, &bucket.key);
+                let key = resolve_key(&ctx, &bucket.key)?;
                 for window in &bucket.windows {
                     let spec = GovernorWindowSpec {
                         id: bucket.id.clone(),
@@ -243,7 +243,7 @@ impl RateLimiter for GovernorRateLimiter {
     ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
         Box::pin(async move {
             let observation = self.response_policy.observe(&ctx);
-            Ok(self.store_observation(&ctx, observation))
+            self.store_observation(&ctx, observation)
         })
     }
 }
@@ -282,31 +282,32 @@ fn rate_limit_policy_error(ctx: &RateLimitContext<'_>, msg: &'static str) -> Api
     }
 }
 
-fn resolve_key(ctx: &RateLimitContext<'_>, key: &RateLimitKey) -> ResolvedRateLimitKey {
-    ResolvedRateLimitKey(
-        key.parts()
-            .iter()
-            .map(|part| {
-                (
-                    part.name.to_string(),
-                    resolve_key_part_value(ctx, part).into_owned(),
-                )
-            })
-            .collect(),
-    )
+fn resolve_key(
+    ctx: &RateLimitContext<'_>,
+    key: &RateLimitKey,
+) -> Result<ResolvedRateLimitKey, ApiClientError> {
+    let mut parts = Vec::with_capacity(key.parts().len());
+    for part in key.parts() {
+        parts.push((
+            part.name.to_string(),
+            resolve_key_part_value(ctx, part)?.into_owned(),
+        ));
+    }
+    Ok(ResolvedRateLimitKey(parts))
 }
 
 fn resolve_key_part_value<'a>(
     ctx: &'a RateLimitContext<'_>,
     part: &'a RateLimitKeyPart,
-) -> std::borrow::Cow<'a, str> {
+) -> Result<std::borrow::Cow<'a, str>, ApiClientError> {
     match &part.value {
-        RateLimitKeyValue::Static(value) => std::borrow::Cow::Borrowed(value.as_ref()),
-        RateLimitKeyValue::Endpoint => std::borrow::Cow::Borrowed(ctx.endpoint),
-        RateLimitKeyValue::Method => std::borrow::Cow::Owned(ctx.method.as_str().to_string()),
-        RateLimitKeyValue::UrlHost => {
-            std::borrow::Cow::Borrowed(ctx.url_host.unwrap_or("<unknown-host>"))
-        }
+        RateLimitKeyValue::Static(value) => Ok(std::borrow::Cow::Borrowed(value.as_ref())),
+        RateLimitKeyValue::Endpoint => Ok(std::borrow::Cow::Borrowed(ctx.endpoint)),
+        RateLimitKeyValue::Method => Ok(std::borrow::Cow::Owned(ctx.method.as_str().to_string())),
+        RateLimitKeyValue::UrlHost => ctx
+            .url_host
+            .map(std::borrow::Cow::Borrowed)
+            .ok_or_else(|| missing_host_key_error(ctx)),
     }
 }
 
@@ -322,63 +323,74 @@ fn client_cooldown_key() -> RateLimitCooldownKey {
 }
 
 fn host_cooldown_key(ctx: &RateLimitContext<'_>) -> RateLimitCooldownKey {
-    RateLimitCooldownKey(format!("host:{}", ctx.url_host.unwrap_or("<unknown-host>")))
+    RateLimitCooldownKey(format!(
+        "host:{}",
+        ctx.url_host.expect("host cooldown checked by caller")
+    ))
 }
 
 fn endpoint_cooldown_key(ctx: &RateLimitContext<'_>) -> RateLimitCooldownKey {
-    RateLimitCooldownKey(format!(
-        "endpoint:{}:{}:{}",
-        ctx.url_host.unwrap_or("<unknown-host>"),
-        ctx.method,
-        ctx.endpoint
-    ))
+    RateLimitCooldownKey(format!("endpoint:{}:{}", ctx.method, ctx.endpoint))
 }
 
 fn bucket_kind_cooldown_key(
     ctx: &RateLimitContext<'_>,
     bucket: &RateLimitBucketUse,
-) -> RateLimitCooldownKey {
-    let key = resolve_key(ctx, &bucket.key);
-    RateLimitCooldownKey(format!("bucket-kind:{}:{:?}", bucket.id.kind.as_ref(), key))
+) -> Result<RateLimitCooldownKey, ApiClientError> {
+    let key = resolve_key(ctx, &bucket.key)?;
+    Ok(RateLimitCooldownKey(format!(
+        "bucket-kind:{}:{:?}",
+        bucket.id.kind.as_ref(),
+        key
+    )))
 }
 
 fn bucket_cooldown_key(
     ctx: &RateLimitContext<'_>,
     bucket: &RateLimitBucketUse,
-) -> RateLimitCooldownKey {
-    let key = resolve_key(ctx, &bucket.key);
-    RateLimitCooldownKey(format!(
+) -> Result<RateLimitCooldownKey, ApiClientError> {
+    let key = resolve_key(ctx, &bucket.key)?;
+    Ok(RateLimitCooldownKey(format!(
         "bucket:{}:{}:{:?}",
         bucket.id.kind.as_ref(),
         bucket.id.name.as_ref(),
         key
-    ))
+    )))
 }
 
-fn cooldown_keys_for_acquire(ctx: &RateLimitContext<'_>) -> Vec<RateLimitCooldownKey> {
+fn cooldown_keys_for_acquire(
+    ctx: &RateLimitContext<'_>,
+) -> Result<Vec<RateLimitCooldownKey>, ApiClientError> {
     let mut keys = vec![
         client_cooldown_key(),
-        host_cooldown_key(ctx),
         endpoint_cooldown_key(ctx),
         request_cooldown_key(ctx),
     ];
-    for bucket in ctx.plan.buckets() {
-        keys.push(bucket_kind_cooldown_key(ctx, bucket));
-        keys.push(bucket_cooldown_key(ctx, bucket));
+    if ctx.url_host.is_some() {
+        keys.push(host_cooldown_key(ctx));
     }
-    keys
+    for bucket in ctx.plan.buckets() {
+        keys.push(bucket_kind_cooldown_key(ctx, bucket)?);
+        keys.push(bucket_cooldown_key(ctx, bucket)?);
+    }
+    Ok(keys)
 }
 
 fn cooldown_keys_for_target(
     ctx: &RateLimitContext<'_>,
     target: &RateLimitTarget,
-) -> Vec<RateLimitCooldownKey> {
+) -> Result<Vec<RateLimitCooldownKey>, ApiClientError> {
     match target {
-        RateLimitTarget::None => Vec::new(),
-        RateLimitTarget::Request => vec![request_cooldown_key(ctx)],
-        RateLimitTarget::Endpoint => vec![endpoint_cooldown_key(ctx)],
-        RateLimitTarget::Host => vec![host_cooldown_key(ctx)],
-        RateLimitTarget::Client => vec![client_cooldown_key()],
+        RateLimitTarget::None => Ok(Vec::new()),
+        RateLimitTarget::Request => Ok(vec![request_cooldown_key(ctx)]),
+        RateLimitTarget::Endpoint => Ok(vec![endpoint_cooldown_key(ctx)]),
+        RateLimitTarget::Host => {
+            if ctx.url_host.is_none() {
+                return Err(missing_host_key_error(ctx));
+            }
+            Ok(vec![host_cooldown_key(ctx)])
+        }
+        RateLimitTarget::Client => Ok(vec![client_cooldown_key()]),
         RateLimitTarget::CurrentPlan { fallback } => {
             if ctx.plan.is_empty() {
                 cooldown_keys_for_target(ctx, fallback)
@@ -397,11 +409,11 @@ fn cooldown_keys_for_target(
                 .iter()
                 .filter(|bucket| bucket.id.kind.as_ref() == kind.as_ref())
                 .map(|bucket| bucket_kind_cooldown_key(ctx, bucket))
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()?;
             if keys.is_empty() {
                 cooldown_keys_for_target(ctx, fallback)
             } else {
-                keys
+                Ok(keys)
             }
         }
         RateLimitTarget::Bucket { id, fallback } => {
@@ -411,14 +423,21 @@ fn cooldown_keys_for_target(
                 .iter()
                 .filter(|bucket| &bucket.id == id)
                 .map(|bucket| bucket_cooldown_key(ctx, bucket))
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, _>>()?;
             if keys.is_empty() {
                 cooldown_keys_for_target(ctx, fallback)
             } else {
-                keys
+                Ok(keys)
             }
         }
     }
+}
+
+fn missing_host_key_error(ctx: &RateLimitContext<'_>) -> ApiClientError {
+    rate_limit_policy_error(
+        ctx,
+        "rate_limit key `[host]` requires request URL to have a host",
+    )
 }
 
 #[cfg(test)]
@@ -452,6 +471,105 @@ mod tests {
             idempotent: true,
             plan: Box::leak(Box::new(plan)),
         }
+    }
+
+    fn hostless_context(plan: RateLimitPlan) -> RateLimitContext<'static> {
+        static METHOD: http::Method = http::Method::GET;
+        static URL: &str = "urn:test:hostless";
+        static ENDPOINT: &str = "HostlessEndpoint";
+
+        RateLimitContext {
+            endpoint: ENDPOINT,
+            method: &METHOD,
+            url: URL,
+            url_host: None,
+            attempt: 0,
+            page_index: 0,
+            idempotent: true,
+            plan: Box::leak(Box::new(plan)),
+        }
+    }
+
+    fn one_window_bucket(key: RateLimitKey) -> RateLimitBucketUse {
+        RateLimitBucketUse::new("method", "test", key).with_windows(vec![RateLimitWindow::new(
+            NonZeroU32::new(10).expect("non-zero"),
+            Duration::from_secs(10),
+        )])
+    }
+
+    #[test]
+    fn rate_limit_host_key_requires_host() {
+        let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
+            RateLimitKeyPart::url_host(),
+        ]))]);
+        let ctx = hostless_context(plan);
+        let err = resolve_key(&ctx, &ctx.plan.buckets()[0].key)
+            .expect_err("host key should require a request host");
+        let msg = err.to_string();
+        assert!(msg.contains("host"));
+        assert!(!msg.contains(concat!("unknown", "-", "host")));
+    }
+
+    #[tokio::test]
+    async fn rate_limit_host_key_failure_happens_before_permit() {
+        let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
+            RateLimitKeyPart::url_host(),
+        ]))]);
+        let ctx = hostless_context(plan);
+        let limiter = GovernorRateLimiter::new();
+
+        let err = limiter
+            .acquire(ctx)
+            .await
+            .expect_err("hostless host key should fail before permit acquisition");
+        let msg = err.to_string();
+        assert!(msg.contains("rate_limit key `[host]`"));
+        assert!(!msg.contains(concat!("unknown", "-", "host")));
+    }
+
+    #[test]
+    fn rate_limit_endpoint_key_allows_hostless_url() {
+        let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
+            RateLimitKeyPart::endpoint(),
+        ]))]);
+        let ctx = hostless_context(plan);
+        let key = resolve_key(&ctx, &ctx.plan.buckets()[0].key)
+            .expect("endpoint key should not require host");
+        assert_eq!(
+            key,
+            ResolvedRateLimitKey(vec![(
+                "endpoint".to_string(),
+                "HostlessEndpoint".to_string()
+            )])
+        );
+    }
+
+    #[test]
+    fn rate_limit_static_key_allows_hostless_url() {
+        let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
+            RateLimitKeyPart::static_value("tenant", "public"),
+        ]))]);
+        let ctx = hostless_context(plan);
+        let key = resolve_key(&ctx, &ctx.plan.buckets()[0].key)
+            .expect("static key should not require host");
+        assert_eq!(
+            key,
+            ResolvedRateLimitKey(vec![("tenant".to_string(), "public".to_string())])
+        );
+    }
+
+    #[test]
+    fn rate_limit_method_key_allows_hostless_url() {
+        let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
+            RateLimitKeyPart::method(),
+        ]))]);
+        let ctx = hostless_context(plan);
+        let key = resolve_key(&ctx, &ctx.plan.buckets()[0].key)
+            .expect("method key should not require host");
+        assert_eq!(
+            key,
+            ResolvedRateLimitKey(vec![("method".to_string(), "GET".to_string())])
+        );
     }
 
     #[test]

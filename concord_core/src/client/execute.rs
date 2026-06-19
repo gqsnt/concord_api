@@ -142,7 +142,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut used_revalidation_refetch = false;
 
         loop {
-            let meta = plan.endpoint.meta.request_meta(base_attempt.saturating_add(attempt_index), plan.overrides.page_index);
+            let current_attempt = checked_attempt(base_attempt, attempt_index, &ctx)?;
+            let meta = plan
+                .endpoint
+                .meta
+                .request_meta(current_attempt, plan.overrides.page_index);
             let cache_mode = if force_cache_refresh_for_next_attempt {
                 force_cache_refresh_for_next_attempt = false;
                 CacheRequestMode::Refresh
@@ -208,8 +212,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                                 ),
                             });
                         }
-                        auth_retry_index = auth_retry_index.saturating_add(1);
-                        attempt_index = attempt_index.saturating_add(1);
+                        auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
+                        attempt_index = next_attempt_counter(attempt_index, &ctx)?;
                         continue;
                     }
                     let cache_after = self
@@ -223,7 +227,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     if cache_after.needs_revalidation_refetch {
                         used_revalidation_refetch = true;
                         force_cache_refresh_for_next_attempt = true;
-                        attempt_index = attempt_index.saturating_add(1);
+                        attempt_index = next_attempt_counter(attempt_index, &ctx)?;
                         continue;
                     }
                     let resp = cache_after.response;
@@ -235,7 +239,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         let response_meta = plan
                             .endpoint
                             .meta
-                            .request_meta(base_attempt.saturating_add(attempt_index), plan.overrides.page_index);
+                            .request_meta(current_attempt, plan.overrides.page_index);
                         if self
                             .handle_auth_rejection(
                                 AuthRejectionCtx {
@@ -253,8 +257,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             if auth_retry_index >= max_auth_retries {
                                 return Err(err);
                             }
-                            auth_retry_index = auth_retry_index.saturating_add(1);
-                            attempt_index = attempt_index.saturating_add(1);
+                            auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
+                            attempt_index = next_attempt_counter(attempt_index, &ctx)?;
                             continue;
                         }
                     }
@@ -264,7 +268,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         endpoint: plan.endpoint.meta.name,
                         method: &plan.endpoint.meta.method,
                         url: &url_str,
-                        attempt: base_attempt.saturating_add(attempt_index),
+                        attempt: current_attempt,
                         retry_count: transport_retry_index,
                         page_index: plan.overrides.page_index,
                         idempotent: plan.endpoint.meta.idempotent,
@@ -295,8 +299,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     if !delay.is_zero() {
                         tokio::time::sleep(delay).await;
                     }
-                    transport_retry_index = transport_retry_index.saturating_add(1);
-                    attempt_index = attempt_index.saturating_add(1);
+                    transport_retry_index = next_attempt_counter(transport_retry_index, &ctx)?;
+                    attempt_index = next_attempt_counter(attempt_index, &ctx)?;
                 }
             }
         }
@@ -522,5 +526,47 @@ fn attach_prepared_auth_generation(
             slot.generation = prepared.applied.generation;
             break;
         }
+    }
+}
+
+fn checked_attempt(
+    base_attempt: u32,
+    attempt_index: u32,
+    ctx: &ErrorContext,
+) -> Result<u32, ApiClientError> {
+    base_attempt.checked_add(attempt_index).ok_or_else(|| {
+        ApiClientError::PolicyViolation {
+            ctx: ctx.clone(),
+            msg: "request attempt counter overflowed",
+        }
+    })
+}
+
+fn next_attempt_counter(attempt: u32, ctx: &ErrorContext) -> Result<u32, ApiClientError> {
+    attempt.checked_add(1).ok_or_else(|| {
+        ApiClientError::PolicyViolation {
+            ctx: ctx.clone(),
+            msg: "request attempt counter overflowed",
+        }
+    })
+}
+
+#[cfg(test)]
+mod attempt_counter_tests {
+    use super::*;
+
+    #[test]
+    fn request_attempt_counter_overflow_returns_error() {
+        let ctx = ErrorContext {
+            endpoint: "Overflow",
+            method: http::Method::GET,
+        };
+        let err = next_attempt_counter(u32::MAX, &ctx)
+            .expect_err("overflowing attempt counter should fail");
+        assert!(err.to_string().contains("request attempt counter overflowed"));
+
+        let err = checked_attempt(u32::MAX, 1, &ctx)
+            .expect_err("overflowing base plus attempt should fail");
+        assert!(err.to_string().contains("request attempt counter overflowed"));
     }
 }

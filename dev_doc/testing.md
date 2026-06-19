@@ -26,6 +26,8 @@ Auth/redaction tests must cover arbitrary auth names, not only conventional name
 
 Auth preparation boundary tests should also verify that no auth application hook receives `BuiltRequest`. `ClientContext::prepare_auth_requirement`, internal auth hooks, and generated auth preparation must receive the auth-only application request, and auth helpers must not be able to mutate logical request URL, headers, body, policy, timeout, or metadata.
 
+Runtime strictness tests should reject invented policy values and silent saturation. Rate-limit `[host]` keys must fail explicitly when the logical URL has no host, and source guards should prevent `"<unknown-host>"` style fallbacks from returning. Cache TTL overflow belongs in macro semantic diagnostics, and request/auth attempt counters should return typed overflow errors instead of saturating.
+
 ## Examples and docs tests
 
 `concord_examples` compile-checks public usage. It includes small examples, public docs fixtures, docs sync tests, release docs checks, and the Riot fixture.

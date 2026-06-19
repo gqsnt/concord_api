@@ -91,7 +91,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                         source.to_string(),
                                     ));
                                 }
-                                attempt = attempt.saturating_add(1);
+                                attempt = next_auth_transport_attempt(attempt)?;
                                 continue;
                             }
                         };
@@ -105,7 +105,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                         source.to_string(),
                                     ));
                                 }
-                                attempt = attempt.saturating_add(1);
+                                attempt = next_auth_transport_attempt(attempt)?;
                                 continue;
                             }
                         };
@@ -208,7 +208,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                         source.to_string(),
                                     ));
                                 }
-                                attempt = attempt.saturating_add(1);
+                                attempt = next_auth_transport_attempt(attempt)?;
                                 continue;
                             }
                         };
@@ -221,7 +221,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                         source.to_string(),
                                     ));
                                 }
-                                attempt = attempt.saturating_add(1);
+                                attempt = next_auth_transport_attempt(attempt)?;
                                 continue;
                             }
                         };
@@ -246,7 +246,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                     source.to_string(),
                                 ));
                             }
-                            attempt = attempt.saturating_add(1);
+                            attempt = next_auth_transport_attempt(attempt)?;
                             continue;
                         }
                     };
@@ -260,7 +260,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                     source.to_string(),
                                 ));
                             }
-                            attempt = attempt.saturating_add(1);
+                            attempt = next_auth_transport_attempt(attempt)?;
                             continue;
                         }
                     };
@@ -304,6 +304,15 @@ async fn read_body_all(
     Ok(buf.freeze())
 }
 
+fn next_auth_transport_attempt(attempt: u32) -> Result<u32, AuthError> {
+    attempt.checked_add(1).ok_or_else(|| {
+        AuthError::new(
+            AuthErrorKind::AcquireFailed,
+            "auth transport attempt counter overflowed",
+        )
+    })
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -330,5 +339,13 @@ mod test {
         let empty = Bytes::new();
         let s = crate::codec::format_debug_body::<NoContent>(&empty, 1024);
         assert_eq!(s, "");
+    }
+
+    #[test]
+    fn auth_attempt_counter_overflow_returns_error() {
+        let err = next_auth_transport_attempt(u32::MAX)
+            .expect_err("overflowing auth transport attempt counter should fail");
+        assert_eq!(err.kind, AuthErrorKind::AcquireFailed);
+        assert!(err.to_string().contains("auth transport attempt counter overflowed"));
     }
 }

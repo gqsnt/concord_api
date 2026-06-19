@@ -189,7 +189,9 @@ fn resolve_cache_duration_secs(ttl: &CacheDurationSpec) -> Result<u64> {
         RateLimitDurationUnit::Seconds => 1,
         RateLimitDurationUnit::Minutes => 60,
     };
-    Ok(amount.saturating_mul(multiplier))
+    amount
+        .checked_mul(multiplier)
+        .ok_or_else(|| syn::Error::new(ttl.amount.span(), "cache ttl overflows u64 seconds"))
 }
 
 fn resolve_cache_capacity_entries(capacity: &CacheCapacitySpec) -> Result<u64> {
