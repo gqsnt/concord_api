@@ -219,37 +219,49 @@ fn emit_client_wrapper(
             if rebuild_auth_state {
                 quote! {
                     #[inline]
-                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> &mut Self {
+                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&mut Self, ::concord_core::advanced::AuthError> {
                         {
-                            let mut __g = self.inner.auth_vars().write().unwrap();
+                            let mut __g = ::concord_core::advanced::write_auth_lock(
+                                self.inner.auth_vars(),
+                                "auth vars lock poisoned",
+                            )?;
                             __g.#f = ::core::option::Option::Some(v.into());
                         }
-                        self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
-                        self
+                        self.inner.try_set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()))?;
+                        ::core::result::Result::Ok(self)
                     }
                     #[inline]
-                    pub fn #clear_name(&mut self) -> &mut Self {
+                    pub fn #clear_name(&mut self) -> ::core::result::Result<&mut Self, ::concord_core::advanced::AuthError> {
                         {
-                            let mut __g = self.inner.auth_vars().write().unwrap();
+                            let mut __g = ::concord_core::advanced::write_auth_lock(
+                                self.inner.auth_vars(),
+                                "auth vars lock poisoned",
+                            )?;
                             __g.#f = ::core::option::Option::None;
                         }
-                        self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
-                        self
+                        self.inner.try_set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()))?;
+                        ::core::result::Result::Ok(self)
                     }
                 }
             } else {
                 quote! {
                     #[inline]
-                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
-                        let mut __g = self.inner.auth_vars().write().unwrap();
+                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&Self, ::concord_core::advanced::AuthError> {
+                        let mut __g = ::concord_core::advanced::write_auth_lock(
+                            self.inner.auth_vars(),
+                            "auth vars lock poisoned",
+                        )?;
                         __g.#f = ::core::option::Option::Some(v.into());
-                        self
+                        ::core::result::Result::Ok(self)
                     }
                     #[inline]
-                    pub fn #clear_name(&self) -> &Self {
-                        let mut __g = self.inner.auth_vars().write().unwrap();
+                    pub fn #clear_name(&self) -> ::core::result::Result<&Self, ::concord_core::advanced::AuthError> {
+                        let mut __g = ::concord_core::advanced::write_auth_lock(
+                            self.inner.auth_vars(),
+                            "auth vars lock poisoned",
+                        )?;
                         __g.#f = ::core::option::Option::None;
-                        self
+                        ::core::result::Result::Ok(self)
                     }
                 }
             }
@@ -257,22 +269,28 @@ fn emit_client_wrapper(
             if rebuild_auth_state {
                 quote! {
                     #[inline]
-                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> &mut Self {
+                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&mut Self, ::concord_core::advanced::AuthError> {
                         {
-                            let mut __g = self.inner.auth_vars().write().unwrap();
+                            let mut __g = ::concord_core::advanced::write_auth_lock(
+                                self.inner.auth_vars(),
+                                "auth vars lock poisoned",
+                            )?;
                             __g.#f = v.into();
                         }
-                        self.inner.set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()));
-                        self
+                        self.inner.try_set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()))?;
+                        ::core::result::Result::Ok(self)
                     }
                 }
             } else {
                 quote! {
                     #[inline]
-                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> &Self {
-                        let mut __g = self.inner.auth_vars().write().unwrap();
+                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&Self, ::concord_core::advanced::AuthError> {
+                        let mut __g = ::concord_core::advanced::write_auth_lock(
+                            self.inner.auth_vars(),
+                            "auth vars lock poisoned",
+                        )?;
                         __g.#f = v.into();
-                        self
+                        ::core::result::Result::Ok(self)
                     }
                 }
             }
@@ -309,20 +327,21 @@ fn emit_client_wrapper(
                 &self,
                 value: #output_ty,
             ) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
-                let __auth_state = self.inner.auth_state();
+                let __auth_state = self.inner.try_auth_state()?;
                 __auth_state.#name.set_manual(value).await
             }
 
             #[inline]
-            pub async fn #clear_name(&self) {
-                let __auth_state = self.inner.auth_state();
+            pub async fn #clear_name(&self) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
+                let __auth_state = self.inner.try_auth_state()?;
                 __auth_state.#name.clear_manual().await;
+                ::core::result::Result::Ok(())
             }
 
             #[inline]
-            pub async fn #has_name(&self) -> bool {
-                let __auth_state = self.inner.auth_state();
-                __auth_state.#name.has_value().await
+            pub async fn #has_name(&self) -> ::core::result::Result<bool, ::concord_core::advanced::AuthError> {
+                let __auth_state = self.inner.try_auth_state()?;
+                ::core::result::Result::Ok(__auth_state.#name.has_value().await)
             }
         })
     });
@@ -526,7 +545,15 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
                     R: ::core::future::IntoFuture<Output = ::core::result::Result<#output_ty, ::concord_core::prelude::ApiClientError>>,
                 {
                     let value: #output_ty = request.await?;
-                    let __auth_state = self.client.inner.auth_state();
+                    let __auth_state = self.client.inner.try_auth_state().map_err(|source| {
+                        ::concord_core::prelude::ApiClientError::Auth {
+                            ctx: ::concord_core::advanced::ErrorContext {
+                                endpoint: stringify!(#endpoint),
+                                method: ::http::Method::GET,
+                            },
+                            source,
+                        }
+                    })?;
                     __auth_state.#name.set_manual(value).await.map_err(|source| {
                         ::concord_core::prelude::ApiClientError::Auth {
                             ctx: ::concord_core::advanced::ErrorContext {
@@ -543,20 +570,21 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
                     &self,
                     value: #output_ty,
                 ) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
-                    let __auth_state = self.client.inner.auth_state();
+                    let __auth_state = self.client.inner.try_auth_state()?;
                     __auth_state.#name.set_manual(value).await
                 }
 
                 #[inline]
-                pub async fn clear(&self) {
-                    let __auth_state = self.client.inner.auth_state();
+                pub async fn clear(&self) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
+                    let __auth_state = self.client.inner.try_auth_state()?;
                     __auth_state.#name.clear_manual().await;
+                    ::core::result::Result::Ok(())
                 }
 
                 #[inline]
-                pub async fn is_set(&self) -> bool {
-                    let __auth_state = self.client.inner.auth_state();
-                    __auth_state.#name.has_value().await
+                pub async fn is_set(&self) -> ::core::result::Result<bool, ::concord_core::advanced::AuthError> {
+                    let __auth_state = self.client.inner.try_auth_state()?;
+                    ::core::result::Result::Ok(__auth_state.#name.has_value().await)
                 }
             }
         })

@@ -147,7 +147,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         }
 
                         AUTH_INTERNAL_STACK.with(|stack| stack.borrow_mut().push(requirement_key));
-                        let auth_state_snapshot = self.client.auth_state();
+                        let auth_state_snapshot = self.client.try_auth_state()?;
                         let applied = {
                             let mut auth_request =
                                 crate::auth::AuthApplicationRequest::new(&mut base_request.extensions);

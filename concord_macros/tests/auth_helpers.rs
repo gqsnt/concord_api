@@ -73,7 +73,13 @@ async fn endpoint_backed_auth_helpers_acquire_clear_and_gate_protected_requests(
     assert!(msg.contains("missing credential"));
     assert!(msg.contains("client.acquire_auth_session(...)"));
     assert_eq!(sent.sent_count().await, 0);
-    assert!(!api.auth_state().session().is_set().await);
+    assert!(
+        !api.auth_state()
+            .session()
+            .is_set()
+            .await
+            .expect("session state check succeeds")
+    );
 
     api.auth_api()
         .login_for_session(LoginRequest {
@@ -82,7 +88,13 @@ async fn endpoint_backed_auth_helpers_acquire_clear_and_gate_protected_requests(
         .acquire_as_session()
         .await
         .expect("session acquisition succeeds");
-    assert!(api.auth_state().session().is_set().await);
+    assert!(
+        api.auth_state()
+            .session()
+            .is_set()
+            .await
+            .expect("session state check succeeds")
+    );
 
     let user = api
         .protected()
@@ -92,8 +104,18 @@ async fn endpoint_backed_auth_helpers_acquire_clear_and_gate_protected_requests(
         .expect("protected request succeeds after acquisition");
     assert_eq!(user.name, "Ada");
 
-    api.auth_state().session().clear().await;
-    assert!(!api.auth_state().session().is_set().await);
+    api.auth_state()
+        .session()
+        .clear()
+        .await
+        .expect("session clear succeeds");
+    assert!(
+        !api.auth_state()
+            .session()
+            .is_set()
+            .await
+            .expect("session state check succeeds")
+    );
 
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);

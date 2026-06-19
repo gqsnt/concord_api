@@ -46,6 +46,8 @@ Auth endpoints that map to credential material get acquisition helpers such as `
 
 Generated auth preparation code resolves credential leases and receives an auth-only application request rather than `BuiltRequest`. Internal auth hooks use the same sealed request shape. Generated code calls core auth helpers that attach typed pending auth slots, then returns a prepared credential sidecar to the runtime so raw material can be inserted only when a `TransportRequest` is materialized immediately before send. Codegen must not emit raw auth values into ordinary query/header policy data or expose logical URL/header mutation during auth preparation.
 
+Generated auth-var setters and endpoint-backed credential state helpers must not unwrap shared locks. Setters that update generated auth vars return `Result<..., AuthError>` when lock state is unavailable. Endpoint-backed credential `set`, `clear`, and `is_set` helpers are fallible for the same reason.
+
 ## Rustdoc
 
 Rustdoc is generated from resolved endpoint metadata. Behavior labels attached through defaults, scopes, and endpoints are emitted as a concise `Behavior: ...` line. Do not render secrets or secret values in rustdoc.

@@ -23,7 +23,13 @@ async fn auth_endpoint_backed_session_flow_acquires_and_uses_credential() {
     assert!(missing.to_string().contains("acquire_auth_session"));
     assert!(!rendered_error(&missing).contains("upstream-secret"));
     handle.assert_recorded_len(0);
-    assert!(!api.auth_state().session().is_set().await);
+    assert!(
+        !api.auth_state()
+            .session()
+            .is_set()
+            .await
+            .expect("session state check succeeds")
+    );
 
     api.auth_api()
         .login_for_session(SessionLoginRequest {
@@ -33,7 +39,13 @@ async fn auth_endpoint_backed_session_flow_acquires_and_uses_credential() {
         .acquire_as_session()
         .await
         .expect("session acquisition succeeds");
-    assert!(api.auth_state().session().is_set().await);
+    assert!(
+        api.auth_state()
+            .session()
+            .is_set()
+            .await
+            .expect("session state check succeeds")
+    );
 
     let user = api
         .protected()

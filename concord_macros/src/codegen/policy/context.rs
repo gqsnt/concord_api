@@ -19,7 +19,13 @@ fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> To
 
     if policy_uses_auth(policy) {
         // AuthVars is a single RwLock<AuthInner>; lock exactly once per request build.
-        ops.push(quote! { let auth = auth.read().unwrap(); });
+        ops.push(quote! {
+            let auth = ::concord_core::advanced::read_auth_lock(auth, "auth vars lock poisoned")
+                .map_err(|source| ::concord_core::prelude::ApiClientError::Auth {
+                    ctx: ctx_err.clone(),
+                    source,
+                })?;
+        });
     }
     ops.extend(emit_policy_ops(policy, PolicyKeyKind::Header, ctx));
     ops.extend(emit_policy_ops(policy, PolicyKeyKind::Query, ctx));

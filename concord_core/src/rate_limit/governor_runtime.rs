@@ -81,7 +81,10 @@ impl GovernorRateLimiter {
         ctx: &RateLimitContext<'_>,
         spec: GovernorWindowSpec,
     ) -> Result<Arc<DefaultDirectRateLimiter>, ApiClientError> {
-        let mut guard = self.windows.lock().expect("rate limit window lock");
+        let mut guard = self
+            .windows
+            .lock()
+            .map_err(|_| rate_limit_runtime_state_error(ctx, "rate limit window lock poisoned"))?;
         let now = Instant::now();
         self.prune_windows(&mut guard, now);
         if let Some(existing) = guard.get_mut(&spec) {
@@ -146,7 +149,9 @@ impl GovernorRateLimiter {
             let now = Instant::now();
             let delay = {
                 let keys = cooldown_keys_for_acquire(ctx)?;
-                let mut guard = self.cooldowns.lock().expect("rate limit cooldown lock");
+                let mut guard = self.cooldowns.lock().map_err(|_| {
+                    rate_limit_runtime_state_error(ctx, "rate limit cooldown lock poisoned")
+                })?;
                 guard.retain(|_, until| *until > now);
                 keys.into_iter()
                     .filter_map(|key| guard.get(&key).copied())
@@ -199,7 +204,9 @@ impl GovernorRateLimiter {
         }
 
         let until = Instant::now() + delay;
-        let mut guard = self.cooldowns.lock().expect("rate limit cooldown lock");
+        let mut guard = self.cooldowns.lock().map_err(|_| {
+            rate_limit_runtime_state_error(ctx, "rate limit cooldown lock poisoned")
+        })?;
         for key in keys {
             let entry = guard.entry(key).or_insert(until);
             if *entry < until {
@@ -322,11 +329,9 @@ fn client_cooldown_key() -> RateLimitCooldownKey {
     RateLimitCooldownKey("client".to_string())
 }
 
-fn host_cooldown_key(ctx: &RateLimitContext<'_>) -> RateLimitCooldownKey {
-    RateLimitCooldownKey(format!(
-        "host:{}",
-        ctx.url_host.expect("host cooldown checked by caller")
-    ))
+fn host_cooldown_key(ctx: &RateLimitContext<'_>) -> Result<RateLimitCooldownKey, ApiClientError> {
+    let host = ctx.url_host.ok_or_else(|| missing_host_key_error(ctx))?;
+    Ok(RateLimitCooldownKey(format!("host:{host}")))
 }
 
 fn endpoint_cooldown_key(ctx: &RateLimitContext<'_>) -> RateLimitCooldownKey {
@@ -367,7 +372,7 @@ fn cooldown_keys_for_acquire(
         request_cooldown_key(ctx),
     ];
     if ctx.url_host.is_some() {
-        keys.push(host_cooldown_key(ctx));
+        keys.push(host_cooldown_key(ctx)?);
     }
     for bucket in ctx.plan.buckets() {
         keys.push(bucket_kind_cooldown_key(ctx, bucket)?);
@@ -388,7 +393,7 @@ fn cooldown_keys_for_target(
             if ctx.url_host.is_none() {
                 return Err(missing_host_key_error(ctx));
             }
-            Ok(vec![host_cooldown_key(ctx)])
+            Ok(vec![host_cooldown_key(ctx)?])
         }
         RateLimitTarget::Client => Ok(vec![client_cooldown_key()]),
         RateLimitTarget::CurrentPlan { fallback } => {
@@ -440,11 +445,23 @@ fn missing_host_key_error(ctx: &RateLimitContext<'_>) -> ApiClientError {
     )
 }
 
+fn rate_limit_runtime_state_error(ctx: &RateLimitContext<'_>, msg: &'static str) -> ApiClientError {
+    ApiClientError::RuntimeState {
+        ctx: ErrorContext {
+            endpoint: ctx.endpoint,
+            method: ctx.method.clone(),
+        },
+        subsystem: "rate-limit",
+        msg,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::rate_limit::RateLimitPlan;
     use std::num::NonZeroU32;
+    use std::panic::AssertUnwindSafe;
 
     fn test_context() -> RateLimitContext<'static> {
         static METHOD: http::Method = http::Method::GET;
@@ -495,6 +512,13 @@ mod tests {
             NonZeroU32::new(10).expect("non-zero"),
             Duration::from_secs(10),
         )])
+    }
+
+    fn poison_mutex<T>(mutex: &Mutex<T>) {
+        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _guard = mutex.lock().expect("test mutex should be available");
+            panic!("poison test mutex");
+        }));
     }
 
     #[test]
@@ -569,6 +593,47 @@ mod tests {
         assert_eq!(
             key,
             ResolvedRateLimitKey(vec![("method".to_string(), "GET".to_string())])
+        );
+    }
+
+    #[tokio::test]
+    async fn poisoned_rate_limit_window_lock_returns_typed_error() {
+        let limiter = GovernorRateLimiter::new();
+        poison_mutex(&limiter.windows);
+
+        let err = limiter
+            .acquire(test_context())
+            .await
+            .expect_err("poisoned rate-limit window lock should fail");
+        assert!(matches!(
+            err,
+            ApiClientError::RuntimeState {
+                subsystem: "rate-limit",
+                ..
+            }
+        ));
+        assert!(err.to_string().contains("rate limit window lock poisoned"));
+    }
+
+    #[tokio::test]
+    async fn poisoned_rate_limit_cooldown_lock_returns_typed_error() {
+        let limiter = GovernorRateLimiter::new();
+        poison_mutex(&limiter.cooldowns);
+
+        let err = limiter
+            .acquire(test_context())
+            .await
+            .expect_err("poisoned rate-limit cooldown lock should fail");
+        assert!(matches!(
+            err,
+            ApiClientError::RuntimeState {
+                subsystem: "rate-limit",
+                ..
+            }
+        ));
+        assert!(
+            err.to_string()
+                .contains("rate limit cooldown lock poisoned")
         );
     }
 

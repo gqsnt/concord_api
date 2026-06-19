@@ -67,6 +67,16 @@ pub async fn session_flow_example() -> Result<(), ApiClientError> {
 
     let _me = api.protected().me().await?;
 
-    api.auth_state().session().clear().await;
+    api.auth_state()
+        .session()
+        .clear()
+        .await
+        .map_err(|source| ApiClientError::Auth {
+            ctx: concord_core::advanced::ErrorContext {
+                endpoint: "auth::session",
+                method: http::Method::GET,
+            },
+            source,
+        })?;
     Ok(())
 }

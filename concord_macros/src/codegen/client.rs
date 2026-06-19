@@ -124,7 +124,10 @@ fn emit_client_auth_state_init(resolved_api: &ResolvedApi, auth_state_ty: &Ident
         quote! { let _ = auth; }
     } else {
         quote! {
-            let auth = auth.read().unwrap();
+            let auth = match auth.read() {
+                ::core::result::Result::Ok(__guard) => __guard,
+                ::core::result::Result::Err(__poisoned) => __poisoned.into_inner(),
+            };
             #[allow(unused_variables)]
             let secret = &auth;
         }
@@ -453,7 +456,13 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
     }
 
     let lock_auth = if policy_uses_auth(policy) {
-        quote! { let auth = auth.read().unwrap(); }
+        quote! {
+            let auth = ::concord_core::advanced::read_auth_lock(auth, "auth vars lock poisoned")
+                .map_err(|source| ::concord_core::prelude::ApiClientError::Auth {
+                    ctx: ctx.clone(),
+                    source,
+                })?;
+        }
     } else {
         quote! {}
     };

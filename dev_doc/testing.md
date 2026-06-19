@@ -28,6 +28,8 @@ Auth preparation boundary tests should also verify that no auth application hook
 
 Runtime strictness tests should reject invented policy values and silent saturation. Rate-limit `[host]` keys must fail explicitly when the logical URL has no host, and source guards should prevent `"<unknown-host>"` style fallbacks from returning. Cache TTL overflow belongs in macro semantic diagnostics, and request/auth attempt counters should return typed overflow errors instead of saturating.
 
+Runtime lock/state tests should poison representative auth, cache, and rate-limit state where feasible and assert typed errors or explicit cache backend outcomes instead of panics. Source guards should reject lock `unwrap`/`expect` patterns in public runtime paths and generated helper code while allowing test-only assertions.
+
 ## Examples and docs tests
 
 `concord_examples` compile-checks public usage. It includes small examples, public docs fixtures, docs sync tests, release docs checks, and the Riot fixture.

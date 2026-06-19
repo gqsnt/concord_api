@@ -133,7 +133,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
         let base_attempt: u32 = plan.overrides.attempt;
         let max_auth_retries = self.runtime_state.max_auth_retries();
-        let auth_state_snapshot = self.auth_state();
+        let auth_state_snapshot =
+            self.try_auth_state()
+                .map_err(|source| ApiClientError::Auth {
+                    ctx: ctx.clone(),
+                    source,
+                })?;
         let auth_http = ClientAuthHttpExecutor { client: self };
         let mut attempt_index: u32 = 0;
         let mut transport_retry_index: u32 = 0;

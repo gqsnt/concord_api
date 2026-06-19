@@ -76,6 +76,7 @@ pub mod advanced {
         PreparedInternalAuth, SecretCredential, StaticApiKeyProvider, StaticBasicProvider,
         StaticBearerProvider, apply_basic_credential, apply_certificate_credential,
         apply_secret_credential, auth_decision_for_status, invalidate_rejected_credential,
+        read_auth_lock, write_auth_lock,
     };
     pub use crate::cache::{
         CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,

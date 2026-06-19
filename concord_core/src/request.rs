@@ -127,7 +127,12 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             method: plan.endpoint.meta.method.clone(),
         };
         let value = client.execute_plan::<E::Response>(plan).await?.value;
-        let auth_state = client.auth_state();
+        let auth_state = client
+            .try_auth_state()
+            .map_err(|source| ApiClientError::Auth {
+                ctx: ctx.clone(),
+                source,
+            })?;
         slot(auth_state.as_ref())
             .set_manual(value)
             .await

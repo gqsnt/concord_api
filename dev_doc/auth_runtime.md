@@ -20,6 +20,8 @@ Generated auth state accessors expose explicit checks and clearing. Endpoint-bac
 
 Protected calls that depend on endpoint-backed credentials fail before transport when the credential slot is empty. Rejection/refresh handling only applies after credential material has been acquired and applied to a request.
 
+Generated helpers that observe or mutate auth state are fallible when they touch shared auth locks. Endpoint-backed `set`, `clear`, and `is_set` helpers return `AuthError` on state-unavailable failures instead of panicking. Request execution maps auth-state lock failure into `ApiClientError::Auth`.
+
 ## Request auth application
 
 Before cache and inflight identity are computed, the runtime resolves required credentials and attaches typed pending auth slots to the logical `BuiltRequest`. No auth application hook receives `BuiltRequest`: endpoint auth preparation and auth-internal preparation both receive an auth-only application request. That request can attach pending auth slots and mark auth query keys as sensitive, but it cannot mutate the logical URL, headers, body, timeout, retry, cache, rate-limit, or metadata. Custom `ClientContext` implementations must use the core `apply_*_credential` helpers instead of writing auth values into request headers or query strings.

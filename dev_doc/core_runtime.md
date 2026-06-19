@@ -44,6 +44,8 @@ Rate-limit keying is strict. A bucket keyed by `[host]` requires the logical req
 
 Semantic numeric state uses explicit failure instead of silent saturation. Cache TTL conversions are checked during macro semantic analysis, and request/auth attempt counters return typed errors if they overflow.
 
+Runtime state access should fail explicitly instead of panicking. Request execution maps poisoned auth state, rate-limit window/cooldown state, and other required runtime state into typed auth or runtime-state errors. Cache backends that cannot return `Result` for every operation must still avoid panics and report backend failure through the cache operation result.
+
 Post-response hooks precede rate-limit observation. The `304 NOT_MODIFIED` revalidation path must preserve the same hook then observation ordering before returning the revalidated cached response.
 
 Auth rejection handling happens before normal retry. Bounded auth refresh is the first recovery path for configured auth rejection responses.

@@ -114,6 +114,8 @@ Child cache profiles override only the sizing fields they set. Local `cache { ..
 
 Cache TTL values use checked arithmetic during semantic analysis. Overflowing duration conversions are rejected at compile time instead of saturating to a different value.
 
+Runtime cache state failures are surfaced through cache backend failure handling instead of panicking. A cache backend state failure may produce a cache miss or `NotStored(Backend)` according to the cache operation, but request execution must not panic on a poisoned cache index.
+
 ## Rate Limit
 
 Rate-limit profiles define buckets and keys.
@@ -180,6 +182,8 @@ rate_limit off
 
 `[host]` is a strict key part. If a bucket uses `[host]`, the request URL must have a host; otherwise execution fails before rate-limit permit acquisition and before transport. Concord does not invent fallback host values such as `"<unknown-host>"`. Endpoint, method, static string, and named key parts do not require a URL host unless they are combined with `[host]`.
 
+Rate-limit runtime state failures, such as poisoned window or cooldown locks, return typed runtime-state errors. They are reported before transport when the state is required for permit acquisition or cooldown handling.
+
 ## Overrides
 
 Narrower layers can clear inherited policies.
@@ -214,5 +218,7 @@ The runtime order is fixed:
 16. Decode the endpoint response. Decode failures do not retry transport.
 
 `BuiltRequest` and response metadata are safe to inspect: Concord stores auth as typed slots and safe identities until the transport boundary. Custom advanced `ClientContext` auth preparation, including internal auth preparation, must use the `apply_*_credential` helpers; auth hooks do not receive `BuiltRequest` and cannot write raw auth into logical URL or headers. A custom `Transport` receives real credential material in the materialized request and is responsible for not logging it.
+
+Poisoned runtime locks are not public panic paths. Request execution reports typed auth or runtime-state errors when auth state, rate-limit state, or other required runtime state is unavailable.
 
 This order is not user-configurable.

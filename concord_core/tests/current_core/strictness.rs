@@ -49,3 +49,35 @@ fn credential_generation_overflow_has_no_runtime_expect() {
         "credential generation overflow must return a typed AuthError, not panic"
     );
 }
+
+#[test]
+fn runtime_and_generated_auth_paths_do_not_use_lock_panics() {
+    for path in [
+        "concord_core/src/client/api.rs",
+        "concord_core/src/client/context.rs",
+        "concord_core/src/client/execute.rs",
+        "concord_core/src/auth/credentials.rs",
+        "concord_core/src/cache.rs",
+        "concord_core/src/rate_limit/governor_runtime.rs",
+        "concord_macros/src/codegen/client.rs",
+        "concord_macros/src/codegen/endpoints/wrapper.rs",
+        "concord_macros/src/codegen/policy/context.rs",
+    ] {
+        let source = workspace_file(path);
+        for forbidden in [
+            ".lock().expect(\"cache index lock\")",
+            ".lock().expect(\"rate limit window lock\")",
+            ".lock().expect(\"rate limit cooldown lock\")",
+            ".read().expect(\"auth_state lock poisoned\")",
+            ".read().unwrap",
+            ".write().expect(\"auth_state lock poisoned\")",
+            ".write().unwrap",
+            "host cooldown checked by caller",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{path} must not use runtime lock panic pattern `{forbidden}`"
+            );
+        }
+    }
+}

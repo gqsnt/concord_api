@@ -133,10 +133,12 @@ Rejected credential refresh only applies after a credential exists and has been 
 Generated auth state accessors expose explicit checks and clearing.
 
 ```rust
-if api.auth_state().session().is_set().await {
-    api.auth_state().session().clear().await;
+if api.auth_state().session().is_set().await? {
+    api.auth_state().session().clear().await?;
 }
 ```
+
+Auth state helpers that observe shared auth state are fallible. A poisoned auth-state lock returns `AuthError` instead of panicking.
 
 Endpoint-backed credential slots track generations. If a stale response tries to invalidate an older generation after a newer credential was acquired, the newer credential is not cleared by that stale invalidation.
 

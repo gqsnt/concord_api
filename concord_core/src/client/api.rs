@@ -10,6 +10,47 @@ pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = ReqwestTransport>
     debug_sink: Arc<dyn DebugSink>,
     runtime_state: Arc<ClientRuntimeState>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::NoAuthState;
+    use std::panic::AssertUnwindSafe;
+
+    #[derive(Clone)]
+    struct PoisonCx;
+
+    impl ClientContext for PoisonCx {
+        type Vars = ();
+        type AuthVars = ();
+        type AuthState = NoAuthState;
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+        const DOMAIN: &'static str = "example.com";
+
+        fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {
+            NoAuthState
+        }
+    }
+
+    #[test]
+    fn poisoned_auth_state_lock_returns_typed_error() {
+        let client = ApiClient::<PoisonCx>::new((), ());
+        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _guard = client
+                .auth_state
+                .write()
+                .expect("test auth_state lock should be available");
+            panic!("poison auth state lock");
+        }));
+
+        let err = match client.try_auth_state() {
+            Ok(_) => panic!("poisoned auth state should return typed auth error"),
+            Err(err) => err,
+        };
+        assert_eq!(err.kind, crate::auth::AuthErrorKind::StateUnavailable);
+        assert!(err.to_string().contains("auth state lock poisoned"));
+    }
+}
 impl<Cx: ClientContext> ApiClient<Cx, ReqwestTransport> {
     pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
         Self::with_reqwest_client(vars, auth_vars, reqwest::Client::new())
@@ -78,15 +119,39 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     #[inline]
     pub fn auth_state(&self) -> Arc<Cx::AuthState> {
+        match self.auth_state.read() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    #[inline]
+    pub fn try_auth_state(&self) -> Result<Arc<Cx::AuthState>, crate::auth::AuthError> {
         self.auth_state
             .read()
-            .expect("auth_state lock poisoned")
-            .clone()
+            .map(|guard| guard.clone())
+            .map_err(|_| crate::auth::AuthError::state_unavailable("auth state lock poisoned"))
     }
 
     #[inline]
     pub fn set_auth_state(&mut self, auth_state: Cx::AuthState) {
-        *self.auth_state.write().expect("auth_state lock poisoned") = Arc::new(auth_state);
+        match self.auth_state.write() {
+            Ok(mut guard) => *guard = Arc::new(auth_state),
+            Err(poisoned) => *poisoned.into_inner() = Arc::new(auth_state),
+        }
+    }
+
+    #[inline]
+    pub fn try_set_auth_state(
+        &mut self,
+        auth_state: Cx::AuthState,
+    ) -> Result<(), crate::auth::AuthError> {
+        *self
+            .auth_state
+            .write()
+            .map_err(|_| crate::auth::AuthError::state_unavailable("auth state lock poisoned"))? =
+            Arc::new(auth_state);
+        Ok(())
     }
 
     #[inline]

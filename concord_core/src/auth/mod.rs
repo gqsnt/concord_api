@@ -12,7 +12,10 @@ pub use credentials::{
     AuthStepPolicy, CredentialContext, CredentialLease, CredentialMaterial, CredentialProvider,
     CredentialSlot, SecretCredential,
 };
-pub use errors::{AuthError, AuthErrorKind, CredentialRefreshReason, InvalidateReason};
+pub use errors::{
+    AuthError, AuthErrorKind, CredentialRefreshReason, InvalidateReason, read_auth_lock,
+    write_auth_lock,
+};
 pub use future::AuthFuture;
 pub use http::{
     AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode,

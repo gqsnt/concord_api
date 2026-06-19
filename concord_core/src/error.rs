@@ -86,6 +86,14 @@ pub enum ApiClientError {
         ctx: ErrorContext,
         msg: &'static str,
     },
+
+    #[error("{ctx}: runtime state error in {subsystem}: {msg}")]
+    RuntimeState {
+        ctx: ErrorContext,
+        subsystem: &'static str,
+        msg: &'static str,
+    },
+
     #[error(
         "{ctx}: invalid host label: label[{index}]='{label}' (placeholder={placeholder:?}) reason={reason:?}"
     )]
@@ -178,6 +186,7 @@ impl ApiClientError {
             | ApiClientError::PaginationLimit { ctx, .. }
             | ApiClientError::Auth { ctx, .. }
             | ApiClientError::PolicyViolation { ctx, .. }
+            | ApiClientError::RuntimeState { ctx, .. }
             | ApiClientError::InvalidHostLabel { ctx, .. } => ctx,
         }
     }
@@ -217,7 +226,9 @@ impl ApiClientError {
                 ErrorCategory::AuthRejected
             }
             ApiClientError::Auth { .. } => ErrorCategory::AuthRejected,
-            ApiClientError::PolicyViolation { .. } => ErrorCategory::InternalInvariant,
+            ApiClientError::PolicyViolation { .. } | ApiClientError::RuntimeState { .. } => {
+                ErrorCategory::InternalInvariant
+            }
         }
     }
 

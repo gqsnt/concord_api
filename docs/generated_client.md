@@ -183,10 +183,12 @@ let me = api.protected().me().await?;
 Auth state accessors expose explicit credential checks and clearing.
 
 ```rust
-if api.auth_state().session().is_set().await {
-    api.auth_state().session().clear().await;
+if api.auth_state().session().is_set().await? {
+    api.auth_state().session().clear().await?;
 }
 ```
+
+Generated auth state helpers are fallible when they observe shared auth state. Lock/state failures return `AuthError` instead of panicking.
 
 ## Advanced Endpoints
 

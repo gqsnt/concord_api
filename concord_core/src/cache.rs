@@ -498,8 +498,9 @@ mod moka_backend {
                 })
                 .eviction_listener(
                     move |key: Arc<CacheKey>, _value: Arc<CachedEntry>, _cause: RemovalCause| {
-                        let mut index = index_for_listener.lock().expect("cache index lock");
-                        remove_variant_from_index(&mut index, key.as_ref());
+                        if let Ok(mut index) = index_for_listener.lock() {
+                            remove_variant_from_index(&mut index, key.as_ref());
+                        }
                     },
                 )
                 .build();
@@ -575,7 +576,7 @@ mod moka_backend {
             &self,
             request: &BuiltRequest,
             response: &BuiltResponse,
-        ) -> http::Response<()> {
+        ) -> Option<http::Response<()>> {
             let mut headers = response.headers.clone();
             if let CacheSetting::Config(config) = &request.cache
                 && let Some(ttl) = config.default_ttl
@@ -590,9 +591,9 @@ mod moka_backend {
             let mut out = http::Response::builder()
                 .status(response.status)
                 .body(())
-                .expect("valid cached response");
+                .ok()?;
             *out.headers_mut() = headers;
-            out
+            Some(out)
         }
 
         fn store_response(&self, request: &BuiltRequest, response: &BuiltResponse) -> CacheAfter {
@@ -610,7 +611,9 @@ mod moka_backend {
             let Some(policy_request) = self.request_for_policy(request) else {
                 return CacheAfter::NotStored(CacheSkipReason::Backend);
             };
-            let policy_response = self.response_for_policy(request, response);
+            let Some(policy_response) = self.response_for_policy(request, response) else {
+                return CacheAfter::NotStored(CacheSkipReason::Backend);
+            };
             let options = CacheOptions {
                 shared: config.shared || self.shared,
                 ..CacheOptions::default()
@@ -638,7 +641,9 @@ mod moka_backend {
                 weight,
             });
             self.entries.insert(variant.clone(), entry);
-            let mut index = self.index.lock().expect("cache index lock");
+            let Ok(mut index) = self.index.lock() else {
+                return CacheAfter::NotStored(CacheSkipReason::Backend);
+            };
             upsert_variant_index(&mut index, primary, variant);
             CacheAfter::Stored
         }
@@ -657,7 +662,9 @@ mod moka_backend {
 
             let primary = default_cache_key_with_method(request, &http::Method::GET);
             let variants = {
-                let mut index = self.index.lock().expect("cache index lock");
+                let Ok(mut index) = self.index.lock() else {
+                    return Some(CacheAfter::NotStored(CacheSkipReason::Backend));
+                };
                 let variants = index.by_primary.remove(&primary);
                 if let Some(variants) = variants.as_ref() {
                     for key in variants {
@@ -688,7 +695,9 @@ mod moka_backend {
             let Some(policy_request) = self.request_for_policy(request) else {
                 return CacheAfter::NotStored(CacheSkipReason::Backend);
             };
-            let policy_response = self.response_for_policy(request, response);
+            let Some(policy_response) = self.response_for_policy(request, response) else {
+                return CacheAfter::NotStored(CacheSkipReason::Backend);
+            };
             match entry
                 .policy
                 .after_response(&policy_request, &policy_response, SystemTime::now())
@@ -720,14 +729,10 @@ mod moka_backend {
                     return CacheBefore::Miss;
                 };
 
-                let variants = self
-                    .index
-                    .lock()
-                    .expect("cache index lock")
-                    .by_primary
-                    .get(&primary)
-                    .cloned()
-                    .unwrap_or_default();
+                let variants = match self.index.lock() {
+                    Ok(index) => index.by_primary.get(&primary).cloned().unwrap_or_default(),
+                    Err(_) => return CacheBefore::Miss,
+                };
                 let now = SystemTime::now();
                 let mut stale_variants = Vec::new();
                 for key in variants {
@@ -764,8 +769,9 @@ mod moka_backend {
                         BeforeRequest::Stale { .. } => {}
                     }
                 }
-                if !stale_variants.is_empty() {
-                    let mut index = self.index.lock().expect("cache index lock");
+                if !stale_variants.is_empty()
+                    && let Ok(mut index) = self.index.lock()
+                {
                     for key in stale_variants {
                         remove_variant_from_index(&mut index, &key);
                     }
@@ -807,6 +813,67 @@ mod moka_backend {
                     None
                 }
             })
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::auth::RequestExtensions;
+        use crate::rate_limit::RateLimitPlan;
+        use crate::retry::RetrySetting;
+        use crate::transport::RequestMeta;
+        use std::panic::AssertUnwindSafe;
+
+        fn cached_request() -> BuiltRequest {
+            BuiltRequest {
+                meta: RequestMeta {
+                    endpoint: "CachePoison",
+                    method: http::Method::GET,
+                    idempotent: true,
+                    attempt: 0,
+                    page_index: 0,
+                },
+                url: "https://example.com/cache".parse().expect("test url"),
+                headers: http::HeaderMap::new(),
+                body: None,
+                timeout: None,
+                retry: RetrySetting::Inherit,
+                rate_limit: RateLimitPlan::new(),
+                cache: CacheSetting::Config(CacheConfig::new()),
+                cache_mode: CacheRequestMode::Default,
+                cache_revalidation: None,
+                extensions: RequestExtensions::default(),
+            }
+        }
+
+        fn cached_response(request: &BuiltRequest) -> BuiltResponse {
+            BuiltResponse {
+                meta: request.meta.clone(),
+                url: request.url.clone(),
+                status: http::StatusCode::OK,
+                headers: http::HeaderMap::new(),
+                body: bytes::Bytes::from_static(b"cached"),
+                rate_limit: RateLimitPlan::new(),
+            }
+        }
+
+        #[test]
+        fn poisoned_cache_index_lock_returns_typed_backend_outcome() {
+            let store = MokaCacheStore::default();
+            let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                let _guard = store.index.lock().expect("test cache index lock");
+                panic!("poison cache index");
+            }));
+
+            let request = cached_request();
+            let response = cached_response(&request);
+            let outcome = store.store_response(&request, &response);
+
+            assert!(matches!(
+                outcome,
+                CacheAfter::NotStored(CacheSkipReason::Backend)
+            ));
         }
     }
 }
