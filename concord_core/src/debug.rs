@@ -2,6 +2,7 @@ use crate::codec::{self, Format};
 use bytes::Bytes;
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap, Method, StatusCode};
+use std::fmt;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u8)]
@@ -172,6 +173,18 @@ fn is_sensitive_header_name(name: &HeaderName) -> bool {
 
 fn header_value_for_debug(name: &HeaderName, value: &HeaderValue) -> String {
     crate::redaction::redacted_display_value(name.as_str(), value.to_str().unwrap_or("<non-utf8>"))
+}
+
+pub(crate) struct RedactedHeaders<'a>(pub(crate) &'a HeaderMap);
+
+impl fmt::Debug for RedactedHeaders<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut map = f.debug_map();
+        for (name, value) in self.0 {
+            map.entry(name, &header_value_for_debug(name, value));
+        }
+        map.finish()
+    }
 }
 
 #[cfg(test)]

@@ -1,16 +1,16 @@
-use crate::auth::{RequestExtensions, TransportAuth};
+use crate::auth::{PendingAuthPlacement, RequestExtensions};
 use crate::cache::{CacheRequestMode, CacheRevalidation, CacheSetting};
 use crate::rate_limit::RateLimitPlan;
 use crate::retry::RetrySetting;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 use url::Url;
 
 use std::error::Error;
-use std::fmt;
 
 #[derive(Clone, Debug)]
 pub struct RequestMeta {
@@ -21,7 +21,7 @@ pub struct RequestMeta {
     pub page_index: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct BuiltRequest {
     pub meta: RequestMeta,
     pub url: Url,
@@ -36,7 +36,51 @@ pub struct BuiltRequest {
     pub extensions: RequestExtensions,
 }
 
-#[derive(Clone, Debug)]
+impl fmt::Debug for BuiltRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BuiltRequest")
+            .field("meta", &self.meta)
+            .field("url", &self.debug_url())
+            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field(
+                "body",
+                &self
+                    .body
+                    .as_ref()
+                    .map(|body| format!("<{} bytes>", body.len())),
+            )
+            .field("timeout", &self.timeout)
+            .field("retry", &self.retry)
+            .field("rate_limit", &self.rate_limit)
+            .field("cache", &self.cache)
+            .field("cache_mode", &self.cache_mode)
+            .field("cache_revalidation", &self.cache_revalidation)
+            .field("extensions", &self.extensions)
+            .finish()
+    }
+}
+
+impl BuiltRequest {
+    pub(crate) fn debug_url(&self) -> String {
+        let mut url = self.url.clone();
+        if self
+            .extensions
+            .pending_auth_slots
+            .iter()
+            .any(|slot| matches!(slot.placement, PendingAuthPlacement::Query(_)))
+        {
+            let mut pairs = url.query_pairs_mut();
+            for slot in &self.extensions.pending_auth_slots {
+                if let PendingAuthPlacement::Query(name) = &slot.placement {
+                    pairs.append_pair(name, "<redacted>");
+                }
+            }
+        }
+        crate::redaction::sanitize_url_for_debug(&url, self.extensions.sensitive_query_keys.iter())
+    }
+}
+
+#[derive(Clone)]
 pub struct BuiltResponse {
     pub meta: RequestMeta,
     pub url: Url,
@@ -46,13 +90,230 @@ pub struct BuiltResponse {
     pub rate_limit: RateLimitPlan,
 }
 
-#[derive(Clone, Debug)]
+impl fmt::Debug for BuiltResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BuiltResponse")
+            .field("meta", &self.meta)
+            .field(
+                "url",
+                &crate::redaction::sanitize_url_for_debug(&self.url, [] as [&str; 0]),
+            )
+            .field("status", &self.status)
+            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field("body", &format!("<{} bytes>", self.body.len()))
+            .field("rate_limit", &self.rate_limit)
+            .finish()
+    }
+}
+
+#[derive(Clone)]
 pub struct DecodedResponse<T> {
     pub meta: RequestMeta,
     pub url: Url,
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub value: T,
+}
+
+impl<T: fmt::Debug> fmt::Debug for DecodedResponse<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DecodedResponse")
+            .field("meta", &self.meta)
+            .field(
+                "url",
+                &crate::redaction::sanitize_url_for_debug(&self.url, [] as [&str; 0]),
+            )
+            .field("status", &self.status)
+            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field("value", &self.value)
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct TransportRequest {
+    pub meta: RequestMeta,
+    pub url: Url,
+    pub headers: HeaderMap,
+    pub body: Option<bytes::Bytes>,
+    pub timeout: Option<Duration>,
+    pub rate_limit: RateLimitPlan,
+    pub transport_auth: Option<TransportAuth>,
+    pub extensions: RequestExtensions,
+}
+
+impl fmt::Debug for TransportRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut headers = self.headers.clone();
+        for slot in &self.extensions.pending_auth_slots {
+            match &slot.placement {
+                PendingAuthPlacement::Bearer | PendingAuthPlacement::Basic => {
+                    headers.insert(
+                        http::header::AUTHORIZATION,
+                        http::HeaderValue::from_static("<redacted>"),
+                    );
+                }
+                PendingAuthPlacement::Header(name) => {
+                    headers.insert(name.clone(), http::HeaderValue::from_static("<redacted>"));
+                }
+                PendingAuthPlacement::Query(_) | PendingAuthPlacement::Certificate => {}
+            }
+        }
+        f.debug_struct("TransportRequest")
+            .field("meta", &self.meta)
+            .field(
+                "url",
+                &crate::redaction::sanitize_url_for_debug(
+                    &self.url,
+                    self.extensions.sensitive_query_keys.iter(),
+                ),
+            )
+            .field("headers", &crate::debug::RedactedHeaders(&headers))
+            .field(
+                "body",
+                &self
+                    .body
+                    .as_ref()
+                    .map(|body| format!("<{} bytes>", body.len())),
+            )
+            .field("timeout", &self.timeout)
+            .field("rate_limit", &self.rate_limit)
+            .field("transport_auth", &self.transport_auth)
+            .field("extensions", &self.extensions)
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum TransportAuth {
+    ClientCertificate { identity_id: String },
+}
+
+impl fmt::Debug for TransportAuth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ClientCertificate { identity_id } => f
+                .debug_struct("ClientCertificate")
+                .field(
+                    "identity_id",
+                    &format_args!("<redacted:{}>", identity_id.len()),
+                )
+                .finish(),
+        }
+    }
+}
+
+pub(crate) fn materialize_transport_request(
+    built: &BuiltRequest,
+    materials: &[crate::auth::AuthTransportMaterial],
+) -> Result<TransportRequest, crate::auth::AuthError> {
+    use base64::Engine;
+    use http::header::{AUTHORIZATION, HeaderValue};
+    use std::collections::HashMap;
+
+    let mut by_slot = HashMap::new();
+    for material in materials {
+        let slot_id = match material {
+            crate::auth::AuthTransportMaterial::Secret { slot_id, .. }
+            | crate::auth::AuthTransportMaterial::Basic { slot_id, .. }
+            | crate::auth::AuthTransportMaterial::Certificate { slot_id, .. } => *slot_id,
+        };
+        by_slot.insert(slot_id, material);
+    }
+
+    let mut req = TransportRequest {
+        meta: built.meta.clone(),
+        url: built.url.clone(),
+        headers: built.headers.clone(),
+        body: built.body.clone(),
+        timeout: built.timeout,
+        rate_limit: built.rate_limit.clone(),
+        transport_auth: None,
+        extensions: built.extensions.clone(),
+    };
+
+    for slot in &built.extensions.pending_auth_slots {
+        let Some(material) = by_slot.get(&slot.id).copied() else {
+            return Err(crate::auth::AuthError::new(
+                crate::auth::AuthErrorKind::MissingCredential,
+                format!(
+                    "missing materialized credential `{}` for auth usage `{}`",
+                    slot.credential.id, slot.usage_id
+                ),
+            ));
+        };
+        match (&slot.placement, material) {
+            (
+                PendingAuthPlacement::Bearer,
+                crate::auth::AuthTransportMaterial::Secret { secret, .. },
+            ) => {
+                let value = format!("Bearer {}", secret.expose());
+                let value = HeaderValue::from_str(&value).map_err(|_| {
+                    crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::UnsupportedScheme,
+                        "invalid bearer header value",
+                    )
+                })?;
+                req.headers.insert(AUTHORIZATION, value);
+            }
+            (
+                PendingAuthPlacement::Header(name),
+                crate::auth::AuthTransportMaterial::Secret { secret, .. },
+            ) => {
+                let value = HeaderValue::from_str(secret.expose()).map_err(|_| {
+                    crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::UnsupportedScheme,
+                        "invalid auth header value",
+                    )
+                })?;
+                req.headers.insert(name.clone(), value);
+            }
+            (
+                PendingAuthPlacement::Query(name),
+                crate::auth::AuthTransportMaterial::Secret { secret, .. },
+            ) => {
+                req.url.query_pairs_mut().append_pair(name, secret.expose());
+            }
+            (
+                PendingAuthPlacement::Basic,
+                crate::auth::AuthTransportMaterial::Basic {
+                    username, password, ..
+                },
+            ) => {
+                let raw = format!("{}:{}", username, password.expose());
+                let value = format!(
+                    "Basic {}",
+                    base64::engine::general_purpose::STANDARD.encode(raw)
+                );
+                let value = HeaderValue::from_str(&value).map_err(|_| {
+                    crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::UnsupportedScheme,
+                        "invalid basic header value",
+                    )
+                })?;
+                req.headers.insert(AUTHORIZATION, value);
+            }
+            (
+                PendingAuthPlacement::Certificate,
+                crate::auth::AuthTransportMaterial::Certificate { identity_id, .. },
+            ) => {
+                req.transport_auth = Some(TransportAuth::ClientCertificate {
+                    identity_id: identity_id.clone(),
+                });
+            }
+            _ => {
+                return Err(crate::auth::AuthError::new(
+                    crate::auth::AuthErrorKind::UnsupportedScheme,
+                    format!(
+                        "credential material does not match auth placement for `{}`",
+                        slot.usage_id
+                    ),
+                ));
+            }
+        }
+    }
+
+    Ok(req)
 }
 
 impl<T> DecodedResponse<T> {
@@ -216,12 +477,12 @@ pub struct TransportResponse {
 /// Injectable transport layer.
 ///
 /// Contract:
-/// - Must honor `BuiltRequest` fields (url/headers/body/timeout) as appropriate.
+/// - Must honor `TransportRequest` fields (url/headers/body/timeout) as appropriate.
 /// - Must not leak a concrete HTTP client type in its public surface.
 pub trait Transport: Send + Clone + Sync + 'static {
     fn send(
         &self,
-        req: BuiltRequest,
+        req: TransportRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>;
 }
 
@@ -257,31 +518,29 @@ impl TransportBody for ReqwestBody {
 impl Transport for ReqwestTransport {
     fn send(
         &self,
-        req: BuiltRequest,
+        req: TransportRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
         let client = self.client.clone();
         Box::pin(async move {
-            let BuiltRequest {
+            let TransportRequest {
                 meta,
                 url,
                 headers,
                 body,
                 timeout,
-                retry: _,
                 rate_limit,
-                cache: _,
-                cache_mode: _,
-                cache_revalidation: _,
-                extensions,
+                transport_auth,
+                ..
             } = req;
-            if let Some(TransportAuth::ClientCertificate { identity_id }) =
-                extensions.transport_auth
-            {
+            if matches!(
+                transport_auth,
+                Some(TransportAuth::ClientCertificate { .. })
+            ) {
                 return Err(TransportError::with_kind(
                     TransportErrorKind::Request,
-                    std::io::Error::other(format!(
-                        "ReqwestTransport does not support per-request client certificate identity `{identity_id}`"
-                    )),
+                    std::io::Error::other(
+                        "ReqwestTransport does not support per-request client certificate auth",
+                    ),
                 ));
             }
             // reqwest needs an owned Url; we keep a copy for returning meta.

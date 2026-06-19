@@ -1,7 +1,6 @@
 mod support;
 
-use concord_core::advanced::{BuiltRequest, CacheRequestMode, RateLimitPlan};
-use concord_core::internal::{CacheSetting, RetrySetting};
+use concord_core::advanced::{RateLimitPlan, TransportRequest};
 use concord_core::transport::RequestMeta;
 
 #[test]
@@ -25,8 +24,8 @@ async fn mock_transport_records_send_events() {
     support::assert_event_order(&transport.events.snapshot(), &["transport_send:Ping"]);
 }
 
-fn request(endpoint: &'static str) -> BuiltRequest {
-    BuiltRequest {
+fn request(endpoint: &'static str) -> TransportRequest {
+    TransportRequest {
         meta: RequestMeta {
             endpoint,
             method: http::Method::GET,
@@ -38,11 +37,8 @@ fn request(endpoint: &'static str) -> BuiltRequest {
         headers: http::HeaderMap::new(),
         body: None,
         timeout: None,
-        retry: RetrySetting::Inherit,
         rate_limit: RateLimitPlan::new(),
-        cache: CacheSetting::Off,
-        cache_mode: CacheRequestMode::Default,
-        cache_revalidation: None,
+        transport_auth: None,
         extensions: Default::default(),
     }
 }

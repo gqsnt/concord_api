@@ -1,11 +1,11 @@
 use super::common::*;
 use concord_core::advanced::{
     AuthAppliedCredential, AuthChallengePolicy, AuthDecision, AuthError, AuthErrorKind,
-    AuthIdentity, AuthPlacement, AuthRequirement, AuthStepPolicy, BuiltRequest, RequestMeta,
-    auth_decision_for_status,
+    AuthPlacement, AuthRequirement, AuthStepPolicy, BuiltRequest, PreparedAuthCredential,
+    RequestMeta, auth_decision_for_status,
 };
-use concord_core::prelude::{ApiClientError, ClientContext, Endpoint};
-use http::{HeaderMap, HeaderValue, StatusCode};
+use concord_core::prelude::{ApiClientError, ApiKey, ClientContext, Endpoint};
+use http::{HeaderMap, StatusCode};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -410,7 +410,7 @@ impl ClientContext for RecordingAuthCx {
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
         _meta: &'a RequestMeta,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthAppliedCredential, AuthError>> {
+    ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>> {
         Box::pin(async move {
             let token = auth.token.as_deref().ok_or_else(|| {
                 AuthError::new(
@@ -421,30 +421,14 @@ impl ClientContext for RecordingAuthCx {
                     ),
                 )
             })?;
-            match requirement.placement {
-                AuthPlacement::Bearer => {
-                    request.headers.insert(
-                        http::header::AUTHORIZATION,
-                        HeaderValue::from_str(&format!("Bearer {token}")).map_err(|_| {
-                            AuthError::new(
-                                AuthErrorKind::UnsupportedScheme,
-                                "invalid bearer token for authorization header",
-                            )
-                        })?,
-                    );
-                }
-                AuthPlacement::Header(name) => {
-                    request.headers.insert(
-                        http::header::HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
-                            AuthError::new(AuthErrorKind::UnsupportedScheme, "invalid header name")
-                        })?,
-                        HeaderValue::from_str(token).map_err(|_| {
-                            AuthError::new(AuthErrorKind::UnsupportedScheme, "invalid header value")
-                        })?,
-                    );
-                }
-                AuthPlacement::Query(name) => {
-                    request.url.query_pairs_mut().append_pair(name, token);
+            let application = match requirement.placement {
+                AuthPlacement::Bearer | AuthPlacement::Header(_) | AuthPlacement::Query(_) => {
+                    let material = ApiKey::new(token.to_string());
+                    concord_core::advanced::apply_secret_credential(
+                        request,
+                        requirement,
+                        &material,
+                    )?
                 }
                 AuthPlacement::Basic | AuthPlacement::Certificate => {
                     return Err(AuthError::new(
@@ -452,15 +436,16 @@ impl ClientContext for RecordingAuthCx {
                         "test context supports bearer/header/query auth only",
                     ));
                 }
-            }
-            Ok(AuthAppliedCredential {
+            };
+            let applied = AuthAppliedCredential {
                 credential_id: requirement.credential.id.clone(),
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(1),
-                identity: AuthIdentity::User(auth.identity.to_string()),
+                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
-            })
+            };
+            Ok(PreparedAuthCredential::new(applied, application))
         })
     }
 
@@ -540,26 +525,21 @@ impl ClientContext for PolicyAuthCx {
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
         _meta: &'a RequestMeta,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthAppliedCredential, AuthError>> {
+    ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>> {
         Box::pin(async move {
             auth.events.lock().await.push("acquire".to_string());
-            request.headers.insert(
-                http::header::AUTHORIZATION,
-                HeaderValue::from_str(&format!("Bearer {}", auth.token)).map_err(|_| {
-                    AuthError::new(
-                        AuthErrorKind::UnsupportedScheme,
-                        "invalid bearer token for authorization header",
-                    )
-                })?,
-            );
-            Ok(AuthAppliedCredential {
+            let material = ApiKey::new(auth.token.clone());
+            let application =
+                concord_core::advanced::apply_secret_credential(request, requirement, &material)?;
+            let applied = AuthAppliedCredential {
                 credential_id: requirement.credential.id.clone(),
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(1),
-                identity: AuthIdentity::User("policy-user".to_string()),
+                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
-            })
+            };
+            Ok(PreparedAuthCredential::new(applied, application))
         })
     }
 

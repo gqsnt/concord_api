@@ -16,13 +16,15 @@ pub use errors::{AuthError, AuthErrorKind, CredentialRefreshReason, InvalidateRe
 pub use future::AuthFuture;
 pub use http::{
     AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode,
-    AuthRequirementId, RequestExtensions, TransportAuth,
+    AuthRequirementId, RequestExtensions,
 };
 pub use ids::{AuthIdentity, AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential, ClientCertificate};
+pub(crate) use plan::AuthTransportMaterial;
 pub use plan::{
-    AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy, AuthDecision, AuthPlacement,
-    AuthPlan, AuthRejectionDecision, AuthRequirement, AuthRetryReason, CredentialRef,
+    AuthApplication, AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy, AuthDecision,
+    AuthPlacement, AuthPlan, AuthRejectionDecision, AuthRequirement, AuthRetryReason, AuthSlotId,
+    CredentialRef, PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential,
     apply_basic_credential, apply_certificate_credential, apply_secret_credential,
     auth_decision_for_status, invalidate_rejected_credential,
 };

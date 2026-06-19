@@ -44,6 +44,8 @@ For paginated endpoints, codegen emits `.paginate()` and page-driving wrappers t
 
 Auth endpoints that map to credential material get acquisition helpers such as `.acquire_as_session()`. These helpers execute the endpoint and store material in the credential slot.
 
+Generated auth preparation code resolves credential leases and calls core auth helpers that attach typed pending auth slots to `BuiltRequest`. It returns a prepared credential sidecar to the runtime so raw material can be inserted only when a `TransportRequest` is materialized immediately before send. Codegen must not emit raw auth values into ordinary query/header policy data.
+
 ## Rustdoc
 
 Rustdoc is generated from resolved endpoint metadata. Behavior labels attached through defaults, scopes, and endpoints are emitted as a concise `Behavior: ...` line. Do not render secrets or secret values in rustdoc.

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    BuiltRequest, RateLimitPlan, Transport, TransportBody, TransportError, TransportResponse,
+    RateLimitPlan, Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -118,7 +118,7 @@ async fn endpoint_backed_auth_helpers_acquire_clear_and_gate_protected_requests(
 #[derive(Clone)]
 struct RecordingTransport {
     responses: Arc<Mutex<VecDeque<ResponseFixture>>>,
-    requests: Arc<Mutex<Vec<BuiltRequest>>>,
+    requests: Arc<Mutex<Vec<TransportRequest>>>,
 }
 
 impl RecordingTransport {
@@ -133,7 +133,7 @@ impl RecordingTransport {
         self.requests.lock().await.len()
     }
 
-    async fn requests(&self) -> Vec<BuiltRequest> {
+    async fn requests(&self) -> Vec<TransportRequest> {
         self.requests.lock().await.clone()
     }
 }
@@ -141,7 +141,7 @@ impl RecordingTransport {
 impl Transport for RecordingTransport {
     fn send(
         &self,
-        req: BuiltRequest,
+        req: TransportRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
         let responses = self.responses.clone();
         let requests = self.requests.clone();

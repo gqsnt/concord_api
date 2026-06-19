@@ -272,15 +272,18 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
                 let lease = auth_state.#name
                     .get_or_refresh(credential_ctx, ::concord_core::advanced::AuthStepPolicy::default())
                     .await?;
-                let identity = #apply;
-                return ::core::result::Result::Ok(::concord_core::advanced::AuthAppliedCredential {
+                let application = #apply;
+                let applied = ::concord_core::advanced::AuthAppliedCredential {
                     credential_id: requirement.credential.id.clone(),
                     usage_id: requirement.usage_id.clone(),
                     step_id: requirement.step_id,
                     generation: ::core::option::Option::Some(lease.generation),
-                    identity,
+                    identity: application.identity().clone(),
                     provenance: requirement.provenance.clone(),
-                });
+                };
+                return ::core::result::Result::Ok(
+                    ::concord_core::advanced::PreparedAuthCredential::new(applied, application)
+                );
             }
         }
     });
@@ -293,7 +296,7 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
             auth_state: &'a Self::AuthState,
             executor: &'a dyn ::concord_core::advanced::AuthHttpExecutor,
             _meta: &'a ::concord_core::advanced::RequestMeta,
-        ) -> ::concord_core::advanced::AuthFuture<'a, ::core::result::Result<::concord_core::advanced::AuthAppliedCredential, ::concord_core::advanced::AuthError>> {
+        ) -> ::concord_core::advanced::AuthFuture<'a, ::core::result::Result<::concord_core::advanced::PreparedAuthCredential, ::concord_core::advanced::AuthError>> {
             ::std::boxed::Box::pin(async move {
                 #( #arms )*
                 ::core::result::Result::Err(::concord_core::advanced::AuthError::new(

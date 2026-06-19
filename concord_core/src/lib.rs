@@ -65,16 +65,17 @@ pub mod advanced {
     #[cfg(feature = "json")]
     pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::auth::{
-        AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy, AuthDecision, AuthError,
-        AuthErrorKind, AuthFuture, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse,
-        AuthIdentity, AuthInternalPolicy, AuthMode, AuthPlacement, AuthPlan, AuthProvenance,
-        AuthRejectionDecision, AuthRequirement, AuthRequirementId, AuthRetryReason, AuthStepPolicy,
-        AuthUsageId, ClientCertificate, CredentialContext, CredentialId, CredentialLease,
-        CredentialMaterial, CredentialProvider, CredentialRef, CredentialRefreshReason,
-        CredentialSlot, InvalidateReason, ManualCredentialProvider, SecretCredential,
-        StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider, TransportAuth,
-        apply_basic_credential, apply_certificate_credential, apply_secret_credential,
-        auth_decision_for_status, invalidate_rejected_credential,
+        AuthApplication, AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy,
+        AuthDecision, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor, AuthHttpRequest,
+        AuthHttpResponse, AuthIdentity, AuthInternalPolicy, AuthMode, AuthPlacement, AuthPlan,
+        AuthProvenance, AuthRejectionDecision, AuthRequirement, AuthRequirementId, AuthRetryReason,
+        AuthStepPolicy, AuthUsageId, ClientCertificate, CredentialContext, CredentialId,
+        CredentialLease, CredentialMaterial, CredentialProvider, CredentialRef,
+        CredentialRefreshReason, CredentialSlot, InvalidateReason, ManualCredentialProvider,
+        PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential, SecretCredential,
+        StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider, apply_basic_credential,
+        apply_certificate_credential, apply_secret_credential, auth_decision_for_status,
+        invalidate_rejected_credential,
     };
     pub use crate::cache::{
         CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,
@@ -114,7 +115,8 @@ pub mod advanced {
     pub use crate::runtime_state::ClientRuntimeState;
     pub use crate::transport::{
         BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta, ReqwestTransport, Transport,
-        TransportBody, TransportError, TransportErrorKind, TransportResponse,
+        TransportAuth, TransportBody, TransportError, TransportErrorKind, TransportRequest,
+        TransportResponse,
     };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,

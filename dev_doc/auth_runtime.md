@@ -6,7 +6,7 @@ Auth is declared by the macro and executed by `concord_core`.
 
 Auth vars and secrets are generated client inputs. Secret values are wrapped and redacted. Errors and diagnostics should identify credentials, headers, or fields by name without rendering raw secret values.
 
-Runtime debug/display output must not render header auth values, bearer tokens, basic passwords, OAuth client secrets, or query-auth values. The transport request still carries the real credential material; redaction is only for diagnostics, debug output, generated docs, and derived display/cache/debug keys.
+Runtime debug/display output must not render header auth values, bearer tokens, basic passwords, OAuth client secrets, or query-auth values. The materialized transport request still carries the real credential material required by the remote API; redaction is only for diagnostics, debug output, generated docs, and derived display/cache/debug keys.
 
 ## Credentials
 
@@ -22,9 +22,13 @@ Protected calls that depend on endpoint-backed credentials fail before transport
 
 ## Request auth application
 
-Before cache and inflight identity are computed, the runtime resolves required credentials and applies auth to the request. This ordering prevents authenticated requests from colliding across different credential identities.
+Before cache and inflight identity are computed, the runtime resolves required credentials and attaches typed pending auth slots to the logical `BuiltRequest`. A pending slot records the placement, credential id, usage id, generation, provenance, and safe identity. It does not store the raw secret.
+
+Raw credential material is kept in a short-lived per-attempt sidecar and is inserted only when the runtime materializes a `TransportRequest` immediately before `Transport::send`. `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, cache keys, inflight keys, runtime hooks, and debug sinks must never store raw auth material.
 
 Safe identities are used for cache and inflight separation. They identify credential state without exposing secret values.
+
+Custom transports receive the materialized `TransportRequest`, so they see real credentials at the send boundary. Transport implementations must not log the raw request.
 
 ## Rejection and refresh
 

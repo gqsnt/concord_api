@@ -5,7 +5,7 @@ use concord_core::advanced::{
     BuiltRequest, BuiltResponse, CacheAfter, CacheBefore, CacheFuture, CacheKey, CacheRevalidation,
     CacheStore, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
     RateLimitResponseContext, RateLimiter, Transport, TransportBody, TransportError,
-    TransportErrorKind, TransportResponse,
+    TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::prelude::ApiClientError;
 use http::{HeaderMap, StatusCode};
@@ -58,7 +58,7 @@ impl MockTransport {
 impl Transport for MockTransport {
     fn send(
         &self,
-        req: BuiltRequest,
+        req: TransportRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
         let response = self.next();
         let events = self.events.clone();

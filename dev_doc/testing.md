@@ -22,6 +22,8 @@ Codegen tests inspect generated token output and public facade shape without rel
 
 These tests protect runtime order and should be extended before runtime behavior is refactored.
 
+Auth/redaction tests must cover arbitrary auth names, not only conventional names such as `Authorization` or `api_key`. When auth handling changes, verify that `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, debug sinks, errors, cache keys, and inflight keys do not contain raw auth material, while the materialized `TransportRequest` still carries real credentials at `Transport::send`.
+
 ## Examples and docs tests
 
 `concord_examples` compile-checks public usage. It includes small examples, public docs fixtures, docs sync tests, release docs checks, and the Riot fixture.

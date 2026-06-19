@@ -198,7 +198,7 @@ impl Drop for MockHandle {
 impl concord_core::advanced::Transport for MockTransport {
     fn send(
         &self,
-        req: BuiltRequest,
+        req: TransportRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
         let st = self.st.clone();
         Box::pin(async move {

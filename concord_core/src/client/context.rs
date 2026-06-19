@@ -31,7 +31,7 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn AuthHttpExecutor,
         _meta: &'a RequestMeta,
-    ) -> crate::auth::AuthFuture<'a, Result<crate::auth::AuthAppliedCredential, AuthError>> {
+    ) -> crate::auth::AuthFuture<'a, Result<crate::auth::PreparedAuthCredential, AuthError>> {
         Box::pin(async {
             Err(AuthError::new(
                 AuthErrorKind::UnsupportedScheme,
@@ -75,6 +75,12 @@ struct SendClassifyCtx<'a> {
     dbg_vv: bool,
     url_str: &'a str,
     error_ctx: &'a ErrorContext,
+    auth_materials: &'a [crate::auth::AuthTransportMaterial],
+}
+
+struct AuthPreparation {
+    summary: crate::auth::AuthAttemptSummary,
+    materials: Vec<crate::auth::AuthTransportMaterial>,
 }
 
 enum CacheBeforeOutcome {

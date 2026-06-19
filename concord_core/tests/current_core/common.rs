@@ -1,19 +1,19 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind, AuthIdentity, AuthPlacement,
-    AuthProvenance, AuthRequirement, AuthUsageId, BuiltRequest, BuiltResponse, CacheAfter,
-    CacheBefore, CacheConfig, CacheFuture, CacheKey, CacheRevalidation, CacheStore,
-    DecodedResponse, InflightPolicy, InflightRegistry, PostResponseHookContext, PreSendHookContext,
+    AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind, AuthPlacement, AuthProvenance,
+    AuthRequirement, AuthUsageId, BuiltRequest, BuiltResponse, CacheAfter, CacheBefore,
+    CacheConfig, CacheFuture, CacheKey, CacheRevalidation, CacheStore, DecodedResponse,
+    InflightPolicy, InflightRegistry, PostResponseHookContext, PreSendHookContext,
     RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
     RateLimitResponseContext, RateLimiter, RequestKey, RequestMeta, RuntimeHooks,
     SafeMethodInflightPolicy, Transport, TransportBody, TransportError, TransportErrorHookContext,
-    TransportResponse,
+    TransportRequest, TransportResponse,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
     RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
-use concord_core::prelude::{ApiClient, ApiClientError, ClientContext, Endpoint};
+use concord_core::prelude::{ApiClient, ApiClientError, ApiKey, ClientContext, Endpoint};
 use concord_core::prelude::{HasNextCursor, PageItems};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::collections::VecDeque;
@@ -58,7 +58,10 @@ impl ClientContext for TestCx {
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
         _meta: &'a RequestMeta,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthAppliedCredential, AuthError>> {
+    ) -> concord_core::advanced::AuthFuture<
+        'a,
+        Result<concord_core::advanced::PreparedAuthCredential, AuthError>,
+    > {
         Box::pin(async move {
             let token = auth.token.as_deref().ok_or_else(|| {
                 AuthError::new(
@@ -69,30 +72,14 @@ impl ClientContext for TestCx {
                     ),
                 )
             })?;
-            match requirement.placement {
-                AuthPlacement::Bearer => {
-                    request.headers.insert(
-                        http::header::AUTHORIZATION,
-                        HeaderValue::from_str(&format!("Bearer {token}")).map_err(|_| {
-                            AuthError::new(
-                                AuthErrorKind::UnsupportedScheme,
-                                "invalid bearer token for authorization header",
-                            )
-                        })?,
-                    );
-                }
-                AuthPlacement::Header(name) => {
-                    request.headers.insert(
-                        http::header::HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
-                            AuthError::new(AuthErrorKind::UnsupportedScheme, "invalid header name")
-                        })?,
-                        HeaderValue::from_str(token).map_err(|_| {
-                            AuthError::new(AuthErrorKind::UnsupportedScheme, "invalid header value")
-                        })?,
-                    );
-                }
-                AuthPlacement::Query(name) => {
-                    request.url.query_pairs_mut().append_pair(name, token);
+            let application = match requirement.placement {
+                AuthPlacement::Bearer | AuthPlacement::Header(_) | AuthPlacement::Query(_) => {
+                    let material = ApiKey::new(token.to_string());
+                    concord_core::advanced::apply_secret_credential(
+                        request,
+                        requirement,
+                        &material,
+                    )?
                 }
                 AuthPlacement::Basic | AuthPlacement::Certificate => {
                     return Err(AuthError::new(
@@ -100,15 +87,19 @@ impl ClientContext for TestCx {
                         "test context supports bearer/header/query auth only",
                     ));
                 }
-            }
-            Ok(AuthAppliedCredential {
+            };
+            let applied = AuthAppliedCredential {
                 credential_id: requirement.credential.id.clone(),
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(1),
-                identity: AuthIdentity::User(auth.identity.to_string()),
+                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
-            })
+            };
+            Ok(concord_core::advanced::PreparedAuthCredential::new(
+                applied,
+                application,
+            ))
         })
     }
 
@@ -406,7 +397,7 @@ pub fn retry_policy_for_statuses(max_attempts: u32, statuses: Vec<StatusCode>) -
 pub struct MockTransport {
     responses: Arc<Mutex<VecDeque<MockResponse>>>,
     events: Arc<Mutex<Vec<String>>>,
-    requests: Arc<Mutex<Vec<BuiltRequest>>>,
+    requests: Arc<Mutex<Vec<TransportRequest>>>,
     delay: Option<Duration>,
 }
 
@@ -451,7 +442,7 @@ impl MockTransport {
         self.requests.lock().await.len()
     }
 
-    pub async fn requests(&self) -> Vec<BuiltRequest> {
+    pub async fn requests(&self) -> Vec<TransportRequest> {
         self.requests.lock().await.clone()
     }
 }
@@ -459,7 +450,7 @@ impl MockTransport {
 impl Transport for MockTransport {
     fn send(
         &self,
-        req: BuiltRequest,
+        req: TransportRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
         let responses = self.responses.clone();
         let events = self.events.clone();
@@ -679,9 +670,10 @@ impl CacheStore for RecordingCache {
             self.events.lock().await.push(format!(
                 "cache_before:{}",
                 request
-                    .headers
-                    .get(http::header::AUTHORIZATION)
-                    .and_then(|v| v.to_str().ok())
+                    .extensions
+                    .auth_identities
+                    .first()
+                    .map(String::as_str)
                     .unwrap_or("<none>")
             ));
             if matches!(self.before, CacheBefore::Hit(_)) {

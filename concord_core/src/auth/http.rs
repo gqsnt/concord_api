@@ -6,7 +6,7 @@ use std::fmt;
 use std::time::Duration;
 use url::Url;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AuthHttpRequest {
     pub method: Method,
     pub url: Url,
@@ -14,6 +14,28 @@ pub struct AuthHttpRequest {
     pub body: Option<Bytes>,
     pub mode: AuthMode,
     pub policy: AuthInternalPolicy,
+}
+
+impl fmt::Debug for AuthHttpRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AuthHttpRequest")
+            .field("method", &self.method)
+            .field(
+                "url",
+                &crate::redaction::sanitize_url_for_debug(&self.url, [] as [&str; 0]),
+            )
+            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field(
+                "body",
+                &self
+                    .body
+                    .as_ref()
+                    .map(|body| format!("<{} bytes>", body.len())),
+            )
+            .field("mode", &self.mode)
+            .field("policy", &self.policy)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -80,11 +102,6 @@ pub trait AuthHttpExecutor: Send + Sync {
 #[derive(Clone, Debug, Default)]
 pub struct RequestExtensions {
     pub auth_identities: Vec<String>,
-    pub transport_auth: Option<TransportAuth>,
     pub sensitive_query_keys: Vec<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TransportAuth {
-    ClientCertificate { identity_id: String },
+    pub pending_auth_slots: Vec<crate::auth::PendingAuthSlot>,
 }

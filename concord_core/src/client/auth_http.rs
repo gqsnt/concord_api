@@ -32,14 +32,93 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     policy,
                 } = req;
 
+                let meta = RequestMeta {
+                    endpoint: "<auth>",
+                    method,
+                    idempotent: false,
+                    attempt: 0,
+                    page_index: 0,
+                };
+
+                if matches!(&mode, AuthMode::SkipAuth) {
+                    let auth_url = url.as_str().to_string();
+                    let base_request = crate::transport::TransportRequest {
+                        meta,
+                        url,
+                        headers,
+                        body,
+                        timeout: policy.timeout,
+                        rate_limit: RateLimitPlan::new(),
+                        transport_auth: None,
+                        extensions: Default::default(),
+                    };
+                    let mut attempt: u32 = 0;
+                    loop {
+                        let mut built = base_request.clone();
+                        built.meta.attempt = attempt;
+
+                        if policy.use_rate_limiter {
+                            let _permit = self
+                                .client
+                                .runtime_state
+                                .rate_limiter()
+                                .acquire(RateLimitContext {
+                                    endpoint: "<auth>",
+                                    method: &built.meta.method,
+                                    url: &auth_url,
+                                    url_host: built.url.host_str(),
+                                    attempt,
+                                    page_index: 0,
+                                    idempotent: built.meta.idempotent,
+                                    plan: &built.rate_limit,
+                                })
+                                .await
+                                .map_err(|source| {
+                                    AuthError::new(
+                                        AuthErrorKind::AcquireFailed,
+                                        source.to_string(),
+                                    )
+                                })?;
+                        }
+
+                        let resp = self.client.transport.send(built).await;
+                        let mut resp = match resp {
+                            Ok(resp) => resp,
+                            Err(source) => {
+                                if attempt >= policy.max_transport_retries {
+                                    return Err(AuthError::new(
+                                        AuthErrorKind::AcquireFailed,
+                                        source.to_string(),
+                                    ));
+                                }
+                                attempt = attempt.saturating_add(1);
+                                continue;
+                            }
+                        };
+                        let body = match read_body_all(resp.body.as_mut(), resp.content_length).await
+                        {
+                            Ok(body) => body,
+                            Err(source) => {
+                                if attempt >= policy.max_transport_retries {
+                                    return Err(AuthError::new(
+                                        AuthErrorKind::AcquireFailed,
+                                        source.to_string(),
+                                    ));
+                                }
+                                attempt = attempt.saturating_add(1);
+                                continue;
+                            }
+                        };
+                        return Ok(AuthHttpResponse {
+                            status: resp.status,
+                            headers: resp.headers,
+                            body,
+                        });
+                    }
+                }
+
                 let mut base_request = BuiltRequest {
-                    meta: RequestMeta {
-                        endpoint: "<auth>",
-                        method,
-                        idempotent: false,
-                        attempt: 0,
-                        page_index: 0,
-                    },
+                    meta,
                     url,
                     headers,
                     body,
@@ -109,7 +188,12 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                             .map_err(|source| {
                                 AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
                             })?;
-                        let resp = self.client.transport.send(built).await;
+                        let transport_req =
+                            crate::transport::materialize_transport_request(&built, &[])
+                                .map_err(|source| {
+                                    AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
+                                })?;
+                        let resp = self.client.transport.send(transport_req).await;
                         let mut resp = match resp {
                             Ok(resp) => resp,
                             Err(source) => {
@@ -143,7 +227,11 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         });
                     }
 
-                    let resp = self.client.transport.send(built).await;
+                    let transport_req = crate::transport::materialize_transport_request(&built, &[])
+                        .map_err(|source| {
+                            AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
+                        })?;
+                    let resp = self.client.transport.send(transport_req).await;
                     let mut resp = match resp {
                         Ok(resp) => resp,
                         Err(source) => {

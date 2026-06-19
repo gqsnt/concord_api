@@ -1,7 +1,146 @@
 use super::{
     AuthIdentity, AuthProvenance, AuthStepPolicy, AuthUsageId, CredentialId, InvalidateReason,
 };
+use crate::secret::SecretString;
+use http::HeaderName;
 use std::fmt;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+static NEXT_AUTH_SLOT_ID: AtomicU32 = AtomicU32::new(1);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct AuthSlotId(u32);
+
+impl AuthSlotId {
+    #[inline]
+    pub(crate) fn next() -> Self {
+        Self(NEXT_AUTH_SLOT_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingAuthPlacement {
+    Bearer,
+    Header(HeaderName),
+    Query(String),
+    Basic,
+    Certificate,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct PendingAuthSlot {
+    pub id: AuthSlotId,
+    pub credential: CredentialRef,
+    pub usage_id: AuthUsageId,
+    pub step_id: Option<&'static str>,
+    pub generation: Option<u64>,
+    pub identity: AuthIdentity,
+    pub provenance: AuthProvenance,
+    pub placement: PendingAuthPlacement,
+}
+
+impl fmt::Debug for PendingAuthSlot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PendingAuthSlot")
+            .field("id", &self.id)
+            .field("credential", &self.credential)
+            .field("usage_id", &self.usage_id)
+            .field("step_id", &self.step_id)
+            .field("generation", &self.generation)
+            .field("identity", &"<redacted>")
+            .field("provenance", &self.provenance)
+            .field("placement", &self.placement)
+            .finish()
+    }
+}
+
+#[derive(Clone)]
+pub(crate) enum AuthTransportMaterial {
+    Secret {
+        slot_id: AuthSlotId,
+        secret: SecretString,
+    },
+    Basic {
+        slot_id: AuthSlotId,
+        username: String,
+        password: SecretString,
+    },
+    Certificate {
+        slot_id: AuthSlotId,
+        identity_id: String,
+    },
+}
+
+impl AuthTransportMaterial {
+    #[inline]
+    pub(crate) fn slot_id(&self) -> AuthSlotId {
+        match self {
+            Self::Secret { slot_id, .. }
+            | Self::Basic { slot_id, .. }
+            | Self::Certificate { slot_id, .. } => *slot_id,
+        }
+    }
+}
+
+impl fmt::Debug for AuthTransportMaterial {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Secret { slot_id, .. } => f
+                .debug_struct("AuthTransportMaterial::Secret")
+                .field("slot_id", slot_id)
+                .field("secret", &"<redacted>")
+                .finish(),
+            Self::Basic {
+                slot_id, username, ..
+            } => f
+                .debug_struct("AuthTransportMaterial::Basic")
+                .field("slot_id", slot_id)
+                .field("username", username)
+                .field("password", &"<redacted>")
+                .finish(),
+            Self::Certificate {
+                slot_id,
+                identity_id,
+            } => f
+                .debug_struct("AuthTransportMaterial::Certificate")
+                .field("slot_id", slot_id)
+                .field(
+                    "identity_id",
+                    &format_args!("<redacted:{}>", identity_id.len()),
+                )
+                .finish(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AuthApplication {
+    identity: AuthIdentity,
+    material: AuthTransportMaterial,
+}
+
+impl AuthApplication {
+    #[inline]
+    pub fn identity(&self) -> &AuthIdentity {
+        &self.identity
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PreparedAuthCredential {
+    pub applied: AuthAppliedCredential,
+    pub(crate) material: AuthTransportMaterial,
+}
+
+impl PreparedAuthCredential {
+    #[inline]
+    pub fn new(applied: AuthAppliedCredential, application: AuthApplication) -> Self {
+        Self {
+            applied,
+            material: application.material,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AuthPlan {
@@ -163,19 +302,10 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
     request: &mut crate::transport::BuiltRequest,
     requirement: &AuthRequirement,
     material: &M,
-) -> Result<AuthIdentity, crate::auth::AuthError> {
-    use http::header::{AUTHORIZATION, HeaderName, HeaderValue};
-    match requirement.placement {
-        AuthPlacement::Bearer => {
-            let value = format!("Bearer {}", material.secret_value());
-            let value = HeaderValue::from_str(&value).map_err(|_| {
-                crate::auth::AuthError::new(
-                    crate::auth::AuthErrorKind::UnsupportedScheme,
-                    "invalid bearer header value",
-                )
-            })?;
-            request.headers.insert(AUTHORIZATION, value);
-        }
+) -> Result<AuthApplication, crate::auth::AuthError> {
+    let slot_id = AuthSlotId::next();
+    let placement = match requirement.placement {
+        AuthPlacement::Bearer => PendingAuthPlacement::Bearer,
         AuthPlacement::Header(name) => {
             let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
                 crate::auth::AuthError::new(
@@ -183,19 +313,9 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
                     "invalid auth header name",
                 )
             })?;
-            let value = HeaderValue::from_str(material.secret_value()).map_err(|_| {
-                crate::auth::AuthError::new(
-                    crate::auth::AuthErrorKind::UnsupportedScheme,
-                    "invalid auth header value",
-                )
-            })?;
-            request.headers.insert(name, value);
+            PendingAuthPlacement::Header(name)
         }
         AuthPlacement::Query(name) => {
-            request
-                .url
-                .query_pairs_mut()
-                .append_pair(name, material.secret_value());
             if !request
                 .extensions
                 .sensitive_query_keys
@@ -207,6 +327,7 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
                     .sensitive_query_keys
                     .push(name.to_string());
             }
+            PendingAuthPlacement::Query(name.to_string())
         }
         _ => {
             return Err(crate::auth::AuthError::new(
@@ -214,53 +335,90 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
                 "credential material does not support requested auth placement",
             ));
         }
-    }
-    Ok(crate::auth::CredentialMaterial::safe_identity(material))
+    };
+    let identity = crate::auth::CredentialMaterial::safe_identity(material);
+    request.extensions.pending_auth_slots.push(PendingAuthSlot {
+        id: slot_id,
+        credential: requirement.credential.clone(),
+        usage_id: requirement.usage_id.clone(),
+        step_id: requirement.step_id,
+        generation: None,
+        identity: identity.clone(),
+        provenance: requirement.provenance.clone(),
+        placement,
+    });
+    Ok(AuthApplication {
+        identity,
+        material: AuthTransportMaterial::Secret {
+            slot_id,
+            secret: SecretString::new(material.secret_value().to_string()),
+        },
+    })
 }
 
 pub fn apply_basic_credential(
     request: &mut crate::transport::BuiltRequest,
     requirement: &AuthRequirement,
     material: &crate::auth::BasicCredential,
-) -> Result<AuthIdentity, crate::auth::AuthError> {
-    use base64::Engine;
-    use http::header::{AUTHORIZATION, HeaderValue};
+) -> Result<AuthApplication, crate::auth::AuthError> {
     if !matches!(requirement.placement, AuthPlacement::Basic) {
         return Err(crate::auth::AuthError::new(
             crate::auth::AuthErrorKind::UnsupportedScheme,
             "basic credential requires basic auth placement",
         ));
     }
-    let raw = format!("{}:{}", material.username, material.password.expose());
-    let value = format!(
-        "Basic {}",
-        base64::engine::general_purpose::STANDARD.encode(raw)
-    );
-    let value = HeaderValue::from_str(&value).map_err(|_| {
-        crate::auth::AuthError::new(
-            crate::auth::AuthErrorKind::UnsupportedScheme,
-            "invalid basic header value",
-        )
-    })?;
-    request.headers.insert(AUTHORIZATION, value);
-    Ok(crate::auth::CredentialMaterial::safe_identity(material))
+    let slot_id = AuthSlotId::next();
+    let identity = crate::auth::CredentialMaterial::safe_identity(material);
+    request.extensions.pending_auth_slots.push(PendingAuthSlot {
+        id: slot_id,
+        credential: requirement.credential.clone(),
+        usage_id: requirement.usage_id.clone(),
+        step_id: requirement.step_id,
+        generation: None,
+        identity: identity.clone(),
+        provenance: requirement.provenance.clone(),
+        placement: PendingAuthPlacement::Basic,
+    });
+    Ok(AuthApplication {
+        identity,
+        material: AuthTransportMaterial::Basic {
+            slot_id,
+            username: material.username.clone(),
+            password: material.password.clone(),
+        },
+    })
 }
 
 pub fn apply_certificate_credential(
     request: &mut crate::transport::BuiltRequest,
     requirement: &AuthRequirement,
     material: &crate::auth::ClientCertificate,
-) -> Result<AuthIdentity, crate::auth::AuthError> {
+) -> Result<AuthApplication, crate::auth::AuthError> {
     if !matches!(requirement.placement, AuthPlacement::Certificate) {
         return Err(crate::auth::AuthError::new(
             crate::auth::AuthErrorKind::UnsupportedScheme,
             "certificate credential requires certificate auth placement",
         ));
     }
-    request.extensions.transport_auth = Some(crate::auth::TransportAuth::ClientCertificate {
-        identity_id: material.identity_id.clone(),
+    let slot_id = AuthSlotId::next();
+    let identity = crate::auth::CredentialMaterial::safe_identity(material);
+    request.extensions.pending_auth_slots.push(PendingAuthSlot {
+        id: slot_id,
+        credential: requirement.credential.clone(),
+        usage_id: requirement.usage_id.clone(),
+        step_id: requirement.step_id,
+        generation: None,
+        identity: identity.clone(),
+        provenance: requirement.provenance.clone(),
+        placement: PendingAuthPlacement::Certificate,
     });
-    Ok(crate::auth::CredentialMaterial::safe_identity(material))
+    Ok(AuthApplication {
+        identity,
+        material: AuthTransportMaterial::Certificate {
+            slot_id,
+            identity_id: material.identity_id.clone(),
+        },
+    })
 }
 
 pub async fn invalidate_rejected_credential<Cx, P>(

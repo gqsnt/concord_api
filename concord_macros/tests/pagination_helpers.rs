@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    BuiltRequest, RateLimitPlan, Transport, TransportBody, TransportError, TransportResponse,
+    RateLimitPlan, Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -98,7 +98,7 @@ async fn generated_pagination_for_each_page_and_max_items_work() {
     assert!(err.to_string().contains("max_items"));
 }
 
-fn assert_query(request: &BuiltRequest, key: &str, expected: &str) {
+fn assert_query(request: &TransportRequest, key: &str, expected: &str) {
     let value = request
         .url
         .query_pairs()
@@ -110,7 +110,7 @@ fn assert_query(request: &BuiltRequest, key: &str, expected: &str) {
 #[derive(Clone)]
 struct RecordingTransport {
     responses: Arc<Mutex<VecDeque<ResponseFixture>>>,
-    requests: Arc<Mutex<Vec<BuiltRequest>>>,
+    requests: Arc<Mutex<Vec<TransportRequest>>>,
 }
 
 impl RecordingTransport {
@@ -121,7 +121,7 @@ impl RecordingTransport {
         }
     }
 
-    async fn requests(&self) -> Vec<BuiltRequest> {
+    async fn requests(&self) -> Vec<TransportRequest> {
         self.requests.lock().await.clone()
     }
 }
@@ -129,7 +129,7 @@ impl RecordingTransport {
 impl Transport for RecordingTransport {
     fn send(
         &self,
-        req: BuiltRequest,
+        req: TransportRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
         let responses = self.responses.clone();
         let requests = self.requests.clone();

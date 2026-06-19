@@ -5,16 +5,18 @@ mod common;
 mod query_auth_redaction {
     use super::common::{MockResponse, MockTransport, auth_policy, decode_string, request_plan};
     use bytes::Bytes;
+    use concord_core::advanced::ClientCertificate;
     use concord_core::advanced::{
         AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind, AuthPlacement,
-        AuthRequirement, BuiltRequest, DebugSink, RequestMeta, RuntimeHooks, Transport,
-        TransportError, TransportErrorHookContext, TransportResponse, apply_basic_credential,
-        apply_secret_credential,
+        AuthRequirement, AuthRetryReason, BuiltRequest, DebugSink, RequestMeta, RuntimeHooks,
+        Transport, TransportAuth, TransportError, TransportErrorHookContext, TransportResponse,
+        apply_basic_credential, apply_certificate_credential, apply_secret_credential,
     };
     #[cfg(feature = "json")]
     use concord_core::advanced::{
         AuthHttpRequest, CredentialProvider, OAuth2ClientCredentialsProvider,
     };
+    use concord_core::advanced::{PreparedAuthCredential, TransportRequest};
     use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
     use concord_core::prelude::{
         AccessToken, ApiClient, ApiClientError, ApiKey, BasicCredential, ClientContext, DebugLevel,
@@ -23,12 +25,16 @@ mod query_auth_redaction {
     use http::{HeaderMap, Method, StatusCode};
     use std::future::Future;
     use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use tokio::sync::Mutex as TokioMutex;
 
     const API_KEY_SECRET: &str = "LEAK_SENTINEL_API_KEY_123";
     const BEARER_SECRET: &str = "LEAK_SENTINEL_BEARER_456";
     const PASSWORD_SECRET: &str = "LEAK_SENTINEL_PASSWORD_789";
+    const REFRESH_SECRET_A: &str = "LEAK_SENTINEL_REFRESH_A";
+    const REFRESH_SECRET_B: &str = "LEAK_SENTINEL_REFRESH_B";
+    const CERTIFICATE_ID: &str = "LEAK_SENTINEL_CERTIFICATE_ID";
     #[cfg(feature = "json")]
     const CLIENT_SECRET: &str = "LEAK_SENTINEL_CLIENT_SECRET_ABC";
 
@@ -66,10 +72,10 @@ mod query_auth_redaction {
             _auth_state: &'a Self::AuthState,
             _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
             _meta: &'a RequestMeta,
-        ) -> concord_core::advanced::AuthFuture<'a, Result<AuthAppliedCredential, AuthError>>
+        ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>>
         {
             Box::pin(async move {
-                let identity = match requirement.placement {
+                let application = match requirement.placement {
                     AuthPlacement::Basic => {
                         let material = BasicCredential::new("sentinel-user", auth.password.clone());
                         apply_basic_credential(request, requirement, &material)?
@@ -98,14 +104,15 @@ mod query_auth_redaction {
                         ));
                     }
                 };
-                Ok(AuthAppliedCredential {
+                let applied = AuthAppliedCredential {
                     credential_id: requirement.credential.id.clone(),
                     usage_id: requirement.usage_id.clone(),
                     step_id: requirement.step_id,
                     generation: Some(1),
-                    identity,
+                    identity: application.identity().clone(),
                     provenance: requirement.provenance.clone(),
-                })
+                };
+                Ok(PreparedAuthCredential::new(applied, application))
             })
         }
 
@@ -173,7 +180,12 @@ mod query_auth_redaction {
                 .push(format!("request:{url}"));
         }
 
-        fn request_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
+        fn request_headers(&self, _dbg: DebugLevel, headers: &HeaderMap) {
+            self.events
+                .lock()
+                .expect("debug events lock")
+                .push(format!("request_headers:{headers:?}"));
+        }
 
         fn request_body(
             &self,
@@ -259,7 +271,7 @@ mod query_auth_redaction {
     async fn run_debug_request(
         policy: ResolvedPolicy,
         status: StatusCode,
-    ) -> Result<(Vec<String>, Vec<BuiltRequest>), ApiClientError> {
+    ) -> Result<(Vec<String>, Vec<TransportRequest>), ApiClientError> {
         let events = Arc::new(TokioMutex::new(Vec::new()));
         let transport = MockTransport::new(events, vec![MockResponse::text(status, "ok")]);
         let sent = transport.clone();
@@ -270,7 +282,7 @@ mod query_auth_redaction {
 
         let request = client
             .request(RedactionEndpoint { policy })
-            .debug_level(DebugLevel::V)
+            .debug_level(DebugLevel::VV)
             .execute_decoded()
             .await;
 
@@ -286,7 +298,7 @@ mod query_auth_redaction {
 
     #[derive(Clone)]
     struct FailingTransport {
-        requests: Arc<TokioMutex<Vec<BuiltRequest>>>,
+        requests: Arc<TokioMutex<Vec<TransportRequest>>>,
     }
 
     impl FailingTransport {
@@ -296,7 +308,7 @@ mod query_auth_redaction {
             }
         }
 
-        async fn requests(&self) -> Vec<BuiltRequest> {
+        async fn requests(&self) -> Vec<TransportRequest> {
             self.requests.lock().await.clone()
         }
     }
@@ -304,7 +316,7 @@ mod query_auth_redaction {
     impl Transport for FailingTransport {
         fn send(
             &self,
-            req: BuiltRequest,
+            req: TransportRequest,
         ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>
         {
             let requests = self.requests.clone();
@@ -320,7 +332,7 @@ mod query_auth_redaction {
 
     async fn run_transport_error_request(
         policy: ResolvedPolicy,
-    ) -> Result<(String, Vec<BuiltRequest>), ApiClientError> {
+    ) -> Result<(String, Vec<TransportRequest>), ApiClientError> {
         let transport = FailingTransport::new();
         let sent = transport.clone();
         let mut client =
@@ -433,6 +445,46 @@ mod query_auth_redaction {
     }
 
     #[tokio::test]
+    async fn arbitrary_query_auth_name_is_structurally_redacted() -> Result<(), ApiClientError> {
+        let (events, requests) =
+            run_debug_request(policy_with_query_auth("provider"), StatusCode::OK).await?;
+
+        let debug_output = events.join("\n");
+        assert!(debug_output.contains("provider=<redacted>"));
+        assert!(debug_output.contains("page=2"));
+        assert_secret_absent(&debug_output, API_KEY_SECRET);
+
+        let transport_url = requests[0].url.as_str();
+        assert!(
+            transport_url.contains("provider=LEAK_SENTINEL_API_KEY_123"),
+            "transport request should contain real query auth at send boundary: {transport_url}"
+        );
+        assert_secret_absent(&format!("{:?}", requests[0]), API_KEY_SECRET);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn arbitrary_header_auth_name_is_structurally_redacted() -> Result<(), ApiClientError> {
+        let (events, requests) = run_debug_request(
+            auth_policy(AuthPlacement::Header("X-Custom")),
+            StatusCode::OK,
+        )
+        .await?;
+
+        let debug_output = events.join("\n");
+        assert!(debug_output.contains("request:https://example.com/text"));
+        assert_secret_absent(&debug_output, API_KEY_SECRET);
+
+        let header = requests[0]
+            .headers
+            .get("X-Custom")
+            .and_then(|value| value.to_str().ok());
+        assert_eq!(header, Some(API_KEY_SECRET));
+        assert_secret_absent(&format!("{:?}", requests[0]), API_KEY_SECRET);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn debug_urls_do_not_leak_bearer_header_or_basic_auth_secrets()
     -> Result<(), ApiClientError> {
         for (placement, secret, expected) in [
@@ -509,6 +561,269 @@ mod query_auth_redaction {
         assert_secret_absent(&output, PASSWORD_SECRET);
     }
 
+    #[tokio::test]
+    async fn auth_refresh_does_not_retain_old_or_new_raw_auth_in_debug_surfaces()
+    -> Result<(), ApiClientError> {
+        #[derive(Clone)]
+        struct RefreshAuthVars {
+            prepares: Arc<AtomicUsize>,
+        }
+
+        #[derive(Clone)]
+        struct RefreshCx;
+
+        impl ClientContext for RefreshCx {
+            type Vars = ();
+            type AuthVars = RefreshAuthVars;
+            type AuthState = ();
+            const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+            const DOMAIN: &'static str = "example.com";
+
+            fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+            fn prepare_auth_requirement<'a>(
+                requirement: &'a AuthRequirement,
+                request: &'a mut BuiltRequest,
+                _vars: &'a Self::Vars,
+                auth: &'a Self::AuthVars,
+                _auth_state: &'a Self::AuthState,
+                _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+                _meta: &'a RequestMeta,
+            ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>>
+            {
+                Box::pin(async move {
+                    let prepare_index = auth.prepares.fetch_add(1, Ordering::SeqCst);
+                    let secret = if prepare_index == 0 {
+                        REFRESH_SECRET_A
+                    } else {
+                        REFRESH_SECRET_B
+                    };
+                    let material = ApiKey::new(secret);
+                    let application = apply_secret_credential(request, requirement, &material)?;
+                    let applied = AuthAppliedCredential {
+                        credential_id: requirement.credential.id.clone(),
+                        usage_id: requirement.usage_id.clone(),
+                        step_id: requirement.step_id,
+                        generation: Some((prepare_index + 1) as u64),
+                        identity: application.identity().clone(),
+                        provenance: requirement.provenance.clone(),
+                    };
+                    Ok(PreparedAuthCredential::new(applied, application))
+                })
+            }
+
+            fn handle_auth_response<'a>(
+                requirement: &'a AuthRequirement,
+                applied: &'a AuthAppliedCredential,
+                _vars: &'a Self::Vars,
+                _auth: &'a Self::AuthVars,
+                _auth_state: &'a Self::AuthState,
+                _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+                _meta: &'a RequestMeta,
+                status: StatusCode,
+                _headers: &'a HeaderMap,
+            ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>>
+            {
+                Box::pin(async move {
+                    if status == StatusCode::UNAUTHORIZED {
+                        Ok(AuthDecision::RetryAfterRefresh {
+                            credential: requirement.credential.clone(),
+                            generation: applied.generation,
+                            reason: AuthRetryReason::Unauthorized,
+                        })
+                    } else {
+                        Ok(AuthDecision::Continue)
+                    }
+                })
+            }
+        }
+
+        #[derive(Clone)]
+        struct RefreshEndpoint;
+
+        impl Endpoint<RefreshCx> for RefreshEndpoint {
+            type Response = String;
+
+            fn plan(
+                &self,
+                _ctx: &ClientPlanContext<'_, RefreshCx>,
+            ) -> Result<RequestPlan, ApiClientError> {
+                Ok(request_plan(
+                    "RefreshRedaction",
+                    Method::GET,
+                    "/refresh",
+                    auth_policy(AuthPlacement::Header("X-Custom")),
+                    None,
+                    decode_string,
+                ))
+            }
+        }
+
+        let events = Arc::new(TokioMutex::new(Vec::new()));
+        let transport = MockTransport::new(
+            events,
+            vec![
+                MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
+                MockResponse::text(StatusCode::OK, "ok"),
+            ],
+        );
+        let sent = transport.clone();
+        let mut client = ApiClient::<RefreshCx, _>::with_transport(
+            (),
+            RefreshAuthVars {
+                prepares: Arc::new(AtomicUsize::new(0)),
+            },
+            transport,
+        );
+        let debug = Arc::new(UrlDebugSink::default());
+        client.set_debug_sink(debug.clone());
+
+        let value = client
+            .request(RefreshEndpoint)
+            .debug_level(DebugLevel::VV)
+            .execute_decoded()
+            .await?;
+        assert_eq!(value.into_value(), "ok");
+
+        let debug_output = debug.events().join("\n");
+        assert_secret_absent(&debug_output, REFRESH_SECRET_A);
+        assert_secret_absent(&debug_output, REFRESH_SECRET_B);
+
+        let requests = sent.requests().await;
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0].extensions.pending_auth_slots[0].generation,
+            Some(1)
+        );
+        assert_eq!(
+            requests[1].extensions.pending_auth_slots[0].generation,
+            Some(2)
+        );
+        assert_eq!(
+            requests[0]
+                .headers
+                .get("X-Custom")
+                .and_then(|v| v.to_str().ok()),
+            Some(REFRESH_SECRET_A)
+        );
+        assert_eq!(
+            requests[1]
+                .headers
+                .get("X-Custom")
+                .and_then(|v| v.to_str().ok()),
+            Some(REFRESH_SECRET_B)
+        );
+        for request in &requests {
+            let debug_output = format!("{request:?}");
+            assert_secret_absent(&debug_output, REFRESH_SECRET_A);
+            assert_secret_absent(&debug_output, REFRESH_SECRET_B);
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn certificate_auth_material_reaches_transport_request_only() -> Result<(), ApiClientError>
+    {
+        #[derive(Clone)]
+        struct CertificateAuthVars {
+            identity_id: String,
+        }
+
+        #[derive(Clone)]
+        struct CertificateCx;
+
+        impl ClientContext for CertificateCx {
+            type Vars = ();
+            type AuthVars = CertificateAuthVars;
+            type AuthState = ();
+            const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+            const DOMAIN: &'static str = "example.com";
+
+            fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+            fn prepare_auth_requirement<'a>(
+                requirement: &'a AuthRequirement,
+                request: &'a mut BuiltRequest,
+                _vars: &'a Self::Vars,
+                auth: &'a Self::AuthVars,
+                _auth_state: &'a Self::AuthState,
+                _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+                _meta: &'a RequestMeta,
+            ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>>
+            {
+                Box::pin(async move {
+                    let material = ClientCertificate::new(auth.identity_id.clone());
+                    let application =
+                        apply_certificate_credential(request, requirement, &material)?;
+                    let applied = AuthAppliedCredential {
+                        credential_id: requirement.credential.id.clone(),
+                        usage_id: requirement.usage_id.clone(),
+                        step_id: requirement.step_id,
+                        generation: Some(7),
+                        identity: application.identity().clone(),
+                        provenance: requirement.provenance.clone(),
+                    };
+                    Ok(PreparedAuthCredential::new(applied, application))
+                })
+            }
+        }
+
+        #[derive(Clone)]
+        struct CertificateEndpoint;
+
+        impl Endpoint<CertificateCx> for CertificateEndpoint {
+            type Response = String;
+
+            fn plan(
+                &self,
+                _ctx: &ClientPlanContext<'_, CertificateCx>,
+            ) -> Result<RequestPlan, ApiClientError> {
+                Ok(request_plan(
+                    "CertificateRedaction",
+                    Method::GET,
+                    "/certificate",
+                    auth_policy(AuthPlacement::Certificate),
+                    None,
+                    decode_string,
+                ))
+            }
+        }
+
+        let events = Arc::new(TokioMutex::new(Vec::new()));
+        let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+        let sent = transport.clone();
+        let client = ApiClient::<CertificateCx, _>::with_transport(
+            (),
+            CertificateAuthVars {
+                identity_id: CERTIFICATE_ID.to_string(),
+            },
+            transport,
+        );
+
+        client
+            .request(CertificateEndpoint)
+            .execute_decoded()
+            .await?
+            .into_value();
+
+        let requests = sent.requests().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].transport_auth,
+            Some(TransportAuth::ClientCertificate {
+                identity_id: CERTIFICATE_ID.to_string()
+            })
+        );
+        assert_eq!(
+            requests[0].extensions.pending_auth_slots[0].generation,
+            Some(7)
+        );
+        assert_secret_absent(&format!("{:?}", requests[0]), CERTIFICATE_ID);
+
+        Ok(())
+    }
+
     #[test]
     fn secret_wrappers_redact_debug_and_display() {
         for (debug_output, display_output, secret) in [
@@ -575,12 +890,26 @@ mod query_auth_redaction {
                 Result<concord_core::advanced::AuthHttpResponse, AuthError>,
             > {
                 Box::pin(async move {
+                    let debug_output = format!("{request:?}");
+                    assert_secret_absent(&debug_output, CLIENT_SECRET);
+                    assert!(debug_output.contains("<redacted>"));
+                    assert!(debug_output.contains("body"));
                     let header = request
                         .headers
                         .get(http::header::AUTHORIZATION)
                         .and_then(|value| value.to_str().ok())
                         .unwrap_or_default();
                     assert_secret_absent(header, CLIENT_SECRET);
+                    let encoded = header
+                        .strip_prefix("Basic ")
+                        .expect("oauth2 client credentials should send basic auth");
+                    let decoded =
+                        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
+                            .expect("valid basic auth");
+                    assert_eq!(
+                        String::from_utf8(decoded).expect("utf8 basic auth"),
+                        format!("visible-client-id:{CLIENT_SECRET}")
+                    );
                     Ok(concord_core::advanced::AuthHttpResponse {
                         status: StatusCode::UNAUTHORIZED,
                         headers: HeaderMap::new(),

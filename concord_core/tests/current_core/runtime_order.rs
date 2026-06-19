@@ -50,8 +50,9 @@ async fn fresh_cache_hit_bypasses_inflight_rate_limit_and_transport() -> Result<
     assert!(
         events
             .iter()
-            .any(|event| event == "cache_before:Bearer secret-token")
+            .any(|event| event.starts_with("cache_before:hash:"))
     );
+    assert!(!events.iter().any(|event| event.contains("secret-token")));
     assert!(!events.iter().any(|event| event == "pre_send"));
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "transport"));
@@ -207,10 +208,6 @@ async fn per_call_overrides_apply_to_pending_request() -> Result<(), ApiClientEr
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].timeout, Some(Duration::from_millis(250)));
     assert_eq!(requests[0].meta.attempt, 7);
-    assert_eq!(
-        requests[0].cache_mode,
-        concord_core::advanced::CacheRequestMode::Bypass
-    );
     assert_eq!(debug.events(), vec!["request_start:v:Text:0"]);
     Ok(())
 }

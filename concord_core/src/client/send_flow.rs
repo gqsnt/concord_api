@@ -56,7 +56,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 headers: &built.headers,
             })
             .await?;
-        self.send_built_request(built, send_ctx.error_ctx).await
+        self.send_built_request(built, send_ctx.auth_materials, send_ctx.error_ctx)
+            .await
     }
 
     async fn observe_rate_limit_response(
@@ -86,6 +87,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn send_built_request(
         &self,
         built: BuiltRequest,
+        auth_materials: &[crate::auth::AuthTransportMaterial],
         ctx: &ErrorContext,
     ) -> Result<TransportResponse, ApiClientError> {
         let endpoint = built.meta.endpoint;
@@ -93,13 +95,19 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let attempt = built.meta.attempt;
         let page_index = built.meta.page_index;
         let idempotent = built.meta.idempotent;
-        let url = crate::redaction::sanitize_url_for_debug(
-            &built.url,
-            built.extensions.sensitive_query_keys.iter(),
-        );
+        let url = built.debug_url();
 
-        match self.transport.send(built).await {
-            Ok(resp) => Ok(resp),
+        let transport_req = crate::transport::materialize_transport_request(&built, auth_materials)
+            .map_err(|source| ApiClientError::Auth {
+                ctx: ctx.clone(),
+                source,
+            })?;
+
+        match self.transport.send(transport_req).await {
+            Ok(mut resp) => {
+                resp.url = built.url;
+                Ok(resp)
+            }
             Err(e) => {
                 let hook_meta = HookMeta {
                     endpoint,
