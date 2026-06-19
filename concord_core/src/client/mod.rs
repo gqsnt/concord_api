@@ -29,9 +29,86 @@ use http::StatusCode;
 use http::header::CONTENT_TYPE;
 use http::uri::Scheme;
 use std::cell::RefCell;
+use std::fmt;
 use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::Duration;
+
+#[derive(Debug)]
+enum BodyReadError {
+    Transport(TransportError),
+    ContentLengthTooLarge { limit: usize, actual: u64 },
+    LimitExceeded { limit: usize },
+}
+
+impl fmt::Display for BodyReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BodyReadError::Transport(source) => write!(f, "{source}"),
+            BodyReadError::ContentLengthTooLarge { limit, actual } => {
+                write!(
+                    f,
+                    "response Content-Length {actual} exceeds limit {limit} bytes"
+                )
+            }
+            BodyReadError::LimitExceeded { limit } => {
+                write!(
+                    f,
+                    "response body exceeded limit {limit} bytes while reading"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for BodyReadError {}
+
+impl From<TransportError> for BodyReadError {
+    fn from(value: TransportError) -> Self {
+        BodyReadError::Transport(value)
+    }
+}
+
+async fn read_body_all_limited(
+    body: &mut dyn TransportBody,
+    content_length: Option<u64>,
+    limit: Option<usize>,
+) -> Result<Bytes, BodyReadError> {
+    if let (Some(limit), Some(actual)) = (limit, content_length) {
+        let actual_usize = usize::try_from(actual).unwrap_or(usize::MAX);
+        if actual_usize > limit {
+            return Err(BodyReadError::ContentLengthTooLarge { limit, actual });
+        }
+    }
+
+    const SMALL_START: usize = 8 * 1024;
+    const LARGE_START: usize = 64 * 1024;
+    let cap = match content_length {
+        Some(n) => {
+            let n_usize = usize::try_from(n).unwrap_or(usize::MAX);
+            match limit {
+                Some(limit) => n_usize.min(limit),
+                None => n_usize.max(SMALL_START),
+            }
+        }
+        None => limit.map_or(SMALL_START, |limit| limit.min(LARGE_START)),
+    };
+
+    let mut buf = bytes::BytesMut::with_capacity(cap);
+    while let Some(chunk) = body.next_chunk().await? {
+        if let Some(limit) = limit {
+            let next_len = buf
+                .len()
+                .checked_add(chunk.len())
+                .ok_or(BodyReadError::LimitExceeded { limit })?;
+            if next_len > limit {
+                return Err(BodyReadError::LimitExceeded { limit });
+            }
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf.freeze())
+}
 
 // Request lifecycle is kept in phase files while preserving one private client namespace.
 include!("context.rs");

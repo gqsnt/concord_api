@@ -95,10 +95,15 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                 continue;
                             }
                         };
-                        let body = match read_body_all(resp.body.as_mut(), resp.content_length).await
+                        let body = match read_body_all_limited(
+                            resp.body.as_mut(),
+                            resp.content_length,
+                            Some(policy.max_body_bytes),
+                        )
+                        .await
                         {
                             Ok(body) => body,
-                            Err(source) => {
+                            Err(BodyReadError::Transport(source)) => {
                                 if attempt >= policy.max_transport_retries {
                                     return Err(AuthError::new(
                                         AuthErrorKind::AcquireFailed,
@@ -107,6 +112,10 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                 }
                                 attempt = next_auth_transport_attempt(attempt)?;
                                 continue;
+                            }
+                            Err(source @ BodyReadError::ContentLengthTooLarge { .. })
+                            | Err(source @ BodyReadError::LimitExceeded { .. }) => {
+                                return Err(auth_body_too_large_error(source));
                             }
                         };
                         return Ok(AuthHttpResponse {
@@ -212,9 +221,14 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                 continue;
                             }
                         };
-                        let body = match read_body_all(resp.body.as_mut(), resp.content_length).await {
+                        let body = match read_body_all_limited(
+                            resp.body.as_mut(),
+                            resp.content_length,
+                            Some(policy.max_body_bytes),
+                        )
+                        .await {
                             Ok(body) => body,
-                            Err(source) => {
+                            Err(BodyReadError::Transport(source)) => {
                                 if attempt >= policy.max_transport_retries {
                                     return Err(AuthError::new(
                                         AuthErrorKind::AcquireFailed,
@@ -223,6 +237,10 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                 }
                                 attempt = next_auth_transport_attempt(attempt)?;
                                 continue;
+                            }
+                            Err(source @ BodyReadError::ContentLengthTooLarge { .. })
+                            | Err(source @ BodyReadError::LimitExceeded { .. }) => {
+                                return Err(auth_body_too_large_error(source));
                             }
                         };
                         return Ok(AuthHttpResponse {
@@ -251,9 +269,14 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         }
                     };
 
-                    let body = match read_body_all(resp.body.as_mut(), resp.content_length).await {
+                    let body = match read_body_all_limited(
+                        resp.body.as_mut(),
+                        resp.content_length,
+                        Some(policy.max_body_bytes),
+                    )
+                    .await {
                         Ok(body) => body,
-                        Err(source) => {
+                        Err(BodyReadError::Transport(source)) => {
                             if attempt >= policy.max_transport_retries {
                                 return Err(AuthError::new(
                                     AuthErrorKind::AcquireFailed,
@@ -262,6 +285,10 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                             }
                             attempt = next_auth_transport_attempt(attempt)?;
                             continue;
+                        }
+                        Err(source @ BodyReadError::ContentLengthTooLarge { .. })
+                        | Err(source @ BodyReadError::LimitExceeded { .. }) => {
+                            return Err(auth_body_too_large_error(source));
                         }
                     };
 
@@ -277,31 +304,8 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
     }
 }
 
-async fn read_body_all(
-    body: &mut dyn TransportBody,
-    content_length: Option<u64>,
-) -> Result<Bytes, TransportError> {
-    // Sanity cap: au-delà, on évite toute pré-allocation “grosse” basée sur Content-Length.
-    const SANITY_CAP: usize = 2 * 1024 * 1024; // 2MB
-    const SMALL_START: usize = 8 * 1024;
-    const LARGE_START: usize = 64 * 1024;
-
-    let cap = match content_length {
-        None => SMALL_START,
-        Some(n) => {
-            let n_usize = usize::try_from(n).unwrap_or(usize::MAX);
-            if n_usize <= SANITY_CAP {
-                n_usize.max(SMALL_START)
-            } else {
-                LARGE_START
-            }
-        }
-    };
-    let mut buf = bytes::BytesMut::with_capacity(cap);
-    while let Some(chunk) = body.next_chunk().await? {
-        buf.extend_from_slice(&chunk);
-    }
-    Ok(buf.freeze())
+fn auth_body_too_large_error(error: BodyReadError) -> AuthError {
+    AuthError::new(AuthErrorKind::ResponseTooLarge, error.to_string())
 }
 
 fn next_auth_transport_attempt(attempt: u32) -> Result<u32, AuthError> {

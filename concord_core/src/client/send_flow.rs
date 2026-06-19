@@ -160,12 +160,31 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 })
             }
             ResponseClass::Success => {
-                let bytes = read_body_all(resp.body.as_mut(), resp.content_length)
-                    .await
-                    .map_err(|e| ApiClientError::Transport {
+                let bytes = read_body_all_limited(
+                    resp.body.as_mut(),
+                    resp.content_length,
+                    self.runtime_state.max_response_body_bytes(),
+                )
+                .await
+                .map_err(|e| match e {
+                    BodyReadError::Transport(source) => ApiClientError::Transport {
                         ctx: ctx.clone(),
-                        source: e,
-                    })?;
+                        source,
+                    },
+                    BodyReadError::ContentLengthTooLarge { limit, actual } => {
+                        ApiClientError::ResponseTooLarge {
+                            ctx: ctx.clone(),
+                            limit,
+                            actual,
+                        }
+                    }
+                    BodyReadError::LimitExceeded { limit } => {
+                        ApiClientError::ResponseBodyLimitExceeded {
+                            ctx: ctx.clone(),
+                            limit,
+                        }
+                    }
+                })?;
                 Ok(BuiltResponse {
                     meta: resp.meta,
                     url: resp.url,

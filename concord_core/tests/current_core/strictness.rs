@@ -81,3 +81,21 @@ fn runtime_and_generated_auth_paths_do_not_use_lock_panics() {
         }
     }
 }
+
+#[test]
+fn runtime_body_reads_are_explicitly_limited() {
+    for path in [
+        "concord_core/src/client/send_flow.rs",
+        "concord_core/src/client/auth_http.rs",
+    ] {
+        let source = workspace_file(path);
+        assert!(
+            !source.contains("read_body_all("),
+            "{path} must not call an unbounded full-body read helper"
+        );
+        assert!(
+            source.contains("read_body_all_limited("),
+            "{path} should route full-body reads through the limited helper"
+        );
+    }
+}

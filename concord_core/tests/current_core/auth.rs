@@ -1,11 +1,17 @@
 use super::common::*;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthChallengePolicy, AuthDecision, AuthError,
-    AuthErrorKind, AuthPlacement, AuthRequirement, AuthStepPolicy, PreparedAuthCredential,
-    RequestMeta, auth_decision_for_status,
+    AuthErrorKind, AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
+    AuthStepPolicy, PreparedAuthCredential, RequestMeta, auth_decision_for_status,
 };
-use concord_core::prelude::{ApiClientError, ApiKey, ClientContext, Endpoint};
-use http::{HeaderMap, StatusCode};
+#[cfg(feature = "json")]
+use concord_core::advanced::{
+    CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason,
+    OAuth2ClientCredentialsProvider,
+};
+use concord_core::internal::{ClientPlanContext, RequestPlan};
+use concord_core::prelude::{AccessToken, ApiClientError, ApiKey, ClientContext, Endpoint};
+use http::{HeaderMap, Method, StatusCode};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -381,6 +387,236 @@ async fn auth_retry_respects_max_auth_retries() {
     assert_eq!(harness.event_count("acquire").await, 2);
     assert_eq!(harness.event_count("invalidate:Unauthorized").await, 2);
     assert_eq!(harness.event_count("retry:Unauthorized").await, 2);
+}
+
+#[tokio::test]
+async fn auth_http_content_length_above_limit_fails() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "token").with_content_length(Some(5))],
+    );
+    let client = auth_http_client(transport, AuthHttpLimitVars::plain(4));
+
+    let err = client
+        .request(AuthHttpLimitEndpoint)
+        .execute_decoded()
+        .await
+        .expect_err("auth HTTP content length above limit should fail");
+
+    assert_auth_response_too_large(err, 4);
+}
+
+#[tokio::test]
+async fn auth_http_unknown_length_above_limit_fails() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, bytes::Bytes::new())
+                .with_content_length(None)
+                .with_chunks(vec![
+                    bytes::Bytes::from_static(b"abcd"),
+                    bytes::Bytes::from_static(b"e"),
+                ]),
+        ],
+    );
+    let client = auth_http_client(transport, AuthHttpLimitVars::plain(4));
+
+    let err = client
+        .request(AuthHttpLimitEndpoint)
+        .execute_decoded()
+        .await
+        .expect_err("auth HTTP chunked body above limit should fail");
+
+    assert_auth_response_too_large(err, 4);
+}
+
+#[tokio::test]
+async fn auth_http_body_at_limit_succeeds() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "tokn").with_content_length(Some(4)),
+            MockResponse::text(StatusCode::OK, "protected"),
+        ],
+    );
+    let client = auth_http_client(transport, AuthHttpLimitVars::plain(4));
+
+    let decoded = client
+        .request(AuthHttpLimitEndpoint)
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "protected");
+    Ok(())
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn oauth_client_credentials_token_response_above_limit_fails() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "{}").with_content_length(Some(
+                (AuthInternalPolicy::DEFAULT_MAX_BODY_BYTES + 1) as u64,
+            )),
+        ],
+    );
+    let client = auth_http_client(transport, AuthHttpLimitVars::oauth());
+
+    let err = client
+        .request(AuthHttpLimitEndpoint)
+        .execute_decoded()
+        .await
+        .expect_err("oversized OAuth token response should fail");
+
+    assert_auth_response_too_large(err, AuthInternalPolicy::DEFAULT_MAX_BODY_BYTES);
+}
+
+fn assert_auth_response_too_large(err: ApiClientError, limit: usize) {
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::ResponseTooLarge);
+            assert!(source.to_string().contains(&limit.to_string()));
+        }
+        other => panic!("expected auth response-too-large error, got {other:?}"),
+    }
+}
+
+#[derive(Clone)]
+struct AuthHttpLimitVars {
+    max_body_bytes: usize,
+    use_oauth: bool,
+}
+
+impl AuthHttpLimitVars {
+    fn plain(max_body_bytes: usize) -> Self {
+        Self {
+            max_body_bytes,
+            use_oauth: false,
+        }
+    }
+
+    #[cfg(feature = "json")]
+    fn oauth() -> Self {
+        Self {
+            max_body_bytes: AuthInternalPolicy::DEFAULT_MAX_BODY_BYTES,
+            use_oauth: true,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct AuthHttpLimitCx;
+
+impl ClientContext for AuthHttpLimitCx {
+    type Vars = ();
+    type AuthVars = AuthHttpLimitVars;
+    type AuthState = ();
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+    fn prepare_auth_requirement<'a>(
+        requirement: &'a AuthRequirement,
+        request: &'a mut AuthApplicationRequest<'_>,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>> {
+        Box::pin(async move {
+            let material = if auth.use_oauth {
+                #[cfg(feature = "json")]
+                {
+                    let provider = OAuth2ClientCredentialsProvider::new(
+                        CredentialId::new("test", "oauth"),
+                        "https://auth.example.com/token".parse().expect("token url"),
+                        "client-id",
+                        "client-secret",
+                    );
+                    provider
+                        .acquire(CredentialContext::<AuthHttpLimitCx> {
+                            vars: _vars,
+                            auth,
+                            auth_state: _auth_state,
+                            executor,
+                            credential_id:
+                                <OAuth2ClientCredentialsProvider as CredentialProvider<
+                                    AuthHttpLimitCx,
+                                >>::id(&provider),
+                            reason: CredentialRefreshReason::Missing,
+                        })
+                        .await?
+                }
+                #[cfg(not(feature = "json"))]
+                {
+                    return Err(AuthError::new(
+                        AuthErrorKind::UnsupportedScheme,
+                        "json feature is required for oauth2 provider tests",
+                    ));
+                }
+            } else {
+                let resp = executor
+                    .send(AuthHttpRequest {
+                        method: Method::POST,
+                        url: "https://auth.example.com/token".parse().expect("auth url"),
+                        headers: HeaderMap::new(),
+                        body: None,
+                        mode: AuthMode::SkipAuth,
+                        policy: AuthInternalPolicy {
+                            max_body_bytes: auth.max_body_bytes,
+                            ..Default::default()
+                        },
+                    })
+                    .await?;
+                AccessToken::new(String::from_utf8_lossy(&resp.body).to_string())
+            };
+            let application =
+                concord_core::advanced::apply_secret_credential(request, requirement, &material)?;
+            let applied = AuthAppliedCredential {
+                credential_id: requirement.credential.id.clone(),
+                usage_id: requirement.usage_id.clone(),
+                step_id: requirement.step_id,
+                generation: Some(1),
+                identity: application.identity().clone(),
+                provenance: requirement.provenance.clone(),
+            };
+            Ok(PreparedAuthCredential::new(applied, application))
+        })
+    }
+}
+
+struct AuthHttpLimitEndpoint;
+
+impl Endpoint<AuthHttpLimitCx> for AuthHttpLimitEndpoint {
+    type Response = String;
+
+    fn plan(
+        &self,
+        _ctx: &ClientPlanContext<'_, AuthHttpLimitCx>,
+    ) -> Result<RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            "AuthHttpLimit",
+            Method::GET,
+            "/auth-http-limit",
+            auth_policy(AuthPlacement::Bearer),
+            None,
+            decode_string,
+        ))
+    }
+}
+
+fn auth_http_client(
+    transport: MockTransport,
+    auth: AuthHttpLimitVars,
+) -> concord_core::prelude::ApiClient<AuthHttpLimitCx, MockTransport> {
+    concord_core::prelude::ApiClient::with_transport((), auth, transport)
 }
 
 #[derive(Clone)]

@@ -15,6 +15,7 @@ pub struct ClientRuntimeState {
     rate_limiter: Arc<dyn RateLimiter>,
     retry_policy: Arc<dyn RetryPolicy>,
     max_auth_retries: u32,
+    max_response_body_bytes: Option<usize>,
 }
 
 impl Default for ClientRuntimeState {
@@ -27,6 +28,7 @@ impl Default for ClientRuntimeState {
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
             max_auth_retries: 8,
+            max_response_body_bytes: Some(16 * 1024 * 1024),
         }
     }
 }
@@ -42,6 +44,7 @@ impl ClientRuntimeState {
             rate_limiter: config.rate_limiter,
             retry_policy: config.retry_policy,
             max_auth_retries: config.auth.max_retries,
+            max_response_body_bytes: config.max_response_body_bytes,
         }
     }
 
@@ -88,6 +91,11 @@ impl ClientRuntimeState {
     #[inline]
     pub fn set_max_auth_retries(&mut self, max_auth_retries: u32) {
         self.max_auth_retries = max_auth_retries;
+    }
+
+    #[inline]
+    pub fn max_response_body_bytes(&self) -> Option<usize> {
+        self.max_response_body_bytes
     }
 
     #[inline]

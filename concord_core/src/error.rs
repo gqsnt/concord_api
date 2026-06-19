@@ -39,6 +39,16 @@ pub enum ApiClientError {
         source: crate::transport::TransportError,
     },
 
+    #[error("{ctx}: response Content-Length {actual} exceeds limit {limit} bytes")]
+    ResponseTooLarge {
+        ctx: ErrorContext,
+        limit: usize,
+        actual: u64,
+    },
+
+    #[error("{ctx}: response body exceeded limit {limit} bytes while reading")]
+    ResponseBodyLimitExceeded { ctx: ErrorContext, limit: usize },
+
     #[error("{ctx}: status {status}")]
     HttpStatus {
         ctx: ErrorContext,
@@ -176,6 +186,8 @@ impl ApiClientError {
             ApiClientError::InvalidParam { ctx, .. }
             | ApiClientError::BuildUrl { ctx, .. }
             | ApiClientError::Transport { ctx, .. }
+            | ApiClientError::ResponseTooLarge { ctx, .. }
+            | ApiClientError::ResponseBodyLimitExceeded { ctx, .. }
             | ApiClientError::HttpStatus { ctx, .. }
             | ApiClientError::Decode { ctx, .. }
             | ApiClientError::HeadRequiresNoContent { ctx }
@@ -203,6 +215,8 @@ impl ApiClientError {
                 ErrorCategory::Timeout
             }
             ApiClientError::Transport { .. } => ErrorCategory::Transport,
+            ApiClientError::ResponseTooLarge { .. }
+            | ApiClientError::ResponseBodyLimitExceeded { .. } => ErrorCategory::Decode,
             ApiClientError::HttpStatus { rate_limit, .. } if rate_limit.is_some() => {
                 ErrorCategory::RateLimit
             }

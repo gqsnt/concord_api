@@ -1,6 +1,7 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{AuthPlacement, Caps, DebugSink, NoopCacheStore, NoopRateLimiter};
+use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{ApiClientError, DebugLevel};
 use http::{HeaderMap, Method, StatusCode};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -338,4 +339,235 @@ async fn runtime_config_applies_debug_cache_rate_limit_transport_and_pagination(
     assert_eq!(decoded.into_value(), "configured");
     assert_eq!(transport.sent_count().await, 1);
     Ok(())
+}
+
+#[tokio::test]
+async fn response_content_length_above_limit_fails_before_decode() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "too-large").with_content_length(Some(9))],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("known content length above limit should fail");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseTooLarge {
+            limit: 4,
+            actual: 9,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn response_unknown_length_above_limit_fails_while_reading() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::new())
+                .with_content_length(None)
+                .with_chunks(vec![Bytes::from_static(b"abcd"), Bytes::from_static(b"e")]),
+        ],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("chunked body above limit should fail");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { limit: 4, .. }
+    ));
+}
+
+#[tokio::test]
+async fn response_exactly_at_limit_succeeds() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "abcd")]);
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "abcd");
+    Ok(())
+}
+
+#[tokio::test]
+async fn response_below_limit_succeeds() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "abc")]);
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "abc");
+    Ok(())
+}
+
+#[tokio::test]
+async fn response_too_large_does_not_decode() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xff"))
+                .with_content_length(Some(8)),
+        ],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(1);
+    });
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("body limit should fail before utf-8 decode");
+
+    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
+    assert!(!err.to_string().contains("utf-8"));
+}
+
+#[tokio::test]
+async fn response_too_large_does_not_cache() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "large")]);
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None, false, None);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let endpoint = TextEndpoint {
+        policy: cache_policy(),
+        ..Default::default()
+    };
+    let err = client
+        .request(endpoint)
+        .execute_decoded()
+        .await
+        .expect_err("body limit should fail before cache write");
+
+    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
+    assert_eq!(*after_response_count.lock().await, 0);
+}
+
+#[tokio::test]
+async fn response_limit_applies_when_cache_is_off() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "large")]);
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("response limit applies independently from cache");
+
+    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
+}
+
+#[tokio::test]
+async fn cache_max_body_smaller_than_response_limit_skips_store_but_decode_succeeds()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "2k")],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None, false, None);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4 * 1024);
+    });
+
+    let endpoint = TextEndpoint {
+        policy: ResolvedPolicy {
+            cache: concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new().with_max_body_bytes(1),
+            ),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let decoded = client.request(endpoint).execute_decoded().await?;
+
+    assert_eq!(decoded.value(), "2k");
+    assert_eq!(*after_response_count.lock().await, 1);
+    assert!(
+        events
+            .lock()
+            .await
+            .iter()
+            .any(|event| event == "cache_max_body_skip")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn response_limit_smaller_than_cache_max_body_fails_before_cache() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "large")]);
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None, false, None);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let endpoint = TextEndpoint {
+        policy: ResolvedPolicy {
+            cache: concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new().with_max_body_bytes(4 * 1024),
+            ),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let err = client
+        .request(endpoint)
+        .execute_decoded()
+        .await
+        .expect_err("response limit should fail before cache max_body is considered");
+
+    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
+    assert_eq!(*after_response_count.lock().await, 0);
 }

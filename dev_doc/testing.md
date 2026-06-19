@@ -30,6 +30,8 @@ Runtime strictness tests should reject invented policy values and silent saturat
 
 Runtime lock/state tests should poison representative auth, cache, and rate-limit state where feasible and assert typed errors or explicit cache backend outcomes instead of panics. Source guards should reject lock `unwrap`/`expect` patterns in public runtime paths and generated helper code while allowing test-only assertions.
 
+Response body limit tests should cover `Content-Length` precheck, unknown-length/chunked enforcement, exactly-at-limit success, decode/cache bypass on oversized bodies, auth HTTP token response limits, and separation between endpoint response read limits and cache `max_body`. Source guards should prevent runtime code from reintroducing unbounded full-body read helpers.
+
 ## Examples and docs tests
 
 `concord_examples` compile-checks public usage. It includes small examples, public docs fixtures, docs sync tests, release docs checks, and the Riot fixture.

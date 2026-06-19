@@ -116,6 +116,8 @@ Cache TTL values use checked arithmetic during semantic analysis. Overflowing du
 
 Runtime cache state failures are surfaced through cache backend failure handling instead of panicking. A cache backend state failure may produce a cache miss or `NotStored(Backend)` according to the cache operation, but request execution must not panic on a poisoned cache index.
 
+`max_body` is a cache storage limit only. Concord still reads endpoint response bodies under the runtime response-body limit before decode. The default response read limit is 16 MiB and can be changed with `RuntimeConfig::max_response_body_bytes(...)`; `RuntimeConfig::no_response_body_limit()` is the explicit escape hatch. A response that exceeds the read limit fails before decode and before any cache write, and this body-limit failure is not retryable by default.
+
 ## Rate Limit
 
 Rate-limit profiles define buckets and keys.
@@ -183,6 +185,8 @@ rate_limit off
 `[host]` is a strict key part. If a bucket uses `[host]`, the request URL must have a host; otherwise execution fails before rate-limit permit acquisition and before transport. Concord does not invent fallback host values such as `"<unknown-host>"`. Endpoint, method, static string, and named key parts do not require a URL host unless they are combined with `[host]`.
 
 Rate-limit runtime state failures, such as poisoned window or cooldown locks, return typed runtime-state errors. They are reported before transport when the state is required for permit acquisition or cooldown handling.
+
+Internal auth HTTP responses use a separate 1 MiB body limit for token and credential-acquisition calls. That limit is independent from endpoint response reads and from cache `max_body`.
 
 ## Overrides
 

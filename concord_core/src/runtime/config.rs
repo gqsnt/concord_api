@@ -46,6 +46,7 @@ pub struct RuntimeConfig {
     pub(crate) auth: AuthRuntimeConfig,
     pub(crate) pagination: Caps,
     pub(crate) debug: DebugConfig,
+    pub(crate) max_response_body_bytes: Option<usize>,
 }
 
 impl Default for RuntimeConfig {
@@ -60,6 +61,7 @@ impl Default for RuntimeConfig {
             auth: AuthRuntimeConfig::default(),
             pagination: Caps::default(),
             debug: DebugConfig::default(),
+            max_response_body_bytes: Some(16 * 1024 * 1024),
         }
     }
 }
@@ -139,6 +141,18 @@ impl RuntimeConfig {
     #[inline]
     pub fn pagination(&mut self, caps: Caps) -> &mut Self {
         self.pagination_caps(caps)
+    }
+
+    #[inline]
+    pub fn max_response_body_bytes(&mut self, bytes: usize) -> &mut Self {
+        self.max_response_body_bytes = Some(bytes);
+        self
+    }
+
+    #[inline]
+    pub fn no_response_body_limit(&mut self) -> &mut Self {
+        self.max_response_body_bytes = None;
+        self
     }
 
     #[inline]

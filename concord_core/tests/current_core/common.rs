@@ -406,6 +406,8 @@ pub struct MockResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Bytes,
+    pub content_length: Option<u64>,
+    pub chunks: Option<Vec<Bytes>>,
 }
 
 impl MockResponse {
@@ -419,7 +421,19 @@ impl MockResponse {
             status,
             headers,
             body: body.into(),
+            content_length: None,
+            chunks: None,
         }
+    }
+
+    pub fn with_content_length(mut self, content_length: Option<u64>) -> Self {
+        self.content_length = content_length;
+        self
+    }
+
+    pub fn with_chunks(mut self, chunks: Vec<Bytes>) -> Self {
+        self.chunks = Some(chunks);
+        self
     }
 }
 
@@ -472,9 +486,20 @@ impl Transport for MockTransport {
                 url: req.url,
                 status: response.status,
                 headers: response.headers,
-                content_length: Some(response.body.len() as u64),
+                content_length: response.content_length.or_else(|| {
+                    response
+                        .chunks
+                        .is_none()
+                        .then_some(response.body.len() as u64)
+                }),
                 rate_limit: req.rate_limit,
-                body: Box::new(StaticBody(Some(response.body))),
+                body: if let Some(chunks) = response.chunks {
+                    Box::new(ChunkBody {
+                        chunks: chunks.into(),
+                    })
+                } else {
+                    Box::new(StaticBody(Some(response.body)))
+                },
             })
         })
     }
@@ -487,6 +512,18 @@ impl TransportBody for StaticBody {
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
         Box::pin(async move { Ok(self.0.take()) })
+    }
+}
+
+struct ChunkBody {
+    chunks: VecDeque<Bytes>,
+}
+
+impl TransportBody for ChunkBody {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
+        Box::pin(async move { Ok(self.chunks.pop_front()) })
     }
 }
 
@@ -685,8 +722,8 @@ impl CacheStore for RecordingCache {
 
     fn after_response<'a>(
         &'a self,
-        _request: &'a BuiltRequest,
-        _response: &'a BuiltResponse,
+        request: &'a BuiltRequest,
+        response: &'a BuiltResponse,
         _revalidation: Option<CacheRevalidation>,
     ) -> CacheFuture<'a, CacheAfter> {
         Box::pin(async move {
@@ -695,6 +732,16 @@ impl CacheStore for RecordingCache {
                 .lock()
                 .await
                 .push("cache_after_response".to_string());
+            if let concord_core::internal::CacheSetting::Config(config) = &request.cache
+                && let Some(max_body_bytes) = config.max_body_bytes
+                && response.body.len() > max_body_bytes
+            {
+                self.events
+                    .lock()
+                    .await
+                    .push("cache_max_body_skip".to_string());
+                return CacheAfter::NotStored(concord_core::advanced::CacheSkipReason::TooLarge);
+            }
             CacheAfter::Stored
         })
     }

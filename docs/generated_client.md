@@ -22,6 +22,8 @@ Tests and custom transports can use `new_with_transport(...)`.
 let api = minimal_api::MinimalApi::new_with_transport(transport);
 ```
 
+Generated clients inherit Concord's runtime response-body limit. Endpoint responses are read under a finite 16 MiB default before decode. Advanced callers can adjust this with `configure(|cfg| cfg.max_response_body_bytes(bytes))`; `no_response_body_limit()` disables the endpoint read limit explicitly.
+
 Use `builder()` when constructing a client is clearer with named setters.
 
 ```rust

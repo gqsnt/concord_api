@@ -342,6 +342,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 sink: self.debug_sink.clone(),
                 body: self.debug_body,
             },
+            max_response_body_bytes: self.runtime_state.max_response_body_bytes(),
         };
         f(&mut config);
         self.debug_level = config.debug.level;

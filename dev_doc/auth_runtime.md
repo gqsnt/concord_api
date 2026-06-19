@@ -53,6 +53,8 @@ Credential slots carry generation counters. Invalidating a rejected credential s
 
 Auth-internal requests use recursion guards so an auth refresh request does not recursively trigger the same auth flow.
 
+Auth-internal HTTP responses are also bounded. Token and credential-acquisition responses use `AuthInternalPolicy::max_body_bytes`, which defaults to 1 MiB. The auth executor checks `Content-Length` before reading when present and enforces the same limit while reading unknown-length bodies. Oversized auth responses return `AuthErrorKind::ResponseTooLarge`; they are not treated as retryable transport read failures by default.
+
 ## Advanced forms
 
 Certificate auth is an attachment form for `ClientCertificate` material. The DSL does not provide a secret-derived certificate constructor in v1; certificate material must come from endpoint-backed or runtime-provided credential material.

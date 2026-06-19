@@ -48,6 +48,8 @@ Generated auth preparation code resolves credential leases and receives an auth-
 
 Generated auth-var setters and endpoint-backed credential state helpers must not unwrap shared locks. Setters that update generated auth vars return `Result<..., AuthError>` when lock state is unavailable. Endpoint-backed credential `set`, `clear`, and `is_set` helpers are fallible for the same reason.
 
+Generated clients do not change codec traits for response-size enforcement. They expose the shared runtime configuration surface, and `concord_core` enforces endpoint response body limits before generated response decoding runs.
+
 ## Rustdoc
 
 Rustdoc is generated from resolved endpoint metadata. Behavior labels attached through defaults, scopes, and endpoints are emitted as a concise `Behavior: ...` line. Do not render secrets or secret values in rustdoc.

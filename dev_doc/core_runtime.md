@@ -54,6 +54,8 @@ Retry decisions happen before stale cache fallback. Stale fallback is considered
 
 Successful eligible raw responses are cached after classification. Auth rejection responses and retryable responses that will be retried are not cached as final successes.
 
+Endpoint response bodies are read into memory only through the bounded body reader. The default runtime limit is 16 MiB, `Content-Length` is checked before reading when present, and chunked or unknown-length bodies are checked cumulatively while reading. Too-large responses fail before decode and before cache write. Cache `max_body` remains a storage eligibility limit and does not control the response read/decode limit.
+
 Decode happens last. A decode failure does not trigger another transport retry.
 
 Runtime order is covered by characterization tests in `concord_core`.

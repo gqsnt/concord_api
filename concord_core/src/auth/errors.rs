@@ -45,6 +45,7 @@ pub enum AuthErrorKind {
     UnsupportedScheme,
     RecursionDetected,
     ProviderRejected,
+    ResponseTooLarge,
     StateUnavailable,
     CertificateUnavailable,
     InvalidConfiguration,

@@ -85,11 +85,27 @@ impl fmt::Display for AuthRequirementId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct AuthInternalPolicy {
     pub timeout: Option<Duration>,
     pub max_transport_retries: u32,
     pub use_rate_limiter: bool,
+    pub max_body_bytes: usize,
+}
+
+impl AuthInternalPolicy {
+    pub const DEFAULT_MAX_BODY_BYTES: usize = 1024 * 1024;
+}
+
+impl Default for AuthInternalPolicy {
+    fn default() -> Self {
+        Self {
+            timeout: None,
+            max_transport_retries: 0,
+            use_rate_limiter: false,
+            max_body_bytes: Self::DEFAULT_MAX_BODY_BYTES,
+        }
+    }
 }
 
 pub trait AuthHttpExecutor: Send + Sync {
