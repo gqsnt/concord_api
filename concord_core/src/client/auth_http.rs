@@ -131,6 +131,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     extensions: Default::default(),
                 };
 
+                let mut auth_materials = Vec::new();
                 match mode {
                     AuthMode::SkipAuth => {}
                     AuthMode::UseAuth(requirement) => {
@@ -147,19 +148,23 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
 
                         AUTH_INTERNAL_STACK.with(|stack| stack.borrow_mut().push(requirement_key));
                         let auth_state_snapshot = self.client.auth_state();
-                        let applied = Cx::apply_internal_auth(
-                            &requirement,
-                            &mut base_request,
-                            self.client.vars(),
-                            self.client.auth_vars(),
-                            auth_state_snapshot.as_ref(),
-                            self,
-                        )
-                        .await;
+                        let applied = {
+                            let mut auth_request =
+                                crate::auth::AuthApplicationRequest::new(&mut base_request.extensions);
+                            Cx::apply_internal_auth(
+                                &requirement,
+                                &mut auth_request,
+                                self.client.vars(),
+                                self.client.auth_vars(),
+                                auth_state_snapshot.as_ref(),
+                                self,
+                            )
+                            .await
+                        };
                         AUTH_INTERNAL_STACK.with(|stack| {
                             let _ = stack.borrow_mut().pop();
                         });
-                        applied?;
+                        auth_materials = applied?.materials;
                     }
                 }
 
@@ -189,7 +194,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                 AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
                             })?;
                         let transport_req =
-                            crate::transport::materialize_transport_request(&built, &[])
+                            crate::transport::materialize_transport_request(&built, &auth_materials)
                                 .map_err(|source| {
                                     AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
                                 })?;
@@ -227,7 +232,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         });
                     }
 
-                    let transport_req = crate::transport::materialize_transport_request(&built, &[])
+                    let transport_req = crate::transport::materialize_transport_request(&built, &auth_materials)
                         .map_err(|source| {
                             AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
                         })?;

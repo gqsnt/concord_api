@@ -39,6 +39,33 @@ pub struct PendingAuthSlot {
     pub placement: PendingAuthPlacement,
 }
 
+pub struct AuthApplicationRequest<'a> {
+    extensions: &'a mut crate::auth::RequestExtensions,
+}
+
+impl<'a> AuthApplicationRequest<'a> {
+    #[inline]
+    pub(crate) fn new(extensions: &'a mut crate::auth::RequestExtensions) -> Self {
+        Self { extensions }
+    }
+
+    #[inline]
+    fn push_pending_slot(&mut self, slot: PendingAuthSlot) {
+        self.extensions.pending_auth_slots.push(slot);
+    }
+
+    fn mark_sensitive_query_key(&mut self, key: &str) {
+        if !self
+            .extensions
+            .sensitive_query_keys
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(key))
+        {
+            self.extensions.sensitive_query_keys.push(key.to_string());
+        }
+    }
+}
+
 impl fmt::Debug for PendingAuthSlot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PendingAuthSlot")
@@ -139,6 +166,30 @@ impl PreparedAuthCredential {
             applied,
             material: application.material,
         }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PreparedInternalAuth {
+    pub(crate) materials: Vec<AuthTransportMaterial>,
+}
+
+impl PreparedInternalAuth {
+    #[inline]
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    #[inline]
+    pub fn from_application(application: AuthApplication) -> Self {
+        Self {
+            materials: vec![application.material],
+        }
+    }
+
+    #[inline]
+    pub fn push_application(&mut self, application: AuthApplication) {
+        self.materials.push(application.material);
     }
 }
 
@@ -299,7 +350,7 @@ pub fn auth_decision_for_status(
 }
 
 pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
-    request: &mut crate::transport::BuiltRequest,
+    request: &mut AuthApplicationRequest<'_>,
     requirement: &AuthRequirement,
     material: &M,
 ) -> Result<AuthApplication, crate::auth::AuthError> {
@@ -316,17 +367,7 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
             PendingAuthPlacement::Header(name)
         }
         AuthPlacement::Query(name) => {
-            if !request
-                .extensions
-                .sensitive_query_keys
-                .iter()
-                .any(|key| key.eq_ignore_ascii_case(name))
-            {
-                request
-                    .extensions
-                    .sensitive_query_keys
-                    .push(name.to_string());
-            }
+            request.mark_sensitive_query_key(name);
             PendingAuthPlacement::Query(name.to_string())
         }
         _ => {
@@ -337,7 +378,7 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
         }
     };
     let identity = crate::auth::CredentialMaterial::safe_identity(material);
-    request.extensions.pending_auth_slots.push(PendingAuthSlot {
+    request.push_pending_slot(PendingAuthSlot {
         id: slot_id,
         credential: requirement.credential.clone(),
         usage_id: requirement.usage_id.clone(),
@@ -357,7 +398,7 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
 }
 
 pub fn apply_basic_credential(
-    request: &mut crate::transport::BuiltRequest,
+    request: &mut AuthApplicationRequest<'_>,
     requirement: &AuthRequirement,
     material: &crate::auth::BasicCredential,
 ) -> Result<AuthApplication, crate::auth::AuthError> {
@@ -369,7 +410,7 @@ pub fn apply_basic_credential(
     }
     let slot_id = AuthSlotId::next();
     let identity = crate::auth::CredentialMaterial::safe_identity(material);
-    request.extensions.pending_auth_slots.push(PendingAuthSlot {
+    request.push_pending_slot(PendingAuthSlot {
         id: slot_id,
         credential: requirement.credential.clone(),
         usage_id: requirement.usage_id.clone(),
@@ -390,7 +431,7 @@ pub fn apply_basic_credential(
 }
 
 pub fn apply_certificate_credential(
-    request: &mut crate::transport::BuiltRequest,
+    request: &mut AuthApplicationRequest<'_>,
     requirement: &AuthRequirement,
     material: &crate::auth::ClientCertificate,
 ) -> Result<AuthApplication, crate::auth::AuthError> {
@@ -402,7 +443,7 @@ pub fn apply_certificate_credential(
     }
     let slot_id = AuthSlotId::next();
     let identity = crate::auth::CredentialMaterial::safe_identity(material);
-    request.extensions.pending_auth_slots.push(PendingAuthSlot {
+    request.push_pending_slot(PendingAuthSlot {
         id: slot_id,
         credential: requirement.credential.clone(),
         usage_id: requirement.usage_id.clone(),

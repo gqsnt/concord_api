@@ -7,15 +7,15 @@ mod query_auth_redaction {
     use bytes::Bytes;
     use concord_core::advanced::ClientCertificate;
     use concord_core::advanced::{
-        AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind, AuthPlacement,
-        AuthRequirement, AuthRetryReason, BuiltRequest, DebugSink, RequestMeta, RuntimeHooks,
-        Transport, TransportAuth, TransportError, TransportErrorHookContext, TransportResponse,
-        apply_basic_credential, apply_certificate_credential, apply_secret_credential,
+        AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
+        AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
+        AuthRequirementId, AuthRetryReason, DebugSink, PreparedInternalAuth, RequestMeta,
+        RuntimeHooks, Transport, TransportAuth, TransportError, TransportErrorHookContext,
+        TransportResponse, apply_basic_credential, apply_certificate_credential,
+        apply_secret_credential,
     };
     #[cfg(feature = "json")]
-    use concord_core::advanced::{
-        AuthHttpRequest, CredentialProvider, OAuth2ClientCredentialsProvider,
-    };
+    use concord_core::advanced::{CredentialProvider, OAuth2ClientCredentialsProvider};
     use concord_core::advanced::{PreparedAuthCredential, TransportRequest};
     use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
     use concord_core::prelude::{
@@ -35,6 +35,7 @@ mod query_auth_redaction {
     const REFRESH_SECRET_A: &str = "LEAK_SENTINEL_REFRESH_A";
     const REFRESH_SECRET_B: &str = "LEAK_SENTINEL_REFRESH_B";
     const CERTIFICATE_ID: &str = "LEAK_SENTINEL_CERTIFICATE_ID";
+    const INTERNAL_AUTH_SECRET: &str = "LEAK_SENTINEL_INTERNAL_AUTH";
     #[cfg(feature = "json")]
     const CLIENT_SECRET: &str = "LEAK_SENTINEL_CLIENT_SECRET_ABC";
 
@@ -66,7 +67,7 @@ mod query_auth_redaction {
 
         fn prepare_auth_requirement<'a>(
             requirement: &'a AuthRequirement,
-            request: &'a mut BuiltRequest,
+            request: &'a mut AuthApplicationRequest<'_>,
             _vars: &'a Self::Vars,
             auth: &'a Self::AuthVars,
             _auth_state: &'a Self::AuthState,
@@ -583,7 +584,7 @@ mod query_auth_redaction {
 
             fn prepare_auth_requirement<'a>(
                 requirement: &'a AuthRequirement,
-                request: &'a mut BuiltRequest,
+                request: &'a mut AuthApplicationRequest<'_>,
                 _vars: &'a Self::Vars,
                 auth: &'a Self::AuthVars,
                 _auth_state: &'a Self::AuthState,
@@ -744,7 +745,7 @@ mod query_auth_redaction {
 
             fn prepare_auth_requirement<'a>(
                 requirement: &'a AuthRequirement,
-                request: &'a mut BuiltRequest,
+                request: &'a mut AuthApplicationRequest<'_>,
                 _vars: &'a Self::Vars,
                 auth: &'a Self::AuthVars,
                 _auth_state: &'a Self::AuthState,
@@ -821,6 +822,160 @@ mod query_auth_redaction {
         );
         assert_secret_absent(&format!("{:?}", requests[0]), CERTIFICATE_ID);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn internal_auth_uses_sealed_request_and_materializes_only_at_transport()
+    -> Result<(), ApiClientError> {
+        #[derive(Clone)]
+        struct InternalAuthVars {
+            internal_secret: String,
+            external_secret: String,
+        }
+
+        #[derive(Clone)]
+        struct InternalAuthCx;
+
+        impl ClientContext for InternalAuthCx {
+            type Vars = ();
+            type AuthVars = InternalAuthVars;
+            type AuthState = ();
+            const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+            const DOMAIN: &'static str = "example.com";
+
+            fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+            fn apply_internal_auth<'a>(
+                requirement: &'a AuthRequirementId,
+                request: &'a mut AuthApplicationRequest<'_>,
+                _vars: &'a Self::Vars,
+                auth: &'a Self::AuthVars,
+                _auth_state: &'a Self::AuthState,
+                _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+            ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedInternalAuth, AuthError>>
+            {
+                Box::pin(async move {
+                    assert_eq!(requirement.name(), "internal");
+                    let requirement = AuthRequirement {
+                        credential: concord_core::advanced::CredentialRef {
+                            id: concord_core::advanced::CredentialId::new("test", "internal"),
+                        },
+                        placement: AuthPlacement::Header("X-Internal-Custom"),
+                        usage_id: concord_core::advanced::AuthUsageId::new("internal-use"),
+                        step_id: Some("internal"),
+                        provenance: concord_core::advanced::AuthProvenance::new("internal"),
+                        challenge: Default::default(),
+                    };
+                    let material = ApiKey::new(auth.internal_secret.clone());
+                    let application = apply_secret_credential(request, &requirement, &material)?;
+                    Ok(PreparedInternalAuth::from_application(application))
+                })
+            }
+
+            fn prepare_auth_requirement<'a>(
+                requirement: &'a AuthRequirement,
+                request: &'a mut AuthApplicationRequest<'_>,
+                _vars: &'a Self::Vars,
+                auth: &'a Self::AuthVars,
+                _auth_state: &'a Self::AuthState,
+                executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+                _meta: &'a RequestMeta,
+            ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>>
+            {
+                Box::pin(async move {
+                    let auth_resp = executor
+                        .send(AuthHttpRequest {
+                            method: Method::GET,
+                            url: "https://auth.example.com/internal"
+                                .parse()
+                                .expect("auth url"),
+                            headers: HeaderMap::new(),
+                            body: None,
+                            mode: AuthMode::UseAuth(AuthRequirementId::new("test", "internal")),
+                            policy: AuthInternalPolicy::default(),
+                        })
+                        .await?;
+                    assert_eq!(auth_resp.status, StatusCode::OK);
+
+                    let material = AccessToken::new(auth.external_secret.clone());
+                    let application = apply_secret_credential(request, requirement, &material)?;
+                    let applied = AuthAppliedCredential {
+                        credential_id: requirement.credential.id.clone(),
+                        usage_id: requirement.usage_id.clone(),
+                        step_id: requirement.step_id,
+                        generation: Some(1),
+                        identity: application.identity().clone(),
+                        provenance: requirement.provenance.clone(),
+                    };
+                    Ok(PreparedAuthCredential::new(applied, application))
+                })
+            }
+        }
+
+        struct InternalEndpoint;
+
+        impl Endpoint<InternalAuthCx> for InternalEndpoint {
+            type Response = String;
+
+            fn plan(
+                &self,
+                _ctx: &ClientPlanContext<'_, InternalAuthCx>,
+            ) -> Result<RequestPlan, ApiClientError> {
+                Ok(request_plan(
+                    "InternalAuth",
+                    Method::GET,
+                    "/protected",
+                    auth_policy(AuthPlacement::Bearer),
+                    None,
+                    decode_string,
+                ))
+            }
+        }
+
+        let transport = MockTransport::new(
+            Arc::new(TokioMutex::new(Vec::new())),
+            vec![
+                MockResponse::text(StatusCode::OK, "internal-ok"),
+                MockResponse::text(StatusCode::OK, "protected-ok"),
+            ],
+        );
+        let sent = transport.clone();
+        let client = ApiClient::<InternalAuthCx, _>::with_transport(
+            (),
+            InternalAuthVars {
+                internal_secret: INTERNAL_AUTH_SECRET.to_string(),
+                external_secret: BEARER_SECRET.to_string(),
+            },
+            transport,
+        );
+
+        let value = client
+            .request(InternalEndpoint)
+            .execute_decoded()
+            .await?
+            .into_value();
+        assert_eq!(value, "protected-ok");
+
+        let requests = sent.requests().await;
+        assert_eq!(requests.len(), 2);
+        let internal_header = requests[0]
+            .headers
+            .get("X-Internal-Custom")
+            .and_then(|value| value.to_str().ok())
+            .expect("internal auth header materialized");
+        assert_eq!(internal_header, INTERNAL_AUTH_SECRET);
+        assert_secret_absent(&format!("{:?}", requests[0]), INTERNAL_AUTH_SECRET);
+        assert_secret_absent(
+            &format!("{:?}", requests[0].extensions),
+            INTERNAL_AUTH_SECRET,
+        );
+        assert_secret_absent(&format!("{:?}", requests[1]), INTERNAL_AUTH_SECRET);
+        assert_eq!(requests[0].extensions.pending_auth_slots.len(), 1);
+        assert_eq!(
+            requests[0].extensions.pending_auth_slots[0].generation,
+            None
+        );
         Ok(())
     }
 
@@ -941,5 +1096,71 @@ mod query_auth_redaction {
         let output = format!("{err:?}\n{err}");
         assert!(output.contains("oauth2 token endpoint returned 401"));
         assert_secret_absent(&output, CLIENT_SECRET);
+    }
+
+    fn workspace_file(path: &str) -> String {
+        let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("core crate has workspace parent")
+            .to_path_buf();
+        std::fs::read_to_string(workspace.join(path))
+            .unwrap_or_else(|err| panic!("read workspace file {path}: {err}"))
+    }
+
+    #[test]
+    fn auth_preparation_boundary_does_not_expose_built_request() {
+        let context = workspace_file("concord_core/src/client/context.rs").replace("\r\n", "\n");
+        let plan = workspace_file("concord_core/src/auth/plan.rs").replace("\r\n", "\n");
+        let codegen = workspace_file("concord_macros/src/codegen/client.rs").replace("\r\n", "\n");
+
+        assert!(context.contains("_request: &'a mut crate::auth::AuthApplicationRequest<'_>"));
+        assert!(!context.contains("prepare_auth_requirement<'a>(\n        _requirement: &'a crate::auth::AuthRequirement,\n        _request: &'a mut BuiltRequest"));
+        assert!(!context.contains("apply_internal_auth<'a>(\n        _requirement: &'a AuthRequirementId,\n        _request: &'a mut BuiltRequest"));
+        assert!(
+            !context.contains("&'a mut BuiltRequest"),
+            "auth hooks in ClientContext must not receive BuiltRequest"
+        );
+        assert!(
+            !context.contains("&mut BuiltRequest"),
+            "auth hooks in ClientContext must not receive BuiltRequest"
+        );
+
+        for helper in [
+            "pub fn apply_secret_credential<M: crate::auth::SecretCredential>(\n    request: &mut AuthApplicationRequest<'_>",
+            "pub fn apply_basic_credential(\n    request: &mut AuthApplicationRequest<'_>",
+            "pub fn apply_certificate_credential(\n    request: &mut AuthApplicationRequest<'_>",
+        ] {
+            assert!(
+                plan.contains(helper),
+                "auth helper should use AuthApplicationRequest: {helper}"
+            );
+        }
+        assert!(!plan.contains("request: &mut crate::transport::BuiltRequest"));
+        assert!(!plan.contains("request.headers.insert"));
+        assert!(!plan.contains("request.url.query_pairs_mut"));
+
+        assert!(
+            codegen
+                .contains("request: &'a mut ::concord_core::advanced::AuthApplicationRequest<'_>"),
+            "generated auth preparation should use AuthApplicationRequest"
+        );
+        assert!(
+            !codegen.contains("request: &'a mut ::concord_core::transport::BuiltRequest"),
+            "generated auth preparation must not receive BuiltRequest"
+        );
+        assert!(!codegen.contains("request.headers.insert"));
+        assert!(!codegen.contains("request.url.query_pairs_mut"));
+
+        let auth_http =
+            workspace_file("concord_core/src/client/auth_http.rs").replace("\r\n", "\n");
+        assert!(
+            auth_http.contains("AuthApplicationRequest::new(&mut base_request.extensions)"),
+            "internal auth should use the sealed auth application request"
+        );
+        assert!(!auth_http.contains("Cx::apply_internal_auth(\n                            &requirement,\n                            &mut base_request"));
+        assert!(
+            auth_http.contains("materialize_transport_request(&built, &auth_materials)"),
+            "internal auth material should be carried as sidecar material"
+        );
     }
 }

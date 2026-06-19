@@ -1,9 +1,9 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind, AuthPlacement, AuthProvenance,
-    AuthRequirement, AuthUsageId, BuiltRequest, BuiltResponse, CacheAfter, CacheBefore,
-    CacheConfig, CacheFuture, CacheKey, CacheRevalidation, CacheStore, DecodedResponse,
-    InflightPolicy, InflightRegistry, PostResponseHookContext, PreSendHookContext,
+    AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
+    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltRequest, BuiltResponse,
+    CacheAfter, CacheBefore, CacheConfig, CacheFuture, CacheKey, CacheRevalidation, CacheStore,
+    DecodedResponse, InflightPolicy, InflightRegistry, PostResponseHookContext, PreSendHookContext,
     RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
     RateLimitResponseContext, RateLimiter, RequestKey, RequestMeta, RuntimeHooks,
     SafeMethodInflightPolicy, Transport, TransportBody, TransportError, TransportErrorHookContext,
@@ -52,7 +52,7 @@ impl ClientContext for TestCx {
 
     fn prepare_auth_requirement<'a>(
         requirement: &'a AuthRequirement,
-        request: &'a mut BuiltRequest,
+        request: &'a mut AuthApplicationRequest<'_>,
         _vars: &'a Self::Vars,
         auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,

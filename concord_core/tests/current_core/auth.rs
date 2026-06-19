@@ -1,7 +1,7 @@
 use super::common::*;
 use concord_core::advanced::{
-    AuthAppliedCredential, AuthChallengePolicy, AuthDecision, AuthError, AuthErrorKind,
-    AuthPlacement, AuthRequirement, AuthStepPolicy, BuiltRequest, PreparedAuthCredential,
+    AuthApplicationRequest, AuthAppliedCredential, AuthChallengePolicy, AuthDecision, AuthError,
+    AuthErrorKind, AuthPlacement, AuthRequirement, AuthStepPolicy, PreparedAuthCredential,
     RequestMeta, auth_decision_for_status,
 };
 use concord_core::prelude::{ApiClientError, ApiKey, ClientContext, Endpoint};
@@ -404,7 +404,7 @@ impl ClientContext for RecordingAuthCx {
 
     fn prepare_auth_requirement<'a>(
         requirement: &'a AuthRequirement,
-        request: &'a mut BuiltRequest,
+        request: &'a mut AuthApplicationRequest<'_>,
         _vars: &'a Self::Vars,
         auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,
@@ -519,7 +519,7 @@ impl ClientContext for PolicyAuthCx {
 
     fn prepare_auth_requirement<'a>(
         requirement: &'a AuthRequirement,
-        request: &'a mut BuiltRequest,
+        request: &'a mut AuthApplicationRequest<'_>,
         _vars: &'a Self::Vars,
         auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,

@@ -65,17 +65,17 @@ pub mod advanced {
     #[cfg(feature = "json")]
     pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::auth::{
-        AuthApplication, AuthAppliedCredential, AuthAttemptSummary, AuthChallengePolicy,
-        AuthDecision, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor, AuthHttpRequest,
-        AuthHttpResponse, AuthIdentity, AuthInternalPolicy, AuthMode, AuthPlacement, AuthPlan,
-        AuthProvenance, AuthRejectionDecision, AuthRequirement, AuthRequirementId, AuthRetryReason,
-        AuthStepPolicy, AuthUsageId, ClientCertificate, CredentialContext, CredentialId,
-        CredentialLease, CredentialMaterial, CredentialProvider, CredentialRef,
-        CredentialRefreshReason, CredentialSlot, InvalidateReason, ManualCredentialProvider,
-        PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential, SecretCredential,
-        StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider, apply_basic_credential,
-        apply_certificate_credential, apply_secret_credential, auth_decision_for_status,
-        invalidate_rejected_credential,
+        AuthApplication, AuthApplicationRequest, AuthAppliedCredential, AuthAttemptSummary,
+        AuthChallengePolicy, AuthDecision, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor,
+        AuthHttpRequest, AuthHttpResponse, AuthIdentity, AuthInternalPolicy, AuthMode,
+        AuthPlacement, AuthPlan, AuthProvenance, AuthRejectionDecision, AuthRequirement,
+        AuthRequirementId, AuthRetryReason, AuthStepPolicy, AuthUsageId, ClientCertificate,
+        CredentialContext, CredentialId, CredentialLease, CredentialMaterial, CredentialProvider,
+        CredentialRef, CredentialRefreshReason, CredentialSlot, InvalidateReason,
+        ManualCredentialProvider, PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential,
+        PreparedInternalAuth, SecretCredential, StaticApiKeyProvider, StaticBasicProvider,
+        StaticBearerProvider, apply_basic_credential, apply_certificate_credential,
+        apply_secret_credential, auth_decision_for_status, invalidate_rejected_credential,
     };
     pub use crate::cache::{
         CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,

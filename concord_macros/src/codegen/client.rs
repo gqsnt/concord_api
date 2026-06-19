@@ -290,7 +290,7 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
     quote! {
         fn prepare_auth_requirement<'a>(
             requirement: &'a ::concord_core::advanced::AuthRequirement,
-            request: &'a mut ::concord_core::transport::BuiltRequest,
+            request: &'a mut ::concord_core::advanced::AuthApplicationRequest<'_>,
             vars: &'a Self::Vars,
             auth: &'a Self::AuthVars,
             auth_state: &'a Self::AuthState,

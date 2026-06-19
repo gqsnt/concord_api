@@ -9,12 +9,12 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
 
     fn apply_internal_auth<'a>(
         _requirement: &'a AuthRequirementId,
-        _request: &'a mut BuiltRequest,
+        _request: &'a mut crate::auth::AuthApplicationRequest<'_>,
         _vars: &'a Self::Vars,
         _auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn AuthHttpExecutor,
-    ) -> crate::auth::AuthFuture<'a, Result<(), AuthError>> {
+    ) -> crate::auth::AuthFuture<'a, Result<crate::auth::PreparedInternalAuth, AuthError>> {
         Box::pin(async {
             Err(AuthError::new(
                 AuthErrorKind::UnsupportedScheme,
@@ -25,7 +25,7 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
 
     fn prepare_auth_requirement<'a>(
         _requirement: &'a crate::auth::AuthRequirement,
-        _request: &'a mut BuiltRequest,
+        _request: &'a mut crate::auth::AuthApplicationRequest<'_>,
         _vars: &'a Self::Vars,
         _auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,

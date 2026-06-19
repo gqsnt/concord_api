@@ -194,7 +194,7 @@ The runtime order is fixed:
 
 1. Build and validate the request plan.
 2. Resolve required credentials. Missing credentials fail here, before cache lookup or transport.
-3. Attach typed auth slots to the logical request without storing raw auth material there.
+3. Attach typed auth slots through an auth-only application request without exposing logical URL/header/body mutation or storing raw auth material there.
 4. Compute cache and inflight identity from the logical request and safe auth partition, so authenticated requests do not collide across credentials.
 5. Return a fresh cache hit before inflight coordination, rate-limit acquisition, or transport.
 6. Join an existing inflight request when applicable. Followers do not acquire rate-limit permits.
@@ -209,6 +209,6 @@ The runtime order is fixed:
 15. Cache successful eligible raw responses after classification.
 16. Decode the endpoint response. Decode failures do not retry transport.
 
-`BuiltRequest` and response metadata are safe to inspect: Concord stores auth as typed slots and safe identities until the transport boundary. A custom `Transport` receives real credential material in the materialized request and is responsible for not logging it.
+`BuiltRequest` and response metadata are safe to inspect: Concord stores auth as typed slots and safe identities until the transport boundary. Custom advanced `ClientContext` auth preparation, including internal auth preparation, must use the `apply_*_credential` helpers; auth hooks do not receive `BuiltRequest` and cannot write raw auth into logical URL or headers. A custom `Transport` receives real credential material in the materialized request and is responsible for not logging it.
 
 This order is not user-configurable.

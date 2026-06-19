@@ -313,9 +313,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut materials = Vec::new();
         for requirement in &plan.endpoint.policy.auth.requirements {
             let auth_meta = built.meta.clone();
+            let mut auth_request =
+                crate::auth::AuthApplicationRequest::new(&mut built.extensions);
             let prepared = Cx::prepare_auth_requirement(
                 requirement,
-                built,
+                &mut auth_request,
                 self.vars(),
                 self.auth_vars(),
                 auth_state,

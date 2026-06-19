@@ -44,7 +44,7 @@ For paginated endpoints, codegen emits `.paginate()` and page-driving wrappers t
 
 Auth endpoints that map to credential material get acquisition helpers such as `.acquire_as_session()`. These helpers execute the endpoint and store material in the credential slot.
 
-Generated auth preparation code resolves credential leases and calls core auth helpers that attach typed pending auth slots to `BuiltRequest`. It returns a prepared credential sidecar to the runtime so raw material can be inserted only when a `TransportRequest` is materialized immediately before send. Codegen must not emit raw auth values into ordinary query/header policy data.
+Generated auth preparation code resolves credential leases and receives an auth-only application request rather than `BuiltRequest`. Internal auth hooks use the same sealed request shape. Generated code calls core auth helpers that attach typed pending auth slots, then returns a prepared credential sidecar to the runtime so raw material can be inserted only when a `TransportRequest` is materialized immediately before send. Codegen must not emit raw auth values into ordinary query/header policy data or expose logical URL/header mutation during auth preparation.
 
 ## Rustdoc
 
