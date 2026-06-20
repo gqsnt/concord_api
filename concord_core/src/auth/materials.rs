@@ -1,6 +1,6 @@
 use super::credentials::{CredentialMaterial, SecretCredential};
 use super::ids::AuthIdentity;
-use super::util::hash_secret;
+use super::util::{hash_basic_credential, hash_secret};
 use crate::secret::SecretString;
 use std::time::Instant;
 
@@ -132,7 +132,10 @@ impl CredentialMaterial for BasicCredential {
         if let Some(hint) = &self.identity_hint {
             AuthIdentity::User(hint.clone())
         } else {
-            AuthIdentity::OpaqueHash(hash_secret(self.username.expose()))
+            AuthIdentity::OpaqueHash(hash_basic_credential(
+                self.username.expose(),
+                self.password.expose(),
+            ))
         }
     }
 }
@@ -154,5 +157,48 @@ impl ClientCertificate {
 impl CredentialMaterial for ClientCertificate {
     fn safe_identity(&self) -> AuthIdentity {
         AuthIdentity::OpaqueHash(hash_secret(&self.identity_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_safe_identity_includes_username_and_password_without_exposing_either() {
+        let old = BasicCredential::new("alice", "old-password").safe_identity();
+        let new = BasicCredential::new("alice", "new-password").safe_identity();
+        let same = BasicCredential::new("alice", "old-password").safe_identity();
+        let different_user = BasicCredential::new("bob", "old-password").safe_identity();
+
+        assert_eq!(old.safe_fragment(), same.safe_fragment());
+        assert_ne!(old.safe_fragment(), new.safe_fragment());
+        assert_ne!(old.safe_fragment(), different_user.safe_fragment());
+
+        for fragment in [
+            old.safe_fragment(),
+            new.safe_fragment(),
+            different_user.safe_fragment(),
+        ] {
+            assert!(fragment.starts_with("hash:"));
+            assert!(!fragment.contains("alice"));
+            assert!(!fragment.contains("bob"));
+            assert!(!fragment.contains("old-password"));
+            assert!(!fragment.contains("new-password"));
+            assert!(!fragment.contains("YWxpY2U6b2xkLXBhc3N3b3Jk"));
+        }
+    }
+
+    #[test]
+    fn basic_identity_hint_remains_explicit_public_override() {
+        let old = BasicCredential::new("alice", "old-password")
+            .identity_hint("tenant-a")
+            .safe_identity();
+        let new = BasicCredential::new("alice", "new-password")
+            .identity_hint("tenant-a")
+            .safe_identity();
+
+        assert_eq!(old.safe_fragment(), "user:tenant-a");
+        assert_eq!(old.safe_fragment(), new.safe_fragment());
     }
 }

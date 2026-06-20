@@ -30,7 +30,7 @@ A pending slot records the placement, credential id, usage id, generation, prove
 
 Raw credential material is kept in a short-lived per-attempt sidecar and is inserted only when the runtime materializes a `TransportRequest` immediately before `Transport::send`. `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, cache keys, runtime hooks, and debug sinks must never store raw auth material.
 
-Safe identities are used for cache separation. They identify credential state without exposing secret values. Basic credentials use opaque fingerprints by default; readable identity hints must be explicitly supplied as non-secret labels by advanced integrations.
+Safe identities are used for cache separation. They identify credential state without exposing secret values. Basic credentials use opaque fingerprints of the full Basic credential state by default, including both the secret username and the secret password; readable identity hints must be explicitly supplied as non-secret labels by advanced integrations.
 
 Custom transports receive the materialized `TransportRequest`, so they see real credentials at the send boundary. Transport implementations must not log the raw request.
 

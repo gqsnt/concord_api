@@ -337,7 +337,7 @@ fn append_auth_identities(key: &mut String, identities: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::RequestExtensions;
+    use crate::auth::{BasicCredential, CredentialMaterial, RequestExtensions};
     use crate::rate_limit::RateLimitPlan;
     use crate::retry::RetrySetting;
     use crate::transport::RequestMeta;
@@ -383,6 +383,42 @@ mod tests {
         let key = default_cache_key(&req);
 
         assert!(key.as_str().contains("|auth=user:one;"));
+    }
+
+    #[test]
+    fn default_key_partitions_basic_credentials_by_password_without_raw_secrets() {
+        let mut old = request("https://example.com/items");
+        old.extensions.auth_identities.push(
+            BasicCredential::new("alice", "old-password")
+                .safe_identity()
+                .safe_fragment(),
+        );
+        let mut new = request("https://example.com/items");
+        new.extensions.auth_identities.push(
+            BasicCredential::new("alice", "new-password")
+                .safe_identity()
+                .safe_fragment(),
+        );
+        let mut same = request("https://example.com/items");
+        same.extensions.auth_identities.push(
+            BasicCredential::new("alice", "old-password")
+                .safe_identity()
+                .safe_fragment(),
+        );
+
+        let old_key = default_cache_key(&old);
+        let new_key = default_cache_key(&new);
+        let same_key = default_cache_key(&same);
+
+        assert_eq!(old_key, same_key);
+        assert_ne!(old_key, new_key);
+        for key in [old_key.as_str(), new_key.as_str()] {
+            assert!(!key.contains("alice"));
+            assert!(!key.contains("old-password"));
+            assert!(!key.contains("new-password"));
+            assert!(!key.contains("YWxpY2U6b2xkLXBhc3N3b3Jk"));
+            assert!(!key.contains("YWxpY2U6bmV3LXBhc3N3b3Jk"));
+        }
     }
 }
 
