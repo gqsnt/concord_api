@@ -6,7 +6,7 @@ use concord_core::advanced::{
     DecodedResponse, PostResponseHookContext, PreSendHookContext, RateLimitContext,
     RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
     RateLimiter, RequestMeta, RuntimeHooks, Transport, TransportBody, TransportError,
-    TransportErrorHookContext, TransportRequest, TransportResponse,
+    TransportErrorHookContext, TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
@@ -392,12 +392,42 @@ pub fn retry_policy_for_statuses(max_attempts: u32, statuses: Vec<StatusCode>) -
     }
 }
 
+pub fn retry_policy_for_transport_errors(
+    max_attempts: u32,
+    transport_errors: Vec<TransportErrorKind>,
+) -> ResolvedPolicy {
+    ResolvedPolicy {
+        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
+            max_attempts,
+            methods: vec![Method::GET],
+            statuses: Vec::new(),
+            transport_errors,
+            backoff: concord_core::advanced::RetryBackoff::None,
+            respect_retry_after: true,
+            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
+        }),
+        ..Default::default()
+    }
+}
+
 #[derive(Clone)]
 pub struct MockTransport {
-    responses: Arc<Mutex<VecDeque<MockResponse>>>,
+    outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
     events: Arc<Mutex<Vec<String>>>,
     requests: Arc<Mutex<Vec<TransportRequest>>>,
     delay: Option<Duration>,
+}
+
+#[derive(Clone)]
+pub enum MockOutcome {
+    Response(MockResponse),
+    TransportError(TransportErrorKind),
+}
+
+impl From<MockResponse> for MockOutcome {
+    fn from(value: MockResponse) -> Self {
+        Self::Response(value)
+    }
 }
 
 #[derive(Clone)]
@@ -438,8 +468,12 @@ impl MockResponse {
 
 impl MockTransport {
     pub fn new(events: Arc<Mutex<Vec<String>>>, responses: Vec<MockResponse>) -> Self {
+        Self::with_outcomes(events, responses.into_iter().map(Into::into).collect())
+    }
+
+    pub fn with_outcomes(events: Arc<Mutex<Vec<String>>>, outcomes: Vec<MockOutcome>) -> Self {
         Self {
-            responses: Arc::new(Mutex::new(responses.into())),
+            outcomes: Arc::new(Mutex::new(outcomes.into())),
             events,
             requests: Arc::new(Mutex::new(Vec::new())),
             delay: None,
@@ -465,7 +499,7 @@ impl Transport for MockTransport {
         &self,
         req: TransportRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
-        let responses = self.responses.clone();
+        let outcomes = self.outcomes.clone();
         let events = self.events.clone();
         let requests = self.requests.clone();
         let delay = self.delay;
@@ -475,11 +509,20 @@ impl Transport for MockTransport {
             if let Some(delay) = delay {
                 tokio::time::sleep(delay).await;
             }
-            let response = responses
+            let outcome = outcomes
                 .lock()
                 .await
                 .pop_front()
-                .unwrap_or_else(|| MockResponse::text(StatusCode::OK, "ok"));
+                .unwrap_or_else(|| MockResponse::text(StatusCode::OK, "ok").into());
+            let response = match outcome {
+                MockOutcome::Response(response) => response,
+                MockOutcome::TransportError(kind) => {
+                    return Err(TransportError::with_kind(
+                        kind,
+                        std::io::Error::other("mock transport error"),
+                    ));
+                }
+            };
             Ok(TransportResponse {
                 meta: req.meta,
                 url: req.url,

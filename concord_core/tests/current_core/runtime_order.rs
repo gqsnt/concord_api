@@ -1,6 +1,8 @@
 use super::common::*;
 use bytes::Bytes;
-use concord_core::advanced::{AuthPlacement, Caps, DebugSink, NoopCacheStore, NoopRateLimiter};
+use concord_core::advanced::{
+    AuthPlacement, Caps, DebugSink, NoopCacheStore, NoopRateLimiter, TransportErrorKind,
+};
 use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{ApiClientError, DebugLevel};
 use http::{HeaderMap, Method, StatusCode};
@@ -55,6 +57,21 @@ async fn fresh_cache_hit_bypasses_rate_limit_and_transport() -> Result<(), ApiCl
     Ok(())
 }
 
+fn positions(events: &[String], needle: &str) -> Vec<usize> {
+    events
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, event)| (event == needle).then_some(idx))
+        .collect()
+}
+
+fn first_position(events: &[String], needle: &str) -> usize {
+    events
+        .iter()
+        .position(|event| event == needle)
+        .unwrap_or_else(|| panic!("missing event `{needle}` in {events:?}"))
+}
+
 #[tokio::test]
 async fn retry_decision_happens_before_decode() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -79,6 +96,75 @@ async fn retry_decision_happens_before_decode() -> Result<(), ApiClientError> {
 
     assert_eq!(decoded.value(), "ok");
     assert_eq!(sent_transport.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_acquire_runs_before_each_transport_attempt() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, None, Some(limiter));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: retry_policy(2),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    let rate_acquires = positions(&events, "rate_acquire");
+    let transports = positions(&events, "transport");
+    assert_eq!(rate_acquires.len(), 2);
+    assert_eq!(transports.len(), 2);
+    assert!(rate_acquires[0] < transports[0]);
+    assert!(rate_acquires[1] < transports[1]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_observation_runs_before_retry_decision() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::TOO_MANY_REQUESTS, "slow-down"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, None, Some(limiter));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    let events = events.lock().await.clone();
+    let post_response = first_position(&events, "classify_response");
+    let first_observe = first_position(&events, "rate_response");
+    let second_acquire = positions(&events, "rate_acquire")[1];
+    assert!(post_response < first_observe);
+    assert!(first_observe < second_acquire);
     Ok(())
 }
 
@@ -111,6 +197,215 @@ async fn retryable_status_is_not_cached_before_retry() -> Result<(), ApiClientEr
 
     assert_eq!(decoded.value(), "fresh");
     assert_eq!(*after_response_count.lock().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn stale_cache_fallback_happens_after_retry_exhaustion() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response("Text", StatusCode::OK, "stale");
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "still-failing"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, Some(cache), Some(limiter));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: {
+                let mut policy = retry_policy(2);
+                policy.cache = concord_core::internal::CacheSetting::Config(
+                    concord_core::advanced::CacheConfig::new(),
+                );
+                policy
+            },
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "stale");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    let observes = positions(&events, "rate_response");
+    let second_acquire = positions(&events, "rate_acquire")[1];
+    let stale_fallback = first_position(&events, "cache_after_error");
+    assert!(observes[0] < second_acquire);
+    assert!(observes[1] < stale_fallback);
+    assert!(!events.iter().any(|event| event == "cache_after_response"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn stale_cache_fallback_happens_after_retry_declines() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response("Text", StatusCode::OK, "stale");
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::BAD_REQUEST, "do-not-retry")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, Some(cache), Some(limiter));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: {
+                let mut policy = retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]);
+                policy.cache = concord_core::internal::CacheSetting::Config(
+                    concord_core::advanced::CacheConfig::new(),
+                );
+                policy
+            },
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "stale");
+    assert_eq!(sent_transport.sent_count().await, 1);
+    let events = events.lock().await.clone();
+    assert!(first_position(&events, "transport") < first_position(&events, "classify_response"));
+    assert!(
+        first_position(&events, "classify_response") < first_position(&events, "rate_response")
+    );
+    assert!(
+        first_position(&events, "rate_response") < first_position(&events, "cache_after_error")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn decode_failure_does_not_retry_or_use_stale_fallback() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response("Text", StatusCode::OK, "stale");
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xff")),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let err = client
+        .request(TextEndpoint {
+            policy: {
+                let mut policy = retry_policy(2);
+                policy.cache = concord_core::internal::CacheSetting::Config(
+                    concord_core::advanced::CacheConfig::new(),
+                );
+                policy
+            },
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("decode failure should be terminal");
+
+    assert!(err.to_string().contains("decode error"));
+    assert_eq!(sent_transport.sent_count().await, 1);
+    let events = events.lock().await.clone();
+    assert!(!events.iter().any(|event| event == "cache_after_error"));
+}
+
+#[tokio::test]
+async fn successful_cacheable_response_is_written_before_decode() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(
+            StatusCode::OK,
+            Bytes::from_static(b"\xff"),
+        )],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let err = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("decode should fail after cache write");
+
+    assert!(err.to_string().contains("decode error"));
+    assert_eq!(*after_response_count.lock().await, 1);
+    let events = events.lock().await.clone();
+    assert!(events.iter().any(|event| event == "cache_after_response"));
+    assert!(!events.iter().any(|event| event == "cache_after_error"));
+}
+
+#[tokio::test]
+async fn transport_error_retry_exhaustion_then_stale_fallback() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response("Text", StatusCode::OK, "stale");
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let transport = MockTransport::with_outcomes(
+        events.clone(),
+        vec![
+            MockOutcome::TransportError(TransportErrorKind::Timeout),
+            MockOutcome::TransportError(TransportErrorKind::Timeout),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, Some(cache), None);
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: {
+                let mut policy =
+                    retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]);
+                policy.cache = concord_core::internal::CacheSetting::Config(
+                    concord_core::advanced::CacheConfig::new(),
+                );
+                policy
+            },
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "stale");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    assert_eq!(positions(&events, "transport_error").len(), 2);
+    assert!(
+        positions(&events, "transport_error")[1] < first_position(&events, "cache_after_error")
+    );
+    assert!(!events.iter().any(|event| event == "rate_response"));
     Ok(())
 }
 
