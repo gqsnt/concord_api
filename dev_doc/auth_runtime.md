@@ -36,12 +36,14 @@ Custom transports receive the materialized `TransportRequest`, so they see real 
 
 ## Rejection and refresh
 
-Auth rejection handling runs before normal retry. If configured, the runtime can invalidate rejected credential material and perform bounded auth refresh before retrying the protected request.
+Auth rejection handling runs before normal retry. If configured, the runtime can invalidate rejected credential material and perform bounded auth refresh before retrying the protected request for credentials the runtime can reacquire.
 
 The v1 default policy is:
 
-- `401 Unauthorized`: invalidate the applied credential and retry after refresh.
+- `401 Unauthorized`: invalidate the applied credential and retry after refresh for refreshable/reacquirable runtime credentials.
 - `403 Forbidden`: do not invalidate and do not retry.
+
+Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` can invalidate the applied endpoint-backed generation, but protected request retry does not automatically call the auth endpoint again; users must explicitly reacquire through the auth endpoint before sending another protected call.
 
 The default `403` behavior is deliberate: a forbidden response usually means the credential was accepted but lacks permission. Runtime integrations can opt into forbidden invalidation/retry by using `AuthStepPolicy` directly.
 

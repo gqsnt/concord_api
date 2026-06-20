@@ -316,6 +316,21 @@ fn emit_client_auth_response_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
     let arms = resolved_api.client_auth_credentials.iter().map(|c| {
         let name = &c.name;
         let name_lit = LitStr::new(&name.to_string(), name.span());
+        let retry_after_refresh = match &c.kind {
+            AuthCredentialKindIr::Endpoint { .. } => quote! {},
+            AuthCredentialKindIr::ApiKey { .. }
+            | AuthCredentialKindIr::StaticBearer { .. }
+            | AuthCredentialKindIr::Basic { .. }
+            | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => quote! {
+                if let ::core::option::Option::Some(retry_reason) = decision.retry_reason {
+                    return ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::RetryAfterRefresh {
+                        credential: requirement.credential.clone(),
+                        generation: applied.generation,
+                        reason: retry_reason,
+                    });
+                }
+            },
+        };
         quote! {
             if requirement.credential.id == ::concord_core::advanced::CredentialId::new(#client_ns, #name_lit) {
                 if let ::core::option::Option::Some(decision) =
@@ -337,13 +352,7 @@ fn emit_client_auth_response_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
                             invalidate_reason,
                         ).await?;
                     }
-                    if let ::core::option::Option::Some(retry_reason) = decision.retry_reason {
-                        return ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::RetryAfterRefresh {
-                            credential: requirement.credential.clone(),
-                            generation: applied.generation,
-                            reason: retry_reason,
-                        });
-                    }
+                    #retry_after_refresh
                 }
                 return ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::Continue);
             }

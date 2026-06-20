@@ -297,7 +297,6 @@ impl AuthAttemptSummary {
 pub enum AuthRetryReason {
     Unauthorized,
     Forbidden,
-    ChallengeRejected,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -483,4 +482,154 @@ where
     };
     slot.invalidate_generation(credential_ctx, applied.generation, reason)
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::StatusCode;
+
+    fn requirement(challenge: AuthChallengePolicy) -> AuthRequirement {
+        AuthRequirement {
+            credential: CredentialRef {
+                id: CredentialId::new("test", "token"),
+            },
+            placement: AuthPlacement::Bearer,
+            usage_id: AuthUsageId::new("test.token"),
+            step_id: None,
+            provenance: AuthProvenance::default(),
+            challenge,
+        }
+    }
+
+    fn applied() -> AuthAppliedCredential {
+        AuthAppliedCredential {
+            credential_id: CredentialId::new("test", "token"),
+            usage_id: AuthUsageId::new("test.token"),
+            step_id: None,
+            generation: Some(1),
+            identity: AuthIdentity::Anonymous,
+            provenance: AuthProvenance::default(),
+        }
+    }
+
+    #[test]
+    fn auth_decision_default_unauthorized_invalidates_and_retries() {
+        let decision = auth_decision_for_status(
+            StatusCode::UNAUTHORIZED,
+            &requirement(AuthChallengePolicy::Default),
+            &applied(),
+            AuthStepPolicy::default(),
+        )
+        .expect("default 401 should request auth handling");
+
+        assert_eq!(
+            decision,
+            AuthRejectionDecision {
+                invalidate_reason: Some(InvalidateReason::Unauthorized),
+                retry_reason: Some(AuthRetryReason::Unauthorized),
+            }
+        );
+    }
+
+    #[test]
+    fn auth_decision_default_forbidden_does_nothing() {
+        assert_eq!(
+            auth_decision_for_status(
+                StatusCode::FORBIDDEN,
+                &requirement(AuthChallengePolicy::Default),
+                &applied(),
+                AuthStepPolicy::default(),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn auth_decision_never_refresh_does_nothing_for_unauthorized() {
+        assert_eq!(
+            auth_decision_for_status(
+                StatusCode::UNAUTHORIZED,
+                &requirement(AuthChallengePolicy::NeverRefresh),
+                &applied(),
+                AuthStepPolicy::default(),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn auth_decision_can_invalidate_unauthorized_without_retrying() {
+        let policy = AuthStepPolicy {
+            retry_on_unauthorized: false,
+            invalidate_on_unauthorized: true,
+            ..AuthStepPolicy::default()
+        };
+
+        let decision = auth_decision_for_status(
+            StatusCode::UNAUTHORIZED,
+            &requirement(AuthChallengePolicy::Default),
+            &applied(),
+            policy,
+        )
+        .expect("invalidate-only 401 should request auth handling");
+
+        assert_eq!(
+            decision,
+            AuthRejectionDecision {
+                invalidate_reason: Some(InvalidateReason::Unauthorized),
+                retry_reason: None,
+            }
+        );
+    }
+
+    #[test]
+    fn auth_decision_can_retry_unauthorized_without_invalidating() {
+        let policy = AuthStepPolicy {
+            retry_on_unauthorized: true,
+            invalidate_on_unauthorized: false,
+            ..AuthStepPolicy::default()
+        };
+
+        let decision = auth_decision_for_status(
+            StatusCode::UNAUTHORIZED,
+            &requirement(AuthChallengePolicy::Default),
+            &applied(),
+            policy,
+        )
+        .expect("retry-only 401 should request auth handling");
+
+        assert_eq!(
+            decision,
+            AuthRejectionDecision {
+                invalidate_reason: None,
+                retry_reason: Some(AuthRetryReason::Unauthorized),
+            }
+        );
+    }
+
+    #[test]
+    fn auth_decision_forbidden_follows_explicit_retry_and_invalidation_policy() {
+        let policy = AuthStepPolicy {
+            retry_on_forbidden: true,
+            invalidate_on_forbidden: true,
+            ..AuthStepPolicy::default()
+        };
+
+        let decision = auth_decision_for_status(
+            StatusCode::FORBIDDEN,
+            &requirement(AuthChallengePolicy::Default),
+            &applied(),
+            policy,
+        )
+        .expect("custom 403 policy should request auth handling");
+
+        assert_eq!(
+            decision,
+            AuthRejectionDecision {
+                invalidate_reason: Some(InvalidateReason::Forbidden),
+                retry_reason: Some(AuthRetryReason::Forbidden),
+            }
+        );
+    }
 }

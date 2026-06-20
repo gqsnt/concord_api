@@ -94,6 +94,56 @@ async fn auth_endpoint_errors_do_not_render_secret_values() {
     handle.finish();
 }
 
+#[tokio::test]
+async fn endpoint_backed_session_401_invalidates_without_automatic_retry() {
+    let (transport, handle) = mock()
+        .reply(json_reply(r#"{"access_token":"session-token"}"#))
+        .reply(
+            MockReply::status(http::StatusCode::UNAUTHORIZED)
+                .with_body(Bytes::from_static(b"expired")),
+        )
+        .build();
+    let api = SessionApi::new_with_transport("upstream-secret".to_string(), transport);
+
+    api.auth_api()
+        .login_for_session(SessionLoginRequest {
+            username: "ada".to_string(),
+            password: "login-password".to_string(),
+        })
+        .acquire_as_session()
+        .await
+        .expect("session acquisition succeeds");
+
+    let err = api
+        .protected()
+        .me()
+        .execute()
+        .await
+        .expect_err("401 should remain the protected response outcome");
+
+    assert_eq!(err.category(), ErrorCategory::HttpStatus);
+    assert!(err.to_string().contains("401"));
+    assert!(!err.to_string().contains("missing credential"));
+    assert!(
+        !api.auth_state()
+            .session()
+            .is_set()
+            .await
+            .expect("session state check succeeds")
+    );
+
+    let recorded = handle.recorded();
+    assert_eq!(recorded.len(), 2);
+    assert_request(&recorded[0])
+        .host("example.com")
+        .path("/login");
+    assert_request(&recorded[1])
+        .host("example.com")
+        .path("/me")
+        .header(http::header::AUTHORIZATION, "Bearer session-token");
+    handle.finish();
+}
+
 fn json_reply(body: &'static str) -> MockReply {
     MockReply::ok_json(Bytes::from_static(body.as_bytes()))
 }

@@ -144,18 +144,20 @@ Endpoint-backed credential slots track generations. If a stale response tries to
 
 ## Rejection And Refresh
 
-By default, protected requests may refresh credentials after `401 Unauthorized`.
+By default, protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized`.
 
 `403 Forbidden` does not trigger credential refresh by default because it usually means the credential was accepted but lacks permission.
 
-Credential refresh is bounded. Concord will not refresh indefinitely.
+Credential refresh is bounded by the client runtime `max_auth_retries` setting. Concord will not refresh indefinitely.
 
 Default rejection behavior:
 
 | Status | Invalidate credential | Retry after refresh |
 | --- | --- | --- |
-| `401 Unauthorized` | yes | yes |
+| `401 Unauthorized` | yes | yes, for refreshable/reacquirable runtime credentials |
 | `403 Forbidden` | no | no |
+
+Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` can invalidate the applied endpoint-backed generation, but it does not automatically call the auth endpoint again or retry the protected request into `MissingCredential`. Reacquire through the auth endpoint explicitly before sending another protected call.
 
 Normal retry policy still runs separately. Auth rejection handling happens before normal retry classification, so a `401` refresh path is tried before any ordinary retry decision.
 
