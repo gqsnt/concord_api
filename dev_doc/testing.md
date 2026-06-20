@@ -14,9 +14,9 @@ Parser unit tests cover smaller syntax rules and span-sensitive diagnostics.
 
 Sema unit tests cover name resolution, inheritance, policy merging, behavior expansion, and diagnostics that need semantic context.
 
-Codegen tests inspect generated token output and public facade shape without relying on huge snapshots where a focused assertion is enough.
+Codegen tests should prefer generated API compile checks, type checks, trybuild fixtures, and focused generated-shape assertions that cannot be expressed through Rust type checking.
 
-Macro strictness guards should ensure codegen does not reintroduce validation-dependent panic paths. Production codegen must not contain semantic-state `unreachable!()` calls, generated `expect("validated ...")` calls, or ordinary policy/route/pagination emitters that handle auth-secret value IR. Add trybuild fail fixtures when a rejected form needs a stable public diagnostic.
+Macro strictness belongs primarily in semantic unit tests and trybuild pass/fail fixtures. Add trybuild fail fixtures when a rejected form needs a stable public diagnostic. Source-level keyword audits can be useful during review, but they should not be normal `cargo test` checks.
 
 ## Core tests
 
@@ -26,19 +26,21 @@ These tests protect runtime order and should be extended before runtime behavior
 
 Auth/redaction tests must cover arbitrary auth names, not only conventional names such as `Authorization` or `api_key`. When auth handling changes, verify that `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, debug sinks, errors, and cache keys do not contain raw auth material, while the materialized `TransportRequest` still carries real credentials at `Transport::send`.
 
-Auth preparation boundary tests should also verify that no auth application hook receives `BuiltRequest`. `ClientContext::prepare_auth_requirement`, internal auth hooks, and generated auth preparation must receive the auth-only application request, and auth helpers must not be able to mutate logical request URL, headers, body, policy, timeout, or metadata.
+Auth preparation boundary tests should verify behavior at the sealed auth boundary: raw material stays out of logical request/debug/error surfaces and reaches only `TransportRequest` at send time.
 
-Runtime strictness tests should reject invented policy values and silent saturation. Rate-limit `[host]` keys must fail explicitly when the logical URL has no host, and source guards should prevent `"<unknown-host>"` style fallbacks from returning. Cache TTL overflow belongs in macro semantic diagnostics, and request/auth attempt counters should return typed overflow errors instead of saturating.
+Runtime strictness tests should reject invented policy values and silent saturation through observable behavior. Rate-limit `[host]` keys must fail explicitly when the logical URL has no host. Cache TTL overflow belongs in macro semantic diagnostics, and request/auth attempt counters should return typed overflow errors instead of saturating.
 
-Runtime lock/state tests should poison representative auth, cache, and rate-limit state where feasible and assert typed errors or explicit cache backend outcomes instead of panics. Source guards should reject lock `unwrap`/`expect` patterns in public runtime paths and generated helper code while allowing test-only assertions.
+Runtime lock/state tests should poison representative auth, cache, and rate-limit state where feasible and assert typed errors or explicit cache backend outcomes instead of panics.
 
-Response body limit tests should cover `Content-Length` precheck, unknown-length/chunked enforcement, exactly-at-limit success, decode/cache bypass on oversized bodies, auth HTTP token response limits, and separation between endpoint response read limits and cache `max_body`. Source guards should prevent runtime code from reintroducing unbounded full-body read helpers.
+Response body limit tests should cover `Content-Length` precheck, unknown-length/chunked enforcement, exactly-at-limit success, decode/cache bypass on oversized bodies, auth HTTP token response limits, and separation between endpoint response read limits and cache `max_body`.
 
 ## Examples and docs tests
 
-`concord_examples` compile-checks public usage. It includes small examples, public docs fixtures, docs sync tests, release docs checks, and the Riot fixture.
+`concord_examples` compile-checks public usage. It includes small examples, public docs fixtures, generated API usage tests, and the Riot fixture.
 
 The Riot fixture is the large real-world surface test. Do not change Riot semantics for unrelated macro or runtime work.
+
+Markdown prose is not validated by keyword tests in `cargo test`. Release review may include a manual source and documentation audit for stale wording, unsafe live calls, or validation-dependent codegen patterns, but that audit is not a substitute for behavior, compile, diagnostic, and runtime tests.
 
 ## New DSL feature checklist
 

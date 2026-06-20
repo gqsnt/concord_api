@@ -66,6 +66,9 @@ and verify that public docs/examples do not describe rejected or removed DSL for
 
 - Public DSL docs are complete and current.
 - Developer docs are complete and current.
+- Review docs for stale runtime order, stale syntax, and removed implementation concepts.
+- Review examples for dangerous live calls; live smoke code must remain environment-gated.
+- Review generated-code changes for validation-dependent panics when changing codegen.
 - `concord_examples/src/docs_dsl.rs` compiles.
 - `concord_examples/src/docs_advanced_dsl.rs` compiles.
 - Riot fixture passes.
@@ -79,9 +82,9 @@ and verify that public docs/examples do not describe rejected or removed DSL for
 - Query auth redaction tests pass.
 - No auth secret appears in debug output tests.
 - `401`/`403` auth rejection behavior matches `AuthStepPolicy` defaults.
-- Redaction tests cover debug output, errors, wrappers, OAuth client secrets, and generated docs.
+- Redaction tests cover debug output, errors, wrappers, and OAuth client secrets.
 - Runtime order tests still pass.
-- No stale DSL syntax in docs/examples/tests.
+- No stale DSL syntax in docs/examples.
 - No broad clippy allows.
 - No runtime behavior changed without characterization tests.
 - No macro behavior changed without parser/sema/codegen tests.

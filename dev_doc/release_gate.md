@@ -8,7 +8,7 @@ Run:
 ./scripts/check_v1.sh
 ```
 
-The script runs the same commands listed below and fails through normal `cargo test` if any strictness guard regresses.
+The script runs the same commands listed below. The release gate is enforced primarily by behavior tests, trybuild diagnostics, generated API compile checks, clippy, and rustdoc. Manual review covers source and documentation consistency.
 
 ## Core invariants
 

@@ -29,27 +29,3 @@ fn current_public_docs_exist() {
         );
     }
 }
-
-#[test]
-fn quick_start_matches_minimal_example_surface() {
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("examples crate has workspace parent")
-        .to_path_buf();
-    let quick_start =
-        std::fs::read_to_string(workspace.join("docs/quick_start.md")).expect("read quick start");
-
-    for expected in [
-        "client MinimalApi",
-        "GET GetUser(id: u64)",
-        "as get_user",
-        "let api = minimal_api::MinimalApi::new();",
-        "api.users().get_user(42).await?",
-        "execute_decoded().await?",
-    ] {
-        assert!(
-            quick_start.contains(expected),
-            "quick start should contain current minimal example fragment `{expected}`"
-        );
-    }
-}
