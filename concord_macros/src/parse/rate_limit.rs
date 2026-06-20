@@ -90,6 +90,7 @@ fn parse_rate_limit_profile_list(input: ParseStream<'_>) -> Result<Vec<Ident>> {
 }
 
 fn parse_rate_limit_plan_body(input: ParseStream<'_>) -> Result<RateLimitPlanSpec> {
+    let span = input.span();
     let mut plan = RateLimitPlanSpec::default();
 
     while !input.is_empty() {
@@ -103,6 +104,13 @@ fn parse_rate_limit_plan_body(input: ParseStream<'_>) -> Result<RateLimitPlanSpe
             ));
         }
         let _ = input.parse::<Option<Token![,]>>()?;
+    }
+
+    if plan.buckets.is_empty() {
+        return Err(syn::Error::new(
+            span,
+            "empty rate_limit block has no effect",
+        ));
     }
 
     Ok(plan)

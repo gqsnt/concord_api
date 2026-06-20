@@ -43,6 +43,7 @@ use self::auth_helper_api::AuthHelperApi;
 use self::basic_endpoint_helper_api::BasicEndpointHelperApi;
 use self::basic_helper_api::BasicHelperApi;
 use self::certificate_endpoint_helper_api::CertificateEndpointHelperApi;
+use self::policy_merge_helper_api::PolicyMergeHelperApi;
 
 api! {
     client AuthHelperApi {
@@ -131,6 +132,62 @@ api! {
     }
 }
 
+api! {
+    client PolicyMergeHelperApi {
+        base "https://example.com"
+        var client_header_a: String
+        var client_header_b: String
+        var client_query_a: String
+        var client_query_b: String
+
+        header "X-Client-Key" = vars.client_header_a,
+        headers {
+            "X-Client-Token" = vars.client_header_b
+        }
+        query "client_key" = vars.client_query_a,
+        query {
+            "client_session" = vars.client_query_b
+        }
+    }
+
+    scope merged {
+        path ["merged"]
+
+        header "X-Scope-Key" = "scope-a",
+        headers {
+            "X-Scope-Token" = "scope-b"
+        }
+        query "scope_key" = "scope-a",
+        query {
+            "scope_session" = "scope-b"
+        }
+
+        GET InlineThenBlock
+            path ["inline-then-block"]
+            header "X-Endpoint-Key" = "endpoint-a",
+            headers {
+                "X-Endpoint-Token" = "endpoint-b"
+            }
+            query "endpoint_key" = "endpoint-a",
+            query {
+                "endpoint_session" = "endpoint-b"
+            }
+            -> Json<User>
+
+        GET BlockThenInline
+            path ["block-then-inline"]
+            headers {
+                "X-Endpoint-Block" = "block"
+            }
+            header "X-Endpoint-Inline" = "inline",
+            query {
+                "endpoint_block" = "block"
+            }
+            query "endpoint_inline" = "inline",
+            -> Json<User>
+    }
+}
+
 #[tokio::test]
 async fn endpoint_backed_auth_helpers_acquire_clear_and_gate_protected_requests() {
     let transport = RecordingTransport::new(vec![
@@ -212,6 +269,68 @@ async fn endpoint_backed_auth_helpers_acquire_clear_and_gate_protected_requests(
             .and_then(|value| value.to_str().ok()),
         Some("Bearer session-token")
     );
+}
+
+#[tokio::test]
+async fn same_layer_policy_header_query_inline_then_block_are_preserved() {
+    let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"{"name":"Ada"}"#)]);
+    let sent = transport.clone();
+    let api = PolicyMergeHelperApi::new_with_transport(
+        "client-header-a".to_string(),
+        "client-header-b".to_string(),
+        "client-query-a".to_string(),
+        "client-query-b".to_string(),
+        transport,
+    );
+
+    api.merged()
+        .inline_then_block()
+        .execute()
+        .await
+        .expect("request succeeds");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    let req = &requests[0];
+    assert_header(req, "X-Client-Key", "client-header-a");
+    assert_header(req, "X-Client-Token", "client-header-b");
+    assert_header(req, "X-Scope-Key", "scope-a");
+    assert_header(req, "X-Scope-Token", "scope-b");
+    assert_header(req, "X-Endpoint-Key", "endpoint-a");
+    assert_header(req, "X-Endpoint-Token", "endpoint-b");
+    assert_url_contains(req, "client_key=client-query-a");
+    assert_url_contains(req, "client_session=client-query-b");
+    assert_url_contains(req, "scope_key=scope-a");
+    assert_url_contains(req, "scope_session=scope-b");
+    assert_url_contains(req, "endpoint_key=endpoint-a");
+    assert_url_contains(req, "endpoint_session=endpoint-b");
+}
+
+#[tokio::test]
+async fn same_layer_policy_header_query_block_then_inline_are_preserved() {
+    let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"{"name":"Ada"}"#)]);
+    let sent = transport.clone();
+    let api = PolicyMergeHelperApi::new_with_transport(
+        "client-header-a".to_string(),
+        "client-header-b".to_string(),
+        "client-query-a".to_string(),
+        "client-query-b".to_string(),
+        transport,
+    );
+
+    api.merged()
+        .block_then_inline()
+        .execute()
+        .await
+        .expect("request succeeds");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    let req = &requests[0];
+    assert_header(req, "X-Endpoint-Block", "block");
+    assert_header(req, "X-Endpoint-Inline", "inline");
+    assert_url_contains(req, "endpoint_block=block");
+    assert_url_contains(req, "endpoint_inline=inline");
 }
 
 #[tokio::test]
@@ -326,6 +445,21 @@ async fn generated_basic_auth_keeps_username_and_password_secret_until_transport
     assert_eq!(
         header,
         "Basic TEVBS19TRU5USU5FTF9HRU5FUkFURURfQkFTSUNfVVNFUjpMRUFLX1NFTlRJTkVMX0dFTkVSQVRFRF9CQVNJQ19QQVNTV09SRA=="
+    );
+}
+
+fn assert_header(req: &TransportRequest, name: &'static str, expected: &'static str) {
+    assert_eq!(
+        req.headers.get(name).and_then(|value| value.to_str().ok()),
+        Some(expected)
+    );
+}
+
+fn assert_url_contains(req: &TransportRequest, expected: &'static str) {
+    assert!(
+        req.url.as_str().contains(expected),
+        "expected URL `{}` to contain `{expected}`",
+        req.url
     );
 }
 

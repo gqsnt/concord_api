@@ -35,6 +35,18 @@ fn stmt_span(stmt: &PolicyStmt) -> Span {
     }
 }
 
+fn merge_policy_block(slot: &mut Option<PolicyBlock>, mut block: PolicyBlock) {
+    slot.get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
+        .stmts
+        .append(&mut block.stmts);
+}
+
+fn push_policy_stmt(slot: &mut Option<PolicyBlock>, stmt: PolicyStmt) {
+    slot.get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
+        .stmts
+        .push(stmt);
+}
+
 fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<PolicyBlock> {
     let content;
     braced!(content in input);

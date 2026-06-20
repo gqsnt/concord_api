@@ -53,17 +53,11 @@ impl EndpointBlockParts {
             }
             self.route = other.route;
         }
-        if other.policy.headers.is_some() {
-            if self.policy.headers.is_some() {
-                return Err(syn::Error::new(name.span(), "duplicate headers policy in endpoint"));
-            }
-            self.policy.headers = other.policy.headers;
+        if let Some(headers) = other.policy.headers {
+            merge_policy_block(&mut self.policy.headers, headers);
         }
-        if other.policy.query.is_some() {
-            if self.policy.query.is_some() {
-                return Err(syn::Error::new(name.span(), "duplicate query policy in endpoint"));
-            }
-            self.policy.query = other.policy.query;
+        if let Some(query) = other.policy.query {
+            merge_policy_block(&mut self.policy.query, query);
         }
         if other.policy.timeout.is_some() {
             if self.policy.timeout.is_some() {
@@ -181,30 +175,26 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
             input.parse::<kw::path>()?;
             parts.route = parse_path_route_expr_bracket(input)?;
         } else if input.peek(kw::headers) {
-            if parts.policy.headers.is_some() {
-                return Err(syn::Error::new(input.span(), "duplicate headers policy in endpoint"));
-            }
-            parts.policy.headers = Some(input.parse::<PolicyBlockTaggedHeaders>()?.0);
+            merge_policy_block(
+                &mut parts.policy.headers,
+                input.parse::<PolicyBlockTaggedHeaders>()?.0,
+            );
         } else if input.peek(kw::header) {
-            parts
-                .policy
-                .headers
-                .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
-                .stmts
-                .push(parse_inline_policy_stmt(input, PolicyBlockKind::Headers)?);
+            push_policy_stmt(
+                &mut parts.policy.headers,
+                parse_inline_policy_stmt(input, PolicyBlockKind::Headers)?,
+            );
         } else if input.peek(kw::query) {
             if input.peek2(token::Brace) {
-                if parts.policy.query.is_some() {
-                    return Err(syn::Error::new(input.span(), "duplicate query policy in endpoint"));
-                }
-                parts.policy.query = Some(input.parse::<PolicyBlockTaggedQuery>()?.0);
+                merge_policy_block(
+                    &mut parts.policy.query,
+                    input.parse::<PolicyBlockTaggedQuery>()?.0,
+                );
             } else {
-                parts
-                    .policy
-                    .query
-                    .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
-                    .stmts
-                    .push(parse_inline_policy_stmt(input, PolicyBlockKind::Query)?);
+                push_policy_stmt(
+                    &mut parts.policy.query,
+                    parse_inline_policy_stmt(input, PolicyBlockKind::Query)?,
+                );
             }
         } else if input.peek(kw::timeout) {
             input.parse::<kw::timeout>()?;

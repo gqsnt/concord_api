@@ -228,27 +228,28 @@ impl Parse for RawClient {
                 block.response_policy = Some(observer);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::headers) {
-                policy.headers = Some(content.parse::<PolicyBlockTaggedHeaders>()?.0);
+                merge_policy_block(
+                    &mut policy.headers,
+                    content.parse::<PolicyBlockTaggedHeaders>()?.0,
+                );
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::header) {
-                policy
-                    .headers
-                    .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
-                    .stmts
-                    .push(parse_inline_policy_stmt(
-                        &content,
-                        PolicyBlockKind::Headers,
-                    )?);
+                push_policy_stmt(
+                    &mut policy.headers,
+                    parse_inline_policy_stmt(&content, PolicyBlockKind::Headers)?,
+                );
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::query) {
                 if content.peek2(token::Brace) {
-                    policy.query = Some(content.parse::<PolicyBlockTaggedQuery>()?.0);
+                    merge_policy_block(
+                        &mut policy.query,
+                        content.parse::<PolicyBlockTaggedQuery>()?.0,
+                    );
                 } else {
-                    policy
-                        .query
-                        .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
-                        .stmts
-                        .push(parse_inline_policy_stmt(&content, PolicyBlockKind::Query)?);
+                    push_policy_stmt(
+                        &mut policy.query,
+                        parse_inline_policy_stmt(&content, PolicyBlockKind::Query)?,
+                    );
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::timeout) {
@@ -527,22 +528,26 @@ fn parse_client_default_block(
 ) -> Result<()> {
     while !input.is_empty() {
         if input.peek(kw::headers) {
-            policy.headers = Some(input.parse::<PolicyBlockTaggedHeaders>()?.0);
+            merge_policy_block(
+                &mut policy.headers,
+                input.parse::<PolicyBlockTaggedHeaders>()?.0,
+            );
         } else if input.peek(kw::header) {
-            policy
-                .headers
-                .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
-                .stmts
-                .push(parse_inline_policy_stmt(input, PolicyBlockKind::Headers)?);
+            push_policy_stmt(
+                &mut policy.headers,
+                parse_inline_policy_stmt(input, PolicyBlockKind::Headers)?,
+            );
         } else if input.peek(kw::query) {
             if input.peek2(token::Brace) {
-                policy.query = Some(input.parse::<PolicyBlockTaggedQuery>()?.0);
+                merge_policy_block(
+                    &mut policy.query,
+                    input.parse::<PolicyBlockTaggedQuery>()?.0,
+                );
             } else {
-                policy
-                    .query
-                    .get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
-                    .stmts
-                    .push(parse_inline_policy_stmt(input, PolicyBlockKind::Query)?);
+                push_policy_stmt(
+                    &mut policy.query,
+                    parse_inline_policy_stmt(input, PolicyBlockKind::Query)?,
+                );
             }
         } else if input.peek(kw::timeout) {
             input.parse::<kw::timeout>()?;

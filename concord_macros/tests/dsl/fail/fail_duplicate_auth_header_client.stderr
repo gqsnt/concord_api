@@ -1,0 +1,5 @@
+error: duplicate auth header `X-Api-Key` in the same layer
+  --> tests/dsl/fail/fail_duplicate_auth_header_client.rs:12:21
+   |
+12 |         auth header "x-api-key" = second_key
+   |                     ^^^^^^^^^^^

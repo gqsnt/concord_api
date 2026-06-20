@@ -134,6 +134,8 @@ fn resolve_auth_requirements(
     credentials: &BTreeMap<String, AuthCredentialIr>,
     provenance: AuthUseProvenanceIr,
 ) -> Result<Vec<AuthUsePlanIr>> {
+    reject_duplicate_auth_materialization_keys(uses)?;
+
     let mut out = Vec::new();
     for u in uses {
         out.push(AuthUsePlanIr::Use(Box::new(resolve_auth_use_kind(
@@ -143,6 +145,39 @@ fn resolve_auth_requirements(
         )?)));
     }
     Ok(out)
+}
+
+fn reject_duplicate_auth_materialization_keys(uses: &[NormAuthUse]) -> Result<()> {
+    let mut headers: BTreeMap<String, String> = BTreeMap::new();
+    let mut queries: BTreeMap<String, Span> = BTreeMap::new();
+
+    for u in uses {
+        match &u.kind {
+            AuthUseKind::Header { header, .. } => {
+                let normalized = header.value().to_ascii_lowercase();
+                if let Some(first) = headers.insert(normalized, header.value()) {
+                    return Err(syn::Error::new(
+                        header.span(),
+                        format!("duplicate auth header `{first}` in the same layer"),
+                    ));
+                }
+            }
+            AuthUseKind::Query { key, .. } => {
+                let query = key.value();
+                if queries.insert(query.clone(), key.span()).is_some() {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("duplicate auth query parameter `{query}` in the same layer"),
+                    ));
+                }
+            }
+            AuthUseKind::Bearer { .. }
+            | AuthUseKind::Basic { .. }
+            | AuthUseKind::Certificate { .. } => {}
+        }
+    }
+
+    Ok(())
 }
 
 fn resolve_auth_use_kind(
