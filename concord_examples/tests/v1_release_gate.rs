@@ -44,6 +44,7 @@ fn v1_release_gate_script_contains_required_commands() {
 #[test]
 fn v1_release_checklist_links_local_gate_and_manual_audit() {
     let checklist = workspace_file("dev_doc/release_checklist.md");
+    let release_gate = workspace_file("dev_doc/release_gate.md");
 
     for snippet in [
         "./scripts/check_v1.sh",
@@ -61,6 +62,22 @@ fn v1_release_checklist_links_local_gate_and_manual_audit() {
         assert!(
             checklist.contains(snippet),
             "release checklist should contain `{snippet}`"
+        );
+    }
+
+    for snippet in [
+        "Local v1 release gate",
+        "Core invariants",
+        "Macro/codegen invariants",
+        "Auth/redaction invariants",
+        "Cache/retry/rate-limit invariants",
+        "Body-limit invariants",
+        "cargo clippy --workspace --all-targets -- -D warnings",
+        "does not package, publish, or run any crates.io step",
+    ] {
+        assert!(
+            release_gate.contains(snippet),
+            "release gate doc should contain `{snippet}`"
         );
     }
 }

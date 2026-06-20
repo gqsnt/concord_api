@@ -83,6 +83,18 @@ fn dev_doc_files_exist_and_cover_architecture() {
         &["trybuild", "New DSL feature checklist"],
     );
     assert_doc(
+        "dev_doc/release_gate.md",
+        &[
+            "Local v1 release gate",
+            "Core invariants",
+            "Macro/codegen invariants",
+            "Auth/redaction invariants",
+            "Body-limit invariants",
+            "./scripts/check_v1.sh",
+            "does not package, publish, or run any crates.io step",
+        ],
+    );
+    assert_doc(
         "dev_doc/release_checklist.md",
         &[
             "cargo clippy",
