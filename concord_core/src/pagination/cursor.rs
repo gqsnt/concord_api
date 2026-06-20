@@ -1,4 +1,3 @@
-use crate::endpoint::PaginationPlan;
 use crate::pagination::Stop;
 use std::borrow::Cow;
 
@@ -53,20 +52,6 @@ impl Default for CursorPagination {
             per_page: 20,
             send_cursor_on_first: false,
             stop_when_cursor_missing: true,
-        }
-    }
-}
-
-impl From<CursorPagination> for PaginationPlan {
-    fn from(value: CursorPagination) -> Self {
-        Self::Cursor {
-            cursor_key: value.cursor_key.into_owned(),
-            per_page_key: value.per_page_key.into_owned(),
-            cursor: value.cursor,
-            per_page: value.per_page,
-            send_cursor_on_first: value.send_cursor_on_first,
-            stop_when_cursor_missing: value.stop_when_cursor_missing,
-            stop: value.stop,
         }
     }
 }

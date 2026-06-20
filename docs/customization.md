@@ -191,7 +191,7 @@ Controller rules:
 - Built-in pagination keeps using configuration blocks.
 - Custom pagination uses `paginate TypePath` without a block.
 - Custom pagination controller types must implement `Default`.
-- `PageRequest` can set or remove query parameters and headers.
+- `PageRequest` can set or remove query parameters and headers. Query keys may be owned/dynamic strings. Header mutation is fallible and returns `ApiClientError` for invalid header names instead of panicking.
 - `progress_key` is used for loop detection when enabled.
 - Runtime retry, cache, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
 

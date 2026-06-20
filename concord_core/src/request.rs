@@ -4,7 +4,7 @@ use crate::debug::DebugLevel;
 use crate::endpoint::{CustomPaginationPlan, Endpoint, PaginationPlan};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    Caps, Control, HasNextCursor, PageAdvance, PageInit, PageItems, PageRequest, ProgressKey, Stop,
+    Caps, Control, PageAdvance, PageInit, PageItems, PageRequest, ProgressKey, Stop,
 };
 use crate::timeout::TimeoutOverride;
 use crate::transport::{BuiltResponse, DecodedResponse};
@@ -234,7 +234,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
 
     pub async fn for_each_page<F, Fut>(self, mut f: F) -> Result<(), ApiClientError>
     where
-        E::Response: PageItems + HasNextCursor,
+        E::Response: PageItems,
         T: crate::transport::Transport,
         F: FnMut(DecodedResponse<E::Response>) -> Fut,
         Fut: Future<Output = Result<(), ApiClientError>>,
@@ -246,6 +246,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             endpoint: first_plan.endpoint.meta.name,
             method: first_plan.endpoint.meta.method.clone(),
         };
+        validate_caps(self.caps, &ctx)?;
         let mut first_plan = Some(first_plan);
         let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
             Some(HashSet::new())
@@ -328,7 +329,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
 
     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
     where
-        E::Response: PageItems + HasNextCursor,
+        E::Response: PageItems,
         T: crate::transport::Transport,
     {
         let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
@@ -339,6 +340,22 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         .await?;
         Ok(out)
     }
+}
+
+fn validate_caps(caps: Caps, ctx: &crate::error::ErrorContext) -> Result<(), ApiClientError> {
+    if caps.max_pages == 0 {
+        return Err(ApiClientError::Pagination {
+            ctx: ctx.clone(),
+            msg: "max_pages must be greater than zero".into(),
+        });
+    }
+    if caps.max_items == 0 {
+        return Err(ApiClientError::Pagination {
+            ctx: ctx.clone(),
+            msg: "max_items must be greater than zero".into(),
+        });
+    }
+    Ok(())
 }
 
 enum PaginationRunner {
@@ -359,6 +376,7 @@ enum PaginationRunner {
         stop_when_cursor_missing: bool,
         stop: Stop,
         started: bool,
+        next_cursor: crate::endpoint::CursorNextFn,
     },
     Paged {
         page_key: String,
@@ -424,6 +442,7 @@ impl PaginationRunner {
                 send_cursor_on_first,
                 stop_when_cursor_missing,
                 stop,
+                next_cursor,
             }) => {
                 if per_page == 0 {
                     return Err(ApiClientError::Pagination {
@@ -440,6 +459,7 @@ impl PaginationRunner {
                     stop_when_cursor_missing,
                     stop,
                     started: false,
+                    next_cursor,
                 })
             }
             Some(PaginationPlan::Paged {
@@ -558,6 +578,10 @@ impl PaginationRunner {
                 let mut request = PageRequest::new(
                     &mut plan.endpoint.policy.query,
                     &mut plan.endpoint.policy.headers,
+                    crate::error::ErrorContext {
+                        endpoint: plan.endpoint.meta.name,
+                        method: plan.endpoint.meta.method.clone(),
+                    },
                 );
                 (custom.apply)(state.as_ref(), &mut request)
             }
@@ -570,7 +594,7 @@ impl PaginationRunner {
         ctx: &ErrorContext,
     ) -> Result<Control, ApiClientError>
     where
-        R: PageItems + HasNextCursor,
+        R: PageItems,
     {
         match self {
             Self::OffsetLimit {
@@ -604,17 +628,14 @@ impl PaginationRunner {
                 stop_when_cursor_missing,
                 stop,
                 started,
+                next_cursor,
                 ..
             } => {
                 *started = true;
                 if matches!(stop, Stop::OnEmpty) && resp.value.item_count_hint() == Some(0) {
                     return Ok(Control::Stop);
                 }
-                *cursor = resp
-                    .value
-                    .next_cursor()
-                    .map(|c| c.to_string())
-                    .filter(|s| !s.is_empty());
+                *cursor = next_cursor(&resp.value as &(dyn Any + Send), ctx.clone())?;
                 if cursor.is_none() && *stop_when_cursor_missing {
                     return Ok(Control::Stop);
                 }

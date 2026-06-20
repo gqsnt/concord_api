@@ -402,6 +402,11 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
             );
         };
     }
+    let page_ty = ep
+        .map
+        .as_ref()
+        .map(|m| m.out_ty.clone())
+        .unwrap_or_else(|| ep.response.ty.clone());
     let auto_key_assigns = p.assigns.iter().filter_map(|(k, v)| {
         let PaginationValueKind::EpField(f) = v else { return None; };
         let key_res = find_query_key_for_ep_field(ep, f)?;
@@ -433,13 +438,18 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
         };
         quote! { ctrl.#k = #val; }
     });
+    let plan_expr = if is_cursor {
+        quote! { ::concord_core::internal::PaginationPlan::cursor::<#page_ty>(ctrl) }
+    } else {
+        quote! { ::concord_core::internal::PaginationPlan::from(ctrl) }
+    };
     quote! {
         #[allow(unused_variables)]
         let cx = vars;
         let mut ctrl: #ctrl_ty = ::core::default::Default::default();
         #( #auto_key_assigns )*
         #( #assigns )*
-        let __pagination_plan = ::core::option::Option::Some(::concord_core::internal::PaginationPlan::from(ctrl));
+        let __pagination_plan = ::core::option::Option::Some(#plan_expr);
     }
 }
 

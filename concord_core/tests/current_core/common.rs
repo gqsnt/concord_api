@@ -194,6 +194,44 @@ impl Endpoint<TestCx> for ItemsEndpoint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageOnlyItems {
+    pub items: Vec<String>,
+}
+
+impl PageItems for PageOnlyItems {
+    type Item = String;
+
+    fn item_count_hint(&self) -> Option<usize> {
+        Some(self.items.len())
+    }
+
+    fn into_items(self) -> Vec<Self::Item> {
+        self.items
+    }
+}
+
+#[derive(Clone)]
+pub struct PageOnlyItemsEndpoint {
+    pub policy: ResolvedPolicy,
+    pub pagination: PaginationPlan,
+}
+
+impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
+    type Response = PageOnlyItems;
+
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            "PageOnlyItems",
+            Method::GET,
+            "/page-only-items",
+            self.policy.clone(),
+            Some(self.pagination.clone()),
+            decode_page_only_items,
+        ))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CursorItems {
     pub items: Vec<String>,
     pub next: Option<String>,
@@ -316,6 +354,30 @@ pub fn decode_items(
         status: resp.status,
         headers: resp.headers,
         value,
+    }))
+}
+
+pub fn decode_page_only_items(
+    resp: BuiltResponse,
+    ctx: concord_core::advanced::ErrorContext,
+) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
+    let content_type = resp
+        .headers
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok());
+    let text = std::str::from_utf8(&resp.body)
+        .map_err(|e| ApiClientError::decode_error(ctx, resp.status, content_type, e))?;
+    let items = if text.is_empty() {
+        Vec::new()
+    } else {
+        text.split(',').map(ToOwned::to_owned).collect()
+    };
+    Ok(Box::new(DecodedResponse {
+        meta: resp.meta,
+        url: resp.url,
+        status: resp.status,
+        headers: resp.headers,
+        value: PageOnlyItems { items },
     }))
 }
 

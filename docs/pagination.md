@@ -34,7 +34,7 @@ The runtime keeps request parameters stable while advancing the pagination contr
 
 ## Cursor Pagination
 
-Cursor pagination uses a response type that exposes items and a next cursor.
+Cursor pagination uses a response type that exposes items and a next cursor. Offset, page-number, and custom pagination collection only require `PageItems`; built-in cursor pagination additionally requires `HasNextCursor`.
 
 ```rust
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -95,5 +95,7 @@ let items = api
     .collect()
     .await?;
 ```
+
+Caps must be greater than zero. Passing `0` through per-request builders or runtime pagination caps returns a typed pagination error before the first page request is sent.
 
 Retry and auth refresh preserve the current page state. A retry for page `N` retries page `N`, not page `N + 1`.

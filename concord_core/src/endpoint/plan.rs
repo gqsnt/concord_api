@@ -2,7 +2,8 @@
 
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    PageAdvance, PageDecision, PageInit, PageItems, PageRequest, PaginationController, ProgressKey,
+    HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
+    PaginationController, ProgressKey,
 };
 use crate::policy::ResolvedPolicy;
 use crate::transport::RequestMeta;
@@ -154,6 +155,7 @@ pub enum PaginationPlan {
         send_cursor_on_first: bool,
         stop_when_cursor_missing: bool,
         stop: crate::pagination::Stop,
+        next_cursor: CursorNextFn,
     },
     Paged {
         page_key: String,
@@ -165,6 +167,9 @@ pub enum PaginationPlan {
     },
     Custom(CustomPaginationPlan),
 }
+
+pub type CursorNextFn =
+    for<'a> fn(&(dyn Any + Send), ErrorContext) -> Result<Option<String>, ApiClientError>;
 
 pub type CustomPaginationInitFn =
     for<'a> fn(PageInit<'a>) -> Result<Box<dyn Any + Send + Sync>, ApiClientError>;
@@ -187,6 +192,22 @@ pub struct CustomPaginationPlan {
 }
 
 impl PaginationPlan {
+    pub fn cursor<Page>(value: crate::pagination::CursorPagination) -> Self
+    where
+        Page: PageItems + HasNextCursor,
+    {
+        Self::Cursor {
+            cursor_key: value.cursor_key.into_owned(),
+            per_page_key: value.per_page_key.into_owned(),
+            cursor: value.cursor,
+            per_page: value.per_page,
+            send_cursor_on_first: value.send_cursor_on_first,
+            stop_when_cursor_missing: value.stop_when_cursor_missing,
+            stop: value.stop,
+            next_cursor: cursor_next::<Page>,
+        }
+    }
+
     pub fn custom<C, Page>() -> Self
     where
         C: PaginationController<Page> + Default,
@@ -200,6 +221,25 @@ impl PaginationPlan {
             progress_key: custom_pagination_progress_key::<C, Page>,
         })
     }
+}
+
+fn cursor_next<Page>(
+    page: &(dyn Any + Send),
+    ctx: ErrorContext,
+) -> Result<Option<String>, ApiClientError>
+where
+    Page: PageItems + HasNextCursor,
+{
+    let Some(page) = page.downcast_ref::<Page>() else {
+        return Err(ApiClientError::Pagination {
+            ctx,
+            msg: "cursor pagination page type mismatch".into(),
+        });
+    };
+    Ok(page
+        .next_cursor()
+        .map(|cursor| cursor.to_string())
+        .filter(|cursor| !cursor.is_empty()))
 }
 
 fn custom_pagination_init<C, Page>(

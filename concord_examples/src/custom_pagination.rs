@@ -55,7 +55,7 @@ impl PaginationController<HeaderCursorPage> for HeaderCursorPagination {
         request.set_header(
             "x-page-cursor",
             http::HeaderValue::from_str(&state.page.to_string()).unwrap(),
-        );
+        )?;
         Ok(())
     }
 

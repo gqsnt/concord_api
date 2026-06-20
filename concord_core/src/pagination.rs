@@ -2,7 +2,7 @@ pub mod cursor;
 pub mod offset_limit;
 pub mod paged;
 
-use crate::error::ApiClientError;
+use crate::error::{ApiClientError, ErrorContext};
 pub use cursor::{CursorPagination, HasNextCursor};
 use http::{HeaderMap, HeaderName, HeaderValue};
 pub use offset_limit::OffsetLimitPagination;
@@ -49,32 +49,63 @@ pub struct PageAdvance<'a> {
 pub struct PageRequest<'a> {
     query: &'a mut Vec<(String, String)>,
     headers: &'a mut HeaderMap,
+    ctx: ErrorContext,
 }
 
 impl<'a> PageRequest<'a> {
-    #[doc(hidden)]
-    pub fn new(query: &'a mut Vec<(String, String)>, headers: &'a mut HeaderMap) -> Self {
-        Self { query, headers }
+    pub(crate) fn new(
+        query: &'a mut Vec<(String, String)>,
+        headers: &'a mut HeaderMap,
+        ctx: ErrorContext,
+    ) -> Self {
+        Self {
+            query,
+            headers,
+            ctx,
+        }
     }
 
-    pub fn set_query<T>(&mut self, key: &'static str, value: T)
+    pub fn set_query<T>(&mut self, key: impl Into<String>, value: T)
     where
         T: std::fmt::Display,
     {
-        self.remove_query(key);
-        self.query.push((key.to_string(), value.to_string()));
+        let key = key.into();
+        self.remove_query(&key);
+        self.query.push((key, value.to_string()));
     }
 
-    pub fn remove_query(&mut self, key: &'static str) {
+    pub fn remove_query(&mut self, key: &str) {
         self.query.retain(|(existing, _)| existing != key);
     }
 
-    pub fn set_header(&mut self, name: &'static str, value: HeaderValue) {
-        self.headers.insert(HeaderName::from_static(name), value);
+    pub fn set_header<N>(&mut self, name: N, value: HeaderValue) -> Result<(), ApiClientError>
+    where
+        N: TryInto<HeaderName>,
+        N::Error: std::fmt::Display,
+    {
+        let name = name
+            .try_into()
+            .map_err(|source| ApiClientError::Pagination {
+                ctx: self.ctx.clone(),
+                msg: format!("invalid pagination header name: {source}").into(),
+            })?;
+        self.headers.insert(name, value);
+        Ok(())
     }
 
-    pub fn remove_header(&mut self, name: &'static str) {
-        let _ = self.headers.remove(HeaderName::from_static(name));
+    pub fn remove_header<N>(&mut self, name: N) -> Result<(), ApiClientError>
+    where
+        N: TryInto<HeaderName>,
+        N::Error: std::fmt::Display,
+    {
+        let name = name
+            .try_into()
+            .map_err(|source| ApiClientError::Pagination {
+                ctx: self.ctx.clone(),
+                msg: format!("invalid pagination header name: {source}").into(),
+            })?;
+        let _ = self.headers.remove(name);
+        Ok(())
     }
 }
 

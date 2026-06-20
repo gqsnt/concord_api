@@ -6,8 +6,8 @@ use std::marker::PhantomData;
 pub mod plan;
 #[allow(unused_imports)]
 pub use plan::{
-    AttemptState, BodyPlan, CustomPaginationPlan, EndpointMeta, EndpointPlan, PaginationPlan,
-    RequestArgs, RequestOverrides, RequestPlan, ResolvedRoute, ResponsePlan,
+    AttemptState, BodyPlan, CursorNextFn, CustomPaginationPlan, EndpointMeta, EndpointPlan,
+    PaginationPlan, RequestArgs, RequestOverrides, RequestPlan, ResolvedRoute, ResponsePlan,
 };
 
 pub struct ClientPlanContext<'a, Cx: ClientContext> {

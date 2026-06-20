@@ -35,28 +35,8 @@ note: required by a bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
    |     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
    |                  ------- required by a bound in this associated function
    |     where
-   |         E::Response: PageItems + HasNextCursor,
+   |         E::Response: PageItems,
    |                      ^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
-
-error[E0277]: the trait bound `String: HasNextCursor` is not satisfied
-  --> tests/usage/fail/fail_non_paginated_paginate.rs:16:35
-   |
-16 |     let _ = api.ping().paginate().collect().await?;
-   |                                   ^^^^^^^ the trait `HasNextCursor` is not implemented for `String`
-   |
-help: the trait `HasNextCursor` is implemented for `Vec<T>`
-  --> $WORKSPACE/concord_core/src/pagination/cursor.rs
-   |
-   | impl<T: Send + 'static> HasNextCursor for Vec<T> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
-  --> $WORKSPACE/concord_core/src/request.rs
-   |
-   |     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
-   |                  ------- required by a bound in this associated function
-   |     where
-   |         E::Response: PageItems + HasNextCursor,
-   |                                  ^^^^^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
 
 error[E0277]: the trait bound `String: PageItems` is not satisfied
   --> tests/usage/fail/fail_non_paginated_paginate.rs:16:13
@@ -75,28 +55,8 @@ note: required by a bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
    |     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
    |                  ------- required by a bound in this associated function
    |     where
-   |         E::Response: PageItems + HasNextCursor,
+   |         E::Response: PageItems,
    |                      ^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
-
-error[E0277]: the trait bound `String: HasNextCursor` is not satisfied
-  --> tests/usage/fail/fail_non_paginated_paginate.rs:16:13
-   |
-16 |     let _ = api.ping().paginate().collect().await?;
-   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `HasNextCursor` is not implemented for `String`
-   |
-help: the trait `HasNextCursor` is implemented for `Vec<T>`
-  --> $WORKSPACE/concord_core/src/pagination/cursor.rs
-   |
-   | impl<T: Send + 'static> HasNextCursor for Vec<T> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
-  --> $WORKSPACE/concord_core/src/request.rs
-   |
-   |     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
-   |                  ------- required by a bound in this associated function
-   |     where
-   |         E::Response: PageItems + HasNextCursor,
-   |                                  ^^^^^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
 
 error[E0277]: the trait bound `String: PageItems` is not satisfied
   --> tests/usage/fail/fail_non_paginated_paginate.rs:16:45
@@ -115,25 +75,5 @@ note: required by a bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
    |     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
    |                  ------- required by a bound in this associated function
    |     where
-   |         E::Response: PageItems + HasNextCursor,
+   |         E::Response: PageItems,
    |                      ^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
-
-error[E0277]: the trait bound `String: HasNextCursor` is not satisfied
-  --> tests/usage/fail/fail_non_paginated_paginate.rs:16:45
-   |
-16 |     let _ = api.ping().paginate().collect().await?;
-   |                                             ^^^^^ the trait `HasNextCursor` is not implemented for `String`
-   |
-help: the trait `HasNextCursor` is implemented for `Vec<T>`
-  --> $WORKSPACE/concord_core/src/pagination/cursor.rs
-   |
-   | impl<T: Send + 'static> HasNextCursor for Vec<T> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
-  --> $WORKSPACE/concord_core/src/request.rs
-   |
-   |     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
-   |                  ------- required by a bound in this associated function
-   |     where
-   |         E::Response: PageItems + HasNextCursor,
-   |                                  ^^^^^^^^^^^^^ required by this bound in `PaginatedRequest::<'a, Cx, E, T>::collect`
