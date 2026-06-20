@@ -37,7 +37,7 @@ The commands below are the full local gate. `./scripts/check_v1.sh` runs the scr
 - Auth preparation receives an auth-only application request, not `BuiltRequest`.
 - Endpoint auth and internal auth attach typed pending auth slots and carry raw material as sidecar data until transport materialization.
 - Arbitrary auth header/query names are protected structurally, not only by sensitive-name guesses.
-- OAuth client secrets, bearer tokens, basic passwords, query auth values, and header auth values are absent from Concord debug/errors/hooks.
+- OAuth client secrets, bearer tokens, Basic auth usernames and passwords declared as secrets, query auth values, and header auth values are absent from Concord debug/errors/hooks.
 
 ## Cache/retry/rate-limit invariants
 

@@ -89,7 +89,7 @@ pub(crate) enum AuthTransportMaterial {
     },
     Basic {
         slot_id: AuthSlotId,
-        username: String,
+        username: SecretString,
         password: SecretString,
     },
     Certificate {
@@ -117,12 +117,10 @@ impl fmt::Debug for AuthTransportMaterial {
                 .field("slot_id", slot_id)
                 .field("secret", &"<redacted>")
                 .finish(),
-            Self::Basic {
-                slot_id, username, ..
-            } => f
+            Self::Basic { slot_id, .. } => f
                 .debug_struct("AuthTransportMaterial::Basic")
                 .field("slot_id", slot_id)
-                .field("username", username)
+                .field("username", &"<redacted>")
                 .field("password", &"<redacted>")
                 .finish(),
             Self::Certificate {

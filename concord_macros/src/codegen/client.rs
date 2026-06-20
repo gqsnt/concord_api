@@ -188,7 +188,7 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
             ::concord_core::advanced::StaticBasicProvider::new(
                 #credential_id,
                 ::concord_core::prelude::BasicCredential::new(
-                    auth.#username.expose().to_string(),
+                    auth.#username.clone(),
                     auth.#password.clone(),
                 ),
             )

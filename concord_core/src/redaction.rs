@@ -1,4 +1,24 @@
-use std::hash::{Hash, Hasher};
+use std::hash::BuildHasher;
+use std::sync::OnceLock;
+
+static SECRET_FINGERPRINT_STATE: OnceLock<std::collections::hash_map::RandomState> =
+    OnceLock::new();
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub(crate) struct SecretFingerprint(String);
+
+impl std::fmt::Display for SecretFingerprint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+pub(crate) fn secret_fingerprint(value: &str) -> SecretFingerprint {
+    // Process-local keyed SipHash label. This is for redacted partitioning and
+    // diagnostics only; it is not a stable persistent identifier.
+    let state = SECRET_FINGERPRINT_STATE.get_or_init(std::collections::hash_map::RandomState::new);
+    SecretFingerprint(format!("{:016x}", state.hash_one(value)))
+}
 
 pub(crate) fn is_sensitive_name(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
@@ -25,14 +45,8 @@ pub(crate) fn is_sensitive_name(name: &str) -> bool {
         || n.ends_with("-key")
 }
 
-pub(crate) fn hash_value(value: &str) -> String {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    value.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
-
 pub(crate) fn hashed_sensitive_value(value: &str) -> String {
-    format!("<sensitive:{}>", hash_value(value))
+    format!("<sensitive:{}>", secret_fingerprint(value))
 }
 
 pub(crate) fn redacted_display_value(name: &str, value: &str) -> String {

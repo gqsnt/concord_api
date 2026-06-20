@@ -28,6 +28,7 @@ pub struct User {
 }
 
 use self::auth_helper_api::AuthHelperApi;
+use self::basic_helper_api::BasicHelperApi;
 
 api! {
     client AuthHelperApi {
@@ -52,6 +53,20 @@ api! {
             path ["me"]
             -> Json<User>
     }
+}
+
+api! {
+    client BasicHelperApi {
+        base "https://example.com"
+        secret username: String
+        secret password: String
+        credential login = basic(secret.username, secret.password)
+    }
+
+    GET BasicMe
+        path ["basic-me"]
+        auth basic login
+        -> Json<User>
 }
 
 #[tokio::test]
@@ -134,6 +149,40 @@ async fn endpoint_backed_auth_helpers_acquire_clear_and_gate_protected_requests(
             .get(http::header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok()),
         Some("Bearer session-token")
+    );
+}
+
+#[tokio::test]
+async fn generated_basic_auth_keeps_username_and_password_secret_until_transport() {
+    const USERNAME: &str = "LEAK_SENTINEL_GENERATED_BASIC_USER";
+    const PASSWORD: &str = "LEAK_SENTINEL_GENERATED_BASIC_PASSWORD";
+
+    let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"{"name":"Ada"}"#)]);
+    let sent = transport.clone();
+    let api =
+        BasicHelperApi::new_with_transport(PASSWORD.to_string(), USERNAME.to_string(), transport);
+
+    let user = api
+        .basic_me()
+        .execute()
+        .await
+        .expect("basic request succeeds");
+    assert_eq!(user.name, "Ada");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    let debug_output = format!("{:?}", requests[0]);
+    assert!(!debug_output.contains(USERNAME));
+    assert!(!debug_output.contains(PASSWORD));
+
+    let header = requests[0]
+        .headers
+        .get(http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("basic auth header materialized");
+    assert_eq!(
+        header,
+        "Basic TEVBS19TRU5USU5FTF9HRU5FUkFURURfQkFTSUNfVVNFUjpMRUFLX1NFTlRJTkVMX0dFTkVSQVRFRF9CQVNJQ19QQVNTV09SRA=="
     );
 }
 

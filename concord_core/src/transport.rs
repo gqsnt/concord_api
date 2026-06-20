@@ -280,7 +280,7 @@ pub(crate) fn materialize_transport_request(
                     username, password, ..
                 },
             ) => {
-                let raw = format!("{}:{}", username, password.expose());
+                let raw = format!("{}:{}", username.expose(), password.expose());
                 let value = format!(
                     "Basic {}",
                     base64::engine::general_purpose::STANDARD.encode(raw)

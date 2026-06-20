@@ -24,7 +24,7 @@ Macro strictness belongs primarily in semantic unit tests and trybuild pass/fail
 
 These tests protect runtime order and should be extended before runtime behavior is refactored.
 
-Auth/redaction tests must cover arbitrary auth names, not only conventional names such as `Authorization` or `api_key`. When auth handling changes, verify that `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, debug sinks, errors, and cache keys do not contain raw auth material, while the materialized `TransportRequest` still carries real credentials at `Transport::send`.
+Auth/redaction tests must cover arbitrary auth names, not only conventional names such as `Authorization` or `api_key`. Basic auth usernames declared as `secret` are secret material too. When auth handling changes, verify that `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, debug sinks, errors, and cache keys do not contain raw auth material, while the materialized `TransportRequest` still carries real credentials at `Transport::send`.
 
 Auth preparation boundary tests should verify behavior at the sealed auth boundary: raw material stays out of logical request/debug/error surfaces and reaches only `TransportRequest` at send time.
 

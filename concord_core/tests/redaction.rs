@@ -9,10 +9,11 @@ mod query_auth_redaction {
     use concord_core::advanced::{
         AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
         AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
-        AuthRequirementId, AuthRetryReason, DebugSink, PreparedInternalAuth, RequestMeta,
-        RuntimeHooks, Transport, TransportAuth, TransportError, TransportErrorHookContext,
-        TransportResponse, apply_basic_credential, apply_certificate_credential,
-        apply_secret_credential,
+        AuthRequirementId, AuthRetryReason, BuiltRequest, CacheAfter, CacheBefore, CacheFuture,
+        CacheStore, DebugSink, PreparedInternalAuth, RequestMeta, RuntimeHooks, Transport,
+        TransportAuth, TransportError, TransportErrorHookContext, TransportResponse,
+        apply_basic_credential, apply_certificate_credential, apply_secret_credential,
+        default_cache_key,
     };
     #[cfg(feature = "json")]
     use concord_core::advanced::{CredentialProvider, OAuth2ClientCredentialsProvider};
@@ -31,6 +32,7 @@ mod query_auth_redaction {
 
     const API_KEY_SECRET: &str = "LEAK_SENTINEL_API_KEY_123";
     const BEARER_SECRET: &str = "LEAK_SENTINEL_BEARER_456";
+    const BASIC_USERNAME_SECRET: &str = "LEAK_SENTINEL_BASIC_USERNAME_012";
     const PASSWORD_SECRET: &str = "LEAK_SENTINEL_PASSWORD_789";
     const REFRESH_SECRET_A: &str = "LEAK_SENTINEL_REFRESH_A";
     const REFRESH_SECRET_B: &str = "LEAK_SENTINEL_REFRESH_B";
@@ -50,6 +52,7 @@ mod query_auth_redaction {
     struct RedactionAuthVars {
         api_key: String,
         bearer: String,
+        username: String,
         password: String,
     }
 
@@ -78,7 +81,8 @@ mod query_auth_redaction {
             Box::pin(async move {
                 let application = match requirement.placement {
                     AuthPlacement::Basic => {
-                        let material = BasicCredential::new("sentinel-user", auth.password.clone());
+                        let material =
+                            BasicCredential::new(auth.username.clone(), auth.password.clone());
                         apply_basic_credential(request, requirement, &material)?
                     }
                     AuthPlacement::Bearer => {
@@ -265,6 +269,7 @@ mod query_auth_redaction {
         RedactionAuthVars {
             api_key: API_KEY_SECRET.to_string(),
             bearer: BEARER_SECRET.to_string(),
+            username: BASIC_USERNAME_SECRET.to_string(),
             password: PASSWORD_SECRET.to_string(),
         }
     }
@@ -328,6 +333,41 @@ mod query_auth_redaction {
                     std::io::Error::other("redaction transport failure"),
                 ))
             })
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingCache {
+        observations: TokioMutex<Vec<String>>,
+    }
+
+    impl RecordingCache {
+        async fn observations(&self) -> Vec<String> {
+            self.observations.lock().await.clone()
+        }
+    }
+
+    impl CacheStore for RecordingCache {
+        fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
+            Box::pin(async move {
+                let mut observations = self.observations.lock().await;
+                observations.push(format!("key:{}", default_cache_key(request).as_str()));
+                observations.push(format!("request:{request:?}"));
+                observations.push(format!(
+                    "identities:{:?}",
+                    request.extensions.auth_identities
+                ));
+                CacheBefore::Miss
+            })
+        }
+
+        fn after_response<'a>(
+            &'a self,
+            _request: &'a BuiltRequest,
+            _response: &'a concord_core::advanced::BuiltResponse,
+            _revalidation: Option<concord_core::advanced::CacheRevalidation>,
+        ) -> CacheFuture<'a, CacheAfter> {
+            Box::pin(async { CacheAfter::Stored })
         }
     }
 
@@ -519,6 +559,69 @@ mod query_auth_redaction {
     }
 
     #[tokio::test]
+    async fn basic_auth_username_secret_absent_from_debug_output() -> Result<(), ApiClientError> {
+        let (events, requests) =
+            run_debug_request(auth_policy(AuthPlacement::Basic), StatusCode::OK).await?;
+
+        let debug_output = events.join("\n");
+        assert_secret_absent(&debug_output, BASIC_USERNAME_SECRET);
+        assert_secret_absent(&debug_output, PASSWORD_SECRET);
+        assert_secret_absent(&format!("{:?}", requests[0]), BASIC_USERNAME_SECRET);
+        assert_secret_absent(&format!("{:?}", requests[0]), PASSWORD_SECRET);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn basic_auth_username_secret_absent_from_cache_key() -> Result<(), ApiClientError> {
+        let events = Arc::new(TokioMutex::new(Vec::new()));
+        let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+        let cache = Arc::new(RecordingCache::default());
+        let mut policy = auth_policy(AuthPlacement::Basic);
+        policy.cache = concord_core::internal::CacheSetting::Config(
+            concord_core::advanced::CacheConfig::new(),
+        );
+        let mut client =
+            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        client.configure(|cfg| {
+            cfg.cache_store(cache.clone());
+        });
+
+        client
+            .request(RedactionEndpoint { policy })
+            .execute_decoded()
+            .await?;
+
+        let output = cache.observations().await.join("\n");
+        assert_secret_absent(&output, BASIC_USERNAME_SECRET);
+        assert_secret_absent(&output, PASSWORD_SECRET);
+        assert!(output.contains("hash:"));
+        assert!(!output.contains("user:"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn basic_auth_username_and_password_reach_transport_authorization_header()
+    -> Result<(), ApiClientError> {
+        let (_events, requests) =
+            run_debug_request(auth_policy(AuthPlacement::Basic), StatusCode::OK).await?;
+        let header = requests[0]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .expect("basic auth header materialized");
+        let encoded = header
+            .strip_prefix("Basic ")
+            .expect("basic auth header uses Basic scheme");
+        let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, encoded)
+            .expect("valid basic auth");
+        assert_eq!(
+            String::from_utf8(decoded).expect("utf8 basic auth"),
+            format!("{BASIC_USERNAME_SECRET}:{PASSWORD_SECRET}")
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn transport_error_hook_url_redacts_query_auth_secret() -> Result<(), ApiClientError> {
         let (output, requests) =
             run_transport_error_request(policy_with_query_auth("api_key")).await?;
@@ -540,6 +643,7 @@ mod query_auth_redaction {
             RedactionAuthVars {
                 api_key: String::new(),
                 bearer: String::new(),
+                username: String::new(),
                 password: String::new(),
             },
             transport,
@@ -1003,11 +1107,11 @@ mod query_auth_redaction {
                 )
             },
             {
-                let value = BasicCredential::new("sentinel-user", PASSWORD_SECRET);
+                let value = BasicCredential::new(BASIC_USERNAME_SECRET, PASSWORD_SECRET);
                 (
                     format!("{value:?}"),
-                    format!("{}", value.password),
-                    PASSWORD_SECRET,
+                    format!("{}:{}", value.username, value.password),
+                    BASIC_USERNAME_SECRET,
                 )
             },
         ] {
@@ -1016,6 +1120,12 @@ mod query_auth_redaction {
             assert_secret_absent(&debug_output, secret);
             assert_secret_absent(&display_output, secret);
         }
+        let basic = BasicCredential::new(BASIC_USERNAME_SECRET, PASSWORD_SECRET);
+        assert_secret_absent(&format!("{basic:?}"), PASSWORD_SECRET);
+        assert_secret_absent(
+            &format!("{}:{}", basic.username, basic.password),
+            PASSWORD_SECRET,
+        );
     }
 
     #[cfg(feature = "json")]

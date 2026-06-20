@@ -165,6 +165,8 @@ Normal retry policy still runs separately. Auth rejection handling happens befor
 
 Secret values are wrapped before storage. User-facing errors and diagnostics should identify the credential, header, query key, or auth usage by name, not render raw secret values.
 
-Concord redacts secret values from debug and diagnostic output. Header values, bearer tokens, passwords, OAuth client secrets, and query-auth values are not rendered directly.
+Concord redacts secret values from debug and diagnostic output. Header values, bearer tokens, Basic auth usernames and passwords declared through `secret`, OAuth client secrets, and query-auth values are not rendered directly.
+
+Basic auth cache/debug identities use opaque fingerprints by default. If an integration needs a readable non-secret partition label, provide an explicit identity hint from advanced credential material rather than relying on the secret username text.
 
 The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug/display output, diagnostics, cache/debug keys, and generated documentation, not to the request sent over transport.

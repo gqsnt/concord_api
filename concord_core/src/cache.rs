@@ -554,7 +554,7 @@ mod moka_backend {
                         .get(&header_name)
                         .and_then(|value| value.to_str().ok())
                         .unwrap_or("");
-                    out.push_str(&crate::redaction::hash_value(value));
+                    out.push_str(&crate::redaction::secret_fingerprint(value).to_string());
                 }
                 out.push(';');
             }

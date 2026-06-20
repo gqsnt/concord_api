@@ -105,23 +105,35 @@ impl SecretCredential for ApiKey {
 
 #[derive(Clone, Debug)]
 pub struct BasicCredential {
-    pub username: String,
+    pub username: SecretString,
     pub password: SecretString,
+    pub identity_hint: Option<String>,
 }
 
 impl BasicCredential {
     #[inline]
-    pub fn new(username: impl Into<String>, password: impl Into<SecretString>) -> Self {
+    pub fn new(username: impl Into<SecretString>, password: impl Into<SecretString>) -> Self {
         Self {
             username: username.into(),
             password: password.into(),
+            identity_hint: None,
         }
+    }
+
+    #[inline]
+    pub fn identity_hint(mut self, hint: impl Into<String>) -> Self {
+        self.identity_hint = Some(hint.into());
+        self
     }
 }
 
 impl CredentialMaterial for BasicCredential {
     fn safe_identity(&self) -> AuthIdentity {
-        AuthIdentity::User(self.username.clone())
+        if let Some(hint) = &self.identity_hint {
+            AuthIdentity::User(hint.clone())
+        } else {
+            AuthIdentity::OpaqueHash(hash_secret(self.username.expose()))
+        }
     }
 }
 
