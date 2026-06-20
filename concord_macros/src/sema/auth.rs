@@ -70,6 +70,7 @@ fn analyze_auth_credentials(
                     endpoint: endpoint.clone(),
                     endpoint_key,
                     output_ty: output_ty.clone(),
+                    material_shape: shape_from_type(output_ty),
                 }
             }
         };
@@ -209,53 +210,31 @@ fn auth_plan_references_credential(plans: &[AuthUsePlanIr], target: &Ident) -> b
 }
 
 fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<()> {
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum MaterialShape {
-        AccessToken,
-        SecretValue,
-        Basic,
-        Certificate,
-        Unknown,
-    }
-
-    fn shape_from_type(ty: &Type) -> MaterialShape {
-        let Type::Path(type_path) = ty else {
-            return MaterialShape::Unknown;
-        };
-        let Some(segment) = type_path.path.segments.last() else {
-            return MaterialShape::Unknown;
-        };
-        match segment.ident.to_string().as_str() {
-            "AccessToken" => MaterialShape::AccessToken,
-            "ApiKey" => MaterialShape::SecretValue,
-            "BasicCredential" => MaterialShape::Basic,
-            "ClientCertificate" => MaterialShape::Certificate,
-            _ => MaterialShape::Unknown,
-        }
-    }
-
     let shape = match &cred.kind {
-        AuthCredentialKindIr::ApiKey { .. } => MaterialShape::SecretValue,
+        AuthCredentialKindIr::ApiKey { .. } => AuthMaterialShapeIr::SecretValue,
         AuthCredentialKindIr::StaticBearer { .. }
-        | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => MaterialShape::AccessToken,
-        AuthCredentialKindIr::Basic { .. } => MaterialShape::Basic,
-        AuthCredentialKindIr::Endpoint { output_ty, .. } => shape_from_type(output_ty),
+        | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => AuthMaterialShapeIr::AccessToken,
+        AuthCredentialKindIr::Basic { .. } => AuthMaterialShapeIr::Basic,
+        AuthCredentialKindIr::Endpoint { material_shape, .. } => *material_shape,
     };
 
     let fits = match u {
         AuthUseKind::Bearer { .. } => {
-            matches!(shape, MaterialShape::AccessToken | MaterialShape::Unknown)
+            matches!(
+                shape,
+                AuthMaterialShapeIr::AccessToken | AuthMaterialShapeIr::Unknown
+            )
         }
         AuthUseKind::Header { .. } | AuthUseKind::Query { .. } => {
             matches!(
                 shape,
-                MaterialShape::SecretValue | MaterialShape::AccessToken | MaterialShape::Unknown
+                AuthMaterialShapeIr::SecretValue
+                    | AuthMaterialShapeIr::AccessToken
+                    | AuthMaterialShapeIr::Unknown
             )
         }
-        AuthUseKind::Basic { .. } => matches!(shape, MaterialShape::Basic | MaterialShape::Unknown),
-        AuthUseKind::Certificate { .. } => {
-            matches!(shape, MaterialShape::Certificate | MaterialShape::Unknown)
-        }
+        AuthUseKind::Basic { .. } => matches!(shape, AuthMaterialShapeIr::Basic),
+        AuthUseKind::Certificate { .. } => matches!(shape, AuthMaterialShapeIr::Certificate),
     };
 
     if fits {
@@ -282,17 +261,33 @@ fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<(
         AuthUseKind::Basic { credential } => Err(syn::Error::new(
             credential.span(),
             format!(
-                "BasicAuth requires a Basic credential; `{}` does not fit",
+                "BasicAuth requires BasicCredential material; `{}` does not fit",
                 cred.name
             ),
         )),
         AuthUseKind::Certificate { credential } => Err(syn::Error::new(
             credential.span(),
             format!(
-                "CertificateAuth requires a client-certificate credential; `{}` does not fit",
+                "CertificateAuth requires ClientCertificate material; `{}` does not fit",
                 cred.name
             ),
         )),
+    }
+}
+
+fn shape_from_type(ty: &Type) -> AuthMaterialShapeIr {
+    let Type::Path(type_path) = ty else {
+        return AuthMaterialShapeIr::Unknown;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return AuthMaterialShapeIr::Unknown;
+    };
+    match segment.ident.to_string().as_str() {
+        "AccessToken" => AuthMaterialShapeIr::AccessToken,
+        "ApiKey" => AuthMaterialShapeIr::SecretValue,
+        "BasicCredential" => AuthMaterialShapeIr::Basic,
+        "ClientCertificate" => AuthMaterialShapeIr::Certificate,
+        _ => AuthMaterialShapeIr::Unknown,
     }
 }
 

@@ -1,0 +1,5 @@
+error: BearerAuth requires an access-token credential; `session` does not fit
+  --> tests/usage/fail/fail_endpoint_basic_used_as_bearer.rs:29:21
+   |
+29 |         auth bearer session
+   |                     ^^^^^^^

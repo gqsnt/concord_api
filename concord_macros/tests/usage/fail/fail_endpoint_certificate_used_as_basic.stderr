@@ -1,0 +1,5 @@
+error: BasicAuth requires BasicCredential material; `cert` does not fit
+  --> tests/usage/fail/fail_endpoint_certificate_used_as_basic.rs:28:20
+   |
+28 |         auth basic cert
+   |                    ^^^^

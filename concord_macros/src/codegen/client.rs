@@ -257,7 +257,19 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
         let name_lit = LitStr::new(&name.to_string(), name.span());
         let apply = match &c.kind {
             AuthCredentialKindIr::Basic { .. } => quote! { ::concord_core::advanced::apply_basic_credential(request, requirement, &lease.value)? },
-            AuthCredentialKindIr::Endpoint { .. } => quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? },
+            AuthCredentialKindIr::Endpoint { material_shape, .. } => match material_shape {
+                AuthMaterialShapeIr::Basic => {
+                    quote! { ::concord_core::advanced::apply_basic_credential(request, requirement, &lease.value)? }
+                }
+                AuthMaterialShapeIr::Certificate => {
+                    quote! { ::concord_core::advanced::apply_certificate_credential(request, requirement, &lease.value)? }
+                }
+                AuthMaterialShapeIr::AccessToken
+                | AuthMaterialShapeIr::SecretValue
+                | AuthMaterialShapeIr::Unknown => {
+                    quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? }
+                }
+            },
             AuthCredentialKindIr::ApiKey { .. }
             | AuthCredentialKindIr::StaticBearer { .. }
             | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? },

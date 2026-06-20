@@ -84,6 +84,15 @@ pub struct AuthCredentialIr {
     pub kind: AuthCredentialKindIr,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum AuthMaterialShapeIr {
+    AccessToken,
+    SecretValue,
+    Basic,
+    Certificate,
+    Unknown,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum AuthCredentialKindIr {
@@ -107,6 +116,7 @@ pub enum AuthCredentialKindIr {
         endpoint: syn::Path,
         endpoint_key: String,
         output_ty: Type,
+        material_shape: AuthMaterialShapeIr,
     },
 }
 

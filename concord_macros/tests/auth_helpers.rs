@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    RateLimitPlan, Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
+    ClientCertificate, RateLimitPlan, Transport, TransportAuth, TransportBody, TransportError,
+    TransportRequest, TransportResponse,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -23,12 +24,25 @@ pub struct LoginResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BasicLoginResponse {
+    username: String,
+    password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CertificateLoginResponse {
+    identity_id: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct User {
     name: String,
 }
 
 use self::auth_helper_api::AuthHelperApi;
+use self::basic_endpoint_helper_api::BasicEndpointHelperApi;
 use self::basic_helper_api::BasicHelperApi;
+use self::certificate_endpoint_helper_api::CertificateEndpointHelperApi;
 
 api! {
     client AuthHelperApi {
@@ -67,6 +81,54 @@ api! {
         path ["basic-me"]
         auth basic login
         -> Json<User>
+}
+
+api! {
+    client BasicEndpointHelperApi {
+        base "https://example.com"
+        credential basic_session = endpoint auth_api::LoginForBasic
+    }
+
+    scope auth_api {
+        POST LoginForBasic(body: Json<LoginRequest>)
+            path ["login-basic"]
+            -> Json<BasicLoginResponse>
+            map BasicCredential {
+                BasicCredential::new(r.username, r.password)
+            }
+    }
+
+    scope protected {
+        auth basic basic_session
+
+        GET BasicMe
+            path ["basic-me"]
+            -> Json<User>
+    }
+}
+
+api! {
+    client CertificateEndpointHelperApi {
+        base "https://example.com"
+        credential cert_session = endpoint auth_api::GetCertificate
+    }
+
+    scope auth_api {
+        POST GetCertificate(body: Json<LoginRequest>)
+            path ["cert"]
+            -> Json<CertificateLoginResponse>
+            map ClientCertificate {
+                ClientCertificate::new(r.identity_id)
+            }
+    }
+
+    scope protected {
+        auth certificate cert_session
+
+        GET CertificateMe
+            path ["certificate-me"]
+            -> Json<User>
+    }
 }
 
 #[tokio::test]
@@ -150,6 +212,87 @@ async fn endpoint_backed_auth_helpers_acquire_clear_and_gate_protected_requests(
             .and_then(|value| value.to_str().ok()),
         Some("Bearer session-token")
     );
+}
+
+#[tokio::test]
+async fn endpoint_backed_basic_credential_materializes_basic_authorization() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(r#"{"username":"endpoint-user","password":"endpoint-password"}"#),
+        ResponseFixture::json(r#"{"name":"Ada"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = BasicEndpointHelperApi::new_with_transport(transport);
+
+    api.auth_api()
+        .login_for_basic(LoginRequest {
+            username: "ada".to_string(),
+        })
+        .acquire_as_basic_session()
+        .await
+        .expect("basic session acquisition succeeds");
+
+    let user = api
+        .protected()
+        .basic_me()
+        .execute()
+        .await
+        .expect("protected request succeeds");
+    assert_eq!(user.name, "Ada");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].meta.endpoint, "auth_api::LoginForBasic");
+    assert_eq!(requests[1].meta.endpoint, "protected::BasicMe");
+    assert_eq!(
+        requests[1]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Basic ZW5kcG9pbnQtdXNlcjplbmRwb2ludC1wYXNzd29yZA==")
+    );
+    let debug_output = format!("{:?}", requests[1]);
+    assert!(!debug_output.contains("endpoint-user"));
+    assert!(!debug_output.contains("endpoint-password"));
+}
+
+#[tokio::test]
+async fn endpoint_backed_certificate_credential_materializes_transport_auth() {
+    const IDENTITY_ID: &str = "endpoint-certificate-identity";
+
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(r#"{"identity_id":"endpoint-certificate-identity"}"#),
+        ResponseFixture::json(r#"{"name":"Ada"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = CertificateEndpointHelperApi::new_with_transport(transport);
+
+    api.auth_api()
+        .get_certificate(LoginRequest {
+            username: "ada".to_string(),
+        })
+        .acquire_as_cert_session()
+        .await
+        .expect("certificate session acquisition succeeds");
+
+    let user = api
+        .protected()
+        .certificate_me()
+        .execute()
+        .await
+        .expect("protected request succeeds");
+    assert_eq!(user.name, "Ada");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].meta.endpoint, "auth_api::GetCertificate");
+    assert_eq!(requests[1].meta.endpoint, "protected::CertificateMe");
+    assert_eq!(
+        requests[1].transport_auth,
+        Some(TransportAuth::ClientCertificate {
+            identity_id: IDENTITY_ID.to_string(),
+        })
+    );
+    assert!(!format!("{:?}", requests[1]).contains(IDENTITY_ID));
 }
 
 #[tokio::test]
