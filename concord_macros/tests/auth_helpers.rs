@@ -43,6 +43,7 @@ use self::auth_helper_api::AuthHelperApi;
 use self::basic_endpoint_helper_api::BasicEndpointHelperApi;
 use self::basic_helper_api::BasicHelperApi;
 use self::certificate_endpoint_helper_api::CertificateEndpointHelperApi;
+use self::o_auth_helper_api::OAuthHelperApi;
 use self::policy_merge_helper_api::PolicyMergeHelperApi;
 
 api! {
@@ -130,6 +131,25 @@ api! {
             path ["certificate-me"]
             -> Json<User>
     }
+}
+
+api! {
+    client OAuthHelperApi {
+        base "https://api.example.com"
+        secret client_id: String
+        secret client_secret: String
+        credential oauth = oauth2_client {
+            token_url: "https://auth.example.com/oauth/token",
+            client_id: secret.client_id,
+            client_secret: secret.client_secret,
+            scope: "read:me",
+        }
+    }
+
+    GET OAuthMe
+        path ["oauth-me"]
+        auth bearer oauth
+        -> Json<User>
 }
 
 api! {
@@ -448,6 +468,200 @@ async fn generated_basic_auth_keeps_username_and_password_secret_until_transport
     );
 }
 
+#[tokio::test]
+async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
+    const CLIENT_ID: &str = "oauth-client";
+    const CLIENT_SECRET: &str = "LEAK_SENTINEL_OAUTH_CLIENT_SECRET";
+    const ACCESS_TOKEN: &str = "LEAK_SENTINEL_OAUTH_ACCESS_TOKEN";
+
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(
+            r#"{"access_token":"LEAK_SENTINEL_OAUTH_ACCESS_TOKEN","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::json(r#"{"name":"Ada"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = OAuthHelperApi::new_with_transport(
+        CLIENT_ID.to_string(),
+        CLIENT_SECRET.to_string(),
+        transport,
+    );
+
+    let user = api
+        .oauth_me()
+        .execute()
+        .await
+        .expect("oauth protected request succeeds");
+    assert_eq!(user.name, "Ada");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].meta.endpoint, "<auth>");
+    assert_eq!(requests[0].meta.method, http::Method::POST);
+    assert_eq!(
+        requests[0].url.as_str(),
+        "https://auth.example.com/oauth/token"
+    );
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Basic b2F1dGgtY2xpZW50OkxFQUtfU0VOVElORUxfT0FVVEhfQ0xJRU5UX1NFQ1JFVA==")
+    );
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(http::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/x-www-form-urlencoded")
+    );
+    assert_eq!(
+        requests[0]
+            .body
+            .as_ref()
+            .and_then(|body| std::str::from_utf8(body).ok()),
+        Some("grant_type=client_credentials&scope=read%3Ame")
+    );
+
+    assert_eq!(requests[1].meta.endpoint, "OAuthMe");
+    assert_eq!(
+        requests[1]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer LEAK_SENTINEL_OAUTH_ACCESS_TOKEN")
+    );
+    assert!(!requests[1].url.as_str().contains(CLIENT_SECRET));
+    assert!(!requests[1].body.as_ref().is_some_and(|body| {
+        body.windows(CLIENT_SECRET.len())
+            .any(|window| window == CLIENT_SECRET.as_bytes())
+    }));
+
+    let token_debug = format!("{:?}", requests[0]);
+    let protected_debug = format!("{:?}", requests[1]);
+    assert!(!token_debug.contains(CLIENT_SECRET));
+    assert!(!token_debug.contains(ACCESS_TOKEN));
+    assert!(!protected_debug.contains(CLIENT_SECRET));
+    assert!(!protected_debug.contains(ACCESS_TOKEN));
+}
+
+#[tokio::test]
+async fn generated_oauth_client_credentials_reuses_valid_token() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(
+            r#"{"access_token":"reuse-token","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::json(r#"{"name":"Ada"}"#),
+        ResponseFixture::json(r#"{"name":"Ada"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = OAuthHelperApi::new_with_transport(
+        "oauth-client".to_string(),
+        "oauth-secret".to_string(),
+        transport,
+    );
+
+    api.oauth_me()
+        .execute()
+        .await
+        .expect("first protected request succeeds");
+    api.oauth_me()
+        .execute()
+        .await
+        .expect("second protected request succeeds");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0].meta.endpoint, "<auth>");
+    assert_eq!(requests[1].meta.endpoint, "OAuthMe");
+    assert_eq!(requests[2].meta.endpoint, "OAuthMe");
+    for req in &requests[1..] {
+        assert_eq!(
+            req.headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer reuse-token")
+        );
+    }
+}
+
+#[tokio::test]
+async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(
+            r#"{"access_token":"token-a","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::status_json(StatusCode::UNAUTHORIZED, r#"{"error":"expired"}"#),
+        ResponseFixture::json(
+            r#"{"access_token":"token-b","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::json(r#"{"name":"Ada"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = OAuthHelperApi::new_with_transport(
+        "oauth-client".to_string(),
+        "oauth-secret".to_string(),
+        transport,
+    );
+
+    let user = api
+        .oauth_me()
+        .execute()
+        .await
+        .expect("oauth protected request refreshes after 401");
+    assert_eq!(user.name, "Ada");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 4);
+    assert_eq!(requests[0].meta.endpoint, "<auth>");
+    assert_eq!(requests[1].meta.endpoint, "OAuthMe");
+    assert_eq!(
+        requests[1]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer token-a")
+    );
+    assert_eq!(requests[2].meta.endpoint, "<auth>");
+    assert_eq!(requests[3].meta.endpoint, "OAuthMe");
+    assert_eq!(
+        requests[3]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer token-b")
+    );
+}
+
+#[tokio::test]
+async fn generated_oauth_client_credentials_token_failure_blocks_protected_request() {
+    const CLIENT_SECRET: &str = "LEAK_SENTINEL_OAUTH_FAILURE_SECRET";
+
+    let transport = RecordingTransport::new(vec![ResponseFixture::status_json(
+        StatusCode::BAD_REQUEST,
+        r#"{"error":"invalid_client"}"#,
+    )]);
+    let sent = transport.clone();
+    let api = OAuthHelperApi::new_with_transport(
+        "oauth-client".to_string(),
+        CLIENT_SECRET.to_string(),
+        transport,
+    );
+
+    let err = api
+        .oauth_me()
+        .execute()
+        .await
+        .expect_err("token failure blocks protected request");
+    assert!(!err.to_string().contains(CLIENT_SECRET));
+    assert!(!format!("{err:?}").contains(CLIENT_SECRET));
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].meta.endpoint, "<auth>");
+}
+
 fn assert_header(req: &TransportRequest, name: &'static str, expected: &'static str) {
     assert_eq!(
         req.headers.get(name).and_then(|value| value.to_str().ok()),
@@ -517,13 +731,17 @@ struct ResponseFixture {
 
 impl ResponseFixture {
     fn json(body: &'static str) -> Self {
+        Self::status_json(StatusCode::OK, body)
+    }
+
+    fn status_json(status: StatusCode, body: &'static str) -> Self {
         let mut headers = HeaderMap::new();
         headers.insert(
             http::header::CONTENT_TYPE,
             http::HeaderValue::from_static("application/json"),
         );
         Self {
-            status: StatusCode::OK,
+            status,
             headers,
             body: Bytes::from_static(body.as_bytes()),
         }

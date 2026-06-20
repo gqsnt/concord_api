@@ -4,6 +4,7 @@ use concord_macros::api;
 use std::future::Future;
 use std::pin::Pin;
 use self::both_config_api::BothConfigApi;
+use self::o_auth_config_api::OAuthConfigApi;
 use self::secret_config_api::SecretConfigApi;
 use self::vars_config_api::VarsConfigApi;
 
@@ -61,6 +62,25 @@ api! {
         -> Json<String>
 }
 
+api! {
+    client OAuthConfigApi {
+        base "https://example.com"
+        secret client_id: String
+        secret client_secret: String
+        credential oauth = oauth2_client {
+            token_url: "https://auth.example.com/oauth/token",
+            client_id: secret.client_id,
+            client_secret: secret.client_secret,
+            scope: "read:ping",
+        }
+    }
+
+    GET OAuthPing
+        path ["oauth-ping"]
+        auth bearer oauth
+        -> Json<String>
+}
+
 fn constructor_shape_is_stable() -> Result<(), ApiClientError> {
     let _vars = VarsConfigApi::new("tenant".to_string());
     let _vars = VarsConfigApi::builder()
@@ -84,11 +104,26 @@ fn constructor_shape_is_stable() -> Result<(), ApiClientError> {
         FailingTransport,
     );
 
+    let _oauth = OAuthConfigApi::new("client-id".to_string(), "client-secret".to_string());
+    let _oauth = OAuthConfigApi::builder()
+        .client_id("client-id".to_string())
+        .client_secret("client-secret".to_string())
+        .build()?;
+    let _oauth_with_transport = OAuthConfigApi::new_with_transport(
+        "client-id".to_string(),
+        "client-secret".to_string(),
+        FailingTransport,
+    );
+
     Ok(())
 }
 
 fn normal_use_does_not_name_endpoint_markers(api: BothConfigApi<FailingTransport>) {
     let _pending = api.both_ping();
+}
+
+fn oauth_normal_use_does_not_name_endpoint_markers(api: OAuthConfigApi<FailingTransport>) {
+    let _pending = api.oauth_ping();
 }
 
 fn main() {}
