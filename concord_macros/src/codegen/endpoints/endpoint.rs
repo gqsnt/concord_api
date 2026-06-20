@@ -403,7 +403,7 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
         };
     }
     let auto_key_assigns = p.assigns.iter().filter_map(|(k, v)| {
-        let ValueKind::EpField(f) = v else { return None; };
+        let PaginationValueKind::EpField(f) = v else { return None; };
         let key_res = find_query_key_for_ep_field(ep, f)?;
         let (_ks, _sp, key_ts) = emit_key_string(key_res, PolicyKeyKind::Query);
         let k_str = k.to_string();
@@ -423,12 +423,10 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
     });
     let assigns = p.assigns.iter().map(|(k, v)| {
         let val = match v {
-            ValueKind::EpField(f) => quote! { ep.#f.clone() },
-            ValueKind::LitStr(s) => quote! { ::std::borrow::Cow::from(#s) },
-            ValueKind::CxField(f) => quote! { vars.#f.clone() },
-            ValueKind::AuthField(_) => quote! {{ compile_error!("paginate auth vars are not supported in pagination controller construction"); ::core::unreachable!() }},
-            ValueKind::OtherExpr(e) => quote! { (#e) },
-            ValueKind::Fmt(fmt) => {
+            PaginationValueKind::EpField(f) => quote! { ep.#f.clone() },
+            PaginationValueKind::LitStr(s) => quote! { ::std::borrow::Cow::from(#s) },
+            PaginationValueKind::OtherExpr(e) => quote! { (#e) },
+            PaginationValueKind::Fmt(fmt) => {
                 let build = emit_fmt_build_string(fmt);
                 quote! { { #build } }
             }

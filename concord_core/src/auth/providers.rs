@@ -168,7 +168,7 @@ where
 #[derive(Clone, Debug)]
 pub struct OAuth2ClientCredentialsProvider {
     id: CredentialId,
-    token_url: Url,
+    token_url: Result<Url, String>,
     client_id: SecretString,
     client_secret: SecretString,
     scope: Option<String>,
@@ -185,7 +185,23 @@ impl OAuth2ClientCredentialsProvider {
     ) -> Self {
         Self {
             id,
-            token_url,
+            token_url: Ok(token_url),
+            client_id: client_id.into(),
+            client_secret: client_secret.into(),
+            scope: None,
+        }
+    }
+
+    #[inline]
+    pub fn from_validated_token_url(
+        id: CredentialId,
+        token_url: &'static str,
+        client_id: impl Into<SecretString>,
+        client_secret: impl Into<SecretString>,
+    ) -> Self {
+        Self {
+            id,
+            token_url: token_url.parse::<Url>().map_err(|err| err.to_string()),
             client_id: client_id.into(),
             client_secret: client_secret.into(),
             scope: None,
@@ -243,7 +259,12 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
                 .executor
                 .send(AuthHttpRequest {
                     method: http::Method::POST,
-                    url: self.token_url.clone(),
+                    url: self.token_url.clone().map_err(|err| {
+                        AuthError::new(
+                            AuthErrorKind::InvalidConfiguration,
+                            format!("invalid oauth2 token URL: {err}"),
+                        )
+                    })?,
                     headers,
                     body: Some(Bytes::from(body.into_bytes())),
                     mode: AuthMode::SkipAuth,

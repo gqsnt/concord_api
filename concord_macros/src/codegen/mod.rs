@@ -43,31 +43,8 @@ fn acquire_as_trait_ident(client: &Ident, credential: &Ident) -> Ident {
 }
 
 #[inline]
-fn value_uses_auth(v: &ValueKind) -> bool {
-    match v {
-        ValueKind::AuthField(_) => true,
-        ValueKind::Fmt(fmt) => fmt.pieces.iter().any(|p| {
-            matches!(
-                p,
-                FmtResolvedPiece::Var {
-                    source: FmtVarSource::Auth,
-                    ..
-                }
-            )
-        }),
-        _ => false,
-    }
-}
-
-#[inline]
-fn policy_uses_auth(policy: &PolicyBlocksResolved) -> bool {
-    let ops_use = |op: &PolicyOp| match op {
-        PolicyOp::Set { value, .. } => value_uses_auth(value),
-        _ => false,
-    };
-    policy.headers.iter().any(ops_use)
-        || policy.query.iter().any(ops_use)
-        || policy.timeout.as_ref().is_some_and(value_uses_auth)
+fn policy_uses_auth(_policy: &PolicyBlocksResolved) -> bool {
+    false
 }
 
 fn ep_optionals(ep: &ResolvedEndpoint) -> std::collections::BTreeMap<String, bool> {

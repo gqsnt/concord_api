@@ -28,6 +28,10 @@ Endpoint builders collect field values, route pieces, query/header policy, auth 
 
 Codegen emits resolved route/query/header logic from semantic data. It should not inspect raw syntax such as whether a profile was declared flat or grouped.
 
+Policy, route, and pagination emitters receive context-specific resolved value IR. Ordinary public policy values cannot contain `secret.*` references, route values cannot contain auth refs, and pagination assignments cannot contain `vars.*` or `secret.*`. Those forms are rejected in sema with user-facing diagnostics before codegen runs.
+
+Generated construction code must not panic because a prior phase "validated" a value. If an internal invariant is somehow violated while building retry status lists, rate-limit windows/costs, OAuth2 token URLs, or similar runtime config, generated code or core constructors must return typed errors rather than using `expect(...)` or `unreachable!()`.
+
 Body codec encoding is emitted from the endpoint signature `body: Codec<T>`. Response codec decoding is emitted from `-> Codec<T>`.
 
 Resolved cache sizing fields are emitted through core cache config builders for capacity entries, max body bytes, and shared mode. Runtime cache order is unchanged by these fields.

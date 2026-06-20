@@ -46,6 +46,9 @@ fn analyze_auth_credentials(
                 client_secret,
                 scope,
             } => {
+                token_url.value().parse::<url::Url>().map_err(|err| {
+                    syn::Error::new(token_url.span(), format!("invalid OAuth2 token URL: {err}"))
+                })?;
                 validate_required_secret(client_id, auth_vars)?;
                 validate_required_secret(client_secret, auth_vars)?;
                 AuthCredentialKindIr::OAuth2ClientCredentials {

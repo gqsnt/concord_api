@@ -24,13 +24,7 @@ fn resolve_paginate(
             Some(ep_vars),
             a.value.span(),
         )?;
-        // rule: forbid `vars.*` and `secret.*` in pagination (controller config must not depend on runtime vars/secrets)
-        if matches!(vk, ValueKind::CxField(_) | ValueKind::AuthField(_)) {
-            return Err(syn::Error::new(
-                a.value.span(),
-                "paginate assignments must not reference `vars.*` or `secret.*`; use `ep.*` or constants",
-            ));
-        }
+        let vk = pagination_value_from_value_kind(vk, a.value.span())?;
         assigns.push((a.key.clone(), vk));
     }
     Ok(PaginateResolved {
@@ -151,13 +145,14 @@ fn resolve_policy_blocks(
                 "timeout expression cannot contain nested `vars`/`ep`; use a plain `vars.x`, `ep.y`, or a pure expression without them",
             ));
         }
-        out.timeout = Some(resolve_value_kind(
+        let timeout = resolve_value_kind(
             t,
             client_vars,
             auth_vars,
             endpoint_vars,
             t.span(),
-        )?);
+        )?;
+        out.timeout = Some(public_value_from_value_kind(timeout, t.span())?);
     }
 
     Ok(out)
@@ -196,19 +191,23 @@ fn resolve_policy_block(
                     value.span(),
                 )?;
 
-                // Optional-ref conditional set/remove for pure vars/ep refs
-                let cond = match &vk {
+                let set_value = match vk {
                     ValueKind::CxField(id) => {
                         let v = client_vars.get(&id.to_string()).ok_or_else(|| {
                             syn::Error::new(
                                 id.span(),
-                                unknown_scoped_name_message("client var", "vars", id, client_vars),
+                                unknown_scoped_name_message(
+                                    "client var",
+                                    "vars",
+                                    &id,
+                                    client_vars,
+                                ),
                             )
                         })?;
                         if v.optional {
-                            Some(OptionalRefKind::Cx)
+                            PolicySetValue::OptionalCxField(id)
                         } else {
-                            None
+                            PolicySetValue::Value(PublicValueKind::CxField(id))
                         }
                     }
                     ValueKind::EpField(id) => {
@@ -218,36 +217,24 @@ fn resolve_policy_block(
                         let v = ep.get(&id.to_string()).ok_or_else(|| {
                             syn::Error::new(
                                 id.span(),
-                                unknown_scoped_name_message("endpoint var", "ep", id, ep),
+                                unknown_scoped_name_message("endpoint var", "ep", &id, ep),
                             )
                         })?;
                         if v.optional {
-                            Some(OptionalRefKind::Ep)
+                            PolicySetValue::OptionalEpField(id)
                         } else {
-                            None
+                            PolicySetValue::Value(PublicValueKind::EpField(id))
                         }
                     }
-                    ValueKind::AuthField(id) => {
-                        let v = auth_vars.get(&id.to_string()).ok_or_else(|| {
-                            syn::Error::new(
-                                id.span(),
-                                format!("unknown secret var `secret.{}`", id),
-                            )
-                        })?;
-                        if v.optional {
-                            Some(OptionalRefKind::Auth)
-                        } else {
-                            None
-                        }
+                    other => {
+                        PolicySetValue::Value(public_value_from_value_kind(other, value.span())?)
                     }
-                    _ => None,
                 };
 
                 ops.push(PolicyOp::Set {
                     key: resolve_key(key),
-                    value: vk,
+                    value: set_value,
                     op: *op,
-                    conditional_on_optional_ref: cond,
                 });
             }
         }
@@ -257,7 +244,11 @@ fn resolve_policy_block(
     if owner == PolicyOwner::Client {
         for op in &ops {
             if let PolicyOp::Set { value, .. } = op
-                && matches!(value, ValueKind::EpField(_))
+                && matches!(
+                    value,
+                    PolicySetValue::Value(PublicValueKind::EpField(_))
+                        | PolicySetValue::OptionalEpField(_)
+                )
             {
                 let sp = blk
                     .stmts
@@ -276,7 +267,8 @@ fn resolve_policy_block(
     for op in &ops {
         if let PolicyOp::Set { value, .. } = op {
             match value {
-                ValueKind::CxField(id) => {
+                PolicySetValue::Value(PublicValueKind::CxField(id))
+                | PolicySetValue::OptionalCxField(id) => {
                     if !client_vars.contains_key(&id.to_string()) {
                         return Err(syn::Error::new(
                             id.span(),
@@ -284,15 +276,8 @@ fn resolve_policy_block(
                         ));
                     }
                 }
-                ValueKind::AuthField(id) => {
-                    if !auth_vars.contains_key(&id.to_string()) {
-                        return Err(syn::Error::new(
-                            id.span(),
-                            format!("unknown secret var `secret.{}`", id),
-                        ));
-                    }
-                }
-                ValueKind::EpField(id) => {
+                PolicySetValue::Value(PublicValueKind::EpField(id))
+                | PolicySetValue::OptionalEpField(id) => {
                     let ep = endpoint_vars
                         .ok_or_else(|| syn::Error::new(id.span(), "`ep.*` is not allowed here"))?;
                     if !ep.contains_key(&id.to_string()) {
@@ -302,7 +287,7 @@ fn resolve_policy_block(
                         ));
                     }
                 }
-                ValueKind::OtherExpr(e) => {
+                PolicySetValue::Value(PublicValueKind::OtherExpr(e)) => {
                     if emit_helpers::contains_cx_or_ep(e) {
                         return Err(syn::Error::new(
                             e.span(),
@@ -310,8 +295,9 @@ fn resolve_policy_block(
                         ));
                     }
                 }
-                ValueKind::LitStr(_) => {}
-                ValueKind::Fmt(_) => {}
+                PolicySetValue::Value(
+                    PublicValueKind::LitStr(_) | PublicValueKind::Fmt(_),
+                ) => {}
             }
         }
     }
@@ -545,18 +531,8 @@ fn resolve_policy_value_kind(
                             });
                         }
                         RefScope::Auth => {
-                            let v = auth_vars.get(&r.ident.to_string()).ok_or_else(|| {
-                                syn::Error::new(
-                                    r.ident.span(),
-                                    format!("unknown secret var `secret.{}`", r.ident),
-                                )
-                            })?;
-                            has_optional |= v.optional;
-                            pieces.push(FmtResolvedPiece::Var {
-                                source: FmtVarSource::Auth,
-                                field: r.ident.clone(),
-                                optional: v.optional,
-                            });
+                            let _ = auth_vars;
+                            return Err(direct_secret_policy_error(r.ident.span()));
                         }
                     },
                 }
@@ -574,6 +550,151 @@ fn resolve_policy_value_kind(
                 pieces,
             }))
         }
+    }
+}
+
+fn public_value_from_value_kind(value: ValueKind, _span: Span) -> Result<PublicValueKind> {
+    match value {
+        ValueKind::LitStr(value) => Ok(PublicValueKind::LitStr(value)),
+        ValueKind::CxField(value) => Ok(PublicValueKind::CxField(value)),
+        ValueKind::EpField(value) => Ok(PublicValueKind::EpField(value)),
+        ValueKind::OtherExpr(value) => {
+            if emit_helpers::is_auth_field(&value).is_some() {
+                return Err(direct_secret_policy_error(value.span()));
+            }
+            Ok(PublicValueKind::OtherExpr(value))
+        }
+        ValueKind::Fmt(value) => Ok(PublicValueKind::Fmt(value)),
+        ValueKind::AuthField(value) => Err(direct_secret_policy_error(value.span())),
+    }
+}
+
+fn pagination_value_from_value_kind(value: ValueKind, span: Span) -> Result<PaginationValueKind> {
+    match value {
+        ValueKind::LitStr(value) => Ok(PaginationValueKind::LitStr(value)),
+        ValueKind::EpField(value) => Ok(PaginationValueKind::EpField(value)),
+        ValueKind::OtherExpr(value) => {
+            if emit_helpers::contains_auth_field(&value) || emit_helpers::contains_cx_field(&value)
+            {
+                return Err(pagination_scoped_ref_error(value.span()));
+            }
+            Ok(PaginationValueKind::OtherExpr(value))
+        }
+        ValueKind::Fmt(value) => {
+            if let Some(field) = value.pieces.iter().find_map(|piece| match piece {
+                FmtResolvedPiece::Var {
+                    source: FmtVarSource::Cx,
+                    field,
+                    ..
+                } => Some(field),
+                FmtResolvedPiece::Lit(_)
+                | FmtResolvedPiece::Var {
+                    source: FmtVarSource::Ep,
+                    ..
+                } => None,
+            }) {
+                return Err(pagination_scoped_ref_error(field.span()));
+            }
+            Ok(PaginationValueKind::Fmt(value))
+        }
+        ValueKind::CxField(_) => Err(pagination_scoped_ref_error(span)),
+        ValueKind::AuthField(value) => Err(pagination_scoped_ref_error(value.span())),
+    }
+}
+
+fn direct_secret_policy_error(span: Span) -> syn::Error {
+    syn::Error::new(
+        span,
+        "direct secret.* is not allowed in policy expressions; declare an auth credential",
+    )
+}
+
+fn pagination_scoped_ref_error(span: Span) -> syn::Error {
+    syn::Error::new(
+        span,
+        "paginate assignments must not reference `vars.*` or `secret.*`; use `ep.*` or constants",
+    )
+}
+
+#[cfg(test)]
+mod pagination_value_tests {
+    use super::*;
+
+    fn lit(value: &str) -> syn::LitStr {
+        syn::LitStr::new(value, Span::call_site())
+    }
+
+    #[test]
+    fn pagination_fmt_rejects_client_vars() {
+        let value = ValueKind::Fmt(FmtResolved {
+            require_all: false,
+            pieces: vec![
+                FmtResolvedPiece::Lit(lit("page-")),
+                FmtResolvedPiece::Var {
+                    source: FmtVarSource::Cx,
+                    field: emit_helpers::ident("cursor", Span::call_site()),
+                    optional: false,
+                },
+            ],
+        });
+
+        let err = pagination_value_from_value_kind(value, Span::call_site()).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("paginate assignments must not reference `vars.*` or `secret.*`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn pagination_fmt_allows_endpoint_vars() {
+        let value = ValueKind::Fmt(FmtResolved {
+            require_all: false,
+            pieces: vec![
+                FmtResolvedPiece::Lit(lit("page-")),
+                FmtResolvedPiece::Var {
+                    source: FmtVarSource::Ep,
+                    field: emit_helpers::ident("cursor", Span::call_site()),
+                    optional: false,
+                },
+            ],
+        });
+
+        assert!(matches!(
+            pagination_value_from_value_kind(value, Span::call_site()),
+            Ok(PaginationValueKind::Fmt(_))
+        ));
+    }
+
+    #[test]
+    fn pagination_expr_rejects_nested_client_vars() {
+        let expr: syn::Expr = syn::parse_quote! { format!("{}", cx.cursor) };
+
+        let err =
+            pagination_value_from_value_kind(ValueKind::OtherExpr(expr), Span::call_site())
+                .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("paginate assignments must not reference `vars.*` or `secret.*`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn pagination_expr_rejects_nested_auth_vars() {
+        let expr: syn::Expr = syn::parse_quote! { format!("{}", auth.cursor) };
+
+        let err =
+            pagination_value_from_value_kind(ValueKind::OtherExpr(expr), Span::call_site())
+                .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("paginate assignments must not reference `vars.*` or `secret.*`"),
+            "{err}"
+        );
     }
 }
 
@@ -597,5 +718,4 @@ pub enum FmtResolvedPiece {
 pub enum FmtVarSource {
     Cx,
     Ep,
-    Auth,
 }

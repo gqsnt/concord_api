@@ -53,27 +53,6 @@ pub fn emit_header_name(key: &str, span: Span) -> TokenStream2 {
     }}
 }
 
-/// - The generated code expects a `ctx` variable to be in scope (it is in policy apply fns).
-#[inline]
-pub fn emit_err_invalid_param(param: &str, span: Span) -> TokenStream2 {
-    let lit = LitStr::new(param, span);
-    quote! {
-        ::concord_core::prelude::ApiClientError::InvalidParam {
-            ctx: ctx.clone(),
-            param: #lit.into(),
-        }
-    }
-}
-
-pub fn emit_header_value_from_expr(expr: &syn::Expr, key: &str, span: Span) -> TokenStream2 {
-    let param = format!("header:{key}");
-    let err = emit_err_invalid_param(&param, span);
-    quote! {{
-        ::http::HeaderValue::from_str(&(#expr).to_string())
-            .map_err(|_| #err)?
-    }}
-}
-
 pub fn emit_header_value_from_static(s: &LitStr) -> TokenStream2 {
     quote! { ::http::HeaderValue::from_static(#s) }
 }
@@ -114,6 +93,65 @@ pub fn is_auth_field(expr: &syn::Expr) -> Option<syn::Ident> {
         }
         _ => None,
     }
+}
+
+pub fn contains_cx_field(expr: &syn::Expr) -> bool {
+    contains_field_with_any_base(expr, &["cx", "vars"])
+}
+
+pub fn contains_auth_field(expr: &syn::Expr) -> bool {
+    contains_field_with_any_base(expr, &["auth", "secret"])
+}
+
+fn contains_field_with_any_base(expr: &syn::Expr, bases: &'static [&'static str]) -> bool {
+    struct Finder {
+        bases: &'static [&'static str],
+        found: bool,
+    }
+
+    impl<'ast> syn::visit::Visit<'ast> for Finder {
+        fn visit_expr_field(&mut self, node: &'ast syn::ExprField) {
+            if let syn::Expr::Path(path) = &*node.base
+                && self
+                    .bases
+                    .iter()
+                    .any(|base| tokens_eq_path_ident(&path.path, base))
+            {
+                self.found = true;
+                return;
+            }
+            syn::visit::visit_expr_field(self, node);
+        }
+
+        fn visit_expr_macro(&mut self, node: &'ast syn::ExprMacro) {
+            if token_stream_contains_scoped_base(&node.mac.tokens, self.bases) {
+                self.found = true;
+                return;
+            }
+            syn::visit::visit_expr_macro(self, node);
+        }
+    }
+
+    let mut finder = Finder {
+        bases,
+        found: false,
+    };
+    syn::visit::Visit::visit_expr(&mut finder, expr);
+    finder.found
+}
+
+fn token_stream_contains_scoped_base(
+    tokens: &proc_macro2::TokenStream,
+    bases: &[&'static str],
+) -> bool {
+    let compact: String = tokens
+        .to_string()
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect();
+    bases
+        .iter()
+        .any(|base| compact.contains(&format!("{base}.")) || compact.contains(&format!("{base}::")))
 }
 
 pub fn is_ep_field(expr: &syn::Expr) -> Option<syn::Ident> {

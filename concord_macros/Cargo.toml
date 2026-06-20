@@ -18,6 +18,7 @@ syn = { version = "2", default-features = false, features = [
     "printing",
     "clone-impls",
 ] } #//"parsing", "proc-macro", "printing",
+url.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true

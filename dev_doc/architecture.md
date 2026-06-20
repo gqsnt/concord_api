@@ -24,6 +24,8 @@ Core owns runtime behavior. Auth application, cache lookup, inflight coordinatio
 
 Code generation consumes resolved semantic data, not raw syntax. If codegen needs to know whether something came from `defaults { ... }` versus `default { ... }`, that is usually a design smell. Sema should resolve aliases, inheritance, profile names, and merge rules before codegen.
 
+Raw parser AST may contain invalid forms long enough to produce good diagnostics. Resolved semantic IR should not. Sema lowers public policy, route, and pagination values into context-specific IR that cannot contain auth-secret references or other values rejected for that context. Codegen renders already-valid IR and must not rely on `expect("validated ...")`, `expect("valid ...")`, or `unreachable!()` for semantic invalid states.
+
 Behavior profiles are semantic sugar. They are lowered before runtime into ordinary auth, cache, retry, and rate-limit data. `concord_core` must not know behavior profiles exist.
 
 The generated client is a typed facade over request plans. The public API should stay facade-first, while advanced endpoint structs remain available for tests and request planning.

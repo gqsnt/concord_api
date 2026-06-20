@@ -23,7 +23,6 @@ fn emit_fmt_require_all_guard_with_ep_optionals(
         match source {
             FmtVarSource::Cx => Some(quote! { if vars.#field.is_none() { __fmt_ok = false; } }),
             FmtVarSource::Ep => Some(quote! { if ep.#field.is_none() { __fmt_ok = false; } }),
-            FmtVarSource::Auth => Some(quote! { if auth.#field.is_none() { __fmt_ok = false; } }),
         }
     });
 

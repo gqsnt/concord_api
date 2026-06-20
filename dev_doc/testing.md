@@ -16,6 +16,8 @@ Sema unit tests cover name resolution, inheritance, policy merging, behavior exp
 
 Codegen tests inspect generated token output and public facade shape without relying on huge snapshots where a focused assertion is enough.
 
+Macro strictness guards should ensure codegen does not reintroduce validation-dependent panic paths. Production codegen must not contain semantic-state `unreachable!()` calls, generated `expect("validated ...")` calls, or ordinary policy/route/pagination emitters that handle auth-secret value IR. Add trybuild fail fixtures when a rejected form needs a stable public diagnostic.
+
 ## Core tests
 
 `concord_core` has runtime characterization tests for cache, inflight, rate-limit, auth rejection, retry, stale fallback, decode, pagination, codecs, and runtime configuration.

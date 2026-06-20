@@ -27,9 +27,16 @@ fn emit_retry_config(config: &RetryConfigResolved) -> TokenStream2 {
         .methods
         .iter()
         .map(|method| quote! { ::http::Method::#method });
-    let statuses = config.statuses.iter().map(
-        |status| quote! { ::http::StatusCode::from_u16(#status).expect("valid retry status") },
-    );
+    let statuses = config.statuses.iter().map(|status| {
+        quote! {
+            ::http::StatusCode::from_u16(#status).map_err(|_| {
+                ::concord_core::prelude::ApiClientError::PolicyViolation {
+                    ctx: ctx.clone(),
+                    msg: "validated retry status was invalid",
+                }
+            })?
+        }
+    });
     let transport_errors = config.transport_errors.iter().map(|kind| {
         quote! { ::concord_core::transport::TransportErrorKind::#kind }
     });
@@ -63,9 +70,16 @@ fn emit_retry_patch_ops(patch: &RetryPatchResolved) -> Vec<TokenStream2> {
         ops.push(quote! { __retry.methods = ::std::vec![ #( #methods ),* ]; });
     }
     if let Some(statuses) = &patch.statuses {
-        let statuses = statuses.iter().map(
-            |status| quote! { ::http::StatusCode::from_u16(#status).expect("valid retry status") },
-        );
+        let statuses = statuses.iter().map(|status| {
+            quote! {
+                ::http::StatusCode::from_u16(#status).map_err(|_| {
+                    ::concord_core::prelude::ApiClientError::PolicyViolation {
+                        ctx: ctx.clone(),
+                        msg: "validated retry status was invalid",
+                    }
+                })?
+            }
+        });
         ops.push(quote! { __retry.statuses = ::std::vec![ #( #statuses ),* ]; });
     }
     if let Some(transport_errors) = &patch.transport_errors {

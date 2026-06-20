@@ -33,19 +33,6 @@ fn emit_fmt_build_string(fmt: &FmtResolved) -> proc_macro2::TokenStream {
                         ops.push(quote! { __fmt_s.push_str(&ep.#field.to_string()); });
                     }
                 }
-                FmtVarSource::Auth => {
-                    if *optional {
-                        ops.push(quote! {
-                           if let ::core::option::Option::Some(__v) = auth.#field.as_ref() {
-                                __fmt_s.push_str(__v.expose());
-                            }
-                        });
-                    } else {
-                        ops.push(quote! {
-                            __fmt_s.push_str(auth.#field.expose());
-                        });
-                    }
-                }
             },
         }
     }
@@ -97,19 +84,6 @@ fn emit_fmt_build_string_with_ep_optionals(
                         ops.push(quote! { __fmt_s.push_str(&ep.#field.to_string()); });
                     }
                 }
-                FmtVarSource::Auth => {
-                    if *optional {
-                        ops.push(quote! {
-                           if let ::core::option::Option::Some(__v) = auth.#field.as_ref() {
-                                __fmt_s.push_str(__v.expose());
-                            }
-                        });
-                    } else {
-                        ops.push(quote! {
-                            __fmt_s.push_str(auth.#field.expose());
-                        });
-                    }
-                }
             },
         }
     }
@@ -120,17 +94,16 @@ fn emit_fmt_build_string_with_ep_optionals(
     }
 }
 
-fn emit_value_expr(v: &ValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
+fn emit_value_expr(v: &PublicValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
     match v {
-        ValueKind::LitStr(s) => quote! { #s },
-        ValueKind::CxField(f) => match ctx {
+        PublicValueKind::LitStr(s) => quote! { #s },
+        PublicValueKind::CxField(f) => match ctx {
             PolicyEmitCtx::ClientBase => quote! { &vars.#f },
             _ => quote! { &vars.#f },
         },
-        ValueKind::EpField(f) => quote! { &ep.#f },
-        ValueKind::AuthField(f) => quote! { auth.#f.expose() },
-        ValueKind::OtherExpr(e) => quote! { (#e) },
-        ValueKind::Fmt(fmt) => {
+        PublicValueKind::EpField(f) => quote! { &ep.#f },
+        PublicValueKind::OtherExpr(e) => quote! { (#e) },
+        PublicValueKind::Fmt(fmt) => {
             let build = emit_fmt_build_string(fmt);
             quote! { { #build } }
         }

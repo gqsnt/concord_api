@@ -684,9 +684,9 @@ mod tests {
             &endpoint_policy.query[2],
             PolicyOp::Set {
                 key: KeyResolved::Static(key),
-                conditional_on_optional_ref: Some(OptionalRefKind::Ep),
+                value: PolicySetValue::OptionalEpField(field),
                 ..
-            } if key.value() == "maybe"
+            } if key.value() == "maybe" && field == "maybe"
         ));
         assert!(matches!(
             &endpoint_policy.query[3],

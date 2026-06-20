@@ -169,7 +169,7 @@ pub enum PathPiece {
 pub struct PolicyBlocksResolved {
     pub headers: Vec<PolicyOp>,
     pub query: Vec<PolicyOp>,
-    pub timeout: Option<ValueKind>,
+    pub timeout: Option<PublicValueKind>,
     pub cache: Option<CacheResolved>,
     pub retry: Option<RetryResolved>,
     pub rate_limit: Option<RateLimitResolved>,
@@ -313,18 +313,16 @@ pub enum PolicyOp {
     },
     Set {
         key: KeyResolved,
-        value: ValueKind,
+        value: PolicySetValue,
         op: SetOp,
-        // if value is a pure optional ref, emit conditional set/remove
-        conditional_on_optional_ref: Option<OptionalRefKind>,
     },
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum OptionalRefKind {
-    Cx,
-    Ep,
-    Auth,
+#[derive(Debug, Clone)]
+pub enum PolicySetValue {
+    Value(PublicValueKind),
+    OptionalCxField(Ident),
+    OptionalEpField(Ident),
 }
 
 #[derive(Debug, Clone)]
@@ -334,6 +332,23 @@ pub enum ValueKind {
     EpField(Ident),
     OtherExpr(Expr),
     AuthField(Ident),
+    Fmt(FmtResolved),
+}
+
+#[derive(Debug, Clone)]
+pub enum PublicValueKind {
+    LitStr(LitStr),
+    CxField(Ident),
+    EpField(Ident),
+    OtherExpr(Expr),
+    Fmt(FmtResolved),
+}
+
+#[derive(Debug, Clone)]
+pub enum PaginationValueKind {
+    LitStr(LitStr),
+    EpField(Ident),
+    OtherExpr(Expr),
     Fmt(FmtResolved),
 }
 
@@ -352,7 +367,7 @@ pub enum PolicyKeyKind {
 #[derive(Debug)]
 pub struct PaginateResolved {
     pub ctrl_ty: syn::Path,
-    pub assigns: Vec<(Ident, ValueKind)>,
+    pub assigns: Vec<(Ident, PaginationValueKind)>,
 }
 
 #[derive(Debug)]

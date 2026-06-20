@@ -200,9 +200,9 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
             scope,
         } => {
             let provider = quote! {
-                ::concord_core::advanced::OAuth2ClientCredentialsProvider::new(
+                ::concord_core::advanced::OAuth2ClientCredentialsProvider::from_validated_token_url(
                     #credential_id,
-                    #token_url.parse().expect("valid OAuth2ClientCredentials token_url"),
+                    #token_url,
                     auth.#client_id.clone(),
                     auth.#client_secret.clone(),
                 )

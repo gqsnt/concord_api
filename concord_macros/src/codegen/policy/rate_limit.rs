@@ -33,14 +33,24 @@ fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> Tok
             let per_secs = window.per_secs;
             quote! {
                 ::concord_core::advanced::RateLimitWindow::new(
-                    ::std::num::NonZeroU32::new(#max).expect("validated non-zero rate limit max"),
+                    ::std::num::NonZeroU32::new(#max).ok_or_else(|| {
+                        ::concord_core::prelude::ApiClientError::PolicyViolation {
+                            ctx: ctx.clone(),
+                            msg: "validated rate-limit max was zero",
+                        }
+                    })?,
                     ::std::time::Duration::from_secs(#per_secs),
                 )
             }
         });
         quote! {
             ::concord_core::advanced::RateLimitBucketUse::new(#kind, #name, #key)
-                .with_cost(::std::num::NonZeroU32::new(#cost).expect("validated non-zero rate limit cost"))
+                .with_cost(::std::num::NonZeroU32::new(#cost).ok_or_else(|| {
+                    ::concord_core::prelude::ApiClientError::PolicyViolation {
+                        ctx: ctx.clone(),
+                        msg: "validated rate-limit cost was zero",
+                    }
+                })?)
                 .with_windows(::std::vec![ #( #windows ),* ])
         }
     });

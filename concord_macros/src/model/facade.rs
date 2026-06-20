@@ -500,15 +500,15 @@ fn route_pieces_use_ep_field(pieces: &[PathPiece], field: &Ident) -> bool {
 
 fn policy_ops_use_ep_field(ops: &[PolicyOp], field: &Ident) -> bool {
     ops.iter().any(|op| match op {
-        PolicyOp::Set { value, .. } => value_kind_uses_ep_field(value, field),
+        PolicyOp::Set { value, .. } => policy_set_value_uses_ep_field(value, field),
         PolicyOp::Remove { .. } => false,
     })
 }
 
-fn value_kind_uses_ep_field(value: &ValueKind, field: &Ident) -> bool {
+fn value_kind_uses_ep_field(value: &PublicValueKind, field: &Ident) -> bool {
     match value {
-        ValueKind::EpField(candidate) => candidate == field,
-        ValueKind::Fmt(fmt) => fmt.pieces.iter().any(|piece| {
+        PublicValueKind::EpField(candidate) => candidate == field,
+        PublicValueKind::Fmt(fmt) => fmt.pieces.iter().any(|piece| {
             matches!(
                 piece,
                 FmtResolvedPiece::Var {
@@ -519,6 +519,14 @@ fn value_kind_uses_ep_field(value: &ValueKind, field: &Ident) -> bool {
             )
         }),
         _ => false,
+    }
+}
+
+fn policy_set_value_uses_ep_field(value: &PolicySetValue, field: &Ident) -> bool {
+    match value {
+        PolicySetValue::OptionalEpField(candidate) => candidate == field,
+        PolicySetValue::Value(value) => value_kind_uses_ep_field(value, field),
+        PolicySetValue::OptionalCxField(_) => false,
     }
 }
 
