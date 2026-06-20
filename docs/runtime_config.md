@@ -33,6 +33,33 @@ Common configuration methods include:
 - `runtime_hooks(...)`
 - `pagination_caps(...)`
 - `max_auth_retries(...)`
+- `max_response_body_bytes(...)`
+- `no_response_body_limit()`
+
+## Response Body Limits
+
+Endpoint response bodies use a finite runtime read limit before endpoint decode.
+The default is 16 MiB. Configure it with:
+
+```rust
+api.configure_mut(|cfg| {
+    cfg.max_response_body_bytes(32 * 1024 * 1024);
+});
+```
+
+`no_response_body_limit()` is the explicit advanced opt-out for unbounded
+endpoint response reads:
+
+```rust
+api.configure_mut(|cfg| {
+    cfg.no_response_body_limit();
+});
+```
+
+Auth-internal HTTP/token response limits are separate from endpoint response
+limits. Cache `max_body` controls only whether a response is eligible for cache
+storage; it does not raise or lower the runtime body read limit used before
+decode.
 
 Per-request overrides stay on the pending request.
 

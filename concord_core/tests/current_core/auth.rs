@@ -476,6 +476,36 @@ async fn oauth_client_credentials_token_response_above_limit_fails() {
     assert_auth_response_too_large(err, AuthInternalPolicy::DEFAULT_MAX_BODY_BYTES);
 }
 
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn oauth_client_credentials_expires_in_overflow_returns_typed_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(
+            StatusCode::OK,
+            r#"{"access_token":"token","token_type":"Bearer","expires_in":18446744073709551615}"#,
+        )],
+    );
+    let sent = transport.clone();
+    let client = auth_http_client(transport, AuthHttpLimitVars::oauth());
+
+    let err = client
+        .request(AuthHttpLimitEndpoint)
+        .execute_decoded()
+        .await
+        .expect_err("overflowing OAuth expires_in should fail");
+
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
+            assert!(source.to_string().contains("oauth2 expires_in overflowed"));
+        }
+        other => panic!("expected auth configuration error, got {other:?}"),
+    }
+    assert_eq!(sent.sent_count().await, 1);
+}
+
 fn assert_auth_response_too_large(err: ApiClientError, limit: usize) {
     match err {
         ApiClientError::Auth { source, .. } => {

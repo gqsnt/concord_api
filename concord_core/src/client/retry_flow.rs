@@ -28,26 +28,25 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         config: &RetrySetting,
         ctx: &RetryContext<'_>,
         retry_count: u32,
-    ) -> Option<std::time::Duration> {
+    ) -> Result<Option<std::time::Duration>, ApiClientError> {
         let decision = if let RetrySetting::Config(config) = config {
             if retry_count >= config.max_retries() {
-                return None;
+                return Ok(None);
             }
-            config.decide(ctx)
+            config.try_decide(ctx)?
         } else if matches!(config, RetrySetting::Inherit) {
             if retry_count >= self.runtime_state.retry_policy().max_retries() {
-                return None;
+                return Ok(None);
             }
-            self.runtime_state.retry_policy().should_retry(ctx)
+            self.runtime_state.retry_policy().should_retry_checked(ctx)?
         } else {
-            return None;
+            return Ok(None);
         };
 
-        match decision {
+        Ok(match decision {
             RetryDecision::Stop => None,
             RetryDecision::Retry => Some(std::time::Duration::ZERO),
             RetryDecision::RetryAfter(delay) => Some(delay),
-        }
+        })
     }
 }
-

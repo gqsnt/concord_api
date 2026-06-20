@@ -51,7 +51,7 @@ Runtime state access should fail explicitly instead of panicking. Request execut
 
 Post-response hooks precede rate-limit observation. The `304 NOT_MODIFIED` revalidation path must preserve the same hook then observation ordering before returning the revalidated cached response.
 
-Auth rejection handling happens before normal retry. Bounded auth refresh is the first recovery path for configured auth rejection responses.
+Auth rejection handling happens after response classification but before the normal retry decision. Bounded auth refresh is the first recovery path for configured auth rejection responses.
 
 Retry decisions happen before stale cache fallback. Stale fallback is considered only after retry declines or retry budget is exhausted.
 

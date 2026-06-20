@@ -165,7 +165,7 @@ Default rejection behavior:
 
 Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` can invalidate the applied endpoint-backed generation, but it does not automatically call the auth endpoint again or retry the protected request into `MissingCredential`. Reacquire through the auth endpoint explicitly before sending another protected call.
 
-Normal retry policy still runs separately. Auth rejection handling happens before normal retry classification, so a `401` refresh path is tried before any ordinary retry decision.
+Normal retry policy still runs separately. Auth rejection handling happens after response classification but before the normal retry decision, so a `401` refresh path is tried before any ordinary retry decision.
 
 `AuthChallengePolicy::NeverRefresh` is available in the advanced core API for runtime integrations that must never refresh on a protected response. It is not a public DSL clause in v1.
 

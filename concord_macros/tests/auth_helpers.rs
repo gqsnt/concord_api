@@ -442,7 +442,7 @@ async fn generated_basic_auth_keeps_username_and_password_secret_until_transport
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"{"name":"Ada"}"#)]);
     let sent = transport.clone();
     let api =
-        BasicHelperApi::new_with_transport(PASSWORD.to_string(), USERNAME.to_string(), transport);
+        BasicHelperApi::new_with_transport(USERNAME.to_string(), PASSWORD.to_string(), transport);
 
     let user = api
         .basic_me()

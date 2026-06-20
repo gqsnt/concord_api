@@ -1,7 +1,7 @@
 use crate::transport::{TransportError, TransportErrorKind};
-use http::header::{HeaderName, RETRY_AFTER};
+use http::header::HeaderName;
 use http::{HeaderMap, Method, StatusCode};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[allow(dead_code)]
 pub type RetryPlan = RetryConfig;
@@ -45,6 +45,14 @@ pub trait RetryPolicy: Send + Sync + 'static {
     #[inline]
     fn should_retry(&self, _ctx: &RetryContext<'_>) -> RetryDecision {
         RetryDecision::Stop
+    }
+
+    #[inline]
+    fn should_retry_checked(
+        &self,
+        ctx: &RetryContext<'_>,
+    ) -> Result<RetryDecision, crate::error::ApiClientError> {
+        Ok(self.should_retry(ctx))
     }
 }
 
@@ -110,9 +118,12 @@ impl RetryConfig {
         }
     }
 
-    pub fn decide(&self, ctx: &RetryContext<'_>) -> RetryDecision {
+    pub fn try_decide(
+        &self,
+        ctx: &RetryContext<'_>,
+    ) -> Result<RetryDecision, crate::error::ApiClientError> {
         if !self.method_allowed(ctx.method) || !self.idempotency.allows(ctx) {
-            return RetryDecision::Stop;
+            return Ok(RetryDecision::Stop);
         }
 
         let retryable = match &ctx.outcome {
@@ -123,20 +134,25 @@ impl RetryConfig {
             RetryOutcome::Decode | RetryOutcome::Transform | RetryOutcome::Other => false,
         };
         if !retryable {
-            return RetryDecision::Stop;
+            return Ok(RetryDecision::Stop);
         }
 
         if self.respect_retry_after
             && let Some(headers) = ctx.response_headers
-            && let Some(delay) = retry_after_delay(headers)
+            && let Some(delay) = crate::rate_limit::parse_retry_after(headers)
         {
-            return RetryDecision::RetryAfter(delay);
+            validate_retry_delay(ctx, delay, "retry Retry-After duration overflowed")?;
+            return Ok(RetryDecision::RetryAfter(delay));
         }
 
-        match self.backoff.delay(ctx.retry_count) {
-            Some(delay) if !delay.is_zero() => RetryDecision::RetryAfter(delay),
-            _ => RetryDecision::Retry,
+        match self.backoff.delay(ctx)? {
+            Some(delay) if !delay.is_zero() => Ok(RetryDecision::RetryAfter(delay)),
+            _ => Ok(RetryDecision::Retry),
         }
+    }
+
+    pub fn decide(&self, ctx: &RetryContext<'_>) -> RetryDecision {
+        self.try_decide(ctx).unwrap_or(RetryDecision::Stop)
     }
 
     fn method_allowed(&self, method: &Method) -> bool {
@@ -176,14 +192,37 @@ pub enum RetryBackoff {
 }
 
 impl RetryBackoff {
-    fn delay(&self, retry_count: u32) -> Option<Duration> {
+    fn delay(
+        &self,
+        ctx: &RetryContext<'_>,
+    ) -> Result<Option<Duration>, crate::error::ApiClientError> {
         match self {
-            Self::None => Some(Duration::ZERO),
-            Self::Fixed(delay) => Some(*delay),
+            Self::None => Ok(Some(Duration::ZERO)),
+            Self::Fixed(delay) => {
+                validate_retry_delay(ctx, *delay, "retry fixed backoff duration overflowed")?;
+                Ok(Some(*delay))
+            }
             Self::Exponential { base, factor, max } => {
-                let multiplier = factor.powi(retry_count.min(i32::MAX as u32) as i32);
-                let delay = Duration::from_secs_f64(base.as_secs_f64() * multiplier);
-                Some(delay.min(*max))
+                if !factor.is_finite() || *factor < 0.0 {
+                    return Err(retry_config_error(
+                        ctx,
+                        "retry exponential backoff factor must be finite and non-negative",
+                    ));
+                }
+                let multiplier = factor.powi(ctx.retry_count.min(i32::MAX as u32) as i32);
+                let seconds = base.as_secs_f64() * multiplier;
+                if !seconds.is_finite() || seconds < 0.0 {
+                    return Err(retry_config_error(
+                        ctx,
+                        "retry exponential backoff duration overflowed",
+                    ));
+                }
+                let delay = Duration::try_from_secs_f64(seconds).map_err(|_| {
+                    retry_config_error(ctx, "retry exponential backoff duration overflowed")
+                })?;
+                let delay = delay.min(*max);
+                validate_retry_delay(ctx, delay, "retry exponential backoff duration overflowed")?;
+                Ok(Some(delay))
             }
         }
     }
@@ -214,12 +253,34 @@ impl RetryPolicy for ConfiguredRetryPolicy {
     fn should_retry(&self, ctx: &RetryContext<'_>) -> RetryDecision {
         self.config.decide(ctx)
     }
+
+    fn should_retry_checked(
+        &self,
+        ctx: &RetryContext<'_>,
+    ) -> Result<RetryDecision, crate::error::ApiClientError> {
+        self.config.try_decide(ctx)
+    }
 }
 
-fn retry_after_delay(headers: &HeaderMap) -> Option<Duration> {
-    let raw = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
-    let seconds = raw.parse::<u64>().ok()?;
-    Some(Duration::from_secs(seconds))
+fn validate_retry_delay(
+    ctx: &RetryContext<'_>,
+    delay: Duration,
+    msg: &'static str,
+) -> Result<(), crate::error::ApiClientError> {
+    Instant::now()
+        .checked_add(delay)
+        .map(|_| ())
+        .ok_or_else(|| retry_config_error(ctx, msg))
+}
+
+fn retry_config_error(ctx: &RetryContext<'_>, msg: &'static str) -> crate::error::ApiClientError {
+    crate::error::ApiClientError::invalid_param(
+        crate::error::ErrorContext {
+            endpoint: ctx.endpoint,
+            method: ctx.method.clone(),
+        },
+        msg,
+    )
 }
 
 #[cfg(test)]
@@ -268,7 +329,10 @@ mod tests {
     #[test]
     fn retry_after_is_honored_when_enabled() {
         let mut response_headers = HeaderMap::new();
-        response_headers.insert(RETRY_AFTER, http::HeaderValue::from_static("3"));
+        response_headers.insert(
+            http::header::RETRY_AFTER,
+            http::HeaderValue::from_static("3"),
+        );
         let request_headers = HeaderMap::new();
         let config = RetryConfig {
             max_attempts: 2,
@@ -287,6 +351,88 @@ mod tests {
             )),
             RetryDecision::RetryAfter(Duration::from_secs(3))
         );
+    }
+
+    #[test]
+    fn retry_after_http_date_is_honored_when_enabled() {
+        let mut response_headers = HeaderMap::new();
+        let when = std::time::SystemTime::now() + Duration::from_secs(3);
+        response_headers.insert(
+            http::header::RETRY_AFTER,
+            http::HeaderValue::from_str(&httpdate::fmt_http_date(when))
+                .expect("valid retry-after date"),
+        );
+        let request_headers = HeaderMap::new();
+        let config = RetryConfig {
+            max_attempts: 2,
+            statuses: vec![StatusCode::TOO_MANY_REQUESTS],
+            methods: vec![Method::GET],
+            respect_retry_after: true,
+            ..RetryConfig::default()
+        };
+
+        let decision = config
+            .try_decide(&ctx(
+                &Method::GET,
+                &request_headers,
+                Some(&response_headers),
+                0,
+            ))
+            .expect("http-date retry-after should be valid");
+        let RetryDecision::RetryAfter(delay) = decision else {
+            panic!("expected retry-after decision");
+        };
+        assert!(delay <= Duration::from_secs(3));
+    }
+
+    #[test]
+    fn huge_retry_after_returns_typed_error() {
+        let mut response_headers = HeaderMap::new();
+        response_headers.insert(
+            http::header::RETRY_AFTER,
+            http::HeaderValue::from_static("18446744073709551615"),
+        );
+        let request_headers = HeaderMap::new();
+        let config = RetryConfig {
+            max_attempts: 2,
+            statuses: vec![StatusCode::TOO_MANY_REQUESTS],
+            methods: vec![Method::GET],
+            respect_retry_after: true,
+            ..RetryConfig::default()
+        };
+
+        let err = config
+            .try_decide(&ctx(
+                &Method::GET,
+                &request_headers,
+                Some(&response_headers),
+                0,
+            ))
+            .expect_err("huge retry-after should fail");
+        assert_eq!(err.category(), crate::error::ErrorCategory::Config);
+        assert!(err.to_string().contains("Retry-After"));
+    }
+
+    #[test]
+    fn exponential_backoff_overflow_returns_typed_error() {
+        let request_headers = HeaderMap::new();
+        let config = RetryConfig {
+            max_attempts: 2,
+            statuses: vec![StatusCode::TOO_MANY_REQUESTS],
+            methods: vec![Method::GET],
+            backoff: RetryBackoff::Exponential {
+                base: Duration::MAX,
+                factor: f64::INFINITY,
+                max: Duration::MAX,
+            },
+            ..RetryConfig::default()
+        };
+
+        let err = config
+            .try_decide(&ctx(&Method::GET, &request_headers, None, 1))
+            .expect_err("invalid exponential backoff should fail");
+        assert_eq!(err.category(), crate::error::ErrorCategory::Config);
+        assert!(err.to_string().contains("backoff"));
     }
 
     #[test]

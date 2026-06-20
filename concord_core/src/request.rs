@@ -10,7 +10,7 @@ use crate::timeout::TimeoutOverride;
 use crate::transport::{BuiltResponse, DecodedResponse};
 use std::any::Any;
 use std::collections::HashSet;
-use std::future::{Future, IntoFuture, ready};
+use std::future::{Future, IntoFuture};
 use std::pin::Pin;
 use std::time::Duration;
 
@@ -333,12 +333,91 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         T: crate::transport::Transport,
     {
         let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
-        self.for_each_page(|resp| {
-            out.extend(<E::Response as PageItems>::into_items(resp.value));
-            ready(Ok(()))
+        let first_plan = self.pending.ep.plan(&self.pending.client.plan_context())?;
+        let mut runner =
+            PaginationRunner::new(first_plan.endpoint.pagination.clone(), &first_plan)?;
+        let ctx = crate::error::ErrorContext {
+            endpoint: first_plan.endpoint.meta.name,
+            method: first_plan.endpoint.meta.method.clone(),
+        };
+        validate_caps(self.caps, &ctx)?;
+        let mut first_plan = Some(first_plan);
+        let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
+            Some(HashSet::new())
+        } else {
+            None
+        };
+        let mut items_count: u64 = 0;
+
+        for page_index in 0..self.caps.max_pages {
+            if let Some(seen) = seen.as_mut()
+                && let Some(k) = runner.progress_key()
+                && !seen.insert(k.clone())
+            {
+                return Err(ApiClientError::Pagination {
+                    ctx: ctx.clone(),
+                    msg: format!("loop detected (page_index={} key={:?})", page_index, k).into(),
+                });
+            }
+
+            let mut plan = if let Some(plan) = first_plan.take() {
+                plan
+            } else {
+                self.pending.ep.plan(&self.pending.client.plan_context())?
+            };
+            plan.overrides.timeout = match self.pending.opts.timeout_override {
+                TimeoutOverride::Inherit => plan.overrides.timeout,
+                TimeoutOverride::Clear => None,
+                TimeoutOverride::Set(d) => Some(d),
+            };
+            plan.overrides.debug_level = self.pending.opts.debug_level;
+            plan.overrides.attempt = self.pending.opts.attempt;
+            plan.overrides.page_index = page_index;
+            plan.overrides.cache_mode = self.pending.opts.cache_mode;
+            runner.apply_query(&mut plan)?;
+
+            let resp: DecodedResponse<E::Response> = self
+                .pending
+                .client
+                .execute_plan::<E::Response>(plan)
+                .await?;
+            let control_ctrl = runner.on_page(&resp, &ctx)?;
+            let items = <E::Response as PageItems>::into_items(resp.value);
+            let page_len = items.len() as u64;
+            if page_len > 0 {
+                let new_total = items_count.checked_add(page_len).ok_or_else(|| {
+                    ApiClientError::Pagination {
+                        ctx: ctx.clone(),
+                        msg: "items overflow".into(),
+                    }
+                })?;
+                if new_total > self.caps.max_items {
+                    return Err(ApiClientError::PaginationLimit {
+                        ctx: ctx.clone(),
+                        msg: format!(
+                            "max_items reached (max={} seen={} page_index={})",
+                            self.caps.max_items, new_total, page_index
+                        )
+                        .into(),
+                    });
+                }
+                items_count = new_total;
+            }
+            out.extend(items);
+            match control_ctrl {
+                Control::Continue => continue,
+                Control::Stop => return Ok(out),
+            }
+        }
+
+        Err(ApiClientError::PaginationLimit {
+            ctx,
+            msg: format!(
+                "max_pages reached (max_pages={} seen_items={} page_index={})",
+                self.caps.max_pages, items_count, self.caps.max_pages
+            )
+            .into(),
         })
-        .await?;
-        Ok(out)
     }
 }
 

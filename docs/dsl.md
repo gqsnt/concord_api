@@ -813,10 +813,12 @@ Built-in controllers:
 Custom controllers are Rust type paths implementing the pagination traits.
 
 ```rust
-paginate custom::HeaderCursorPagination {
-    cursor = cursor
-}
+paginate custom::HeaderCursorPagination
 ```
+
+Built-in pagination controllers use assignment blocks for their configured fields.
+Custom pagination controllers use `paginate TypePath` without a block; their
+state and request mutation live in the Rust controller implementation.
 
 Response page types can implement `PageItems`; cursor page types also implement `HasNextCursor`.
 

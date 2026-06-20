@@ -298,7 +298,17 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
             let mut out = AccessToken::new(token.access_token);
             out.expires_at = token
                 .expires_in
-                .map(|seconds| Instant::now() + Duration::from_secs(seconds));
+                .map(|seconds| {
+                    Instant::now()
+                        .checked_add(Duration::from_secs(seconds))
+                        .ok_or_else(|| {
+                            AuthError::new(
+                                AuthErrorKind::InvalidConfiguration,
+                                "oauth2 expires_in overflowed",
+                            )
+                        })
+                })
+                .transpose()?;
             out.refresh_token = token.refresh_token.map(SecretString::new);
             out.scope = token
                 .scope

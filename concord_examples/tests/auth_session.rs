@@ -144,6 +144,61 @@ async fn endpoint_backed_session_401_invalidates_without_automatic_retry() {
     handle.finish();
 }
 
+#[tokio::test]
+async fn rotating_static_secret_preserves_endpoint_backed_session() {
+    let (transport, handle) = mock()
+        .reply(json_reply(r#"{"access_token":"session-token"}"#))
+        .reply(json_reply(r#"{"id":7,"username":"ada"}"#))
+        .build();
+    let mut api = SessionApi::new_with_transport("upstream-secret".to_string(), transport);
+
+    api.auth_api()
+        .login_for_session(SessionLoginRequest {
+            username: "ada".to_string(),
+            password: "login-password".to_string(),
+        })
+        .acquire_as_session()
+        .await
+        .expect("session acquisition succeeds");
+    assert!(
+        api.auth_state()
+            .session()
+            .is_set()
+            .await
+            .expect("session state check succeeds")
+    );
+
+    api.set_upstream_key("rotated-upstream-secret")
+        .expect("static secret rotation should rebuild providers");
+    assert!(
+        api.auth_state()
+            .session()
+            .is_set()
+            .await
+            .expect("session state check succeeds after static secret rotation")
+    );
+
+    let user = api
+        .protected()
+        .me()
+        .execute()
+        .await
+        .expect("protected request should use preserved session");
+    assert_eq!(user.username, "ada");
+
+    let recorded = handle.recorded();
+    assert_eq!(recorded.len(), 2);
+    assert_request(&recorded[0])
+        .host("example.com")
+        .path("/login")
+        .header("X-Upstream-Key", "upstream-secret");
+    assert_request(&recorded[1])
+        .host("example.com")
+        .path("/me")
+        .header(http::header::AUTHORIZATION, "Bearer session-token");
+    handle.finish();
+}
+
 fn json_reply(body: &'static str) -> MockReply {
     MockReply::ok_json(Bytes::from_static(body.as_bytes()))
 }

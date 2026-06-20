@@ -10,7 +10,7 @@ Clients with no required variables use `new()`.
 let api = minimal_api::MinimalApi::new();
 ```
 
-Clients with required variables or secrets take those values as constructor arguments in declaration order.
+Clients with required variables or secrets take those values as constructor arguments in the stable generated constructor order.
 
 ```rust
 let api = session_api::SessionApi::new("upstream-key".to_string());

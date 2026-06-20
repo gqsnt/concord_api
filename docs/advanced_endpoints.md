@@ -7,6 +7,14 @@ let endpoint = example_api::endpoints::GetUser::new(42);
 let user = api.request(endpoint).execute().await?;
 ```
 
+Root endpoints live directly under `endpoints::*`. Scoped endpoints are nested
+under their scope module path:
+
+```rust
+let endpoint = minimal_api::endpoints::users::GetUser::new(42);
+let user = api.request(endpoint).execute().await?;
+```
+
 Endpoint setters are available on explicit endpoint values too.
 
 ```rust

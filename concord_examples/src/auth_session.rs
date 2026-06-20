@@ -54,8 +54,10 @@ pub use self::session_api::SessionApi;
 pub async fn session_flow_example() -> Result<(), ApiClientError> {
     let api = session_api::SessionApi::new("upstream-key".to_string());
 
-    // This will fail until session is acquired.
-    let _ = api.protected().me().await;
+    // This fails until the session is explicitly acquired; integration tests
+    // assert the exact error category.
+    let missing = api.protected().me().await;
+    debug_assert!(missing.is_err());
 
     api.auth_api()
         .login_for_session(SessionLoginRequest {

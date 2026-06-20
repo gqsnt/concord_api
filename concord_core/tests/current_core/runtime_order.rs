@@ -3,8 +3,11 @@ use bytes::Bytes;
 use concord_core::advanced::{
     AuthPlacement, Caps, DebugSink, NoopCacheStore, NoopRateLimiter, TransportErrorKind,
 };
-use concord_core::internal::ResolvedPolicy;
-use concord_core::prelude::{ApiClientError, DebugLevel};
+use concord_core::internal::{
+    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
+    RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+};
+use concord_core::prelude::{ApiClientError, DebugLevel, Endpoint};
 use http::{HeaderMap, Method, StatusCode};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
@@ -72,6 +75,40 @@ fn first_position(events: &[String], needle: &str) -> usize {
         .unwrap_or_else(|| panic!("missing event `{needle}` in {events:?}"))
 }
 
+#[derive(Clone)]
+struct UnsafeEndpoint {
+    policy: ResolvedPolicy,
+}
+
+impl Endpoint<TestCx> for UnsafeEndpoint {
+    type Response = String;
+
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        Ok(RequestPlan {
+            endpoint: EndpointPlan {
+                meta: EndpointMeta {
+                    name: "Unsafe",
+                    method: Method::POST,
+                    idempotent: false,
+                    facade_path: &[],
+                },
+                route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", "/unsafe"),
+                policy: self.policy.clone(),
+                body: BodyPlan::None,
+                response: ResponsePlan {
+                    accept: Some(http::HeaderValue::from_static("text/plain")),
+                    no_content: false,
+                    format: concord_core::internal::Format::Text,
+                    decode: decode_string,
+                },
+                pagination: None,
+            },
+            args: RequestArgs::default(),
+            overrides: RequestOverrides::default(),
+        })
+    }
+}
+
 #[tokio::test]
 async fn retry_decision_happens_before_decode() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -96,6 +133,174 @@ async fn retry_decision_happens_before_decode() -> Result<(), ApiClientError> {
 
     assert_eq!(decoded.value(), "ok");
     assert_eq!(sent_transport.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn configured_transport_error_kind_retries_then_succeeds() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::with_outcomes(
+        events,
+        vec![
+            MockOutcome::TransportError(TransportErrorKind::Timeout),
+            MockResponse::text(StatusCode::OK, "ok").into(),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn unconfigured_transport_error_kind_does_not_retry() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::with_outcomes(
+        events,
+        vec![
+            MockOutcome::TransportError(TransportErrorKind::Connect),
+            MockResponse::text(StatusCode::OK, "should-not-send").into(),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let err = client
+        .request(TextEndpoint {
+            policy: retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("unconfigured transport error kind should not retry");
+
+    assert!(err.to_string().contains("transport"));
+    assert_eq!(sent.sent_count().await, 1);
+}
+
+#[tokio::test]
+async fn transport_error_retry_budget_exhaustion_returns_final_typed_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::with_outcomes(
+        events,
+        vec![
+            MockOutcome::TransportError(TransportErrorKind::Timeout),
+            MockOutcome::TransportError(TransportErrorKind::Timeout),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let err = client
+        .request(TextEndpoint {
+            policy: retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("retry budget exhaustion should return final transport error");
+
+    assert_eq!(err.category(), concord_core::error::ErrorCategory::Timeout);
+    assert_eq!(sent.sent_count().await, 2);
+}
+
+#[tokio::test]
+async fn unsafe_method_without_idempotency_header_does_not_retry() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "do-not-retry"),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+    let policy = ResolvedPolicy {
+        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
+            max_attempts: 2,
+            methods: vec![Method::POST],
+            statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
+            transport_errors: Vec::new(),
+            backoff: concord_core::advanced::RetryBackoff::None,
+            respect_retry_after: false,
+            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
+        }),
+        ..Default::default()
+    };
+
+    let err = client
+        .request(UnsafeEndpoint { policy })
+        .execute_decoded()
+        .await
+        .expect_err("unsafe request without idempotency signal should not retry");
+
+    assert!(err.to_string().contains("500"));
+    assert_eq!(sent.sent_count().await, 1);
+}
+
+#[tokio::test]
+async fn unsafe_method_with_idempotency_header_retries_with_stable_value()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+    let header = http::HeaderName::from_static("idempotency-key");
+    let mut headers = HeaderMap::new();
+    headers.insert(header.clone(), http::HeaderValue::from_static("stable-key"));
+    let policy = ResolvedPolicy {
+        headers,
+        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
+            max_attempts: 2,
+            methods: vec![Method::POST],
+            statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
+            transport_errors: Vec::new(),
+            backoff: concord_core::advanced::RetryBackoff::None,
+            respect_retry_after: false,
+            idempotency: concord_core::advanced::RetryIdempotency::Header(header.clone()),
+        }),
+        ..Default::default()
+    };
+
+    let decoded = client
+        .request(UnsafeEndpoint { policy })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(&header)
+            .and_then(|v| v.to_str().ok()),
+        Some("stable-key")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get(&header)
+            .and_then(|v| v.to_str().ok()),
+        Some("stable-key")
+    );
     Ok(())
 }
 

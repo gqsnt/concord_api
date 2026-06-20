@@ -285,7 +285,7 @@ where
                 let mut inner = lock_slot_inner(&self.inner);
                 match &inner.state {
                     CredentialSlotState::Valid { value, generation }
-                        if credential_refresh_reason(value, policy).is_none() =>
+                        if credential_refresh_reason(value, policy)?.is_none() =>
                     {
                         return Ok(CredentialLease {
                             value: value.clone(),
@@ -296,7 +296,7 @@ where
                         let notify = Arc::new(Notify::new());
                         let current = value.clone();
                         let generation = *generation;
-                        let reason = credential_refresh_reason(value, policy)
+                        let reason = credential_refresh_reason(value, policy)?
                             .unwrap_or(CredentialRefreshReason::ExpiringSoon);
                         let previous = RefreshPrevious::Valid {
                             value: value.clone(),
@@ -561,7 +561,16 @@ where
                 inner.state = CredentialSlotState::Failed {
                     generation: previous_generation,
                     error: error.clone(),
-                    retry_after: error.retry_after().map(|wait| Instant::now() + wait),
+                    retry_after: error
+                        .retry_after()
+                        .map(|wait| {
+                            checked_auth_instant_add(
+                                Instant::now(),
+                                wait,
+                                "auth retry-after overflowed",
+                            )
+                        })
+                        .transpose()?,
                 };
                 guard.disarm();
                 notify.notify_waiters();
@@ -615,17 +624,36 @@ fn notify_refresh_wait_registered() {}
 fn credential_refresh_reason<T: CredentialMaterial>(
     value: &T,
     policy: AuthStepPolicy,
-) -> Option<CredentialRefreshReason> {
-    value.expires_at().and_then(|expires_at| {
-        let now = Instant::now();
-        if expires_at <= now {
-            Some(CredentialRefreshReason::Expired)
-        } else if expires_at <= now + policy.refresh_skew {
-            Some(CredentialRefreshReason::ExpiringSoon)
-        } else {
-            None
-        }
-    })
+) -> Result<Option<CredentialRefreshReason>, AuthError> {
+    value
+        .expires_at()
+        .map(|expires_at| {
+            let now = Instant::now();
+            if expires_at <= now {
+                Ok(Some(CredentialRefreshReason::Expired))
+            } else if expires_at
+                <= checked_auth_instant_add(
+                    now,
+                    policy.refresh_skew,
+                    "auth refresh_skew overflowed",
+                )?
+            {
+                Ok(Some(CredentialRefreshReason::ExpiringSoon))
+            } else {
+                Ok(None)
+            }
+        })
+        .transpose()
+        .map(Option::flatten)
+}
+
+fn checked_auth_instant_add(
+    base: Instant,
+    duration: Duration,
+    context: &'static str,
+) -> Result<Instant, AuthError> {
+    base.checked_add(duration)
+        .ok_or_else(|| AuthError::new(AuthErrorKind::InvalidConfiguration, context))
 }
 
 fn next_generation<T>(state: &CredentialSlotState<T>) -> Result<u64, AuthError> {
@@ -1054,6 +1082,52 @@ mod tests {
             .await
             .expect("manual credential should remain cached");
         assert_eq!(cached.value.value, "manual");
+    }
+
+    #[tokio::test]
+    async fn auth_retry_after_overflow_returns_typed_error() {
+        let provider = TestProvider::new();
+        let slot = CredentialSlot::<TestCx, _>::new(provider.clone());
+        let release = provider.enqueue_acquire().await;
+
+        let caller = tokio::spawn(async move {
+            slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                .await
+        });
+        provider.wait_for_acquire_count(1).await;
+        release
+            .send(Err(AuthError::new(AuthErrorKind::AcquireFailed, "wait")
+                .with_retry_after(Duration::MAX)))
+            .expect("acquire should be waiting");
+
+        let err = caller
+            .await
+            .expect("task should not panic")
+            .expect_err("overflowing retry-after should fail");
+        assert_eq!(err.kind, AuthErrorKind::InvalidConfiguration);
+        assert!(err.to_string().contains("auth retry-after overflowed"));
+    }
+
+    #[tokio::test]
+    async fn refresh_skew_overflow_returns_typed_error() {
+        let provider = TestProvider::new();
+        let slot = CredentialSlot::<TestCx, _>::new(provider);
+        slot.set_manual(TestCredential::fresh("cached"))
+            .await
+            .expect("manual credential should be stored");
+
+        let err = slot
+            .get_or_refresh(
+                test_context(),
+                AuthStepPolicy {
+                    refresh_skew: Duration::MAX,
+                    ..AuthStepPolicy::default()
+                },
+            )
+            .await
+            .expect_err("overflowing refresh skew should fail");
+        assert_eq!(err.kind, AuthErrorKind::InvalidConfiguration);
+        assert!(err.to_string().contains("auth refresh_skew overflowed"));
     }
 
     #[derive(Clone, Debug)]

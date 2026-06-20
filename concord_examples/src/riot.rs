@@ -538,6 +538,10 @@ api! {
             path ["lol", "tournament-stub", "v5"]
             behavior tournament_stub_high_volume_read
 
+            // Mutation endpoints are included for DSL/type coverage only. The
+            // default live smoke path must not call them. Do not run mutation
+            // calls against live Riot services unless explicitly testing
+            // intended side effects with an owned key.
             POST CreateTournamentStubCodes(tournament_id: i64, count?: u32, body: Json<serde_json::Value>)
             as create_codes
             path ["codes"]

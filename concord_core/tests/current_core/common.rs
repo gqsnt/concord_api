@@ -210,6 +210,40 @@ impl PageItems for PageOnlyItems {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoHintItems {
+    pub items: Vec<String>,
+}
+
+impl PageItems for NoHintItems {
+    type Item = String;
+
+    fn into_items(self) -> Vec<Self::Item> {
+        self.items
+    }
+}
+
+#[derive(Clone)]
+pub struct NoHintItemsEndpoint {
+    pub policy: ResolvedPolicy,
+    pub pagination: PaginationPlan,
+}
+
+impl Endpoint<TestCx> for NoHintItemsEndpoint {
+    type Response = NoHintItems;
+
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            "NoHintItems",
+            Method::GET,
+            "/no-hint-items",
+            self.policy.clone(),
+            Some(self.pagination.clone()),
+            decode_no_hint_items,
+        ))
+    }
+}
+
 #[derive(Clone)]
 pub struct PageOnlyItemsEndpoint {
     pub policy: ResolvedPolicy,
@@ -378,6 +412,30 @@ pub fn decode_page_only_items(
         status: resp.status,
         headers: resp.headers,
         value: PageOnlyItems { items },
+    }))
+}
+
+pub fn decode_no_hint_items(
+    resp: BuiltResponse,
+    ctx: concord_core::advanced::ErrorContext,
+) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
+    let content_type = resp
+        .headers
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok());
+    let text = std::str::from_utf8(&resp.body)
+        .map_err(|e| ApiClientError::decode_error(ctx, resp.status, content_type, e))?;
+    let items = if text.is_empty() {
+        Vec::new()
+    } else {
+        text.split(',').map(ToOwned::to_owned).collect()
+    };
+    Ok(Box::new(DecodedResponse {
+        meta: resp.meta,
+        url: resp.url,
+        status: resp.status,
+        headers: resp.headers,
+        value: NoHintItems { items },
     }))
 }
 

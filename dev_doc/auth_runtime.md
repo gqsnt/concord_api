@@ -36,7 +36,7 @@ Custom transports receive the materialized `TransportRequest`, so they see real 
 
 ## Rejection and refresh
 
-Auth rejection handling runs before normal retry. If configured, the runtime can invalidate rejected credential material and perform bounded auth refresh before retrying the protected request for credentials the runtime can reacquire.
+Auth rejection handling runs after response classification but before normal retry. If configured, the runtime can invalidate rejected credential material and perform bounded auth refresh before retrying the protected request for credentials the runtime can reacquire.
 
 The v1 default policy is:
 

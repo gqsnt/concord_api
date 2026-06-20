@@ -50,8 +50,10 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
 
     // client vars: explicit `vars {}` only.
     let mut client_vars_map: BTreeMap<String, VarInfo> = BTreeMap::new();
+    let mut client_vars: Vec<VarInfo> = Vec::new();
     if let Some(vb) = &norm.client.vars {
         for d in &vb.decls {
+            let was_present = client_vars_map.contains_key(&d.rust.to_string());
             upsert_var(
                 &mut client_vars_map,
                 &d.rust,
@@ -59,13 +61,23 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
                 &d.ty,
                 d.default.as_ref(),
             )?;
+            if !was_present {
+                client_vars.push(
+                    client_vars_map
+                        .get(&d.rust.to_string())
+                        .expect("inserted client var")
+                        .clone(),
+                );
+            }
         }
     }
 
     // secret vars: only from `secret {}`.
     let mut auth_vars_map: BTreeMap<String, VarInfo> = BTreeMap::new();
+    let mut client_auth_vars: Vec<VarInfo> = Vec::new();
     if let Some(vb) = &norm.client.auth_vars {
         for d in &vb.decls {
+            let was_present = auth_vars_map.contains_key(&d.rust.to_string());
             upsert_var(
                 &mut auth_vars_map,
                 &d.rust,
@@ -73,6 +85,14 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
                 &d.ty,
                 d.default.as_ref(),
             )?;
+            if !was_present {
+                client_auth_vars.push(
+                    auth_vars_map
+                        .get(&d.rust.to_string())
+                        .expect("inserted auth var")
+                        .clone(),
+                );
+            }
         }
     }
 
@@ -153,9 +173,6 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
     )?;
     client_policy.rate_limit =
         merge_rate_limit_resolved(default_behavior_rate_limit, explicit_default_rate_limit);
-
-    let client_vars: Vec<VarInfo> = client_vars_map.values().cloned().collect();
-    let client_auth_vars: Vec<VarInfo> = auth_vars_map.values().cloned().collect();
 
     // walk layers/endpoints
     let mut layers: Vec<LayerIr> = Vec::new();

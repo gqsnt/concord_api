@@ -4,17 +4,27 @@ use super::{
 use crate::secret::SecretString;
 use http::HeaderName;
 use std::fmt;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-static NEXT_AUTH_SLOT_ID: AtomicU32 = AtomicU32::new(1);
+static NEXT_AUTH_SLOT_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct AuthSlotId(u32);
+pub struct AuthSlotId(u64);
 
 impl AuthSlotId {
     #[inline]
-    pub(crate) fn next() -> Self {
-        Self(NEXT_AUTH_SLOT_ID.fetch_add(1, Ordering::Relaxed))
+    pub(crate) fn next() -> Result<Self, crate::auth::AuthError> {
+        NEXT_AUTH_SLOT_ID
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+            .map(Self)
+            .map_err(|_| {
+                crate::auth::AuthError::new(
+                    crate::auth::AuthErrorKind::InvalidConfiguration,
+                    "auth slot id counter overflowed",
+                )
+            })
     }
 }
 
@@ -351,7 +361,7 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
     requirement: &AuthRequirement,
     material: &M,
 ) -> Result<AuthApplication, crate::auth::AuthError> {
-    let slot_id = AuthSlotId::next();
+    let slot_id = AuthSlotId::next()?;
     let placement = match requirement.placement {
         AuthPlacement::Bearer => PendingAuthPlacement::Bearer,
         AuthPlacement::Header(name) => {
@@ -405,7 +415,7 @@ pub fn apply_basic_credential(
             "basic credential requires basic auth placement",
         ));
     }
-    let slot_id = AuthSlotId::next();
+    let slot_id = AuthSlotId::next()?;
     let identity = crate::auth::CredentialMaterial::safe_identity(material);
     request.push_pending_slot(PendingAuthSlot {
         id: slot_id,
@@ -438,7 +448,7 @@ pub fn apply_certificate_credential(
             "certificate credential requires certificate auth placement",
         ));
     }
-    let slot_id = AuthSlotId::next();
+    let slot_id = AuthSlotId::next()?;
     let identity = crate::auth::CredentialMaterial::safe_identity(material);
     request.push_pending_slot(PendingAuthSlot {
         id: slot_id,

@@ -35,14 +35,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         retry_config: &RetrySetting,
         retry_ctx: &RetryContext<'_>,
         retry_count: u32,
-    ) -> Option<Duration> {
-        let mut delay = self.retry_delay(retry_config, retry_ctx, retry_count)?;
+    ) -> Result<Option<Duration>, ApiClientError> {
+        let Some(mut delay) = self.retry_delay(retry_config, retry_ctx, retry_count)? else {
+            return Ok(None);
+        };
         if Self::rate_limit_action_from_error(err)
             .is_some_and(|action| action.delay_handled_by_rate_limiter())
         {
             delay = Duration::ZERO;
         }
-        Some(delay)
+        Ok(Some(delay))
     }
 
     async fn maybe_serve_stale(
@@ -274,7 +276,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         &retry_config,
                         &retry_ctx,
                         transport_retry_index,
-                    ) else {
+                    )? else {
                         if let Some(cached) = self
                             .maybe_serve_stale(
                                 &built_for_cache,

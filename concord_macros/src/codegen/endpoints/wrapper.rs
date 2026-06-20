@@ -163,6 +163,35 @@ fn emit_client_wrapper(
     });
 
     let (credential_secret_names, has_custom_credentials) = auth_credential_secret_names(resolved_api);
+    let preserve_manual_slots = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
+        if matches!(credential.kind, AuthCredentialKindIr::Endpoint { .. }) {
+            let name = &credential.name;
+            Some(quote! {
+                __new_auth_state.#name = __old_auth_state.#name.clone();
+            })
+        } else {
+            None
+        }
+    });
+    let rebuild_auth_state_method = if resolved_api.client_auth_credentials.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            #[inline]
+            fn __concord_rebuild_auth_state_preserving_manual(
+                &mut self,
+            ) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
+                let __old_auth_state = self.inner.try_auth_state()?;
+                let mut __new_auth_state =
+                    <#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(
+                        self.inner.vars(),
+                        self.inner.auth_vars(),
+                    );
+                #( #preserve_manual_slots )*
+                self.inner.try_set_auth_state(__new_auth_state)
+            }
+        }
+    };
     let configure_rate_limiter = if let Some(policy) = &resolved_api.rate_limit_response_policy {
         quote! {
             __inner.set_rate_limiter(::std::sync::Arc::new(
@@ -227,7 +256,7 @@ fn emit_client_wrapper(
                             )?;
                             __g.#f = ::core::option::Option::Some(v.into());
                         }
-                        self.inner.try_set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()))?;
+                        self.__concord_rebuild_auth_state_preserving_manual()?;
                         ::core::result::Result::Ok(self)
                     }
                     #[inline]
@@ -239,7 +268,7 @@ fn emit_client_wrapper(
                             )?;
                             __g.#f = ::core::option::Option::None;
                         }
-                        self.inner.try_set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()))?;
+                        self.__concord_rebuild_auth_state_preserving_manual()?;
                         ::core::result::Result::Ok(self)
                     }
                 }
@@ -277,7 +306,7 @@ fn emit_client_wrapper(
                             )?;
                             __g.#f = v.into();
                         }
-                        self.inner.try_set_auth_state(<#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(self.inner.vars(), self.inner.auth_vars()))?;
+                        self.__concord_rebuild_auth_state_preserving_manual()?;
                         ::core::result::Result::Ok(self)
                     }
                 }
@@ -463,6 +492,7 @@ fn emit_client_wrapper(
         }
 
         impl<T: ::concord_core::advanced::Transport> #client_ty<T> {
+            #rebuild_auth_state_method
             #( #var_setters )*
             #( #auth_setters )*
             #( #credential_lifecycle_methods )*

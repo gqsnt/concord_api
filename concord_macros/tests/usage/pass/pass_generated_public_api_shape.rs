@@ -4,6 +4,7 @@ use concord_macros::api;
 use std::future::Future;
 use std::pin::Pin;
 use self::both_config_api::BothConfigApi;
+use self::declaration_order_api::DeclarationOrderApi;
 use self::o_auth_config_api::OAuthConfigApi;
 use self::secret_config_api::SecretConfigApi;
 use self::vars_config_api::VarsConfigApi;
@@ -81,6 +82,22 @@ api! {
         -> Json<String>
 }
 
+api! {
+    client DeclarationOrderApi {
+        base "https://example.com"
+        var tenant: String
+        var region: String
+        secret username: String
+        secret password: String
+        credential login = basic(secret.username, secret.password)
+    }
+
+    GET OrderedPing
+        path ["ordered-ping"]
+        auth basic login
+        -> Json<String>
+}
+
 fn constructor_shape_is_stable() -> Result<(), ApiClientError> {
     let _vars = VarsConfigApi::new("tenant".to_string());
     let _vars = VarsConfigApi::builder()
@@ -112,6 +129,26 @@ fn constructor_shape_is_stable() -> Result<(), ApiClientError> {
     let _oauth_with_transport = OAuthConfigApi::new_with_transport(
         "client-id".to_string(),
         "client-secret".to_string(),
+        FailingTransport,
+    );
+
+    let _ordered = DeclarationOrderApi::new(
+        "tenant".to_string(),
+        "region".to_string(),
+        "username".to_string(),
+        "password".to_string(),
+    );
+    let _ordered = DeclarationOrderApi::builder()
+        .tenant("tenant".to_string())
+        .region("region".to_string())
+        .username("username".to_string())
+        .password("password".to_string())
+        .build()?;
+    let _ordered_with_transport = DeclarationOrderApi::new_with_transport(
+        "tenant".to_string(),
+        "region".to_string(),
+        "username".to_string(),
+        "password".to_string(),
         FailingTransport,
     );
 

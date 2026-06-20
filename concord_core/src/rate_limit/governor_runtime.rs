@@ -203,7 +203,9 @@ impl GovernorRateLimiter {
             return Ok(false);
         }
 
-        let until = Instant::now() + delay;
+        let until = Instant::now().checked_add(delay).ok_or_else(|| {
+            rate_limit_policy_error(ctx, "rate-limit cooldown duration overflowed")
+        })?;
         let mut guard = self.cooldowns.lock().map_err(|_| {
             rate_limit_runtime_state_error(ctx, "rate limit cooldown lock poisoned")
         })?;
@@ -549,6 +551,18 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("rate_limit key `[host]`"));
         assert!(!msg.contains(concat!("unknown", "-", "host")));
+    }
+
+    #[test]
+    fn rate_limit_cooldown_overflow_returns_typed_error() {
+        let limiter = GovernorRateLimiter::new();
+        let ctx = test_context();
+        let err = limiter
+            .store_cooldown(&ctx, &RateLimitTarget::Endpoint, Duration::MAX)
+            .expect_err("overflowing cooldown should fail");
+
+        assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+        assert!(err.to_string().contains("cooldown duration overflowed"));
     }
 
     #[test]

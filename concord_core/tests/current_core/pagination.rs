@@ -133,6 +133,38 @@ impl PaginationController<Vec<String>> for DynamicRequestMutationPagination {
     }
 }
 
+#[derive(Default)]
+struct StopAfterFirstNoHintPagination;
+
+impl PaginationController<NoHintItems> for StopAfterFirstNoHintPagination {
+    type State = ();
+
+    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
+        Ok(())
+    }
+
+    fn apply(
+        &self,
+        _state: &Self::State,
+        _request: &mut PageRequest<'_>,
+    ) -> Result<(), ApiClientError> {
+        Ok(())
+    }
+
+    fn advance(
+        &self,
+        _state: &mut Self::State,
+        _page: &NoHintItems,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        Ok(PageDecision::Stop)
+    }
+
+    fn progress_key(&self, _state: &Self::State) -> Option<ProgressKey> {
+        None
+    }
+}
+
 #[tokio::test]
 async fn custom_pagination_controller_drives_query_headers_and_stop() -> Result<(), ApiClientError>
 {
@@ -590,6 +622,54 @@ async fn max_items_error_includes_page_context() {
     let msg = err.to_string();
     assert!(msg.contains("max_items"));
     assert!(msg.contains("Items"));
+    assert!(msg.contains("page_index=0"));
+}
+
+#[tokio::test]
+async fn collect_enforces_max_items_from_actual_items_without_hint() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = NoHintItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<StopAfterFirstNoHintPagination, NoHintItems>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate()
+        .max_items(2)
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a".to_string(), "b".to_string()]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn collect_rejects_page_exceeding_max_items_without_hint() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = NoHintItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<StopAfterFirstNoHintPagination, NoHintItems>(),
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate()
+        .max_items(1)
+        .collect()
+        .await
+        .expect_err("actual collected item count must enforce max_items");
+
+    assert!(matches!(err, ApiClientError::PaginationLimit { .. }));
+    let msg = err.to_string();
+    assert!(msg.contains("max_items"));
+    assert!(msg.contains("NoHintItems"));
     assert!(msg.contains("page_index=0"));
 }
 
