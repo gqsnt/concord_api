@@ -8,7 +8,7 @@ Run:
 ./scripts/check_v1.sh
 ```
 
-The script runs the same commands listed below. The release gate is enforced primarily by behavior tests, trybuild diagnostics, generated API compile checks, clippy, and rustdoc. Manual review covers source and documentation consistency.
+The commands below are the full local gate. `./scripts/check_v1.sh` runs the scripted gate and targeted smoke checks. The release gate is enforced primarily by behavior tests, trybuild diagnostics, generated API compile checks, clippy, and rustdoc. Manual review covers source and documentation consistency.
 
 ## Core invariants
 

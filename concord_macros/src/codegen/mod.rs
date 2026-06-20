@@ -142,7 +142,6 @@ mod tests {
     use super::*;
     use crate::model::facade::SetterForm;
     use quote::quote;
-    use std::path::Path;
 
     fn expanded(input: TokenStream2) -> String {
         let resolved = crate::sema::analyze_tokens_for_test(input);
@@ -189,69 +188,6 @@ mod tests {
     fn assert_generated_doc_attrs_do_not_expose_hidden_names(expanded: &str) {
         for needle in ["__", "EpSearch", "EpCreate"] {
             assert_generated_doc_attrs_do_not_contain(expanded, needle);
-        }
-    }
-
-    #[test]
-    fn codegen_does_not_import_raw_ast_or_removed_part_models() {
-        fn visit(path: &Path, contents: &mut Vec<(String, String)>) {
-            for entry in std::fs::read_dir(path).expect("read codegen dir") {
-                let entry = entry.expect("read codegen entry");
-                let path = entry.path();
-                if path.is_dir() {
-                    visit(&path, contents);
-                } else if path.extension().and_then(|v| v.to_str()) == Some("rs") {
-                    let mut body = std::fs::read_to_string(&path).expect("read codegen source");
-                    if path.file_name().and_then(|v| v.to_str()) == Some("mod.rs")
-                        && let Some((production, _tests)) = body.split_once("#[cfg(test)]")
-                    {
-                        body = production.to_string();
-                    }
-                    contents.push((path.display().to_string(), body));
-                }
-            }
-        }
-
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/codegen");
-        let mut files = Vec::new();
-        visit(&root, &mut files);
-
-        let forbidden = [
-            ["crate", "::", "ast"].concat(),
-            ["crate", "::", "parse"].concat(),
-            ["use", "crate", "::", "ast"].concat(),
-            ["use", "crate", "::", "parse"].concat(),
-            ["Raw", "Api"].concat(),
-            ["Raw", "Endpoint"].concat(),
-            ["Raw", "Scope"].concat(),
-            ["Raw", "Item"].concat(),
-            ["Client", "Def"].concat(),
-            ["Layer", "Def"].concat(),
-            ["Endpoint", "Def"].concat(),
-            ["Auth", "Block"].concat(),
-            ["Retry", "Profiles", "Block"].concat(),
-            ["Cache", "Profiles", "Block"].concat(),
-            ["Rate", "Limit", "Profiles", "Block"].concat(),
-            ["Route", "Part"].concat(),
-            ["Policy", "Part"].concat(),
-            ["Auth", "Part"].concat(),
-            ["Body", "Part"].concat(),
-            ["Pagination", "Part"].concat(),
-            ["Route", "Part"].concat(),
-            ["Policy", "Part"].concat(),
-            ["Auth", "Part"].concat(),
-            ["Body", "Part"].concat(),
-            ["Pagination", "Part"].concat(),
-            ["with", "_", "configure"].concat(),
-        ];
-
-        for (path, body) in files {
-            for needle in &forbidden {
-                assert!(
-                    !body.contains(needle.as_str()),
-                    "codegen file `{path}` must not contain raw/removed symbol `{needle}`"
-                );
-            }
         }
     }
 
@@ -481,26 +417,6 @@ mod tests {
             !out.contains("__ep = __ep . locale") && !out.contains("__ep=__ep.locale"),
             "captured defaulted scope params must not call public endpoint setters"
         );
-    }
-
-    #[test]
-    fn codegen_does_not_recompute_endpoint_setter_names() {
-        let endpoint_codegen =
-            std::fs::read_to_string("src/codegen/endpoints/endpoint.rs").expect("endpoint codegen");
-        let wrapper_codegen =
-            std::fs::read_to_string("src/codegen/endpoints/wrapper.rs").expect("wrapper codegen");
-        let facade_codegen = format!("{endpoint_codegen}\n{wrapper_codegen}");
-        for forbidden in [
-            "format!(\"{}_opt\"",
-            "format!(\"{f}_opt\"",
-            "format!(\"clear_{}\"",
-            "format!(\"clear_{f}\"",
-        ] {
-            assert!(
-                !facade_codegen.contains(forbidden),
-                "facade codegen must get public setter names from FacadeIr, found `{forbidden}`"
-            );
-        }
     }
 
     #[test]

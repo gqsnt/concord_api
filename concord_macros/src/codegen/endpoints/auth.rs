@@ -26,11 +26,6 @@ fn emit_auth_requirement(
 ) -> TokenStream2 {
     let endpoint_key = endpoint_qualified_name(ep);
     let credential = auth_use_credential_ident_ir(auth_use);
-    let credential_ir = resolved_api
-        .client_auth_credentials
-        .iter()
-        .find(|c| c.name == *credential)
-        .expect("auth use was validated by sema");
     let client_ns = LitStr::new(&resolved_api.client_name.to_string(), resolved_api.client_name.span());
     let credential_name = LitStr::new(&credential.to_string(), credential.span());
     let step_id = if let Some(alt) = alt_idx {
@@ -51,7 +46,6 @@ fn emit_auth_requirement(
     };
     let placement = emit_auth_placement(auth_use);
     let usage_id = emit_auth_usage_id(auth_use);
-    let _ = credential_ir;
     quote! {
         ::concord_core::advanced::AuthRequirement {
             credential: ::concord_core::advanced::CredentialRef {
