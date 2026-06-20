@@ -4,9 +4,11 @@ use super::http::AuthHttpExecutor;
 use super::ids::{AuthIdentity, CredentialId};
 use crate::client::ClientContext;
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::Notify;
+use tokio::sync::futures::OwnedNotified;
 
 pub trait CredentialMaterial: Clone + Send + Sync + 'static {
     fn expires_at(&self) -> Option<Instant> {
@@ -130,6 +132,29 @@ enum CredentialSlotState<T> {
     Refreshing {
         notify: Arc<Notify>,
         generation: u64,
+        owner: RefreshOwnerId,
+        previous: RefreshPrevious<T>,
+    },
+    Failed {
+        generation: u64,
+        error: AuthError,
+        retry_after: Option<Instant>,
+    },
+}
+
+struct CredentialSlotInner<T> {
+    state: CredentialSlotState<T>,
+    next_owner: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RefreshOwnerId(u64);
+
+enum RefreshPrevious<T> {
+    Empty,
+    Valid {
+        value: T,
+        generation: u64,
     },
     Failed {
         generation: u64,
@@ -140,22 +165,93 @@ enum CredentialSlotState<T> {
 
 pub struct CredentialSlot<Cx: ClientContext, P: CredentialProvider<Cx>> {
     provider: P,
-    state: Mutex<CredentialSlotState<P::Credential>>,
+    inner: Arc<Mutex<CredentialSlotInner<P::Credential>>>,
     _cx: PhantomData<Cx>,
 }
 
 enum SlotAction<T> {
-    Wait(Arc<Notify>),
+    Wait {
+        notified: Pin<Box<OwnedNotified>>,
+    },
     Acquire {
         generation: u64,
-        notify: Arc<Notify>,
+        guard: RefreshGuard<T>,
     },
     Refresh {
         current: T,
         generation: u64,
-        notify: Arc<Notify>,
+        guard: RefreshGuard<T>,
         reason: CredentialRefreshReason,
     },
+}
+
+enum CommitOutcome<T> {
+    Stored(CredentialLease<T>),
+    Failed(AuthError),
+    StaleOwner,
+}
+
+struct RefreshGuard<T> {
+    inner: Arc<Mutex<CredentialSlotInner<T>>>,
+    owner: RefreshOwnerId,
+    disarmed: bool,
+}
+
+impl<T> RefreshGuard<T> {
+    fn disarm(&mut self) {
+        self.disarmed = true;
+    }
+}
+
+impl<T> Drop for RefreshGuard<T> {
+    fn drop(&mut self) {
+        if self.disarmed {
+            return;
+        }
+
+        let notify = {
+            let mut inner = lock_slot_inner(&self.inner);
+            match &inner.state {
+                CredentialSlotState::Refreshing { owner, .. } if *owner == self.owner => {
+                    match std::mem::replace(&mut inner.state, CredentialSlotState::Empty) {
+                        CredentialSlotState::Refreshing {
+                            notify, previous, ..
+                        } => {
+                            inner.state = previous.into_state();
+                            Some(notify)
+                        }
+                        state => {
+                            inner.state = state;
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            }
+        };
+
+        if let Some(notify) = notify {
+            notify.notify_waiters();
+        }
+    }
+}
+
+impl<T> RefreshPrevious<T> {
+    fn into_state(self) -> CredentialSlotState<T> {
+        match self {
+            Self::Empty => CredentialSlotState::Empty,
+            Self::Valid { value, generation } => CredentialSlotState::Valid { value, generation },
+            Self::Failed {
+                generation,
+                error,
+                retry_after,
+            } => CredentialSlotState::Failed {
+                generation,
+                error,
+                retry_after,
+            },
+        }
+    }
 }
 
 impl<Cx, P> CredentialSlot<Cx, P>
@@ -167,7 +263,10 @@ where
     pub fn new(provider: P) -> Self {
         Self {
             provider,
-            state: Mutex::new(CredentialSlotState::Empty),
+            inner: Arc::new(Mutex::new(CredentialSlotInner {
+                state: CredentialSlotState::Empty,
+                next_owner: 1,
+            })),
             _cx: PhantomData,
         }
     }
@@ -189,8 +288,8 @@ where
     ) -> Result<CredentialLease<P::Credential>, AuthError> {
         loop {
             let action = {
-                let mut state = self.state.lock().await;
-                match &*state {
+                let mut inner = lock_slot_inner(&self.inner);
+                match &inner.state {
                     CredentialSlotState::Valid { value, generation }
                         if credential_refresh_reason(value, policy).is_none() =>
                     {
@@ -205,19 +304,45 @@ where
                         let generation = *generation;
                         let reason = credential_refresh_reason(value, policy)
                             .unwrap_or(CredentialRefreshReason::ExpiringSoon);
-                        *state = CredentialSlotState::Refreshing {
-                            notify: notify.clone(),
+                        let previous = RefreshPrevious::Valid {
+                            value: value.clone(),
                             generation,
+                        };
+                        let owner = inner.next_refresh_owner()?;
+                        inner.state = CredentialSlotState::Refreshing {
+                            notify,
+                            generation,
+                            owner,
+                            previous,
                         };
                         SlotAction::Refresh {
                             current,
                             generation,
-                            notify,
+                            guard: RefreshGuard {
+                                inner: self.inner.clone(),
+                                owner,
+                                disarmed: false,
+                            },
                             reason,
                         }
                     }
-                    CredentialSlotState::Refreshing { notify, .. } => {
-                        SlotAction::Wait(notify.clone())
+                    CredentialSlotState::Refreshing { notify, owner, .. } => {
+                        let owner = *owner;
+                        let mut notified = Box::pin(notify.clone().notified_owned());
+                        notified.as_mut().enable();
+                        let should_wait = matches!(
+                            &inner.state,
+                            CredentialSlotState::Refreshing {
+                                owner: current_owner,
+                                ..
+                            } if *current_owner == owner
+                        );
+                        notify_refresh_wait_registered();
+                        if should_wait {
+                            SlotAction::Wait { notified }
+                        } else {
+                            continue;
+                        }
                     }
                     CredentialSlotState::Failed {
                         generation,
@@ -229,45 +354,78 @@ where
                         }
                         let notify = Arc::new(Notify::new());
                         let generation = *generation;
-                        *state = CredentialSlotState::Refreshing {
-                            notify: notify.clone(),
+                        let previous = RefreshPrevious::Failed {
                             generation,
+                            error: error.clone(),
+                            retry_after: *retry_after,
                         };
-                        SlotAction::Acquire { generation, notify }
+                        let owner = inner.next_refresh_owner()?;
+                        inner.state = CredentialSlotState::Refreshing {
+                            notify,
+                            generation,
+                            owner,
+                            previous,
+                        };
+                        SlotAction::Acquire {
+                            generation,
+                            guard: RefreshGuard {
+                                inner: self.inner.clone(),
+                                owner,
+                                disarmed: false,
+                            },
+                        }
                     }
                     CredentialSlotState::Empty => {
                         let notify = Arc::new(Notify::new());
-                        *state = CredentialSlotState::Refreshing {
-                            notify: notify.clone(),
+                        let owner = inner.next_refresh_owner()?;
+                        inner.state = CredentialSlotState::Refreshing {
+                            notify,
                             generation: 0,
+                            owner,
+                            previous: RefreshPrevious::Empty,
                         };
                         SlotAction::Acquire {
                             generation: 0,
-                            notify,
+                            guard: RefreshGuard {
+                                inner: self.inner.clone(),
+                                owner,
+                                disarmed: false,
+                            },
                         }
                     }
                 }
             };
 
             match action {
-                SlotAction::Wait(notify) => {
-                    notify.notified().await;
+                SlotAction::Wait { notified } => {
+                    notified.await;
                 }
-                SlotAction::Acquire { generation, notify } => {
+                SlotAction::Acquire {
+                    generation,
+                    mut guard,
+                } => {
                     let result = self.provider.acquire(ctx.clone()).await;
-                    return self.commit_slot_result(generation, notify, result).await;
+                    match self.commit_slot_result(generation, &mut guard, result)? {
+                        CommitOutcome::Stored(lease) => return Ok(lease),
+                        CommitOutcome::Failed(error) => return Err(error),
+                        CommitOutcome::StaleOwner => continue,
+                    }
                 }
                 SlotAction::Refresh {
                     current,
                     generation,
-                    notify,
+                    mut guard,
                     reason,
                 } => {
                     let result = self
                         .provider
                         .refresh(ctx.with_reason(reason), &current)
                         .await;
-                    return self.commit_slot_result(generation, notify, result).await;
+                    match self.commit_slot_result(generation, &mut guard, result)? {
+                        CommitOutcome::Stored(lease) => return Ok(lease),
+                        CommitOutcome::Failed(error) => return Err(error),
+                        CommitOutcome::StaleOwner => continue,
+                    }
                 }
             }
         }
@@ -280,15 +438,30 @@ where
         reason: InvalidateReason,
     ) -> Result<(), AuthError> {
         let current = {
-            let mut state = self.state.lock().await;
-            match &*state {
+            let mut inner = lock_slot_inner(&self.inner);
+            match &mut inner.state {
                 CredentialSlotState::Valid {
                     value,
                     generation: current_generation,
                 } if generation.is_none_or(|expected| expected == *current_generation) => {
                     let current = value.clone();
-                    *state = CredentialSlotState::Empty;
+                    inner.state = CredentialSlotState::Empty;
                     Some(current)
+                }
+                CredentialSlotState::Refreshing { previous, .. } => {
+                    let current = match previous {
+                        RefreshPrevious::Valid {
+                            value,
+                            generation: previous_generation,
+                        } if generation.is_none_or(|expected| expected == *previous_generation) => {
+                            Some(value.clone())
+                        }
+                        _ => None,
+                    };
+                    if current.is_some() {
+                        *previous = RefreshPrevious::Empty;
+                    }
+                    current
                 }
                 _ => None,
             }
@@ -300,13 +473,13 @@ where
 
     pub async fn set_manual(&self, value: P::Credential) -> Result<(), AuthError> {
         let notify = {
-            let mut state = self.state.lock().await;
-            let generation = next_generation(&*state)?;
-            let notify = match &*state {
+            let mut inner = lock_slot_inner(&self.inner);
+            let generation = next_generation(&inner.state)?;
+            let notify = match &inner.state {
                 CredentialSlotState::Refreshing { notify, .. } => Some(notify.clone()),
                 _ => None,
             };
-            *state = CredentialSlotState::Valid { value, generation };
+            inner.state = CredentialSlotState::Valid { value, generation };
             notify
         };
         if let Some(notify) = notify {
@@ -317,12 +490,12 @@ where
 
     pub async fn clear_manual(&self) {
         let notify = {
-            let mut state = self.state.lock().await;
-            let notify = match &*state {
+            let mut inner = lock_slot_inner(&self.inner);
+            let notify = match &inner.state {
                 CredentialSlotState::Refreshing { notify, .. } => Some(notify.clone()),
                 _ => None,
             };
-            *state = CredentialSlotState::Empty;
+            inner.state = CredentialSlotState::Empty;
             notify
         };
         if let Some(notify) = notify {
@@ -331,13 +504,13 @@ where
     }
 
     pub async fn has_value(&self) -> bool {
-        let state = self.state.lock().await;
-        matches!(*state, CredentialSlotState::Valid { .. })
+        let inner = lock_slot_inner(&self.inner);
+        matches!(inner.state, CredentialSlotState::Valid { .. })
     }
 
     pub async fn get_cached(&self) -> Option<CredentialLease<P::Credential>> {
-        let state = self.state.lock().await;
-        match &*state {
+        let inner = lock_slot_inner(&self.inner);
+        match &inner.state {
             CredentialSlotState::Valid { value, generation } => Some(CredentialLease {
                 value: value.clone(),
                 generation: *generation,
@@ -346,13 +519,34 @@ where
         }
     }
 
-    async fn commit_slot_result(
+    fn commit_slot_result(
         &self,
         previous_generation: u64,
-        notify: Arc<Notify>,
+        guard: &mut RefreshGuard<P::Credential>,
         result: Result<P::Credential, AuthError>,
-    ) -> Result<CredentialLease<P::Credential>, AuthError> {
-        let mut state = self.state.lock().await;
+    ) -> Result<CommitOutcome<P::Credential>, AuthError> {
+        let notify = {
+            let inner = lock_slot_inner(&self.inner);
+            match &inner.state {
+                CredentialSlotState::Refreshing { notify, owner, .. } if *owner == guard.owner => {
+                    notify.clone()
+                }
+                _ => {
+                    guard.disarm();
+                    return Ok(CommitOutcome::StaleOwner);
+                }
+            }
+        };
+
+        let mut inner = lock_slot_inner(&self.inner);
+        match &inner.state {
+            CredentialSlotState::Refreshing { owner, .. } if *owner == guard.owner => {}
+            _ => {
+                guard.disarm();
+                return Ok(CommitOutcome::StaleOwner);
+            }
+        }
+
         match result {
             Ok(value) => {
                 let generation = previous_generation.checked_add(1).ok_or_else(|| {
@@ -361,25 +555,68 @@ where
                         "credential generation counter overflowed",
                     )
                 })?;
-                *state = CredentialSlotState::Valid {
+                inner.state = CredentialSlotState::Valid {
                     value: value.clone(),
                     generation,
                 };
+                guard.disarm();
                 notify.notify_waiters();
-                Ok(CredentialLease { value, generation })
+                Ok(CommitOutcome::Stored(CredentialLease { value, generation }))
             }
             Err(error) => {
-                *state = CredentialSlotState::Failed {
+                inner.state = CredentialSlotState::Failed {
                     generation: previous_generation,
                     error: error.clone(),
                     retry_after: error.retry_after().map(|wait| Instant::now() + wait),
                 };
+                guard.disarm();
                 notify.notify_waiters();
-                Err(error)
+                Ok(CommitOutcome::Failed(error))
             }
         }
     }
 }
+
+impl<T> CredentialSlotInner<T> {
+    fn next_refresh_owner(&mut self) -> Result<RefreshOwnerId, AuthError> {
+        let owner = self.next_owner;
+        self.next_owner = self.next_owner.checked_add(1).ok_or_else(|| {
+            AuthError::new(
+                AuthErrorKind::AcquireFailed,
+                "credential refresh owner counter overflowed",
+            )
+        })?;
+        Ok(RefreshOwnerId(owner))
+    }
+}
+
+fn lock_slot_inner<T>(
+    inner: &Arc<Mutex<CredentialSlotInner<T>>>,
+) -> MutexGuard<'_, CredentialSlotInner<T>> {
+    inner
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+type RefreshWaitHook = Arc<dyn Fn() + Send + Sync>;
+
+#[cfg(test)]
+static REFRESH_WAIT_HOOK: Mutex<Option<RefreshWaitHook>> = Mutex::new(None);
+
+#[cfg(test)]
+fn notify_refresh_wait_registered() {
+    let hook = REFRESH_WAIT_HOOK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+#[cfg(not(test))]
+fn notify_refresh_wait_registered() {}
 
 fn credential_refresh_reason<T: CredentialMaterial>(
     value: &T,
@@ -415,7 +652,17 @@ fn next_generation<T>(state: &CredentialSlotState<T>) -> Result<u64, AuthError> 
 
 #[cfg(test)]
 mod tests {
+    use super::super::http::{AuthHttpRequest, AuthHttpResponse};
     use super::*;
+    use http::uri::Scheme;
+    use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::{Mutex as AsyncMutex, Notify as AsyncNotify, oneshot};
+    use tokio::time::{Duration as TokioDuration, timeout};
+
+    static TEST_UNIT: () = ();
+    static NOOP_EXECUTOR: NoopExecutor = NoopExecutor;
+    static HOOK_TEST_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
     #[test]
     fn credential_generation_overflow_returns_auth_error() {
@@ -431,5 +678,585 @@ mod tests {
             err.to_string()
                 .contains("credential generation counter overflowed")
         );
+    }
+
+    #[tokio::test]
+    async fn leader_cancellation_during_acquire_recovers() {
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+
+        let first = provider.enqueue_acquire().await;
+        let leader = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(1).await;
+        leader.abort();
+        let _ = leader.await;
+        assert!(first.send(Ok(TestCredential::fresh("cancelled"))).is_err());
+
+        let second = provider.enqueue_acquire().await;
+        let caller = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(2).await;
+        second
+            .send(Ok(TestCredential::fresh("second")))
+            .expect("second acquire should still be waiting");
+
+        let lease = timeout(TokioDuration::from_secs(1), caller)
+            .await
+            .expect("later caller should not hang")
+            .expect("caller task should not panic")
+            .expect("later acquire should succeed");
+        assert_eq!(lease.value.value, "second");
+        assert_eq!(lease.generation, 1);
+        assert!(slot.has_value().await);
+        assert_eq!(provider.acquire_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn leader_cancellation_during_refresh_restores_previous_valid_and_recovers() {
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+        slot.set_manual(TestCredential::expired("old"))
+            .await
+            .expect("manual credential should be stored");
+
+        let first = provider.enqueue_refresh().await;
+        let leader = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_refresh_count(1).await;
+        leader.abort();
+        let _ = leader.await;
+        assert!(first.send(Ok(TestCredential::fresh("cancelled"))).is_err());
+
+        let cached = slot
+            .get_cached()
+            .await
+            .expect("cancelled refresh should restore previous credential");
+        assert_eq!(cached.value.value, "old");
+
+        let second = provider.enqueue_refresh().await;
+        let caller = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_refresh_count(2).await;
+        second
+            .send(Ok(TestCredential::fresh("new")))
+            .expect("second refresh should still be waiting");
+
+        let lease = timeout(TokioDuration::from_secs(1), caller)
+            .await
+            .expect("later caller should not hang")
+            .expect("caller task should not panic")
+            .expect("refresh retry should succeed");
+        assert_eq!(lease.value.value, "new");
+        assert!(slot.has_value().await);
+        assert_eq!(provider.refresh_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn invalidate_generation_during_refresh_prevents_cancelled_refresh_from_restoring_invalidated_valid()
+     {
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+        slot.set_manual(TestCredential::expired("old"))
+            .await
+            .expect("manual credential should be stored");
+        let old_generation = slot
+            .get_cached()
+            .await
+            .expect("manual credential should be cached")
+            .generation;
+
+        let refresh_release = provider.enqueue_refresh().await;
+        let leader = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_refresh_count(1).await;
+
+        slot.invalidate_generation(
+            test_context(),
+            Some(old_generation),
+            InvalidateReason::Unauthorized,
+        )
+        .await
+        .expect("invalidation should succeed");
+
+        leader.abort();
+        let _ = leader.await;
+        assert!(
+            refresh_release
+                .send(Ok(TestCredential::fresh("cancelled")))
+                .is_err()
+        );
+        assert!(
+            slot.get_cached().await.is_none(),
+            "cancelled refresh must not restore invalidated old credential"
+        );
+
+        let acquire_release = provider.enqueue_acquire().await;
+        let caller = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(1).await;
+        acquire_release
+            .send(Ok(TestCredential::fresh("new")))
+            .expect("acquire after invalidation should still be waiting");
+
+        let lease = timeout(TokioDuration::from_secs(1), caller)
+            .await
+            .expect("caller should not hang after invalidation rollback")
+            .expect("caller task should not panic")
+            .expect("caller should acquire replacement credential");
+        assert_eq!(lease.value.value, "new");
+        assert_ne!(lease.value.value, "old");
+    }
+
+    #[tokio::test]
+    async fn leader_cancellation_during_retry_from_failed_restores_failed_and_recovers() {
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+
+        let first = provider.enqueue_acquire().await;
+        let initial = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(1).await;
+        first
+            .send(Err(AuthError::new(
+                AuthErrorKind::AcquireFailed,
+                "first failed",
+            )))
+            .expect("initial acquire should still be waiting");
+        let err = initial
+            .await
+            .expect("initial task should not panic")
+            .expect_err("initial acquire should fail");
+        assert_eq!(err.kind, AuthErrorKind::AcquireFailed);
+
+        let retry = provider.enqueue_acquire().await;
+        let leader = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(2).await;
+        leader.abort();
+        let _ = leader.await;
+        assert!(retry.send(Ok(TestCredential::fresh("cancelled"))).is_err());
+
+        let recovery = provider.enqueue_acquire().await;
+        let caller = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(3).await;
+        recovery
+            .send(Ok(TestCredential::fresh("recovered")))
+            .expect("recovery acquire should still be waiting");
+
+        let lease = timeout(TokioDuration::from_secs(1), caller)
+            .await
+            .expect("caller should not hang after failed retry cancellation")
+            .expect("caller task should not panic")
+            .expect("caller should recover from restored failed state");
+        assert_eq!(lease.value.value, "recovered");
+        assert!(slot.has_value().await);
+        assert_eq!(provider.acquire_count(), 3);
+    }
+
+    #[tokio::test]
+    async fn waiter_cannot_miss_refresh_completion_notification() {
+        let _hook_guard = HOOK_TEST_LOCK.lock().await;
+        set_refresh_wait_hook_none();
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+        let release = provider.enqueue_acquire().await;
+
+        let leader = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(1).await;
+
+        let (registered_tx, registered_rx) = oneshot::channel();
+        let registered_tx = Arc::new(Mutex::new(Some(registered_tx)));
+        set_refresh_wait_hook({
+            let registered_tx = registered_tx.clone();
+            Arc::new(move || {
+                if let Some(tx) = registered_tx
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .take()
+                {
+                    let _ = tx.send(());
+                }
+            })
+        });
+
+        let follower = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        registered_rx
+            .await
+            .expect("follower should reach registered wait path");
+        release
+            .send(Ok(TestCredential::fresh("shared")))
+            .expect("leader acquire should still be waiting");
+        set_refresh_wait_hook_none();
+
+        let leader = timeout(TokioDuration::from_secs(1), leader)
+            .await
+            .expect("leader should complete")
+            .expect("leader task should not panic")
+            .expect("leader should acquire");
+        let follower = timeout(TokioDuration::from_secs(1), follower)
+            .await
+            .expect("follower should complete")
+            .expect("follower task should not panic")
+            .expect("follower should observe stored credential");
+
+        assert_eq!(leader.value.value, "shared");
+        assert_eq!(follower.value.value, "shared");
+        assert_eq!(provider.acquire_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn waiters_are_notified_on_cancellation_rollback() {
+        let _hook_guard = HOOK_TEST_LOCK.lock().await;
+        set_refresh_wait_hook_none();
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+        let first = provider.enqueue_acquire().await;
+
+        let leader = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(1).await;
+
+        let (registered_tx, registered_rx) = oneshot::channel();
+        let registered_tx = Arc::new(Mutex::new(Some(registered_tx)));
+        set_refresh_wait_hook({
+            let registered_tx = registered_tx.clone();
+            Arc::new(move || {
+                if let Some(tx) = registered_tx
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .take()
+                {
+                    let _ = tx.send(());
+                }
+            })
+        });
+
+        let follower = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        registered_rx
+            .await
+            .expect("follower should reach registered wait path");
+
+        let second = provider.enqueue_acquire().await;
+        leader.abort();
+        let _ = leader.await;
+        assert!(first.send(Ok(TestCredential::fresh("cancelled"))).is_err());
+        set_refresh_wait_hook_none();
+
+        provider.wait_for_acquire_count(2).await;
+        second
+            .send(Ok(TestCredential::fresh("recovered")))
+            .expect("follower retry acquire should still be waiting");
+
+        let lease = timeout(TokioDuration::from_secs(1), follower)
+            .await
+            .expect("follower should not hang after rollback")
+            .expect("follower task should not panic")
+            .expect("follower retry should succeed");
+        assert_eq!(lease.value.value, "recovered");
+        assert!(slot.has_value().await);
+    }
+
+    #[tokio::test]
+    async fn stale_acquire_owner_cannot_overwrite_manual_set() {
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+        let release = provider.enqueue_acquire().await;
+
+        let leader = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(1).await;
+
+        slot.set_manual(TestCredential::fresh("manual"))
+            .await
+            .expect("manual set should succeed");
+        release
+            .send(Ok(TestCredential::fresh("stale")))
+            .expect("stale acquire should still be waiting");
+
+        let lease = timeout(TokioDuration::from_secs(1), leader)
+            .await
+            .expect("stale owner should not hang")
+            .expect("leader task should not panic")
+            .expect("leader should observe manual credential after stale commit");
+        assert_eq!(lease.value.value, "manual");
+
+        let cached = slot
+            .get_cached()
+            .await
+            .expect("manual credential should remain cached");
+        assert_eq!(cached.value.value, "manual");
+    }
+
+    #[derive(Clone, Debug)]
+    struct TestCredential {
+        value: &'static str,
+        expires_at: Option<Instant>,
+    }
+
+    impl TestCredential {
+        fn fresh(value: &'static str) -> Self {
+            Self {
+                value,
+                expires_at: Some(Instant::now() + Duration::from_secs(3600)),
+            }
+        }
+
+        fn expired(value: &'static str) -> Self {
+            Self {
+                value,
+                expires_at: Some(Instant::now() - Duration::from_secs(1)),
+            }
+        }
+    }
+
+    impl CredentialMaterial for TestCredential {
+        fn expires_at(&self) -> Option<Instant> {
+            self.expires_at
+        }
+    }
+
+    #[derive(Clone)]
+    struct TestProvider {
+        inner: Arc<TestProviderInner>,
+    }
+
+    struct TestProviderInner {
+        acquire_count: AtomicUsize,
+        refresh_count: AtomicUsize,
+        acquire_started: AsyncNotify,
+        refresh_started: AsyncNotify,
+        acquire_releases:
+            AsyncMutex<VecDeque<oneshot::Receiver<Result<TestCredential, AuthError>>>>,
+        refresh_releases:
+            AsyncMutex<VecDeque<oneshot::Receiver<Result<TestCredential, AuthError>>>>,
+    }
+
+    impl TestProvider {
+        fn new() -> Self {
+            Self {
+                inner: Arc::new(TestProviderInner {
+                    acquire_count: AtomicUsize::new(0),
+                    refresh_count: AtomicUsize::new(0),
+                    acquire_started: AsyncNotify::new(),
+                    refresh_started: AsyncNotify::new(),
+                    acquire_releases: AsyncMutex::new(VecDeque::new()),
+                    refresh_releases: AsyncMutex::new(VecDeque::new()),
+                }),
+            }
+        }
+
+        async fn enqueue_acquire(&self) -> oneshot::Sender<Result<TestCredential, AuthError>> {
+            let (tx, rx) = oneshot::channel();
+            self.inner.acquire_releases.lock().await.push_back(rx);
+            tx
+        }
+
+        async fn enqueue_refresh(&self) -> oneshot::Sender<Result<TestCredential, AuthError>> {
+            let (tx, rx) = oneshot::channel();
+            self.inner.refresh_releases.lock().await.push_back(rx);
+            tx
+        }
+
+        fn acquire_count(&self) -> usize {
+            self.inner.acquire_count.load(Ordering::SeqCst)
+        }
+
+        fn refresh_count(&self) -> usize {
+            self.inner.refresh_count.load(Ordering::SeqCst)
+        }
+
+        async fn wait_for_acquire_count(&self, expected: usize) {
+            loop {
+                if self.acquire_count() >= expected {
+                    return;
+                }
+                self.inner.acquire_started.notified().await;
+            }
+        }
+
+        async fn wait_for_refresh_count(&self, expected: usize) {
+            loop {
+                if self.refresh_count() >= expected {
+                    return;
+                }
+                self.inner.refresh_started.notified().await;
+            }
+        }
+    }
+
+    impl CredentialProvider<TestCx> for TestProvider {
+        type Credential = TestCredential;
+
+        fn id(&self) -> CredentialId {
+            CredentialId::new("test", "credential")
+        }
+
+        fn acquire<'a>(
+            &'a self,
+            _ctx: CredentialContext<'a, TestCx>,
+        ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
+            Box::pin(async move {
+                self.inner.acquire_count.fetch_add(1, Ordering::SeqCst);
+                self.inner.acquire_started.notify_waiters();
+                let release = self
+                    .inner
+                    .acquire_releases
+                    .lock()
+                    .await
+                    .pop_front()
+                    .expect("test acquire release should be queued");
+                release
+                    .await
+                    .expect("test acquire sender should not be dropped")
+            })
+        }
+
+        fn refresh<'a>(
+            &'a self,
+            _ctx: CredentialContext<'a, TestCx>,
+            _current: &'a Self::Credential,
+        ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
+            Box::pin(async move {
+                self.inner.refresh_count.fetch_add(1, Ordering::SeqCst);
+                self.inner.refresh_started.notify_waiters();
+                let release = self
+                    .inner
+                    .refresh_releases
+                    .lock()
+                    .await
+                    .pop_front()
+                    .expect("test refresh release should be queued");
+                release
+                    .await
+                    .expect("test refresh sender should not be dropped")
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct TestCx;
+
+    impl ClientContext for TestCx {
+        type Vars = ();
+        type AuthVars = ();
+        type AuthState = ();
+        const SCHEME: Scheme = Scheme::HTTPS;
+        const DOMAIN: &'static str = "example.com";
+
+        fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+    }
+
+    struct NoopExecutor;
+
+    impl AuthHttpExecutor for NoopExecutor {
+        fn send<'a>(
+            &'a self,
+            _req: AuthHttpRequest,
+        ) -> AuthFuture<'a, Result<AuthHttpResponse, AuthError>> {
+            Box::pin(async {
+                Err(AuthError::new(
+                    AuthErrorKind::UnsupportedScheme,
+                    "test executor does not send requests",
+                ))
+            })
+        }
+    }
+
+    fn test_context() -> CredentialContext<'static, TestCx> {
+        CredentialContext {
+            vars: &TEST_UNIT,
+            auth: &TEST_UNIT,
+            auth_state: &TEST_UNIT,
+            executor: &NOOP_EXECUTOR,
+            credential_id: CredentialId::new("test", "credential"),
+            reason: CredentialRefreshReason::Missing,
+        }
+    }
+
+    fn set_refresh_wait_hook(hook: RefreshWaitHook) {
+        *REFRESH_WAIT_HOOK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(hook);
+    }
+
+    fn set_refresh_wait_hook_none() {
+        *REFRESH_WAIT_HOOK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     }
 }
