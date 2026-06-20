@@ -20,7 +20,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify, watch};
 
 #[derive(Clone, Debug)]
 pub struct TestAuthVars {
@@ -477,7 +477,6 @@ pub struct MockTransport {
     outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
     events: Arc<Mutex<Vec<String>>>,
     requests: Arc<Mutex<Vec<TransportRequest>>>,
-    delay: Option<Duration>,
 }
 
 #[derive(Clone)]
@@ -538,13 +537,7 @@ impl MockTransport {
             outcomes: Arc::new(Mutex::new(outcomes.into())),
             events,
             requests: Arc::new(Mutex::new(Vec::new())),
-            delay: None,
         }
-    }
-
-    pub fn delayed(mut self, delay: Duration) -> Self {
-        self.delay = Some(delay);
-        self
     }
 
     pub async fn sent_count(&self) -> usize {
@@ -564,18 +557,125 @@ impl Transport for MockTransport {
         let outcomes = self.outcomes.clone();
         let events = self.events.clone();
         let requests = self.requests.clone();
-        let delay = self.delay;
         Box::pin(async move {
             events.lock().await.push("transport".to_string());
             requests.lock().await.push(req.clone());
-            if let Some(delay) = delay {
-                tokio::time::sleep(delay).await;
-            }
             let outcome = outcomes
                 .lock()
                 .await
                 .pop_front()
                 .unwrap_or_else(|| MockResponse::text(StatusCode::OK, "ok").into());
+            let response = match outcome {
+                MockOutcome::Response(response) => response,
+                MockOutcome::TransportError(kind) => {
+                    return Err(TransportError::with_kind(
+                        kind,
+                        std::io::Error::other("mock transport error"),
+                    ));
+                }
+            };
+            Ok(TransportResponse {
+                meta: req.meta,
+                url: req.url,
+                status: response.status,
+                headers: response.headers,
+                content_length: response.content_length.or_else(|| {
+                    response
+                        .chunks
+                        .is_none()
+                        .then_some(response.body.len() as u64)
+                }),
+                rate_limit: req.rate_limit,
+                body: if let Some(chunks) = response.chunks {
+                    Box::new(ChunkBody {
+                        chunks: chunks.into(),
+                    })
+                } else {
+                    Box::new(StaticBody(Some(response.body)))
+                },
+            })
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct GateTransport {
+    outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
+    events: Arc<Mutex<Vec<String>>>,
+    requests: Arc<Mutex<Vec<TransportRequest>>>,
+    arrived: Arc<Notify>,
+    release: watch::Sender<bool>,
+}
+
+impl GateTransport {
+    pub fn new(events: Arc<Mutex<Vec<String>>>, responses: Vec<MockResponse>) -> Self {
+        Self::with_outcomes(events, responses.into_iter().map(Into::into).collect())
+    }
+
+    pub fn with_outcomes(events: Arc<Mutex<Vec<String>>>, outcomes: Vec<MockOutcome>) -> Self {
+        let (release, _) = watch::channel(false);
+        Self {
+            outcomes: Arc::new(Mutex::new(outcomes.into())),
+            events,
+            requests: Arc::new(Mutex::new(Vec::new())),
+            arrived: Arc::new(Notify::new()),
+            release,
+        }
+    }
+
+    pub async fn sent_count(&self) -> usize {
+        self.requests.lock().await.len()
+    }
+
+    pub async fn requests(&self) -> Vec<TransportRequest> {
+        self.requests.lock().await.clone()
+    }
+
+    pub async fn wait_for_sends(&self, expected: usize) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let notified = self.arrived.notified();
+                if self.sent_count().await >= expected {
+                    break;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {expected} transport sends"));
+    }
+
+    pub fn release_all(&self) {
+        let _ = self.release.send(true);
+    }
+}
+
+impl Transport for GateTransport {
+    fn send(
+        &self,
+        req: TransportRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        let outcomes = self.outcomes.clone();
+        let events = self.events.clone();
+        let requests = self.requests.clone();
+        let arrived = self.arrived.clone();
+        let mut release = self.release.subscribe();
+        Box::pin(async move {
+            events.lock().await.push("transport".to_string());
+            requests.lock().await.push(req.clone());
+            let outcome = outcomes
+                .lock()
+                .await
+                .pop_front()
+                .unwrap_or_else(|| MockResponse::text(StatusCode::OK, "ok").into());
+            arrived.notify_waiters();
+
+            while !*release.borrow() {
+                if release.changed().await.is_err() {
+                    break;
+                }
+            }
+
             let response = match outcome {
                 MockOutcome::Response(response) => response,
                 MockOutcome::TransportError(kind) => {
@@ -871,8 +971,8 @@ pub fn client(auth: TestAuthVars, transport: MockTransport) -> ApiClient<TestCx,
     ApiClient::with_transport((), auth, transport)
 }
 
-pub fn configure_runtime(
-    client: &mut ApiClient<TestCx, MockTransport>,
+pub fn configure_runtime<T: Transport>(
+    client: &mut ApiClient<TestCx, T>,
     cache: Option<Arc<dyn CacheStore>>,
     limiter: Option<Arc<dyn RateLimiter>>,
 ) {
