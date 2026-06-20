@@ -527,7 +527,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
         };
         let name = &credential.name;
         let handle_ty = emit_helpers::ident(
-            &format!("{}{}Auth", client_ty, pascalize(&name.to_string())),
+            &crate::model::facade::generated_auth_handle_type_name(client_ty, name),
             name.span(),
         );
         Some(quote! {
@@ -632,7 +632,7 @@ fn emit_auth_accessor_methods(resolved_api: &ResolvedApi, client_ty: &Ident) -> 
         }
         let name = &credential.name;
         let handle_ty = emit_helpers::ident(
-            &format!("{}{}Auth", client_ty, pascalize(&name.to_string())),
+            &crate::model::facade::generated_auth_handle_type_name(client_ty, name),
             name.span(),
         );
         Some(quote! {

@@ -1,0 +1,5 @@
+error: generated public API name `FooBarRequestExt` for endpoint request extension trait conflicts with endpoint request extension trait in generated module type namespace
+  --> tests/usage/fail/fail_generated_public_type_collision.rs:15:13
+   |
+15 |         GET Bar
+   |             ^^^

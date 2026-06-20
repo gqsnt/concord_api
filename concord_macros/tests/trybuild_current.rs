@@ -32,6 +32,7 @@ fn current_trybuild_fixtures_match_expected_results() {
         "tests/usage/pass/pass_client_config.rs",
         "tests/usage/pass/pass_execution_pagination_auth.rs",
         "tests/usage/pass/pass_facade_navigation.rs",
+        "tests/usage/pass/pass_generated_public_api_shape.rs",
         "tests/usage/pass/pass_param_builders.rs",
     ]
     .into_iter()
@@ -126,10 +127,15 @@ fn current_trybuild_fixtures_match_expected_results() {
         "tests/usage/fail/fail_endpoint_basic_used_as_bearer.rs",
         "tests/usage/fail/fail_endpoint_certificate_used_as_basic.rs",
         "tests/usage/fail/fail_endpoint_unknown_used_as_basic.rs",
+        "tests/usage/fail/fail_generated_public_type_collision.rs",
         "tests/usage/fail/fail_maybe_field.rs",
         "tests/usage/fail/fail_missing_required_param.rs",
         "tests/usage/fail/fail_non_credential_acquire_as.rs",
         "tests/usage/fail/fail_non_paginated_paginate.rs",
+        "tests/usage/fail/fail_raw_identifier_public_name.rs",
+        "tests/usage/fail/fail_reserved_credential_auth_method.rs",
+        "tests/usage/fail/fail_reserved_endpoint_method.rs",
+        "tests/usage/fail/fail_reserved_scope_accessor.rs",
         "tests/usage/fail/fail_reset_field.rs",
         "tests/usage/fail/fail_with_configure.rs",
         "tests/usage/fail/response_codec_missing_trait.rs",

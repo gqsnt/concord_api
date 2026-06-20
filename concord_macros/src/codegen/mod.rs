@@ -8,7 +8,7 @@ use crate::emit_helpers;
 use crate::model::SetOp;
 use crate::model::facade::{
     FacadeCredentialMethods, FacadeDoc, FacadeEndpoint, FacadeIr, FacadeMethod, FacadeScope,
-    FacadeSetter, build_facade_ir,
+    FacadeSetter, build_facade_ir, client_prefixed_type_name, generated_acquire_as_trait_type_name,
 };
 use crate::sema::*;
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -18,26 +18,12 @@ use syn::{Ident, LitStr};
 #[inline]
 fn client_prefixed_ident(client: &Ident, suffix: &str) -> Ident {
     // Example: RiotClient + "Vars" => RiotClientVars
-    emit_helpers::ident(&format!("{}{}", client, suffix), client.span())
+    emit_helpers::ident(&client_prefixed_type_name(client, suffix), client.span())
 }
 
 fn acquire_as_trait_ident(client: &Ident, credential: &Ident) -> Ident {
-    let mut pascal = String::new();
-    let mut upper_next = true;
-    for ch in credential.to_string().chars() {
-        if ch == '_' || ch == '-' {
-            upper_next = true;
-            continue;
-        }
-        if upper_next {
-            pascal.extend(ch.to_uppercase());
-            upper_next = false;
-        } else {
-            pascal.push(ch);
-        }
-    }
     emit_helpers::ident(
-        &format!("{}AcquireAs{}Ext", client, pascal),
+        &generated_acquire_as_trait_type_name(client, credential),
         credential.span(),
     )
 }

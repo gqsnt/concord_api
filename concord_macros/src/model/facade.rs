@@ -205,7 +205,7 @@ fn facade_scope_from_info(
             FacadeMethod {
                 public_name,
                 target_scope_path: target_scope_path.clone(),
-                target_scope_type_name: facade_scope_type_name(
+                target_scope_type_name: generated_scope_type_name(
                     &resolved_api.client_name,
                     &child.path,
                 ),
@@ -244,7 +244,7 @@ fn facade_scope_from_info(
         path: path.clone(),
         public_name,
         public_method: path.last().cloned().unwrap_or_default(),
-        rust_type_name: facade_scope_type_name(&resolved_api.client_name, &scope.path),
+        rust_type_name: generated_scope_type_name(&resolved_api.client_name, &scope.path),
         parent_path: scope
             .path
             .iter()
@@ -362,7 +362,7 @@ fn facade_endpoint_from_resolved(ep: &ResolvedEndpoint) -> FacadeEndpoint {
     let public_method = ep.alias.as_ref().unwrap_or(&ep.name).to_string();
     FacadeEndpoint {
         target_endpoint: endpoint_qualified_name(ep),
-        public_method: pascal_to_snake(&public_method),
+        public_method: generated_endpoint_method_name(&public_method),
         scope_path: ep.scope_modules.iter().map(ToString::to_string).collect(),
         required_args,
         setters,
@@ -534,28 +534,68 @@ fn ident_path_strings(path: &[Ident]) -> Vec<String> {
     path.iter().map(ToString::to_string).collect()
 }
 
-fn facade_scope_type_name(client_name: &Ident, path: &[Ident]) -> String {
+pub(crate) fn generated_scope_type_name(client_name: &Ident, path: &[Ident]) -> String {
     format!("{}{}Scope", client_name, pascalize_ident_path(path))
+}
+
+pub(crate) fn client_prefixed_type_name(client: &Ident, suffix: &str) -> String {
+    format!("{client}{suffix}")
+}
+
+pub(crate) fn generated_auth_facade_type_name(client: &Ident) -> String {
+    client_prefixed_type_name(client, "Auth")
+}
+
+pub(crate) fn generated_auth_handle_type_name(client: &Ident, credential: &Ident) -> String {
+    format!(
+        "{}{}Auth",
+        client,
+        generated_pascal_name(&credential.to_string())
+    )
+}
+
+pub(crate) fn generated_acquire_as_trait_type_name(client: &Ident, credential: &Ident) -> String {
+    format!(
+        "{}AcquireAs{}Ext",
+        client,
+        generated_pascal_name(&credential.to_string())
+    )
+}
+
+pub(crate) fn generated_endpoint_request_ext_trait_type_name(ep: &ResolvedEndpoint) -> String {
+    let mut name = String::new();
+    for scope in &ep.scope_modules {
+        name.push_str(&generated_pascal_name(&scope.to_string()));
+    }
+    name.push_str(&generated_pascal_name(&ep.name.to_string()));
+    name.push_str("RequestExt");
+    name
+}
+
+pub(crate) fn generated_endpoint_method_name(raw: &str) -> String {
+    pascal_to_snake(raw)
+}
+
+pub(crate) fn generated_pascal_name(raw: &str) -> String {
+    raw.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            let Some(first) = chars.next() else {
+                return String::new();
+            };
+            let mut out = String::new();
+            out.extend(first.to_uppercase());
+            out.push_str(chars.as_str());
+            out
+        })
+        .collect::<String>()
 }
 
 fn pascalize_ident_path(path: &[Ident]) -> String {
     path.iter()
         .map(ToString::to_string)
-        .map(|s| {
-            s.split('_')
-                .filter(|part| !part.is_empty())
-                .map(|part| {
-                    let mut chars = part.chars();
-                    let Some(first) = chars.next() else {
-                        return String::new();
-                    };
-                    let mut out = String::new();
-                    out.extend(first.to_uppercase());
-                    out.push_str(chars.as_str());
-                    out
-                })
-                .collect::<String>()
-        })
+        .map(|s| generated_pascal_name(&s))
         .collect::<String>()
 }
 

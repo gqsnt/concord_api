@@ -10,13 +10,10 @@ fn endpoint_internal_ident(ep: &ResolvedEndpoint) -> Ident {
 }
 
 fn endpoint_pending_ext_trait_ident(ep: &ResolvedEndpoint) -> Ident {
-    let mut name = String::new();
-    for scope in &ep.scope_modules {
-        name.push_str(&pascalize(&scope.to_string()));
-    }
-    name.push_str(&pascalize(&ep.name.to_string()));
-    name.push_str("RequestExt");
-    emit_helpers::ident(&name, ep.name.span())
+    emit_helpers::ident(
+        &crate::model::facade::generated_endpoint_request_ext_trait_type_name(ep),
+        ep.name.span(),
+    )
 }
 
 fn pascalize(raw: &str) -> String {

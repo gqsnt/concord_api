@@ -15,9 +15,14 @@ use crate::ast::{
     RetryProfilesBlock, RetrySpec, RouteAtom, SecretRef,
 };
 use crate::emit_helpers;
+use crate::model::facade::{
+    build_facade_ir, client_prefixed_type_name, generated_acquire_as_trait_type_name,
+    generated_auth_facade_type_name, generated_auth_handle_type_name,
+    generated_endpoint_request_ext_trait_type_name,
+};
 use crate::model::*;
 use proc_macro2::Span;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet as PublicNameSet};
 use syn::{Expr, Ident, LitStr, Path, Result, Type, spanned::Spanned};
 
 include!("ir.rs");
@@ -181,7 +186,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         Some(CacheResolved::Clear) | None => None,
     };
 
-    Ok(ResolvedApi {
+    let resolved_api = ResolvedApi {
         mod_name,
         client_name,
         scheme: norm.client.scheme,
@@ -198,7 +203,508 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
             .as_ref()
             .and_then(|block| block.response_policy.clone()),
         endpoints,
+    };
+
+    validate_generated_public_api(&resolved_api)?;
+
+    Ok(resolved_api)
+}
+
+fn validate_generated_public_api(api: &ResolvedApi) -> Result<()> {
+    let mut errors = None;
+    let facade_ir = build_facade_ir(api);
+
+    reject_raw_ident(&mut errors, &api.client_name, "client type");
+    for var in api.client_vars.iter().chain(api.client_auth_vars.iter()) {
+        reject_raw_ident(&mut errors, &var.rust, "client parameter");
+    }
+    for credential in &api.client_auth_credentials {
+        reject_raw_ident(&mut errors, &credential.name, "credential");
+    }
+    for endpoint in &api.endpoints {
+        reject_raw_ident(&mut errors, &endpoint.name, "endpoint");
+        if let Some(alias) = &endpoint.alias {
+            reject_raw_ident(&mut errors, alias, "endpoint alias");
+        }
+        for scope in &endpoint.scope_modules {
+            reject_raw_ident(&mut errors, scope, "scope");
+        }
+        for var in &endpoint.vars {
+            reject_raw_ident(&mut errors, &var.rust, "endpoint parameter");
+        }
+        for group in &endpoint.facade_param_groups {
+            for var in group {
+                reject_raw_ident(&mut errors, &var.rust, "scope parameter");
+            }
+        }
+    }
+
+    validate_client_method_namespace(api, &facade_ir, &mut errors);
+    validate_builder_namespace(api, &mut errors);
+    validate_auth_facade_namespace(api, &mut errors);
+    validate_scope_method_namespaces(api, &facade_ir, &mut errors);
+    validate_generated_type_namespace(api, &facade_ir, &mut errors);
+
+    match errors {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+fn validate_client_method_namespace(
+    api: &ResolvedApi,
+    facade_ir: &crate::model::facade::FacadeIr,
+    errors: &mut Option<syn::Error>,
+) {
+    let mut ns = PublicNameNamespace::new("generated client");
+    for name in [
+        "new",
+        "new_with_transport",
+        "builder",
+        "debug_level",
+        "set_debug_level",
+        "with_debug_level",
+        "pagination_caps",
+        "set_pagination_caps",
+        "with_pagination_caps",
+        "configure",
+        "configure_mut",
+        "request",
+        "auth_state",
+    ] {
+        ns.reserve(name, "generated client method", api.client_name.span());
+    }
+    let root_auth_scope_exists = facade_ir
+        .scopes
+        .iter()
+        .any(|scope| scope.path.first().is_some_and(|part| part == "auth"));
+    if !root_auth_scope_exists {
+        ns.reserve("auth", "generated client method", api.client_name.span());
+    }
+
+    for var in &api.client_vars {
+        ns.add(
+            errors,
+            format!("set_{}", var.rust),
+            var.rust.span(),
+            "client parameter setter",
+        );
+        if var.optional {
+            ns.add(
+                errors,
+                format!("clear_{}", var.rust),
+                var.rust.span(),
+                "client parameter clearer",
+            );
+        }
+    }
+    for var in &api.client_auth_vars {
+        ns.add(
+            errors,
+            format!("set_{}", var.rust),
+            var.rust.span(),
+            "client secret setter",
+        );
+        if var.optional {
+            ns.add(
+                errors,
+                format!("clear_{}", var.rust),
+                var.rust.span(),
+                "client secret clearer",
+            );
+        }
+    }
+    for methods in &facade_ir.credential_methods {
+        let span = api
+            .client_auth_credentials
+            .iter()
+            .find(|credential| credential.name == methods.credential.as_str())
+            .map(|credential| credential.name.span())
+            .unwrap_or_else(Span::call_site);
+        for public_name in [
+            &methods.acquire_name,
+            &methods.set_name,
+            &methods.clear_name,
+            &methods.has_name,
+        ] {
+            ns.add(
+                errors,
+                public_name.clone(),
+                span,
+                "endpoint-backed credential helper",
+            );
+        }
+    }
+
+    for scope in facade_ir
+        .scopes
+        .iter()
+        .filter(|scope| scope.path.len() == 1)
+    {
+        let span = scope_public_name_span(api, &scope.path).unwrap_or_else(Span::call_site);
+        ns.add(
+            errors,
+            scope.public_method.clone(),
+            span,
+            "root scope accessor",
+        );
+    }
+
+    for endpoint in facade_ir
+        .endpoints
+        .iter()
+        .filter(|endpoint| endpoint.scope_path.is_empty())
+    {
+        let span = resolved_endpoint_for_facade(api, endpoint)
+            .map(endpoint_public_name_span)
+            .unwrap_or_else(Span::call_site);
+        ns.add(
+            errors,
+            endpoint.public_method.clone(),
+            span,
+            "root endpoint method",
+        );
+    }
+}
+
+fn validate_builder_namespace(api: &ResolvedApi, errors: &mut Option<syn::Error>) {
+    let mut ns = PublicNameNamespace::new("generated client builder");
+    for name in ["new", "build"] {
+        ns.reserve(name, "generated builder method", api.client_name.span());
+    }
+    for var in api
+        .client_vars
+        .iter()
+        .chain(api.client_auth_vars.iter())
+        .filter(|var| !var.optional && var.default.is_none())
+    {
+        ns.add(
+            errors,
+            var.rust.to_string(),
+            var.rust.span(),
+            "required constructor parameter builder setter",
+        );
+    }
+}
+
+fn validate_auth_facade_namespace(api: &ResolvedApi, errors: &mut Option<syn::Error>) {
+    let mut ns = PublicNameNamespace::new("generated auth-state facade");
+    for credential in &api.client_auth_credentials {
+        if matches!(credential.kind, AuthCredentialKindIr::Endpoint { .. }) {
+            ns.add(
+                errors,
+                credential.name.to_string(),
+                credential.name.span(),
+                "endpoint-backed credential auth-state accessor",
+            );
+        }
+    }
+}
+
+fn validate_scope_method_namespaces(
+    api: &ResolvedApi,
+    facade_ir: &crate::model::facade::FacadeIr,
+    errors: &mut Option<syn::Error>,
+) {
+    let mut namespaces: BTreeMap<Vec<String>, PublicNameNamespace> = BTreeMap::new();
+
+    for scope in &facade_ir.scopes {
+        let path = scope.path.clone();
+        for setter in &scope.setters {
+            scope_namespace(&mut namespaces, &path).add(
+                errors,
+                setter.set_name.clone(),
+                Span::call_site(),
+                "scope parameter setter",
+            );
+            if setter
+                .forms
+                .contains(&crate::model::facade::SetterForm::Clear)
+            {
+                scope_namespace(&mut namespaces, &path).add(
+                    errors,
+                    setter.clear_name.clone(),
+                    Span::call_site(),
+                    "scope parameter clearer",
+                );
+            }
+        }
+        for method in &scope.methods {
+            scope_namespace(&mut namespaces, &path).add(
+                errors,
+                method.public_name.clone(),
+                Span::call_site(),
+                "scope accessor",
+            );
+        }
+    }
+
+    for endpoint in &facade_ir.endpoints {
+        if !endpoint.scope_path.is_empty() {
+            let span = resolved_endpoint_for_facade(api, endpoint)
+                .map(endpoint_public_name_span)
+                .unwrap_or_else(Span::call_site);
+            scope_namespace(&mut namespaces, &endpoint.scope_path).add(
+                errors,
+                endpoint.public_method.clone(),
+                span,
+                "endpoint method",
+            );
+        }
+    }
+}
+
+fn resolved_endpoint_for_facade<'a>(
+    api: &'a ResolvedApi,
+    facade_endpoint: &crate::model::facade::FacadeEndpoint,
+) -> Option<&'a ResolvedEndpoint> {
+    api.endpoints.iter().find(|endpoint| {
+        resolved_endpoint_qualified_name(endpoint) == facade_endpoint.target_endpoint
     })
+}
+
+fn endpoint_public_name_span(endpoint: &ResolvedEndpoint) -> Span {
+    endpoint.alias.as_ref().unwrap_or(&endpoint.name).span()
+}
+
+fn scope_public_name_span(api: &ResolvedApi, path: &[String]) -> Option<Span> {
+    if path.is_empty() {
+        return None;
+    }
+    api.endpoints.iter().find_map(|endpoint| {
+        if endpoint.scope_modules.len() < path.len() {
+            return None;
+        }
+        let matches_path = endpoint
+            .scope_modules
+            .iter()
+            .zip(path.iter())
+            .all(|(actual, expected)| actual == expected);
+        matches_path.then(|| endpoint.scope_modules[path.len() - 1].span())
+    })
+}
+
+fn resolved_endpoint_qualified_name(endpoint: &ResolvedEndpoint) -> String {
+    if endpoint.scope_modules.is_empty() {
+        endpoint.name.to_string()
+    } else {
+        let mut qualified = endpoint
+            .scope_modules
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("::");
+        qualified.push_str("::");
+        qualified.push_str(&endpoint.name.to_string());
+        qualified
+    }
+}
+
+fn validate_generated_type_namespace(
+    api: &ResolvedApi,
+    facade_ir: &crate::model::facade::FacadeIr,
+    errors: &mut Option<syn::Error>,
+) {
+    let mut ns = PublicNameNamespace::new("generated module type namespace");
+    let span = api.client_name.span();
+    ns.add(errors, api.client_name.to_string(), span, "client type");
+    for suffix in [
+        "Vars",
+        "AuthInner",
+        "AuthVars",
+        "AuthState",
+        "Cx",
+        "Builder",
+    ] {
+        ns.add(
+            errors,
+            client_prefixed_type_name(&api.client_name, suffix),
+            span,
+            "generated client support type",
+        );
+    }
+    ns.add(
+        errors,
+        generated_auth_facade_type_name(&api.client_name),
+        span,
+        "generated auth-state facade type",
+    );
+
+    for credential in &api.client_auth_credentials {
+        if matches!(credential.kind, AuthCredentialKindIr::Endpoint { .. }) {
+            ns.add(
+                errors,
+                generated_auth_handle_type_name(&api.client_name, &credential.name),
+                credential.name.span(),
+                "endpoint-backed credential auth handle type",
+            );
+            ns.add(
+                errors,
+                generated_acquire_as_trait_type_name(&api.client_name, &credential.name),
+                credential.name.span(),
+                "endpoint-backed credential request extension trait",
+            );
+        }
+    }
+
+    for scope in &facade_ir.scopes {
+        ns.add(
+            errors,
+            scope.rust_type_name.clone(),
+            Span::call_site(),
+            "scope facade type",
+        );
+    }
+
+    for endpoint in &api.endpoints {
+        ns.add(
+            errors,
+            generated_endpoint_request_ext_trait_type_name(endpoint),
+            endpoint.name.span(),
+            "endpoint request extension trait",
+        );
+    }
+
+    validate_endpoint_public_type_namespaces(api, errors);
+}
+
+fn validate_endpoint_public_type_namespaces(api: &ResolvedApi, errors: &mut Option<syn::Error>) {
+    let mut namespaces: BTreeMap<Vec<String>, PublicNameNamespace> = BTreeMap::new();
+    let mut child_modules_seen: PublicNameSet<(Vec<String>, String)> = PublicNameSet::new();
+
+    for endpoint in &api.endpoints {
+        let path = endpoint
+            .scope_modules
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        endpoint_type_namespace(&mut namespaces, &path).add(
+            errors,
+            endpoint.name.to_string(),
+            endpoint.name.span(),
+            "endpoint marker type",
+        );
+
+        for idx in 0..endpoint.scope_modules.len() {
+            let parent = endpoint.scope_modules[..idx]
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            let child = endpoint.scope_modules[idx].to_string();
+            if child_modules_seen.insert((parent.clone(), child.clone())) {
+                endpoint_type_namespace(&mut namespaces, &parent).add(
+                    errors,
+                    child,
+                    endpoint.scope_modules[idx].span(),
+                    "endpoint scope module",
+                );
+            }
+        }
+    }
+}
+
+fn endpoint_type_namespace<'a>(
+    namespaces: &'a mut BTreeMap<Vec<String>, PublicNameNamespace>,
+    path: &[String],
+) -> &'a mut PublicNameNamespace {
+    namespaces
+        .entry(path.to_vec())
+        .or_insert_with(|| PublicNameNamespace::new(endpoint_type_namespace_label(path)))
+}
+
+fn endpoint_type_namespace_label(path: &[String]) -> String {
+    if path.is_empty() {
+        "generated endpoints module".to_string()
+    } else {
+        format!("generated endpoints::{} module", path.join("::"))
+    }
+}
+
+fn scope_namespace<'a>(
+    namespaces: &'a mut BTreeMap<Vec<String>, PublicNameNamespace>,
+    path: &[String],
+) -> &'a mut PublicNameNamespace {
+    namespaces
+        .entry(path.to_vec())
+        .or_insert_with(|| PublicNameNamespace::new(scope_namespace_label(path)))
+}
+
+fn scope_namespace_label(path: &[String]) -> String {
+    if path.is_empty() {
+        "generated client".to_string()
+    } else {
+        format!("generated `{}` scope facade", path.join("::"))
+    }
+}
+
+struct PublicNameNamespace {
+    label: String,
+    names: BTreeMap<String, PublicNameSource>,
+}
+
+impl PublicNameNamespace {
+    fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            names: BTreeMap::new(),
+        }
+    }
+
+    fn reserve(&mut self, name: &'static str, kind: &'static str, span: Span) {
+        self.names
+            .insert(name.to_string(), PublicNameSource { kind, span });
+    }
+
+    fn add(
+        &mut self,
+        errors: &mut Option<syn::Error>,
+        name: String,
+        span: Span,
+        kind: &'static str,
+    ) {
+        if let Some(existing) = self.names.get(&name) {
+            push_error(
+                errors,
+                syn::Error::new(
+                    span,
+                    format!(
+                        "generated public API name `{name}` for {kind} conflicts with {} in {}",
+                        existing.kind, self.label
+                    ),
+                ),
+            );
+        } else {
+            self.names.insert(name, PublicNameSource { kind, span });
+        }
+    }
+}
+
+struct PublicNameSource {
+    kind: &'static str,
+    #[allow(dead_code)]
+    span: Span,
+}
+
+fn reject_raw_ident(errors: &mut Option<syn::Error>, ident: &Ident, kind: &'static str) {
+    let name = ident.to_string();
+    if name.starts_with("r#") {
+        push_error(
+            errors,
+            syn::Error::new(
+                ident.span(),
+                format!(
+                    "raw Rust identifier `{name}` is not supported for generated public API {kind} names"
+                ),
+            ),
+        );
+    }
+}
+
+fn push_error(errors: &mut Option<syn::Error>, error: syn::Error) {
+    match errors {
+        Some(existing) => existing.combine(error),
+        None => *errors = Some(error),
+    }
 }
 
 // Keep feature-domain macro chunks in separate files without widening helper visibility.

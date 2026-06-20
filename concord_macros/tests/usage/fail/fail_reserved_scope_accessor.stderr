@@ -1,0 +1,5 @@
+error: generated public API name `configure` for root scope accessor conflicts with generated client method in generated client
+ --> tests/usage/fail/fail_reserved_scope_accessor.rs:6:11
+  |
+6 |     scope configure {
+  |           ^^^^^^^^^
