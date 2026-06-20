@@ -10,14 +10,15 @@ mod query_auth_redaction {
         AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
         AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
         AuthRequirementId, AuthRetryReason, BuiltRequest, CacheAfter, CacheBefore, CacheFuture,
-        CacheStore, DebugSink, PreparedInternalAuth, RequestMeta, RuntimeHooks, Transport,
-        TransportAuth, TransportError, TransportErrorHookContext, TransportResponse,
-        apply_basic_credential, apply_certificate_credential, apply_secret_credential,
-        default_cache_key,
+        CacheStore, DebugSink, DecodedResponse, PreparedInternalAuth, RequestMeta,
+        ReqwestTransport, RuntimeHooks, Transport, TransportAuth, TransportError,
+        TransportErrorHookContext, TransportRequest, TransportResponse, apply_basic_credential,
+        apply_certificate_credential, apply_secret_credential, default_cache_key,
     };
+    use concord_core::advanced::{BuiltResponse, PreparedAuthCredential, RateLimitPlan};
     #[cfg(feature = "json")]
     use concord_core::advanced::{CredentialProvider, OAuth2ClientCredentialsProvider};
-    use concord_core::advanced::{PreparedAuthCredential, TransportRequest};
+    use concord_core::auth::RequestExtensions;
     use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
     use concord_core::prelude::{
         AccessToken, ApiClient, ApiClientError, ApiKey, BasicCredential, ClientContext, DebugLevel,
@@ -25,9 +26,11 @@ mod query_auth_redaction {
     };
     use http::{HeaderMap, Method, StatusCode};
     use std::future::Future;
+    use std::net::TcpListener;
     use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
     use tokio::sync::Mutex as TokioMutex;
 
     const API_KEY_SECRET: &str = "LEAK_SENTINEL_API_KEY_123";
@@ -38,14 +41,102 @@ mod query_auth_redaction {
     const REFRESH_SECRET_B: &str = "LEAK_SENTINEL_REFRESH_B";
     const CERTIFICATE_ID: &str = "LEAK_SENTINEL_CERTIFICATE_ID";
     const INTERNAL_AUTH_SECRET: &str = "LEAK_SENTINEL_INTERNAL_AUTH";
+    const QUERY_TRANSPORT_SECRET: &str = "LEAK_SENTINEL_QUERY_TRANSPORT";
     #[cfg(feature = "json")]
     const CLIENT_SECRET: &str = "LEAK_SENTINEL_CLIENT_SECRET_ABC";
+    #[cfg(feature = "json")]
+    const OAUTH_ACCESS_TOKEN: &str = "LEAK_SENTINEL_OAUTH_ACCESS_TOKEN";
+    #[cfg(feature = "json")]
+    const OAUTH_REFRESH_TOKEN: &str = "LEAK_SENTINEL_OAUTH_REFRESH_TOKEN";
 
     fn assert_secret_absent(output: &str, secret: &str) {
         assert!(
             !output.contains(secret),
             "secret leaked in output:\n{output}"
         );
+    }
+
+    fn assert_all_secrets_absent(output: &str, secrets: &[&str]) {
+        for secret in secrets {
+            assert_secret_absent(output, secret);
+        }
+    }
+
+    fn sensitive_header_map() -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            http::header::AUTHORIZATION,
+            http::HeaderValue::from_static("Bearer SECRET_AUTH"),
+        );
+        headers.insert(
+            http::header::PROXY_AUTHORIZATION,
+            http::HeaderValue::from_static("Basic SECRET_PROXY"),
+        );
+        headers.insert(
+            http::header::COOKIE,
+            http::HeaderValue::from_static("session=SECRET_COOKIE"),
+        );
+        headers.insert(
+            http::header::SET_COOKIE,
+            http::HeaderValue::from_static("session=SECRET_SET_COOKIE"),
+        );
+        headers.insert(
+            http::header::WWW_AUTHENTICATE,
+            http::HeaderValue::from_static("Bearer error_description=\"SECRET_WWW\""),
+        );
+        headers.insert(
+            http::HeaderName::from_bytes(b"X-Api-Key").expect("header name"),
+            http::HeaderValue::from_static("SECRET_API_KEY"),
+        );
+        headers.insert(
+            http::HeaderName::from_static("x-auth-token"),
+            http::HeaderValue::from_static("SECRET_AUTH_TOKEN"),
+        );
+        headers.insert(
+            http::HeaderName::from_static("x-access-token"),
+            http::HeaderValue::from_static("SECRET_ACCESS_TOKEN"),
+        );
+        headers.insert(
+            http::HeaderName::from_static("x-refresh-token"),
+            http::HeaderValue::from_static("SECRET_REFRESH_TOKEN"),
+        );
+        headers.insert(
+            http::HeaderName::from_static("x-session-token"),
+            http::HeaderValue::from_static("SECRET_SESSION_TOKEN"),
+        );
+        headers.insert(
+            http::HeaderName::from_static("x-custom-session-id"),
+            http::HeaderValue::from_static("SECRET_VENDOR_SESSION"),
+        );
+        headers.insert(
+            http::HeaderName::from_static("x-request-id"),
+            http::HeaderValue::from_static("visible-request-id"),
+        );
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            http::HeaderValue::from_static("application/json"),
+        );
+        headers.insert(
+            http::header::RETRY_AFTER,
+            http::HeaderValue::from_static("1"),
+        );
+        headers
+    }
+
+    fn sensitive_header_sentinels() -> [&'static str; 11] {
+        [
+            "SECRET_AUTH",
+            "SECRET_PROXY",
+            "SECRET_COOKIE",
+            "SECRET_SET_COOKIE",
+            "SECRET_WWW",
+            "SECRET_API_KEY",
+            "SECRET_AUTH_TOKEN",
+            "SECRET_ACCESS_TOKEN",
+            "SECRET_REFRESH_TOKEN",
+            "SECRET_SESSION_TOKEN",
+            "SECRET_VENDOR_SESSION",
+        ]
     }
 
     #[derive(Clone, Debug)]
@@ -251,10 +342,11 @@ mod query_auth_redaction {
             ctx: TransportErrorHookContext<'a>,
         ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
             Box::pin(async move {
-                self.events
-                    .lock()
-                    .await
-                    .push(format!("transport_error:{}", ctx.meta.url));
+                let mut events = self.events.lock().await;
+                events.push(format!("transport_error:{}", ctx.meta.url));
+                events.push(format!("transport_error_ctx:{ctx:?}"));
+                events.push(format!("transport_error_display:{}", ctx.error));
+                events.push(format!("transport_error_debug:{:?}", ctx.error));
             })
         }
     }
@@ -391,6 +483,196 @@ mod query_auth_redaction {
             .expect_err("transport error should be returned");
         let output = format!("{}\n{}", err, hooks.events().await.join("\n"));
         Ok((output, sent.requests().await))
+    }
+
+    #[test]
+    fn response_header_debug_redacts_sensitive_names_case_insensitively() {
+        let headers = sensitive_header_map();
+        let response = BuiltResponse {
+            meta: RequestMeta {
+                endpoint: "HeaderRedaction",
+                method: Method::GET,
+                idempotent: true,
+                attempt: 0,
+                page_index: 0,
+            },
+            url: "https://example.com/items?api_key=SECRET_QUERY_IN_URL"
+                .parse()
+                .expect("url"),
+            status: StatusCode::UNAUTHORIZED,
+            headers,
+            body: Bytes::from_static(b"body"),
+            rate_limit: RateLimitPlan::default(),
+        };
+
+        let output = format!("{response:?}");
+        assert_all_secrets_absent(&output, &sensitive_header_sentinels());
+        assert_secret_absent(&output, "SECRET_QUERY_IN_URL");
+        assert!(output.contains("<redacted>"));
+        assert!(output.contains("visible-request-id"));
+        assert!(output.contains("application/json"));
+        assert!(output.contains("\"retry-after\": \"1\""));
+    }
+
+    #[test]
+    fn api_client_error_http_status_debug_redacts_sensitive_headers() {
+        let err = ApiClientError::HttpStatus {
+            ctx: concord_core::advanced::ErrorContext {
+                endpoint: "HeaderRedaction",
+                method: Method::GET,
+            },
+            status: StatusCode::UNAUTHORIZED,
+            headers: Box::new(sensitive_header_map()),
+            rate_limit: None,
+        };
+
+        for output in [format!("{err}"), format!("{err:?}"), format!("{err:#?}")] {
+            assert_all_secrets_absent(&output, &sensitive_header_sentinels());
+            assert!(output.contains("HeaderRedaction"));
+            assert!(output.contains("401"));
+        }
+    }
+
+    #[test]
+    fn built_and_decoded_response_debug_redacts_sensitive_headers() {
+        let meta = RequestMeta {
+            endpoint: "DebugResponse",
+            method: Method::GET,
+            idempotent: true,
+            attempt: 2,
+            page_index: 3,
+        };
+        let built = BuiltResponse {
+            meta: meta.clone(),
+            url: "https://example.com/debug?api_key=SECRET_RESPONSE_QUERY"
+                .parse()
+                .expect("url"),
+            status: StatusCode::OK,
+            headers: sensitive_header_map(),
+            body: Bytes::from_static(b"SECRET_BODY_NOT_RENDERED"),
+            rate_limit: RateLimitPlan::default(),
+        };
+        let decoded = DecodedResponse {
+            meta,
+            url: built.url.clone(),
+            status: StatusCode::OK,
+            headers: sensitive_header_map(),
+            value: "visible-value",
+        };
+
+        for output in [format!("{built:?}"), format!("{decoded:?}")] {
+            assert_all_secrets_absent(&output, &sensitive_header_sentinels());
+            assert_secret_absent(&output, "SECRET_RESPONSE_QUERY");
+            assert_secret_absent(&output, "SECRET_BODY_NOT_RENDERED");
+            assert!(output.contains("DebugResponse"));
+            assert!(output.contains("visible-request-id"));
+        }
+    }
+
+    #[test]
+    fn hook_context_debug_redacts_sensitive_headers() {
+        let meta = concord_core::advanced::HookMeta {
+            endpoint: "HookRedaction",
+            method: &Method::GET,
+            url: "https://example.com/hook",
+            attempt: 0,
+            page_index: 0,
+            idempotent: true,
+        };
+        let headers = sensitive_header_map();
+        let pre = concord_core::advanced::PreSendHookContext {
+            meta: meta.clone(),
+            headers: &headers,
+        };
+        let post = concord_core::advanced::PostResponseHookContext {
+            meta,
+            status: StatusCode::UNAUTHORIZED,
+            headers: &headers,
+        };
+
+        for output in [format!("{pre:?}"), format!("{post:?}")] {
+            assert_all_secrets_absent(&output, &sensitive_header_sentinels());
+            assert!(output.contains("HookRedaction"));
+            assert!(output.contains("visible-request-id"));
+        }
+    }
+
+    #[tokio::test]
+    async fn built_request_and_transport_request_debug_redact_query_auth_secret()
+    -> Result<(), ApiClientError> {
+        let events = Arc::new(TokioMutex::new(Vec::new()));
+        let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+        let sent = transport.clone();
+        let cache = Arc::new(RecordingCache::default());
+        let mut policy = policy_with_query_auth("api_key");
+        policy.cache = concord_core::internal::CacheSetting::Config(
+            concord_core::advanced::CacheConfig::new(),
+        );
+        let mut client =
+            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        client.configure(|cfg| {
+            cfg.cache_store(cache.clone());
+        });
+
+        client
+            .request(RedactionEndpoint { policy })
+            .execute_decoded()
+            .await?;
+
+        let cache_output = cache.observations().await.join("\n");
+        assert_secret_absent(&cache_output, API_KEY_SECRET);
+        assert!(cache_output.contains("api_key=<redacted>"));
+
+        let requests = sent.requests().await;
+        assert!(requests[0].url.as_str().contains(API_KEY_SECRET));
+        assert_secret_absent(&format!("{:?}", requests[0]), API_KEY_SECRET);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reqwest_transport_error_display_debug_and_source_strip_materialized_url_secret() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind local port");
+        let port = listener.local_addr().expect("local addr").port();
+        drop(listener);
+        let url = format!("http://127.0.0.1:{port}/items?api_key={QUERY_TRANSPORT_SECRET}")
+            .parse()
+            .expect("url");
+        let req = TransportRequest {
+            meta: RequestMeta {
+                endpoint: "ReqwestFailure",
+                method: Method::GET,
+                idempotent: true,
+                attempt: 0,
+                page_index: 0,
+            },
+            url,
+            headers: HeaderMap::new(),
+            body: None,
+            timeout: Some(Duration::from_secs(1)),
+            rate_limit: RateLimitPlan::default(),
+            transport_auth: None,
+            extensions: RequestExtensions::default(),
+        };
+        let err = match ReqwestTransport::new(reqwest::Client::new())
+            .send(req)
+            .await
+        {
+            Ok(_) => panic!("closed local port should fail"),
+            Err(err) => err,
+        };
+
+        let source_output = format!("{}\n{:?}", err.source_error(), err.source_error());
+        let api_err = ApiClientError::Transport {
+            ctx: concord_core::advanced::ErrorContext {
+                endpoint: "ReqwestFailure",
+                method: Method::GET,
+            },
+            source: err,
+        };
+        let output = format!("{api_err}\n{api_err:?}\n{api_err:#?}\n{source_output}");
+        assert_secret_absent(&output, QUERY_TRANSPORT_SECRET);
+        assert!(!output.contains("api_key="), "{output}");
+        assert!(output.contains("ReqwestFailure"));
     }
 
     #[tokio::test]
@@ -631,6 +913,26 @@ mod query_auth_redaction {
         );
         assert_secret_absent(&output, API_KEY_SECRET);
         assert!(requests[0].url.as_str().contains(API_KEY_SECRET));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn transport_error_hook_does_not_observe_query_auth_secret() -> Result<(), ApiClientError>
+    {
+        let (output, requests) =
+            run_transport_error_request(policy_with_query_auth("api_key")).await?;
+
+        assert!(
+            output.contains("transport_error:https://example.com/text?page=2&api_key=<redacted>")
+        );
+        assert!(output.contains("transport_error_ctx:TransportErrorHookContext"));
+        assert!(output.contains("transport_error_display:transport error: Connect"));
+        assert!(output.contains("transport_error_debug:TransportError"));
+        assert_secret_absent(&output, API_KEY_SECRET);
+        assert!(
+            requests[0].url.as_str().contains(API_KEY_SECRET),
+            "transport request should still contain real query auth at send boundary"
+        );
         Ok(())
     }
 
@@ -1206,5 +1508,65 @@ mod query_auth_redaction {
         let output = format!("{err:?}\n{err}");
         assert!(output.contains("oauth2 token endpoint returned 401"));
         assert_secret_absent(&output, CLIENT_SECRET);
+
+        struct InvalidJsonAuthExecutor;
+
+        impl concord_core::advanced::AuthHttpExecutor for InvalidJsonAuthExecutor {
+            fn send<'a>(
+                &'a self,
+                request: AuthHttpRequest,
+            ) -> concord_core::advanced::AuthFuture<
+                'a,
+                Result<concord_core::advanced::AuthHttpResponse, AuthError>,
+            > {
+                Box::pin(async move {
+                    let request_debug = format!("{request:?}");
+                    assert_secret_absent(&request_debug, CLIENT_SECRET);
+                    let mut headers = HeaderMap::new();
+                    headers.insert(
+                        http::header::WWW_AUTHENTICATE,
+                        http::HeaderValue::from_static(
+                            "Bearer error_description=\"LEAK_SENTINEL_OAUTH_ACCESS_TOKEN\"",
+                        ),
+                    );
+                    let response = concord_core::advanced::AuthHttpResponse {
+                        status: StatusCode::OK,
+                        headers,
+                        body: Bytes::from(format!(
+                            "{{\"access_token\":\"{OAUTH_ACCESS_TOKEN}\",\"refresh_token\":\"{OAUTH_REFRESH_TOKEN}\""
+                        )),
+                    };
+                    let response_debug = format!("{response:?}");
+                    assert_secret_absent(&response_debug, OAUTH_ACCESS_TOKEN);
+                    assert_secret_absent(&response_debug, OAUTH_REFRESH_TOKEN);
+                    Ok(response)
+                })
+            }
+        }
+
+        let provider = OAuth2ClientCredentialsProvider::new(
+            concord_core::advanced::CredentialId::new("test", "oauth"),
+            "https://auth.example.com/token".parse().expect("token url"),
+            "visible-client-id",
+            CLIENT_SECRET,
+        );
+        let ctx = concord_core::advanced::CredentialContext::<OAuthCx> {
+            vars: &(),
+            auth: &(),
+            auth_state: &(),
+            executor: &InvalidJsonAuthExecutor,
+            credential_id: concord_core::advanced::CredentialId::new("test", "oauth"),
+            reason: concord_core::advanced::CredentialRefreshReason::Missing,
+        };
+
+        let err = provider
+            .acquire(ctx)
+            .await
+            .expect_err("invalid token response should fail decode");
+        let output = format!("{err:?}\n{err}");
+        assert!(output.contains("oauth2 token response decode failed"));
+        assert_secret_absent(&output, CLIENT_SECRET);
+        assert_secret_absent(&output, OAUTH_ACCESS_TOKEN);
+        assert_secret_absent(&output, OAUTH_REFRESH_TOKEN);
     }
 }

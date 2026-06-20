@@ -38,11 +38,21 @@ impl fmt::Debug for AuthHttpRequest {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AuthHttpResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: Bytes,
+}
+
+impl fmt::Debug for AuthHttpResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AuthHttpResponse")
+            .field("status", &self.status)
+            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field("body", &format!("<{} bytes>", self.body.len()))
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -168,11 +168,15 @@ impl DebugSink for StderrDebugSink {
 
 #[allow(dead_code)]
 fn is_sensitive_header_name(name: &HeaderName) -> bool {
-    crate::redaction::is_sensitive_name(name.as_str())
+    crate::redaction::should_redact_header_name(name)
 }
 
 fn header_value_for_debug(name: &HeaderName, value: &HeaderValue) -> String {
-    crate::redaction::redacted_display_value(name.as_str(), value.to_str().unwrap_or("<non-utf8>"))
+    if is_sensitive_header_name(name) {
+        "<redacted>".to_string()
+    } else {
+        value.to_str().unwrap_or("<non-utf8>").to_string()
+    }
 }
 
 pub(crate) struct RedactedHeaders<'a>(pub(crate) &'a HeaderMap);

@@ -28,6 +28,13 @@ pub(crate) fn is_sensitive_name(name: &str) -> bool {
             | "proxy-authorization"
             | "cookie"
             | "set-cookie"
+            | "www-authenticate"
+            | "x-api-key"
+            | "x-api-token"
+            | "x-auth-token"
+            | "x-access-token"
+            | "x-refresh-token"
+            | "x-session-token"
             | "access_token"
             | "refresh_token"
             | "api_key"
@@ -41,20 +48,19 @@ pub(crate) fn is_sensitive_name(name: &str) -> bool {
         || n.contains("secret")
         || n.contains("api-key")
         || n.contains("apikey")
+        || n.contains("session")
+        || n.contains("credential")
+        || n.contains("authorization")
         || n.ends_with("_key")
         || n.ends_with("-key")
 }
 
-pub(crate) fn hashed_sensitive_value(value: &str) -> String {
-    format!("<sensitive:{}>", secret_fingerprint(value))
+pub(crate) fn should_redact_header_name(name: &http::HeaderName) -> bool {
+    is_sensitive_name(name.as_str())
 }
 
-pub(crate) fn redacted_display_value(name: &str, value: &str) -> String {
-    if is_sensitive_name(name) {
-        "<redacted>".to_string()
-    } else {
-        value.to_string()
-    }
+pub(crate) fn hashed_sensitive_value(value: &str) -> String {
+    format!("<sensitive:{}>", secret_fingerprint(value))
 }
 
 pub(crate) fn sanitized_url_for_key(url: &url::Url) -> String {

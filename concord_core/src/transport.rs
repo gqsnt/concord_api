@@ -359,7 +359,6 @@ pub enum TransportErrorKind {
     Other,
 }
 
-#[derive(Debug)]
 pub struct TransportError {
     kind: TransportErrorKind,
     source: crate::error::FxError,
@@ -398,7 +397,15 @@ impl TransportError {
 
 impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.source)
+        write!(f, "transport error: {:?}", self.kind)
+    }
+}
+
+impl fmt::Debug for TransportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransportError")
+            .field("kind", &self.kind)
+            .finish_non_exhaustive()
     }
 }
 
@@ -410,8 +417,10 @@ impl Error for TransportError {
 
 impl From<reqwest::Error> for TransportError {
     fn from(e: reqwest::Error) -> Self {
+        let kind = classify_reqwest_error(&e);
+        let e = e.without_url();
         Self {
-            kind: classify_reqwest_error(&e),
+            kind,
             source: Box::new(e),
         }
     }

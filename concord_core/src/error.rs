@@ -1,7 +1,7 @@
 use http::{HeaderMap, StatusCode};
 use std::borrow::Cow;
 use std::error::Error;
-use std::fmt::{Debug, Display};
+use std::fmt::{self, Debug, Display};
 use thiserror::Error;
 
 pub type FxError = Box<dyn Error + Send + Sync>;
@@ -18,7 +18,7 @@ impl core::fmt::Display for ErrorContext {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error)]
 #[non_exhaustive]
 pub enum ApiClientError {
     #[error("{ctx}: invalid/missing param: {param}")]
@@ -114,6 +114,119 @@ pub enum ApiClientError {
         placeholder: Option<&'static str>,
         reason: HostLabelInvalidReason,
     },
+}
+
+impl Debug for ApiClientError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidParam { ctx, param } => f
+                .debug_struct("InvalidParam")
+                .field("ctx", ctx)
+                .field("param", param)
+                .finish(),
+            Self::BuildUrl { ctx, source } => f
+                .debug_struct("BuildUrl")
+                .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
+            Self::Transport { ctx, source } => f
+                .debug_struct("Transport")
+                .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
+            Self::ResponseTooLarge { ctx, limit, actual } => f
+                .debug_struct("ResponseTooLarge")
+                .field("ctx", ctx)
+                .field("limit", limit)
+                .field("actual", actual)
+                .finish(),
+            Self::ResponseBodyLimitExceeded { ctx, limit } => f
+                .debug_struct("ResponseBodyLimitExceeded")
+                .field("ctx", ctx)
+                .field("limit", limit)
+                .finish(),
+            Self::HttpStatus {
+                ctx,
+                status,
+                headers,
+                rate_limit,
+            } => f
+                .debug_struct("HttpStatus")
+                .field("ctx", ctx)
+                .field("status", status)
+                .field("headers", &crate::debug::RedactedHeaders(headers.as_ref()))
+                .field("rate_limit", rate_limit)
+                .finish(),
+            Self::Decode { ctx, source } => f
+                .debug_struct("Decode")
+                .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
+            Self::HeadRequiresNoContent { ctx } => f
+                .debug_struct("HeadRequiresNoContent")
+                .field("ctx", ctx)
+                .finish(),
+            Self::Transform { ctx, source } => f
+                .debug_struct("Transform")
+                .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
+            Self::NoContentStatusRequiresNoContent { ctx, status } => f
+                .debug_struct("NoContentStatusRequiresNoContent")
+                .field("ctx", ctx)
+                .field("status", status)
+                .finish(),
+            Self::Codec { ctx, source } => f
+                .debug_struct("Codec")
+                .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
+            Self::Pagination { ctx, msg } => f
+                .debug_struct("Pagination")
+                .field("ctx", ctx)
+                .field("msg", msg)
+                .finish(),
+            Self::PaginationLimit { ctx, msg } => f
+                .debug_struct("PaginationLimit")
+                .field("ctx", ctx)
+                .field("msg", msg)
+                .finish(),
+            Self::Auth { ctx, source } => f
+                .debug_struct("Auth")
+                .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
+            Self::PolicyViolation { ctx, msg } => f
+                .debug_struct("PolicyViolation")
+                .field("ctx", ctx)
+                .field("msg", msg)
+                .finish(),
+            Self::RuntimeState {
+                ctx,
+                subsystem,
+                msg,
+            } => f
+                .debug_struct("RuntimeState")
+                .field("ctx", ctx)
+                .field("subsystem", subsystem)
+                .field("msg", msg)
+                .finish(),
+            Self::InvalidHostLabel {
+                ctx,
+                label,
+                index,
+                placeholder,
+                reason,
+            } => f
+                .debug_struct("InvalidHostLabel")
+                .field("ctx", ctx)
+                .field("label", label)
+                .field("index", index)
+                .field("placeholder", placeholder)
+                .field("reason", reason)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
