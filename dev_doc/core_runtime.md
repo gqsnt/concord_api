@@ -9,32 +9,31 @@ The runtime order is:
 ```text
 1. build request plan
 2. resolve credentials and attach pending auth slots
-3. compute cache/inflight identity from the logical request and safe auth partition
+3. compute cache identity from the logical request and safe auth partition
 4. fresh cache lookup
-5. inflight coordination
-6. rate-limit acquire
-7. materialize a send-only `TransportRequest`
-8. transport send
-9. drop the materialized transport request
-10. classify response/transport failure
-11. post-response hook
-12. rate-limit observation
-13. auth rejection handling
-14. retry decision
-15. stale cache fallback
-16. cache write
-17. decode response
+5. rate-limit acquire
+6. materialize a send-only `TransportRequest`
+7. transport send
+8. drop the materialized transport request
+9. classify response/transport failure
+10. post-response hook
+11. rate-limit observation
+12. auth rejection handling
+13. retry decision
+14. stale cache fallback
+15. cache write
+16. decode response
 ```
 
 This order is not user-configurable.
 
 ## Invariants
 
-A fresh cache hit returns before inflight coordination, rate-limit acquisition, or transport.
+A fresh cache hit returns before rate-limit acquisition or transport.
 
-Inflight followers join the sender result and do not acquire rate-limit permits or send transport.
+Concord does not coalesce ordinary endpoint requests in v1. Two concurrent identical cache-miss endpoint requests both acquire their own rate-limit permit and send their own transport request. Cache may avoid later transport only after a response has been stored.
 
-`BuiltRequest` is the logical request. It contains public route/query/header data, safe auth identities, and typed pending auth slots, but it does not contain raw auth material. Cache keys, inflight keys, debug sinks, hooks, and response metadata operate on this logical request.
+`BuiltRequest` is the logical request. It contains public route/query/header data, safe auth identities, and typed pending auth slots, but it does not contain raw auth material. Cache keys, debug sinks, hooks, and response metadata operate on this logical request.
 
 Auth preparation does not receive `BuiltRequest` directly. Endpoint auth preparation and auth-internal preparation both receive an auth-only application request that exposes only pending-slot attachment, so custom client contexts cannot insert raw auth into logical headers, query strings, body data, policy data, or request metadata during credential preparation.
 

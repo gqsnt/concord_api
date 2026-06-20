@@ -9,8 +9,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 
 #[tokio::test]
-async fn fresh_cache_hit_bypasses_inflight_rate_limit_and_transport() -> Result<(), ApiClientError>
-{
+async fn fresh_cache_hit_bypasses_rate_limit_and_transport() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events.clone(),
@@ -22,7 +21,6 @@ async fn fresh_cache_hit_bypasses_inflight_rate_limit_and_transport() -> Result<
         built_response("Text", StatusCode::OK, "cached"),
     ));
     let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let inflight_events = Arc::new(StdMutex::new(Vec::new()));
     let mut client = client(
         TestAuthVars {
             token: Some("secret-token".to_string()),
@@ -31,10 +29,7 @@ async fn fresh_cache_hit_bypasses_inflight_rate_limit_and_transport() -> Result<
         transport,
     );
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    client.set_inflight_policy(Arc::new(RecordingInflightPolicy::new(
-        inflight_events.clone(),
-    )));
-    configure_runtime(&mut client, Some(cache), Some(limiter), false, None);
+    configure_runtime(&mut client, Some(cache), Some(limiter));
 
     let mut policy = cache_policy();
     policy.auth = auth_policy(AuthPlacement::Bearer).auth;
@@ -57,7 +52,6 @@ async fn fresh_cache_hit_bypasses_inflight_rate_limit_and_transport() -> Result<
     assert!(!events.iter().any(|event| event == "pre_send"));
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "transport"));
-    assert!(inflight_events.lock().expect("inflight events").is_empty());
     Ok(())
 }
 
@@ -101,7 +95,7 @@ async fn retryable_status_is_not_cached_before_retry() -> Result<(), ApiClientEr
         ],
     );
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
 
     let endpoint = TextEndpoint {
         policy: {
@@ -465,7 +459,7 @@ async fn response_too_large_does_not_cache() {
     let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "large")]);
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });
@@ -513,7 +507,7 @@ async fn cache_max_body_smaller_than_response_limit_skips_store_but_decode_succe
         vec![MockResponse::text(StatusCode::OK, "2k")],
     );
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4 * 1024);
     });
@@ -548,7 +542,7 @@ async fn response_limit_smaller_than_cache_max_body_fails_before_cache() {
     let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "large")]);
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });

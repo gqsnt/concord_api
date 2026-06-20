@@ -3,11 +3,10 @@ use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
     AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltRequest, BuiltResponse,
     CacheAfter, CacheBefore, CacheConfig, CacheFuture, CacheKey, CacheRevalidation, CacheStore,
-    DecodedResponse, InflightPolicy, InflightRegistry, PostResponseHookContext, PreSendHookContext,
-    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, RequestKey, RequestMeta, RuntimeHooks,
-    SafeMethodInflightPolicy, Transport, TransportBody, TransportError, TransportErrorHookContext,
-    TransportRequest, TransportResponse,
+    DecodedResponse, PostResponseHookContext, PreSendHookContext, RateLimitContext,
+    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+    RateLimiter, RequestMeta, RuntimeHooks, Transport, TransportBody, TransportError,
+    TransportErrorHookContext, TransportRequest, TransportResponse,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
@@ -561,38 +560,6 @@ impl RateLimiter for RecordingRateLimiter {
 }
 
 #[derive(Default)]
-pub struct RecordingInflightPolicy {
-    pub events: Arc<std::sync::Mutex<Vec<String>>>,
-}
-
-impl RecordingInflightPolicy {
-    pub fn new(events: Arc<std::sync::Mutex<Vec<String>>>) -> Self {
-        Self { events }
-    }
-}
-
-impl InflightPolicy for RecordingInflightPolicy {
-    fn key_for(&self, req: &BuiltRequest) -> Option<RequestKey> {
-        self.events
-            .lock()
-            .expect("recording inflight policy poisoned")
-            .push("inflight_key_for".to_string());
-        if req.body.is_some() {
-            return None;
-        }
-        if matches!(req.meta.method, Method::GET | Method::HEAD) {
-            Some(RequestKey::new(format!(
-                "{} {}",
-                req.meta.method,
-                req.url.as_str()
-            )))
-        } else {
-            None
-        }
-    }
-}
-
-#[derive(Default)]
 pub struct RecordingRuntimeHooks {
     pub events: Arc<Mutex<Vec<String>>>,
 }
@@ -803,8 +770,6 @@ pub fn configure_runtime(
     client: &mut ApiClient<TestCx, MockTransport>,
     cache: Option<Arc<dyn CacheStore>>,
     limiter: Option<Arc<dyn RateLimiter>>,
-    inflight: bool,
-    registry: Option<Arc<InflightRegistry>>,
 ) {
     client.configure(|cfg| {
         cfg.debug(concord_core::prelude::DebugLevel::V);
@@ -818,12 +783,6 @@ pub fn configure_runtime(
         }
         if let Some(limiter) = limiter {
             cfg.rate_limiter(limiter);
-        }
-        if inflight {
-            cfg.inflight_policy(Arc::new(SafeMethodInflightPolicy));
-        }
-        if let Some(registry) = registry {
-            cfg.inflight_registry(registry);
         }
     });
 }

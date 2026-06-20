@@ -1,5 +1,4 @@
 use crate::cache::{CacheStore, NoopCacheStore};
-use crate::inflight::{InflightPolicy, InflightRegistry, NoopInflightPolicy};
 use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
 use crate::runtime::RuntimeConfig;
@@ -10,8 +9,6 @@ use std::sync::Arc;
 pub struct ClientRuntimeState {
     hooks: Arc<dyn RuntimeHooks>,
     cache_store: Arc<dyn CacheStore>,
-    inflight_policy: Arc<dyn InflightPolicy>,
-    inflight_registry: Arc<InflightRegistry>,
     rate_limiter: Arc<dyn RateLimiter>,
     retry_policy: Arc<dyn RetryPolicy>,
     max_auth_retries: u32,
@@ -23,8 +20,6 @@ impl Default for ClientRuntimeState {
         Self {
             hooks: Arc::new(NoopRuntimeHooks),
             cache_store: Arc::new(NoopCacheStore),
-            inflight_policy: Arc::new(NoopInflightPolicy),
-            inflight_registry: Arc::new(InflightRegistry::default()),
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
             max_auth_retries: 8,
@@ -39,8 +34,6 @@ impl ClientRuntimeState {
         Self {
             hooks: config.hooks,
             cache_store: config.cache_store,
-            inflight_policy: config.inflight_policy,
-            inflight_registry: config.inflight_registry,
             rate_limiter: config.rate_limiter,
             retry_policy: config.retry_policy,
             max_auth_retries: config.auth.max_retries,
@@ -96,21 +89,6 @@ impl ClientRuntimeState {
     #[inline]
     pub fn max_response_body_bytes(&self) -> Option<usize> {
         self.max_response_body_bytes
-    }
-
-    #[inline]
-    pub fn inflight_policy(&self) -> &Arc<dyn InflightPolicy> {
-        &self.inflight_policy
-    }
-
-    #[inline]
-    pub fn set_inflight_policy(&mut self, inflight_policy: Arc<dyn InflightPolicy>) {
-        self.inflight_policy = inflight_policy;
-    }
-
-    #[inline]
-    pub fn inflight_registry(&self) -> &Arc<InflightRegistry> {
-        &self.inflight_registry
     }
 
     #[inline]

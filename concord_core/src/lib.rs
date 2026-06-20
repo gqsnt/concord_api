@@ -5,7 +5,6 @@ mod codec;
 mod debug;
 mod endpoint;
 pub mod error;
-mod inflight;
 mod pagination;
 mod policy;
 mod rate_limit;
@@ -90,9 +89,6 @@ pub mod advanced {
     };
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::error::{ErrorContext, FxError};
-    pub use crate::inflight::{
-        InflightPolicy, InflightRegistry, NoopInflightPolicy, RequestKey, SafeMethodInflightPolicy,
-    };
     pub use crate::pagination::{
         Caps, Control, HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
         PaginationController, ProgressKey,

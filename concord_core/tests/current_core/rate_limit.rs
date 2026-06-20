@@ -15,7 +15,7 @@ async fn rate_limit_observation_happens_after_response_classification() -> Resul
     );
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, None, Some(limiter), false, None);
+    configure_runtime(&mut client, None, Some(limiter));
 
     client
         .request(TextEndpoint::default())

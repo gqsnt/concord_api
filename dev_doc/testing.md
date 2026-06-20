@@ -20,11 +20,11 @@ Macro strictness guards should ensure codegen does not reintroduce validation-de
 
 ## Core tests
 
-`concord_core` has runtime characterization tests for cache, inflight, rate-limit, auth rejection, retry, stale fallback, decode, pagination, codecs, and runtime configuration.
+`concord_core` has runtime characterization tests for cache, concurrency, rate-limit, auth rejection, retry, stale fallback, decode, pagination, codecs, and runtime configuration.
 
 These tests protect runtime order and should be extended before runtime behavior is refactored.
 
-Auth/redaction tests must cover arbitrary auth names, not only conventional names such as `Authorization` or `api_key`. When auth handling changes, verify that `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, debug sinks, errors, cache keys, and inflight keys do not contain raw auth material, while the materialized `TransportRequest` still carries real credentials at `Transport::send`.
+Auth/redaction tests must cover arbitrary auth names, not only conventional names such as `Authorization` or `api_key`. When auth handling changes, verify that `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, debug sinks, errors, and cache keys do not contain raw auth material, while the materialized `TransportRequest` still carries real credentials at `Transport::send`.
 
 Auth preparation boundary tests should also verify that no auth application hook receives `BuiltRequest`. `ClientContext::prepare_auth_requirement`, internal auth hooks, and generated auth preparation must receive the auth-only application request, and auth helpers must not be able to mutate logical request URL, headers, body, policy, timeout, or metadata.
 

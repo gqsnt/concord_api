@@ -14,7 +14,7 @@ The script runs the same commands listed below and fails through normal `cargo t
 
 - `BuiltRequest` is logical request state and does not contain raw auth material.
 - `TransportRequest` is the only Concord-owned request type that receives materialized auth values.
-- `BuiltResponse`, `DecodedResponse<T>`, debug hooks, cache keys, and inflight keys operate on logical or redacted request data.
+- `BuiltResponse`, `DecodedResponse<T>`, debug hooks, and cache keys operate on logical or redacted request data.
 - Runtime request paths return typed errors for poisoned state, missing required rate-limit keys, body-limit violations, and semantic counter overflow.
 
 ## Macro/codegen invariants
@@ -41,8 +41,9 @@ The script runs the same commands listed below and fails through normal `cargo t
 
 ## Cache/retry/rate-limit invariants
 
-- Auth resolution remains before cache and inflight identity.
-- Cache and inflight identity remain separated by safe auth partitions without raw credential values.
+- Auth resolution remains before cache identity.
+- Cache identity remains separated by safe auth partitions without raw credential values.
+- Ordinary endpoint requests are not deduplicated while in flight. Cache identity remains relevant only for completed cache entries.
 - Rate-limit `[host]` keys fail before permit acquisition and transport if the logical URL has no host.
 - Retry/auth refresh semantics remain bounded and policy-driven.
 
@@ -73,4 +74,3 @@ cargo test -p concord_core redaction
 cargo test -p concord_core auth_runtime
 cargo test -p concord_examples live_smoke
 ```
-

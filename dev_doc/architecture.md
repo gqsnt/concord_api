@@ -20,7 +20,7 @@ api! input
 
 Macros own syntax. Any new keyword, stanza, or DSL diagnostic belongs in `concord_macros`. The core crate must not depend on DSL syntax or macro AST types.
 
-Core owns runtime behavior. Auth application, cache lookup, inflight coordination, retry, rate-limit acquisition, stale fallback, transport, decode, and pagination execution live in `concord_core`.
+Core owns runtime behavior. Auth application, cache lookup, retry, rate-limit acquisition, stale fallback, transport, decode, and pagination execution live in `concord_core`.
 
 Code generation consumes resolved semantic data, not raw syntax. If codegen needs to know whether something came from `defaults { ... }` versus `default { ... }`, that is usually a design smell. Sema should resolve aliases, inheritance, profile names, and merge rules before codegen.
 

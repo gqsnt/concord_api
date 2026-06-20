@@ -22,7 +22,7 @@ async fn fresh_cache_hit_skips_transport_and_rate_limit() -> Result<(), ApiClien
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), Some(limiter), false, None);
+    configure_runtime(&mut client, Some(cache), Some(limiter));
 
     let endpoint = TextEndpoint {
         policy: cache_policy(),
@@ -50,7 +50,7 @@ async fn stale_revalidation_goes_through_rate_limit_and_transport() -> Result<()
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), Some(limiter), false, None);
+    configure_runtime(&mut client, Some(cache), Some(limiter));
 
     let endpoint = TextEndpoint {
         policy: cache_policy(),
@@ -81,7 +81,7 @@ async fn not_modified_revalidation_runs_post_response_before_rate_limit_observat
     );
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), Some(limiter), false, None);
+    configure_runtime(&mut client, Some(cache), Some(limiter));
 
     let endpoint = TextEndpoint {
         policy: cache_policy(),
@@ -125,7 +125,7 @@ async fn stale_is_not_returned_before_retry_exhaustion() -> Result<(), ApiClient
         ],
     );
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
 
     let endpoint = TextEndpoint {
         policy: {
@@ -162,7 +162,7 @@ async fn stale_cache_fallback_happens_after_retry_exhaustion() -> Result<(), Api
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
 
     let endpoint = TextEndpoint {
         policy: {
@@ -196,7 +196,7 @@ async fn stale_is_not_returned_when_policy_disallows() {
         )],
     );
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
 
     let endpoint = TextEndpoint {
         policy: cache_policy(),
@@ -228,7 +228,7 @@ async fn stale_decode_failure_includes_endpoint_context() {
         )],
     );
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
 
     let endpoint = TextEndpoint {
         policy: cache_policy(),
@@ -310,7 +310,7 @@ async fn stale_fallback_emits_debug_event() -> Result<(), ApiClientError> {
     let mut client = client(TestAuthVars::default(), transport);
     let debug = Arc::new(RecordingDebugSink::default());
     client.set_debug_sink(debug.clone());
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
 
     let endpoint = TextEndpoint {
         policy: cache_policy(),

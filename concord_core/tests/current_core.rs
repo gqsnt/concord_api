@@ -4,8 +4,8 @@ mod auth;
 mod cache;
 #[path = "current_core/common.rs"]
 mod common;
-#[path = "current_core/inflight.rs"]
-mod inflight;
+#[path = "current_core/concurrency.rs"]
+mod concurrency;
 #[path = "current_core/pagination.rs"]
 mod pagination;
 #[path = "current_core/public_api.rs"]

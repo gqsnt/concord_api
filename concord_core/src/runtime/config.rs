@@ -1,6 +1,5 @@
 use crate::cache::{CacheStore, NoopCacheStore};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
-use crate::inflight::{InflightPolicy, InflightRegistry, NoopInflightPolicy};
 use crate::pagination::Caps;
 use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
@@ -39,8 +38,6 @@ impl Default for DebugConfig {
 pub struct RuntimeConfig {
     pub(crate) hooks: Arc<dyn RuntimeHooks>,
     pub(crate) cache_store: Arc<dyn CacheStore>,
-    pub(crate) inflight_policy: Arc<dyn InflightPolicy>,
-    pub(crate) inflight_registry: Arc<InflightRegistry>,
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) retry_policy: Arc<dyn RetryPolicy>,
     pub(crate) auth: AuthRuntimeConfig,
@@ -54,8 +51,6 @@ impl Default for RuntimeConfig {
         Self {
             hooks: Arc::new(NoopRuntimeHooks),
             cache_store: Arc::new(NoopCacheStore),
-            inflight_policy: Arc::new(NoopInflightPolicy),
-            inflight_registry: Arc::new(InflightRegistry::default()),
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
             auth: AuthRuntimeConfig::default(),
@@ -99,18 +94,6 @@ impl RuntimeConfig {
     #[inline]
     pub fn cache_store(&mut self, store: Arc<dyn CacheStore>) -> &mut Self {
         self.cache_store = store;
-        self
-    }
-
-    #[inline]
-    pub fn inflight_policy(&mut self, policy: Arc<dyn InflightPolicy>) -> &mut Self {
-        self.inflight_policy = policy;
-        self
-    }
-
-    #[inline]
-    pub fn inflight_registry(&mut self, registry: Arc<InflightRegistry>) -> &mut Self {
-        self.inflight_registry = registry;
         self
     }
 

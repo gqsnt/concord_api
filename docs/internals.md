@@ -26,7 +26,7 @@ Behavior use names are preserved as endpoint documentation metadata even though 
 Endpoint::plan -> RequestPlan -> execute_plan
 ```
 
-The core runtime is syntax-neutral. It executes request plans with fixed ordering for auth, cache, inflight coordination, rate limiting, transport, response classification, retry, cache fallback, and decoding.
+The core runtime is syntax-neutral. It executes request plans with fixed ordering for auth, cache lookup, rate limiting, transport, response classification, retry, cache fallback, and decoding.
 
 ## Test Artifacts
 

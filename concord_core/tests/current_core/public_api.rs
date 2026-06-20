@@ -28,7 +28,6 @@ fn advanced_surface_contains_extension_api() {
             idempotency: advanced::RetryIdempotency::SafeMethodsOnly,
         },
     )));
-    cfg.inflight_policy(Arc::new(advanced::NoopInflightPolicy));
     cfg.runtime_hooks(Arc::new(advanced::NoopRuntimeHooks));
     cfg.max_auth_retries(2);
 

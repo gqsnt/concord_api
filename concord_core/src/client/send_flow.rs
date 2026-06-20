@@ -197,40 +197,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    async fn send_and_classify_with_inflight(
-        &self,
-        built: BuiltRequest,
-        inflight_key: Option<RequestKey>,
-        send_ctx: SendClassifyCtx<'_>,
-    ) -> Result<BuiltResponse, ApiClientError> {
-        if let Some(key) = inflight_key {
-            let join = self
-                .runtime_state
-                .inflight_registry()
-                .join_or_lead(key)
-                .await;
-            if join.is_leader() {
-                let result = self.send_and_classify_once(built, send_ctx).await;
-                let shared = match &result {
-                    Ok(resp) => SharedSendResult::Ok(resp.clone()),
-                    Err(err) => SharedSendResult::Err(SharedSendError::from_api_error(err)),
-                };
-                join.complete(self.runtime_state.inflight_registry(), shared)
-                    .await;
-                result
-            } else {
-                match join.wait().await {
-                    SharedSendResult::Ok(resp) => Ok(resp),
-                    SharedSendResult::Err(err) => {
-                        Err(err.into_api_error(send_ctx.error_ctx.clone()))
-                    }
-                }
-            }
-        } else {
-            self.send_and_classify_once(built, send_ctx).await
-        }
-    }
-
     async fn send_and_classify_once(
         &self,
         built: BuiltRequest,

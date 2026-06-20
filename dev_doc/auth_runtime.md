@@ -24,13 +24,13 @@ Generated helpers that observe or mutate auth state are fallible when they touch
 
 ## Request auth application
 
-Before cache and inflight identity are computed, the runtime resolves required credentials and attaches typed pending auth slots to the logical `BuiltRequest`. No auth application hook receives `BuiltRequest`: endpoint auth preparation and auth-internal preparation both receive an auth-only application request. That request can attach pending auth slots and mark auth query keys as sensitive, but it cannot mutate the logical URL, headers, body, timeout, retry, cache, rate-limit, or metadata. Custom `ClientContext` implementations must use the core `apply_*_credential` helpers instead of writing auth values into request headers or query strings.
+Before cache identity is computed, the runtime resolves required credentials and attaches typed pending auth slots to the logical `BuiltRequest`. No auth application hook receives `BuiltRequest`: endpoint auth preparation and auth-internal preparation both receive an auth-only application request. That request can attach pending auth slots and mark auth query keys as sensitive, but it cannot mutate the logical URL, headers, body, timeout, retry, cache, rate-limit, or metadata. Custom `ClientContext` implementations must use the core `apply_*_credential` helpers instead of writing auth values into request headers or query strings.
 
 A pending slot records the placement, credential id, usage id, generation, provenance, and safe identity. It does not store the raw secret.
 
-Raw credential material is kept in a short-lived per-attempt sidecar and is inserted only when the runtime materializes a `TransportRequest` immediately before `Transport::send`. `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, cache keys, inflight keys, runtime hooks, and debug sinks must never store raw auth material.
+Raw credential material is kept in a short-lived per-attempt sidecar and is inserted only when the runtime materializes a `TransportRequest` immediately before `Transport::send`. `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, cache keys, runtime hooks, and debug sinks must never store raw auth material.
 
-Safe identities are used for cache and inflight separation. They identify credential state without exposing secret values.
+Safe identities are used for cache separation. They identify credential state without exposing secret values.
 
 Custom transports receive the materialized `TransportRequest`, so they see real credentials at the send boundary. Transport implementations must not log the raw request.
 

@@ -436,7 +436,7 @@ async fn stale_decode_failure_does_not_advance_page_state() {
     );
     let sent = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
 
     let endpoint = ItemsEndpoint {
         policy: cache_policy(),

@@ -56,7 +56,7 @@ async fn auth_rejection_does_not_store_cache_entry() {
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), None, false, None);
+    configure_runtime(&mut client, Some(cache), None);
     let endpoint = TextEndpoint {
         policy: {
             let mut policy = auth_policy(AuthPlacement::Bearer);

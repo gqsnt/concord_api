@@ -276,22 +276,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
-    pub fn inflight_policy(&self) -> &Arc<dyn InflightPolicy> {
-        self.runtime_state.inflight_policy()
-    }
-
-    #[inline]
-    pub fn set_inflight_policy(&mut self, inflight_policy: Arc<dyn InflightPolicy>) {
-        Arc::make_mut(&mut self.runtime_state).set_inflight_policy(inflight_policy);
-    }
-
-    #[inline]
-    pub fn with_inflight_policy(mut self, inflight_policy: Arc<dyn InflightPolicy>) -> Self {
-        Arc::make_mut(&mut self.runtime_state).set_inflight_policy(inflight_policy);
-        self
-    }
-
-    #[inline]
     pub fn runtime_state(&self) -> &Arc<ClientRuntimeState> {
         &self.runtime_state
     }
@@ -329,8 +313,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut config = crate::runtime::RuntimeConfig {
             hooks: self.runtime_state.hooks().clone(),
             cache_store: self.runtime_state.cache_store().clone(),
-            inflight_policy: self.runtime_state.inflight_policy().clone(),
-            inflight_registry: self.runtime_state.inflight_registry().clone(),
             rate_limiter: self.runtime_state.rate_limiter().clone(),
             retry_policy: self.runtime_state.retry_policy().clone(),
             auth: crate::runtime::AuthRuntimeConfig {

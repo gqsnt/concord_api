@@ -22,16 +22,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         self.prepare_cache_before_request(built).await
     }
 
-    async fn send_or_join_inflight(
-        &self,
-        built: BuiltRequest,
-        inflight_key: Option<RequestKey>,
-        send_ctx: SendClassifyCtx<'_>,
-    ) -> Result<BuiltResponse, ApiClientError> {
-        self.send_and_classify_with_inflight(built, inflight_key, send_ctx)
-            .await
-    }
-
     async fn handle_auth_rejection(
         &self,
         ctx: AuthRejectionCtx<'_, Cx, T>,
@@ -171,14 +161,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             };
 
             self.debug_planned_request(dbg, &plan, &built, &url_str);
-            let inflight_key = self.runtime_state.inflight_policy().key_for(&built);
             let retry_config = built.retry.clone();
             let retry_request_headers = built.headers.clone();
             let built_for_cache = built.clone();
             let send_result = self
-                .send_or_join_inflight(
+                .send_and_classify_once(
                     built,
-                    inflight_key,
                     SendClassifyCtx {
                         dbg,
                         dbg_verbose,

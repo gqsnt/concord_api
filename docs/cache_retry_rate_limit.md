@@ -207,21 +207,22 @@ The runtime order is fixed:
 1. Build and validate the request plan.
 2. Resolve required credentials. Missing credentials fail here, before cache lookup or transport.
 3. Attach typed auth slots through an auth-only application request without exposing logical URL/header/body mutation or storing raw auth material there.
-4. Compute cache and inflight identity from the logical request and safe auth partition, so authenticated requests do not collide across credentials.
-5. Return a fresh cache hit before inflight coordination, rate-limit acquisition, or transport.
-6. Join an existing inflight request when applicable. Followers do not acquire rate-limit permits.
-7. Acquire rate-limit permits for the request that will actually be sent.
-8. Materialize the send-only transport request with raw auth values.
-9. Send the transport request.
-10. Classify the response or transport failure.
-11. Observe rate-limit response headers after classification.
-12. Handle auth rejection and bounded auth refresh before normal retry decisions.
-13. Apply normal retry policy. Retryable send failures or retryable statuses are retried before decode.
-14. Consider stale cache fallback only after retry declines or the retry budget is exhausted.
-15. Cache successful eligible raw responses after classification.
-16. Decode the endpoint response. Decode failures do not retry transport.
+4. Compute cache identity from the logical request and safe auth partition, so authenticated requests do not collide across credentials.
+5. Return a fresh cache hit before rate-limit acquisition or transport.
+6. Acquire rate-limit permits for the request that will actually be sent.
+7. Materialize the send-only transport request with raw auth values.
+8. Send the transport request.
+9. Classify the response or transport failure.
+10. Observe rate-limit response headers after classification.
+11. Handle auth rejection and bounded auth refresh before normal retry decisions.
+12. Apply normal retry policy. Retryable send failures or retryable statuses are retried before decode.
+13. Consider stale cache fallback only after retry declines or the retry budget is exhausted.
+14. Cache successful eligible raw responses after classification.
+15. Decode the endpoint response. Decode failures do not retry transport.
 
 `BuiltRequest` and response metadata are safe to inspect: Concord stores auth as typed slots and safe identities until the transport boundary. Custom advanced `ClientContext` auth preparation, including internal auth preparation, must use the `apply_*_credential` helpers; auth hooks do not receive `BuiltRequest` and cannot write raw auth into logical URL or headers. A custom `Transport` receives real credential material in the materialized request and is responsible for not logging it.
+
+Concord does not coalesce ordinary endpoint requests in v1. Concurrent identical cache-miss requests are sent independently; cache may avoid later transport only after a response has been stored.
 
 Poisoned runtime locks are not public panic paths. Request execution reports typed auth or runtime-state errors when auth state, rate-limit state, or other required runtime state is unavailable.
 
