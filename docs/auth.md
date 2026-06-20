@@ -71,6 +71,10 @@ defaults {
 }
 ```
 
+Generated OAuth2 client-credentials support is a normal runtime credential flow. Before the first protected request, Concord sends a token request to `token_url` using `POST`, `Authorization: Basic base64(client_id:client_secret)`, `Content-Type: application/x-www-form-urlencoded`, and a body containing `grant_type=client_credentials` plus `scope` when configured. A successful token response becomes `AccessToken` material. Protected requests then materialize `Authorization: Bearer <access_token>` only at the transport boundary.
+
+Valid OAuth tokens are reused through the credential slot. A protected `401` invalidates the applied token generation and reacquires a token within the runtime auth retry budget before retrying the protected request. Token endpoint failures stop the protected request before it is sent. `client_secret`, access tokens, and refresh tokens are redacted from debug output and errors.
+
 ## Endpoint-Backed Credentials
 
 An endpoint can produce a credential for later requests. Declare the credential as an endpoint path and map the auth endpoint response into the credential material.
@@ -127,6 +131,8 @@ let me = api.protected().me().await?;
 Protected calls fail before transport if a required endpoint-backed credential has not been acquired.
 
 Rejected credential refresh only applies after a credential exists and has been applied to the protected request. If the slot is empty, Concord reports the missing credential before sending the request.
+
+Endpoint-backed material can be `AccessToken`, API-key-like secret material, `BasicCredential`, or `ClientCertificate` when attached to the matching auth placement. Endpoint-backed Basic credentials materialize as a Basic `Authorization` header at transport send time. Endpoint-backed client certificates materialize as certificate transport metadata.
 
 ## Auth State
 

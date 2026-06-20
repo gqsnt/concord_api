@@ -182,6 +182,8 @@ rate_limit off
 
 `rate_limit [...]` lists must not be empty and must not contain a duplicate profile name within the same list. Reusing a profile across separate defaults, scopes, endpoints, or behaviors remains valid.
 
+An empty `rate_limit {}` block is rejected because it has no effect. Use `rate_limit off` to clear inherited rate-limit policy, or provide at least one bucket in an inline block.
+
 `[host]` is a strict key part. If a bucket uses `[host]`, the request URL must have a host; otherwise execution fails before rate-limit permit acquisition and before transport. Concord does not invent fallback host values such as `"<unknown-host>"`. Endpoint, method, static string, and named key parts do not require a URL host unless they are combined with `[host]`.
 
 Rate-limit runtime state failures, such as poisoned window or cooldown locks, return typed runtime-state errors. They are reported before transport when the state is required for permit acquisition or cooldown handling.
@@ -204,21 +206,24 @@ GET Uncached
 
 The runtime order is fixed:
 
-1. Build and validate the request plan.
-2. Resolve required credentials. Missing credentials fail here, before cache lookup or transport.
-3. Attach typed auth slots through an auth-only application request without exposing logical URL/header/body mutation or storing raw auth material there.
-4. Compute cache identity from the logical request and safe auth partition, so authenticated requests do not collide across credentials.
-5. Return a fresh cache hit before rate-limit acquisition or transport.
-6. Acquire rate-limit permits for the request that will actually be sent.
-7. Materialize the send-only transport request with raw auth values.
-8. Send the transport request.
+1. Build the logical request.
+2. Resolve/apply auth into pending slots and sidecar identity.
+3. Compute cache identity from the logical request and safe auth partition.
+4. Run fresh cache lookup.
+5. Acquire rate-limit permits.
+6. Materialize `TransportRequest` with raw auth.
+7. Send the transport request.
+8. Stop exposing the materialized request.
 9. Classify the response or transport failure.
-10. Observe rate-limit response headers after classification.
-11. Handle auth rejection and bounded auth refresh before normal retry decisions.
-12. Apply normal retry policy. Retryable send failures or retryable statuses are retried before decode.
-13. Consider stale cache fallback only after retry declines or the retry budget is exhausted.
-14. Cache successful eligible raw responses after classification.
-15. Decode the endpoint response. Decode failures do not retry transport.
+10. Run response/error hooks.
+11. Observe rate-limit response headers.
+12. Handle auth rejection and bounded auth refresh.
+13. Apply normal retry policy.
+14. Consider stale cache fallback only after retry declines or the retry budget is exhausted.
+15. Cache successful eligible raw responses.
+16. Decode the endpoint response.
+
+Fresh cache hits bypass rate-limit acquisition and transport. Decode failures do not retry transport and do not use stale fallback. Successful cacheable raw responses are currently cached before endpoint decode. Rate-limit observation is response-based; Concord does not expose a separate transport-error observation API in v1.
 
 `BuiltRequest` and response metadata are safe to inspect: Concord stores auth as typed slots and safe identities until the transport boundary. Custom advanced `ClientContext` auth preparation, including internal auth preparation, must use the `apply_*_credential` helpers; auth hooks do not receive `BuiltRequest` and cannot write raw auth into logical URL or headers. A custom `Transport` receives real credential material in the materialized request and is responsible for not logging it.
 

@@ -16,6 +16,8 @@ Clients with required variables or secrets take those values as constructor argu
 let api = session_api::SessionApi::new("upstream-key".to_string());
 ```
 
+Constructor order is stable: ordinary `var` inputs come first in source declaration order, followed by auth vars/secrets in source declaration order. Adding optional endpoint auth does not reorder existing constructor arguments.
+
 Tests and custom transports can use `new_with_transport(...)`.
 
 ```rust
@@ -202,6 +204,14 @@ let user = api.request(endpoint).execute().await?;
 ```
 
 Use advanced endpoints for focused tests, reusable endpoint values, or explicit request planning. Keep normal application code on the facade where possible.
+
+## Public Name Stability
+
+Generated public names are validated before codegen within their generated namespace. Client facade names are checked against generated client methods such as `new`, `new_with_transport`, `builder`, `configure`, `request`, and `auth_state`. Endpoint-backed auth helper names, auth-state credential accessors, scope facade methods, endpoint methods, generated request-extension traits, endpoint marker types, and support types are also collision-validated in their own namespaces.
+
+Raw Rust identifiers such as `r#type` are rejected for public generated names in v1. Use ordinary DSL names or aliases that generate stable public Rust names.
+
+Endpoint-backed credentials expose deterministic acquisition helpers such as `.acquire_as_session()` on the endpoint request that returns credential material. Stored credential state is accessed through `api.auth_state().session().set(...)`, `.clear()`, and `.is_set()`.
 
 ## Rustdoc And Autocomplete
 

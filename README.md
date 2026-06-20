@@ -45,6 +45,7 @@ let user = api.users().get_user(42).await?;
 - Direct `.await`, `.execute()`, `.execute_decoded()`, and explicit `.execute_raw()`.
 - Explicit `.paginate().collect()` and `.for_each_page(...)`.
 - Endpoint-backed credential acquisition with `.acquire_as_<credential>()`.
+- OAuth2 client-credentials auth through generated token acquisition and bearer materialization.
 - Advanced endpoint structs under `endpoints::*` for focused tests and request planning.
 
 ## Docs
@@ -68,6 +69,7 @@ The `concord_examples` crate contains current examples for:
 
 - minimal client usage
 - endpoint-backed auth
+- OAuth2 client-credentials auth
 - offset and cursor pagination
 - custom pagination
 - custom codecs

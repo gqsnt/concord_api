@@ -33,6 +33,10 @@ A fresh cache hit returns before rate-limit acquisition or transport.
 
 Concord does not coalesce ordinary endpoint requests in v1. Two concurrent identical cache-miss endpoint requests both acquire their own rate-limit permit and send their own transport request. Cache may avoid later transport only after a response has been stored.
 
+Concurrent fresh cache hits bypass transport and rate-limit acquisition. Concurrent cache misses are not runtime-coalesced unless a custom cache backend implements its own coordination internally.
+
+Credential acquisition is different from ordinary endpoint execution: `CredentialSlot` may single-flight acquisition/refresh for the same refreshable credential. Concurrent protected requests that all need the same missing credential should produce one credential acquisition and one protected transport send per request after the credential is available. Endpoint-backed/manual credentials remain explicit and are not implicitly acquired by protected requests.
+
 `BuiltRequest` is the logical request. It contains public route/query/header data, safe auth identities, and typed pending auth slots, but it does not contain raw auth material. Cache keys, debug sinks, hooks, and response metadata operate on this logical request.
 
 Auth preparation does not receive `BuiltRequest` directly. Endpoint auth preparation and auth-internal preparation both receive an auth-only application request that exposes only pending-slot attachment, so custom client contexts cannot insert raw auth into logical headers, query strings, body data, policy data, or request metadata during credential preparation.
@@ -58,3 +62,5 @@ Endpoint response bodies are read into memory only through the bounded body read
 Decode happens last. A decode failure does not trigger another transport retry.
 
 Runtime order is covered by characterization tests in `concord_core`.
+
+Endpoint concurrency tests use deterministic gates and explicit arrival counts rather than short sleeps. Timeouts in those tests are deadlock guards, not timing assertions.

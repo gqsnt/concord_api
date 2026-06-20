@@ -47,6 +47,10 @@ Behavior merge rules:
 
 Parser diagnostics reject duplicate names inside one `behavior [...]` list. Sema also rejects attaching the same behavior more than once at one defaults, scope, or endpoint site, while still allowing the same behavior to be reused across different layers.
 
+Same-layer auth header/query declarations are non-lossy. Distinct inline and block declarations merge in declaration order. Duplicate auth headers in the same layer are rejected with case-insensitive header-name comparison. Duplicate auth query parameters in the same layer are rejected by exact query key. Cross-layer inheritance is separate and is not collapsed by these same-layer checks.
+
+An empty inline `rate_limit {}` block is rejected as a no-effect declaration. Clearing inherited rate-limit policy must use `rate_limit off`.
+
 Behavior names are preserved as rustdoc labels. Labels are deduped in stable first-seen order so repeated attachments do not make docs noisy.
 
 Behavior is not a runtime concept. By the time codegen builds request plans, behavior semantics have been lowered into ordinary policy/auth data.

@@ -61,4 +61,6 @@ Auth-internal HTTP responses are also bounded. Token and credential-acquisition 
 
 Certificate auth is an attachment form for `ClientCertificate` material. The DSL does not provide a secret-derived certificate constructor in v1; certificate material must come from endpoint-backed or runtime-provided credential material.
 
-OAuth2 client credentials are represented as a credential provider that fetches and refreshes bearer access tokens at a high level. The runtime handles token acquisition through the provider before applying bearer auth.
+OAuth2 client credentials are represented as a credential provider that fetches and refreshes bearer access tokens at a high level. Generated clients configure the provider from `oauth2_client { token_url, client_id, client_secret, scope? }`. Acquisition sends `POST` to `token_url` with HTTP Basic client authentication, form body `grant_type=client_credentials`, and optional `scope`. A successful token response becomes `AccessToken` material, is stored in the credential slot, and is materialized as `Authorization: Bearer ...` only when the protected `TransportRequest` is built.
+
+OAuth token reuse, cancellation safety, and protected `401` refresh use the same `CredentialSlot` path as other refreshable credentials. Token endpoint failure returns an auth error and blocks the protected request from being sent. OAuth client secrets and tokens remain redacted from debug/errors.

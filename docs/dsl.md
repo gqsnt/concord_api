@@ -695,6 +695,8 @@ rate_limit {
 
 `rate_limit [a, b]` lists must contain at least one profile and cannot contain a duplicate name within the same list. Reusing a rate-limit profile across separate defaults, scopes, endpoints, or behaviors remains valid.
 
+`rate_limit {}` is rejected because an empty inline rate-limit block has no effect. Use `rate_limit off` to clear inherited policy, or include at least one bucket.
+
 Contextual key bindings are declared where the variables are visible:
 
 ```rust
@@ -763,6 +765,8 @@ header "X-Debug" -
 ```
 
 Query shorthand uses the Rust argument name as both key and value. Optional query values remove the key when absent. `+=` is query-only; headers support set and remove, not append.
+
+At the same declaration layer, distinct auth header/query declarations from inline forms and `auth { ... }` blocks merge in declaration order. Duplicate auth headers at the same layer are rejected case-insensitively. Duplicate auth query parameter names at the same layer are rejected by exact key match. These checks do not change normal cross-layer inheritance.
 
 `fmt[...]` builds one wire atom from literals and variables. Optional pieces inside `fmt[...]` require all referenced optional values to be present.
 

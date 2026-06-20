@@ -44,6 +44,7 @@ The commands below are the full local gate. `./scripts/check_v1.sh` runs the scr
 - Auth resolution remains before cache identity.
 - Cache identity remains separated by safe auth partitions without raw credential values.
 - Ordinary endpoint requests are not deduplicated while in flight. Cache identity remains relevant only for completed cache entries.
+- Concurrent cache misses are not runtime-coalesced; concurrent fresh cache hits bypass transport. Credential slots may single-flight acquisition/refresh for the same refreshable credential.
 - Rate-limit `[host]` keys fail before permit acquisition and transport if the logical URL has no host.
 - Retry/auth refresh semantics remain bounded and policy-driven.
 

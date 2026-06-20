@@ -20,6 +20,10 @@ Generated code includes:
 
 The generated client should preserve the facade-first API shape. Advanced endpoint structs exist for focused tests and request planning.
 
+Generated public API names are validated after resolution and before codegen. The validator must use the same naming helpers as codegen for endpoint methods, scope facades, auth helpers, and generated public type names. Public DSL names that would collide with generated methods/types, reserved helper names, or raw Rust identifiers are semantic errors rather than Rust duplicate-definition failures.
+
+Constructor shape is stable: generated `new(...)`, `builder()`, and `new_with_transport(...)` keep ordinary vars before auth vars/secrets, each in source declaration order. Normal users should not need to name endpoint marker structs; `endpoints::*` remains an advanced explicit-endpoint surface.
+
 ## Request plans
 
 Endpoint builders collect field values, route pieces, query/header policy, auth requirements, body codec information, response codec information, retry/cache/rate-limit plans, pagination plans, and endpoint metadata. They build `concord_core` request plans.
@@ -47,6 +51,8 @@ For paginated endpoints, codegen emits `.paginate()` and page-driving wrappers t
 ## Endpoint-backed credentials
 
 Auth endpoints that map to credential material get acquisition helpers such as `.acquire_as_session()`. These helpers execute the endpoint and store material in the credential slot.
+
+Endpoint-backed auth state handles are exposed under `auth_state().credential_name()` with fallible `set`, `clear`, and `is_set` methods. Acquisition helpers are named from the real generated public credential name, for example `.acquire_as_session()`.
 
 Generated auth preparation code resolves credential leases and receives an auth-only application request rather than `BuiltRequest`. Internal auth hooks use the same sealed request shape. Generated code calls core auth helpers that attach typed pending auth slots, then returns a prepared credential sidecar to the runtime so raw material can be inserted only when a `TransportRequest` is materialized immediately before send. Codegen must not emit raw auth values into ordinary query/header policy data or expose logical URL/header mutation during auth preparation.
 
