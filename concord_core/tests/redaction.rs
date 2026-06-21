@@ -283,15 +283,6 @@ mod query_auth_redaction {
                 .push(format!("request_headers:{headers:?}"));
         }
 
-        fn request_body(
-            &self,
-            _dbg: DebugLevel,
-            _body: &Bytes,
-            _format: concord_core::internal::Format,
-            _max_chars: usize,
-        ) {
-        }
-
         fn response_status(&self, _dbg: DebugLevel, _status: StatusCode, url: &str, ok: bool) {
             self.events
                 .lock()
@@ -300,15 +291,6 @@ mod query_auth_redaction {
         }
 
         fn response_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
-
-        fn response_body(
-            &self,
-            _dbg: DebugLevel,
-            _body: &Bytes,
-            _format: concord_core::internal::Format,
-            _max_chars: usize,
-        ) {
-        }
 
         fn stale_fallback(
             &self,

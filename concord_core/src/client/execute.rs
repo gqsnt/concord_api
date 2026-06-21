@@ -226,7 +226,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         continue;
                     }
                     let resp = cache_after.response;
-                    self.debug_planned_response(dbg, &plan, &resp, &url_str);
+                    self.maybe_capture_dev_response_body(&plan, &resp);
+                    self.debug_planned_response(dbg, &resp, &url_str);
                     return Ok(resp);
                 }
                 Err(err) => {
@@ -482,32 +483,32 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
         if dbg.is_very_verbose() {
             self.debug_sink.request_headers(dbg, &built.headers);
-            if self.debug_body {
-                let Some(body) = built.body.as_ref() else {
-                    return;
-                };
-                const MAX_CHARS: usize = 32 * 1024;
-                let fmt = match &plan.endpoint.body {
-                    BodyPlan::Encoded { format, .. } => *format,
-                    BodyPlan::None => crate::codec::Format::Text,
-                };
-                self.debug_sink.request_body(dbg, body, fmt, MAX_CHARS);
-            }
         }
     }
 
-    fn debug_planned_response(&self, dbg: DebugLevel, plan: &RequestPlan, resp: &BuiltResponse, url_str: &str) {
+    fn debug_planned_response(&self, dbg: DebugLevel, resp: &BuiltResponse, url_str: &str) {
         if dbg.is_verbose() {
             self.debug_sink.response_status(dbg, resp.status, url_str, true);
         }
         if dbg.is_very_verbose() {
-            const MAX_CHARS: usize = 32 * 1024;
             self.debug_sink.response_headers(dbg, &resp.headers);
-            if self.debug_body {
-                self.debug_sink
-                    .response_body(dbg, &resp.body, plan.endpoint.response.format, MAX_CHARS);
-            }
         }
+    }
+
+    #[allow(deprecated)]
+    fn maybe_capture_dev_response_body(&self, plan: &RequestPlan, resp: &BuiltResponse) {
+        let Some(capture) = self.runtime_state.dev_body_capture() else {
+            return;
+        };
+        if !plan.endpoint.policy.auth.requirements.is_empty() {
+            return;
+        }
+        capture.capture_response(
+            plan.endpoint.meta.name,
+            &plan.endpoint.meta.method,
+            resp.status,
+            &resp.body,
+        );
     }
 }
 

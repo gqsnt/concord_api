@@ -110,6 +110,48 @@ impl Endpoint<TestCx> for UnsafeEndpoint {
     }
 }
 
+#[derive(Clone)]
+struct BodyDebugEndpoint {
+    request_body: Bytes,
+}
+
+impl Endpoint<TestCx> for BodyDebugEndpoint {
+    type Response = String;
+
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        Ok(RequestPlan {
+            endpoint: EndpointPlan {
+                meta: EndpointMeta {
+                    name: "BodyDebug",
+                    method: Method::POST,
+                    idempotent: false,
+                    facade_path: &[],
+                },
+                route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", "/body-debug"),
+                policy: ResolvedPolicy::default(),
+                body: BodyPlan::Encoded {
+                    content_type: Some(http::HeaderValue::from_static("text/plain")),
+                    format: concord_core::internal::Format::Text,
+                },
+                response: ResponsePlan {
+                    accept: Some(http::HeaderValue::from_static("text/plain")),
+                    no_content: false,
+                    format: concord_core::internal::Format::Text,
+                    decode: decode_string,
+                },
+                pagination: None,
+            },
+            args: RequestArgs {
+                body: Some(self.request_body.clone()),
+            },
+            overrides: RequestOverrides {
+                debug_level: Some(DebugLevel::VV),
+                ..Default::default()
+            },
+        })
+    }
+}
+
 struct HugeDelayRetryPolicy;
 
 impl RetryPolicy for HugeDelayRetryPolicy {
@@ -777,7 +819,10 @@ async fn per_call_overrides_apply_to_pending_request() -> Result<(), ApiClientEr
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].timeout, Some(Duration::from_millis(250)));
     assert_eq!(requests[0].meta.attempt, 7);
-    assert_eq!(debug.events(), vec!["request_start:v:Text:0"]);
+    assert_eq!(
+        debug.events(),
+        vec!["request_start:v:Text:0", "response_status:v:200 OK:true"]
+    );
     Ok(())
 }
 
@@ -802,6 +847,218 @@ async fn decode_error_includes_endpoint_status_and_content_type() {
     assert!(msg.contains("GET Text"));
     assert!(msg.contains("status=200 OK"));
     assert!(msg.contains("content-type=text/plain"));
+}
+
+#[tokio::test]
+async fn very_verbose_debug_does_not_emit_request_or_response_body_bytes()
+-> Result<(), ApiClientError> {
+    const REQUEST_SENTINEL: &str = "PR52_REQUEST_BODY_SENTINEL_DO_NOT_LOG";
+    const RESPONSE_SENTINEL: &str = "PR52_RESPONSE_BODY_SENTINEL_DO_NOT_LOG";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL)],
+    );
+    let debug = Arc::new(RecordingDebugSink::default());
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_debug_sink(debug.clone());
+    client.set_debug_level(DebugLevel::VV);
+
+    let decoded = client
+        .request(BodyDebugEndpoint {
+            request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), RESPONSE_SENTINEL);
+    let debug_output = debug.events().join("\n");
+    assert!(debug_output.contains("request_start:vv:BodyDebug:0"));
+    assert!(debug_output.contains("request_headers:vv"));
+    assert!(debug_output.contains("response_status:vv:200 OK:true"));
+    assert!(debug_output.contains("response_headers:vv"));
+    assert!(!debug_output.contains(REQUEST_SENTINEL));
+    assert!(!debug_output.contains(RESPONSE_SENTINEL));
+    Ok(())
+}
+
+#[tokio::test]
+async fn dev_body_capture_is_disabled_by_default() -> Result<(), ApiClientError> {
+    let dir = unique_capture_dir("disabled");
+    std::fs::create_dir_all(&dir).expect("create test capture dir");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(
+            StatusCode::OK,
+            "PR52_DISABLED_CAPTURE_SENTINEL",
+        )],
+    );
+    let client = client(TestAuthVars::default(), transport);
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "PR52_DISABLED_CAPTURE_SENTINEL");
+    assert!(capture_files(&dir).is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[allow(deprecated)]
+#[tokio::test]
+async fn deprecated_dev_body_capture_writes_response_only_to_safe_file()
+-> Result<(), ApiClientError> {
+    const REQUEST_SENTINEL: &str = "PR52_CAPTURE_REQUEST_SENTINEL_DO_NOT_WRITE";
+    const RESPONSE_SENTINEL: &str = "PR52_CAPTURE_RESPONSE_SENTINEL";
+
+    let dir = unique_capture_dir("enabled");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL)],
+    );
+    let debug = Arc::new(RecordingDebugSink::default());
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_debug_sink(debug.clone());
+    client.set_debug_level(DebugLevel::VV);
+    client.configure(|cfg| {
+        cfg.dev_body_capture(
+            concord_core::advanced::DevBodyCaptureConfig::response_dir(&dir).max_bytes(1024),
+        );
+    });
+
+    let decoded = client
+        .request(BodyDebugEndpoint {
+            request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), RESPONSE_SENTINEL);
+    let files = capture_files(&dir);
+    assert_eq!(files.len(), 1);
+    let filename = files[0]
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("capture filename should be utf-8");
+    assert!(filename.starts_with("BodyDebug-POST-200-"));
+    assert!(!filename.contains("body-debug"));
+    assert!(!filename.contains('?'));
+    assert!(!filename.contains(REQUEST_SENTINEL));
+    assert!(!filename.contains(RESPONSE_SENTINEL));
+    let captured = std::fs::read_to_string(&files[0]).expect("read captured response body");
+    assert_eq!(captured, RESPONSE_SENTINEL);
+    assert!(!captured.contains(REQUEST_SENTINEL));
+    let debug_output = debug.events().join("\n");
+    assert!(!debug_output.contains(REQUEST_SENTINEL));
+    assert!(!debug_output.contains(RESPONSE_SENTINEL));
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[allow(deprecated)]
+#[tokio::test]
+async fn deprecated_dev_body_capture_skips_oversized_response_by_default()
+-> Result<(), ApiClientError> {
+    const RESPONSE_SENTINEL: &str = "PR52_OVERSIZE_RESPONSE_SENTINEL_DO_NOT_CAPTURE";
+
+    let dir = unique_capture_dir("oversize");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL)],
+    );
+    let debug = Arc::new(RecordingDebugSink::default());
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_debug_sink(debug.clone());
+    client.set_debug_level(DebugLevel::VV);
+    client.configure(|cfg| {
+        cfg.dev_body_capture(
+            concord_core::advanced::DevBodyCaptureConfig::response_dir(&dir).max_bytes(8),
+        );
+    });
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), RESPONSE_SENTINEL);
+    assert!(capture_files(&dir).is_empty());
+    let debug_output = debug.events().join("\n");
+    assert!(!debug_output.contains(RESPONSE_SENTINEL));
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[allow(deprecated)]
+#[tokio::test]
+async fn deprecated_dev_body_capture_skips_authenticated_responses_by_default()
+-> Result<(), ApiClientError> {
+    const AUTH_RESPONSE_SENTINEL: &str = "PR52_AUTH_TOKEN_RESPONSE_SENTINEL_DO_NOT_CAPTURE";
+
+    let dir = unique_capture_dir("auth-skip");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, AUTH_RESPONSE_SENTINEL)],
+    );
+    let mut client = client(
+        TestAuthVars {
+            token: Some("auth-token".to_string()),
+            identity: "auth-user",
+        },
+        transport,
+    );
+    client.configure(|cfg| {
+        cfg.dev_body_capture(concord_core::advanced::DevBodyCaptureConfig::response_dir(
+            &dir,
+        ));
+    });
+    let policy = ResolvedPolicy {
+        auth: auth_policy(AuthPlacement::Bearer).auth,
+        ..Default::default()
+    };
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy,
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), AUTH_RESPONSE_SENTINEL);
+    assert!(capture_files(&dir).is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+fn unique_capture_dir(name: &str) -> std::path::PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("test clock should be after unix epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "concord-pr52-{name}-{}-{nanos}",
+        std::process::id()
+    ))
+}
+
+fn capture_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    if !dir.exists() {
+        return Vec::new();
+    }
+    let mut files = std::fs::read_dir(dir)
+        .expect("read capture dir")
+        .map(|entry| entry.expect("read capture entry").path())
+        .collect::<Vec<_>>();
+    files.sort();
+    files
 }
 
 #[derive(Default)]
@@ -830,28 +1087,25 @@ impl DebugSink for RecordingDebugSink {
             .push(format!("request_start:{dbg}:{endpoint}:{page_index}"));
     }
 
-    fn request_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
-
-    fn request_body(
-        &self,
-        _dbg: DebugLevel,
-        _body: &Bytes,
-        _format: concord_core::internal::Format,
-        _max_chars: usize,
-    ) {
+    fn request_headers(&self, dbg: DebugLevel, _headers: &HeaderMap) {
+        self.events
+            .lock()
+            .expect("debug events lock")
+            .push(format!("request_headers:{dbg}"));
     }
 
-    fn response_status(&self, _dbg: DebugLevel, _status: StatusCode, _url: &str, _ok: bool) {}
+    fn response_status(&self, dbg: DebugLevel, status: StatusCode, _url: &str, ok: bool) {
+        self.events
+            .lock()
+            .expect("debug events lock")
+            .push(format!("response_status:{dbg}:{status}:{ok}"));
+    }
 
-    fn response_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
-
-    fn response_body(
-        &self,
-        _dbg: DebugLevel,
-        _body: &Bytes,
-        _format: concord_core::internal::Format,
-        _max_chars: usize,
-    ) {
+    fn response_headers(&self, dbg: DebugLevel, _headers: &HeaderMap) {
+        self.events
+            .lock()
+            .expect("debug events lock")
+            .push(format!("response_headers:{dbg}"));
     }
 }
 

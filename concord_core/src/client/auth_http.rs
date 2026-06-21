@@ -320,30 +320,6 @@ fn next_auth_transport_attempt(attempt: u32) -> Result<u32, AuthError> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::codec::{Format, FormatType, NoContent, format_debug_body, text::Text};
-
-    struct BinaryEncoding;
-    impl FormatType for BinaryEncoding {
-        const FORMAT_TYPE: Format = Format::Binary;
-    }
-
-    #[test]
-    fn debug_preview_uses_request_encoder_and_response_decoder_formats() {
-        // Request: binary => base64
-        let req = Bytes::from_static(&[0x00, 0x01, 0x02]);
-        let req_s = format_debug_body::<BinaryEncoding>(&req, 1024);
-        assert_eq!(req_s, "AAEC");
-
-        // Response: text => UTF-8
-        let resp = Bytes::from_static(b"hello");
-        let resp_s = format_debug_body::<Text>(&resp, 1024);
-        assert_eq!(resp_s, "hello");
-
-        // sanity: NoContentEncoding is text-format (empty)
-        let empty = Bytes::new();
-        let s = crate::codec::format_debug_body::<NoContent>(&empty, 1024);
-        assert_eq!(s, "");
-    }
 
     #[test]
     fn auth_attempt_counter_overflow_returns_error() {

@@ -39,6 +39,14 @@ Credential acquisition is different from ordinary endpoint execution: `Credentia
 
 `BuiltRequest` is the logical request. It contains public route/query/header data, safe auth identities, and typed pending auth slots, but it does not contain raw auth material. Cache keys, debug sinks, hooks, and response metadata operate on this logical request.
 
+Debug sinks and runtime hooks are body-free. They may observe safe metadata and
+redacted headers/URLs, but they must not receive live request or response body
+bytes, snippets, previews, or formatted excerpts.
+
+The deprecated dev body capture path is deliberately separate from debug sinks
+and hooks. It is opt-in, response-only, local-file-only, and skips protected
+auth-bearing requests by default.
+
 Auth preparation does not receive `BuiltRequest` directly. Endpoint auth preparation and auth-internal preparation both receive an auth-only application request that exposes only pending-slot attachment, so custom client contexts cannot insert raw auth into logical headers, query strings, body data, policy data, or request metadata during credential preparation.
 
 `TransportRequest` is materialized only immediately before `Transport::send`. It is the boundary where bearer values, arbitrary auth headers, query-auth values, basic auth headers, and certificate transport metadata are inserted. Concord drops it after send and does not store it in `BuiltResponse` or `DecodedResponse<T>`. Custom transports receive real credentials and must not log them.

@@ -396,27 +396,9 @@ impl DebugSink for RecordingDebugSink {
 
     fn request_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
 
-    fn request_body(
-        &self,
-        _dbg: DebugLevel,
-        _body: &Bytes,
-        _format: concord_core::internal::Format,
-        _max_chars: usize,
-    ) {
-    }
-
     fn response_status(&self, _dbg: DebugLevel, _status: StatusCode, _url: &str, _ok: bool) {}
 
     fn response_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
-
-    fn response_body(
-        &self,
-        _dbg: DebugLevel,
-        _body: &Bytes,
-        _format: concord_core::internal::Format,
-        _max_chars: usize,
-    ) {
-    }
 
     fn stale_fallback(
         &self,

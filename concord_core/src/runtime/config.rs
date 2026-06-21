@@ -4,7 +4,15 @@ use crate::pagination::Caps;
 use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
 use crate::runtime_hooks::{NoopRuntimeHooks, RuntimeHooks};
+use bytes::Bytes;
+use http::{Method, StatusCode};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static DEV_BODY_CAPTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
 pub struct AuthRuntimeConfig {
@@ -21,7 +29,6 @@ impl Default for AuthRuntimeConfig {
 pub struct DebugConfig {
     pub(crate) level: DebugLevel,
     pub(crate) sink: Arc<dyn DebugSink>,
-    pub(crate) body: bool,
 }
 
 impl Default for DebugConfig {
@@ -29,9 +36,87 @@ impl Default for DebugConfig {
         Self {
             level: DebugLevel::default(),
             sink: Arc::new(StderrDebugSink),
-            body: false,
         }
     }
+}
+
+#[deprecated(
+    note = "dev-only diagnostic capture; not for production; may persist sensitive response bytes to disk; disabled by default"
+)]
+#[derive(Clone, Debug)]
+pub struct DevBodyCaptureConfig {
+    pub(crate) dir: PathBuf,
+    pub(crate) max_bytes: usize,
+}
+
+#[allow(deprecated)]
+impl DevBodyCaptureConfig {
+    pub const DEFAULT_MAX_BYTES: usize = 64 * 1024;
+
+    #[inline]
+    pub fn response_dir(dir: impl Into<PathBuf>) -> Self {
+        Self {
+            dir: dir.into(),
+            max_bytes: Self::DEFAULT_MAX_BYTES,
+        }
+    }
+
+    #[inline]
+    pub fn max_bytes(mut self, max_bytes: usize) -> Self {
+        self.max_bytes = max_bytes;
+        self
+    }
+
+    pub(crate) fn capture_response(
+        &self,
+        endpoint: &'static str,
+        method: &Method,
+        status: StatusCode,
+        body: &Bytes,
+    ) {
+        let _ = self.try_capture_response(endpoint, method, status, body);
+    }
+
+    fn try_capture_response(
+        &self,
+        endpoint: &'static str,
+        method: &Method,
+        status: StatusCode,
+        body: &Bytes,
+    ) -> std::io::Result<()> {
+        fs::create_dir_all(&self.dir)?;
+        let counter = DEV_BODY_CAPTURE_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let filename = format!(
+            "{}-{}-{}-{counter}.body",
+            sanitize_path_component(endpoint),
+            sanitize_path_component(method.as_str()),
+            status.as_u16()
+        );
+        if body.len() > self.max_bytes {
+            return Ok(());
+        }
+        let path = safe_capture_path(&self.dir, &filename);
+        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+        file.write_all(body)?;
+        Ok(())
+    }
+}
+
+fn sanitize_path_component(value: &str) -> String {
+    let mut out = String::with_capacity(value.len().max(1));
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    if out.is_empty() { "_".to_string() } else { out }
+}
+
+fn safe_capture_path(dir: &Path, filename: &str) -> PathBuf {
+    debug_assert!(!filename.contains('/') && !filename.contains('\\'));
+    dir.join(filename)
 }
 
 #[derive(Clone)]
@@ -44,6 +129,8 @@ pub struct RuntimeConfig {
     pub(crate) pagination: Caps,
     pub(crate) debug: DebugConfig,
     pub(crate) max_response_body_bytes: Option<usize>,
+    #[allow(deprecated)]
+    pub(crate) dev_body_capture: Option<DevBodyCaptureConfig>,
 }
 
 impl Default for RuntimeConfig {
@@ -57,6 +144,7 @@ impl Default for RuntimeConfig {
             pagination: Caps::default(),
             debug: DebugConfig::default(),
             max_response_body_bytes: Some(16 * 1024 * 1024),
+            dev_body_capture: None,
         }
     }
 }
@@ -69,12 +157,6 @@ impl RuntimeConfig {
     }
 
     #[inline]
-    pub fn debug_body(&mut self, enabled: bool) -> &mut Self {
-        self.debug.body = enabled;
-        self
-    }
-
-    #[inline]
     pub fn debug(&mut self, level: DebugLevel) -> &mut Self {
         self.debug_level(level)
     }
@@ -82,6 +164,16 @@ impl RuntimeConfig {
     #[inline]
     pub fn debug_sink(&mut self, sink: Arc<dyn DebugSink>) -> &mut Self {
         self.debug.sink = sink;
+        self
+    }
+
+    #[deprecated(
+        note = "dev-only diagnostic capture; not for production; may persist sensitive response bytes to disk; disabled by default"
+    )]
+    #[allow(deprecated)]
+    #[inline]
+    pub fn dev_body_capture(&mut self, capture: DevBodyCaptureConfig) -> &mut Self {
+        self.dev_body_capture = Some(capture);
         self
     }
 
@@ -136,11 +228,6 @@ impl RuntimeConfig {
     pub fn no_response_body_limit(&mut self) -> &mut Self {
         self.max_response_body_bytes = None;
         self
-    }
-
-    #[inline]
-    pub fn debug_body_enabled(&self) -> bool {
-        self.debug.body
     }
 
     #[inline]

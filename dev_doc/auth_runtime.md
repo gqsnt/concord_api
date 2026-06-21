@@ -6,7 +6,7 @@ Auth is declared by the macro and executed by `concord_core`.
 
 Auth vars and secrets are generated client inputs. Secret values are wrapped and redacted. Errors and diagnostics should identify credentials, headers, or fields by name without rendering raw secret values.
 
-Runtime debug/display output must not render header auth values, bearer tokens, Basic auth usernames or passwords declared as secrets, OAuth client secrets, or query-auth values. The materialized transport request still carries the real credential material required by the remote API; redaction is only for diagnostics, debug output, generated docs, and derived display/cache/debug keys.
+Runtime debug/display output must not render header auth values, bearer tokens, Basic auth usernames or passwords declared as secrets, OAuth client secrets, or query-auth values. Debug sinks and hooks also do not receive live request or response body bytes, so auth/token endpoint bodies cannot be previewed through diagnostics. The materialized transport request still carries the real credential material required by the remote API; redaction is only for diagnostics, debug output, generated docs, and derived display/cache/debug keys.
 
 ## Credentials
 

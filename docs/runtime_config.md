@@ -25,7 +25,6 @@ api.configure_mut(|cfg| {
 Common configuration methods include:
 
 - `debug_level(...)`
-- `debug_body(...)`
 - `debug_sink(...)`
 - `cache_store(...)`
 - `rate_limiter(...)`
@@ -35,6 +34,26 @@ Common configuration methods include:
 - `max_auth_retries(...)`
 - `max_response_body_bytes(...)`
 - `no_response_body_limit()`
+
+Debug sinks and runtime hooks are metadata-only. They may observe redacted URLs,
+redacted headers, statuses, retry/cache/rate-limit events, and safe endpoint
+metadata. They never receive request or response body bytes, and verbose debug
+logging does not support live body previews.
+
+## Deprecated Dev Body Capture
+
+Live request/response body debug is not supported. `DebugSink`, stderr debug
+output, and runtime hooks never receive body bytes.
+
+For local generated-client debugging only, Concord exposes deprecated
+`DevBodyCaptureConfig` through `RuntimeConfig::dev_body_capture(...)`. It is
+disabled by default and marked deprecated because it can persist sensitive
+response bytes to disk. It writes selected ordinary response bodies to local
+files under the configured directory using generated safe filenames. It does
+not capture request bodies, and it skips responses for authenticated requests
+and auth/token acquisition paths by default.
+
+Do not use dev body capture in production.
 
 ## Response Body Limits
 

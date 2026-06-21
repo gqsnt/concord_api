@@ -104,7 +104,8 @@ pub mod advanced {
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,
         RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy,
     };
-    pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};
+    #[allow(deprecated)]
+    pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, DevBodyCaptureConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{
         HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext, RuntimeHooks,
         TransportErrorHookContext,

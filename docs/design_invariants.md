@@ -54,6 +54,13 @@ Core runtime code must not depend on raw DSL syntax.
 
 Raw parser syntax may represent rejected forms so diagnostics can point at the right token. Resolved macro IR should be context-specific: ordinary policy, route, and pagination values must not carry auth-secret references after sema. Public expression contexts also must not depend on generated implementation locals such as `auth`, `secret`, `cx`, `ep`, `vars`, `self`, or `request`; sema closes those references before codegen. Codegen should render resolved data and return typed errors for impossible construction failures instead of relying on validation-dependent panics.
 
+Runtime diagnostics are metadata-only for bodies. Debug sinks, stderr debug
+logs, runtime hooks, and callback-style diagnostics must not receive live
+request or response body bytes, even truncated or formatted previews.
+The only body-oriented developer aid is the deprecated, explicit, disabled by
+default local response-file capture path; it is not connected to debug sinks,
+hooks, or logging.
+
 ## Runtime Pipeline
 
 The runtime pipeline order is fixed.
