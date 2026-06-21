@@ -61,6 +61,13 @@ The only body-oriented developer aid is the deprecated, explicit, disabled by
 default local response-file capture path; it is not connected to debug sinks,
 hooks, or logging.
 
+Credential slots use monotonic generations across all states, including empty
+states. Auth rejection invalidates only the generation that was applied to the
+rejected request, stale credential completions cannot overwrite newer material,
+and cancellation of an in-flight credential acquisition must wake waiters
+without leaving the slot permanently in flight. Auth locks are not held across
+credential endpoint or token endpoint I/O.
+
 ## Runtime Pipeline
 
 The runtime pipeline order is fixed.

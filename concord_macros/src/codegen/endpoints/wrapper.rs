@@ -363,8 +363,7 @@ fn emit_client_wrapper(
             #[inline]
             pub async fn #clear_name(&self) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
                 let __auth_state = self.inner.try_auth_state()?;
-                __auth_state.#name.clear_manual().await;
-                ::core::result::Result::Ok(())
+                __auth_state.#name.clear_manual().await
             }
 
             #[inline]
@@ -607,8 +606,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
                 #[inline]
                 pub async fn clear(&self) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
                     let __auth_state = self.client.inner.try_auth_state()?;
-                    __auth_state.#name.clear_manual().await;
-                    ::core::result::Result::Ok(())
+                    __auth_state.#name.clear_manual().await
                 }
 
                 #[inline]

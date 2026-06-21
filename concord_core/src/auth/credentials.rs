@@ -118,7 +118,9 @@ pub struct CredentialLease<T> {
 }
 
 enum CredentialSlotState<T> {
-    Empty,
+    Empty {
+        generation: u64,
+    },
     Valid {
         value: T,
         generation: u64,
@@ -151,7 +153,6 @@ enum RefreshPrevious<T> {
         generation: u64,
     },
     Failed {
-        generation: u64,
         error: AuthError,
         retry_after: Option<Instant>,
     },
@@ -207,11 +208,17 @@ impl<T> Drop for RefreshGuard<T> {
             let mut inner = lock_slot_inner(&self.inner);
             match &inner.state {
                 CredentialSlotState::Refreshing { owner, .. } if *owner == self.owner => {
-                    match std::mem::replace(&mut inner.state, CredentialSlotState::Empty) {
+                    match std::mem::replace(
+                        &mut inner.state,
+                        CredentialSlotState::Empty { generation: 0 },
+                    ) {
                         CredentialSlotState::Refreshing {
-                            notify, previous, ..
+                            notify,
+                            generation,
+                            previous,
+                            ..
                         } => {
-                            inner.state = previous.into_state();
+                            inner.state = previous.into_state_at(generation);
                             Some(notify)
                         }
                         state => {
@@ -231,15 +238,11 @@ impl<T> Drop for RefreshGuard<T> {
 }
 
 impl<T> RefreshPrevious<T> {
-    fn into_state(self) -> CredentialSlotState<T> {
+    fn into_state_at(self, generation: u64) -> CredentialSlotState<T> {
         match self {
-            Self::Empty => CredentialSlotState::Empty,
-            Self::Valid { value, generation } => CredentialSlotState::Valid { value, generation },
-            Self::Failed {
-                generation,
-                error,
-                retry_after,
-            } => CredentialSlotState::Failed {
+            Self::Empty => CredentialSlotState::Empty { generation },
+            Self::Valid { value, .. } => CredentialSlotState::Valid { value, generation },
+            Self::Failed { error, retry_after } => CredentialSlotState::Failed {
                 generation,
                 error,
                 retry_after,
@@ -258,7 +261,7 @@ where
         Self {
             provider,
             inner: Arc::new(Mutex::new(CredentialSlotInner {
-                state: CredentialSlotState::Empty,
+                state: CredentialSlotState::Empty { generation: 0 },
                 next_owner: 1,
             })),
             _cx: PhantomData,
@@ -295,12 +298,13 @@ where
                     CredentialSlotState::Valid { value, generation } => {
                         let notify = Arc::new(Notify::new());
                         let current = value.clone();
-                        let generation = *generation;
+                        let previous_generation = *generation;
+                        let generation = next_generation(&inner.state)?;
                         let reason = credential_refresh_reason(value, policy)?
                             .unwrap_or(CredentialRefreshReason::ExpiringSoon);
                         let previous = RefreshPrevious::Valid {
                             value: value.clone(),
-                            generation,
+                            generation: previous_generation,
                         };
                         let owner = inner.next_refresh_owner()?;
                         inner.state = CredentialSlotState::Refreshing {
@@ -339,7 +343,7 @@ where
                         }
                     }
                     CredentialSlotState::Failed {
-                        generation,
+                        generation: _,
                         error,
                         retry_after,
                     } => {
@@ -347,9 +351,8 @@ where
                             return Err(error.clone());
                         }
                         let notify = Arc::new(Notify::new());
-                        let generation = *generation;
+                        let generation = next_generation(&inner.state)?;
                         let previous = RefreshPrevious::Failed {
-                            generation,
                             error: error.clone(),
                             retry_after: *retry_after,
                         };
@@ -369,17 +372,18 @@ where
                             },
                         }
                     }
-                    CredentialSlotState::Empty => {
+                    CredentialSlotState::Empty { .. } => {
                         let notify = Arc::new(Notify::new());
                         let owner = inner.next_refresh_owner()?;
+                        let generation = next_generation(&inner.state)?;
                         inner.state = CredentialSlotState::Refreshing {
                             notify,
-                            generation: 0,
+                            generation,
                             owner,
                             previous: RefreshPrevious::Empty,
                         };
                         SlotAction::Acquire {
-                            generation: 0,
+                            generation,
                             guard: RefreshGuard {
                                 inner: self.inner.clone(),
                                 owner,
@@ -439,10 +443,22 @@ where
                     generation: current_generation,
                 } if generation.is_none_or(|expected| expected == *current_generation) => {
                     let current = value.clone();
-                    inner.state = CredentialSlotState::Empty;
+                    let next_generation = current_generation.checked_add(1).ok_or_else(|| {
+                        AuthError::new(
+                            AuthErrorKind::AcquireFailed,
+                            "credential generation counter overflowed",
+                        )
+                    })?;
+                    inner.state = CredentialSlotState::Empty {
+                        generation: next_generation,
+                    };
                     Some(current)
                 }
-                CredentialSlotState::Refreshing { previous, .. } => {
+                CredentialSlotState::Refreshing {
+                    generation: _,
+                    previous,
+                    ..
+                } => {
                     let current = match previous {
                         RefreshPrevious::Valid {
                             value,
@@ -482,19 +498,21 @@ where
         Ok(())
     }
 
-    pub async fn clear_manual(&self) {
+    pub async fn clear_manual(&self) -> Result<(), AuthError> {
         let notify = {
             let mut inner = lock_slot_inner(&self.inner);
+            let generation = next_generation(&inner.state)?;
             let notify = match &inner.state {
                 CredentialSlotState::Refreshing { notify, .. } => Some(notify.clone()),
                 _ => None,
             };
-            inner.state = CredentialSlotState::Empty;
+            inner.state = CredentialSlotState::Empty { generation };
             notify
         };
         if let Some(notify) = notify {
             notify.notify_waiters();
         }
+        Ok(())
     }
 
     pub async fn has_value(&self) -> bool {
@@ -515,16 +533,19 @@ where
 
     fn commit_slot_result(
         &self,
-        previous_generation: u64,
+        attempt_generation: u64,
         guard: &mut RefreshGuard<P::Credential>,
         result: Result<P::Credential, AuthError>,
     ) -> Result<CommitOutcome<P::Credential>, AuthError> {
         let notify = {
             let inner = lock_slot_inner(&self.inner);
             match &inner.state {
-                CredentialSlotState::Refreshing { notify, owner, .. } if *owner == guard.owner => {
-                    notify.clone()
-                }
+                CredentialSlotState::Refreshing {
+                    notify,
+                    owner,
+                    generation,
+                    ..
+                } if *owner == guard.owner && *generation == attempt_generation => notify.clone(),
                 _ => {
                     guard.disarm();
                     return Ok(CommitOutcome::StaleOwner);
@@ -534,7 +555,9 @@ where
 
         let mut inner = lock_slot_inner(&self.inner);
         match &inner.state {
-            CredentialSlotState::Refreshing { owner, .. } if *owner == guard.owner => {}
+            CredentialSlotState::Refreshing {
+                owner, generation, ..
+            } if *owner == guard.owner && *generation == attempt_generation => {}
             _ => {
                 guard.disarm();
                 return Ok(CommitOutcome::StaleOwner);
@@ -543,23 +566,20 @@ where
 
         match result {
             Ok(value) => {
-                let generation = previous_generation.checked_add(1).ok_or_else(|| {
-                    AuthError::new(
-                        AuthErrorKind::AcquireFailed,
-                        "credential generation counter overflowed",
-                    )
-                })?;
                 inner.state = CredentialSlotState::Valid {
                     value: value.clone(),
-                    generation,
+                    generation: attempt_generation,
                 };
                 guard.disarm();
                 notify.notify_waiters();
-                Ok(CommitOutcome::Stored(CredentialLease { value, generation }))
+                Ok(CommitOutcome::Stored(CredentialLease {
+                    value,
+                    generation: attempt_generation,
+                }))
             }
             Err(error) => {
                 inner.state = CredentialSlotState::Failed {
-                    generation: previous_generation,
+                    generation: attempt_generation,
                     error: error.clone(),
                     retry_after: error
                         .retry_after()
@@ -658,8 +678,8 @@ fn checked_auth_instant_add(
 
 fn next_generation<T>(state: &CredentialSlotState<T>) -> Result<u64, AuthError> {
     match state {
-        CredentialSlotState::Empty => Ok(1),
-        CredentialSlotState::Valid { generation, .. }
+        CredentialSlotState::Empty { generation }
+        | CredentialSlotState::Valid { generation, .. }
         | CredentialSlotState::Refreshing { generation, .. }
         | CredentialSlotState::Failed { generation, .. } => {
             generation.checked_add(1).ok_or_else(|| {
@@ -739,7 +759,7 @@ mod tests {
             .expect("caller task should not panic")
             .expect("later acquire should succeed");
         assert_eq!(lease.value.value, "second");
-        assert_eq!(lease.generation, 1);
+        assert_eq!(lease.generation, 2);
         assert!(slot.has_value().await);
         assert_eq!(provider.acquire_count(), 2);
     }
@@ -858,6 +878,168 @@ mod tests {
             .expect("caller should acquire replacement credential");
         assert_eq!(lease.value.value, "new");
         assert_ne!(lease.value.value, "old");
+        assert!(
+            lease.generation > old_generation,
+            "replacement credential must not reuse invalidated generation"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalidated_previous_generation_is_not_resurrected_by_refresh_cancellation() {
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+        slot.set_manual(TestCredential::expired("OLD_TOKEN_MUST_NOT_RESURRECT"))
+            .await
+            .expect("old credential should be stored");
+        let old_generation = slot
+            .get_cached()
+            .await
+            .expect("old credential should be cached")
+            .generation;
+
+        let refresh_release = provider.enqueue_refresh().await;
+        let leader = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_refresh_count(1).await;
+
+        slot.invalidate_generation(
+            test_context(),
+            Some(old_generation),
+            InvalidateReason::Unauthorized,
+        )
+        .await
+        .expect("in-flight previous generation invalidation should succeed");
+
+        leader.abort();
+        let _ = leader.await;
+        assert!(
+            refresh_release
+                .send(Ok(TestCredential::fresh(
+                    "STALE_REFRESH_AFTER_CANCEL_MUST_NOT_INSTALL"
+                )))
+                .is_err()
+        );
+        assert!(
+            slot.get_cached().await.is_none(),
+            "cancelled refresh rollback must not resurrect invalidated old credential"
+        );
+
+        let acquire_release = provider.enqueue_acquire().await;
+        let caller = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(1).await;
+        acquire_release
+            .send(Ok(TestCredential::fresh(
+                "NEW_TOKEN_AFTER_CANCELLED_REFRESH",
+            )))
+            .expect("replacement acquire should be waiting");
+
+        let lease = timeout(TokioDuration::from_secs(1), caller)
+            .await
+            .expect("replacement acquire should not hang")
+            .expect("caller task should not panic")
+            .expect("replacement acquire should succeed");
+        assert_eq!(lease.value.value, "NEW_TOKEN_AFTER_CANCELLED_REFRESH");
+        assert!(
+            lease.generation > old_generation + 1,
+            "replacement generation must advance past the cancelled refresh attempt"
+        );
+    }
+
+    #[tokio::test]
+    async fn generation_increases_across_invalidation_and_regeneration() {
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+        slot.set_manual(TestCredential::fresh("first"))
+            .await
+            .expect("manual credential should be stored");
+        let first = slot
+            .get_cached()
+            .await
+            .expect("first credential should be cached");
+        assert_eq!(first.generation, 1);
+
+        slot.invalidate_generation(
+            test_context(),
+            Some(first.generation),
+            InvalidateReason::Unauthorized,
+        )
+        .await
+        .expect("matching generation invalidation should succeed");
+        assert!(slot.get_cached().await.is_none());
+
+        let release = provider.enqueue_acquire().await;
+        let caller = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_acquire_count(1).await;
+        release
+            .send(Ok(TestCredential::fresh("second")))
+            .expect("replacement acquire should be waiting");
+        let second = timeout(TokioDuration::from_secs(1), caller)
+            .await
+            .expect("replacement acquire should not hang")
+            .expect("caller task should not panic")
+            .expect("replacement acquire should succeed");
+
+        assert_eq!(second.value.value, "second");
+        assert!(
+            second.generation > first.generation,
+            "slot generation must increase after invalidation"
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_invalidation_does_not_clear_newer_credential() {
+        let provider = TestProvider::new();
+        let slot = CredentialSlot::<TestCx, _>::new(provider);
+        slot.set_manual(TestCredential::fresh("OLD_TOKEN_SHOULD_NOT_SURVIVE"))
+            .await
+            .expect("old credential should be stored");
+        let old_generation = slot
+            .get_cached()
+            .await
+            .expect("old credential should be cached")
+            .generation;
+
+        slot.set_manual(TestCredential::fresh("NEW_TOKEN_SHOULD_REMAIN"))
+            .await
+            .expect("new credential should be stored");
+        let new_generation = slot
+            .get_cached()
+            .await
+            .expect("new credential should be cached")
+            .generation;
+        assert!(new_generation > old_generation);
+
+        slot.invalidate_generation(
+            test_context(),
+            Some(old_generation),
+            InvalidateReason::Unauthorized,
+        )
+        .await
+        .expect("stale invalidation should be ignored safely");
+
+        let cached = slot
+            .get_cached()
+            .await
+            .expect("newer credential must remain cached");
+        assert_eq!(cached.value.value, "NEW_TOKEN_SHOULD_REMAIN");
+        assert_eq!(cached.generation, new_generation);
     }
 
     #[tokio::test]
@@ -1082,6 +1264,45 @@ mod tests {
             .await
             .expect("manual credential should remain cached");
         assert_eq!(cached.value.value, "manual");
+    }
+
+    #[tokio::test]
+    async fn stale_refresh_owner_cannot_overwrite_newer_manual_set() {
+        let provider = TestProvider::new();
+        let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
+        slot.set_manual(TestCredential::expired("old"))
+            .await
+            .expect("old credential should be stored");
+
+        let release = provider.enqueue_refresh().await;
+        let leader = {
+            let slot = slot.clone();
+            tokio::spawn(async move {
+                slot.get_or_refresh(test_context(), AuthStepPolicy::default())
+                    .await
+            })
+        };
+        provider.wait_for_refresh_count(1).await;
+
+        slot.set_manual(TestCredential::fresh("FRESH_TOKEN_MUST_INSTALL"))
+            .await
+            .expect("new manual credential should be stored");
+        release
+            .send(Ok(TestCredential::fresh("STALE_TOKEN_MUST_NOT_INSTALL")))
+            .expect("stale refresh should still be waiting");
+
+        let lease = timeout(TokioDuration::from_secs(1), leader)
+            .await
+            .expect("stale refresh owner should not hang")
+            .expect("leader task should not panic")
+            .expect("leader should observe newer manual credential after stale commit");
+        assert_eq!(lease.value.value, "FRESH_TOKEN_MUST_INSTALL");
+
+        let cached = slot
+            .get_cached()
+            .await
+            .expect("newer manual credential should remain cached");
+        assert_eq!(cached.value.value, "FRESH_TOKEN_MUST_INSTALL");
     }
 
     #[tokio::test]

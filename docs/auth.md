@@ -156,7 +156,12 @@ if api.auth_state().session().is_set().await? {
 
 Auth state helpers that observe shared auth state are fallible. A poisoned auth-state lock returns `AuthError` instead of panicking.
 
-Endpoint-backed credential slots track generations. If a stale response tries to invalidate an older generation after a newer credential was acquired, the newer credential is not cleared by that stale invalidation.
+Credential slots track monotonic generations, including when a slot is empty.
+If a stale response tries to invalidate an older generation after a newer
+credential was acquired, the newer credential is not cleared by that stale
+invalidation. Stale credential acquisition completions are ignored, and a
+cancelled credential acquisition wakes waiters instead of leaving the slot
+permanently in flight.
 
 ## Rejection And Refresh
 

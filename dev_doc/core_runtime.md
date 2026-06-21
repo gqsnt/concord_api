@@ -37,6 +37,12 @@ Concurrent fresh cache hits bypass transport and rate-limit acquisition. Concurr
 
 Credential acquisition is different from ordinary endpoint execution: `CredentialSlot` may single-flight acquisition/refresh for the same refreshable credential. Concurrent protected requests that all need the same missing credential should produce one credential acquisition and one protected transport send per request after the credential is available. Endpoint-backed/manual credentials remain explicit and are not implicitly acquired by protected requests.
 
+Credential slot generations are monotonic across empty, in-flight, ready, and
+failed states. Stale auth rejection, stale acquisition completion, or cancelled
+acquisition cleanup must not clear or overwrite newer credential material.
+Credential acquisition may coordinate waiters for the same slot, but auth locks
+must not be held across credential endpoint or token endpoint I/O.
+
 `BuiltRequest` is the logical request. It contains public route/query/header data, safe auth identities, and typed pending auth slots, but it does not contain raw auth material. Cache keys, debug sinks, hooks, and response metadata operate on this logical request.
 
 Debug sinks and runtime hooks are body-free. They may observe safe metadata and

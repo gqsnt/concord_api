@@ -12,7 +12,9 @@ Runtime debug/display output must not render header auth values, bearer tokens, 
 
 Credential declarations create providers and credential slots. Static providers include API key, bearer token, basic credentials, and OAuth2 client credentials. Endpoint-backed credentials are populated by executing an auth endpoint and mapping its decoded response into credential material. In code and tests, endpoint-backed credentials are the primary stateful auth example.
 
-Credential slots store material and generation counters. Generations let the runtime identify whether a credential was refreshed or invalidated between attempts.
+Credential slots store material and monotonic generation counters. Every slot
+state, including empty and failed states, preserves a generation so the same
+slot never reuses an older epoch during a client auth-state lifetime.
 
 ## Auth state
 
@@ -51,7 +53,15 @@ Credential refresh is bounded by the client runtime `max_auth_retries` setting. 
 
 `AuthChallengePolicy::NeverRefresh` is part of the advanced core API. When a requirement uses it, auth rejection does not invalidate or retry for `401` or `403`. It is not exposed as public DSL syntax in v1.
 
-Credential slots carry generation counters. Invalidating a rejected credential should target the generation that was applied to the failed request, so stale invalidation cannot clear newer credential material that was acquired after the request was sent.
+Credential slots carry monotonic generation counters. Invalidating a rejected
+credential targets the generation that was applied to the failed request, so
+stale invalidation cannot clear newer credential material that was acquired
+after the request was sent. Credential acquisition and refresh transition the
+slot into an in-flight generation while the auth lock is not held across network
+I/O. Completion stores the result only if the slot is still in that in-flight
+generation; stale completions are discarded. If the acquiring future is dropped
+or cancelled, the in-flight guard rolls the slot forward to a safe state and
+wakes waiters instead of leaving the slot permanently in flight.
 
 Auth-internal requests use recursion guards so an auth refresh request does not recursively trigger the same auth flow.
 
