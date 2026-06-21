@@ -1,3 +1,4 @@
+use crate::auth::{AuthIdentity, PendingAuthPlacement, PendingAuthSlot};
 use crate::transport::{BuiltRequest, BuiltResponse};
 use std::future::Future;
 use std::pin::Pin;
@@ -264,8 +265,15 @@ fn default_cache_key_with_method(req: &BuiltRequest, method: &http::Method) -> C
         method,
         crate::redaction::sanitized_url_for_key(&req.url)
     );
-    append_auth_identities(&mut key, &req.extensions.auth_identities);
+    append_auth_cache_identity(&mut key, &req.extensions.pending_auth_slots);
     CacheKey::new(key)
+}
+
+pub(crate) fn auth_cache_identity_is_safe(req: &BuiltRequest) -> bool {
+    req.extensions
+        .pending_auth_slots
+        .iter()
+        .all(|slot| !matches!(slot.identity, AuthIdentity::Anonymous))
 }
 
 pub trait CacheStore: Send + Sync + 'static {
@@ -323,21 +331,61 @@ pub struct NoopCacheStore;
 
 impl CacheStore for NoopCacheStore {}
 
-fn append_auth_identities(key: &mut String, identities: &[String]) {
-    if identities.is_empty() {
+fn append_auth_cache_identity(key: &mut String, slots: &[PendingAuthSlot]) {
+    if slots.is_empty() {
         return;
     }
     key.push_str("|auth=");
-    for identity in identities {
-        key.push_str(identity);
-        key.push(';');
+    for slot in slots {
+        key.push_str("slot{");
+        push_component(key, "cred", &slot.credential.id.safe_fragment());
+        push_component(key, "use", slot.usage_id.as_str());
+        if let Some(step_id) = slot.step_id {
+            push_component(key, "step", step_id);
+        }
+        push_component(key, "place", placement_kind_fragment(&slot.placement));
+        match &slot.placement {
+            PendingAuthPlacement::Header(name) => push_component(key, "header", name.as_str()),
+            PendingAuthPlacement::Query(name) => push_component(key, "query", name),
+            PendingAuthPlacement::Bearer
+            | PendingAuthPlacement::Basic
+            | PendingAuthPlacement::Certificate => {}
+        }
+        if let Some(generation) = slot.generation {
+            push_component(key, "gen", &generation.to_string());
+        }
+        push_component(key, "id", &slot.identity.safe_fragment());
+        key.push('}');
+    }
+}
+
+fn push_component(key: &mut String, label: &str, value: &str) {
+    key.push_str(label);
+    key.push(':');
+    key.push_str(&value.len().to_string());
+    key.push(':');
+    key.push_str(value);
+}
+
+fn placement_kind_fragment(placement: &PendingAuthPlacement) -> &'static str {
+    match placement {
+        PendingAuthPlacement::Bearer => "bearer",
+        PendingAuthPlacement::Header(_) => "header",
+        PendingAuthPlacement::Query(_) => "query",
+        PendingAuthPlacement::Basic => "basic",
+        PendingAuthPlacement::Certificate => "certificate",
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::{BasicCredential, CredentialMaterial, RequestExtensions};
+    use crate::auth::{
+        ApiKey, AuthApplicationRequest, AuthChallengePolicy, AuthIdentity, AuthPlacement,
+        AuthProvenance, AuthRequirement, AuthUsageId, BasicCredential, CredentialId,
+        CredentialMaterial, CredentialRef, RequestExtensions, SecretCredential,
+        apply_basic_credential, apply_secret_credential,
+    };
     use crate::rate_limit::RateLimitPlan;
     use crate::retry::RetrySetting;
     use crate::transport::RequestMeta;
@@ -364,6 +412,50 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct AnonymousSecret(&'static str);
+
+    impl CredentialMaterial for AnonymousSecret {
+        fn safe_identity(&self) -> AuthIdentity {
+            AuthIdentity::Anonymous
+        }
+    }
+
+    impl SecretCredential for AnonymousSecret {
+        fn secret_value(&self) -> &str {
+            self.0
+        }
+    }
+
+    fn requirement(placement: AuthPlacement) -> AuthRequirement {
+        requirement_with_ids(
+            placement,
+            CredentialId::new("test", "credential"),
+            AuthUsageId::new("test.credential"),
+            None,
+        )
+    }
+
+    fn requirement_with_ids(
+        placement: AuthPlacement,
+        credential_id: CredentialId,
+        usage_id: AuthUsageId,
+        step_id: Option<&'static str>,
+    ) -> AuthRequirement {
+        AuthRequirement {
+            credential: CredentialRef { id: credential_id },
+            placement,
+            usage_id,
+            step_id,
+            provenance: AuthProvenance::default(),
+            challenge: AuthChallengePolicy::Default,
+        }
+    }
+
+    fn encoded(label: &str, value: &str) -> String {
+        format!("{label}:{}:{value}", value.len())
+    }
+
     #[test]
     fn default_key_redacts_sensitive_query_values() {
         let req = request("https://example.com/items?api_key=secret&visible=plain");
@@ -378,33 +470,45 @@ mod tests {
     #[test]
     fn default_key_includes_auth_identity() {
         let mut req = request("https://example.com/items");
-        req.extensions.auth_identities.push("user:one".to_string());
+        let mut auth_request = AuthApplicationRequest::new(&mut req.extensions);
+        apply_basic_credential(
+            &mut auth_request,
+            &requirement(AuthPlacement::Basic),
+            &BasicCredential::new("alice", "password").identity_hint("user-one"),
+        )
+        .expect("basic credential should apply");
 
         let key = default_cache_key(&req);
 
-        assert!(key.as_str().contains("|auth=user:one;"));
+        assert!(key.as_str().contains("|auth="));
+        assert!(key.as_str().contains(&encoded("cred", "test:credential")));
+        assert!(key.as_str().contains(&encoded("place", "basic")));
+        assert!(key.as_str().contains(&encoded("id", "user:user-one")));
     }
 
     #[test]
     fn default_key_partitions_basic_credentials_by_password_without_raw_secrets() {
         let mut old = request("https://example.com/items");
-        old.extensions.auth_identities.push(
-            BasicCredential::new("alice", "old-password")
-                .safe_identity()
-                .safe_fragment(),
-        );
+        apply_basic_credential(
+            &mut AuthApplicationRequest::new(&mut old.extensions),
+            &requirement(AuthPlacement::Basic),
+            &BasicCredential::new("alice", "old-password"),
+        )
+        .expect("old basic credential should apply");
         let mut new = request("https://example.com/items");
-        new.extensions.auth_identities.push(
-            BasicCredential::new("alice", "new-password")
-                .safe_identity()
-                .safe_fragment(),
-        );
+        apply_basic_credential(
+            &mut AuthApplicationRequest::new(&mut new.extensions),
+            &requirement(AuthPlacement::Basic),
+            &BasicCredential::new("alice", "new-password"),
+        )
+        .expect("new basic credential should apply");
         let mut same = request("https://example.com/items");
-        same.extensions.auth_identities.push(
-            BasicCredential::new("alice", "old-password")
-                .safe_identity()
-                .safe_fragment(),
-        );
+        apply_basic_credential(
+            &mut AuthApplicationRequest::new(&mut same.extensions),
+            &requirement(AuthPlacement::Basic),
+            &BasicCredential::new("alice", "old-password"),
+        )
+        .expect("same basic credential should apply");
 
         let old_key = default_cache_key(&old);
         let new_key = default_cache_key(&new);
@@ -419,6 +523,89 @@ mod tests {
             assert!(!key.contains("YWxpY2U6b2xkLXBhc3N3b3Jk"));
             assert!(!key.contains("YWxpY2U6bmV3LXBhc3N3b3Jk"));
         }
+    }
+
+    #[test]
+    fn default_key_partitions_query_auth_without_raw_secret() {
+        let requirement = requirement(AuthPlacement::Query("api_key"));
+        let mut a = request("https://example.com/items?page=1");
+        apply_secret_credential(
+            &mut AuthApplicationRequest::new(&mut a.extensions),
+            &requirement,
+            &ApiKey::new("QUERY_AUTH_SECRET_A"),
+        )
+        .expect("query auth A should apply");
+        let mut b = request("https://example.com/items?page=1");
+        apply_secret_credential(
+            &mut AuthApplicationRequest::new(&mut b.extensions),
+            &requirement,
+            &ApiKey::new("QUERY_AUTH_SECRET_B"),
+        )
+        .expect("query auth B should apply");
+
+        let key_a = default_cache_key(&a);
+        let key_b = default_cache_key(&b);
+
+        assert_ne!(key_a, key_b);
+        for key in [key_a.as_str(), key_b.as_str()] {
+            assert!(key.contains(&encoded("place", "query")));
+            assert!(key.contains(&encoded("query", "api_key")));
+            assert!(!key.contains("QUERY_AUTH_SECRET_A"));
+            assert!(!key.contains("QUERY_AUTH_SECRET_B"));
+        }
+    }
+
+    #[test]
+    fn auth_cache_identity_components_are_unambiguously_encoded() {
+        let delimiter_query = "api_key,id:user:x;place:bearer";
+        let delimiter_step = "step,place:query:api_key";
+        let delimiter_credential = CredentialId::new("test,place:query", "credential;id:user:x");
+        let delimiter_usage = AuthUsageId::new("use,id:user:x;place:bearer");
+        let delimiter_requirement = requirement_with_ids(
+            AuthPlacement::Query(delimiter_query),
+            delimiter_credential,
+            delimiter_usage,
+            Some(delimiter_step),
+        );
+        let mut delimiter_req = request("https://example.com/items?page=1");
+        apply_secret_credential(
+            &mut AuthApplicationRequest::new(&mut delimiter_req.extensions),
+            &delimiter_requirement,
+            &ApiKey::new("QUERY_AUTH_SECRET_DELIMITER"),
+        )
+        .expect("delimiter-heavy query auth should apply");
+        let mut bearer_req = request("https://example.com/items?page=1");
+        apply_secret_credential(
+            &mut AuthApplicationRequest::new(&mut bearer_req.extensions),
+            &requirement(AuthPlacement::Bearer),
+            &ApiKey::new("QUERY_AUTH_SECRET_DELIMITER"),
+        )
+        .expect("bearer auth should apply");
+
+        let delimiter_key = default_cache_key(&delimiter_req);
+        let bearer_key = default_cache_key(&bearer_req);
+
+        assert_ne!(delimiter_key, bearer_key);
+        let delimiter_key = delimiter_key.as_str();
+        assert!(delimiter_key.contains(&encoded("cred", "test,place:query:credential;id:user:x")));
+        assert!(delimiter_key.contains(&encoded("use", "use,id:user:x;place:bearer")));
+        assert!(delimiter_key.contains(&encoded("step", delimiter_step)));
+        assert!(delimiter_key.contains(&encoded("place", "query")));
+        assert!(delimiter_key.contains(&encoded("query", delimiter_query)));
+        assert!(!delimiter_key.contains("QUERY_AUTH_SECRET_DELIMITER"));
+    }
+
+    #[test]
+    fn anonymous_protected_identity_is_not_cache_safe() {
+        let mut req = request("https://example.com/items");
+        apply_secret_credential(
+            &mut AuthApplicationRequest::new(&mut req.extensions),
+            &requirement(AuthPlacement::Bearer),
+            &AnonymousSecret("UNKNOWN_BEARER_SECRET"),
+        )
+        .expect("bearer credential should apply");
+
+        assert!(!auth_cache_identity_is_safe(&req));
     }
 }
 

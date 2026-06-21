@@ -77,6 +77,15 @@ cache standard {
 
 A fresh cache hit returns before rate-limit acquisition and transport. Stale fallback is considered only after retry declines or the retry budget is exhausted.
 
+For protected requests, cache identity includes the logical request plus safe
+auth identity. Auth material that is inserted later at the transport boundary,
+including query-auth parameters, still contributes safe cache identity so two
+credentials do not share an entry for the same public URL. Raw bearer tokens,
+API keys, auth headers, query-auth values, client secrets, request bodies, and
+response bodies are never cache-key material. If Concord cannot construct a
+safe auth identity for a protected request, cache lookup, stale fallback, and
+cache store are bypassed for that request.
+
 Local cache attachments can use profile names, `only`, `off`, or shorthand patches.
 
 ```rust

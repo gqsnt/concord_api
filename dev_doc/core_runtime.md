@@ -45,6 +45,14 @@ must not be held across credential endpoint or token endpoint I/O.
 
 `BuiltRequest` is the logical request. It contains public route/query/header data, safe auth identities, and typed pending auth slots, but it does not contain raw auth material. Cache keys, debug sinks, hooks, and response metadata operate on this logical request.
 
+Cache identity is derived before transport materialization. The default cache
+key includes the sanitized logical URL plus safe pending-auth metadata:
+credential id, usage id, step id, placement, generation when available, and
+safe auth identity. Query-auth placement contributes the query key name and
+safe identity, never the query-auth value. A protected request whose pending
+auth identity is anonymous or otherwise unsafe bypasses cache lookup, stale
+fallback, and cache write rather than sharing a public cache entry.
+
 Debug sinks and runtime hooks are body-free. They may observe safe metadata and
 redacted headers/URLs, but they must not receive live request or response body
 bytes, snippets, previews, or formatted excerpts.

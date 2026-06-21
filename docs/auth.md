@@ -192,4 +192,13 @@ Concord redacts secret values from debug and diagnostic output. Header values, b
 
 Basic auth cache/debug identities use opaque fingerprints by default. For Basic auth, the default fingerprint includes both the secret username and the secret password, without exposing either raw value. If an integration needs a readable non-secret partition label, provide an explicit identity hint from advanced credential material rather than relying on secret text.
 
+Protected cache entries are partitioned by safe auth identity. The logical
+request carries typed pending auth slots before cache lookup, so bearer,
+header, Basic, certificate, OAuth, endpoint-backed, and query-auth credentials
+can affect cache identity without materializing raw credentials into the cache
+key. Query-auth credentials do not collapse into the public URL cache key; the
+query key and safe auth identity are represented, but the raw query-auth value
+is not. If Concord cannot identify a protected request safely, it skips cache
+lookup and cache store for that request by default.
+
 The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug/display output, diagnostics, cache/debug keys, and generated documentation, not to the request sent over transport.

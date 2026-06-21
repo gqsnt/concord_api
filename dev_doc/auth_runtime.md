@@ -34,6 +34,14 @@ Raw credential material is kept in a short-lived per-attempt sidecar and is inse
 
 Safe identities are used for cache separation. They identify credential state without exposing secret values. Basic credentials use opaque fingerprints of the full Basic credential state by default, including both the secret username and the secret password; readable identity hints must be explicitly supplied as non-secret labels by advanced integrations.
 
+Protected cache identity is built from pending auth slots, not from
+materialized auth headers or query values. The default key includes safe
+credential metadata, placement, generation when known, and safe identity. This
+keeps query-auth credentials from colliding with the public URL key while still
+keeping raw query-auth values out of cache keys and diagnostics. If an auth
+requirement resolves only to anonymous identity, request execution bypasses
+cache lookup/store/fallback for that protected request.
+
 Custom transports receive the materialized `TransportRequest`, so they see real credentials at the send boundary. Transport implementations must not log the raw request.
 
 ## Rejection and refresh

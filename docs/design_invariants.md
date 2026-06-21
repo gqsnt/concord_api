@@ -61,6 +61,15 @@ The only body-oriented developer aid is the deprecated, explicit, disabled by
 default local response-file capture path; it is not connected to debug sinks,
 hooks, or logging.
 
+Cache identity is computed from the logical request and safe auth partition,
+not from the materialized transport request. Protected requests include typed
+pending auth slot metadata and safe credential identity in the cache identity,
+including query-auth credentials that are inserted later at transport
+materialization. Raw tokens, auth headers, query-auth values, request bodies,
+and response bodies must never be cache-key material. If a protected request
+does not have a safe auth identity, it bypasses cache lookup and store instead
+of falling back to an unauthenticated public key.
+
 Credential slots use monotonic generations across all states, including empty
 states. Auth rejection invalidates only the generation that was applied to the
 rejected request, stale credential completions cannot overwrite newer material,

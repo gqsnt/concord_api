@@ -58,6 +58,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         if built_for_cache.cache_mode != CacheRequestMode::Default {
             return Ok(None);
         }
+        if !crate::cache::auth_cache_identity_is_safe(built_for_cache) {
+            return Ok(None);
+        }
         let Some(cached) = self
             .runtime_state
             .cache_store()
@@ -419,6 +422,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     async fn prepare_cache_before_request(&self, built: &mut BuiltRequest) -> CacheBeforeOutcome {
+        if !crate::cache::auth_cache_identity_is_safe(built) {
+            return CacheBeforeOutcome::Continue(None);
+        }
         match built.cache_mode {
             CacheRequestMode::Default => {
                 match self.runtime_state.cache_store().before_request(built).await {
@@ -449,7 +455,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     ) -> CacheAfterOutcome {
         let was_revalidation_304 =
             resp.status == StatusCode::NOT_MODIFIED && cache_revalidation.is_some();
-        let cache_after = if built_for_cache.cache_mode == CacheRequestMode::Bypass {
+        let cache_after = if built_for_cache.cache_mode == CacheRequestMode::Bypass
+            || !crate::cache::auth_cache_identity_is_safe(built_for_cache)
+        {
             None
         } else {
             Some(

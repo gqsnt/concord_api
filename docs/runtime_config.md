@@ -40,6 +40,12 @@ redacted headers, statuses, retry/cache/rate-limit events, and safe endpoint
 metadata. They never receive request or response body bytes, and verbose debug
 logging does not support live body previews.
 
+Custom cache stores receive the logical `BuiltRequest`. Protected requests are
+eligible for cache only when the logical request carries a safe auth identity;
+otherwise Concord bypasses cache lookup, stale fallback, and cache write. Cache
+keys must use safe auth identity, not materialized auth headers, query-auth
+values, tokens, secrets, or body bytes.
+
 ## Deprecated Dev Body Capture
 
 Live request/response body debug is not supported. `DebugSink`, stderr debug
