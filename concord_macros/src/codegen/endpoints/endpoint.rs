@@ -97,8 +97,16 @@ fn emit_endpoint_def(
                 quote! { #f: ::core::option::Option::None }
             }
         } else {
-            let d = v.default.as_ref().unwrap();
-            quote! { #f: #d }
+            match &v.default {
+                Some(d) => quote! { #f: #d },
+                None => {
+                    let err = emit_helpers::compile_error_expr(
+                        "required endpoint variable default was missing in resolved IR",
+                        f.span(),
+                    );
+                    quote! { #f: #err }
+                }
+            }
         }
     });
     let mut init_parts: Vec<TokenStream2> = init_fields.collect();

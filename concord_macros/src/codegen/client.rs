@@ -38,8 +38,16 @@ fn emit_client_vars(vars: &[VarInfo], vars_ty: &Ident) -> TokenStream2 {
                 quote! { #name: ::core::option::Option::None }
             }
         } else {
-            let d = v.default.as_ref().unwrap();
-            quote! { #name: #d }
+            match &v.default {
+                Some(d) => quote! { #name: #d },
+                None => {
+                    let err = emit_helpers::compile_error_expr(
+                        "required client variable default was missing in resolved IR",
+                        name.span(),
+                    );
+                    quote! { #name: #err }
+                }
+            }
         }
     });
 
@@ -535,8 +543,16 @@ fn emit_client_auth_vars(
                 quote! { #name: ::core::option::Option::None }
             }
         } else {
-            let d = v.default.as_ref().unwrap();
-            quote! { #name: ::concord_core::prelude::SecretString::new(#d) }
+            match &v.default {
+                Some(d) => quote! { #name: ::concord_core::prelude::SecretString::new(#d) },
+                None => {
+                    let err = emit_helpers::compile_error_expr(
+                        "required auth variable default was missing in resolved IR",
+                        name.span(),
+                    );
+                    quote! { #name: #err }
+                }
+            }
         }
     });
 

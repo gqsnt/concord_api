@@ -36,6 +36,8 @@ Policy, route, and pagination emitters receive context-specific resolved value I
 
 Generated construction code must not panic because a prior phase "validated" a value. If an internal invariant is somehow violated while building retry status lists, rate-limit windows/costs, OAuth2 token URLs, or similar runtime config, generated code or core constructors must return typed errors rather than using `expect(...)` or `unreachable!()`.
 
+When a codegen helper encounters an unexpected mismatch in resolved IR, it should emit a compile-time diagnostic (`compile_error!` / `syn::Error`) instead of panicking. User-triggerable invalid DSL input belongs in sema diagnostics before codegen runs.
+
 Body codec encoding is emitted from the endpoint signature `body: Codec<T>`. Response codec decoding is emitted from `-> Codec<T>`.
 
 Resolved cache sizing fields are emitted through core cache config builders for capacity entries, max body bytes, and shared mode. Runtime cache order is unchanged by these fields.

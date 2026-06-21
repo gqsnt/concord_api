@@ -115,9 +115,8 @@ fn upsert_var(
             ));
         }
         // default consistency: allow same tokens or missing
-        if prev.default.is_some()
-            && default.is_some()
-            && prev.default.as_ref().unwrap() != default.unwrap()
+        if let (Some(prev_default), Some(default)) = (prev.default.as_ref(), default)
+            && prev_default != default
         {
             return Err(syn::Error::new(
                 rust.span(),

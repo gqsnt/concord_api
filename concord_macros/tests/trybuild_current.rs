@@ -104,6 +104,7 @@ fn current_trybuild_fixtures_match_expected_results() {
         "tests/dsl/fail/fail_retry_status_invalid.rs",
         "tests/dsl/fail/fail_rate_limit_zero_max.rs",
         "tests/dsl/fail/fail_rate_limit_zero_cost.rs",
+        "tests/dsl/fail/fail_codec_spec_missing_type_arg.rs",
         "tests/dsl/fail/fail_oauth2_token_url_invalid.rs",
         "tests/dsl/fail/fail_auth_in_policy_expr.rs",
         "tests/dsl/fail/fail_raw_auth_in_policy_expr.rs",

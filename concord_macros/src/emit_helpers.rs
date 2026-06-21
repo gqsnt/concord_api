@@ -38,6 +38,19 @@ pub fn lit_str(s: &str, span: Span) -> LitStr {
     LitStr::new(s, span)
 }
 
+pub fn compile_error_tokens(msg: &str, span: Span) -> TokenStream2 {
+    let msg = LitStr::new(msg, span);
+    quote! { compile_error!(#msg) }
+}
+
+pub fn compile_error_expr(msg: &str, span: Span) -> TokenStream2 {
+    let msg = LitStr::new(msg, span);
+    quote! {{
+        compile_error!(#msg);
+        loop {}
+    }}
+}
+
 /// Build `HeaderName` expression + error mapping:
 /// `let name = HeaderName::from_bytes(b"...").map_err(|_| ApiClientError::InvalidParam(concat!("header:", "...")))?;`
 pub fn emit_header_name(key: &str, span: Span) -> TokenStream2 {
@@ -251,4 +264,26 @@ fn unraw_ident_text(ident: &Ident) -> String {
 
 fn is_secret_exposure_method(ident: &str) -> bool {
     matches!(ident, "expose" | "expose_secret")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compile_error_expr_is_a_valid_expression_block() {
+        let tokens = compile_error_expr("missing default", Span::call_site());
+        let rendered = tokens.to_string();
+        assert!(rendered.contains("compile_error"));
+        assert!(rendered.contains("loop"));
+    }
+
+    #[test]
+    fn compile_error_expr_can_be_wrapped_in_a_field_initializer() {
+        let err = compile_error_expr("missing default", Span::call_site());
+        let rendered = quote!(field_name: #err).to_string();
+        assert!(rendered.contains("field_name"));
+        assert!(rendered.contains("compile_error"));
+        assert!(rendered.contains("loop"));
+    }
 }

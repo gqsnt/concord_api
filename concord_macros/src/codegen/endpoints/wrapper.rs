@@ -129,11 +129,16 @@ fn emit_client_wrapper(
     });
 
     let var_setters = facade_ir.client_setters.iter().map(|setter| {
-        let v = resolved_api
+        let Some(v) = resolved_api
             .client_vars
             .iter()
             .find(|var| var.rust == setter.field.as_str())
-            .expect("FacadeIr client setter must target a resolved client var");
+        else {
+            return emit_helpers::compile_error_tokens(
+                "FacadeIr client setter must target a resolved client var",
+                Span::call_site(),
+            );
+        };
         let f = &v.rust;
         let ty = &v.ty;
         let set_name = emit_helpers::ident(&setter.set_name, f.span());
@@ -234,11 +239,16 @@ fn emit_client_wrapper(
         quote! {}
     };
     let auth_setters = facade_ir.auth_setters.iter().map(|setter| {
-        let v = resolved_api
+        let Some(v) = resolved_api
             .client_auth_vars
             .iter()
             .find(|var| var.rust == setter.field.as_str())
-            .expect("FacadeIr auth setter must target a resolved auth var");
+        else {
+            return emit_helpers::compile_error_tokens(
+                "FacadeIr auth setter must target a resolved auth var",
+                Span::call_site(),
+            );
+        };
         let f = &v.rust;
         let set_name = emit_helpers::ident(&setter.set_name, f.span());
         let rebuild_auth_state =
@@ -330,12 +340,17 @@ fn emit_client_wrapper(
         let AuthCredentialKindIr::Endpoint {
             endpoint,
             output_ty,
-            ..
+            .. 
         } = &credential.kind
         else {
             return None;
         };
-        let methods = facade_credential_methods_for(facade_ir, name);
+        let Some(methods) = facade_credential_methods_for(facade_ir, name) else {
+            return Some(emit_helpers::compile_error_tokens(
+                "FacadeIr must contain one public method set per endpoint-backed credential",
+                name.span(),
+            ));
+        };
         let acquire_name = emit_helpers::ident(&methods.acquire_name, name.span());
         let set_name = emit_helpers::ident(&methods.set_name, name.span());
         let clear_name = emit_helpers::ident(&methods.clear_name, name.span());
@@ -378,7 +393,12 @@ fn emit_client_wrapper(
         let AuthCredentialKindIr::Endpoint { endpoint, .. } = &credential.kind else {
             return None;
         };
-        let methods = facade_credential_methods_for(facade_ir, name);
+        let Some(methods) = facade_credential_methods_for(facade_ir, name) else {
+            return Some(emit_helpers::compile_error_tokens(
+                "FacadeIr must contain one public method set per endpoint-backed credential",
+                name.span(),
+            ));
+        };
         let method = emit_helpers::ident(&methods.pending_method, name.span());
         let trait_name = acquire_as_trait_ident(client_ty, name);
         Some(quote! {
@@ -695,7 +715,12 @@ fn emit_tree_facade(
         .iter()
         .filter(|ep| ep.scope_modules.is_empty())
         .map(|ep| {
-            let facade = facade_ir_for_endpoint(facade_ir, ep);
+            let Some(facade) = facade_ir_for_endpoint(facade_ir, ep) else {
+                return emit_helpers::compile_error_tokens(
+                    "FacadeIr must contain one public endpoint entry per resolved endpoint",
+                    ep.name.span(),
+                );
+            };
             emit_facade_endpoint_method(ep, facade, client_ty, cx_ty, &[], true)
         });
     let scope_structs = facade_ir
@@ -749,8 +774,16 @@ fn emit_scope_ctor_method(
                 quote! { #name: ::core::option::Option::None }
             }
         } else {
-            let default = v.default.as_ref().unwrap();
-            quote! { #name: #default }
+            match &v.default {
+                Some(default) => quote! { #name: #default },
+                None => {
+                    let err = emit_helpers::compile_error_expr(
+                        "required scope parameter default was missing in resolved IR",
+                        name.span(),
+                    );
+                    quote! { #name: #err }
+                }
+            }
         }
     });
 
@@ -810,14 +843,24 @@ fn emit_facade_scope_struct(
         Some(emit_scope_setter(setter, var))
     });
     let child_methods = scope_ir.methods.iter().map(|method| {
-        let child_ir = facade_scope_ir_for_path(facade_ir, &method.target_scope_path);
+        let Some(child_ir) = facade_scope_ir_for_path(facade_ir, &method.target_scope_path) else {
+            return emit_helpers::compile_error_tokens(
+                "FacadeIr must contain one scope entry per resolved facade scope",
+                Span::call_site(),
+            );
+        };
         emit_scope_ctor_method(child_ir, Some(scope_ir), Some(method))
     });
     let endpoint_methods = resolved_api
         .endpoints
         .iter()
         .filter_map(|ep| {
-            let facade = facade_ir_for_endpoint(facade_ir, ep);
+            let Some(facade) = facade_ir_for_endpoint(facade_ir, ep) else {
+                return Some(emit_helpers::compile_error_tokens(
+                    "FacadeIr must contain one public endpoint entry per resolved endpoint",
+                    ep.name.span(),
+                ));
+            };
             if facade.scope_path != scope_ir.path {
                 return None;
             }
@@ -974,24 +1017,22 @@ fn emit_scope_setter(setter: &FacadeSetter, var: &VarInfo) -> TokenStream2 {
     }
 }
 
-fn facade_ir_for_endpoint<'a>(facade_ir: &'a FacadeIr, ep: &ResolvedEndpoint) -> &'a FacadeEndpoint {
+fn facade_ir_for_endpoint<'a>(facade_ir: &'a FacadeIr, ep: &ResolvedEndpoint) -> Option<&'a FacadeEndpoint> {
     let target = endpoint_qualified_name(ep);
     facade_ir
         .endpoints
         .iter()
         .find(|candidate| candidate.target_endpoint == target)
-        .expect("FacadeIr must contain one public endpoint entry per resolved endpoint")
 }
 
 fn facade_credential_methods_for<'a>(
     facade_ir: &'a FacadeIr,
     name: &Ident,
-) -> &'a FacadeCredentialMethods {
+) -> Option<&'a FacadeCredentialMethods> {
     facade_ir
         .credential_methods
         .iter()
         .find(|methods| name == methods.credential.as_str())
-        .expect("FacadeIr must contain one public method set per endpoint-backed credential")
 }
 
 fn facade_ir_endpoint_docs(facade: &FacadeEndpoint, span: Span) -> Vec<LitStr> {
@@ -1008,12 +1049,14 @@ fn facade_docs_to_lit(docs: &[FacadeDoc], span: Span) -> Vec<LitStr> {
         .collect()
 }
 
-fn facade_scope_ir_for_path<'a>(facade_ir: &'a FacadeIr, path: &[String]) -> &'a FacadeScope {
+fn facade_scope_ir_for_path<'a>(
+    facade_ir: &'a FacadeIr,
+    path: &[String],
+) -> Option<&'a FacadeScope> {
     facade_ir
         .scopes
         .iter()
         .find(|scope| scope.path == path)
-        .expect("FacadeIr must contain one scope entry per resolved facade scope")
 }
 
 fn behavior_doc_line(names: &[String]) -> Option<String> {

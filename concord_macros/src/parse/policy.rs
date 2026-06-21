@@ -316,7 +316,12 @@ impl Parse for CodecSpec {
             }
         }
 
-        let last = path.segments.last_mut().unwrap();
+        let Some(last) = path.segments.last_mut() else {
+            return Err(syn::Error::new_spanned(
+                path,
+                "codec spec expects a non-empty type path",
+            ));
+        };
 
         // Extract exactly one type argument `T` from `Enc<T>`.
         // If there is no `<T>`, default to `()` (useful for NoContentEncoding).
