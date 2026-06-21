@@ -1,7 +1,8 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, Caps, DebugSink, NoopCacheStore, NoopRateLimiter, TransportErrorKind,
+    AuthPlacement, Caps, DebugSink, NoopCacheStore, NoopRateLimiter, RetryContext, RetryDecision,
+    RetryPolicy, TransportErrorKind,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
@@ -109,6 +110,30 @@ impl Endpoint<TestCx> for UnsafeEndpoint {
     }
 }
 
+struct HugeDelayRetryPolicy;
+
+impl RetryPolicy for HugeDelayRetryPolicy {
+    fn max_retries(&self) -> u32 {
+        1
+    }
+
+    fn should_retry(&self, _ctx: &RetryContext<'_>) -> RetryDecision {
+        RetryDecision::RetryAfter(Duration::MAX)
+    }
+}
+
+struct ZeroDelayRetryPolicy;
+
+impl RetryPolicy for ZeroDelayRetryPolicy {
+    fn max_retries(&self) -> u32 {
+        1
+    }
+
+    fn should_retry(&self, _ctx: &RetryContext<'_>) -> RetryDecision {
+        RetryDecision::RetryAfter(Duration::ZERO)
+    }
+}
+
 #[tokio::test]
 async fn retry_decision_happens_before_decode() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -133,6 +158,55 @@ async fn retry_decision_happens_before_decode() -> Result<(), ApiClientError> {
 
     assert_eq!(decoded.value(), "ok");
     assert_eq!(sent_transport.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_retry_policy_huge_retry_after_returns_typed_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_retry_policy(Arc::new(HugeDelayRetryPolicy));
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("huge custom retry delay should be rejected before sleeping");
+
+    assert_eq!(err.category(), concord_core::error::ErrorCategory::Config);
+    assert!(err.to_string().contains("retry policy duration overflowed"));
+    assert_eq!(sent.sent_count().await, 1);
+}
+
+#[tokio::test]
+async fn custom_retry_policy_valid_retry_after_still_retries() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_retry_policy(Arc::new(ZeroDelayRetryPolicy));
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent.sent_count().await, 2);
     Ok(())
 }
 

@@ -13,7 +13,9 @@ use crate::rate_limit::{
 };
 use crate::request::PendingRequest;
 use crate::response_classify::{ResponseClass, classify_status};
-use crate::retry::{RetryContext, RetryDecision, RetryOutcome, RetryPolicy, RetrySetting};
+use crate::retry::{
+    RetryContext, RetryDecision, RetryOutcome, RetryPolicy, RetrySetting, validate_retry_delay,
+};
 use crate::runtime_hooks::{
     HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
 };

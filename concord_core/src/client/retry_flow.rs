@@ -46,7 +46,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(match decision {
             RetryDecision::Stop => None,
             RetryDecision::Retry => Some(std::time::Duration::ZERO),
-            RetryDecision::RetryAfter(delay) => Some(delay),
+            RetryDecision::RetryAfter(delay) => {
+                validate_retry_delay(ctx, delay, "retry policy duration overflowed")?;
+                Some(delay)
+            }
         })
     }
 }

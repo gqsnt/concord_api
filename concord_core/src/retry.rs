@@ -118,6 +118,8 @@ impl RetryConfig {
         }
     }
 
+    /// Computes the retry decision and returns a typed error for invalid or
+    /// overflowing retry delays.
     pub fn try_decide(
         &self,
         ctx: &RetryContext<'_>,
@@ -151,8 +153,13 @@ impl RetryConfig {
         }
     }
 
-    pub fn decide(&self, ctx: &RetryContext<'_>) -> RetryDecision {
-        self.try_decide(ctx).unwrap_or(RetryDecision::Stop)
+    /// Computes the retry decision using the checked v1 retry API.
+    #[inline]
+    pub fn decide(
+        &self,
+        ctx: &RetryContext<'_>,
+    ) -> Result<RetryDecision, crate::error::ApiClientError> {
+        self.try_decide(ctx)
     }
 
     fn method_allowed(&self, method: &Method) -> bool {
@@ -251,7 +258,7 @@ impl RetryPolicy for ConfiguredRetryPolicy {
     }
 
     fn should_retry(&self, ctx: &RetryContext<'_>) -> RetryDecision {
-        self.config.decide(ctx)
+        self.config.try_decide(ctx).unwrap_or(RetryDecision::Stop)
     }
 
     fn should_retry_checked(
@@ -262,7 +269,7 @@ impl RetryPolicy for ConfiguredRetryPolicy {
     }
 }
 
-fn validate_retry_delay(
+pub(crate) fn validate_retry_delay(
     ctx: &RetryContext<'_>,
     delay: Duration,
     msg: &'static str,
@@ -343,12 +350,14 @@ mod tests {
         };
 
         assert_eq!(
-            config.decide(&ctx(
-                &Method::GET,
-                &request_headers,
-                Some(&response_headers),
-                0
-            )),
+            config
+                .decide(&ctx(
+                    &Method::GET,
+                    &request_headers,
+                    Some(&response_headers),
+                    0
+                ))
+                .expect("retry decision should be valid"),
             RetryDecision::RetryAfter(Duration::from_secs(3))
         );
     }

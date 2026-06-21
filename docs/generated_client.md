@@ -10,13 +10,13 @@ Clients with no required variables use `new()`.
 let api = minimal_api::MinimalApi::new();
 ```
 
-Clients with required variables or secrets take those values as constructor arguments in the stable generated constructor order.
+Clients with required variables or secrets take those values as constructor arguments in source declaration order: ordinary `var` declarations first, then auth `secret` declarations.
 
 ```rust
 let api = session_api::SessionApi::new("upstream-key".to_string());
 ```
 
-Constructor order is stable: ordinary `var` inputs come first in source declaration order, followed by auth vars/secrets in source declaration order. Adding optional endpoint auth does not reorder existing constructor arguments.
+For example, a client declaring `var tenant`, `var region`, then auth secrets `username` and `password` is constructed as `Example::new(tenant, region, username, password)`. For clients with several same-typed values, the builder API is often clearer. Adding optional endpoint auth does not reorder existing constructor arguments.
 
 Tests and custom transports can use `new_with_transport(...)`.
 

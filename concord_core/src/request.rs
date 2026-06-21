@@ -332,6 +332,11 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         E::Response: PageItems,
         T: crate::transport::Transport,
     {
+        // This intentionally has a dedicated loop instead of delegating to
+        // `for_each_page`: collection can enforce `max_items` from the actual
+        // `into_items()` length, while page callbacks can only use
+        // `item_count_hint()` before yielding the decoded page to user code.
+        // Keep pagination ordering changes in sync across both paths.
         let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
         let first_plan = self.pending.ep.plan(&self.pending.client.plan_context())?;
         let mut runner =
