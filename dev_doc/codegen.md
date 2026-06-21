@@ -32,7 +32,7 @@ Endpoint builders collect field values, route pieces, query/header policy, auth 
 
 Codegen emits resolved route/query/header logic from semantic data. It should not inspect raw syntax such as whether a profile was declared flat or grouped.
 
-Policy, route, and pagination emitters receive context-specific resolved value IR. Ordinary public policy values cannot contain `secret.*` references, route values cannot contain auth refs, and pagination assignments cannot contain `vars.*` or `secret.*`. Those forms are rejected in sema with user-facing diagnostics before codegen runs.
+Policy, route, and pagination emitters receive context-specific resolved value IR. Ordinary public policy values cannot contain auth or secret references, raw-identifier aliases of reserved roots, generated implementation-local roots, macro-token bypasses, or secret exposure method calls. Route values and pagination assignments are closed by the same sema validation before codegen runs. Codegen must not make public expressions depend on locals named `auth`, `secret`, `cx`, `ep`, `vars`, `self`, `request`, or similar implementation details. If generated code still needs safe resolved values, it should use internal-only bindings and context-specific IR rather than user-authored local capture.
 
 Generated construction code must not panic because a prior phase "validated" a value. If an internal invariant is somehow violated while building retry status lists, rate-limit windows/costs, OAuth2 token URLs, or similar runtime config, generated code or core constructors must return typed errors rather than using `expect(...)` or `unreachable!()`.
 

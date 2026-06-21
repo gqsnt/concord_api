@@ -135,16 +135,6 @@ fn resolve_policy_blocks(
         )?;
     }
     if let Some(t) = &policy.timeout {
-        // timeout expr must not contain nested vars/ep; allow `vars.x` or `ep.y` only as root
-        if emit_helpers::contains_cx_or_ep(t)
-            && emit_helpers::is_cx_field(t).is_none()
-            && emit_helpers::is_ep_field(t).is_none()
-        {
-            return Err(syn::Error::new(
-                t.span(),
-                "timeout expression cannot contain nested `vars`/`ep`; use a plain `vars.x`, `ep.y`, or a pure expression without them",
-            ));
-        }
         let timeout = resolve_value_kind(
             t,
             client_vars,
@@ -288,12 +278,7 @@ fn resolve_policy_block(
                     }
                 }
                 PolicySetValue::Value(PublicValueKind::OtherExpr(e)) => {
-                    if emit_helpers::contains_cx_or_ep(e) {
-                        return Err(syn::Error::new(
-                            e.span(),
-                            "nested `vars`/`ep` usage is not supported; use plain `vars.x`, `ep.y`, or a pure expression without them",
-                        ));
-                    }
+                    validate_public_expr(e)?;
                 }
                 PolicySetValue::Value(
                     PublicValueKind::LitStr(_) | PublicValueKind::Fmt(_),
@@ -383,10 +368,7 @@ fn resolve_value_kind(
         let _ = client_vars;
         return Ok(ValueKind::CxField(id));
     }
-    if let Some(id) = emit_helpers::is_auth_field(expr) {
-        let _ = auth_vars;
-        return Ok(ValueKind::AuthField(id));
-    }
+    let _ = auth_vars;
     if let Some(id) = emit_helpers::is_ep_field(expr) {
         let _ = endpoint_vars;
         return Ok(ValueKind::EpField(id));
@@ -458,7 +440,7 @@ fn resolve_route_fmt_spec(
                 RefScope::Auth => {
                     return Err(syn::Error::new(
                         r.ident.span(),
-                        "{secret.*} is not allowed in routes (headers/query only)",
+                        "secret references are only allowed in credential declarations",
                     ));
                 }
             },
@@ -559,13 +541,10 @@ fn public_value_from_value_kind(value: ValueKind, _span: Span) -> Result<PublicV
         ValueKind::CxField(value) => Ok(PublicValueKind::CxField(value)),
         ValueKind::EpField(value) => Ok(PublicValueKind::EpField(value)),
         ValueKind::OtherExpr(value) => {
-            if emit_helpers::is_auth_field(&value).is_some() {
-                return Err(direct_secret_policy_error(value.span()));
-            }
+            validate_public_expr(&value)?;
             Ok(PublicValueKind::OtherExpr(value))
         }
         ValueKind::Fmt(value) => Ok(PublicValueKind::Fmt(value)),
-        ValueKind::AuthField(value) => Err(direct_secret_policy_error(value.span())),
     }
 }
 
@@ -574,10 +553,7 @@ fn pagination_value_from_value_kind(value: ValueKind, span: Span) -> Result<Pagi
         ValueKind::LitStr(value) => Ok(PaginationValueKind::LitStr(value)),
         ValueKind::EpField(value) => Ok(PaginationValueKind::EpField(value)),
         ValueKind::OtherExpr(value) => {
-            if emit_helpers::contains_auth_field(&value) || emit_helpers::contains_cx_field(&value)
-            {
-                return Err(pagination_scoped_ref_error(value.span()));
-            }
+            validate_public_expr(&value)?;
             Ok(PaginationValueKind::OtherExpr(value))
         }
         ValueKind::Fmt(value) => {
@@ -598,8 +574,35 @@ fn pagination_value_from_value_kind(value: ValueKind, span: Span) -> Result<Pagi
             Ok(PaginationValueKind::Fmt(value))
         }
         ValueKind::CxField(_) => Err(pagination_scoped_ref_error(span)),
-        ValueKind::AuthField(value) => Err(pagination_scoped_ref_error(value.span())),
     }
+}
+
+fn validate_public_expr(expr: &Expr) -> Result<()> {
+    if let Some(found) = emit_helpers::public_expr_forbidden(expr) {
+        return Err(public_expr_forbidden_error(found));
+    }
+    Ok(())
+}
+
+fn public_expr_forbidden_error(found: emit_helpers::PublicExprForbidden) -> syn::Error {
+    let msg = match found.kind {
+        emit_helpers::PublicExprForbiddenKind::Auth => {
+            "auth references are not allowed in public policy expressions; use an auth declaration/use instead".to_string()
+        }
+        emit_helpers::PublicExprForbiddenKind::Secret => {
+            "secret references are only allowed in credential declarations".to_string()
+        }
+        emit_helpers::PublicExprForbiddenKind::GeneratedLocal => {
+            format!(
+                "generated implementation local `{}` is not part of the public DSL expression scope",
+                found.ident
+            )
+        }
+        emit_helpers::PublicExprForbiddenKind::SecretExposure => {
+            "secret exposure methods are not allowed in public policy expressions".to_string()
+        }
+    };
+    syn::Error::new(found.span, msg)
 }
 
 fn direct_secret_policy_error(span: Span) -> syn::Error {
@@ -612,7 +615,7 @@ fn direct_secret_policy_error(span: Span) -> syn::Error {
 fn pagination_scoped_ref_error(span: Span) -> syn::Error {
     syn::Error::new(
         span,
-        "paginate assignments must not reference `vars.*` or `secret.*`; use `ep.*` or constants",
+        "paginate assignments must not reference client variables or secrets; use `ep.*` or constants",
     )
 }
 
@@ -642,7 +645,7 @@ mod pagination_value_tests {
 
         assert!(
             err.to_string()
-                .contains("paginate assignments must not reference `vars.*` or `secret.*`"),
+                .contains("paginate assignments must not reference client variables or secrets"),
             "{err}"
         );
     }
@@ -677,7 +680,7 @@ mod pagination_value_tests {
 
         assert!(
             err.to_string()
-                .contains("paginate assignments must not reference `vars.*` or `secret.*`"),
+                .contains("generated implementation local `cx` is not part of the public DSL expression scope"),
             "{err}"
         );
     }
@@ -692,7 +695,7 @@ mod pagination_value_tests {
 
         assert!(
             err.to_string()
-                .contains("paginate assignments must not reference `vars.*` or `secret.*`"),
+                .contains("auth references are not allowed in public policy expressions"),
             "{err}"
         );
     }

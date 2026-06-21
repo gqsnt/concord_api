@@ -1,5 +1,5 @@
 // concord_macros/src/emit_helpers.rs
-use proc_macro2::{Span, TokenStream as TokenStream2};
+use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
 use quote::quote;
 use syn::{Ident, LitStr};
 
@@ -65,11 +65,19 @@ pub fn tokens_eq_path_ident(path: &syn::Path, s: &str) -> bool {
     path.segments.len() == 1 && path.segments[0].ident == s
 }
 
+pub fn public_expr_reserved_root_kind(ident: &Ident) -> Option<PublicExprForbiddenKind> {
+    public_expr_forbidden_ident_kind(&unraw_ident_text(ident))
+}
+
+pub fn is_public_expr_reserved_root(ident: &Ident) -> bool {
+    public_expr_reserved_root_kind(ident).is_some()
+}
+
 pub fn is_cx_field(expr: &syn::Expr) -> Option<syn::Ident> {
     match expr {
         syn::Expr::Field(f) => {
             if let syn::Expr::Path(p) = &*f.base
-                && tokens_eq_path_ident(&p.path, "cx")
+                && tokens_eq_path_ident(&p.path, "vars")
                 && let syn::Member::Named(id) = &f.member
             {
                 return Some(id.clone());
@@ -78,80 +86,6 @@ pub fn is_cx_field(expr: &syn::Expr) -> Option<syn::Ident> {
         }
         _ => None,
     }
-}
-
-pub fn is_auth_field(expr: &syn::Expr) -> Option<syn::Ident> {
-    match expr {
-        syn::Expr::Field(f) => {
-            if let syn::Expr::Path(p) = &*f.base
-                && tokens_eq_path_ident(&p.path, "auth")
-                && let syn::Member::Named(id) = &f.member
-            {
-                return Some(id.clone());
-            }
-            None
-        }
-        _ => None,
-    }
-}
-
-pub fn contains_cx_field(expr: &syn::Expr) -> bool {
-    contains_field_with_any_base(expr, &["cx", "vars"])
-}
-
-pub fn contains_auth_field(expr: &syn::Expr) -> bool {
-    contains_field_with_any_base(expr, &["auth", "secret"])
-}
-
-fn contains_field_with_any_base(expr: &syn::Expr, bases: &'static [&'static str]) -> bool {
-    struct Finder {
-        bases: &'static [&'static str],
-        found: bool,
-    }
-
-    impl<'ast> syn::visit::Visit<'ast> for Finder {
-        fn visit_expr_field(&mut self, node: &'ast syn::ExprField) {
-            if let syn::Expr::Path(path) = &*node.base
-                && self
-                    .bases
-                    .iter()
-                    .any(|base| tokens_eq_path_ident(&path.path, base))
-            {
-                self.found = true;
-                return;
-            }
-            syn::visit::visit_expr_field(self, node);
-        }
-
-        fn visit_expr_macro(&mut self, node: &'ast syn::ExprMacro) {
-            if token_stream_contains_scoped_base(&node.mac.tokens, self.bases) {
-                self.found = true;
-                return;
-            }
-            syn::visit::visit_expr_macro(self, node);
-        }
-    }
-
-    let mut finder = Finder {
-        bases,
-        found: false,
-    };
-    syn::visit::Visit::visit_expr(&mut finder, expr);
-    finder.found
-}
-
-fn token_stream_contains_scoped_base(
-    tokens: &proc_macro2::TokenStream,
-    bases: &[&'static str],
-) -> bool {
-    let compact: String = tokens
-        .to_string()
-        .chars()
-        .filter(|ch| !ch.is_whitespace())
-        .collect();
-    bases
-        .iter()
-        .any(|base| compact.contains(&format!("{base}.")) || compact.contains(&format!("{base}::")))
 }
 
 pub fn is_ep_field(expr: &syn::Expr) -> Option<syn::Ident> {
@@ -169,10 +103,152 @@ pub fn is_ep_field(expr: &syn::Expr) -> Option<syn::Ident> {
     }
 }
 
-/// Conservative detection: reject any nested `cx.` / `ep.` usage in a non-trivial expression.
-/// Allowed forms are strictly `cx.name` or `ep.name` at the root.
-pub fn contains_cx_or_ep(expr: &syn::Expr) -> bool {
-    // Relaxed: allow cx/ep in arbitrary expressions. The generated code binds `cx`/`ep`.
-    let _ = expr;
-    false
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublicExprForbiddenKind {
+    Auth,
+    Secret,
+    GeneratedLocal,
+    SecretExposure,
+}
+
+#[derive(Clone, Debug)]
+pub struct PublicExprForbidden {
+    pub ident: String,
+    pub span: Span,
+    pub kind: PublicExprForbiddenKind,
+}
+
+pub fn public_expr_forbidden(expr: &syn::Expr) -> Option<PublicExprForbidden> {
+    struct Finder {
+        found: Option<PublicExprForbidden>,
+    }
+
+    impl Finder {
+        fn record_ident(&mut self, ident: &Ident) {
+            if self.found.is_none()
+                && let Some(kind) = public_expr_reserved_root_kind(ident)
+            {
+                self.found = Some(PublicExprForbidden {
+                    ident: unraw_ident_text(ident),
+                    span: ident.span(),
+                    kind,
+                });
+            }
+        }
+
+        fn record_secret_exposure(&mut self, ident: &Ident) {
+            let text = unraw_ident_text(ident);
+            if self.found.is_none() && is_secret_exposure_method(&text) {
+                self.found = Some(PublicExprForbidden {
+                    ident: text,
+                    span: ident.span(),
+                    kind: PublicExprForbiddenKind::SecretExposure,
+                });
+            }
+        }
+
+        fn scan_tokens(&mut self, tokens: &TokenStream2) {
+            if self.found.is_none() {
+                self.found = public_token_stream_forbidden(tokens);
+            }
+        }
+    }
+
+    impl<'ast> syn::visit::Visit<'ast> for Finder {
+        fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
+            if let Some(first) = node.path.segments.first() {
+                self.record_ident(&first.ident);
+                if self.found.is_some() {
+                    return;
+                }
+            }
+            syn::visit::visit_expr_path(self, node);
+        }
+
+        fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+            self.record_secret_exposure(&node.method);
+            if self.found.is_some() {
+                return;
+            }
+            syn::visit::visit_expr_method_call(self, node);
+        }
+
+        fn visit_macro(&mut self, node: &'ast syn::Macro) {
+            if let Some(first) = node.path.segments.first() {
+                self.record_ident(&first.ident);
+                if self.found.is_some() {
+                    return;
+                }
+            }
+            self.scan_tokens(&node.tokens);
+            if self.found.is_some() {
+                return;
+            }
+            syn::visit::visit_macro(self, node);
+        }
+    }
+
+    let mut finder = Finder { found: None };
+    syn::visit::Visit::visit_expr(&mut finder, expr);
+    finder.found
+}
+
+pub fn public_token_stream_forbidden(tokens: &TokenStream2) -> Option<PublicExprForbidden> {
+    let mut prev_was_dot = false;
+    for token in tokens.clone() {
+        match token {
+            TokenTree::Ident(ident) => {
+                let text = unraw_ident_text(&ident);
+                if prev_was_dot && is_secret_exposure_method(&text) {
+                    return Some(PublicExprForbidden {
+                        ident: text,
+                        span: ident.span(),
+                        kind: PublicExprForbiddenKind::SecretExposure,
+                    });
+                }
+                if let Some(kind) = public_expr_forbidden_ident_kind(&text) {
+                    return Some(PublicExprForbidden {
+                        ident: text,
+                        span: ident.span(),
+                        kind,
+                    });
+                }
+                prev_was_dot = false;
+            }
+            TokenTree::Group(group) => {
+                if let Some(found) = public_token_stream_forbidden(&group.stream()) {
+                    return Some(found);
+                }
+                prev_was_dot = false;
+            }
+            TokenTree::Punct(punct) => {
+                prev_was_dot = punct.as_char() == '.';
+            }
+            TokenTree::Literal(_) => {
+                prev_was_dot = false;
+            }
+        }
+    }
+    None
+}
+
+fn public_expr_forbidden_ident_kind(ident: &str) -> Option<PublicExprForbiddenKind> {
+    match ident {
+        "auth" => Some(PublicExprForbiddenKind::Auth),
+        "secret" | "secrets" => Some(PublicExprForbiddenKind::Secret),
+        "ctx" | "cx" | "ep" | "vars" | "client" | "runtime" | "policy" | "req" | "request"
+        | "headers" | "url" | "cache" | "transport" | "self" => {
+            Some(PublicExprForbiddenKind::GeneratedLocal)
+        }
+        _ => None,
+    }
+}
+
+fn unraw_ident_text(ident: &Ident) -> String {
+    let text = ident.to_string();
+    text.strip_prefix("r#").unwrap_or(&text).to_string()
+}
+
+fn is_secret_exposure_method(ident: &str) -> bool {
+    matches!(ident, "expose" | "expose_secret")
 }

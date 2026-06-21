@@ -1,0 +1,13 @@
+error: auth references are not allowed in public route expressions; use an auth declaration/use instead
+  --> tests/dsl/fail/fail_raw_auth_in_route_atom.rs:10:11
+   |
+10 |     path [r#auth.token]
+   |           ^^^^^^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/dsl/fail/fail_raw_auth_in_route_atom.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

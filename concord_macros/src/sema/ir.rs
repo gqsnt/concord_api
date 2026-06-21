@@ -341,7 +341,6 @@ pub enum ValueKind {
     CxField(Ident),
     EpField(Ident),
     OtherExpr(Expr),
-    AuthField(Ident),
     Fmt(FmtResolved),
 }
 

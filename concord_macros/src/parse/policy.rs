@@ -564,9 +564,26 @@ fn resolve_scoped_ref_base(base: &Ident) -> Result<RefScope> {
     if *base == "ep" {
         return Ok(RefScope::Ep);
     }
+    if let Some(kind) = emit_helpers::public_expr_reserved_root_kind(base) {
+        let message = match kind {
+            emit_helpers::PublicExprForbiddenKind::Auth => {
+                "auth references are not allowed in public route expressions; use an auth declaration/use instead"
+            }
+            emit_helpers::PublicExprForbiddenKind::Secret => {
+                "secret references are only allowed in credential declarations"
+            }
+            emit_helpers::PublicExprForbiddenKind::GeneratedLocal => {
+                "generated implementation locals are not part of the public DSL expression scope"
+            }
+            emit_helpers::PublicExprForbiddenKind::SecretExposure => {
+                "secret exposure methods are not allowed in public route expressions"
+            }
+        };
+        return Err(syn::Error::new(base.span(), message));
+    }
     Err(syn::Error::new(
         base.span(),
-        "unknown scoped reference prefix; expected `vars.`, `ep.`, or `secret.`",
+        "unknown scoped reference prefix; expected `vars.` or `ep.`",
     ))
 }
 
@@ -596,9 +613,7 @@ fn normalize_policy_expr(expr: Expr) -> Expr {
             if p.qself.is_none() && p.path.segments.len() == 1 {
                 let seg = &p.path.segments[0];
                 let id = &seg.ident;
-                if (*id != "vars")
-                    && (*id != "secret")
-                    && (*id != "ep")
+                if !emit_helpers::is_public_expr_reserved_root(id)
                     && id
                         .to_string()
                         .chars()
@@ -616,11 +631,7 @@ fn normalize_policy_expr(expr: Expr) -> Expr {
                 && base_path.path.segments.len() == 1
             {
                 let b = &base_path.path.segments[0].ident;
-                let nb: Ident = if *b == "vars" {
-                    Ident::new("cx", b.span())
-                } else if *b == "secret" {
-                    Ident::new("auth", b.span())
-                } else if *b == "ep" {
+                let nb: Ident = if emit_helpers::is_public_expr_reserved_root(b) {
                     b.clone()
                 } else {
                     return Expr::Field(syn::ExprField {

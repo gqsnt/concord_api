@@ -1,8 +1,8 @@
-error: paginate assignments must not reference `vars.*` or `secret.*`; use `ep.*` or constants
-  --> tests/dsl/fail/fail_vars_in_pagination_expr.rs:16:18
+error: generated implementation local `vars` is not part of the public DSL expression scope
+  --> tests/dsl/fail/fail_vars_in_pagination_expr.rs:16:32
    |
 16 |         cursor = format!("{}", vars.cursor)
-   |                  ^^^^^^
+   |                                ^^^^
 
 warning: unused import: `concord_core::prelude::*`
  --> tests/dsl/fail/fail_vars_in_pagination_expr.rs:1:5

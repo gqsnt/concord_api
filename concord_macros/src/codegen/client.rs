@@ -441,9 +441,10 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
 
             fn base_policy(
                 vars: &Self::Vars,
-                auth: &Self::AuthVars,
+                __concord_auth_vars: &Self::AuthVars,
                 ctx: &::concord_core::error::ErrorContext,
             ) -> ::core::result::Result<::concord_core::internal::Policy, ::concord_core::prelude::ApiClientError> {
+                let _ = __concord_auth_vars;
                 #base_policy
             }
         }
@@ -476,26 +477,11 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
         ops.push(rate_limit);
     }
 
-    let lock_auth = if policy_uses_auth(policy) {
-        quote! {
-            let auth = ::concord_core::advanced::read_auth_lock(auth, "auth vars lock poisoned")
-                .map_err(|source| ::concord_core::prelude::ApiClientError::Auth {
-                    ctx: ctx.clone(),
-                    source,
-                })?;
-        }
-    } else {
-        quote! {}
-    };
-
     quote! {
         let mut policy = ::concord_core::internal::Policy::new();
         let ctx = ctx.clone();
         #[allow(unused_variables)]
         let cx = vars;
-        #[allow(unused_variables)]
-        let auth = auth;
-        #lock_auth
         #( #ops )*
         ::core::result::Result::Ok(policy)
     }

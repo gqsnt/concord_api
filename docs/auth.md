@@ -35,6 +35,16 @@ For compact examples, `secret` and `credential` may still be written directly in
 
 See `docs/dsl.md` for the complete public DSL reference.
 
+`secret.*` references are only part of the auth declaration surface. Use them
+inside credential declarations such as `api_key(secret.token)`,
+`bearer(secret.token)`, `basic(secret.username, secret.password)`, and
+`oauth2_client { ... }`. Ordinary public request expressions for headers,
+query parameters, routes, timeouts, cache/rate-limit keys, and pagination
+assignments cannot read secrets, auth material, generated implementation
+locals, or `.expose()` / `.expose_secret()` methods. Use an `auth` clause when
+a value is credential material; do not put raw auth material in public policy
+expressions.
+
 ## Auth Clauses
 
 Attach credentials at the client, scope, or endpoint layer.

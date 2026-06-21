@@ -1,0 +1,13 @@
+error: auth references are not allowed in public policy expressions; use an auth declaration/use instead
+  --> tests/dsl/fail/fail_auth_path_in_policy_expr.rs:11:23
+   |
+11 |     header "X-Leak" = auth::token()
+   |                       ^^^^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/dsl/fail/fail_auth_path_in_policy_expr.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

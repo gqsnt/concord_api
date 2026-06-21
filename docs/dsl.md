@@ -304,6 +304,16 @@ headers { "X-Trace" = fmt["trace-", vars.trace_id] }
 query { "range" = fmt[start, "-", count] }
 ```
 
+Ordinary route, query, header, timeout, and pagination expressions are public
+request-shaping expressions. They may use endpoint arguments, declared client
+variables in supported DSL reference positions, literals, and pure Rust
+expressions that do not reference Concord generated internals. Outside those
+resolved value forms, they cannot access `secret.*`, `auth.*`, generated locals
+such as `cx`, `ep`, `vars`, `self`, or `request`, raw-identifier variants such
+as `r#secret`, or secret exposure methods. Secrets belong in credential
+declarations and explicit `auth` attachments, so raw auth material is inserted
+only by auth materialization at transport send.
+
 ### Query
 
 Shorthand uses the Rust argument name as both key and value.
@@ -775,6 +785,11 @@ path [fmt["org-", org_id]]
 query { "range" = fmt[start, "-", count] }
 headers { "X-Trace" = fmt["trace-", trace_id] }
 ```
+
+Public `fmt[...]` pieces follow the same secret boundary as other public
+request-shaping expressions: use endpoint arguments or supported safe client
+variable references, not auth secrets or arbitrary generated implementation
+locals.
 
 `timeout` can be attached at a scope or endpoint.
 

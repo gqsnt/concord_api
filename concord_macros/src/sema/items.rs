@@ -290,7 +290,7 @@ fn analyze_layer_route_and_decls(
                             RefScope::Auth => {
                                 return Err(syn::Error::new(
                                     r.ident.span(),
-                                    "{secret.*} is not allowed in prefix route (headers/query only)",
+                                    "secret references are only allowed in credential declarations",
                                 ));
                             }
                         }
@@ -354,7 +354,7 @@ fn analyze_layer_route_and_decls(
                             RefScope::Auth => {
                                 return Err(syn::Error::new(
                                     r.ident.span(),
-                                    "{secret.*} is not allowed in path/prefix (headers/query only)",
+                                    "secret references are only allowed in credential declarations",
                                 ));
                             }
                         }
@@ -443,7 +443,7 @@ fn analyze_endpoint(
                 RefScope::Auth => {
                     return Err(syn::Error::new(
                         r.ident.span(),
-                        "{secret.*} is not allowed in path/prefix (headers/query only)",
+                        "secret references are only allowed in credential declarations",
                     ));
                 }
             },

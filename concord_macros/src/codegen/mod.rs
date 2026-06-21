@@ -28,11 +28,6 @@ fn acquire_as_trait_ident(client: &Ident, credential: &Ident) -> Ident {
     )
 }
 
-#[inline]
-fn policy_uses_auth(_policy: &PolicyBlocksResolved) -> bool {
-    false
-}
-
 fn ep_optionals(ep: &ResolvedEndpoint) -> std::collections::BTreeMap<String, bool> {
     ep.vars
         .iter()
@@ -705,7 +700,7 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "let mut route = < super :: RoutePlanApiCx as :: concord_core :: prelude :: ClientContext > :: base_route (vars , auth)",
+                "let mut route = < super :: RoutePlanApiCx as :: concord_core :: prelude :: ClientContext > :: base_route (vars , __concord_auth_vars)",
                 "route.host_mut().push",
                 "route.path_mut().push_raw(\"v1\")",
                 "route.path_mut().push_raw(\"items\")",

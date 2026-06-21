@@ -17,6 +17,30 @@ Sema resolves:
 - auth endpoint references
 - endpoint aliases and facade names
 
+## Public expression closure
+
+Public request-shaping expressions are closed during sema. Header/query policy
+values, timeout expressions, route atoms, public `fmt[...]` pieces, and
+pagination assignment values must not resolve through auth material, secret
+variables, or generated implementation locals.
+
+The parser may keep raw Rust expressions so diagnostics can point at the user
+token, but sema must reject forbidden roots before resolved IR reaches codegen.
+Forbidden roots include `auth`, `secret`, `secrets`, `ctx`, `cx`, `ep`, `vars`,
+`client`, `runtime`, `policy`, `req`, `request`, `headers`, `url`, `cache`,
+`transport`, and `self` when they appear inside arbitrary public expressions.
+Raw identifiers are normalized for this check, so `r#auth` and `r#secret` are
+equivalent to `auth` and `secret`.
+Direct safe public references, such as endpoint arguments and declared client
+variables in supported value positions, are represented as resolved value IR
+rather than relying on user access to generated locals.
+
+The validator also scans macro token streams recursively because `syn::Visit`
+does not interpret every token inside a macro body. Secret exposure methods
+such as `.expose()` and `.expose_secret()` are rejected in these public
+contexts. Auth credential declarations remain the only DSL surface that may
+refer to `secret.*`.
+
 ## Profiles and inheritance
 
 Retry, cache, rate-limit, and behavior profiles can use `extends`. Sema resolves parents before children, detects self-extension and cycles, and reports unknown parent names.

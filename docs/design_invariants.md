@@ -52,7 +52,7 @@ The core executes syntax-neutral request plans.
 
 Core runtime code must not depend on raw DSL syntax.
 
-Raw parser syntax may represent rejected forms so diagnostics can point at the right token. Resolved macro IR should be context-specific: ordinary policy, route, and pagination values must not carry auth-secret references after sema. Codegen should render resolved data and return typed errors for impossible construction failures instead of relying on validation-dependent panics.
+Raw parser syntax may represent rejected forms so diagnostics can point at the right token. Resolved macro IR should be context-specific: ordinary policy, route, and pagination values must not carry auth-secret references after sema. Public expression contexts also must not depend on generated implementation locals such as `auth`, `secret`, `cx`, `ep`, `vars`, `self`, or `request`; sema closes those references before codegen. Codegen should render resolved data and return typed errors for impossible construction failures instead of relying on validation-dependent panics.
 
 ## Runtime Pipeline
 

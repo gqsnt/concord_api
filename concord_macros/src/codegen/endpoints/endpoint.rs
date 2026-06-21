@@ -266,7 +266,7 @@ fn emit_endpoint_def(
                 plan_ctx: &::concord_core::internal::ClientPlanContext<'_, super::#cx_ty>,
             ) -> ::core::result::Result<::concord_core::internal::RequestPlan, ::concord_core::prelude::ApiClientError> {
                 let vars = plan_ctx.vars;
-                let auth = plan_ctx.auth_vars;
+                let __concord_auth_vars = plan_ctx.auth_vars;
                 let ep = self;
                 let ctx_err = ::concord_core::error::ErrorContext { endpoint: #endpoint_name, method: ::http::Method::#method };
                 let __auth_plan = #auth_plan;
@@ -338,7 +338,7 @@ fn emit_endpoint_plan_route_policy(
     let endpoint_route_apply = emit_path_route_apply(&ep.route_pieces, Some(&ep_opt));
     let endpoint_policy_apply = emit_policy_apply_fn(&ep.policy.endpoint, PolicyEmitCtx::Endpoint);
     quote! {
-        let mut route = <super::#cx_ty as ::concord_core::prelude::ClientContext>::base_route(vars, auth);
+        let mut route = <super::#cx_ty as ::concord_core::prelude::ClientContext>::base_route(vars, __concord_auth_vars);
         #prefix_layer_route_ops
         #path_layer_route_ops
         #endpoint_route_apply
@@ -349,7 +349,7 @@ fn emit_endpoint_plan_route_policy(
             path: route.path().as_str().to_string(),
         };
 
-        let mut policy = <super::#cx_ty as ::concord_core::prelude::ClientContext>::base_policy(vars, auth, &ctx_err)?;
+        let mut policy = <super::#cx_ty as ::concord_core::prelude::ClientContext>::base_policy(vars, __concord_auth_vars, &ctx_err)?;
         #( #scope_policy_ops )*
         {
             let __prev = policy.layer();
