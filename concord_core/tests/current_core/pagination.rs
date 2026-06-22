@@ -1,8 +1,9 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, PageAdvance, PageDecision, PageInit, PageRequest, PaginationController,
-    ProgressKey,
+    AuthPlacement, BuiltRequest, BuiltResponse, CacheAfter, CacheBefore, CacheFuture,
+    CacheRevalidation, CacheStore, PageAdvance, PageDecision, PageInit, PageRequest,
+    PaginationController, ProgressKey, default_cache_key,
 };
 use concord_core::internal::PaginationPlan;
 use concord_core::prelude::{ApiClientError, CursorPagination};
@@ -130,6 +131,47 @@ impl PaginationController<Vec<String>> for DynamicRequestMutationPagination {
 
     fn progress_key(&self, _state: &Self::State) -> Option<ProgressKey> {
         None
+    }
+}
+
+#[derive(Clone, Default)]
+struct RecordingKeyCache {
+    keys: Arc<Mutex<Vec<String>>>,
+}
+
+impl RecordingKeyCache {
+    fn new(keys: Arc<Mutex<Vec<String>>>) -> Self {
+        Self { keys }
+    }
+}
+
+impl CacheStore for RecordingKeyCache {
+    fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
+        Box::pin(async move {
+            self.keys
+                .lock()
+                .await
+                .push(default_cache_key(request).as_str().to_string());
+            CacheBefore::Miss
+        })
+    }
+
+    fn after_response<'a>(
+        &'a self,
+        _request: &'a BuiltRequest,
+        _response: &'a BuiltResponse,
+        _revalidation: Option<CacheRevalidation>,
+    ) -> CacheFuture<'a, CacheAfter> {
+        Box::pin(async move { CacheAfter::Stored })
+    }
+
+    fn after_error<'a>(
+        &'a self,
+        _request: &'a BuiltRequest,
+        _error: &'a ApiClientError,
+        _revalidation: Option<CacheRevalidation>,
+    ) -> CacheFuture<'a, Option<BuiltResponse>> {
+        Box::pin(async move { None })
     }
 }
 
@@ -407,6 +449,140 @@ async fn cursor_pagination_collects_until_cursor_missing() -> Result<(), ApiClie
         Some("next-1".to_string())
     );
     Ok(())
+}
+
+#[tokio::test]
+async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
+            MockResponse::text(StatusCode::OK, "c|next=next-1"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = CursorItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            cursor_key: "cursor".into(),
+            per_page_key: "limit".into(),
+            cursor: Some("start".to_string()),
+            per_page: 2,
+            send_cursor_on_first: true,
+            stop_when_cursor_missing: true,
+            stop: Default::default(),
+        }),
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate()
+        .detect_loops(false)
+        .collect()
+        .await
+        .expect_err("repeated cursor should stop with a typed pagination error");
+
+    assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert!(err.to_string().contains("non-progress"));
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        query_value(&requests[0].url, "cursor"),
+        Some("start".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[1].url, "cursor"),
+        Some("next-1".to_string())
+    );
+}
+
+#[tokio::test]
+async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b|next=start-b"),
+            MockResponse::text(StatusCode::OK, "c|next=start-a"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = CursorItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            cursor_key: "cursor".into(),
+            per_page_key: "limit".into(),
+            cursor: Some("start-a".to_string()),
+            per_page: 2,
+            send_cursor_on_first: true,
+            stop_when_cursor_missing: true,
+            stop: Default::default(),
+        }),
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate()
+        .detect_loops(false)
+        .collect()
+        .await
+        .expect_err("cyclic cursor should stop with a typed pagination error");
+
+    assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert!(err.to_string().contains("non-progress"));
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        query_value(&requests[0].url, "cursor"),
+        Some("start-a".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[1].url, "cursor"),
+        Some("start-b".to_string())
+    );
+}
+
+#[tokio::test]
+async fn cursor_pagination_missing_cursor_without_stop_is_non_progress_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "a,b|next=")],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = CursorItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            cursor_key: "cursor".into(),
+            per_page_key: "limit".into(),
+            cursor: None,
+            per_page: 2,
+            send_cursor_on_first: false,
+            stop_when_cursor_missing: false,
+            stop: Default::default(),
+        }),
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate()
+        .detect_loops(false)
+        .collect()
+        .await
+        .expect_err("missing cursor without stop should not loop forever");
+
+    assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert!(err.to_string().contains("non-progress"));
+    assert_eq!(sent.sent_count().await, 1);
+    let requests = sent.requests().await;
+    assert!(query_value(&requests[0].url, "cursor").is_none());
 }
 
 #[tokio::test]
@@ -709,6 +885,63 @@ async fn max_pages_error_includes_seen_items() {
     assert!(msg.contains("max_pages"));
     assert!(msg.contains("seen_items=2"));
     assert!(msg.contains("page_index=1"));
+}
+
+#[tokio::test]
+async fn pagination_cache_keys_change_per_page_and_keep_auth_partitioning()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let key_events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingKeyCache::new(key_events.clone()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
+            MockResponse::text(StatusCode::OK, "c|next="),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(
+        TestAuthVars {
+            token: Some("CACHE_PARTITION_TOKEN".to_string()),
+            identity: "tenant-a",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), None);
+
+    let endpoint = CursorItemsEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Bearer);
+            policy.cache = concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new(),
+            );
+            policy
+        },
+        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            cursor_key: "cursor".into(),
+            per_page_key: "limit".into(),
+            cursor: Some("start".to_string()),
+            per_page: 2,
+            send_cursor_on_first: true,
+            stop_when_cursor_missing: true,
+            stop: Default::default(),
+        }),
+    };
+
+    let items = client.request(endpoint).paginate().collect().await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    assert_eq!(sent.sent_count().await, 2);
+    let keys = key_events.lock().await.clone();
+    assert_eq!(keys.len(), 2);
+    assert_ne!(keys[0], keys[1]);
+    assert!(keys.iter().all(|key| key.contains("|auth=")));
+    assert!(!keys.iter().any(|key| key.contains("CACHE_PARTITION_TOKEN")));
+    Ok(())
 }
 
 #[tokio::test]

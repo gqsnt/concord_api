@@ -8,7 +8,9 @@ use crate::pagination::{
 };
 use crate::timeout::TimeoutOverride;
 use crate::transport::{BuiltResponse, DecodedResponse};
+use base64::Engine;
 use std::any::Any;
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::future::{Future, IntoFuture};
 use std::pin::Pin;
@@ -248,6 +250,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         };
         validate_caps(self.caps, &ctx)?;
         let mut first_plan = Some(first_plan);
+        let mut state = PaginationRunState::default();
         let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
             Some(HashSet::new())
         } else {
@@ -281,6 +284,8 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             plan.overrides.page_index = page_index;
             plan.overrides.cache_mode = self.pending.opts.cache_mode;
             runner.apply_query(&mut plan)?;
+            let request_identity = pagination_request_identity(&plan);
+            state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
             let resp: DecodedResponse<E::Response> = self
                 .pending
                 .client
@@ -347,6 +352,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         };
         validate_caps(self.caps, &ctx)?;
         let mut first_plan = Some(first_plan);
+        let mut state = PaginationRunState::default();
         let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
             Some(HashSet::new())
         } else {
@@ -380,6 +386,8 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             plan.overrides.page_index = page_index;
             plan.overrides.cache_mode = self.pending.opts.cache_mode;
             runner.apply_query(&mut plan)?;
+            let request_identity = pagination_request_identity(&plan);
+            state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
 
             let resp: DecodedResponse<E::Response> = self
                 .pending
@@ -440,6 +448,92 @@ fn validate_caps(caps: Caps, ctx: &crate::error::ErrorContext) -> Result<(), Api
         });
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct PaginationRunState {
+    seen_request_identities: HashSet<String>,
+}
+
+impl PaginationRunState {
+    fn ensure_progress(
+        &mut self,
+        current_identity: String,
+        ctx: &crate::error::ErrorContext,
+        page_index: u32,
+    ) -> Result<(), ApiClientError> {
+        if !self.seen_request_identities.insert(current_identity) {
+            return Err(ApiClientError::Pagination {
+                ctx: ctx.clone(),
+                msg: format!(
+                    "non-progress detected (page_index={} request repeated)",
+                    page_index
+                )
+                .into(),
+            });
+        }
+        Ok(())
+    }
+}
+
+fn pagination_request_identity(plan: &crate::endpoint::RequestPlan) -> String {
+    let mut out = String::new();
+    push_identity_component(&mut out, "endpoint", plan.endpoint.meta.name);
+    push_identity_component(&mut out, "method", plan.endpoint.meta.method.as_str());
+    push_identity_component(&mut out, "url", &sanitized_plan_url(plan));
+
+    let mut headers: Vec<_> = plan
+        .endpoint
+        .policy
+        .headers
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str().to_string(),
+                base64::engine::general_purpose::STANDARD_NO_PAD.encode(value.as_bytes()),
+            )
+        })
+        .collect();
+    headers.sort_unstable_by(|a, b| {
+        let name_order = a.0.cmp(&b.0);
+        if name_order == Ordering::Equal {
+            a.1.cmp(&b.1)
+        } else {
+            name_order
+        }
+    });
+    for (name, value) in headers {
+        push_identity_component(&mut out, "header", &name);
+        push_identity_component(&mut out, "value", &value);
+    }
+
+    out
+}
+
+fn sanitized_plan_url(plan: &crate::endpoint::RequestPlan) -> String {
+    let route = &plan.endpoint.route;
+    let mut url = format!("{}://{}{}", route.scheme.as_str(), route.host, route.path);
+    if !plan.endpoint.policy.query.is_empty() {
+        url.push('?');
+        for (idx, (key, value)) in plan.endpoint.policy.query.iter().enumerate() {
+            if idx > 0 {
+                url.push('&');
+            }
+            url.push_str(urlencoding::encode(key).as_ref());
+            url.push('=');
+            url.push_str(urlencoding::encode(value).as_ref());
+        }
+    }
+    url
+}
+
+fn push_identity_component(out: &mut String, label: &str, value: &str) {
+    out.push_str(label);
+    out.push(':');
+    out.push_str(&value.len().to_string());
+    out.push(':');
+    out.push_str(value);
+    out.push('|');
 }
 
 enum PaginationRunner {

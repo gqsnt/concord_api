@@ -147,6 +147,7 @@ fn current_trybuild_fixtures_match_expected_results() {
         "tests/dsl/fail/fail_secret_in_policy_fmt.rs",
         "tests/dsl/fail/fail_secret_in_pagination_assignment.rs",
         "tests/dsl/fail/fail_auth_in_pagination_assignment.rs",
+        "tests/dsl/fail/fail_pagination_unknown_field.rs",
         "tests/dsl/fail/fail_vars_in_pagination_expr.rs",
         "tests/dsl/fail/fail_duplicate_default_and_defaults.rs",
         "tests/dsl/fail/fail_duplicate_defaults.rs",

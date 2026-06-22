@@ -35,6 +35,10 @@ Common configuration methods include:
 - `max_response_body_bytes(...)`
 - `no_response_body_limit()`
 
+`pagination_caps(...)` sets the page and item caps used by paginated calls.
+The runtime still enforces non-progress detection for repeated logical page
+identities regardless of the configured caps.
+
 Debug sinks and runtime hooks are metadata-only. They may observe redacted URLs,
 redacted headers, statuses, retry/cache/rate-limit events, and safe endpoint
 metadata. They never receive request or response body bytes, and verbose debug

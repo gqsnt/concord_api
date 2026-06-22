@@ -2,6 +2,17 @@
 
 Pagination is opt-in at the call site. A paginated endpoint first declares a pagination controller in the DSL, then callers use `.paginate()` to choose paginated execution.
 
+The runtime treats pagination as a deterministic page loop:
+
+1. build the logical page request
+2. apply pagination mutations for that page
+3. execute the page request through the normal cache/rate-limit/retry/auth pipeline
+4. decode the response
+5. ask the pagination controller whether to continue or stop
+6. derive the next page request or return
+
+If a later page request would reuse any previously seen logical request identity, the runtime returns a typed pagination error instead of silently looping. That guard is separate from `max_pages` and remains active even when controller loop-key checking is disabled.
+
 ## Offset Pagination
 
 ```rust
@@ -100,6 +111,10 @@ let items = api
 
 Caps must be greater than zero. Passing `0` through per-request builders or runtime pagination caps returns a typed pagination error before the first page request is sent.
 
+`max_pages` stops pagination once the configured number of page requests has been consumed. `max_items` stops collection once the accumulated item count would exceed the cap. The runtime does not fetch or decode another page after a cap has already been reached.
+
 Retry and auth refresh preserve the current page state. A retry for page `N` retries page `N`, not page `N + 1`.
 
 Successful page responses are decoded and handed to the pagination controller before state advances. Decode failure, stale fallback failure, or retry for a page does not advance the controller state.
+
+Cursor pagination follows the same per-page runtime order. `stop_when_cursor_missing` still stops when a cursor is absent; if pagination continues without changing the next request identity, Concord raises a typed non-progress error rather than reissuing the same page forever.

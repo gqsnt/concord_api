@@ -45,6 +45,8 @@ must not be held across credential endpoint or token endpoint I/O.
 
 `BuiltRequest` is the logical request. It contains public route/query/header data, safe auth identities, and typed pending auth slots, but it does not contain raw auth material. Cache keys, debug sinks, hooks, and response metadata operate on this logical request.
 
+Pagination drives one logical request per page and always checks page progress. The runtime records every logical request identity seen during a pagination run and returns a typed pagination error if a later page would reuse any previously seen identity instead of advancing. The old controller loop-key check remains an additional guard, but it is no longer the only defense against repeated pages.
+
 Cache identity is derived before transport materialization. The default cache
 key includes the sanitized logical URL plus safe pending-auth metadata:
 credential id, usage id, step id, placement, generation when available, and
@@ -80,6 +82,8 @@ Retry decisions happen before stale cache fallback. Stale fallback is considered
 Successful eligible raw responses are cached after classification. Auth rejection responses and retryable responses that will be retried are not cached as final successes.
 
 Endpoint response bodies are read into memory only through the bounded body reader. The default runtime limit is 16 MiB, `Content-Length` is checked before reading when present, and chunked or unknown-length bodies are checked cumulatively while reading. Too-large responses fail before decode and before cache write. Cache `max_body` remains a storage eligibility limit and does not control the response read/decode limit.
+
+Pagination follows the same per-page runtime order on each page request: fresh cache lookup, rate limit, transport, classify, hooks, rate-limit observation, auth rejection handling, retry, stale fallback, cache write, decode. Page advancement happens only after a successful page response has been classified and accepted.
 
 Decode happens last. A decode failure does not trigger another transport retry.
 

@@ -70,6 +70,12 @@ and response bodies must never be cache-key material. If a protected request
 does not have a safe auth identity, it bypasses cache lookup and store instead
 of falling back to an unauthenticated public key.
 
+Pagination is a typed runtime state machine. Page loops must either make
+deterministic progress, stop explicitly, or return a typed pagination error.
+Repeated logical page identities are treated as non-progress and fail instead
+of silently looping. Pagination caps remain enforced, but they are not the only
+loop protection.
+
 Credential slots use monotonic generations across all states, including empty
 states. Auth rejection invalidates only the generation that was applied to the
 rejected request, stale credential completions cannot overwrite newer material,
