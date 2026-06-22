@@ -291,6 +291,47 @@ async fn bearer_header_and_query_auth_are_applied() -> Result<(), ApiClientError
 }
 
 #[tokio::test]
+async fn query_auth_key_collision_fails_before_transport_without_leaking_secret() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+    );
+    let sent = transport.clone();
+    let client = client(
+        TestAuthVars {
+            token: Some("QUERY_AUTH_COLLISION_SECRET".to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    let mut policy = auth_policy(AuthPlacement::Query("api_key"));
+    policy
+        .query
+        .push(("api_key".to_string(), "public-value".to_string()));
+
+    let err = client
+        .request(TextEndpoint {
+            policy,
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("query auth key collision should fail before transport");
+
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
+            let msg = source.to_string();
+            assert!(msg.contains("api_key"));
+            assert!(!msg.contains("QUERY_AUTH_COLLISION_SECRET"));
+        }
+        other => panic!("expected auth error, got {other:?}"),
+    }
+    assert_eq!(sent.sent_count().await, 0);
+}
+
+#[tokio::test]
 async fn auth_401_retries_and_invalidates_by_default() -> Result<(), ApiClientError> {
     let harness = PolicyAuthHarness::new(AuthStepPolicy::default(), AuthChallengePolicy::Default);
     let client = harness.client(vec![

@@ -201,6 +201,13 @@ fn emit_endpoint_def(
     };
 
     let pagination_plan = emit_endpoint_pagination_plan(ep);
+    let pagination_marker_impl = if ep.paginate.is_some() {
+        quote! {
+            impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {}
+        }
+    } else {
+        quote! {}
+    };
     let pending_ext_trait = endpoint_pending_ext_trait_ident(ep);
     let pending_setter_decls = facade.setters.iter().filter_map(|setter| {
         let v = endpoint_var_for_setter(ep, setter)?;
@@ -306,6 +313,8 @@ fn emit_endpoint_def(
                 })
             }
         }
+
+        #pagination_marker_impl
 
         #[doc = "Request-builder extension methods for this endpoint."]
         pub trait #pending_ext_trait: Sized {

@@ -550,6 +550,12 @@ fn analyze_endpoint(
     }
 
     // 4) Resolve paginate, if any.
+    if ed.body.is_some() && ed.paginate.is_some() {
+        return Err(syn::Error::new(
+            ed.name.span(),
+            "paginated endpoints with request bodies are not supported in v1",
+        ));
+    }
     let paginate = match &ed.paginate {
         None => None,
         Some(p) => Some(resolve_paginate(p, ctx.client_vars, ctx.auth_vars, &ep_vars)?),

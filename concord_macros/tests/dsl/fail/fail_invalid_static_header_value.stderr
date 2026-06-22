@@ -1,0 +1,13 @@
+error: header value literal is not a valid HTTP header value
+  --> tests/dsl/fail/fail_invalid_static_header_value.rs:11:22
+   |
+11 |     header "X-Bad" = "bad\nvalue"
+   |                      ^^^^^^^^^^^^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/dsl/fail/fail_invalid_static_header_value.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

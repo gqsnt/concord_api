@@ -42,6 +42,11 @@ keeping raw query-auth values out of cache keys and diagnostics. If an auth
 requirement resolves only to anonymous identity, request execution bypasses
 cache lookup/store/fallback for that protected request.
 
+Query-auth materialization must reject a public query parameter that already
+uses the auth query key. The rejection happens before raw query-auth material is
+appended and before transport send, and the typed error may name the key but
+must not include the secret value.
+
 Custom transports receive the materialized `TransportRequest`, so they see real credentials at the send boundary. Transport implementations must not log the raw request.
 
 ## Rejection and refresh

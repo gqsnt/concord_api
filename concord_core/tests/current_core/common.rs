@@ -12,7 +12,9 @@ use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
     RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
-use concord_core::prelude::{ApiClient, ApiClientError, ApiKey, ClientContext, Endpoint};
+use concord_core::prelude::{
+    ApiClient, ApiClientError, ApiKey, ClientContext, Endpoint, PaginatedEndpoint,
+};
 use concord_core::prelude::{HasNextCursor, PageItems};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::collections::VecDeque;
@@ -193,6 +195,8 @@ impl Endpoint<TestCx> for ItemsEndpoint {
     }
 }
 
+impl PaginatedEndpoint<TestCx> for ItemsEndpoint {}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PageOnlyItems {
     pub items: Vec<String>,
@@ -244,6 +248,8 @@ impl Endpoint<TestCx> for NoHintItemsEndpoint {
     }
 }
 
+impl PaginatedEndpoint<TestCx> for NoHintItemsEndpoint {}
+
 #[derive(Clone)]
 pub struct PageOnlyItemsEndpoint {
     pub policy: ResolvedPolicy,
@@ -264,6 +270,8 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
         ))
     }
 }
+
+impl PaginatedEndpoint<TestCx> for PageOnlyItemsEndpoint {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CursorItems {
@@ -311,6 +319,8 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
         ))
     }
 }
+
+impl PaginatedEndpoint<TestCx> for CursorItemsEndpoint {}
 
 pub fn request_plan(
     name: &'static str,

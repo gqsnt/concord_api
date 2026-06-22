@@ -128,6 +128,15 @@ fn resolve_rate_limit_plan_spec(
                     "rate_limit max must be greater than zero",
                 ));
             }
+            if cost > max {
+                return Err(syn::Error::new(
+                    bucket
+                        .cost
+                        .as_ref()
+                        .map_or(window.max.span(), syn::LitInt::span),
+                    "rate_limit bucket cost must not exceed the window max",
+                ));
+            }
             let amount = window.every.base10_parse::<u64>()?;
             if amount == 0 {
                 return Err(syn::Error::new(

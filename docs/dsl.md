@@ -836,6 +836,13 @@ Custom pagination controllers use `paginate TypePath` without a block; their
 state and request mutation live in the Rust controller implementation.
 
 Response page types can implement `PageItems`; cursor page types also implement `HasNextCursor`.
+Implementing `PageItems` alone does not make every endpoint paginated. The
+endpoint must declare `paginate ...` before generated request builders expose
+`.paginate()`.
+
+Paginated endpoints cannot have request bodies in v1. The macro rejects
+`body: Codec<T>` together with a `paginate` declaration because Concord does
+not replay endpoint request bodies across page requests.
 
 ## Compatibility syntax
 

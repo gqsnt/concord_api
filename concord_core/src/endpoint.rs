@@ -113,3 +113,10 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
 
     fn plan(&self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError>;
 }
+
+/// Marker implemented only for endpoints that declare pagination.
+///
+/// A response type implementing [`crate::pagination::PageItems`] is not enough
+/// to make an endpoint paginated; the endpoint plan must also carry an
+/// explicit pagination controller.
+pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx> {}

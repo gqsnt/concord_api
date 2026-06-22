@@ -1,7 +1,7 @@
 use crate::cache::CacheRequestMode;
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
-use crate::endpoint::{CustomPaginationPlan, Endpoint, PaginationPlan};
+use crate::endpoint::{CustomPaginationPlan, Endpoint, PaginatedEndpoint, PaginationPlan};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
     Caps, Control, PageAdvance, PageInit, PageItems, PageRequest, ProgressKey, Stop,
@@ -171,6 +171,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     #[inline]
     pub fn paginate(self) -> PaginatedRequest<'a, Cx, E, T>
     where
+        E: PaginatedEndpoint<Cx>,
         E::Response: PageItems,
     {
         PaginatedRequest::new(self)
@@ -179,6 +180,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     #[inline]
     pub fn pages(self) -> PaginatedRequest<'a, Cx, E, T>
     where
+        E: PaginatedEndpoint<Cx>,
         E::Response: PageItems,
     {
         self.paginate()

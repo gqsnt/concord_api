@@ -48,7 +48,10 @@ Resolved cache sizing fields are emitted through core cache config builders for 
 
 ## Pagination
 
-For paginated endpoints, codegen emits `.paginate()` and page-driving wrappers that connect the resolved `paginate` block to runtime `PaginationController` traits.
+For endpoints with a resolved `paginate` block, codegen implements the core
+`PaginatedEndpoint` marker. The runtime request builder exposes `.paginate()`
+only for endpoints with that marker and a `PageItems` response. Codegen must not
+mark non-paginated endpoints just because their response type can expose items.
 
 ## Endpoint-backed credentials
 

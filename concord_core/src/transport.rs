@@ -272,6 +272,18 @@ pub(crate) fn materialize_transport_request(
                 PendingAuthPlacement::Query(name),
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
+                if req
+                    .url
+                    .query_pairs()
+                    .any(|(existing, _)| existing == name.as_str())
+                {
+                    return Err(crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::InvalidConfiguration,
+                        format!(
+                            "query auth key `{name}` collides with an existing public query parameter"
+                        ),
+                    ));
+                }
                 req.url.query_pairs_mut().append_pair(name, secret.expose());
             }
             (

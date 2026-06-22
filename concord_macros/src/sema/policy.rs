@@ -44,16 +44,21 @@ fn validate_paginate_controller(ctrl_ty: &Path) -> Result<()> {
 }
 
 fn is_builtin_paginate_controller(ctrl_ty: &Path) -> bool {
-    matches!(
-        paginate_controller_name(ctrl_ty).as_deref(),
-        Some("OffsetLimitPagination" | "CursorPagination" | "PagedPagination")
-    )
+    ctrl_ty.leading_colon.is_none()
+        && ctrl_ty.segments.len() == 1
+        && matches!(
+            paginate_controller_name(ctrl_ty).as_deref(),
+            Some("OffsetLimitPagination" | "CursorPagination" | "PagedPagination")
+        )
 }
 
 fn validate_paginate_assignment_key(ctrl_ty: &Path, key: &Ident) -> Result<()> {
     let Some(controller) = paginate_controller_name(ctrl_ty) else {
         return validate_paginate_controller(ctrl_ty);
     };
+    if !is_builtin_paginate_controller(ctrl_ty) {
+        return validate_paginate_controller(ctrl_ty);
+    }
     let key_name = key.to_string();
     let allowed = match controller.as_str() {
         "OffsetLimitPagination" => [
@@ -281,8 +286,16 @@ fn resolve_policy_block(
                     validate_public_expr(e)?;
                 }
                 PolicySetValue::Value(
-                    PublicValueKind::LitStr(_) | PublicValueKind::Fmt(_),
-                ) => {}
+                    PublicValueKind::LitStr(lit)
+                ) if kind == PolicyKeyKind::Header => {
+                    if http::HeaderValue::from_str(&lit.value()).is_err() {
+                        return Err(syn::Error::new(
+                            lit.span(),
+                            "header value literal is not a valid HTTP header value",
+                        ));
+                    }
+                }
+                PolicySetValue::Value(PublicValueKind::LitStr(_) | PublicValueKind::Fmt(_)) => {}
             }
         }
     }

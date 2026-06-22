@@ -644,7 +644,7 @@ mod tests {
                 credential key = api_key(secret.token)
             }
 
-            POST Create(id: String, limit: u64 = 20, body: Json<CreateBody>)
+            GET Create(id: String, limit: u64 = 20)
                 as create
                 path ["items", id]
                 headers {
@@ -671,8 +671,6 @@ mod tests {
                 ":: concord_core :: internal :: EndpointMeta",
                 ":: concord_core :: internal :: ResolvedRoute",
                 ":: concord_core :: internal :: ResolvedPolicy",
-                ":: concord_core :: internal :: BodyPlan :: Encoded",
-                ":: concord_core :: internal :: RequestArgs { body : :: core :: option :: Option :: Some",
                 ":: concord_core :: internal :: ResponsePlan",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
             ],
@@ -980,11 +978,18 @@ mod tests {
                     "X-Tenant" = vars.tenant
                 }
                 auth header "X-Api-Key" = key
+                -> Json<CreateResponse>
+
+            GET List(id: String, count: u64 = 20)
+                path ["items", id]
+                query {
+                    count
+                }
                 paginate OffsetLimitPagination {
                     offset = 0,
                     limit = count
                 }
-                -> Json<CreateResponse>
+                -> Json<Vec<CreateResponse>>
         });
 
         assert_contains_all(

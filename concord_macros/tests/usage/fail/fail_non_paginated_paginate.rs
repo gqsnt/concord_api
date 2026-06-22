@@ -9,7 +9,7 @@ api! {
 
     GET Ping
         path ["ping"]
-        -> Json<String>
+        -> Json<Vec<String>>
 }
 
 async fn bad_usage(api: UsageNonPaginatedApi) -> Result<(), ApiClientError> {

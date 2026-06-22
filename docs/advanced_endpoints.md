@@ -26,6 +26,9 @@ let endpoint = example_api::endpoints::ListItems::new()
 let items = api.request(endpoint).paginate().collect().await?;
 ```
 
+The `.paginate()` builder is available only for endpoint structs generated from
+DSL endpoints that declare `paginate ...`.
+
 Use `.execute_raw()` when a test or diagnostic needs the classified raw response before endpoint decoding.
 
 ```rust

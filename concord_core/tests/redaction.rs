@@ -714,23 +714,36 @@ mod query_auth_redaction {
     }
 
     #[tokio::test]
-    async fn debug_url_redacts_duplicate_sensitive_query_keys() -> Result<(), ApiClientError> {
+    async fn debug_url_rejects_duplicate_sensitive_query_keys_without_leaking() {
         let mut policy = policy_with_query_auth("api_key");
         policy
             .query
             .push(("api_key".to_string(), "also-secret".to_string()));
         policy.query.push(("page".to_string(), "2".to_string()));
 
-        let (events, requests) = run_debug_request(policy, StatusCode::OK).await?;
+        let events = Arc::new(TokioMutex::new(Vec::new()));
+        let transport = MockTransport::new(
+            events,
+            vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+        );
+        let sent = transport.clone();
+        let mut client =
+            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        let debug = Arc::new(UrlDebugSink::default());
+        client.set_debug_sink(debug.clone());
 
-        let debug_output = events.join("\n");
-        assert!(debug_output.matches("api_key=<redacted>").count() >= 2);
-        assert!(debug_output.contains("page=2"));
-        assert_secret_absent(&debug_output, API_KEY_SECRET);
-        assert_secret_absent(&debug_output, "also-secret");
-        assert!(requests[0].url.as_str().contains(API_KEY_SECRET));
-        assert!(requests[0].url.as_str().contains("also-secret"));
-        Ok(())
+        let err = client
+            .request(RedactionEndpoint { policy })
+            .debug_level(DebugLevel::VV)
+            .execute_decoded()
+            .await
+            .expect_err("duplicate query auth key should fail before transport");
+
+        let output = format!("{err}\n{}", debug.events().join("\n"));
+        assert!(output.contains("api_key"));
+        assert_secret_absent(&output, API_KEY_SECRET);
+        assert_secret_absent(&output, "also-secret");
+        assert_eq!(sent.requests().await.len(), 0);
     }
 
     #[tokio::test]

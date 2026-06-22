@@ -318,7 +318,14 @@ fn parse_base_url_literal(base_url: &LitStr) -> Result<(Scheme, String)> {
         ));
     };
     let host = rest.trim_end_matches('/');
-    if host.is_empty() || host.contains('/') {
+    if host.is_empty()
+        || host.contains('/')
+        || host.contains('\\')
+        || host.contains('@')
+        || host.contains('?')
+        || host.contains('#')
+        || host.chars().any(|ch| ch.is_whitespace() || ch.is_control())
+    {
         return Err(syn::Error::new(
             base_url.span(),
             "base URL must contain only scheme and host",

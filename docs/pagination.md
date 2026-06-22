@@ -1,6 +1,10 @@
 # Pagination
 
-Pagination is opt-in at the call site. A paginated endpoint first declares a pagination controller in the DSL, then callers use `.paginate()` to choose paginated execution.
+Pagination is opt-in at the endpoint and call site. A paginated endpoint first
+declares a pagination controller in the DSL, then callers use `.paginate()` to
+choose paginated execution. Response types such as `Vec<T>` can implement
+`PageItems`, but `.paginate()` is available only for endpoints that declare
+pagination.
 
 The runtime treats pagination as a deterministic page loop:
 
@@ -44,6 +48,9 @@ let items = api
 The runtime keeps request parameters stable while advancing the pagination controller fields.
 
 Custom pagination controllers receive a mutable `PageRequest` for the next page. Query mutation accepts borrowed or owned keys, so controllers can compute dynamic query names. Header mutation is fallible: invalid header names return `ApiClientError::Pagination` instead of panicking. `PageRequest::new` is an internal runtime construction hook, not a public user construction API.
+
+Paginated endpoints with request bodies are rejected in v1. Concord does not
+reuse or replay endpoint request bodies across page requests.
 
 ## Cursor Pagination
 

@@ -190,6 +190,18 @@ mod tests {
     }
 
     #[test]
+    fn basic_debug_redacts_username_and_password() {
+        let credential = BasicCredential::new(
+            "BASIC_USERNAME_SENTINEL_DO_NOT_DEBUG",
+            "BASIC_PASSWORD_SENTINEL_DO_NOT_DEBUG",
+        );
+        let rendered = format!("{credential:?}");
+
+        assert!(!rendered.contains("BASIC_USERNAME_SENTINEL_DO_NOT_DEBUG"));
+        assert!(!rendered.contains("BASIC_PASSWORD_SENTINEL_DO_NOT_DEBUG"));
+    }
+
+    #[test]
     fn basic_identity_hint_remains_explicit_public_override() {
         let old = BasicCredential::new("alice", "old-password")
             .identity_hint("tenant-a")
