@@ -51,15 +51,15 @@ Auth rejection handling runs after response classification but before normal ret
 The v1 default policy is:
 
 - `401 Unauthorized`: invalidate the applied credential and retry after refresh for refreshable/reacquirable runtime credentials.
-- `403 Forbidden`: do not invalidate and do not retry.
+- `403 Forbidden`: invalidate the applied credential and retry after refresh for refreshable/reacquirable runtime credentials.
 
 Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` can invalidate the applied endpoint-backed generation, but protected request retry does not automatically call the auth endpoint again; users must explicitly reacquire through the auth endpoint before sending another protected call.
 
-The default `403` behavior is deliberate: a forbidden response usually means the credential was accepted but lacks permission. Runtime integrations can opt into forbidden invalidation/retry by using `AuthStepPolicy` directly.
+Protected auth rejection is handled before ordinary retry and does not fall back to stale cached data by default. Runtime integrations can still narrow forbidden handling by customizing `AuthStepPolicy`, but the v1 default treats both `401` and `403` as protected auth rejection statuses.
 
 Credential refresh is bounded by the client runtime `max_auth_retries` setting. The runtime must not loop indefinitely on repeated auth rejection.
 
-`AuthChallengePolicy::NeverRefresh` is part of the advanced core API. When a requirement uses it, auth rejection does not invalidate or retry for `401` or `403`. It is not exposed as public DSL syntax in v1.
+`AuthChallengePolicy::NeverRefresh` is part of the advanced core API. When a requirement uses it, auth rejection does not invalidate, retry, or stale-fallback for `401` or `403`. It is not exposed as public DSL syntax in v1.
 
 Credential slots carry monotonic generation counters. Invalidating a rejected
 credential targets the generation that was applied to the failed request, so

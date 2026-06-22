@@ -330,6 +330,141 @@ async fn stale_fallback_emits_debug_event() -> Result<(), ApiClientError> {
 }
 
 #[tokio::test]
+async fn protected_auth_rejection_does_not_use_stale_fallback() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response(
+        "Text",
+        StatusCode::OK,
+        "STALE_PROTECTED_RESPONSE_MUST_NOT_BE_SERVED_AFTER_AUTH_REJECTION",
+    );
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let after_error_count = cache.after_error_count.clone();
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
+    );
+    let mut client = client(
+        TestAuthVars {
+            token: Some("bad".to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), None);
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Bearer);
+            policy.cache = concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new(),
+            );
+            policy
+        },
+        ..Default::default()
+    };
+
+    let err = client
+        .request(endpoint)
+        .execute_decoded()
+        .await
+        .expect_err("protected auth rejection should not serve stale cache");
+
+    assert!(err.to_string().contains("auth challenge rejected"));
+    assert_eq!(*after_error_count.lock().await, 0);
+}
+
+#[tokio::test]
+async fn never_refresh_protected_auth_rejection_does_not_use_stale_fallback() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response(
+        "Text",
+        StatusCode::OK,
+        "STALE_PROTECTED_RESPONSE_MUST_NOT_BE_SERVED_AFTER_AUTH_REJECTION",
+    );
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let after_error_count = cache.after_error_count.clone();
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
+    );
+    let mut client = client(
+        TestAuthVars {
+            token: Some("bad".to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), None);
+    let mut endpoint = TextEndpoint {
+        policy: auth_policy(AuthPlacement::Bearer),
+        ..Default::default()
+    };
+    endpoint.policy.auth.requirements[0].challenge =
+        concord_core::advanced::AuthChallengePolicy::NeverRefresh;
+
+    let err = client
+        .request(endpoint)
+        .execute_decoded()
+        .await
+        .expect_err("NeverRefresh protected auth rejection should not serve stale cache");
+
+    assert!(err.to_string().contains("auth challenge rejected"));
+    assert_eq!(*after_error_count.lock().await, 0);
+}
+
+#[tokio::test]
+async fn auth_rejection_refresh_retry_caches_success_only() -> Result<(), ApiClientError> {
+    let cache = Arc::new(DefaultKeyMemoryCache::default());
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(
+                StatusCode::UNAUTHORIZED,
+                "AUTH_REJECTION_RESPONSE_MUST_NOT_BE_CACHED",
+            ),
+            MockResponse::text(StatusCode::OK, "SUCCESS_AFTER_AUTH_REFRESH"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(
+        TestAuthVars {
+            token: Some("refreshable".to_string()),
+            identity: "refresh",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache.clone()), None);
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Bearer);
+            policy.cache = concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new(),
+            );
+            policy
+        },
+        ..Default::default()
+    };
+
+    let first = client.request(endpoint.clone()).execute_decoded().await?;
+    let second = client.request(endpoint).execute_decoded().await?;
+
+    assert_eq!(first.value(), "SUCCESS_AFTER_AUTH_REFRESH");
+    assert_eq!(second.value(), "SUCCESS_AFTER_AUTH_REFRESH");
+    assert_eq!(sent.sent_count().await, 2);
+    let keys = cache.keys().await;
+    assert_eq!(keys.len(), 1);
+    assert!(keys[0].contains("|auth="));
+    assert!(!keys[0].contains("AUTH_REJECTION_RESPONSE_MUST_NOT_BE_CACHED"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn bearer_auth_cache_is_partitioned_by_safe_identity() -> Result<(), ApiClientError> {
     let cache = Arc::new(DefaultKeyMemoryCache::default());
     let events_a = Arc::new(Mutex::new(Vec::new()));

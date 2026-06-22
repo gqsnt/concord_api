@@ -543,15 +543,21 @@ mod tests {
     }
 
     #[test]
-    fn auth_decision_default_forbidden_does_nothing() {
+    fn auth_decision_default_forbidden_invalidates_and_retries() {
+        let decision = auth_decision_for_status(
+            StatusCode::FORBIDDEN,
+            &requirement(AuthChallengePolicy::Default),
+            &applied(),
+            AuthStepPolicy::default(),
+        )
+        .expect("default 403 should request auth handling");
+
         assert_eq!(
-            auth_decision_for_status(
-                StatusCode::FORBIDDEN,
-                &requirement(AuthChallengePolicy::Default),
-                &applied(),
-                AuthStepPolicy::default(),
-            ),
-            None
+            decision,
+            AuthRejectionDecision {
+                invalidate_reason: Some(InvalidateReason::Forbidden),
+                retry_reason: Some(AuthRetryReason::Forbidden),
+            }
         );
     }
 

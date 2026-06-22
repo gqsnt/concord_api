@@ -1,3 +1,10 @@
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AuthRejectionOutcome {
+    NotProtected,
+    Retry,
+    Terminal,
+}
+
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     fn build_attempt_request(
         &self,
@@ -25,8 +32,19 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn handle_auth_rejection(
         &self,
         ctx: AuthRejectionCtx<'_, Cx, T>,
-    ) -> Result<bool, ApiClientError> {
-        self.auth_retry_requested(ctx).await
+    ) -> Result<AuthRejectionOutcome, ApiClientError> {
+        if !Self::is_protected_auth_rejection(ctx.plan, ctx.status) {
+            return Ok(AuthRejectionOutcome::NotProtected);
+        }
+        if self.auth_retry_requested(ctx).await? {
+            return Ok(AuthRejectionOutcome::Retry);
+        }
+        Ok(AuthRejectionOutcome::Terminal)
+    }
+
+    fn is_protected_auth_rejection(plan: &RequestPlan, status: StatusCode) -> bool {
+        matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+            && !plan.endpoint.policy.auth.requirements.is_empty()
     }
 
     fn decide_retry(
@@ -185,7 +203,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
             match send_result {
                 Ok(resp) => {
-                    if self
+                    match self
                         .handle_auth_rejection(
                             AuthRejectionCtx {
                                 plan: &plan,
@@ -199,20 +217,32 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         )
                         .await?
                     {
-                        if auth_retry_index >= max_auth_retries {
+                        AuthRejectionOutcome::Retry => {
+                            if auth_retry_index >= max_auth_retries {
+                                return Err(ApiClientError::Auth {
+                                    ctx: ctx.clone(),
+                                    source: AuthError::new(
+                                        AuthErrorKind::ProviderRejected,
+                                        format!(
+                                            "auth retry budget exhausted (max_auth_retries={max_auth_retries})"
+                                        ),
+                                    ),
+                                });
+                            }
+                            auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
+                            attempt_index = next_attempt_counter(attempt_index, &ctx)?;
+                            continue;
+                        }
+                        AuthRejectionOutcome::Terminal => {
                             return Err(ApiClientError::Auth {
                                 ctx: ctx.clone(),
                                 source: AuthError::new(
                                     AuthErrorKind::ProviderRejected,
-                                    format!(
-                                        "auth retry budget exhausted (max_auth_retries={max_auth_retries})"
-                                    ),
+                                    "auth challenge rejected",
                                 ),
                             });
                         }
-                        auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
-                        attempt_index = next_attempt_counter(attempt_index, &ctx)?;
-                        continue;
+                        AuthRejectionOutcome::NotProtected => {}
                     }
                     let cache_after = self
                         .maybe_write_cache(
@@ -239,7 +269,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             .endpoint
                             .meta
                             .request_meta(current_attempt, plan.overrides.page_index);
-                        if self
+                        match self
                             .handle_auth_rejection(
                                 AuthRejectionCtx {
                                     plan: &plan,
@@ -253,12 +283,30 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             )
                             .await?
                         {
-                            if auth_retry_index >= max_auth_retries {
-                                return Err(err);
+                            AuthRejectionOutcome::Retry => {
+                                if auth_retry_index >= max_auth_retries {
+                                    return Err(ApiClientError::Auth {
+                                        ctx: ctx.clone(),
+                                        source: AuthError::new(
+                                            AuthErrorKind::ProviderRejected,
+                                            "auth challenge rejected",
+                                        ),
+                                    });
+                                }
+                                auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
+                                attempt_index = next_attempt_counter(attempt_index, &ctx)?;
+                                continue;
                             }
-                            auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
-                            attempt_index = next_attempt_counter(attempt_index, &ctx)?;
-                            continue;
+                            AuthRejectionOutcome::Terminal => {
+                                return Err(ApiClientError::Auth {
+                                    ctx: ctx.clone(),
+                                    source: AuthError::new(
+                                        AuthErrorKind::ProviderRejected,
+                                        "auth challenge rejected",
+                                    ),
+                                });
+                            }
+                            AuthRejectionOutcome::NotProtected => {}
                         }
                     }
                     let outcome = Self::retry_outcome_from_error(&err);

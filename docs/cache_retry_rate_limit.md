@@ -75,7 +75,7 @@ cache standard {
 }
 ```
 
-A fresh cache hit returns before rate-limit acquisition and transport. Stale fallback is considered only after retry declines or the retry budget is exhausted.
+A fresh cache hit returns before rate-limit acquisition and transport. Stale fallback is considered only after retry declines or the retry budget is exhausted, except for protected auth rejections, which return a typed auth error instead of serving stale cached data.
 
 For protected requests, cache identity includes the logical request plus safe
 auth identity. Auth material that is inserted later at the transport boundary,
@@ -84,7 +84,9 @@ credentials do not share an entry for the same public URL. Raw bearer tokens,
 API keys, auth headers, query-auth values, client secrets, request bodies, and
 response bodies are never cache-key material. If Concord cannot construct a
 safe auth identity for a protected request, cache lookup, stale fallback, and
-cache store are bypassed for that request.
+cache store are bypassed for that request. Protected auth rejections are never
+written as successful cache entries, and they do not use stale fallback by
+default.
 
 Pagination follows the same per-page runtime order on each page request. If a
 later page would repeat any previously seen logical request identity in the

@@ -70,6 +70,11 @@ and response bodies must never be cache-key material. If a protected request
 does not have a safe auth identity, it bypasses cache lookup and store instead
 of falling back to an unauthenticated public key.
 
+Protected auth rejection must not be masked by stale cache fallback by
+default. Recognized `401` and `403` auth rejections are handled as protected
+auth failures, and rejected auth responses must not be cached as successful
+endpoint responses.
+
 Pagination is a typed runtime state machine. Page loops must either make
 deterministic progress, stop explicitly, or return a typed pagination error.
 Repeated logical page identities are treated as non-progress and fail instead

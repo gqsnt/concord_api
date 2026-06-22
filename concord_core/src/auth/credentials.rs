@@ -104,9 +104,9 @@ impl Default for AuthStepPolicy {
         Self {
             refresh_skew: Duration::from_secs(60),
             retry_on_unauthorized: true,
-            retry_on_forbidden: false,
+            retry_on_forbidden: true,
             invalidate_on_unauthorized: true,
-            invalidate_on_forbidden: false,
+            invalidate_on_forbidden: true,
         }
     }
 }

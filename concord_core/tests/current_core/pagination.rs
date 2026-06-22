@@ -998,6 +998,78 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
 }
 
 #[tokio::test]
+async fn auth_refresh_on_page_n_preserves_page_state_and_does_not_use_stale_fallback()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response(
+        "Items",
+        StatusCode::OK,
+        "STALE_PROTECTED_RESPONSE_MUST_NOT_BE_SERVED_AFTER_AUTH_REJECTION",
+    );
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let after_error_count = cache.after_error_count.clone();
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
+            MockResponse::text(StatusCode::OK, "c"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(
+        TestAuthVars {
+            token: Some("refreshable".to_string()),
+            identity: "refresh",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), None);
+
+    let endpoint = ItemsEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Bearer);
+            policy.cache = concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new(),
+            );
+            policy
+        },
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 2,
+            stop_on_short_page: true,
+            stop: Default::default(),
+        },
+    };
+
+    let items = client.request(endpoint).paginate().collect().await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[1].meta.page_index, 1);
+    assert_eq!(requests[2].meta.page_index, 1);
+    assert_eq!(
+        query_value(&requests[1].url, "offset"),
+        Some("2".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[2].url, "offset"),
+        Some("2".to_string())
+    );
+    assert_eq!(*after_error_count.lock().await, 0);
+    Ok(())
+}
+
+#[tokio::test]
 async fn stale_decode_failure_does_not_advance_page_state() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let stale = built_response("Items", StatusCode::OK, Bytes::from_static(b"\xff"));

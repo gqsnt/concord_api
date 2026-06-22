@@ -75,15 +75,15 @@ Runtime state access should fail explicitly instead of panicking. Request execut
 
 Post-response hooks precede rate-limit observation. The `304 NOT_MODIFIED` revalidation path must preserve the same hook then observation ordering before returning the revalidated cached response.
 
-Auth rejection handling happens after response classification but before the normal retry decision. Bounded auth refresh is the first recovery path for configured auth rejection responses.
+Auth rejection handling happens after response classification but before the normal retry decision. Bounded auth refresh is the first recovery path for configured auth rejection responses. Protected auth rejections do not fall back to stale cache by default, and rejected auth responses are not cached as successful endpoint responses.
 
-Retry decisions happen before stale cache fallback. Stale fallback is considered only after retry declines or retry budget is exhausted.
+Retry decisions happen before stale cache fallback for ordinary failures. Stale fallback is considered only after retry declines or retry budget is exhausted, except for protected auth rejections, which return a typed auth error instead of serving stale cached data.
 
 Successful eligible raw responses are cached after classification. Auth rejection responses and retryable responses that will be retried are not cached as final successes.
 
 Endpoint response bodies are read into memory only through the bounded body reader. The default runtime limit is 16 MiB, `Content-Length` is checked before reading when present, and chunked or unknown-length bodies are checked cumulatively while reading. Too-large responses fail before decode and before cache write. Cache `max_body` remains a storage eligibility limit and does not control the response read/decode limit.
 
-Pagination follows the same per-page runtime order on each page request: fresh cache lookup, rate limit, transport, classify, hooks, rate-limit observation, auth rejection handling, retry, stale fallback, cache write, decode. Page advancement happens only after a successful page response has been classified and accepted.
+Pagination follows the same per-page runtime order on each page request: fresh cache lookup, rate limit, transport, classify, hooks, rate-limit observation, auth rejection handling, retry, stale fallback for ordinary failures, cache write, decode. Page advancement happens only after a successful page response has been classified and accepted. Protected auth rejections retry the same page and do not advance state or serve stale cached data.
 
 Decode happens last. A decode failure does not trigger another transport retry.
 

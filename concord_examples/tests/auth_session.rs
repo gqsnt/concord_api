@@ -121,8 +121,8 @@ async fn endpoint_backed_session_401_invalidates_without_automatic_retry() {
         .await
         .expect_err("401 should remain the protected response outcome");
 
-    assert_eq!(err.category(), ErrorCategory::HttpStatus);
-    assert!(err.to_string().contains("401"));
+    assert_eq!(err.category(), ErrorCategory::AuthRejected);
+    assert!(err.to_string().contains("auth challenge rejected"));
     assert!(!err.to_string().contains("missing credential"));
     assert!(
         !api.auth_state()

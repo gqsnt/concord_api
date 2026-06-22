@@ -114,7 +114,7 @@ impl ClientContext for TestCx {
         _headers: &'a HeaderMap,
     ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
         Box::pin(async move {
-            if status == StatusCode::UNAUTHORIZED {
+            if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
                 if auth.identity == "refresh" {
                     return Ok(AuthDecision::RetryAfterRefresh {
                         credential: requirement.credential.clone(),

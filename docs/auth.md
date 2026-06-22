@@ -165,9 +165,7 @@ permanently in flight.
 
 ## Rejection And Refresh
 
-By default, protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized`.
-
-`403 Forbidden` does not trigger credential refresh by default because it usually means the credential was accepted but lacks permission.
+By default, protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized` or `403 Forbidden`.
 
 Credential refresh is bounded by the client runtime `max_auth_retries` setting. Concord will not refresh indefinitely.
 
@@ -176,13 +174,13 @@ Default rejection behavior:
 | Status | Invalidate credential | Retry after refresh |
 | --- | --- | --- |
 | `401 Unauthorized` | yes | yes, for refreshable/reacquirable runtime credentials |
-| `403 Forbidden` | no | no |
+| `403 Forbidden` | yes | yes, for refreshable/reacquirable runtime credentials |
 
-Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` can invalidate the applied endpoint-backed generation, but it does not automatically call the auth endpoint again or retry the protected request into `MissingCredential`. Reacquire through the auth endpoint explicitly before sending another protected call.
+Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` or `403` can invalidate the applied endpoint-backed generation, but it does not automatically call the auth endpoint again or retry the protected request into `MissingCredential`. Reacquire through the auth endpoint explicitly before sending another protected call.
 
-Normal retry policy still runs separately. Auth rejection handling happens after response classification but before the normal retry decision, so a `401` refresh path is tried before any ordinary retry decision.
+Normal retry policy still runs separately. Auth rejection handling happens after response classification but before the normal retry decision, so a protected `401` or `403` refresh path is tried before any ordinary retry decision. Protected auth rejections do not fall back to stale cached responses by default, and rejected auth responses are not cached as successful endpoint responses.
 
-`AuthChallengePolicy::NeverRefresh` is available in the advanced core API for runtime integrations that must never refresh on a protected response. It is not a public DSL clause in v1.
+`AuthChallengePolicy::NeverRefresh` is available in the advanced core API for runtime integrations that must never refresh on a protected response. It is not a public DSL clause in v1. With `NeverRefresh`, protected `401` and `403` responses do not invalidate, refresh, retry, or stale-fallback.
 
 ## Redaction
 

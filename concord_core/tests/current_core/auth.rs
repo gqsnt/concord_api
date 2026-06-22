@@ -78,6 +78,43 @@ async fn auth_rejection_does_not_store_cache_entry() {
 }
 
 #[tokio::test]
+async fn auth_rejection_does_not_store_cache_entry_forbidden() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
+    );
+    let mut client = client(
+        TestAuthVars {
+            token: Some("bad".to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), None);
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Bearer);
+            policy.cache = concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new(),
+            );
+            policy
+        },
+        ..Default::default()
+    };
+
+    let err = client
+        .request(endpoint)
+        .execute_decoded()
+        .await
+        .expect_err("403 auth rejection should fail");
+    assert!(err.to_string().contains("auth challenge rejected"));
+    assert_eq!(*after_response_count.lock().await, 0);
+}
+
+#[tokio::test]
 async fn auth_rejection_is_handled_before_normal_retry() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -275,24 +312,24 @@ async fn auth_401_retries_and_invalidates_by_default() -> Result<(), ApiClientEr
 }
 
 #[tokio::test]
-async fn auth_403_does_not_retry_or_invalidate_by_default() {
+async fn auth_403_retries_and_invalidates_by_default() -> Result<(), ApiClientError> {
     let harness = PolicyAuthHarness::new(AuthStepPolicy::default(), AuthChallengePolicy::Default);
     let client = harness.client(vec![
         MockResponse::text(StatusCode::FORBIDDEN, "forbidden"),
-        MockResponse::text(StatusCode::OK, "should-not-send"),
+        MockResponse::text(StatusCode::OK, "refreshed"),
     ]);
 
-    let err = client
+    let decoded = client
         .request(harness.endpoint(StatusCode::FORBIDDEN))
         .execute_decoded()
-        .await
-        .expect_err("403 should remain a normal HTTP status by default");
+        .await?;
 
-    assert!(err.to_string().contains("403"));
-    assert_eq!(harness.transport_attempts().await, 1);
-    assert_eq!(harness.event_count("acquire").await, 1);
-    assert_eq!(harness.event_count("invalidate:Forbidden").await, 0);
-    assert_eq!(harness.event_count("retry:Forbidden").await, 0);
+    assert_eq!(decoded.value(), "refreshed");
+    assert_eq!(harness.transport_attempts().await, 2);
+    assert_eq!(harness.event_count("acquire").await, 2);
+    assert_eq!(harness.event_count("invalidate:Forbidden").await, 1);
+    assert_eq!(harness.event_count("retry:Forbidden").await, 1);
+    Ok(())
 }
 
 #[tokio::test]
@@ -337,7 +374,7 @@ async fn auth_403_invalidates_only_when_policy_enables_forbidden_invalidation() 
         .await
         .expect_err("403 should not retry when retry_on_forbidden is false");
 
-    assert!(err.to_string().contains("403"));
+    assert!(err.to_string().contains("auth challenge rejected"));
     assert_eq!(harness.transport_attempts().await, 1);
     assert_eq!(harness.event_count("acquire").await, 1);
     assert_eq!(harness.event_count("invalidate:Forbidden").await, 1);
@@ -357,13 +394,35 @@ async fn auth_never_refresh_does_not_retry_or_invalidate() {
         .request(harness.endpoint(StatusCode::UNAUTHORIZED))
         .execute_decoded()
         .await
-        .expect_err("NeverRefresh should leave 401 as a normal HTTP status");
+        .expect_err("NeverRefresh should produce a terminal auth error");
 
-    assert!(err.to_string().contains("401"));
+    assert!(err.to_string().contains("auth challenge rejected"));
     assert_eq!(harness.transport_attempts().await, 1);
     assert_eq!(harness.event_count("acquire").await, 1);
     assert_eq!(harness.event_count("invalidate:Unauthorized").await, 0);
     assert_eq!(harness.event_count("retry:Unauthorized").await, 0);
+}
+
+#[tokio::test]
+async fn auth_never_refresh_does_not_retry_or_invalidate_forbidden() {
+    let harness =
+        PolicyAuthHarness::new(AuthStepPolicy::default(), AuthChallengePolicy::NeverRefresh);
+    let client = harness.client(vec![
+        MockResponse::text(StatusCode::FORBIDDEN, "forbidden"),
+        MockResponse::text(StatusCode::OK, "should-not-send"),
+    ]);
+
+    let err = client
+        .request(harness.endpoint(StatusCode::FORBIDDEN))
+        .execute_decoded()
+        .await
+        .expect_err("NeverRefresh should leave 403 as a terminal auth error");
+
+    assert!(err.to_string().contains("auth challenge rejected"));
+    assert_eq!(harness.transport_attempts().await, 1);
+    assert_eq!(harness.event_count("acquire").await, 1);
+    assert_eq!(harness.event_count("invalidate:Forbidden").await, 0);
+    assert_eq!(harness.event_count("retry:Forbidden").await, 0);
 }
 
 #[tokio::test]
@@ -380,9 +439,9 @@ async fn auth_retry_respects_max_auth_retries() {
         .request(harness.endpoint(StatusCode::UNAUTHORIZED))
         .execute_decoded()
         .await
-        .expect_err("auth retry budget should stop repeated refresh attempts");
+        .expect_err("auth retry budget should stop repeated refresh attempts with an auth error");
 
-    assert!(err.to_string().contains("401"));
+    assert!(err.to_string().contains("auth challenge rejected"));
     assert_eq!(harness.transport_attempts().await, 2);
     assert_eq!(harness.event_count("acquire").await, 2);
     assert_eq!(harness.event_count("invalidate:Unauthorized").await, 2);
@@ -728,7 +787,7 @@ impl ClientContext for RecordingAuthCx {
     ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
         let events = auth.events.clone();
         Box::pin(async move {
-            if status == StatusCode::UNAUTHORIZED {
+            if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
                 events.lock().await.push("auth_rejection".to_string());
                 if auth.identity == "refresh" {
                     events.lock().await.push("auth_retry".to_string());
