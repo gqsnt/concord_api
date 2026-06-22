@@ -1,6 +1,8 @@
 # Local v1 release gate
 
-This gate is local workspace validation only. It does not package, publish, or run any crates.io step.
+This gate is local workspace validation only. It does not package, publish,
+tag, or run any crates.io step. The default gate does not require external
+credentials or network access.
 
 Run:
 
@@ -59,6 +61,10 @@ The commands below are the full local gate. `./scripts/check_v1.sh` runs the scr
 
 ```bash
 cargo fmt --check
+cargo test -p concord_core redaction
+cargo test -p concord_core auth
+cargo test -p concord_core cache
+cargo test -p concord_core pagination
 cargo test -p concord_core
 cargo test -p concord_macros
 cargo test -p concord_examples
@@ -68,10 +74,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 ./scripts/check_v1.sh
 ```
 
-Targeted checks included in `./scripts/check_v1.sh`:
+Targeted checks included in `./scripts/check_v1.sh` are the same local gate
+commands listed above.
+
+## Trybuild Snapshot Refresh
+
+Snapshot refresh is not part of the default gate. Only use it when macro
+diagnostics intentionally change:
 
 ```bash
-cargo test -p concord_core redaction
-cargo test -p concord_core auth_runtime
-cargo test -p concord_examples live_smoke
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current current_trybuild_fixtures_match_expected_results
 ```
+
+After refreshing snapshots, rerun the full local v1 gate.

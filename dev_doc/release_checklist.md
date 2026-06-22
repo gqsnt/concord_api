@@ -9,14 +9,16 @@ Run:
 ```
 
 This runs the required local v1 verification commands without publishing or packaging.
+The default gate does not require external credentials or network access.
 
 The script runs:
 
 ```bash
 cargo fmt --check
 cargo test -p concord_core redaction
-cargo test -p concord_core auth_runtime
-cargo test -p concord_examples live_smoke
+cargo test -p concord_core auth
+cargo test -p concord_core cache
+cargo test -p concord_core pagination
 cargo test -p concord_core
 cargo test -p concord_macros
 cargo test -p concord_examples
@@ -25,15 +27,19 @@ cargo doc --workspace --no-deps
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+The default gate does not require external credentials, network access,
+publishing, packaging, tagging, or `TRYBUILD=overwrite`.
+
 ## Individual commands
 
 Run:
 
 ```bash
-cargo fmt
+cargo fmt --check
 cargo test -p concord_core redaction
-cargo test -p concord_core auth_runtime
-cargo test -p concord_examples live_smoke
+cargo test -p concord_core auth
+cargo test -p concord_core cache
+cargo test -p concord_core pagination
 cargo test -p concord_core
 cargo test -p concord_macros
 cargo test -p concord_examples
@@ -47,10 +53,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 Only when macro diagnostics intentionally change:
 
 ```bash
-TRYBUILD=overwrite cargo test -p concord_macros current_trybuild_fixtures_match_expected_results
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current current_trybuild_fixtures_match_expected_results
 ```
 
-After refreshing snapshots, run the local v1 gate again.
+After refreshing snapshots, run the local v1 gate again. This command is not
+part of the default release gate.
 
 ## Final stale syntax audit
 
@@ -68,6 +75,8 @@ and verify that public docs/examples do not describe rejected or removed DSL for
 - Developer docs are complete and current.
 - Review docs for stale runtime order, stale syntax, and removed implementation concepts.
 - Review examples for dangerous live calls; live smoke code must remain environment-gated.
+- Live-smoke examples skip by default without `CONCORD_RUN_RIOT_TEST`,
+  `CONCORD_RUN_DDRAGON_TEST`, and any required API key environment variables.
 - Review generated-code changes for validation-dependent panics when changing codegen.
 - `concord_examples/src/docs_dsl.rs` compiles.
 - `concord_examples/src/docs_advanced_dsl.rs` compiles.
