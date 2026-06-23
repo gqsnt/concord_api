@@ -1,11 +1,15 @@
 error[E0599]: no method named `collect_pages` found for struct `PaginatedRequest<'a, Cx, E, T>` in the current scope
-  --> tests/usage/fail/fail_collect_pages.rs:24:35
+  --> tests/usage/fail/fail_collect_pages.rs:27:10
    |
-24 |     let _ = api.list().paginate().collect_pages().await?;
-   |                                   ^^^^^^^^^^^^^
+24 |       let _ = api
+   |  _____________-
+25 | |         .list()
+26 | |         .paginate(PaginationTermination::hard_page_cap(10))
+27 | |         .collect_pages()
+   | |_________-^^^^^^^^^^^^^
    |
 help: there is a method `collect` with a similar name
    |
-24 -     let _ = api.list().paginate().collect_pages().await?;
-24 +     let _ = api.list().paginate().collect().await?;
+27 -         .collect_pages()
+27 +         .collect()
    |

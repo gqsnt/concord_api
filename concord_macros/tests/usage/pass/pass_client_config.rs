@@ -1,4 +1,4 @@
-use concord_core::advanced::{Caps, NoopCacheStore, NoopRateLimiter};
+use concord_core::advanced::{NoopCacheStore, NoopRateLimiter};
 use concord_core::prelude::*;
 use concord_macros::api;
 use std::sync::Arc;
@@ -29,7 +29,7 @@ fn construction_and_configure() -> Result<(), ApiClientError> {
     let _api = UsageConfigApi::new("acme".to_string(), "key".to_string())
         .configure(|cfg| {
             cfg.debug(DebugLevel::V);
-            cfg.pagination(Caps::default().max_items(10_000));
+            cfg.pagination_detect_loops(true);
         });
 
     let _api = UsageConfigApi::new("acme".to_string(), "key".to_string())
@@ -41,7 +41,7 @@ fn construction_and_configure() -> Result<(), ApiClientError> {
     let mut api = UsageConfigApi::new("acme".to_string(), "key".to_string());
     api.configure_mut(|cfg| {
         cfg.debug(DebugLevel::V);
-        cfg.pagination(Caps::default().max_pages(10));
+        cfg.pagination_detect_loops(false);
     });
 
     Ok(())

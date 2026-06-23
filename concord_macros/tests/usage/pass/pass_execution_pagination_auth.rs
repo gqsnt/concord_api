@@ -67,11 +67,15 @@ async fn execution_usage(api: UsageExecutionApi) -> Result<(), ApiClientError> {
         .execute_decoded()
         .await?;
     let _raw = api.list().execute_raw().await?;
-    let _items = api.list().count(100).paginate().max_items(10).collect().await?;
+    let _items = api
+        .list()
+        .count(100)
+        .paginate(PaginationTermination::hard_item_cap(10))
+        .collect()
+        .await?;
     api.list()
         .count(100)
-        .paginate()
-        .max_pages(2)
+        .paginate(PaginationTermination::hard_page_cap(2))
         .for_each_page(|_page| async { Ok(()) })
         .await?;
 

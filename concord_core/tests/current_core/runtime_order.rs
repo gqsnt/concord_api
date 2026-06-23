@@ -1,7 +1,7 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, Caps, DebugSink, NoopCacheStore, NoopRateLimiter, RetryContext, RetryDecision,
+    AuthPlacement, DebugSink, NoopCacheStore, NoopRateLimiter, RetryContext, RetryDecision,
     RetryPolicy, TransportErrorKind,
 };
 use concord_core::internal::{
@@ -1136,7 +1136,7 @@ async fn decode_error_does_not_trigger_transport_retry() {
 }
 
 #[tokio::test]
-async fn runtime_config_applies_debug_cache_rate_limit_transport_and_pagination()
+async fn runtime_config_applies_debug_cache_rate_limit_transport_and_pagination_loop_detection()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -1148,12 +1148,11 @@ async fn runtime_config_applies_debug_cache_rate_limit_transport_and_pagination(
         cfg.debug(concord_core::prelude::DebugLevel::VV);
         cfg.cache_store(Arc::new(NoopCacheStore));
         cfg.rate_limiter(Arc::new(NoopRateLimiter::new()));
-        cfg.pagination(Caps::default().max_pages(3).max_items(12));
+        cfg.pagination_detect_loops(false);
     });
 
     assert_eq!(client.debug_level(), concord_core::prelude::DebugLevel::VV);
-    assert_eq!(client.pagination_caps().max_pages, 3);
-    assert_eq!(client.pagination_caps().max_items, 12);
+    assert!(!client.pagination_detect_loops());
     let decoded = client
         .request(TextEndpoint::default())
         .execute_decoded()

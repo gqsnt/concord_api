@@ -139,14 +139,16 @@ This is an advanced escape hatch for diagnostics and protocol tests.
 
 ## Pagination
 
-Paginated endpoints require an explicit `.paginate()` call.
+Paginated endpoints require an explicit `.paginate(...)` call with a
+termination policy.
 
 ```rust
+use concord_core::prelude::PaginationTermination as PageUntil;
+
 let items = api
     .items()
     .list()
-    .paginate()
-    .max_items(1_000)
+    .paginate(PageUntil::hard_item_cap(1_000))
     .collect()
     .await?;
 ```
@@ -156,7 +158,7 @@ Use `for_each_page` for bounded-memory processing.
 ```rust
 api.items()
     .list()
-    .paginate()
+    .paginate(PageUntil::hard_page_cap(100))
     .for_each_page(|page| async move {
         println!("status={} items={}", page.status(), page.value().len());
         Ok(())

@@ -73,7 +73,7 @@ api! {
 }
 
 fn usage(api: CustomPaginationApi) {
-    let _ = api.list().paginate().max_pages(2);
+    let _ = api.list().paginate(PaginationTermination::hard_page_cap(2));
 }
 
 fn main() {}

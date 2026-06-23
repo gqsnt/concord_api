@@ -1,6 +1,5 @@
 use crate::cache::{CacheStore, NoopCacheStore};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
-use crate::pagination::Caps;
 use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
 use crate::runtime_hooks::{NoopRuntimeHooks, RuntimeHooks};
@@ -126,7 +125,7 @@ pub struct RuntimeConfig {
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) retry_policy: Arc<dyn RetryPolicy>,
     pub(crate) auth: AuthRuntimeConfig,
-    pub(crate) pagination: Caps,
+    pub(crate) pagination_detect_loops: bool,
     pub(crate) debug: DebugConfig,
     pub(crate) max_response_body_bytes: Option<usize>,
     #[allow(deprecated)]
@@ -141,7 +140,7 @@ impl Default for RuntimeConfig {
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
             auth: AuthRuntimeConfig::default(),
-            pagination: Caps::default(),
+            pagination_detect_loops: true,
             debug: DebugConfig::default(),
             max_response_body_bytes: Some(16 * 1024 * 1024),
             dev_body_capture: None,
@@ -208,14 +207,9 @@ impl RuntimeConfig {
     }
 
     #[inline]
-    pub fn pagination_caps(&mut self, caps: Caps) -> &mut Self {
-        self.pagination = caps;
+    pub fn pagination_detect_loops(&mut self, enabled: bool) -> &mut Self {
+        self.pagination_detect_loops = enabled;
         self
-    }
-
-    #[inline]
-    pub fn pagination(&mut self, caps: Caps) -> &mut Self {
-        self.pagination_caps(caps)
     }
 
     #[inline]

@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use concord_core::prelude::PaginationTermination;
 use concord_examples::pagination::{Item, PaginationApi, PaginationAuthApi};
 use concord_test_support::{MockReply, assert_request, mock};
 use http::StatusCode;
@@ -15,7 +16,7 @@ async fn offset_pagination_collects_items_and_preserves_query_shape() {
 
     let items = api
         .list_offset()
-        .paginate()
+        .paginate(PaginationTermination::hard_page_cap(10))
         .collect()
         .await
         .expect("offset pagination collect succeeds");
@@ -47,7 +48,7 @@ async fn cursor_pagination_for_each_page_uses_next_cursor() {
     let seen_for_callback = seen.clone();
 
     api.list_cursor()
-        .paginate()
+        .paginate(PaginationTermination::hard_page_cap(10))
         .for_each_page(move |page| {
             let seen = seen_for_callback.clone();
             async move {
@@ -86,7 +87,7 @@ async fn auth_retry_on_page_n_preserves_offset_and_items() {
     let items = api
         .protected()
         .list_protected()
-        .paginate()
+        .paginate(PaginationTermination::hard_page_cap(10))
         .collect()
         .await
         .expect("auth retry on page N succeeds");

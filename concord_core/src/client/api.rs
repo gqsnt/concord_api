@@ -5,7 +5,7 @@ pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = ReqwestTransport>
     auth_vars: Cx::AuthVars,
     auth_state: Arc<RwLock<Arc<Cx::AuthState>>>,
     debug_level: DebugLevel,
-    pagination_caps: Caps,
+    pagination_detect_loops: bool,
     debug_sink: Arc<dyn DebugSink>,
     runtime_state: Arc<ClientRuntimeState>,
 }
@@ -72,7 +72,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             auth_vars,
             auth_state: Arc::new(RwLock::new(Arc::new(auth_state))),
             debug_level: DebugLevel::default(),
-            pagination_caps: Caps::default(),
+            pagination_detect_loops: true,
             debug_sink: Arc::new(StderrDebugSink),
             runtime_state: Arc::new(ClientRuntimeState::default()),
         }
@@ -269,18 +269,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
-    pub fn pagination_caps(&self) -> Caps {
-        self.pagination_caps
+    pub fn pagination_detect_loops(&self) -> bool {
+        self.pagination_detect_loops
     }
 
     #[inline]
-    pub fn set_pagination_caps(&mut self, caps: Caps) {
-        self.pagination_caps = caps;
+    pub fn set_pagination_detect_loops(&mut self, enabled: bool) {
+        self.pagination_detect_loops = enabled;
     }
 
     #[inline]
-    pub fn with_pagination_caps(mut self, caps: Caps) -> Self {
-        self.pagination_caps = caps;
+    pub fn with_pagination_detect_loops(mut self, enabled: bool) -> Self {
+        self.pagination_detect_loops = enabled;
         self
     }
 
@@ -300,7 +300,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             auth: crate::runtime::AuthRuntimeConfig {
                 max_retries: self.runtime_state.max_auth_retries(),
             },
-            pagination: self.pagination_caps,
+            pagination_detect_loops: self.pagination_detect_loops,
             debug: crate::runtime::DebugConfig {
                 level: self.debug_level,
                 sink: self.debug_sink.clone(),
@@ -311,7 +311,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         f(&mut config);
         self.debug_level = config.debug.level;
         self.debug_sink = config.debug.sink.clone();
-        self.pagination_caps = config.pagination;
+        self.pagination_detect_loops = config.pagination_detect_loops;
         Arc::make_mut(&mut self.runtime_state).apply_config(config);
         self
     }

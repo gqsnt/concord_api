@@ -1,4 +1,3 @@
-use concord_core::advanced::Caps;
 use concord_core::prelude::{ApiClient, ClientContext, DebugLevel};
 
 #[derive(Clone)]
@@ -16,15 +15,14 @@ impl ClientContext for TestCx {
 }
 
 #[test]
-fn configure_updates_debug_level_and_pagination_caps() {
+fn configure_updates_debug_level_and_pagination_loop_detection() {
     let mut api = ApiClient::<TestCx>::new((), ());
 
     api.configure(|cfg| {
         cfg.debug_level(DebugLevel::VV)
-            .pagination_caps(Caps::default().max_pages(3).max_items(12));
+            .pagination_detect_loops(false);
     });
 
     assert_eq!(api.debug_level(), DebugLevel::VV);
-    assert_eq!(api.pagination_caps().max_pages, 3);
-    assert_eq!(api.pagination_caps().max_items, 12);
+    assert!(!api.pagination_detect_loops());
 }

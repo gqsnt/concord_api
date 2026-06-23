@@ -1046,11 +1046,7 @@ pub fn configure_runtime<T: Transport>(
 ) {
     client.configure(|cfg| {
         cfg.debug(concord_core::prelude::DebugLevel::V);
-        cfg.pagination(concord_core::advanced::Caps {
-            max_pages: 8,
-            max_items: 1_000,
-            detect_loops: true,
-        });
+        cfg.pagination_detect_loops(true);
         if let Some(cache) = cache {
             cfg.cache_store(cache);
         }

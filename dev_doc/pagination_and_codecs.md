@@ -54,12 +54,16 @@ additional guard.
 
 The macro `paginate` block resolves controller field assignments. Codegen connects those assignments to the runtime controller traits; the runtime drives page requests and decodes each page through the endpoint response codec.
 
-Collection bounds are shape-specific: offset, page-number, and custom pagination collection require `PageItems`; built-in cursor pagination additionally requires `HasNextCursor`. Zero `max_pages` or `max_items` caps are typed pagination errors before the first transport send.
+Collection bounds are shape-specific: offset, page-number, and custom pagination collection require `PageItems`; built-in cursor pagination additionally requires `HasNextCursor`. There is no implicit page or item cap after `.paginate(...)`; callers must pass an explicit `PaginationTermination`.
 
-`max_pages` is a hard page-request cap. `max_items` is enforced from the
-actual collected items in `collect()` and from item-count hints in
-page-by-page processing when hints are available. Cursor pagination with
-`stop_when_cursor_missing` stops on missing cursor; continuing without changing
-the request identity is a typed non-progress error instead of an infinite loop.
-Pagination progress is checked against every logical request identity seen so
-far in the run, not just the immediately previous page.
+`HardPageCap(n)` and `HardItemCap(n)` are hard safety caps and zero values are
+typed pagination configuration errors before the first transport send.
+`TakePages(n)` and `TakeItems(n)` are soft limits and zero values return an
+empty/no-op result without transport. Item limits are enforced from the actual
+collected items in `collect()`; `for_each_page()` supports page-based
+termination exactly and rejects `TakeItems` because it cannot truncate whole
+page responses. Cursor pagination with `stop_when_cursor_missing` stops on
+missing cursor; continuing without changing the request identity is a typed
+non-progress error instead of an infinite loop. Pagination progress is checked
+against every logical request identity seen so far in the run, not just the
+immediately previous page.

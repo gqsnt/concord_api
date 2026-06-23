@@ -36,7 +36,8 @@ pub mod internal {
     #[doc(hidden)]
     pub use crate::pagination::{
         Control, CursorPagination, HasNextCursor, OffsetLimitPagination, PageAdvance, PageDecision,
-        PageInit, PageRequest, PagedPagination, PaginationController, ProgressKey,
+        PageInit, PageRequest, PagedPagination, PaginationCaps, PaginationController,
+        PaginationTermination, ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
     pub use crate::{cache::CacheSetting, retry::RetrySetting};
@@ -51,7 +52,8 @@ pub mod prelude {
     pub use crate::endpoint::{Endpoint, PaginatedEndpoint};
     pub use crate::error::{ApiClientError, ErrorCategory};
     pub use crate::pagination::{
-        CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination, Stop,
+        CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
+        PaginationTermination, Stop,
     };
     pub use crate::rate_limit::{
         RateLimitObservation, RateLimitObserver, RateLimitResponseContext,
@@ -90,8 +92,8 @@ pub mod advanced {
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::error::{ErrorContext, FxError};
     pub use crate::pagination::{
-        Caps, Control, HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
-        PaginationController, ProgressKey,
+        Control, HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
+        PaginationCaps, PaginationController, PaginationTermination, ProgressKey,
     };
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,

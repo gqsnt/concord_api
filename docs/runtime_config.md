@@ -7,7 +7,7 @@ Use `configure` when chaining from an owned client.
 ```rust
 let api = PolicyApi::new()
     .configure(|cfg| {
-        cfg.pagination_caps(Caps::default().max_pages(50).max_items(10_000));
+        cfg.pagination_detect_loops(true);
     });
 ```
 
@@ -30,14 +30,16 @@ Common configuration methods include:
 - `rate_limiter(...)`
 - `retry_policy(...)`
 - `runtime_hooks(...)`
-- `pagination_caps(...)`
+- `pagination_detect_loops(...)`
 - `max_auth_retries(...)`
 - `max_response_body_bytes(...)`
 - `no_response_body_limit()`
 
-`pagination_caps(...)` sets the page and item caps used by paginated calls.
-The runtime still enforces non-progress detection for repeated logical page
-identities regardless of the configured caps.
+Pagination page and item termination is chosen per request with
+`PaginationTermination`; there is no runtime-wide implicit page or item cap.
+`pagination_detect_loops(...)` changes the default controller loop-key
+detection setting for paginated calls. The runtime still enforces non-progress
+detection for repeated logical page identities regardless of this setting.
 
 Debug sinks and runtime hooks are metadata-only. They may observe redacted URLs,
 redacted headers, statuses, retry/cache/rate-limit events, and safe endpoint

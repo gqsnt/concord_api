@@ -1059,9 +1059,8 @@ pub async fn riot_test() -> Result<(), ApiClientError> {
         .regional(RegionalRoute::Europe)
         .match_v5_matches()
         .ids_by_puuid(account.puuid.clone())
-        .count(20)
-        .paginate()
-        .max_items(60)
+        .count(100)
+        .paginate(PaginationTermination::take_items(60))
         .collect()
         .await?;
 

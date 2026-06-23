@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use concord_core::prelude::PaginationTermination;
 use concord_examples::custom_pagination::{CustomPaginationApi, Item};
 use concord_test_support::{MockReply, assert_request, mock};
 
@@ -10,7 +11,12 @@ async fn custom_pagination_controller_collects_pages() {
         .build();
     let api = CustomPaginationApi::new_with_transport(transport);
 
-    let items = api.list_items().paginate().collect().await.unwrap();
+    let items = api
+        .list_items()
+        .paginate(PaginationTermination::hard_page_cap(10))
+        .collect()
+        .await
+        .unwrap();
 
     assert_eq!(items, vec![Item { id: 1 }, Item { id: 2 }, Item { id: 3 }]);
     let recorded = handle.recorded();

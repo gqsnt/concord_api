@@ -1,3 +1,4 @@
+use concord_core::prelude::PaginationTermination;
 use concord_examples::ddragon::DDragonClient;
 use concord_examples::riot::{PlatformRoute, RegionalRoute, RiotClient};
 use concord_test_support::mock;
@@ -65,8 +66,7 @@ fn riot_like_large_fixture_facade_paths_typecheck_cleanly() {
         .regional(RegionalRoute::Europe)
         .match_v5_matches()
         .ids_by_puuid("puuid".to_string())
-        .paginate()
-        .max_items(10);
+        .paginate(PaginationTermination::take_items(10));
     let _live_game = riot
         .platform(PlatformRoute::EUW1)
         .spectator_v5()

@@ -13,7 +13,11 @@ api! {
 }
 
 async fn bad_usage(api: UsageNonPaginatedApi) -> Result<(), ApiClientError> {
-    let _ = api.ping().paginate().collect().await?;
+    let _ = api
+        .ping()
+        .paginate(PaginationTermination::hard_page_cap(1))
+        .collect()
+        .await?;
     Ok(())
 }
 

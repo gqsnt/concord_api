@@ -1,10 +1,12 @@
 # Pagination
 
 Pagination is opt-in at the endpoint and call site. A paginated endpoint first
-declares a pagination controller in the DSL, then callers use `.paginate()` to
-choose paginated execution. Response types such as `Vec<T>` can implement
-`PageItems`, but `.paginate()` is available only for endpoints that declare
-pagination.
+declares a pagination controller in the DSL, then callers use
+`.paginate(PaginationTermination::...)` to choose paginated execution and an
+explicit termination policy. Response types such as `Vec<T>` can implement
+`PageItems`, but `.paginate(...)` is available only for endpoints that declare
+pagination. No page or item cap is implicit; loop detection is enabled by
+default.
 
 The runtime treats pagination as a deterministic page loop:
 
@@ -15,7 +17,10 @@ The runtime treats pagination as a deterministic page loop:
 5. ask the pagination controller whether to continue or stop
 6. derive the next page request or return
 
-If a later page request would reuse any previously seen logical request identity, the runtime returns a typed pagination error instead of silently looping. That guard is separate from `max_pages` and remains active even when controller loop-key checking is disabled.
+If a later page request would reuse any previously seen logical request
+identity, the runtime returns a typed pagination error instead of silently
+looping. That guard is separate from the explicit termination policy and remains
+active even when controller loop-key checking is disabled.
 
 ## Offset Pagination
 
@@ -37,10 +42,11 @@ GET ListOffset(start: u64 = 0, count: u64 = 20)
 Collect all items with `.collect()`.
 
 ```rust
+use concord_core::prelude::PaginationTermination as PageUntil;
+
 let items = api
     .list_offset()
-    .paginate()
-    .max_items(1_000)
+    .paginate(PageUntil::hard_item_cap(1_000))
     .collect()
     .await?;
 ```
@@ -94,7 +100,7 @@ Use `for_each_page` when pages should be processed without collecting every item
 
 ```rust
 api.list_cursor()
-    .paginate()
+    .paginate(PageUntil::hard_page_cap(100))
     .for_each_page(|page| async move {
         println!("status={} items={}", page.status(), page.value().len());
         Ok(())
@@ -102,23 +108,42 @@ api.list_cursor()
     .await?;
 ```
 
-## Bounds
+## Termination
 
-Use `max_pages` and `max_items` to cap work.
+Pagination requires an explicit termination policy.
 
 ```rust
 let items = api
     .list_offset()
-    .paginate()
-    .max_pages(10)
-    .max_items(500)
+    .paginate(PageUntil::take_items(500))
     .collect()
     .await?;
 ```
 
-Caps must be greater than zero. Passing `0` through per-request builders or runtime pagination caps returns a typed pagination error before the first page request is sent.
+Hard caps fetch until the controller stops, but error if the cap would be
+exceeded:
 
-`max_pages` stops pagination once the configured number of page requests has been consumed. `max_items` stops collection once the accumulated item count would exceed the cap. The runtime does not fetch or decode another page after a cap has already been reached.
+- `PaginationTermination::HardPageCap(n)` errors if more than `n` pages would
+  be required.
+- `PaginationTermination::HardItemCap(n)` errors if more than `n` items would
+  be collected.
+
+Soft limits stop cleanly:
+
+- `PaginationTermination::TakePages(n)` fetches at most `n` pages and stops even
+  if the controller would continue.
+- `PaginationTermination::TakeItems(n)` returns at most `n` items. `collect()`
+  truncates the final page if necessary.
+
+Hard caps must be greater than zero. `HardPageCap(0)` and `HardItemCap(0)`
+return typed pagination errors before the first page request is sent.
+`TakePages(0)` and `TakeItems(0)` return an empty collection without transport
+for `collect()`. `TakePages(0)` is a no-op for `for_each_page()`.
+
+`collect()` supports all four termination modes. `for_each_page()` supports
+page-based termination exactly. `TakeItems` is rejected for `for_each_page()`
+because the callback receives whole pages; use `collect()` when item-level
+truncation is required.
 
 Retry and auth refresh preserve the current page state. A retry for page `N` retries page `N`, not page `N + 1`.
 

@@ -241,7 +241,7 @@ The runtime order is fixed:
 
 Fresh cache hits bypass rate-limit acquisition and transport. Decode failures do not retry transport and do not use stale fallback. Successful cacheable raw responses are currently cached before endpoint decode. Rate-limit observation is response-based; Concord does not expose a separate transport-error observation API in v1.
 
-Pagination reuses this same per-page order for each page request. A page that is already cached still needs to advance or stop according to the pagination controller; Concord does not silently reuse the same page identity forever. If a paginated request would repeat the same logical request identity on the next page, the pagination runtime returns a typed non-progress error rather than relying only on `max_pages`.
+Pagination reuses this same per-page order for each page request. A page that is already cached still needs to advance or stop according to the pagination controller; Concord does not silently reuse the same page identity forever. If a paginated request would repeat any logical request identity already seen in the same run, the pagination runtime returns a typed non-progress error independent of the explicit termination policy.
 
 `BuiltRequest` and response metadata are safe to inspect: Concord stores auth as typed slots and safe identities until the transport boundary. Custom advanced `ClientContext` auth preparation, including internal auth preparation, must use the `apply_*_credential` helpers; auth hooks do not receive `BuiltRequest` and cannot write raw auth into logical URL or headers. A custom `Transport` receives real credential material in the materialized request and is responsible for not logging it.
 

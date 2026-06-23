@@ -8,6 +8,62 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 pub use offset_limit::OffsetLimitPagination;
 pub use paged::PagedPagination;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaginationTermination {
+    /// Fetch pages until the pagination controller stops, but error if more than this many pages would be required.
+    HardPageCap(usize),
+    /// Fetch items until the pagination controller stops, but error if more than this many items would be collected.
+    HardItemCap(usize),
+    /// Fetch at most this many pages and stop cleanly even if more pages exist.
+    TakePages(usize),
+    /// Return at most this many items and stop cleanly, truncating the final page in collect().
+    TakeItems(usize),
+}
+
+impl PaginationTermination {
+    #[inline]
+    pub const fn hard_page_cap(n: usize) -> Self {
+        Self::HardPageCap(n)
+    }
+
+    #[inline]
+    pub const fn hard_item_cap(n: usize) -> Self {
+        Self::HardItemCap(n)
+    }
+
+    #[inline]
+    pub const fn take_pages(n: usize) -> Self {
+        Self::TakePages(n)
+    }
+
+    #[inline]
+    pub const fn take_items(n: usize) -> Self {
+        Self::TakeItems(n)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaginationCaps {
+    pub termination: PaginationTermination,
+    pub detect_loops: bool,
+}
+
+impl PaginationCaps {
+    #[inline]
+    pub const fn new(termination: PaginationTermination) -> Self {
+        Self {
+            termination,
+            detect_loops: true,
+        }
+    }
+
+    #[inline]
+    pub const fn detect_loops(mut self, enabled: bool) -> Self {
+        self.detect_loops = enabled;
+        self
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Control {
     Continue,
@@ -137,39 +193,6 @@ where
 pub enum Stop {
     #[default]
     OnEmpty,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct Caps {
-    pub max_pages: u32,
-    pub max_items: u64,
-    pub detect_loops: bool,
-}
-impl Default for Caps {
-    fn default() -> Self {
-        Self {
-            max_pages: 100,
-            max_items: 100_000,
-            detect_loops: true,
-        }
-    }
-}
-impl Caps {
-    #[inline]
-    pub fn max_pages(mut self, v: u32) -> Self {
-        self.max_pages = v;
-        self
-    }
-    #[inline]
-    pub fn max_items(mut self, v: u64) -> Self {
-        self.max_items = v;
-        self
-    }
-    #[inline]
-    pub fn detect_loops(mut self, v: bool) -> Self {
-        self.detect_loops = v;
-        self
-    }
 }
 
 /// Items container returned by a paginated endpoint.

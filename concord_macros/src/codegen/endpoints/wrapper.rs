@@ -526,15 +526,15 @@ fn emit_client_wrapper(
             #[doc = "Return this client with a changed debug level."]
             #[inline]
             pub fn with_debug_level(mut self, level: ::concord_core::prelude::DebugLevel) -> Self { self.inner.set_debug_level(level); self }
-            #[doc = "Return the pagination caps."]
+            #[doc = "Return whether pagination loop detection is enabled by default."]
             #[inline]
-            pub fn pagination_caps(&self) -> ::concord_core::advanced::Caps { self.inner.pagination_caps() }
-            #[doc = "Set pagination caps in place."]
+            pub fn pagination_detect_loops(&self) -> bool { self.inner.pagination_detect_loops() }
+            #[doc = "Set whether pagination loop detection is enabled by default."]
             #[inline]
-            pub fn set_pagination_caps(&mut self, caps: ::concord_core::advanced::Caps) { self.inner.set_pagination_caps(caps); }
-            #[doc = "Return this client with changed pagination caps."]
+            pub fn set_pagination_detect_loops(&mut self, enabled: bool) { self.inner.set_pagination_detect_loops(enabled); }
+            #[doc = "Return this client with changed pagination loop detection default."]
             #[inline]
-            pub fn with_pagination_caps(mut self, caps: ::concord_core::advanced::Caps) -> Self { self.inner.set_pagination_caps(caps); self }
+            pub fn with_pagination_detect_loops(mut self, enabled: bool) -> Self { self.inner.set_pagination_detect_loops(enabled); self }
             #[doc = "Mutate advanced runtime configuration and return this client."]
             #[inline]
             pub fn configure(mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> Self { self.inner.configure(f); self }

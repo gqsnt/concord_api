@@ -46,9 +46,7 @@ async fn generated_pagination_collect_preserves_query_setters_and_caps() {
         .list()
         .filter("ranked".to_string())
         .count(2)
-        .paginate()
-        .max_pages(3)
-        .max_items(10)
+        .paginate(PaginationTermination::hard_page_cap(3))
         .collect()
         .await
         .expect("pagination collect succeeds");
@@ -73,7 +71,7 @@ async fn generated_pagination_for_each_page_and_max_items_work() {
 
     api.list()
         .count(2)
-        .paginate()
+        .paginate(PaginationTermination::hard_page_cap(3))
         .for_each_page(move |page| {
             let seen = seen_for_callback.clone();
             async move {
@@ -90,12 +88,11 @@ async fn generated_pagination_for_each_page_and_max_items_work() {
     let err = api
         .list()
         .count(2)
-        .paginate()
-        .max_items(1)
+        .paginate(PaginationTermination::hard_item_cap(1))
         .for_each_page(|_| ready(Ok(())))
         .await
-        .expect_err("max_items should fail");
-    assert!(err.to_string().contains("max_items"));
+        .expect_err("hard item cap should fail");
+    assert!(err.to_string().contains("hard item cap"));
 }
 
 fn assert_query(request: &TransportRequest, key: &str, expected: &str) {

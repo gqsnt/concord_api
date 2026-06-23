@@ -21,7 +21,11 @@ api! {
 }
 
 async fn bad_usage(api: UsageCollectPagesApi) -> Result<(), ApiClientError> {
-    let _ = api.list().paginate().collect_pages().await?;
+    let _ = api
+        .list()
+        .paginate(PaginationTermination::hard_page_cap(10))
+        .collect_pages()
+        .await?;
     Ok(())
 }
 

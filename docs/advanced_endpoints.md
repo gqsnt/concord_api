@@ -18,16 +18,23 @@ let user = api.request(endpoint).execute().await?;
 Endpoint setters are available on explicit endpoint values too.
 
 ```rust
+use concord_core::prelude::PaginationTermination;
+
 let endpoint = example_api::endpoints::ListItems::new()
     .count(50)
     .count_opt(Some(100))
     .clear_count();
 
-let items = api.request(endpoint).paginate().collect().await?;
+let items = api
+    .request(endpoint)
+    .paginate(PaginationTermination::hard_page_cap(100))
+    .collect()
+    .await?;
 ```
 
-The `.paginate()` builder is available only for endpoint structs generated from
-DSL endpoints that declare `paginate ...`.
+The `.paginate(...)` builder is available only for endpoint structs generated
+from DSL endpoints that declare `paginate ...`, and it requires an explicit
+`PaginationTermination`.
 
 Use `.execute_raw()` when a test or diagnostic needs the classified raw response before endpoint decoding.
 

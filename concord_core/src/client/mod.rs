@@ -6,7 +6,6 @@ use crate::cache::{CacheAfter, CacheBefore, CacheRequestMode, CacheRevalidation,
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::endpoint::{BodyPlan, ClientPlanContext, Endpoint, RequestPlan};
 use crate::error::{ApiClientError, ErrorContext};
-use crate::pagination::Caps;
 use crate::policy::Policy;
 use crate::rate_limit::{
     RateLimitContext, RateLimitPlan, RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
