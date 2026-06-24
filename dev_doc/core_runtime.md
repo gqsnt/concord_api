@@ -21,8 +21,9 @@ The runtime order is:
 12. auth rejection handling
 13. retry decision
 14. stale cache fallback
-15. cache write
-16. decode response
+15. decode response
+16. map/transform endpoint value
+17. cache write after endpoint success
 ```
 
 This order is not user-configurable.
@@ -61,7 +62,9 @@ bytes, snippets, previews, or formatted excerpts.
 
 The deprecated dev body capture path is deliberately separate from debug sinks
 and hooks. It is opt-in, response-only, local-file-only, and skips protected
-auth-bearing requests by default.
+auth-bearing requests by default. When enabled, it may capture the received
+body before endpoint decode so it remains useful for local diagnosis of bad
+provider payloads and decode failures.
 
 Auth preparation does not receive `BuiltRequest` directly. Endpoint auth preparation and auth-internal preparation both receive an auth-only application request that exposes only pending-slot attachment, so custom client contexts cannot insert raw auth into logical headers, query strings, body data, policy data, or request metadata during credential preparation.
 
@@ -79,13 +82,13 @@ Auth rejection handling happens after response classification but before the nor
 
 Retry decisions happen before stale cache fallback for ordinary failures. Stale fallback is considered only after retry declines or retry budget is exhausted, except for protected auth rejections, which return a typed auth error instead of serving stale cached data.
 
-Successful eligible raw responses are cached after classification. Auth rejection responses and retryable responses that will be retried are not cached as final successes.
+Successful eligible responses are admitted to cache only after endpoint decode and any map/transform succeed. Auth rejection responses and retryable responses that will be retried are not cached as final successes.
 
 Endpoint response bodies are read into memory only through the bounded body reader. The default runtime limit is 16 MiB, `Content-Length` is checked before reading when present, and chunked or unknown-length bodies are checked cumulatively while reading. Too-large responses fail before decode and before cache write. Cache `max_body` remains a storage eligibility limit and does not control the response read/decode limit.
 
-Pagination follows the same per-page runtime order on each page request: fresh cache lookup, rate limit, transport, classify, hooks, rate-limit observation, auth rejection handling, retry, stale fallback for ordinary failures, cache write, decode. Page advancement happens only after a successful page response has been classified and accepted. Protected auth rejections retry the same page and do not advance state or serve stale cached data.
+Pagination follows the same per-page runtime order on each page request: fresh cache lookup, rate limit, transport, classify, hooks, rate-limit observation, auth rejection handling, retry, stale fallback for ordinary failures, decode, map/transform, cache write after endpoint success. Page advancement happens only after the page response has completed endpoint decode/map successfully and the pagination runtime has accepted it. Protected auth rejections retry the same page and do not advance state or serve stale cached data.
 
-Decode happens last. A decode failure does not trigger another transport retry.
+Decode and map/transform are the final semantic validation steps before successful cache admission and return. A decode failure does not trigger another transport retry.
 
 Runtime order is covered by characterization tests in `concord_core`.
 

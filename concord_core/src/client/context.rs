@@ -88,11 +88,6 @@ enum CacheBeforeOutcome {
     Continue(Option<CacheRevalidation>),
 }
 
-struct CacheAfterOutcome {
-    response: BuiltResponse,
-    needs_revalidation_refetch: bool,
-}
-
 struct AuthRejectionCtx<'a, Cx: ClientContext, T: Transport> {
     plan: &'a RequestPlan,
     auth_state: &'a Cx::AuthState,

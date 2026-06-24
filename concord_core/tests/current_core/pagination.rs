@@ -395,6 +395,45 @@ impl PaginationController<NoHintItems> for NoHintCountingPagination {
     }
 }
 
+static PR63_PAGINATED_DECODE_FAILURE_ADVANCES: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Default)]
+struct Pr63PaginatedDecodeFailurePagination;
+
+struct Pr63PaginatedDecodeFailureState;
+
+impl PaginationController<NoHintItems> for Pr63PaginatedDecodeFailurePagination {
+    type State = Pr63PaginatedDecodeFailureState;
+
+    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
+        Ok(Pr63PaginatedDecodeFailureState)
+    }
+
+    fn apply(
+        &self,
+        _state: &Self::State,
+        request: &mut PageRequest<'_>,
+    ) -> Result<(), ApiClientError> {
+        request
+            .set_expected_items_per_page(NonZeroUsize::new(2).expect("test page size is non-zero"));
+        Ok(())
+    }
+
+    fn advance(
+        &self,
+        _state: &mut Self::State,
+        _page: &NoHintItems,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        PR63_PAGINATED_DECODE_FAILURE_ADVANCES.fetch_add(1, AtomicOrdering::SeqCst);
+        Ok(PageDecision::Stop)
+    }
+
+    fn progress_key(&self, _state: &Self::State) -> Option<ProgressKey> {
+        None
+    }
+}
+
 #[derive(Default)]
 struct AlwaysContinueNoExpectedPagination;
 
@@ -2394,6 +2433,73 @@ async fn stale_decode_failure_does_not_advance_page_state() {
         query_value(&requests[0].url, "offset"),
         Some("0".to_string())
     );
+}
+
+#[tokio::test]
+async fn paginated_page_decode_failure_does_not_store_page_cache() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(
+            StatusCode::OK,
+            Bytes::from_static(b"\xff"),
+        )],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let endpoint = NoHintItemsEndpoint {
+        policy: cache_policy(),
+        pagination: PaginationPlan::custom::<Pr63PaginatedDecodeFailurePagination, NoHintItems>(),
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(4))
+        .collect()
+        .await
+        .expect_err("invalid page should fail before cache store");
+
+    assert!(err.to_string().contains("decode error"));
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert_eq!(sent.sent_count().await, 1);
+    assert_eq!(
+        PR63_PAGINATED_DECODE_FAILURE_ADVANCES.load(AtomicOrdering::SeqCst),
+        0
+    );
+}
+
+#[tokio::test]
+async fn paginated_successful_page_stores_after_decode() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "a,b")],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let endpoint = NoHintItemsEndpoint {
+        policy: cache_policy(),
+        pagination: PaginationPlan::custom::<StopAfterFirstNoHintPagination, NoHintItems>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(1))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a".to_string(), "b".to_string()]);
+    assert_eq!(*after_response_count.lock().await, 1);
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
 }
 
 fn query_value(url: &url::Url, name: &str) -> Option<String> {

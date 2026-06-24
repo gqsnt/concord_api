@@ -63,7 +63,10 @@ disabled by default and marked deprecated because it can persist sensitive
 response bytes to disk. It writes selected ordinary response bodies to local
 files under the configured directory using generated safe filenames. It does
 not capture request bodies, and it skips responses for authenticated requests
-and auth/token acquisition paths by default.
+and auth/token acquisition paths by default. When enabled, it may capture the
+received body before endpoint decode so it remains useful for local diagnosis of
+bad provider payloads and decode failures; it is still separate from cache,
+debug sinks, and runtime hooks.
 
 Do not use dev body capture in production.
 

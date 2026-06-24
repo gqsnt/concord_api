@@ -36,7 +36,7 @@ The `.paginate(...)` builder is available only for endpoint structs generated
 from DSL endpoints that declare `paginate ...`, and it requires an explicit
 `PaginationTermination`.
 
-Use `.execute_raw()` when a test or diagnostic needs the classified raw response before endpoint decoding.
+Use `.execute_raw()` when a test or diagnostic needs the classified raw response before endpoint decoding. `execute_raw()` bypasses endpoint cache entirely: it does not read from cache, does not serve stale cache, and does not populate cache because raw execution skips endpoint decode/map and cannot prove endpoint success.
 
 ```rust
 let raw = api

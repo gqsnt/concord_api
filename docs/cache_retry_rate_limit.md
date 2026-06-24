@@ -77,6 +77,8 @@ cache standard {
 
 A fresh cache hit returns before rate-limit acquisition and transport. Stale fallback is considered only after retry declines or the retry budget is exhausted, except for protected auth rejections, which return a typed auth error instead of serving stale cached data.
 
+Concord stores raw `BuiltResponse` cache entries, but new successful entries are admitted only after the endpoint response has decoded and any map/transform has succeeded. Decode failures, map failures, body-limit failures, retryable failures, auth rejections, and stale-fallback failures do not create successful cache entries from the failed response.
+
 For protected requests, cache identity includes the logical request plus safe
 auth identity. Auth material that is inserted later at the transport boundary,
 including query-auth parameters, still contributes safe cache identity so two
@@ -236,12 +238,13 @@ The runtime order is fixed:
 12. Handle auth rejection and bounded auth refresh.
 13. Apply normal retry policy.
 14. Consider stale cache fallback only after retry declines or the retry budget is exhausted.
-15. Cache successful eligible raw responses.
-16. Decode the endpoint response.
+15. Decode the endpoint response.
+16. Apply any endpoint map/transform.
+17. Admit a successful cache entry only after endpoint success.
 
-Fresh cache hits bypass rate-limit acquisition and transport. Decode failures do not retry transport and do not use stale fallback. Successful cacheable raw responses are currently cached before endpoint decode. Rate-limit observation is response-based; Concord does not expose a separate transport-error observation API in v1.
+Fresh cache hits bypass rate-limit acquisition and transport. Decode failures do not retry transport and do not use stale fallback. Successful cacheable responses are admitted to cache only after endpoint decode and any map/transform succeed. Rate-limit observation is response-based; Concord does not expose a separate transport-error observation API in v1.
 
-Pagination reuses this same per-page order for each page request. A page that is already cached still needs to advance or stop according to the pagination controller; Concord does not silently reuse the same page identity forever. If a paginated request would repeat any logical request identity already seen in the same run, the pagination runtime returns a typed non-progress error independent of the explicit termination policy.
+Pagination reuses this same per-page order for each page request. A page that is already cached still needs to advance or stop according to the pagination controller; Concord does not silently reuse the same page identity forever. If a paginated request would repeat any logical request identity already seen in the same run, the pagination runtime returns a typed non-progress error independent of the explicit termination policy. A page is considered successful only after endpoint decode and any map/transform complete successfully.
 
 `BuiltRequest` and response metadata are safe to inspect: Concord stores auth as typed slots and safe identities until the transport boundary. Custom advanced `ClientContext` auth preparation, including internal auth preparation, must use the `apply_*_credential` helpers; auth hooks do not receive `BuiltRequest` and cannot write raw auth into logical URL or headers. A custom `Transport` receives real credential material in the materialized request and is responsible for not logging it.
 

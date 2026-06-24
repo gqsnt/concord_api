@@ -14,6 +14,205 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::Mutex;
 
+tokio::task_local! {
+    static ORDER_EVENTS: Arc<StdMutex<Vec<String>>>;
+}
+
+fn record_order_event(event: &str) {
+    ORDER_EVENTS.with(|events| {
+        events
+            .lock()
+            .expect("order events lock")
+            .push(event.to_string());
+    });
+}
+
+#[derive(Clone, Copy)]
+enum MapMode {
+    Success,
+    Fail,
+}
+
+#[derive(Clone)]
+struct OrderingEndpoint {
+    policy: ResolvedPolicy,
+    map_mode: MapMode,
+}
+
+impl Endpoint<TestCx> for OrderingEndpoint {
+    type Response = String;
+
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        let decode = match self.map_mode {
+            MapMode::Success => decode_ordering_success,
+            MapMode::Fail => decode_ordering_fail,
+        };
+        Ok(request_plan(
+            "Ordering",
+            Method::GET,
+            "/ordering",
+            self.policy.clone(),
+            None,
+            decode,
+        ))
+    }
+}
+
+fn decode_ordering_success(
+    resp: concord_core::advanced::BuiltResponse,
+    ctx: concord_core::advanced::ErrorContext,
+) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
+    record_order_event("decode");
+    let content_type = resp
+        .headers
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok());
+    let value = std::str::from_utf8(&resp.body)
+        .map(str::to_string)
+        .map_err(|e| ApiClientError::decode_error(ctx, resp.status, content_type, e))?;
+    record_order_event("map");
+    Ok(Box::new(concord_core::transport::DecodedResponse {
+        meta: resp.meta,
+        url: resp.url,
+        status: resp.status,
+        headers: resp.headers,
+        value,
+    }))
+}
+
+fn decode_ordering_fail(
+    resp: concord_core::advanced::BuiltResponse,
+    ctx: concord_core::advanced::ErrorContext,
+) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
+    record_order_event("decode");
+    let content_type = resp
+        .headers
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok());
+    let value = std::str::from_utf8(&resp.body)
+        .map(str::to_string)
+        .map_err(|e| ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e))?;
+    record_order_event("map");
+    Err(ApiClientError::Transform {
+        ctx,
+        source: std::io::Error::other(format!("mapping failed for {value}")).into(),
+    })
+}
+
+#[derive(Default)]
+struct OrderingCache {
+    cached: Arc<StdMutex<Option<concord_core::advanced::BuiltResponse>>>,
+    after_response_count: Arc<StdMutex<u32>>,
+}
+
+impl concord_core::advanced::CacheStore for OrderingCache {
+    fn before_request<'a>(
+        &'a self,
+        _request: &'a concord_core::advanced::BuiltRequest,
+    ) -> concord_core::advanced::CacheFuture<'a, concord_core::advanced::CacheBefore> {
+        Box::pin(async move {
+            let cached = self.cached.lock().expect("order cache entry lock").clone();
+            match cached {
+                Some(response) => concord_core::advanced::CacheBefore::Hit(response),
+                None => concord_core::advanced::CacheBefore::Miss,
+            }
+        })
+    }
+
+    fn after_response<'a>(
+        &'a self,
+        _request: &'a concord_core::advanced::BuiltRequest,
+        _response: &'a concord_core::advanced::BuiltResponse,
+        _revalidation: Option<concord_core::advanced::CacheRevalidation>,
+    ) -> concord_core::advanced::CacheFuture<'a, concord_core::advanced::CacheAfter> {
+        Box::pin(async move {
+            *self
+                .after_response_count
+                .lock()
+                .expect("order cache count lock") += 1;
+            record_order_event("store");
+            *self.cached.lock().expect("order cache entry lock") = Some(_response.clone());
+            concord_core::advanced::CacheAfter::Stored
+        })
+    }
+}
+
+struct UpdatingRevalidationCache {
+    cached: Arc<Mutex<concord_core::advanced::BuiltResponse>>,
+    after_response_count: Arc<StdMutex<u32>>,
+    revalidation_seen: Arc<StdMutex<Vec<bool>>>,
+    updated: Arc<StdMutex<bool>>,
+}
+
+impl UpdatingRevalidationCache {
+    fn new(cached: concord_core::advanced::BuiltResponse) -> Self {
+        Self {
+            cached: Arc::new(Mutex::new(cached)),
+            after_response_count: Arc::new(StdMutex::new(0)),
+            revalidation_seen: Arc::new(StdMutex::new(Vec::new())),
+            updated: Arc::new(StdMutex::new(false)),
+        }
+    }
+}
+
+impl concord_core::advanced::CacheStore for UpdatingRevalidationCache {
+    fn before_request<'a>(
+        &'a self,
+        _request: &'a concord_core::advanced::BuiltRequest,
+    ) -> concord_core::advanced::CacheFuture<'a, concord_core::advanced::CacheBefore> {
+        Box::pin(async move {
+            let cached = self.cached.lock().await.clone();
+            if *self.updated.lock().expect("updated flag lock") {
+                concord_core::advanced::CacheBefore::Hit(cached)
+            } else {
+                concord_core::advanced::CacheBefore::Revalidate {
+                    request_headers: HeaderMap::new(),
+                    cached: concord_core::advanced::CacheRevalidation {
+                        key: concord_core::advanced::CacheKey::new("revalidate".to_string()),
+                        cached_response: cached,
+                    },
+                }
+            }
+        })
+    }
+
+    fn after_response<'a>(
+        &'a self,
+        _request: &'a concord_core::advanced::BuiltRequest,
+        response: &'a concord_core::advanced::BuiltResponse,
+        revalidation: Option<concord_core::advanced::CacheRevalidation>,
+    ) -> concord_core::advanced::CacheFuture<'a, concord_core::advanced::CacheAfter> {
+        Box::pin(async move {
+            *self
+                .after_response_count
+                .lock()
+                .expect("revalidation count lock") += 1;
+            self.revalidation_seen
+                .lock()
+                .expect("revalidation seen lock")
+                .push(revalidation.is_some());
+            if let Some(revalidation) = revalidation {
+                if response.status == StatusCode::NOT_MODIFIED {
+                    let mut updated = revalidation.cached_response.clone();
+                    updated.status = response.status;
+                    updated.headers = response.headers.clone();
+                    *self.cached.lock().await = updated.clone();
+                    *self.updated.lock().expect("updated flag lock") = true;
+                    return concord_core::advanced::CacheAfter::Updated(Box::new(updated));
+                }
+                if response.status.is_success() {
+                    let mut updated = response.clone();
+                    updated.status = response.status;
+                    *self.cached.lock().await = updated.clone();
+                    *self.updated.lock().expect("updated flag lock") = true;
+                    return concord_core::advanced::CacheAfter::Updated(Box::new(updated));
+                }
+            }
+            concord_core::advanced::CacheAfter::Stored
+        })
+    }
+}
+
 #[tokio::test]
 async fn fresh_cache_hit_bypasses_rate_limit_and_transport() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -614,13 +813,238 @@ async fn stale_cache_fallback_happens_after_retry_declines() -> Result<(), ApiCl
 }
 
 #[tokio::test]
-async fn decode_failure_does_not_retry_or_use_stale_fallback() {
+async fn decode_failure_does_not_store_cache() -> Result<(), ApiClientError> {
+    let order_events = Arc::new(StdMutex::new(Vec::new()));
+    let cache = Arc::new(OrderingCache::default());
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xff")),
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xfe")),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let err = ORDER_EVENTS
+        .scope(order_events, async {
+            client
+                .request(OrderingEndpoint {
+                    policy: cache_policy(),
+                    map_mode: MapMode::Success,
+                })
+                .execute_decoded()
+                .await
+        })
+        .await
+        .expect_err("invalid body should fail decode");
+
+    assert!(err.to_string().contains("decode error"));
+    assert_eq!(
+        *after_response_count.lock().expect("order cache count lock"),
+        0
+    );
+    assert_eq!(sent_transport.sent_count().await, 1);
+
+    let err = ORDER_EVENTS
+        .scope(Arc::new(StdMutex::new(Vec::new())), async {
+            client
+                .request(OrderingEndpoint {
+                    policy: cache_policy(),
+                    map_mode: MapMode::Success,
+                })
+                .execute_decoded()
+                .await
+        })
+        .await
+        .expect_err("invalid body should fail decode again");
+
+    assert!(err.to_string().contains("decode error"));
+    assert_eq!(sent_transport.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn map_failure_does_not_store_cache() -> Result<(), ApiClientError> {
+    let cache = Arc::new(OrderingCache::default());
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            MockResponse::text(StatusCode::OK, "mapped"),
+            MockResponse::text(StatusCode::OK, "mapped-again"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let err = ORDER_EVENTS
+        .scope(Arc::new(StdMutex::new(Vec::new())), async {
+            client
+                .request(OrderingEndpoint {
+                    policy: cache_policy(),
+                    map_mode: MapMode::Fail,
+                })
+                .execute_decoded()
+                .await
+        })
+        .await
+        .expect_err("map failure should be terminal");
+
+    assert!(err.to_string().contains("transform error"));
+    assert_eq!(
+        *after_response_count.lock().expect("order cache count lock"),
+        0
+    );
+    assert_eq!(sent_transport.sent_count().await, 1);
+
+    let err = ORDER_EVENTS
+        .scope(Arc::new(StdMutex::new(Vec::new())), async {
+            client
+                .request(OrderingEndpoint {
+                    policy: cache_policy(),
+                    map_mode: MapMode::Fail,
+                })
+                .execute_decoded()
+                .await
+        })
+        .await
+        .expect_err("map failure should be terminal again");
+
+    assert!(err.to_string().contains("transform error"));
+    assert_eq!(sent_transport.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn revalidation_304_without_existing_entry_does_not_create_cache_entry() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::NOT_MODIFIED, "")],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let err = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("304 without revalidation state should not be cached");
+
+    assert!(err.to_string().contains("304"));
+    assert_eq!(*after_response_count.lock().await, 0);
+}
+
+#[tokio::test]
+async fn revalidation_304_updates_existing_decoded_entry_only() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(UpdatingRevalidationCache::new(built_response(
+        "Text",
+        StatusCode::OK,
+        "cached",
+    )));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::NOT_MODIFIED, "")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "cached");
+    assert_eq!(
+        *after_response_count
+            .lock()
+            .expect("revalidation count lock"),
+        1
+    );
+    assert_eq!(sent_transport.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn revalidation_200_after_decode_preserves_revalidation_context() -> Result<(), ApiClientError>
+{
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(UpdatingRevalidationCache::new(built_response(
+        "Text",
+        StatusCode::OK,
+        "cached",
+    )));
+    let after_response_count = cache.after_response_count.clone();
+    let revalidation_seen = cache.revalidation_seen.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "fresh")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "fresh");
+    assert_eq!(
+        *after_response_count
+            .lock()
+            .expect("revalidation count lock"),
+        1
+    );
+    assert_eq!(
+        revalidation_seen
+            .lock()
+            .expect("revalidation seen lock")
+            .as_slice(),
+        &[true]
+    );
+    assert_eq!(sent_transport.sent_count().await, 1);
+
+    let cached = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(cached.value(), "fresh");
+    assert_eq!(sent_transport.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn stale_fallback_remote_decode_failure_does_not_store_remote_failure() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let stale = built_response("Text", StatusCode::OK, "stale");
     let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
         events.clone(),
         stale,
     ));
+    let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
         events.clone(),
         vec![
@@ -649,39 +1073,59 @@ async fn decode_failure_does_not_retry_or_use_stale_fallback() {
 
     assert!(err.to_string().contains("decode error"));
     assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(*after_response_count.lock().await, 0);
     let events = events.lock().await.clone();
     assert!(!events.iter().any(|event| event == "cache_after_error"));
 }
 
 #[tokio::test]
-async fn successful_cacheable_response_is_written_before_decode() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
+async fn successful_decode_and_map_stores_cache() -> Result<(), ApiClientError> {
+    let order_events = Arc::new(StdMutex::new(Vec::new()));
+    let cache = Arc::new(OrderingCache::default());
     let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(
-            StatusCode::OK,
-            Bytes::from_static(b"\xff"),
-        )],
+        Arc::new(Mutex::new(Vec::new())),
+        vec![MockResponse::text(StatusCode::OK, "stored")],
     );
+    let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     configure_runtime(&mut client, Some(cache), None);
 
-    let err = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
+    let decoded = ORDER_EVENTS
+        .scope(order_events.clone(), async {
+            client
+                .request(OrderingEndpoint {
+                    policy: cache_policy(),
+                    map_mode: MapMode::Success,
+                })
+                .execute_decoded()
+                .await
         })
-        .execute_decoded()
-        .await
-        .expect_err("decode should fail after cache write");
+        .await?;
 
-    assert!(err.to_string().contains("decode error"));
-    assert_eq!(*after_response_count.lock().await, 1);
-    let events = events.lock().await.clone();
-    assert!(events.iter().any(|event| event == "cache_after_response"));
-    assert!(!events.iter().any(|event| event == "cache_after_error"));
+    assert_eq!(decoded.value(), "stored");
+    assert_eq!(
+        *after_response_count.lock().expect("order cache count lock"),
+        1
+    );
+    assert_eq!(sent_transport.sent_count().await, 1);
+    let events = order_events.lock().expect("order events lock").clone();
+    assert_eq!(events, vec!["decode", "map", "store"]);
+
+    let decoded = ORDER_EVENTS
+        .scope(order_events.clone(), async {
+            client
+                .request(OrderingEndpoint {
+                    policy: cache_policy(),
+                    map_mode: MapMode::Success,
+                })
+                .execute_decoded()
+                .await
+        })
+        .await?;
+    assert_eq!(decoded.value(), "stored");
+    assert_eq!(sent_transport.sent_count().await, 1);
+    Ok(())
 }
 
 #[tokio::test]
@@ -792,6 +1236,100 @@ async fn execute_raw_returns_classified_raw_response() -> Result<(), ApiClientEr
     assert_eq!(response.meta.endpoint, "Text");
     assert_eq!(response.url.as_str(), "https://example.com/text");
     assert_eq!(response.body, Bytes::from_static(b"raw"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn execute_raw_does_not_lookup_or_store_cache() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, "raw-1"),
+            MockResponse::text(StatusCode::OK, "raw-2"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let first = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_raw()
+        .await?;
+    let second = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_raw()
+        .await?;
+
+    assert_eq!(first.body, Bytes::from_static(b"raw-1"));
+    assert_eq!(second.body, Bytes::from_static(b"raw-2"));
+    assert_eq!(sent_transport.sent_count().await, 2);
+    assert_eq!(*after_response_count.lock().await, 0);
+    let events = events.lock().await.clone();
+    assert!(!events.iter().any(|event| event == "cache_before:<none>"));
+    assert!(!events.iter().any(|event| event == "cache_after_response"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn decoded_cache_entry_does_not_affect_execute_raw() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, "cached"),
+            MockResponse::text(StatusCode::OK, "raw"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+    assert_eq!(decoded.value(), "cached");
+    assert_eq!(*after_response_count.lock().await, 1);
+
+    let raw = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_raw()
+        .await?;
+    assert_eq!(raw.body, Bytes::from_static(b"raw"));
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.as_str() == "cache_before:<none>")
+            .count(),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.as_str() == "cache_after_response")
+            .count(),
+        1
+    );
     Ok(())
 }
 
@@ -1280,7 +1818,7 @@ async fn response_too_large_does_not_decode() {
 }
 
 #[tokio::test]
-async fn response_too_large_does_not_cache() {
+async fn body_limit_failure_does_not_store_cache() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let cache = Arc::new(RecordingCache::miss(events.clone()));
     let after_response_count = cache.after_response_count.clone();
