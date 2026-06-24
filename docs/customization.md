@@ -119,7 +119,7 @@ impl<T: Send + 'static> HasNextCursor for Page<T> {
 
 ## Custom Pagination Controllers
 
-A custom controller implements `PaginationController<Page>`. The controller owns pagination state, mutates the next page request through `PageRequest`, and decides whether to continue after each page.
+A custom controller implements `PaginationController<Page>`. The controller owns pagination state, mutates the next page request through `PageRequest`, and decides whether to continue after each page when the runtime has not already stopped.
 
 `paginate TypePath` constructs the controller through `Default`, so custom controller marker types must implement `Default + PaginationController<Page>`. This keeps the DSL closed: the DSL names a Rust type, not a runtime object or request-plan hook.
 
@@ -128,6 +128,7 @@ use concord_core::advanced::{
     PageAdvance, PageDecision, PageInit, PageRequest, PaginationController, ProgressKey,
 };
 use concord_core::prelude::ApiClientError;
+use std::num::NonZeroUsize;
 
 #[derive(Default)]
 pub struct HeaderCursorPagination;
@@ -150,6 +151,10 @@ impl PaginationController<Page<String>> for HeaderCursorPagination {
         request: &mut PageRequest<'_>,
     ) -> Result<(), ApiClientError> {
         request.set_query("page", state.page);
+        request.set_query("limit", 100);
+        request.set_expected_items_per_page(
+            NonZeroUsize::new(100).expect("page size is non-zero"),
+        );
         Ok(())
     }
 
@@ -159,9 +164,7 @@ impl PaginationController<Page<String>> for HeaderCursorPagination {
         page: &Page<String>,
         _ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError> {
-        if page.items.is_empty() {
-            return Ok(PageDecision::Stop);
-        }
+        let _ = page;
         state.page += 1;
         Ok(PageDecision::Continue)
     }
@@ -192,6 +195,9 @@ Controller rules:
 - Custom pagination uses `paginate TypePath` without a block.
 - Custom pagination controller types must implement `Default`.
 - `PageRequest` can set or remove query parameters and headers. Query keys may be owned/dynamic strings. Header mutation is fallible and returns `ApiClientError` for invalid header names instead of panicking.
+- `PageRequest::set_expected_items_per_page(NonZeroUsize)` tells the runtime how many items the current page requested. Set it during every `apply()` call that asks for a known page size; the value is per-page and does not persist.
+- `PageItems::item_count_hint()` must be exact when present. Implement it whenever possible so runtime empty/short-page termination and item limits can be decided before `advance()`.
+- When an exact hint proves an empty page, a short page, a hard-item-cap overflow, or completion of `TakeItems`, the runtime does not call `advance()`. Without a hint, `collect()` remains exact after consuming the page, but custom `advance()` may already have run.
 - `progress_key` is used for loop detection when enabled.
 - Runtime retry, cache, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
 

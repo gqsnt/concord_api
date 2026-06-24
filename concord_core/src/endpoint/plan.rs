@@ -144,8 +144,6 @@ pub enum PaginationPlan {
         limit_key: String,
         offset: u64,
         limit: u64,
-        stop_on_short_page: bool,
-        stop: crate::pagination::Stop,
     },
     Cursor {
         cursor_key: String,
@@ -154,7 +152,6 @@ pub enum PaginationPlan {
         per_page: u64,
         send_cursor_on_first: bool,
         stop_when_cursor_missing: bool,
-        stop: crate::pagination::Stop,
         next_cursor: CursorNextFn,
     },
     Paged {
@@ -162,8 +159,6 @@ pub enum PaginationPlan {
         per_page_key: String,
         page: u64,
         per_page: u64,
-        stop_on_short_page: bool,
-        stop: crate::pagination::Stop,
     },
     Custom(CustomPaginationPlan),
 }
@@ -203,7 +198,6 @@ impl PaginationPlan {
             per_page: value.per_page,
             send_cursor_on_first: value.send_cursor_on_first,
             stop_when_cursor_missing: value.stop_when_cursor_missing,
-            stop: value.stop,
             next_cursor: cursor_next::<Page>,
         }
     }

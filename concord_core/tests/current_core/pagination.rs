@@ -8,7 +8,9 @@ use concord_core::advanced::{
 use concord_core::internal::PaginationPlan;
 use concord_core::prelude::{ApiClientError, CursorPagination, PaginationTermination};
 use http::{HeaderValue, StatusCode};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use tokio::sync::Mutex;
 
 #[derive(Default)]
@@ -245,6 +247,236 @@ impl PaginationController<Vec<String>> for ConstantProgressChangingQueryPaginati
     }
 }
 
+#[derive(Default)]
+struct AlwaysContinueExpectedPagination;
+
+struct AlwaysContinueExpectedState {
+    page: u64,
+}
+
+impl PaginationController<Vec<String>> for AlwaysContinueExpectedPagination {
+    type State = AlwaysContinueExpectedState;
+
+    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
+        Ok(AlwaysContinueExpectedState { page: 0 })
+    }
+
+    fn apply(
+        &self,
+        state: &Self::State,
+        request: &mut PageRequest<'_>,
+    ) -> Result<(), ApiClientError> {
+        request.set_query("page", state.page);
+        request.set_expected_items_per_page(NonZeroUsize::new(2).expect("test page size"));
+        Ok(())
+    }
+
+    fn advance(
+        &self,
+        state: &mut Self::State,
+        _page: &Vec<String>,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        state.page += 1;
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(state.page))
+    }
+}
+
+macro_rules! counting_expected_controller {
+    ($controller:ident, $state:ident, $counter:ident) => {
+        static $counter: AtomicUsize = AtomicUsize::new(0);
+
+        #[derive(Default)]
+        struct $controller;
+
+        struct $state {
+            page: u64,
+        }
+
+        impl PaginationController<Vec<String>> for $controller {
+            type State = $state;
+
+            fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
+                Ok($state { page: 0 })
+            }
+
+            fn apply(
+                &self,
+                state: &Self::State,
+                request: &mut PageRequest<'_>,
+            ) -> Result<(), ApiClientError> {
+                request.set_query("page", state.page);
+                request.set_expected_items_per_page(
+                    NonZeroUsize::new(2).expect("test page size is non-zero"),
+                );
+                Ok(())
+            }
+
+            fn advance(
+                &self,
+                state: &mut Self::State,
+                _page: &Vec<String>,
+                _ctx: PageAdvance<'_>,
+            ) -> Result<PageDecision, ApiClientError> {
+                $counter.fetch_add(1, AtomicOrdering::SeqCst);
+                state.page += 1;
+                Ok(PageDecision::Continue)
+            }
+
+            fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
+                Some(ProgressKey::U64(state.page))
+            }
+        }
+    };
+}
+
+counting_expected_controller!(
+    EmptyHintCountingPagination,
+    EmptyHintState,
+    EMPTY_HINT_ADVANCES
+);
+counting_expected_controller!(
+    ShortHintCountingPagination,
+    ShortHintState,
+    SHORT_HINT_ADVANCES
+);
+counting_expected_controller!(HardCapCountingPagination, HardCapState, HARD_CAP_ADVANCES);
+counting_expected_controller!(
+    TakeItemsCountingPagination,
+    TakeItemsState,
+    TAKE_ITEMS_ADVANCES
+);
+
+#[test]
+fn custom_expected_items_per_page_zero_is_unrepresentable() {
+    assert!(NonZeroUsize::new(0).is_none());
+}
+
+static NO_HINT_ADVANCES: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Default)]
+struct NoHintCountingPagination;
+
+struct NoHintCountingState;
+
+impl PaginationController<NoHintItems> for NoHintCountingPagination {
+    type State = NoHintCountingState;
+
+    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
+        Ok(NoHintCountingState)
+    }
+
+    fn apply(
+        &self,
+        _state: &Self::State,
+        request: &mut PageRequest<'_>,
+    ) -> Result<(), ApiClientError> {
+        request
+            .set_expected_items_per_page(NonZeroUsize::new(2).expect("test page size is non-zero"));
+        Ok(())
+    }
+
+    fn advance(
+        &self,
+        _state: &mut Self::State,
+        _page: &NoHintItems,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        NO_HINT_ADVANCES.fetch_add(1, AtomicOrdering::SeqCst);
+        Ok(PageDecision::Stop)
+    }
+
+    fn progress_key(&self, _state: &Self::State) -> Option<ProgressKey> {
+        None
+    }
+}
+
+#[derive(Default)]
+struct AlwaysContinueNoExpectedPagination;
+
+struct AlwaysContinueNoExpectedState {
+    page: u64,
+}
+
+#[derive(Default)]
+struct AlwaysContinueNeverExpectedPagination;
+
+struct AlwaysContinueNeverExpectedState {
+    page: u64,
+}
+
+impl PaginationController<Vec<String>> for AlwaysContinueNeverExpectedPagination {
+    type State = AlwaysContinueNeverExpectedState;
+
+    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
+        Ok(AlwaysContinueNeverExpectedState { page: 0 })
+    }
+
+    fn apply(
+        &self,
+        state: &Self::State,
+        request: &mut PageRequest<'_>,
+    ) -> Result<(), ApiClientError> {
+        request.set_query("page", state.page);
+        request.clear_expected_items_per_page();
+        Ok(())
+    }
+
+    fn advance(
+        &self,
+        state: &mut Self::State,
+        _page: &Vec<String>,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        state.page += 1;
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(state.page))
+    }
+}
+
+impl PaginationController<Vec<String>> for AlwaysContinueNoExpectedPagination {
+    type State = AlwaysContinueNoExpectedState;
+
+    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
+        Ok(AlwaysContinueNoExpectedState { page: 0 })
+    }
+
+    fn apply(
+        &self,
+        state: &Self::State,
+        request: &mut PageRequest<'_>,
+    ) -> Result<(), ApiClientError> {
+        request.set_query("page", state.page);
+        if state.page == 0 {
+            request.set_expected_items_per_page(NonZeroUsize::new(2).expect("test page size"));
+        } else {
+            request.clear_expected_items_per_page();
+        }
+        Ok(())
+    }
+
+    fn advance(
+        &self,
+        state: &mut Self::State,
+        _page: &Vec<String>,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        state.page += 1;
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(state.page))
+    }
+}
+
 #[tokio::test]
 async fn custom_pagination_controller_drives_query_headers_and_stop() -> Result<(), ApiClientError>
 {
@@ -382,8 +614,6 @@ async fn retry_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientEr
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 
@@ -437,8 +667,6 @@ async fn offset_pagination_collects_page_items_without_has_next_cursor()
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 
@@ -477,7 +705,6 @@ async fn cursor_pagination_collects_until_cursor_missing() -> Result<(), ApiClie
             per_page: 2,
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
-            stop: Default::default(),
         }),
     };
 
@@ -511,7 +738,7 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
-            MockResponse::text(StatusCode::OK, "c|next=next-1"),
+            MockResponse::text(StatusCode::OK, "c,d|next=next-1"),
         ],
     );
     let sent = transport.clone();
@@ -526,7 +753,6 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
             per_page: 2,
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
-            stop: Default::default(),
         }),
     };
 
@@ -559,7 +785,7 @@ async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b|next=start-b"),
-            MockResponse::text(StatusCode::OK, "c|next=start-a"),
+            MockResponse::text(StatusCode::OK, "c,d|next=start-a"),
         ],
     );
     let sent = transport.clone();
@@ -574,7 +800,6 @@ async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
             per_page: 2,
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
-            stop: Default::default(),
         }),
     };
 
@@ -619,7 +844,6 @@ async fn cursor_pagination_missing_cursor_without_stop_is_non_progress_error() {
             per_page: 2,
             send_cursor_on_first: false,
             stop_when_cursor_missing: false,
-            stop: Default::default(),
         }),
     };
 
@@ -658,8 +882,6 @@ async fn paged_pagination_collects_page_items_without_has_next_cursor() -> Resul
             per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 
@@ -696,8 +918,6 @@ async fn paged_pagination_uses_page_numbers() -> Result<(), ApiClientError> {
             per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 
@@ -732,8 +952,6 @@ async fn hard_page_cap_zero_errors_before_transport() {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 
@@ -763,8 +981,6 @@ async fn hard_item_cap_zero_errors_before_transport() {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 
@@ -794,8 +1010,6 @@ async fn take_pages_zero_returns_empty_without_transport() -> Result<(), ApiClie
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -824,8 +1038,6 @@ async fn take_items_zero_returns_empty_without_transport() -> Result<(), ApiClie
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -862,8 +1074,6 @@ async fn take_items_truncates_final_page() -> Result<(), ApiClientError> {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -900,8 +1110,6 @@ async fn take_items_less_than_first_page_sends_one_page() -> Result<(), ApiClien
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -938,8 +1146,6 @@ async fn take_items_exact_boundary_stops_without_extra_page() -> Result<(), ApiC
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -976,8 +1182,6 @@ async fn take_pages_stops_without_error() -> Result<(), ApiClientError> {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -1021,8 +1225,6 @@ async fn hard_page_cap_errors_without_fetching_extra_page() {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -1059,8 +1261,6 @@ async fn hard_item_cap_errors_without_truncating() {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -1083,7 +1283,7 @@ async fn loop_detection_still_default_enabled() {
         events,
         vec![
             MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
-            MockResponse::text(StatusCode::OK, "c|next=next-1"),
+            MockResponse::text(StatusCode::OK, "c,d|next=next-1"),
         ],
     );
     let sent = transport.clone();
@@ -1098,7 +1298,6 @@ async fn loop_detection_still_default_enabled() {
             per_page: 2,
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
-            stop: Default::default(),
         }),
     };
 
@@ -1168,8 +1367,6 @@ async fn for_each_page_take_pages_stops_cleanly() -> Result<(), ApiClientError> 
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
     let pages = Arc::new(Mutex::new(Vec::new()));
@@ -1206,8 +1403,6 @@ async fn for_each_page_take_items_rejected_before_transport() {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -1242,8 +1437,6 @@ async fn for_each_page_receives_decoded_pages() -> Result<(), ApiClientError> {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
     let pages = Arc::new(Mutex::new(Vec::new()));
@@ -1284,8 +1477,6 @@ async fn max_items_error_includes_page_context() {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 3,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 
@@ -1349,6 +1540,593 @@ async fn collect_rejects_page_exceeding_max_items_without_hint() {
 }
 
 #[tokio::test]
+async fn collect_offset_short_first_page_stops_via_runtime() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 100,
+        },
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a", "b", "c"]);
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn collect_offset_empty_first_page_stops_via_runtime() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 100,
+        },
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::take_pages(100))
+        .collect()
+        .await?;
+
+    assert!(items.is_empty());
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn collect_paged_short_page_stops_via_runtime() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = PageOnlyItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::Paged {
+            page_key: "page".to_string(),
+            per_page_key: "per_page".to_string(),
+            page: 1,
+            per_page: 100,
+        },
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a", "b"]);
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn collect_cursor_short_page_stops_even_with_next_cursor() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "a,b|next=next-page")],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = CursorItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            cursor_key: "cursor".into(),
+            per_page_key: "limit".into(),
+            cursor: Some("start".to_string()),
+            per_page: 100,
+            send_cursor_on_first: true,
+            stop_when_cursor_missing: true,
+        }),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a", "b"]);
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn collect_cursor_empty_page_stops_even_with_next_cursor() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "|next=next-page")],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = CursorItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            cursor_key: "cursor".into(),
+            per_page_key: "limit".into(),
+            cursor: Some("start".to_string()),
+            per_page: 100,
+            send_cursor_on_first: true,
+            stop_when_cursor_missing: true,
+        }),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::take_pages(100))
+        .collect()
+        .await?;
+
+    assert!(items.is_empty());
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn take_items_short_page_returns_short_page_under_limit() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 100,
+        },
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::take_items(500))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a", "b", "c"]);
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn hard_item_cap_short_page_success_under_cap() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 100,
+        },
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_item_cap(10_000))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a", "b", "c"]);
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn hard_item_cap_still_errors_before_short_stop_when_page_exceeds_cap() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, numbered_items(0, 90)),
+            MockResponse::text(StatusCode::OK, numbered_items(90, 48)),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 90,
+        },
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_item_cap(100))
+        .collect()
+        .await
+        .expect_err("hard item cap must not be hidden by short-page stop");
+
+    assert!(matches!(err, ApiClientError::PaginationLimit { .. }));
+    assert_eq!(sent.sent_count().await, 2);
+}
+
+#[tokio::test]
+async fn take_items_exact_limit_still_wins_before_short_stop() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 100,
+        },
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::take_items(2))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a", "b"]);
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_collect_empty_page_with_hint_does_not_call_advance() -> Result<(), ApiClientError> {
+    EMPTY_HINT_ADVANCES.store(0, AtomicOrdering::SeqCst);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<EmptyHintCountingPagination, Vec<String>>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert!(items.is_empty());
+    assert_eq!(sent.sent_count().await, 1);
+    assert_eq!(EMPTY_HINT_ADVANCES.load(AtomicOrdering::SeqCst), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_collect_short_page_with_hint_does_not_call_advance() -> Result<(), ApiClientError> {
+    SHORT_HINT_ADVANCES.store(0, AtomicOrdering::SeqCst);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<ShortHintCountingPagination, Vec<String>>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a"]);
+    assert_eq!(sent.sent_count().await, 1);
+    assert_eq!(SHORT_HINT_ADVANCES.load(AtomicOrdering::SeqCst), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn hard_item_cap_hint_exceeded_does_not_call_advance() {
+    HARD_CAP_ADVANCES.store(0, AtomicOrdering::SeqCst);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let client = client(TestAuthVars::default(), transport);
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<HardCapCountingPagination, Vec<String>>(),
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_item_cap(2))
+        .collect()
+        .await
+        .expect_err("the exact hint exceeds the hard item cap");
+
+    assert!(matches!(err, ApiClientError::PaginationLimit { .. }));
+    assert_eq!(HARD_CAP_ADVANCES.load(AtomicOrdering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn take_items_hint_reached_does_not_call_advance() -> Result<(), ApiClientError> {
+    TAKE_ITEMS_ADVANCES.store(0, AtomicOrdering::SeqCst);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b,c")]);
+    let client = client(TestAuthVars::default(), transport);
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<TakeItemsCountingPagination, Vec<String>>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::take_items(2))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a", "b"]);
+    assert_eq!(TAKE_ITEMS_ADVANCES.load(AtomicOrdering::SeqCst), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_collect_no_hint_empty_page_may_call_advance_before_exact_collection()
+-> Result<(), ApiClientError> {
+    NO_HINT_ADVANCES.store(0, AtomicOrdering::SeqCst);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+    let endpoint = NoHintItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<NoHintCountingPagination, NoHintItems>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(2))
+        .collect()
+        .await?;
+
+    assert!(items.is_empty());
+    assert_eq!(sent.sent_count().await, 1);
+    assert_eq!(NO_HINT_ADVANCES.load(AtomicOrdering::SeqCst), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_collect_full_page_continues_when_expected_items_set() -> Result<(), ApiClientError>
+{
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::OK, "c"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<AlwaysContinueExpectedPagination, Vec<String>>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a", "b", "c"]);
+    assert_eq!(sent.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_collect_short_page_does_not_stop_when_expected_items_missing()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a"),
+            MockResponse::text(StatusCode::OK, ""),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<AlwaysContinueNeverExpectedPagination, Vec<String>>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a"]);
+    assert_eq!(sent.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_expected_items_is_per_page_not_sticky() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::OK, "c"),
+            MockResponse::text(StatusCode::OK, ""),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<AlwaysContinueNoExpectedPagination, Vec<String>>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a", "b", "c"]);
+    assert_eq!(sent.sent_count().await, 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn for_each_page_short_page_stops_after_callback_when_hint_available()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 2,
+        },
+    };
+
+    let mut pages = 0usize;
+    client
+        .request(endpoint)
+        .paginate(PaginationTermination::take_pages(100))
+        .for_each_page(|page| {
+            pages += 1;
+            async move {
+                assert_eq!(page.value, vec!["a"]);
+                Ok(())
+            }
+        })
+        .await?;
+
+    assert_eq!(pages, 1);
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn for_each_page_empty_page_stops_after_callback_when_hint_available()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 2,
+        },
+    };
+
+    let mut pages = 0usize;
+    client
+        .request(endpoint)
+        .paginate(PaginationTermination::take_pages(100))
+        .for_each_page(|page| {
+            pages += 1;
+            async move {
+                assert!(page.value.is_empty());
+                Ok(())
+            }
+        })
+        .await?;
+
+    assert_eq!(pages, 1);
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn for_each_page_short_page_does_not_stop_without_hint() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a"),
+            MockResponse::text(StatusCode::OK, ""),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = NoHintItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 2,
+        },
+    };
+
+    let mut pages = 0usize;
+    client
+        .request(endpoint)
+        .paginate(PaginationTermination::take_pages(2))
+        .for_each_page(|_page| {
+            pages += 1;
+            async move { Ok(()) }
+        })
+        .await?;
+
+    assert_eq!(pages, 2);
+    assert_eq!(sent.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
 async fn max_pages_error_includes_seen_items() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -1367,8 +2145,6 @@ async fn max_pages_error_includes_seen_items() {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: false,
-            stop: Default::default(),
         },
     };
 
@@ -1423,7 +2199,6 @@ async fn pagination_cache_keys_change_per_page_and_keep_auth_partitioning()
             per_page: 2,
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
-            stop: Default::default(),
         }),
     };
 
@@ -1473,8 +2248,6 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 
@@ -1548,8 +2321,6 @@ async fn auth_refresh_on_page_n_preserves_page_state_and_does_not_use_stale_fall
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 
@@ -1605,8 +2376,6 @@ async fn stale_decode_failure_does_not_advance_page_state() {
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
-            stop_on_short_page: true,
-            stop: Default::default(),
         },
     };
 

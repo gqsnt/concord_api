@@ -7,6 +7,7 @@ pub use cursor::{CursorPagination, HasNextCursor};
 use http::{HeaderMap, HeaderName, HeaderValue};
 pub use offset_limit::OffsetLimitPagination;
 pub use paged::PagedPagination;
+use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaginationTermination {
@@ -106,6 +107,7 @@ pub struct PageRequest<'a> {
     query: &'a mut Vec<(String, String)>,
     headers: &'a mut HeaderMap,
     ctx: ErrorContext,
+    expected_items_per_page: Option<NonZeroUsize>,
 }
 
 impl<'a> PageRequest<'a> {
@@ -118,6 +120,7 @@ impl<'a> PageRequest<'a> {
             query,
             headers,
             ctx,
+            expected_items_per_page: None,
         }
     }
 
@@ -163,6 +166,28 @@ impl<'a> PageRequest<'a> {
         let _ = self.headers.remove(name);
         Ok(())
     }
+
+    #[inline]
+    /// Records the non-zero number of items requested for the current page.
+    ///
+    /// Custom pagination controllers should set this during `apply()` whenever
+    /// they request a known page size. The value is scoped to the current page
+    /// request. The value does not persist to the next page.
+    pub fn set_expected_items_per_page(&mut self, n: NonZeroUsize) {
+        self.expected_items_per_page = Some(n);
+    }
+
+    #[inline]
+    /// Clears the expected item count for the current page request.
+    pub fn clear_expected_items_per_page(&mut self) {
+        self.expected_items_per_page = None;
+    }
+
+    #[inline]
+    /// Returns the expected item count recorded for the current page request.
+    pub fn expected_items_per_page(&self) -> Option<NonZeroUsize> {
+        self.expected_items_per_page
+    }
 }
 
 pub trait PaginationController<Page>: Send + Sync + 'static
@@ -189,16 +214,17 @@ where
     fn progress_key(&self, state: &Self::State) -> Option<ProgressKey>;
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
-pub enum Stop {
-    #[default]
-    OnEmpty,
-}
-
 /// Items container returned by a paginated endpoint.
 pub trait PageItems: Send + 'static {
     type Item: Send + 'static;
 
+    /// Returns the exact number of items in this page when it can be observed
+    /// without consuming the page.
+    ///
+    /// If this returns `Some(n)`, `n` must be exact. The runtime uses this
+    /// value for pre-advance empty/short-page termination and for
+    /// `for_each_page()` item-cap checks. Return `None` only when the page type
+    /// cannot expose the count without consuming itself.
     fn item_count_hint(&self) -> Option<usize> {
         None
     }

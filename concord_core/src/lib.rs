@@ -53,7 +53,7 @@ pub mod prelude {
     pub use crate::error::{ApiClientError, ErrorCategory};
     pub use crate::pagination::{
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
-        PaginationTermination, Stop,
+        PaginationTermination,
     };
     pub use crate::rate_limit::{
         RateLimitObservation, RateLimitObserver, RateLimitResponseContext,

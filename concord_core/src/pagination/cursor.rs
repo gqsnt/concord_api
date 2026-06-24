@@ -1,4 +1,3 @@
-use crate::pagination::Stop;
 use std::borrow::Cow;
 
 /// Output helper trait for cursor pagination.
@@ -23,8 +22,6 @@ impl<T: Send + 'static> HasNextCursor for Vec<T> {
 /// - response: provides a "next cursor"
 #[derive(Clone, Debug)]
 pub struct CursorPagination {
-    pub stop: Stop,
-
     /// Query key for cursor (ex: "cursor", "pageCursor", "starting_after").
     pub cursor_key: Cow<'static, str>,
     /// Query key for per-page (ex: "per_page", "pageSize", "limit").
@@ -45,7 +42,6 @@ pub struct CursorPagination {
 impl Default for CursorPagination {
     fn default() -> Self {
         Self {
-            stop: Stop::default(),
             cursor_key: Cow::from("cursor"),
             per_page_key: Cow::from("per_page"),
             cursor: None,

@@ -40,7 +40,7 @@ Custom pagination implements `PaginationController`.
 
 `PageRequest` represents the next page request mutation.
 
-`PageRequest` is constructed by the runtime, not by user code. Controllers mutate it through query/header helpers. Query keys can be owned or dynamic. Header mutation is fallible and invalid header names must return typed pagination errors rather than panicking.
+`PageRequest` is constructed by the runtime, not by user code. Controllers mutate it through query/header helpers. Query keys can be owned or dynamic. Header mutation is fallible and invalid header names must return typed pagination errors rather than panicking. Custom controllers that request a known page size set it through `PageRequest::set_expected_items_per_page(NonZeroUsize)` during `apply()`. The value is per page request and starts as `None` for each page.
 
 `PageDecision` tells the runtime whether to continue, stop, or error.
 
@@ -54,6 +54,21 @@ additional guard.
 
 The macro `paginate` block resolves controller field assignments. Codegen connects those assignments to the runtime controller traits; the runtime drives page requests and decodes each page through the endpoint response codec.
 
+Empty-page and short-page termination are runtime invariants, not
+controller-specific rules. The runtime obtains expected page size from built-in
+offset/page/cursor controllers (`limit` or `per_page`) or from custom
+`PageRequest::set_expected_items_per_page(NonZeroUsize)`. `PageItems` count
+hints are exact when present. The runtime uses an exact hint to detect common
+content termination before controller advance, and does not call advance after
+a hinted empty or short page.
+
+`collect()` still validates actual items and applies exact `TakeItems`
+truncation after `into_items()`. Because that method consumes the page while
+cursor/custom advance can require a page reference, a page without an item
+count hint may be advanced before exact post-consumption termination or a hard
+item-cap error is known. No additional request is sent after the exact result is
+known. This limitation is part of the v1 `PageItems` contract.
+
 Collection bounds are shape-specific: offset, page-number, and custom pagination collection require `PageItems`; built-in cursor pagination additionally requires `HasNextCursor`. There is no implicit page or item cap after `.paginate(...)`; callers must pass an explicit `PaginationTermination`.
 
 `HardPageCap(n)` and `HardItemCap(n)` are hard safety caps and zero values are
@@ -62,8 +77,9 @@ typed pagination configuration errors before the first transport send.
 empty/no-op result without transport. Item limits are enforced from the actual
 collected items in `collect()`; `for_each_page()` supports page-based
 termination exactly and rejects `TakeItems` because it cannot truncate whole
-page responses. Cursor pagination with `stop_when_cursor_missing` stops on
-missing cursor; continuing without changing the request identity is a typed
-non-progress error instead of an infinite loop. Pagination progress is checked
-against every logical request identity seen so far in the run, not just the
-immediately previous page.
+page responses. `for_each_page()` can apply runtime empty/short-page stops only
+when `PageItems::item_count_hint()` is present. Cursor pagination with
+`stop_when_cursor_missing` stops on missing cursor; continuing without changing
+the request identity is a typed non-progress error instead of an infinite loop.
+Pagination progress is checked against every logical request identity seen so
+far in the run, not just the immediately previous page.

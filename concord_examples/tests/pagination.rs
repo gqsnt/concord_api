@@ -39,9 +39,9 @@ async fn offset_pagination_collects_items_and_preserves_query_shape() {
 async fn cursor_pagination_for_each_page_uses_next_cursor() {
     let (transport, handle) = mock()
         .reply(json_reply(
-            r#"{"items":[{"id":10}],"next_cursor":"next-page"}"#,
+            r#"{"items":[{"id":10},{"id":11}],"next_cursor":"next-page"}"#,
         ))
-        .reply(json_reply(r#"{"items":[{"id":11}],"next_cursor":null}"#))
+        .reply(json_reply(r#"{"items":[{"id":12}],"next_cursor":null}"#))
         .build();
     let api = PaginationApi::new_with_transport(transport);
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -61,7 +61,7 @@ async fn cursor_pagination_for_each_page_uses_next_cursor() {
         .await
         .expect("cursor pagination for_each_page succeeds");
 
-    assert_eq!(*seen.lock().await, vec![10, 11]);
+    assert_eq!(*seen.lock().await, vec![10, 11, 12]);
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 2);
     assert_request(&recorded[0])

@@ -14,8 +14,28 @@ The runtime treats pagination as a deterministic page loop:
 2. apply pagination mutations for that page
 3. execute the page request through the normal cache/rate-limit/retry/auth pipeline
 4. decode the response
-5. ask the pagination controller whether to continue or stop
-6. derive the next page request or return
+5. use an exact item-count hint, when available, to apply common page-content
+   stop rules before controller advance
+6. ask the pagination controller whether to continue or stop only when the
+   runtime has not already stopped
+7. derive the next page request or return
+
+Common page-content stop rules are runtime invariants, not controller-specific
+behavior:
+
+- an empty page stops pagination
+- a short page stops pagination when Concord knows the expected page size
+
+The current page is included before stopping. `PageItems::item_count_hint()` is
+exact when present, and the runtime uses it before calling controller advance.
+Page types should implement it whenever they can expose the count without
+consuming themselves. Built-in offset, page-number, and
+cursor pagination provide the expected page size automatically from `limit` or
+`per_page`. Custom pagination controllers can call
+`PageRequest::set_expected_items_per_page(NonZeroUsize)` during `apply()` when
+they request a specific page size. If custom pagination does not set an
+expected size, `collect()` still stops on empty pages, but Concord cannot
+generically detect a short page.
 
 If a later page request would reuse any previously seen logical request
 identity, the runtime returns a typed pagination error instead of silently
@@ -53,7 +73,7 @@ let items = api
 
 The runtime keeps request parameters stable while advancing the pagination controller fields.
 
-Custom pagination controllers receive a mutable `PageRequest` for the next page. Query mutation accepts borrowed or owned keys, so controllers can compute dynamic query names. Header mutation is fallible: invalid header names return `ApiClientError::Pagination` instead of panicking. `PageRequest::new` is an internal runtime construction hook, not a public user construction API.
+Custom pagination controllers receive a mutable `PageRequest` for the next page. Query mutation accepts borrowed or owned keys, so controllers can compute dynamic query names. Header mutation is fallible: invalid header names return `ApiClientError::Pagination` instead of panicking. Controllers that request a specific page size should call `set_expected_items_per_page(NonZeroUsize)` on each page request. The expected count is per page and does not persist. `PageRequest::new` is an internal runtime construction hook, not a public user construction API.
 
 Paginated endpoints with request bodies are rejected in v1. Concord does not
 reuse or replay endpoint request bodies across page requests.
@@ -140,13 +160,30 @@ return typed pagination errors before the first page request is sent.
 `TakePages(0)` and `TakeItems(0)` return an empty collection without transport
 for `collect()`. `TakePages(0)` is a no-op for `for_each_page()`.
 
-`collect()` supports all four termination modes. `for_each_page()` supports
-page-based termination exactly. `TakeItems` is rejected for `for_each_page()`
+`collect()` supports all four termination modes. Item collection, exact
+`TakeItems` truncation, and final hard-item-cap validation use the items returned
+by `PageItems::into_items()`. Pre-advance empty/short-page stop and pre-advance
+item-limit decisions require an exact `item_count_hint()`, because
+`into_items()` consumes the page while cursor and custom advance logic may need
+to borrow it. Without a hint, collection and limits remain exact and no extra
+page is fetched after the exact terminal result is known, but controller
+advance may already have run. `HardItemCap` never truncates.
+
+`for_each_page()` supports page-based termination exactly. Runtime empty/short
+page stops use `PageItems::item_count_hint()` because the callback receives
+whole page responses. If the hint is missing, `for_each_page()` cannot detect
+empty or short pages generically. `TakeItems` is rejected for `for_each_page()`
 because the callback receives whole pages; use `collect()` when item-level
 truncation is required.
 
 Retry and auth refresh preserve the current page state. A retry for page `N` retries page `N`, not page `N + 1`.
 
-Successful page responses are decoded and handed to the pagination controller before state advances. Decode failure, stale fallback failure, or retry for a page does not advance the controller state.
+Successful page responses with an exact item-count hint are checked for common
+content termination before the controller can advance. A hinted hard-item-cap
+overflow or completed `TakeItems` request also prevents advance. For page types
+without a hint, `collect()` can determine exact item termination only after
+`into_items()` consumes the page, so controller advance may already have run.
+Decode failure, stale fallback failure, and retry for a page never advance the
+controller state.
 
 Cursor pagination follows the same per-page runtime order. `stop_when_cursor_missing` still stops when a cursor is absent; if pagination continues without changing the next request identity, Concord raises a typed non-progress error rather than reissuing the same page forever.

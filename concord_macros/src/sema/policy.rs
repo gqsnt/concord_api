@@ -62,16 +62,13 @@ fn validate_paginate_assignment_key(ctrl_ty: &Path, key: &Ident) -> Result<()> {
     let key_name = key.to_string();
     let allowed = match controller.as_str() {
         "OffsetLimitPagination" => [
-            "stop",
             "offset_key",
             "limit_key",
             "offset",
             "limit",
-            "stop_on_short_page",
         ]
         .as_slice(),
         "CursorPagination" => [
-            "stop",
             "cursor_key",
             "per_page_key",
             "cursor",
@@ -81,12 +78,10 @@ fn validate_paginate_assignment_key(ctrl_ty: &Path, key: &Ident) -> Result<()> {
         ]
         .as_slice(),
         "PagedPagination" => [
-            "stop",
             "page_key",
             "per_page_key",
             "page",
             "per_page",
-            "stop_on_short_page",
         ]
         .as_slice(),
         _ => return validate_paginate_controller(ctrl_ty),
