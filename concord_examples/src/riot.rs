@@ -1060,7 +1060,7 @@ pub async fn riot_test() -> Result<(), ApiClientError> {
         .match_v5_matches()
         .ids_by_puuid(account.puuid.clone())
         .count(100)
-        .paginate(PaginationTermination::take_items(60))
+        .paginate(PaginationTermination::take_items(400))
         .collect()
         .await?;
 
