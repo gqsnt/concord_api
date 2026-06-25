@@ -46,6 +46,10 @@ Flat `retry`, `cache`, and `rate_limit` profile declarations remain valid. `poli
 
 `max_attempts` is the total number of send tries, including the first send. `retry_after` honors `Retry-After` response headers for retryable statuses.
 
+Retry is a bounded transport/status decision layer. Retry decisions happen after transport-response metadata observation and auth rejection handling, and before stale fallback and endpoint decode/map. Retry does not handle endpoint decode failures or map/transform failures, and custom retry policies cannot make a failed endpoint execution cache-admissible. Retryable HTTP/status/transport failures are not cached before retry. Fresh cache hits bypass retry. If stale fallback is enabled, it runs only after retry declines or exhausts. `execute_raw()` bypasses cache; its retry behavior is the same as documented runtime raw execution behavior.
+
+Invalid or overflowing retry delays return a typed configuration error rather than panicking or sleeping.
+
 ```rust
 retry read {
     max_attempts 2

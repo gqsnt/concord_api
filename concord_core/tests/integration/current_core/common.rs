@@ -5,9 +5,9 @@ use concord_core::advanced::{
     CacheAfter, CacheBefore, CacheConfig, CacheFuture, CacheKey, CacheRevalidation, CacheStore,
     DecodedResponse, PostResponseHookContext, PreSendHookContext, RateLimitContext,
     RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RequestMeta, RuntimeHooks, Transport, TransportBody, TransportError,
-    TransportErrorHookContext, TransportErrorKind, TransportRequest, TransportResponse,
-    apply_basic_credential,
+    RateLimiter, RequestMeta, RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, Transport,
+    TransportBody, TransportError, TransportErrorHookContext, TransportErrorKind, TransportRequest,
+    TransportResponse, apply_basic_credential,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
@@ -1056,6 +1056,55 @@ impl RateLimiter for ObservationRateLimiter {
             events.push(format!("rate_headers:{headers:?}"));
             Ok(RateLimitResponseAction::Continue)
         })
+    }
+}
+
+pub struct RecordingRetryPolicy {
+    pub events: Arc<Mutex<Vec<String>>>,
+    pub decision: RetryDecision,
+    pub max_retries: u32,
+}
+
+impl RecordingRetryPolicy {
+    pub fn new(events: Arc<Mutex<Vec<String>>>, decision: RetryDecision, max_retries: u32) -> Self {
+        Self {
+            events,
+            decision,
+            max_retries,
+        }
+    }
+}
+
+impl RetryPolicy for RecordingRetryPolicy {
+    fn max_retries(&self) -> u32 {
+        self.max_retries
+    }
+
+    fn should_retry_checked(
+        &self,
+        ctx: &RetryContext<'_>,
+    ) -> Result<RetryDecision, ApiClientError> {
+        let events = self.events.clone();
+        let endpoint = ctx.endpoint;
+        let method = ctx.method.clone();
+        let url = ctx.url.to_string();
+        let attempt = ctx.attempt;
+        let retry_count = ctx.retry_count;
+        let page_index = ctx.page_index;
+        let idempotent = ctx.idempotent;
+        let outcome = format!("{:?}", ctx.outcome);
+        let request_headers = format!("{:?}", ctx.request_headers);
+        let response_headers = format!("{:?}", ctx.response_headers);
+        let decision = self.decision;
+        let mut events = events.try_lock().expect("retry events lock");
+        events.push(format!(
+            "retry_ctx:{endpoint}:{method}:{url}:{attempt}:{retry_count}:{page_index}:{idempotent}"
+        ));
+        events.push(format!("retry_outcome:{outcome}"));
+        events.push(format!("retry_request_headers:{request_headers}"));
+        events.push(format!("retry_response_headers:{response_headers}"));
+        events.push(format!("retry_decision:{decision:?}"));
+        Ok(self.decision)
     }
 }
 

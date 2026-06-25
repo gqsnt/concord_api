@@ -30,6 +30,8 @@ This order is not user-configurable.
 
 Runtime hooks and rate-limit observation are transport-response metadata observations, not endpoint-success hooks. They may observe HTTP responses that later fail auth handling, retry, stale fallback, or decode/map, but they never receive response body bytes or raw auth material. Cache admission is different: successful values are stored only after endpoint decode and any map/transform succeed.
 
+Retry is a bounded transport/status decision layer. It runs after transport-response observation and auth rejection handling, and before stale fallback and endpoint decode/map. Retry does not handle endpoint decode failures or map/transform failures, and it cannot make a failed endpoint execution cache-admissible. Fresh cache hits bypass retry. `execute_raw()` bypasses cache; its retry behavior follows the documented raw-execution path.
+
 ## Invariants
 
 A fresh cache hit returns before rate-limit acquisition or transport.

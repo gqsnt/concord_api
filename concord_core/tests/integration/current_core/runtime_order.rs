@@ -514,6 +514,157 @@ async fn custom_retry_policy_valid_retry_after_still_retries() -> Result<(), Api
 }
 
 #[tokio::test]
+async fn custom_retry_policy_huge_delay_returns_typed_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::RetryAfter(Duration::MAX),
+        8,
+    )));
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("huge custom retry delay should be rejected before sleeping");
+
+    assert_eq!(err.category(), concord_core::error::ErrorCategory::Config);
+    assert!(err.to_string().contains("retry policy duration overflowed"));
+    assert_eq!(sent.sent_count().await, 1);
+    let retry_events = retry_events.lock().await.clone();
+    assert_eq!(retry_events.len(), 5);
+    assert!(
+        retry_events
+            .iter()
+            .any(|event| event.starts_with("retry_decision:RetryAfter"))
+    );
+}
+
+#[tokio::test]
+async fn custom_retry_policy_zero_delay_is_allowed_and_retries() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::RetryAfter(Duration::ZERO),
+        8,
+    )));
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent.sent_count().await, 2);
+    let retry_events = retry_events.lock().await.clone();
+    assert!(
+        retry_events
+            .iter()
+            .any(|event| event.starts_with("retry_decision:RetryAfter"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_retry_policy_cannot_exceed_configured_max_attempts() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-1"),
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-2"),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        1,
+    )));
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("retry budget exhaustion should stop after one retry");
+
+    assert!(matches!(
+        err,
+        ApiClientError::HttpStatus {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            ..
+        }
+    ));
+    assert_eq!(sent.sent_count().await, 2);
+    let retry_events = retry_events.lock().await.clone();
+    assert_eq!(positions(&retry_events, "retry_decision:Retry").len(), 1);
+}
+
+#[tokio::test]
+async fn custom_retry_decision_happens_after_hook_and_rate_limit_observation()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, None, Some(limiter));
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    let hook = first_event_with_prefix(&events, "hook_status:500 Internal Server Error");
+    let rate = first_event_with_prefix(&events, "rate_status:500 Internal Server Error");
+    let retry = first_event_with_prefix(&events, "retry_decision:Retry");
+    let second_send = positions(&events, "transport")[1];
+    assert!(hook < rate);
+    assert!(rate < retry);
+    assert!(retry < second_send);
+    assert!(!events.iter().any(|event| event.contains("PR66_")));
+    Ok(())
+}
+
+#[tokio::test]
 async fn configured_transport_error_kind_retries_then_succeeds() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::with_outcomes(
@@ -919,6 +1070,157 @@ async fn runtime_hooks_observe_auth_rejection_before_auth_handling() -> Result<(
 }
 
 #[tokio::test]
+async fn auth_rejection_preempts_custom_retry_policy_for_401() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::UNAUTHORIZED, "unauthorized"),
+            MockResponse::text(StatusCode::OK, "recovered"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::bearer("PR66_BEARER_401_DO_NOT_LEAK", "refresh", events.clone()),
+        transport,
+    );
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(
+        &mut client,
+        None,
+        Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+    );
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "recovered");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    let hook = first_event_with_prefix(&events, "hook_status:401 Unauthorized");
+    let rate = first_event_with_prefix(&events, "rate_status:401 Unauthorized");
+    let auth = first_position(&events, "auth_rejection:401 Unauthorized");
+    assert!(hook < rate);
+    assert!(rate < auth);
+    assert!(events.iter().any(|event| event == "auth_retry"));
+    assert!(retry_events.lock().await.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn auth_rejection_preempts_custom_retry_policy_for_403() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::FORBIDDEN, "forbidden"),
+            MockResponse::text(StatusCode::OK, "recovered"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::bearer("PR66_BEARER_403_DO_NOT_LEAK", "refresh", events.clone()),
+        transport,
+    );
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(
+        &mut client,
+        None,
+        Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+    );
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "recovered");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    let hook = first_event_with_prefix(&events, "hook_status:403 Forbidden");
+    let rate = first_event_with_prefix(&events, "rate_status:403 Forbidden");
+    let auth = first_position(&events, "auth_rejection:403 Forbidden");
+    assert!(hook < rate);
+    assert!(rate < auth);
+    assert!(events.iter().any(|event| event == "auth_retry"));
+    assert!(retry_events.lock().await.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn never_refresh_auth_rejection_does_not_fall_through_to_custom_retry() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::bearer(
+            "PR66_BEARER_REJECTION_DO_NOT_LEAK",
+            "user-a",
+            events.clone(),
+        ),
+        transport,
+    );
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(
+        &mut client,
+        None,
+        Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+    );
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("terminal auth rejection should win");
+
+    assert!(err.to_string().contains("auth challenge rejected"));
+    assert_eq!(sent_transport.sent_count().await, 1);
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_status:403 Forbidden"))
+    );
+    assert!(events.iter().any(|event| event.starts_with("auth_fail")));
+    assert!(retry_events.lock().await.is_empty());
+}
+
+#[tokio::test]
 async fn runtime_hooks_do_not_observe_body_on_http_status_error() {
     const RESPONSE_SENTINEL: &str = "PR65_RESPONSE_BODY_SENTINEL_DO_NOT_LEAK";
 
@@ -1014,6 +1316,176 @@ async fn transport_observation_does_not_leak_basic_auth_material() -> Result<(),
 }
 
 #[tokio::test]
+async fn custom_retry_context_does_not_expose_bearer_auth() {
+    const BEARER_SECRET: &str = "PR66_BEARER_SECRET_DO_NOT_LEAK";
+    const RESPONSE_SENTINEL: &str = "PR66_RESPONSE_BODY_SENTINEL_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            RESPONSE_SENTINEL,
+        )],
+    );
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::bearer(BEARER_SECRET, "user-a", Arc::new(Mutex::new(Vec::new()))),
+        transport,
+    );
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Stop,
+        8,
+    )));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("http status error should remain terminal");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    let retry_events = retry_events.lock().await.clone();
+    assert!(
+        retry_events
+            .iter()
+            .any(|event| event.starts_with("retry_ctx:"))
+    );
+    assert!(
+        !retry_events
+            .iter()
+            .any(|event| event.contains(BEARER_SECRET))
+    );
+    assert!(
+        !retry_events
+            .iter()
+            .any(|event| event.contains(RESPONSE_SENTINEL))
+    );
+}
+
+#[tokio::test]
+async fn custom_retry_context_does_not_expose_query_auth() {
+    const QUERY_SECRET: &str = "PR66_QUERY_SECRET_DO_NOT_LEAK";
+    const RESPONSE_SENTINEL: &str = "PR66_RESPONSE_BODY_SENTINEL_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            RESPONSE_SENTINEL,
+        )],
+    );
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::bearer(QUERY_SECRET, "user-a", Arc::new(Mutex::new(Vec::new()))),
+        transport,
+    );
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Stop,
+        8,
+    )));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Query("api_key")),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("http status error should remain terminal");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    let retry_events = retry_events.lock().await.clone();
+    assert!(
+        retry_events
+            .iter()
+            .any(|event| event.starts_with("retry_ctx:"))
+    );
+    assert!(
+        !retry_events
+            .iter()
+            .any(|event| event.contains(QUERY_SECRET))
+    );
+    assert!(
+        !retry_events
+            .iter()
+            .any(|event| event.contains(RESPONSE_SENTINEL))
+    );
+}
+
+#[tokio::test]
+async fn custom_retry_context_does_not_expose_basic_auth_material() {
+    const BASIC_USERNAME: &str = "PR66_BASIC_USERNAME_DO_NOT_LEAK";
+    const BASIC_PASSWORD: &str = "PR66_BASIC_PASSWORD_DO_NOT_LEAK";
+    const RESPONSE_SENTINEL: &str = "PR66_RESPONSE_BODY_SENTINEL_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            RESPONSE_SENTINEL,
+        )],
+    );
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::basic(
+            BASIC_USERNAME,
+            BASIC_PASSWORD,
+            "basic",
+            Arc::new(Mutex::new(Vec::new())),
+        ),
+        transport,
+    );
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Stop,
+        8,
+    )));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Basic),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("http status error should remain terminal");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    let retry_events = retry_events.lock().await.clone();
+    assert!(
+        retry_events
+            .iter()
+            .any(|event| event.starts_with("retry_ctx:"))
+    );
+    assert!(
+        !retry_events
+            .iter()
+            .any(|event| event.contains(BASIC_USERNAME))
+    );
+    assert!(
+        !retry_events
+            .iter()
+            .any(|event| event.contains(BASIC_PASSWORD))
+    );
+    assert!(
+        !retry_events
+            .iter()
+            .any(|event| event.contains(RESPONSE_SENTINEL))
+    );
+}
+
+#[tokio::test]
 async fn stale_cache_fallback_happens_after_retry_exhaustion() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let stale = built_response("Text", StatusCode::OK, "stale");
@@ -1106,6 +1578,109 @@ async fn stale_cache_fallback_happens_after_retry_declines() -> Result<(), ApiCl
 }
 
 #[tokio::test]
+async fn custom_retry_declines_before_stale_fallback() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response("Text", StatusCode::OK, "stale");
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let after_response_count = cache.after_response_count.clone();
+    let after_error_count = cache.after_error_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "do-not-retry",
+        )],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        events.clone(),
+        RetryDecision::Stop,
+        8,
+    )));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "stale");
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert_eq!(*after_error_count.lock().await, 1);
+    let events = events.lock().await.clone();
+    let retry = first_position(&events, "retry_decision:Stop");
+    let stale_fallback = first_position(&events, "cache_after_error");
+    assert!(retry < stale_fallback);
+    assert!(!events.iter().any(|event| event == "cache_after_response"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_retry_exhaustion_then_stale_fallback() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response("Text", StatusCode::OK, "stale");
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let after_response_count = cache.after_response_count.clone();
+    let after_error_count = cache.after_error_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "still-failing"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        events.clone(),
+        RetryDecision::RetryAfter(Duration::ZERO),
+        1,
+    )));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "stale");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert_eq!(*after_error_count.lock().await, 1);
+    let events = events.lock().await.clone();
+    let retry = first_event_with_prefix(&events, "retry_decision:RetryAfter");
+    let stale_fallback = first_position(&events, "cache_after_error");
+    let transports = positions(&events, "transport");
+    assert_eq!(transports.len(), 2);
+    assert!(transports[0] < retry);
+    assert!(retry < transports[1]);
+    assert!(transports[1] < stale_fallback);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.starts_with("retry_decision:RetryAfter"))
+            .count(),
+        1
+    );
+    assert!(!events.iter().any(|event| event == "cache_after_response"));
+    Ok(())
+}
+
+#[tokio::test]
 async fn decode_failure_does_not_store_cache() -> Result<(), ApiClientError> {
     let order_events = Arc::new(StdMutex::new(Vec::new()));
     let cache = Arc::new(OrderingCache::default());
@@ -1160,6 +1735,80 @@ async fn decode_failure_does_not_store_cache() -> Result<(), ApiClientError> {
 }
 
 #[tokio::test]
+async fn custom_retry_policy_not_invoked_for_decode_failure() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xff")),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("decode failure should be terminal");
+
+    assert_eq!(err.category(), concord_core::error::ErrorCategory::Decode);
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert!(retry_events.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn decode_failure_does_not_consume_retry_budget() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xff")),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        1,
+    )));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("decode failure should be terminal");
+
+    assert_eq!(err.category(), concord_core::error::ErrorCategory::Decode);
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert!(retry_events.lock().await.is_empty());
+}
+
+#[tokio::test]
 async fn map_failure_does_not_store_cache() -> Result<(), ApiClientError> {
     let cache = Arc::new(OrderingCache::default());
     let after_response_count = cache.after_response_count.clone();
@@ -1209,6 +1858,50 @@ async fn map_failure_does_not_store_cache() -> Result<(), ApiClientError> {
 
     assert!(err.to_string().contains("transform error"));
     assert_eq!(sent_transport.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_retry_policy_not_invoked_for_map_failure() -> Result<(), ApiClientError> {
+    let cache = Arc::new(OrderingCache::default());
+    let after_response_count = cache.after_response_count.clone();
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            MockResponse::text(StatusCode::OK, "mapped"),
+            MockResponse::text(StatusCode::OK, "mapped-again"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
+
+    let err = ORDER_EVENTS
+        .scope(Arc::new(StdMutex::new(Vec::new())), async {
+            client
+                .request(OrderingEndpoint {
+                    policy: cache_policy(),
+                    map_mode: MapMode::Fail,
+                })
+                .execute_decoded()
+                .await
+        })
+        .await
+        .expect_err("map failure should be terminal");
+
+    assert!(err.to_string().contains("transform error"));
+    assert_eq!(
+        *after_response_count.lock().expect("order cache count lock"),
+        0
+    );
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert!(retry_events.lock().await.is_empty());
     Ok(())
 }
 
@@ -1570,6 +2263,54 @@ async fn execute_raw_does_not_lookup_or_store_cache() -> Result<(), ApiClientErr
     let events = events.lock().await.clone();
     assert!(!events.iter().any(|event| event == "cache_before:<none>"));
     assert!(!events.iter().any(|event| event == "cache_after_response"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn execute_raw_uses_retry_but_bypasses_cache() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "raw"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
+
+    let raw = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_raw()
+        .await?;
+
+    assert_eq!(raw.status, StatusCode::OK);
+    assert_eq!(raw.body, Bytes::from_static(b"raw"));
+    assert_eq!(sent_transport.sent_count().await, 2);
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert!(
+        events
+            .lock()
+            .await
+            .iter()
+            .all(|event| !event.starts_with("cache_before:"))
+    );
+    assert_eq!(
+        positions(&retry_events.lock().await, "retry_decision:Retry").len(),
+        1
+    );
     Ok(())
 }
 

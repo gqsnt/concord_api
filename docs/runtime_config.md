@@ -47,6 +47,7 @@ metadata. They never receive request or response body bytes. Concord does not
 route body bytes through debug sinks, stderr logs, hooks, or callback APIs.
 Rate-limit observation follows the same metadata-only boundary and remains
 response-based rather than endpoint-success based.
+Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run before stale fallback and endpoint decode/map. They do not see body bytes or raw auth material and cannot make a failed endpoint execution cache-admissible.
 
 Custom cache stores receive the logical `BuiltRequest`. Protected requests are
 eligible for cache only when the logical request carries a safe auth identity;
