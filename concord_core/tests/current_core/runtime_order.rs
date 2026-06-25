@@ -1422,7 +1422,7 @@ async fn very_verbose_debug_does_not_emit_request_or_response_body_bytes()
 }
 
 #[tokio::test]
-async fn dev_body_capture_is_disabled_by_default() -> Result<(), ApiClientError> {
+async fn dev_body_capture_disabled_by_default() -> Result<(), ApiClientError> {
     let dir = unique_capture_dir("disabled");
     std::fs::create_dir_all(&dir).expect("create test capture dir");
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -1448,8 +1448,7 @@ async fn dev_body_capture_is_disabled_by_default() -> Result<(), ApiClientError>
 
 #[allow(deprecated)]
 #[tokio::test]
-async fn deprecated_dev_body_capture_writes_response_only_to_safe_file()
--> Result<(), ApiClientError> {
+async fn dev_body_capture_writes_response_only_to_safe_file() -> Result<(), ApiClientError> {
     const REQUEST_SENTINEL: &str = "PR52_CAPTURE_REQUEST_SENTINEL_DO_NOT_WRITE";
     const RESPONSE_SENTINEL: &str = "PR52_CAPTURE_RESPONSE_SENTINEL";
 
@@ -1500,8 +1499,7 @@ async fn deprecated_dev_body_capture_writes_response_only_to_safe_file()
 
 #[allow(deprecated)]
 #[tokio::test]
-async fn deprecated_dev_body_capture_skips_oversized_response_by_default()
--> Result<(), ApiClientError> {
+async fn dev_body_capture_skips_oversized_response() -> Result<(), ApiClientError> {
     const RESPONSE_SENTINEL: &str = "PR52_OVERSIZE_RESPONSE_SENTINEL_DO_NOT_CAPTURE";
 
     let dir = unique_capture_dir("oversize");
@@ -1535,8 +1533,7 @@ async fn deprecated_dev_body_capture_skips_oversized_response_by_default()
 
 #[allow(deprecated)]
 #[tokio::test]
-async fn deprecated_dev_body_capture_skips_authenticated_responses_by_default()
--> Result<(), ApiClientError> {
+async fn dev_body_capture_skips_protected_auth_response() -> Result<(), ApiClientError> {
     const AUTH_RESPONSE_SENTINEL: &str = "PR52_AUTH_TOKEN_RESPONSE_SENTINEL_DO_NOT_CAPTURE";
 
     let dir = unique_capture_dir("auth-skip");
@@ -1572,6 +1569,96 @@ async fn deprecated_dev_body_capture_skips_authenticated_responses_by_default()
 
     assert_eq!(decoded.value(), AUTH_RESPONSE_SENTINEL);
     assert!(capture_files(&dir).is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[allow(deprecated)]
+#[tokio::test]
+async fn debug_sink_body_free_when_dev_body_capture_enabled() -> Result<(), ApiClientError> {
+    const RESPONSE_SENTINEL: &str = "PR64_DEBUG_SINK_RESPONSE_SENTINEL";
+
+    let dir = unique_capture_dir("debug-free");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL)],
+    );
+    let debug = Arc::new(RecordingDebugSink::default());
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_debug_sink(debug.clone());
+    client.set_debug_level(DebugLevel::VV);
+    client.configure(|cfg| {
+        cfg.dev_body_capture(
+            concord_core::advanced::DevBodyCaptureConfig::response_dir(&dir).max_bytes(1024),
+        );
+    });
+
+    let decoded = client
+        .request(BodyDebugEndpoint {
+            request_body: Bytes::from_static(b"PR64_DEBUG_SINK_REQUEST_SENTINEL"),
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), RESPONSE_SENTINEL);
+    let debug_output = debug.events().join("\n");
+    assert!(debug_output.contains("response_status:vv:200 OK:true"));
+    assert!(debug_output.contains("response_headers:vv"));
+    assert!(!debug_output.contains("PR64_DEBUG_SINK_REQUEST_SENTINEL"));
+    assert!(!debug_output.contains(RESPONSE_SENTINEL));
+    let files = capture_files(&dir);
+    assert_eq!(files.len(), 1);
+    let captured = std::fs::read_to_string(&files[0]).expect("read captured response body");
+    assert_eq!(captured, RESPONSE_SENTINEL);
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[allow(deprecated)]
+#[tokio::test]
+async fn runtime_hooks_body_free_when_dev_body_capture_enabled() -> Result<(), ApiClientError> {
+    const RESPONSE_SENTINEL: &str = "PR64_RUNTIME_HOOK_RESPONSE_SENTINEL";
+
+    let dir = unique_capture_dir("hooks-free");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL)],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
+    client.configure(|cfg| {
+        cfg.dev_body_capture(
+            concord_core::advanced::DevBodyCaptureConfig::response_dir(&dir).max_bytes(1024),
+        );
+    });
+
+    let decoded = client
+        .request(BodyDebugEndpoint {
+            request_body: Bytes::from_static(b"PR64_RUNTIME_HOOK_REQUEST_SENTINEL"),
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), RESPONSE_SENTINEL);
+    let hook_events = events.lock().await.clone();
+    assert!(hook_events.iter().any(|event| event == "pre_send"));
+    assert!(hook_events.iter().any(|event| event == "classify_response"));
+    assert!(
+        !hook_events
+            .iter()
+            .any(|event| event.contains("PR64_RUNTIME_HOOK_REQUEST_SENTINEL"))
+    );
+    assert!(
+        !hook_events
+            .iter()
+            .any(|event| event.contains(RESPONSE_SENTINEL))
+    );
+    let files = capture_files(&dir);
+    assert_eq!(files.len(), 1);
+    let captured = std::fs::read_to_string(&files[0]).expect("read captured response body");
+    assert_eq!(captured, RESPONSE_SENTINEL);
     let _ = std::fs::remove_dir_all(&dir);
     Ok(())
 }

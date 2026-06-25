@@ -24,10 +24,12 @@ async fn custom_pagination_controller_collects_pages() {
     assert_request(&recorded[0])
         .path("/items")
         .query_has("page", "0")
+        .query_has("limit", "2")
         .header("x-page-cursor", "0");
     assert_request(&recorded[1])
         .path("/items")
         .query_has("page", "1")
+        .query_has("limit", "2")
         .header("x-page-cursor", "1");
     handle.finish();
 }

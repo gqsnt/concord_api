@@ -9,9 +9,13 @@ use concord_core::internal::PaginationPlan;
 use concord_core::prelude::{ApiClientError, CursorPagination, PaginationTermination};
 use http::{HeaderValue, StatusCode};
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
+
+tokio::task_local! {
+    static PR64_CUSTOM_PAGINATION_EVENTS: Arc<StdMutex<Vec<&'static str>>>;
+}
 
 #[derive(Default)]
 struct HeaderTokenPagination;
@@ -392,6 +396,53 @@ impl PaginationController<NoHintItems> for NoHintCountingPagination {
 
     fn progress_key(&self, _state: &Self::State) -> Option<ProgressKey> {
         None
+    }
+}
+
+#[derive(Default)]
+struct Pr64RuntimeOwnedShortPagePagination;
+
+struct Pr64RuntimeOwnedShortPageState {
+    page: u64,
+}
+
+impl PaginationController<PageOnlyItems> for Pr64RuntimeOwnedShortPagePagination {
+    type State = Pr64RuntimeOwnedShortPageState;
+
+    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
+        Ok(Pr64RuntimeOwnedShortPageState { page: 0 })
+    }
+
+    fn apply(
+        &self,
+        state: &Self::State,
+        request: &mut PageRequest<'_>,
+    ) -> Result<(), ApiClientError> {
+        request.set_query("page", state.page);
+        request.set_query("limit", 2);
+        request
+            .set_expected_items_per_page(NonZeroUsize::new(2).expect("test page size is non-zero"));
+        Ok(())
+    }
+
+    fn advance(
+        &self,
+        state: &mut Self::State,
+        _page: &PageOnlyItems,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        PR64_CUSTOM_PAGINATION_EVENTS.with(|events| {
+            events
+                .lock()
+                .expect("custom pagination events lock")
+                .push("advance");
+        });
+        state.page += 1;
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(state.page))
     }
 }
 
@@ -2499,6 +2550,48 @@ async fn paginated_successful_page_stores_after_decode() -> Result<(), ApiClient
     assert_eq!(items, vec!["a".to_string(), "b".to_string()]);
     assert_eq!(*after_response_count.lock().await, 1);
     assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_pagination_example_short_page_stop_is_runtime_owned() -> Result<(), ApiClientError>
+{
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let events_for_scope = events.clone();
+    let transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::OK, "c"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = PageOnlyItemsEndpoint {
+        policy: cache_policy(),
+        pagination: PaginationPlan::custom::<Pr64RuntimeOwnedShortPagePagination, PageOnlyItems>(),
+    };
+
+    let items = PR64_CUSTOM_PAGINATION_EVENTS
+        .scope(events_for_scope, async move {
+            client
+                .request(endpoint)
+                .paginate(PaginationTermination::hard_page_cap(10))
+                .collect()
+                .await
+        })
+        .await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    assert_eq!(sent.sent_count().await, 2);
+    assert_eq!(
+        &*events.lock().expect("custom pagination events lock"),
+        &["advance"]
+    );
     Ok(())
 }
 

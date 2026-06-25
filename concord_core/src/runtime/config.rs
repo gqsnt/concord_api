@@ -40,7 +40,7 @@ impl Default for DebugConfig {
 }
 
 #[deprecated(
-    note = "dev-only diagnostic capture; not for production; may persist sensitive response bytes to disk; disabled by default"
+    note = "dev-only diagnostic body capture; disabled by default; may persist sensitive response bytes to local disk; do not use in production"
 )]
 #[derive(Clone, Debug)]
 pub struct DevBodyCaptureConfig {
@@ -167,7 +167,7 @@ impl RuntimeConfig {
     }
 
     #[deprecated(
-        note = "dev-only diagnostic capture; not for production; may persist sensitive response bytes to disk; disabled by default"
+        note = "dev-only diagnostic body capture; disabled by default; may persist sensitive response bytes to local disk; do not use in production"
     )]
     #[allow(deprecated)]
     #[inline]

@@ -21,7 +21,7 @@ The runtime treats pagination as a deterministic page loop:
 7. derive the next page request or return
 
 Common page-content stop rules are runtime invariants, not controller-specific
-behavior:
+behavior when the runtime has enough information to decide before advance:
 
 - an empty page stops pagination
 - a short page stops pagination when Concord knows the expected page size
@@ -29,13 +29,16 @@ behavior:
 The current page is included before stopping. `PageItems::item_count_hint()` is
 exact when present, and the runtime uses it before calling controller advance.
 Page types should implement it whenever they can expose the count without
-consuming themselves. Built-in offset, page-number, and
-cursor pagination provide the expected page size automatically from `limit` or
-`per_page`. Custom pagination controllers can call
-`PageRequest::set_expected_items_per_page(NonZeroUsize)` during `apply()` when
-they request a specific page size. If custom pagination does not set an
-expected size, `collect()` still stops on empty pages, but Concord cannot
-generically detect a short page.
+consuming themselves. An exact hint alone lets Concord stop before `advance()`
+for an empty page, hard-item-cap overflow, and provable `TakeItems`
+completion. Built-in offset, page-number, and cursor pagination provide the
+expected page size automatically from `limit` or `per_page`. Custom pagination
+controllers can call `PageRequest::set_expected_items_per_page(NonZeroUsize)`
+during `apply()` when they request a specific page size. With both an exact
+hint and an expected page size, the runtime also owns generic short-page stop
+before `advance()`. If custom pagination does not set an expected size,
+`collect()` still remains exact after consuming the page, but Concord cannot
+generically detect a short page before advance.
 
 If a later page request would reuse any previously seen logical request
 identity, the runtime returns a typed pagination error instead of silently
@@ -162,12 +165,15 @@ for `collect()`. `TakePages(0)` is a no-op for `for_each_page()`.
 
 `collect()` supports all four termination modes. Item collection, exact
 `TakeItems` truncation, and final hard-item-cap validation use the items returned
-by `PageItems::into_items()`. Pre-advance empty/short-page stop and pre-advance
-item-limit decisions require an exact `item_count_hint()`, because
-`into_items()` consumes the page while cursor and custom advance logic may need
-to borrow it. Without a hint, collection and limits remain exact and no extra
-page is fetched after the exact terminal result is known, but controller
-advance may already have run. `HardItemCap` never truncates.
+by `PageItems::into_items()`. Pre-advance empty-page stop, hard-item-cap
+overflow, and provable `TakeItems` completion require an exact
+`item_count_hint()`, because `into_items()` consumes the page while cursor and
+custom advance logic may need to borrow it. Generic pre-advance short-page stop
+also requires an expected page size from built-ins or
+`PageRequest::set_expected_items_per_page(NonZeroUsize)`. Without a hint,
+collection and limits remain exact and no extra page is fetched after the exact
+terminal result is known, but controller advance may already have run.
+`HardItemCap` never truncates.
 
 `for_each_page()` supports page-based termination exactly. Runtime empty/short
 page stops use `PageItems::item_count_hint()` because the callback receives

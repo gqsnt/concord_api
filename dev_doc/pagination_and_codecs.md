@@ -58,16 +58,19 @@ Empty-page and short-page termination are runtime invariants, not
 controller-specific rules. The runtime obtains expected page size from built-in
 offset/page/cursor controllers (`limit` or `per_page`) or from custom
 `PageRequest::set_expected_items_per_page(NonZeroUsize)`. `PageItems` count
-hints are exact when present. The runtime uses an exact hint to detect common
-content termination before controller advance, and does not call advance after
-a hinted empty or short page.
+hints are exact when present. An exact hint alone is enough for hinted
+empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion
+before controller advance. Exact hint plus expected page size is required for
+generic short-page stop before controller advance.
 
 `collect()` still validates actual items and applies exact `TakeItems`
 truncation after `into_items()`. Because that method consumes the page while
 cursor/custom advance can require a page reference, a page without an item
 count hint may be advanced before exact post-consumption termination or a hard
 item-cap error is known. No additional request is sent after the exact result is
-known. This limitation is part of the v1 `PageItems` contract.
+known. This limitation is part of the v1 `PageItems` contract. Without an
+expected page size, Concord cannot generically detect a short page before
+advance.
 
 Collection bounds are shape-specific: offset, page-number, and custom pagination collection require `PageItems`; built-in cursor pagination additionally requires `HasNextCursor`. There is no implicit page or item cap after `.paginate(...)`; callers must pass an explicit `PaginationTermination`.
 

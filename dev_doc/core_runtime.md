@@ -64,7 +64,8 @@ The deprecated dev body capture path is deliberately separate from debug sinks
 and hooks. It is opt-in, response-only, local-file-only, and skips protected
 auth-bearing requests by default. When enabled, it may capture the received
 body before endpoint decode so it remains useful for local diagnosis of bad
-provider payloads and decode failures.
+provider payloads and decode failures. Release checks treat deprecated use
+outside explicit tests as a failure.
 
 Auth preparation does not receive `BuiltRequest` directly. Endpoint auth preparation and auth-internal preparation both receive an auth-only application request that exposes only pending-slot attachment, so custom client contexts cannot insert raw auth into logical headers, query strings, body data, policy data, or request metadata during credential preparation.
 

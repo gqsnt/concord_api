@@ -196,8 +196,9 @@ Controller rules:
 - Custom pagination controller types must implement `Default`.
 - `PageRequest` can set or remove query parameters and headers. Query keys may be owned/dynamic strings. Header mutation is fallible and returns `ApiClientError` for invalid header names instead of panicking.
 - `PageRequest::set_expected_items_per_page(NonZeroUsize)` tells the runtime how many items the current page requested. Set it during every `apply()` call that asks for a known page size; the value is per-page and does not persist.
-- `PageItems::item_count_hint()` must be exact when present. Implement it whenever possible so runtime empty/short-page termination and item limits can be decided before `advance()`.
-- When an exact hint proves an empty page, a short page, a hard-item-cap overflow, or completion of `TakeItems`, the runtime does not call `advance()`. Without a hint, `collect()` remains exact after consuming the page, but custom `advance()` may already have run.
+- `PageItems::item_count_hint()` must be exact when present. Implement it whenever possible so runtime empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion can be decided before `advance()`.
+- With both an exact hint and an expected page size, the runtime also owns generic short-page stop and will not call `advance()` for terminal hinted pages.
+- Without an exact hint, `collect()` remains exact after consuming the page, but custom `advance()` may already have run. Without an expected page size, Concord cannot generically detect a short page before `advance()`.
 - `progress_key` is used for loop detection when enabled.
 - Runtime retry, cache, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
 

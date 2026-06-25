@@ -14,6 +14,7 @@ else
 fi
 
 "${CARGO[@]}" fmt --check
+RUSTFLAGS="-D warnings" "${CARGO[@]}" check --workspace --all-targets
 "${CARGO[@]}" test -p concord_core redaction
 "${CARGO[@]}" test -p concord_core auth
 "${CARGO[@]}" test -p concord_core cache
