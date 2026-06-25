@@ -160,6 +160,8 @@ GET Search
 
 A response observer can translate provider headers into rate-limit observations.
 
+Rate-limit response observation is response-based transport metadata observation, not an endpoint-success hook. It may see responses that later become auth rejection, retry, stale fallback, or decode failure. Concord v1 does not expose a separate rate-limit observation API for pure transport errors.
+
 ```rust
 #[derive(Default)]
 pub struct ProviderRateLimitHeaders;

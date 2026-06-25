@@ -45,6 +45,8 @@ Debug sinks and runtime hooks are metadata-only. They may observe redacted URLs,
 redacted headers, statuses, retry/cache/rate-limit events, and safe endpoint
 metadata. They never receive request or response body bytes. Concord does not
 route body bytes through debug sinks, stderr logs, hooks, or callback APIs.
+Rate-limit observation follows the same metadata-only boundary and remains
+response-based rather than endpoint-success based.
 
 Custom cache stores receive the logical `BuiltRequest`. Protected requests are
 eligible for cache only when the logical request carries a safe auth identity;

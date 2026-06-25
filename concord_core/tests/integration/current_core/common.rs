@@ -7,13 +7,14 @@ use concord_core::advanced::{
     RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
     RateLimiter, RequestMeta, RuntimeHooks, Transport, TransportBody, TransportError,
     TransportErrorHookContext, TransportErrorKind, TransportRequest, TransportResponse,
+    apply_basic_credential,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
     RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{
-    ApiClient, ApiClientError, ApiKey, ClientContext, Endpoint, PaginatedEndpoint,
+    ApiClient, ApiClientError, ApiKey, BasicCredential, ClientContext, Endpoint, PaginatedEndpoint,
 };
 use concord_core::prelude::{HasNextCursor, PageItems};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -478,6 +479,183 @@ pub fn decode_cursor_items(
     }))
 }
 
+#[derive(Clone)]
+pub struct ObservationAuthVars {
+    pub token: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub identity: &'static str,
+    pub events: Arc<Mutex<Vec<String>>>,
+}
+
+impl ObservationAuthVars {
+    pub fn bearer(
+        token: impl Into<String>,
+        identity: &'static str,
+        events: Arc<Mutex<Vec<String>>>,
+    ) -> Self {
+        Self {
+            token: Some(token.into()),
+            username: None,
+            password: None,
+            identity,
+            events,
+        }
+    }
+
+    pub fn basic(
+        username: impl Into<String>,
+        password: impl Into<String>,
+        identity: &'static str,
+        events: Arc<Mutex<Vec<String>>>,
+    ) -> Self {
+        Self {
+            token: None,
+            username: Some(username.into()),
+            password: Some(password.into()),
+            identity,
+            events,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ObservationAuthCx;
+
+impl ClientContext for ObservationAuthCx {
+    type Vars = ();
+    type AuthVars = ObservationAuthVars;
+    type AuthState = ();
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+    fn prepare_auth_requirement<'a>(
+        requirement: &'a AuthRequirement,
+        request: &'a mut AuthApplicationRequest<'_>,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+    ) -> concord_core::advanced::AuthFuture<
+        'a,
+        Result<concord_core::advanced::PreparedAuthCredential, AuthError>,
+    > {
+        Box::pin(async move {
+            let application = match requirement.placement {
+                AuthPlacement::Bearer | AuthPlacement::Header(_) | AuthPlacement::Query(_) => {
+                    let token = auth.token.as_deref().ok_or_else(|| {
+                        AuthError::new(
+                            AuthErrorKind::MissingCredential,
+                            format!(
+                                "missing credential `{}`; acquire or configure it before sending request",
+                                requirement.credential.id
+                            ),
+                        )
+                    })?;
+                    let material = ApiKey::new(token.to_string());
+                    concord_core::advanced::apply_secret_credential(
+                        request,
+                        requirement,
+                        &material,
+                    )?
+                }
+                AuthPlacement::Basic => {
+                    let username = auth.username.as_deref().ok_or_else(|| {
+                        AuthError::new(
+                            AuthErrorKind::MissingCredential,
+                            format!(
+                                "missing username credential `{}`; acquire or configure it before sending request",
+                                requirement.credential.id
+                            ),
+                        )
+                    })?;
+                    let password = auth.password.as_deref().ok_or_else(|| {
+                        AuthError::new(
+                            AuthErrorKind::MissingCredential,
+                            format!(
+                                "missing password credential `{}`; acquire or configure it before sending request",
+                                requirement.credential.id
+                            ),
+                        )
+                    })?;
+                    let material = BasicCredential::new(username.to_string(), password.to_string());
+                    apply_basic_credential(request, requirement, &material)?
+                }
+                AuthPlacement::Certificate => {
+                    return Err(AuthError::new(
+                        AuthErrorKind::UnsupportedScheme,
+                        "observation test context does not use certificate auth",
+                    ));
+                }
+            };
+            let applied = AuthAppliedCredential {
+                credential_id: requirement.credential.id.clone(),
+                usage_id: requirement.usage_id.clone(),
+                step_id: requirement.step_id,
+                generation: Some(1),
+                identity: application.identity().clone(),
+                provenance: requirement.provenance.clone(),
+            };
+            Ok(concord_core::advanced::PreparedAuthCredential::new(
+                applied,
+                application,
+            ))
+        })
+    }
+
+    fn handle_auth_response<'a>(
+        requirement: &'a AuthRequirement,
+        applied: &'a AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+        status: StatusCode,
+        _headers: &'a HeaderMap,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
+        let events = auth.events.clone();
+        Box::pin(async move {
+            if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
+                events.lock().await.push(format!("auth_rejection:{status}"));
+                if auth.identity == "refresh" {
+                    events.lock().await.push("auth_retry".to_string());
+                    return Ok(AuthDecision::RetryAfterRefresh {
+                        credential: requirement.credential.clone(),
+                        generation: applied.generation,
+                        reason: concord_core::advanced::AuthRetryReason::Unauthorized,
+                    });
+                }
+                events.lock().await.push("auth_fail".to_string());
+                Ok(AuthDecision::Fail)
+            } else {
+                Ok(AuthDecision::Continue)
+            }
+        })
+    }
+}
+
+impl Endpoint<ObservationAuthCx> for TextEndpoint {
+    type Response = String;
+
+    fn plan(
+        &self,
+        _ctx: &ClientPlanContext<'_, ObservationAuthCx>,
+    ) -> Result<RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            self.name,
+            self.method.clone(),
+            self.path,
+            self.policy.clone(),
+            self.pagination.clone(),
+            decode_string,
+        ))
+    }
+}
+
 pub fn auth_policy(placement: AuthPlacement) -> ResolvedPolicy {
     ResolvedPolicy {
         auth: concord_core::advanced::AuthPlan {
@@ -833,6 +1011,112 @@ impl RateLimiter for RecordingRateLimiter {
 }
 
 #[derive(Default)]
+pub struct ObservationRateLimiter {
+    pub events: Arc<Mutex<Vec<String>>>,
+}
+
+impl ObservationRateLimiter {
+    pub fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl RateLimiter for ObservationRateLimiter {
+    fn acquire<'a>(
+        &'a self,
+        _ctx: RateLimitContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
+        Box::pin(async move {
+            self.events.lock().await.push("rate_acquire".to_string());
+            Ok(RateLimitPermit)
+        })
+    }
+
+    fn on_response<'a>(
+        &'a self,
+        ctx: RateLimitResponseContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
+        let events = self.events.clone();
+        let meta = ctx.meta;
+        let status = ctx.status;
+        let headers = ctx.headers;
+        Box::pin(async move {
+            let mut events = events.lock().await;
+            events.push(format!(
+                "rate_meta:{}:{}:{}:{}:{}:{}",
+                meta.endpoint,
+                meta.method,
+                meta.url,
+                meta.url_host.unwrap_or("<none>"),
+                meta.attempt,
+                meta.page_index
+            ));
+            events.push(format!("rate_idempotent:{}", meta.idempotent));
+            events.push(format!("rate_status:{status}"));
+            events.push(format!("rate_headers:{headers:?}"));
+            Ok(RateLimitResponseAction::Continue)
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct ObservationRuntimeHooks {
+    pub events: Arc<Mutex<Vec<String>>>,
+}
+
+impl ObservationRuntimeHooks {
+    pub fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl RuntimeHooks for ObservationRuntimeHooks {
+    fn pre_send<'a>(
+        &'a self,
+        _ctx: PreSendHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ApiClientError>> + Send + 'a>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events.lock().await.push("pre_send".to_string());
+            Ok(())
+        })
+    }
+
+    fn post_response<'a>(
+        &'a self,
+        ctx: PostResponseHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let events = self.events.clone();
+        let meta = ctx.meta;
+        let status = ctx.status;
+        let headers = ctx.headers;
+        Box::pin(async move {
+            let mut events = events.lock().await;
+            events.push(format!(
+                "hook_meta:{}:{}:{}:{}:{}",
+                meta.endpoint, meta.method, meta.url, meta.attempt, meta.page_index
+            ));
+            events.push(format!("hook_idempotent:{}", meta.idempotent));
+            events.push(format!("hook_status:{status}"));
+            events.push(format!("hook_headers:{headers:?}"));
+        })
+    }
+
+    fn transport_error<'a>(
+        &'a self,
+        ctx: TransportErrorHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events
+                .lock()
+                .await
+                .push(format!("transport_error:{:?}:{ctx:?}", ctx.error.kind()));
+        })
+    }
+}
+
+#[derive(Default)]
 pub struct RecordingRuntimeHooks {
     pub events: Arc<Mutex<Vec<String>>>,
 }
@@ -1039,8 +1323,8 @@ pub fn client(auth: TestAuthVars, transport: MockTransport) -> ApiClient<TestCx,
     ApiClient::with_transport((), auth, transport)
 }
 
-pub fn configure_runtime<T: Transport>(
-    client: &mut ApiClient<TestCx, T>,
+pub fn configure_runtime<Cx: ClientContext, T: Transport>(
+    client: &mut ApiClient<Cx, T>,
     cache: Option<Arc<dyn CacheStore>>,
     limiter: Option<Arc<dyn RateLimiter>>,
 ) {

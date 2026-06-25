@@ -28,6 +28,8 @@ The runtime order is:
 
 This order is not user-configurable.
 
+Runtime hooks and rate-limit observation are transport-response metadata observations, not endpoint-success hooks. They may observe HTTP responses that later fail auth handling, retry, stale fallback, or decode/map, but they never receive response body bytes or raw auth material. Cache admission is different: successful values are stored only after endpoint decode and any map/transform succeed.
+
 ## Invariants
 
 A fresh cache hit returns before rate-limit acquisition or transport.

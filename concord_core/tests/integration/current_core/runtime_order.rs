@@ -9,7 +9,7 @@ use concord_core::internal::{
     RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClientError, DebugLevel, Endpoint};
-use http::{HeaderMap, Method, StatusCode};
+use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -56,6 +56,68 @@ impl Endpoint<TestCx> for OrderingEndpoint {
             decode,
         ))
     }
+}
+
+#[derive(Clone)]
+struct ObservationFailureEndpoint {
+    policy: ResolvedPolicy,
+    request_body: Bytes,
+}
+
+impl Endpoint<TestCx> for ObservationFailureEndpoint {
+    type Response = String;
+
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        Ok(RequestPlan {
+            endpoint: EndpointPlan {
+                meta: EndpointMeta {
+                    name: "ObservationFailure",
+                    method: Method::POST,
+                    idempotent: false,
+                    facade_path: &[],
+                },
+                route: ResolvedRoute::new(
+                    http::uri::Scheme::HTTPS,
+                    "example.com",
+                    "/observation-failure",
+                ),
+                policy: self.policy.clone(),
+                body: BodyPlan::Encoded {
+                    content_type: Some(HeaderValue::from_static("application/json")),
+                    format: concord_core::internal::Format::Text,
+                },
+                response: ResponsePlan {
+                    accept: Some(HeaderValue::from_static("application/json")),
+                    no_content: false,
+                    format: concord_core::internal::Format::Text,
+                    decode: decode_observation_failure,
+                },
+                pagination: None,
+            },
+            args: RequestArgs {
+                body: Some(self.request_body.clone()),
+            },
+            overrides: RequestOverrides::default(),
+        })
+    }
+}
+
+fn decode_observation_failure(
+    resp: concord_core::advanced::BuiltResponse,
+    ctx: concord_core::advanced::ErrorContext,
+) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
+    let content_type = resp
+        .headers
+        .get(http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok());
+    let _ = std::str::from_utf8(&resp.body)
+        .map_err(|e| ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e))?;
+    Err(ApiClientError::decode_error(
+        ctx,
+        resp.status,
+        content_type,
+        std::io::Error::other("invalid JSON payload"),
+    ))
 }
 
 fn decode_ordering_success(
@@ -717,6 +779,237 @@ async fn retryable_status_is_not_cached_before_retry() -> Result<(), ApiClientEr
 
     assert_eq!(decoded.value(), "fresh");
     assert_eq!(*after_response_count.lock().await, 1);
+    Ok(())
+}
+
+fn first_event_with_prefix(events: &[String], prefix: &str) -> usize {
+    events
+        .iter()
+        .position(|event| event.starts_with(prefix))
+        .unwrap_or_else(|| panic!("missing event prefix `{prefix}` in {events:?}"))
+}
+
+#[tokio::test]
+async fn runtime_hooks_observe_200_before_decode_failure() {
+    const REQUEST_SENTINEL: &str = "PR65_REQUEST_BODY_SENTINEL_DO_NOT_LEAK";
+    const RESPONSE_SENTINEL: &str = "PR65_RESPONSE_BODY_SENTINEL_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let mut response = MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL);
+    response.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    let transport = MockTransport::new(events.clone(), vec![response]);
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, Some(cache), None);
+
+    let err = client
+        .request(ObservationFailureEndpoint {
+            policy: cache_policy(),
+            request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
+        })
+        .execute_decoded()
+        .await
+        .expect_err("invalid payload should fail decode");
+
+    assert_eq!(err.category(), concord_core::error::ErrorCategory::Decode);
+    assert!(err.to_string().contains("decode error"));
+    assert_eq!(*after_response_count.lock().await, 0);
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("hook_status:200 OK"))
+    );
+    assert!(!events.iter().any(|event| event.contains("PR65_")));
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("hook_headers:"))
+    );
+    assert!(!events.iter().any(|event| event.contains(REQUEST_SENTINEL)));
+    assert!(!events.iter().any(|event| event.contains(RESPONSE_SENTINEL)));
+}
+
+#[tokio::test]
+async fn runtime_hooks_observe_retryable_status_before_retry() -> Result<(), ApiClientError> {
+    const FIRST_SENTINEL: &str = "PR65_FIRST_RETRYABLE_BODY_DO_NOT_LEAK";
+    const SECOND_SENTINEL: &str = "PR65_SECOND_RETRYABLE_BODY_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, FIRST_SENTINEL),
+            MockResponse::text(StatusCode::OK, SECOND_SENTINEL),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: retry_policy(2),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), SECOND_SENTINEL);
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    let first = first_event_with_prefix(&events, "hook_status:500 Internal Server Error");
+    let second = first_event_with_prefix(&events, "hook_status:200 OK");
+    assert!(first < second);
+    assert!(!events.iter().any(|event| event.contains(FIRST_SENTINEL)));
+    assert!(!events.iter().any(|event| event.contains(SECOND_SENTINEL)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn runtime_hooks_observe_auth_rejection_before_auth_handling() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::UNAUTHORIZED, "unauthorized"),
+            MockResponse::text(StatusCode::OK, "recovered"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::bearer("PR65_BEARER_SECRET_DO_NOT_LEAK", "refresh", events.clone()),
+        transport,
+    );
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "recovered");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    let hook = first_event_with_prefix(&events, "hook_status:401 Unauthorized");
+    let auth = first_position(&events, "auth_rejection:401 Unauthorized");
+    assert!(hook < auth);
+    assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("hook_headers:"))
+    );
+    assert!(events.iter().any(|event| event == "auth_retry"));
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.contains("PR65_BEARER_SECRET_DO_NOT_LEAK"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn runtime_hooks_do_not_observe_body_on_http_status_error() {
+    const RESPONSE_SENTINEL: &str = "PR65_RESPONSE_BODY_SENTINEL_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut response = MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_SENTINEL);
+    response.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    let transport = MockTransport::new(events.clone(), vec![response]);
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("HTTP status error should remain terminal");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("hook_status:500 Internal Server Error"))
+    );
+    assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("hook_headers:"))
+    );
+    assert!(!events.iter().any(|event| event.contains(RESPONSE_SENTINEL)));
+}
+
+#[tokio::test]
+async fn transport_observation_does_not_leak_basic_auth_material() -> Result<(), ApiClientError> {
+    const BASIC_USERNAME: &str = "PR65_BASIC_USERNAME_DO_NOT_LEAK";
+    const BASIC_PASSWORD: &str = "PR65_BASIC_PASSWORD_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "basic-ok")],
+    );
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::basic(BASIC_USERNAME, BASIC_PASSWORD, "basic", events.clone()),
+        transport,
+    );
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(
+        &mut client,
+        None,
+        Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+    );
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Basic),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "basic-ok");
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("hook_status:200 OK"))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_status:200 OK"))
+    );
+    assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("hook_headers:"))
+    );
+    assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_headers:"))
+    );
+    assert!(!events.iter().any(|event| event.contains(BASIC_USERNAME)));
+    assert!(!events.iter().any(|event| event.contains(BASIC_PASSWORD)));
     Ok(())
 }
 
