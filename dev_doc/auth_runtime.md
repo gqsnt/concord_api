@@ -42,6 +42,11 @@ keeping raw query-auth values out of cache keys and diagnostics. If an auth
 requirement resolves only to anonymous identity, request execution bypasses
 cache lookup/store/fallback for that protected request.
 
+Page and custom pagination mutation happens before auth-collision validation,
+cache lookup, rate-limit acquisition, and transport materialization. The
+runtime uses the final mutated logical request as the input to safe metadata
+construction, then materializes raw auth only into `TransportRequest`.
+
 Query-auth materialization must reject a public query parameter that already
 uses the auth query key. The rejection happens before raw query-auth material is
 appended and before cache lookup, rate-limit acquisition, and transport send,

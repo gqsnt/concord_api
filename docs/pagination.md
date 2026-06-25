@@ -78,8 +78,12 @@ The runtime keeps request parameters stable while advancing the pagination contr
 
 Custom pagination controllers receive a mutable `PageRequest` for the next page. Query mutation accepts borrowed or owned keys, so controllers can compute dynamic query names. Header mutation is fallible: invalid header names return `ApiClientError::Pagination` instead of panicking. Controllers that request a specific page size should call `set_expected_items_per_page(NonZeroUsize)` on each page request. The expected count is per page and does not persist. `PageRequest::new` is an internal runtime construction hook, not a public user construction API.
 
+`PageRequest` mutations are applied to the logical page request before auth collision validation, cache lookup, rate-limit acquisition, and transport materialization. Query mutation is deterministic: `set_query()` removes all prior entries for that key and appends the new value at the end of the query list, while `remove_query()` removes every matching entry and leaves missing keys unchanged. Header mutation is typed and fallible for invalid names; header values are already represented as `HeaderValue`, so invalid values are rejected before they reach `PageRequest` and controllers usually map `HeaderValue::from_str` failures into typed pagination errors.
+
 Paginated endpoints with request bodies are rejected in v1. Concord does not
 reuse or replay endpoint request bodies across page requests.
+
+Custom pagination cannot override auth-owned query or header material. If a page controller creates a collision with query auth, bearer/basic `Authorization`, or custom header auth, Concord rejects the request before cache lookup, stale fallback, rate-limit acquisition, and transport send.
 
 ## Cursor Pagination
 

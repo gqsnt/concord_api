@@ -287,6 +287,50 @@ mod test {
     }
 
     #[test]
+    fn query_remove_semantics_documented_and_tested() {
+        let mut p = Policy::new();
+
+        p.push_query("dup", "first");
+        p.push_query("dup", "second");
+        p.push_query("keep", "base");
+
+        p.remove_query("missing");
+        assert_eq!(
+            p.query(),
+            &[
+                ("dup".to_string(), "first".to_string()),
+                ("dup".to_string(), "second".to_string()),
+                ("keep".to_string(), "base".to_string())
+            ]
+        );
+
+        p.remove_query("dup");
+        assert_eq!(p.query(), &[("keep".to_string(), "base".to_string())]);
+
+        p.set_query("dup", "after-remove");
+        assert_eq!(
+            p.query(),
+            &[
+                ("keep".to_string(), "base".to_string()),
+                ("dup".to_string(), "after-remove".to_string())
+            ]
+        );
+
+        p.set_query("keep", "replace");
+        assert_eq!(
+            p.query(),
+            &[
+                ("dup".to_string(), "after-remove".to_string()),
+                ("keep".to_string(), "replace".to_string())
+            ]
+        );
+
+        p.push_query("dup", "shadow");
+        p.remove_query("dup");
+        assert_eq!(p.query(), &[("keep".to_string(), "replace".to_string())]);
+    }
+
+    #[test]
     fn header_override_and_remove_are_case_insensitive() {
         let mut p = Policy::new();
         p.insert_header(

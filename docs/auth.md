@@ -200,6 +200,10 @@ is not. If Concord cannot identify a protected request safely, it skips cache
 lookup and cache store for that request by default. Query/header auth collisions
 are rejected before cache lookup, rate-limit acquisition, and transport.
 
+Custom pagination and other page-request mutation runs before that auth-collision
+boundary, so public query/header edits are part of the logical request before
+cache identity, rate limiting, and transport materialization are decided.
+
 If a public query parameter already uses the same key as a query-auth
 credential, Concord rejects the request before transport with a typed auth
 configuration error. It does not append a duplicate credential query key or

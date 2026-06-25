@@ -22,6 +22,8 @@ Macros own syntax. Any new keyword, stanza, or DSL diagnostic belongs in `concor
 
 Core owns runtime behavior. Auth application, cache lookup, retry, rate-limit acquisition, stale fallback, transport, decode, and pagination execution live in `concord_core`.
 
+Pagination and page-request mutation belong in the logical-request phase before auth-collision validation, cache identity, rate limiting, and transport materialization. Raw auth must remain confined to `TransportRequest`; safe metadata used by cache, debug, hooks, retry, and rate limit should come from the final mutated logical request.
+
 Code generation consumes resolved semantic data, not raw syntax. If codegen needs to know whether something came from `defaults { ... }` versus `default { ... }`, that is usually a design smell. Sema should resolve aliases, inheritance, profile names, and merge rules before codegen.
 
 Raw parser AST may contain invalid forms long enough to produce good diagnostics. Resolved semantic IR should not. Sema lowers public policy, route, and pagination values into context-specific IR that cannot contain auth-secret references or other values rejected for that context. Codegen renders already-valid IR and must not rely on `expect("validated ...")`, `expect("valid ...")`, or `unreachable!()` for semantic invalid states.

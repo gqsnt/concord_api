@@ -776,6 +776,8 @@ header "X-Debug" -
 
 Query shorthand uses the Rust argument name as both key and value. Optional query values remove the key when absent. `+=` is query-only; headers support set and remove, not append.
 
+Query and header clauses preserve source order at a given layer. Removing a query key removes every matching entry at that layer, and a later `query` assignment for the same key appends a new entry at the end of the logical query list.
+
 At the same declaration layer, distinct auth header/query declarations from inline forms and `auth { ... }` blocks merge in declaration order. Duplicate auth headers at the same layer are rejected case-insensitively. Duplicate auth query parameter names at the same layer are rejected by exact key match. These checks do not change normal cross-layer inheritance.
 
 `fmt[...]` builds one wire atom from literals and variables. Optional pieces inside `fmt[...]` require all referenced optional values to be present.

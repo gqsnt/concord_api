@@ -129,14 +129,26 @@ impl<'a> PageRequest<'a> {
         T: std::fmt::Display,
     {
         let key = key.into();
+        // Deterministic override-by-key: remove all prior entries for the key,
+        // then append the new value at the end of the logical query list.
         self.remove_query(&key);
         self.query.push((key, value.to_string()));
     }
 
+    /// Removes every query entry matching `key`.
+    ///
+    /// Missing keys are a no-op. This keeps query mutation deterministic and
+    /// preserves the relative order of the remaining keys.
     pub fn remove_query(&mut self, key: &str) {
         self.query.retain(|(existing, _)| existing != key);
     }
 
+    /// Inserts or replaces a header on the page request.
+    ///
+    /// Header names are validated here and return a typed pagination error on
+    /// failure. Header values are already represented as `HeaderValue`, so
+    /// invalid values must be rejected before this call or remain
+    /// unrepresentable by the caller's API.
     pub fn set_header<N>(&mut self, name: N, value: HeaderValue) -> Result<(), ApiClientError>
     where
         N: TryInto<HeaderName>,
@@ -245,5 +257,77 @@ impl<T: Send + 'static> PageItems for Vec<T> {
 
     fn into_items(self) -> Vec<Self::Item> {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::Method;
+
+    #[test]
+    fn page_request_query_order_and_remove_semantics_are_deterministic() {
+        let mut query = Vec::new();
+        let mut headers = HeaderMap::new();
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::GET,
+        };
+        let mut request = PageRequest::new(&mut query, &mut headers, ctx);
+
+        request.set_query("tag", "base");
+        request.set_query("q", "first");
+        request.set_query("tag", "override");
+        request.remove_query("missing");
+        request.remove_query("q");
+        request.set_query("q", "final");
+
+        assert_eq!(
+            &*request.query,
+            &[
+                ("tag".to_string(), "override".to_string()),
+                ("q".to_string(), "final".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn page_request_invalid_header_name_returns_typed_error_with_context() {
+        let mut query = Vec::new();
+        let mut headers = HeaderMap::new();
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::POST,
+        };
+        let mut request = PageRequest::new(&mut query, &mut headers, ctx.clone());
+
+        let err = request
+            .set_header("bad header name", HeaderValue::from_static("value"))
+            .expect_err("invalid header names should return a typed pagination error");
+
+        assert!(matches!(err, ApiClientError::Pagination { .. }));
+        assert_eq!(err.context().endpoint, ctx.endpoint);
+        assert_eq!(err.context().method, &ctx.method);
+        let msg = err.to_string();
+        assert!(msg.contains("invalid pagination header name"));
+        assert!(msg.contains("POST Items"));
+    }
+
+    #[test]
+    fn page_request_remove_header_invalid_name_returns_typed_error() {
+        let mut query = Vec::new();
+        let mut headers = HeaderMap::new();
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::POST,
+        };
+        let mut request = PageRequest::new(&mut query, &mut headers, ctx);
+
+        let err = request
+            .remove_header("bad header name")
+            .expect_err("invalid header names should return a typed pagination error");
+
+        assert!(matches!(err, ApiClientError::Pagination { .. }));
+        assert!(err.to_string().contains("invalid pagination header name"));
     }
 }
