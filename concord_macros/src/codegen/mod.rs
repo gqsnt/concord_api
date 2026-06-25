@@ -1261,6 +1261,140 @@ mod tests {
     }
 
     #[test]
+    fn codegen_snapshot_uses_resolved_ir() {
+        let resolved = crate::sema::analyze_tokens_for_test(quote! {
+            client ResolvedIrApi {
+                base "https://example.com"
+                secret token: String
+                credential session = bearer(secret.token)
+
+                policies {
+                    retry read {
+                        max_attempts 2
+                        methods [GET]
+                        on [401, 403]
+                        retry_after
+                    }
+
+                    cache standard {
+                        ttl 30s
+                        revalidate
+                    }
+
+                    rate_limit app {
+                        bucket application by [host] {
+                            10 / 1s
+                        }
+                    }
+                }
+
+                behaviors {
+                    behavior shared {
+                        auth bearer session
+                        retry read
+                        cache standard
+                        rate_limit app
+                    }
+
+                    behavior endpoint_override {
+                        retry off
+                        cache off
+                    }
+                }
+
+                defaults {
+                    behavior shared
+                }
+            }
+
+            GET Ping(page?: u64 = 0)
+                path ["ping"]
+                behavior endpoint_override
+                -> Json<String>
+        });
+
+        match &resolved.client_policy.cache {
+            Some(CacheResolved::Set(config)) => {
+                assert_eq!(config.default_ttl_secs, Some(30));
+                assert_eq!(config.revalidate, Some(true));
+            }
+            other => panic!(
+                "expected resolved client cache from behavior/default lowering, got {other:?}"
+            ),
+        }
+        match &resolved.client_policy.retry {
+            Some(RetryResolved::Set(config)) => {
+                let expected_methods: Vec<syn::Ident> = vec![syn::parse_quote!(GET)];
+                assert_eq!(config.max_attempts, 2);
+                assert_eq!(config.methods, expected_methods);
+                assert_eq!(config.statuses, vec![401, 403]);
+                assert!(config.respect_retry_after);
+            }
+            other => panic!(
+                "expected resolved client retry from behavior/default lowering, got {other:?}"
+            ),
+        }
+        match &resolved.client_policy.rate_limit {
+            Some(RateLimitResolved::Add(plan)) => {
+                assert_eq!(plan.buckets.len(), 1);
+                let bucket = &plan.buckets[0];
+                assert_eq!(bucket.kind, "application");
+                assert_eq!(bucket.name, "app_0");
+                assert_eq!(bucket.cost, 1);
+                assert_eq!(bucket.key.len(), 1);
+            }
+            other => panic!(
+                "expected resolved client rate limit from behavior/default lowering, got {other:?}"
+            ),
+        }
+
+        let endpoint = resolved
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Ping")
+            .expect("resolved ping endpoint");
+        assert_eq!(
+            endpoint.behavior_doc.names,
+            vec!["shared".to_string(), "endpoint_override".to_string()]
+        );
+        match &endpoint.policy.endpoint.cache {
+            Some(CacheResolved::Clear) => {}
+            other => {
+                panic!("expected endpoint cache override to clear inherited cache, got {other:?}")
+            }
+        }
+        match &endpoint.policy.endpoint.retry {
+            Some(RetryResolved::Clear) => {}
+            other => {
+                panic!("expected endpoint retry override to clear inherited retry, got {other:?}")
+            }
+        }
+
+        let out = emit(resolved)
+            .to_string()
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect::<String>();
+
+        assert_contains_all(
+            &out,
+            &[
+                "policy.set_cache({letmut__cache=::concord_core::advanced::CacheConfig::new();",
+                "with_default_ttl(::std::time::Duration::from_secs(30u64))",
+                "with_revalidate(true)",
+                "policy.set_retry(::concord_core::advanced::RetryConfig{max_attempts:2u32",
+                "::http::Method::GET",
+                "::http::StatusCode::from_u16(401u16)",
+                "::http::StatusCode::from_u16(403u16)",
+                "policy.clear_cache();",
+                "policy.clear_retry();",
+                "policy.add_rate_limit(::concord_core::advanced::RateLimitPlan::from_buckets",
+                "RateLimitBucketUse::new(\"application\",\"app_0\"",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_mapping_snapshot_contains_final_response_type_and_transform() {
         let out = expanded(quote! {
             client SnapshotMapping {

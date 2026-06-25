@@ -70,3 +70,84 @@ fn required_stage_snapshots_exist() {
         assert!(path.is_file(), "missing stage snapshot: {}", path.display());
     }
 }
+
+#[test]
+fn removed_pagination_fields_absent_from_docs_and_examples() {
+    let root = manifest_dir();
+    for rel in [
+        "../docs/pagination.md",
+        "../docs/dsl.md",
+        "../docs/auth.md",
+        "../dev_doc/architecture.md",
+        "../dev_doc/auth_runtime.md",
+        "../concord_examples/src/pagination.rs",
+        "../concord_examples/src/custom_pagination.rs",
+        "../concord_examples/src/docs_dsl.rs",
+    ] {
+        let path = root.join(rel);
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+        for line in text.lines() {
+            let line = line.trim();
+            if line.contains("paginate")
+                && (line.contains("stop_on_short_page") || line.contains("stop ="))
+            {
+                panic!(
+                    "removed pagination field syntax must stay absent from {}: {}",
+                    path.display(),
+                    line
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn production_macro_source_has_no_validation_dependent_panics() {
+    let root = manifest_dir().join("../concord_macros/src");
+    let mut hits = Vec::new();
+
+    visit_rs_files(&root, &mut |path| {
+        let text = std::fs::read_to_string(path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
+        let production = text
+            .split_once("#[cfg(test)]")
+            .map(|(head, _)| head)
+            .unwrap_or(&text);
+        for (line_no, line) in production.lines().enumerate() {
+            let trimmed = line.trim();
+            for needle in [
+                "expect(\"validated",
+                "expect(\"valid",
+                "expect(\"resolved",
+                "unreachable!(\"sema",
+                "panic!(\"invalid DSL",
+            ] {
+                if trimmed.contains(needle) {
+                    hits.push(format!("{}:{}: {}", path.display(), line_no + 1, trimmed));
+                }
+            }
+        }
+    });
+
+    assert!(
+        hits.is_empty(),
+        "validation-dependent panic/expect patterns remain in production macro source:\n{}",
+        hits.join("\n")
+    );
+}
+
+fn visit_rs_files(root: &std::path::Path, visit: &mut impl FnMut(&std::path::Path)) {
+    let entries = std::fs::read_dir(root)
+        .unwrap_or_else(|err| panic!("failed to read dir {}: {err}", root.display()));
+    for entry in entries {
+        let entry =
+            entry.unwrap_or_else(|err| panic!("failed to read entry in {}: {err}", root.display()));
+        let path = entry.path();
+        if path.is_dir() {
+            visit_rs_files(&path, visit);
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            visit(&path);
+        }
+    }
+}

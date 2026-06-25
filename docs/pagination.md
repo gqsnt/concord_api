@@ -31,14 +31,21 @@ exact when present, and the runtime uses it before calling controller advance.
 Page types should implement it whenever they can expose the count without
 consuming themselves. An exact hint alone lets Concord stop before `advance()`
 for an empty page, hard-item-cap overflow, and provable `TakeItems`
-completion. Built-in offset, page-number, and cursor pagination provide the
-expected page size automatically from `limit` or `per_page`. Custom pagination
-controllers can call `PageRequest::set_expected_items_per_page(NonZeroUsize)`
-during `apply()` when they request a specific page size. With both an exact
-hint and an expected page size, the runtime also owns generic short-page stop
-before `advance()`. If custom pagination does not set an expected size,
-`collect()` still remains exact after consuming the page, but Concord cannot
-generically detect a short page before advance.
+completion. Built-in offset, cursor, and page-number pagination provide the
+expected page size automatically from `limit` or `per_page`. Built-in
+controllers are `OffsetLimitPagination`, `CursorPagination`, and
+`PagedPagination`. Custom pagination controllers can call
+`PageRequest::set_expected_items_per_page(NonZeroUsize)` during `apply()`
+when they request a specific page size. With both an exact hint and an
+expected page size, the runtime also owns generic short-page stop before
+`advance()`. If custom pagination does not set an expected size, `collect()`
+still remains exact after consuming the page, but Concord cannot generically
+detect a short page before advance.
+
+Removed controller-local short-page stop fields such as `stop` and
+`stop_on_short_page` remain unsupported. Runtime-owned short-page stopping is
+controlled by `PageItems::item_count_hint()` and
+`PageRequest::set_expected_items_per_page()`.
 
 If a later page request would reuse any previously seen logical request
 identity, the runtime returns a typed pagination error instead of silently

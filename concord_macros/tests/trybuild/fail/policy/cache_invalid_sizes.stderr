@@ -1,0 +1,29 @@
+error: cache capacity must be greater than zero
+ --> tests/trybuild/fail/policy/cache_invalid_sizes.rs:8:22
+  |
+8 |             capacity 0 entries
+  |                      ^
+
+error: number too large to fit in target type
+  --> tests/trybuild/fail/policy/cache_invalid_sizes.rs:22:22
+   |
+22 |             capacity 18446744073709551616 entries
+   |                      ^^^^^^^^^^^^^^^^^^^^
+
+error: cache max_body must be greater than zero
+  --> tests/trybuild/fail/policy/cache_invalid_sizes.rs:36:22
+   |
+36 |             max_body 0 bytes
+   |                      ^
+
+error: number too large to fit in target type
+  --> tests/trybuild/fail/policy/cache_invalid_sizes.rs:50:22
+   |
+50 |             max_body 18446744073709551616 bytes
+   |                      ^^^^^^^^^^^^^^^^^^^^
+
+error: expected cache size unit after max_body; expected bytes, kb, kib, mb, mib, gb, or gib
+  --> tests/trybuild/fail/policy/cache_invalid_sizes.rs:64:24
+   |
+64 |             max_body 1 frob
+   |                        ^^^^

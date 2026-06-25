@@ -62,12 +62,13 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
                 d.default.as_ref(),
             )?;
             if !was_present {
-                client_vars.push(
-                    client_vars_map
-                        .get(&d.rust.to_string())
-                        .expect("inserted client var")
-                        .clone(),
-                );
+                let resolved = client_vars_map.get(&d.rust.to_string()).ok_or_else(|| {
+                    syn::Error::new(
+                        d.rust.span(),
+                        "internal resolver error: inserted client var missing from resolution map",
+                    )
+                })?;
+                client_vars.push(resolved.clone());
             }
         }
     }
@@ -86,12 +87,13 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
                 d.default.as_ref(),
             )?;
             if !was_present {
-                client_auth_vars.push(
-                    auth_vars_map
-                        .get(&d.rust.to_string())
-                        .expect("inserted auth var")
-                        .clone(),
-                );
+                let resolved = auth_vars_map.get(&d.rust.to_string()).ok_or_else(|| {
+                    syn::Error::new(
+                        d.rust.span(),
+                        "internal resolver error: inserted auth var missing from resolution map",
+                    )
+                })?;
+                client_auth_vars.push(resolved.clone());
             }
         }
     }
