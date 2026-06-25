@@ -390,10 +390,27 @@ mod test {
     }
 
     #[test]
+    fn test_url_path_push_preserves_interior_slash() {
+        let mut p = UrlPath::new();
+        p.push_raw("a/b");
+        assert_eq!(p.as_str(), "/a/b");
+    }
+
+    #[test]
     fn test_url_path_segment_encoded_does_not_trim_spaces() {
         let mut p = UrlPath::new();
         p.push_segment_encoded(" a ");
         assert_eq!(p.as_str(), "/%20a%20");
+    }
+
+    #[test]
+    fn test_url_path_segment_encoded_preserves_dot_segments_and_encodes_data() {
+        let mut p = UrlPath::new();
+        p.push_segment_encoded(".");
+        p.push_segment_encoded("..");
+        p.push_segment_encoded("a b");
+        p.push_segment_encoded("\u{00b5}");
+        assert_eq!(p.as_str(), "/./../a%20b/%C2%B5");
     }
 
     #[test]

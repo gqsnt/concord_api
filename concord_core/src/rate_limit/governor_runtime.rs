@@ -551,6 +551,7 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("rate_limit key `[host]`"));
         assert!(!msg.contains(concat!("unknown", "-", "host")));
+        assert!(!msg.contains("<unknown>"));
     }
 
     #[test]

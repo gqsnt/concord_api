@@ -12,3 +12,5 @@ pub mod pagination;
 pub mod policy_stack;
 pub mod riot;
 pub mod test_api;
+#[cfg(test)]
+pub mod url_host_path;

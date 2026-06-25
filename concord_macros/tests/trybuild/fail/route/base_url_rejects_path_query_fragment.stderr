@@ -1,0 +1,17 @@
+error: base URL must contain only scheme and host
+ --> tests/trybuild/fail/route/base_url_rejects_path_query_fragment.rs:5:14
+  |
+5 |         base "https://example.com/api"
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: base URL must contain only scheme and host
+  --> tests/trybuild/fail/route/base_url_rejects_path_query_fragment.rs:11:14
+   |
+11 |         base "https://example.com?x=1"
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: base URL must contain only scheme and host
+  --> tests/trybuild/fail/route/base_url_rejects_path_query_fragment.rs:17:14
+   |
+17 |         base "https://example.com#frag"
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,11 @@
+error: base URL must start with `https://` or `http://`
+ --> tests/trybuild/fail/route/base_url_rejects_invalid_scheme_or_empty_host.rs:5:14
+  |
+5 |         base "ftp://example.com"
+  |              ^^^^^^^^^^^^^^^^^^^
+
+error: base URL must contain only scheme and host
+  --> tests/trybuild/fail/route/base_url_rejects_invalid_scheme_or_empty_host.rs:11:14
+   |
+11 |         base "https://"
+   |              ^^^^^^^^^^

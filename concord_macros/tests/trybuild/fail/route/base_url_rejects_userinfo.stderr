@@ -1,0 +1,11 @@
+error: base URL must contain only scheme and host
+ --> tests/trybuild/fail/route/base_url_rejects_userinfo.rs:5:14
+  |
+5 |         base "https://user@example.com"
+  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: base URL must contain only scheme and host
+  --> tests/trybuild/fail/route/base_url_rejects_userinfo.rs:11:14
+   |
+11 |         base "https://user:pass@example.com"
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

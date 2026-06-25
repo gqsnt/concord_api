@@ -727,6 +727,21 @@ mod tests {
     }
 
     #[test]
+    fn static_path_slash_behavior_characterized() {
+        let out = expanded(quote! {
+            client StaticPathSlashApi {
+                base "https://example.com"
+            }
+
+            GET Show
+                path ["a/b"]
+                -> Json<String>
+        });
+
+        assert_contains_all(&out, &["route.path_mut().push_raw(\"a/b\")"]);
+    }
+
+    #[test]
     fn generated_policy_snapshot_materializes_resolved_policy() {
         let out = expanded(quote! {
             client PolicyPlanApi {

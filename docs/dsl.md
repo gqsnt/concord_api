@@ -104,7 +104,7 @@ A compile-checked version of the guide examples lives in `concord_examples/src/d
 
 ### Base URL
 
-`base` declares the scheme and root domain.
+`base` declares the scheme and root domain. It accepts only `http://...` or `https://...` host-only literals. Path, query, fragment, userinfo, backslash, whitespace, and control characters are rejected.
 
 ```rust
 client ExampleApi {
@@ -286,7 +286,7 @@ Scope-level attachments apply to all nested endpoints. Nested scopes inherit out
 
 ### Host and path
 
-`host [...]` appends host labels before the base domain. `path [...]` appends path atoms.
+`host [...]` appends host labels before the base domain. `path [...]` appends route atoms.
 
 ```rust
 scope tenant(tenant_id: String) {
@@ -295,9 +295,12 @@ scope tenant(tenant_id: String) {
 }
 ```
 
-`host [...]` is a scope-level route fragment. Use a scope when a group of endpoints needs dynamic or additional host labels.
+`host [...]` is a scope-level route fragment. Use a scope when a group of endpoints needs dynamic or additional host labels. Dynamic host pieces are label-safe only: they are validated as host labels and cannot inject scheme, userinfo, port, query, fragment, slash, backslash, whitespace, or empty/dashed labels.
 
-Path atoms are encoded segment-by-segment. Split fixed path pieces into separate string atoms.
+Path atoms follow two rules:
+
+- string atoms are trusted route literals and are joined raw, so a literal like `"a/b"` intentionally contributes a slash-separated route fragment;
+- dynamic atoms, including `fmt[...]` in a path position, are treated as one segment of data, reject `/`, `\`, `.` and `..`, and percent-encode other bytes segment-by-segment.
 
 ### Formatting with `fmt`
 

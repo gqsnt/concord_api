@@ -111,15 +111,18 @@ fn emit_value_expr(v: &PublicValueKind, ctx: PolicyEmitCtx) -> TokenStream2 {
 }
 
 fn emit_dynamic_path_segment_push(value: TokenStream2, label: LitStr) -> TokenStream2 {
-    quote! {
-        {
-            let __segment = (#value).to_string();
-            if __segment.contains('/') || __segment.contains('\\') {
-                return ::core::result::Result::Err(
-                    ::concord_core::prelude::ApiClientError::invalid_param(ctx.clone(), #label)
-                );
-            }
-            route.path_mut().push_segment_encoded(&__segment);
+        quote! {
+            {
+                let __segment = (#value).to_string();
+                if __segment == "." || __segment == ".."
+                    || __segment.contains('/')
+                    || __segment.contains('\\')
+                {
+                    return ::core::result::Result::Err(
+                        ::concord_core::prelude::ApiClientError::invalid_param(ctx.clone(), #label)
+                    );
+                }
+                route.path_mut().push_segment_encoded(&__segment);
         }
     }
 }

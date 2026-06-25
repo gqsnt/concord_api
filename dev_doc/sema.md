@@ -24,6 +24,12 @@ values, timeout expressions, route atoms, public `fmt[...]` pieces, and
 pagination assignment values must not resolve through auth material, secret
 variables, or generated implementation locals.
 
+Route atoms split into trusted string literals and dynamic data: static path
+string atoms stay as raw route fragments, while dynamic path pieces and
+`fmt[...]` path pieces are checked as single encoded segments and reject `/`,
+`\`, `.` and `..`. Dynamic host pieces are checked as host labels, not as
+full URL hosts.
+
 The parser may keep raw Rust expressions so diagnostics can point at the user
 token, but sema must reject forbidden roots before resolved IR reaches codegen.
 Forbidden roots include `auth`, `secret`, `secrets`, `ctx`, `cx`, `ep`, `vars`,
