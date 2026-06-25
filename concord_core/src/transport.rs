@@ -203,6 +203,58 @@ impl fmt::Debug for TransportAuth {
     }
 }
 
+pub(crate) fn validate_transport_auth_collisions(
+    built: &BuiltRequest,
+) -> Result<(), crate::auth::AuthError> {
+    use http::header::AUTHORIZATION;
+
+    for slot in &built.extensions.pending_auth_slots {
+        match &slot.placement {
+            PendingAuthPlacement::Bearer => {
+                if built.headers.contains_key(AUTHORIZATION) {
+                    return Err(crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::InvalidConfiguration,
+                        "bearer auth collides with an existing public Authorization header",
+                    ));
+                }
+            }
+            PendingAuthPlacement::Header(name) => {
+                if built.headers.contains_key(name) {
+                    return Err(crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::InvalidConfiguration,
+                        format!("header auth key `{name}` collides with an existing public header"),
+                    ));
+                }
+            }
+            PendingAuthPlacement::Query(name) => {
+                if built
+                    .url
+                    .query_pairs()
+                    .any(|(existing, _)| existing == name.as_str())
+                {
+                    return Err(crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::InvalidConfiguration,
+                        format!(
+                            "query auth key `{name}` collides with an existing public query parameter"
+                        ),
+                    ));
+                }
+            }
+            PendingAuthPlacement::Basic => {
+                if built.headers.contains_key(AUTHORIZATION) {
+                    return Err(crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::InvalidConfiguration,
+                        "basic auth collides with an existing public Authorization header",
+                    ));
+                }
+            }
+            PendingAuthPlacement::Certificate => {}
+        }
+    }
+
+    Ok(())
+}
+
 pub(crate) fn materialize_transport_request(
     built: &BuiltRequest,
     materials: &[crate::auth::AuthTransportMaterial],
@@ -220,6 +272,8 @@ pub(crate) fn materialize_transport_request(
         };
         by_slot.insert(slot_id, material);
     }
+
+    validate_transport_auth_collisions(built)?;
 
     let mut req = TransportRequest {
         meta: built.meta.clone(),
@@ -272,18 +326,6 @@ pub(crate) fn materialize_transport_request(
                 PendingAuthPlacement::Query(name),
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
-                if req
-                    .url
-                    .query_pairs()
-                    .any(|(existing, _)| existing == name.as_str())
-                {
-                    return Err(crate::auth::AuthError::new(
-                        crate::auth::AuthErrorKind::InvalidConfiguration,
-                        format!(
-                            "query auth key `{name}` collides with an existing public query parameter"
-                        ),
-                    ));
-                }
                 req.url.query_pairs_mut().append_pair(name, secret.expose());
             }
             (

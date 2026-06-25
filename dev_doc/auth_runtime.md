@@ -44,8 +44,14 @@ cache lookup/store/fallback for that protected request.
 
 Query-auth materialization must reject a public query parameter that already
 uses the auth query key. The rejection happens before raw query-auth material is
-appended and before transport send, and the typed error may name the key but
-must not include the secret value.
+appended and before cache lookup, rate-limit acquisition, and transport send,
+and the typed error may name the key but must not include the secret value.
+
+Header-auth materialization follows the same structural rule: public headers
+cannot silently collide with bearer, Basic, or custom auth headers, and header
+matching is case-insensitive. The runtime rejects those collisions before cache
+lookup, rate-limit acquisition, and transport rather than overwriting the
+public header value.
 
 Custom transports receive the materialized `TransportRequest`, so they see real credentials at the send boundary. Transport implementations must not log the raw request.
 

@@ -58,6 +58,12 @@ otherwise Concord bypasses cache lookup, stale fallback, and cache write. Cache
 keys must use safe auth identity, not materialized auth headers, query-auth
 values, tokens, secrets, or body bytes.
 
+Reserved auth names are structural, not best-effort. Query-auth names are
+rejected if a public query parameter already uses the same key, and
+header-auth names are rejected case-insensitively if a public header already
+uses the same name. Those collisions are rejected before cache lookup,
+rate-limit acquisition, and transport.
+
 ## Deprecated Dev Body Capture
 
 Live request/response body debug is not supported. `DebugSink`, stderr debug

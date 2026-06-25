@@ -11,7 +11,7 @@ use concord_core::advanced::{
 };
 use concord_core::internal::{ClientPlanContext, RequestPlan};
 use concord_core::prelude::{AccessToken, ApiClientError, ApiKey, ClientContext, Endpoint};
-use http::{HeaderMap, Method, StatusCode};
+use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -329,6 +329,241 @@ async fn query_auth_key_collision_fails_before_transport_without_leaking_secret(
         other => panic!("expected auth error, got {other:?}"),
     }
     assert_eq!(sent.sent_count().await, 0);
+}
+
+#[tokio::test]
+async fn query_auth_collision_fails_before_cache_and_rate_limit() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::hit(
+        events.clone(),
+        built_response("Text", StatusCode::OK, "cached"),
+    ));
+    let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+    );
+    let sent = transport.clone();
+    let mut client = client(
+        TestAuthVars {
+            token: Some("QUERY_AUTH_COLLISION_SECRET".to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    let mut policy = auth_policy(AuthPlacement::Query("api_key"));
+    policy.cache =
+        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
+    policy
+        .query
+        .push(("api_key".to_string(), "public-value".to_string()));
+
+    let err = client
+        .request(TextEndpoint {
+            policy,
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("query auth collision should fail before cache or rate limit");
+
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
+            let msg = source.to_string();
+            assert!(msg.contains("api_key"));
+            assert!(!msg.contains("QUERY_AUTH_COLLISION_SECRET"));
+        }
+        other => panic!("expected auth error, got {other:?}"),
+    }
+    assert_eq!(sent.sent_count().await, 0);
+    let events = events.lock().await.clone();
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.starts_with("cache_before:"))
+    );
+    assert!(!events.iter().any(|event| event == "cache_hit"));
+    assert!(!events.iter().any(|event| event == "rate_acquire"));
+    assert!(!events.iter().any(|event| event == "rate_response"));
+}
+
+#[tokio::test]
+async fn public_header_auth_collision_fails_before_cache_and_rate_limit() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::hit(
+        events.clone(),
+        built_response("Text", StatusCode::OK, "cached"),
+    ));
+    let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+    );
+    let sent = transport.clone();
+    let mut client = client(
+        TestAuthVars {
+            token: Some("BEARER_HEADER_COLLISION_SECRET".to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    let mut policy = auth_policy(AuthPlacement::Bearer);
+    policy.cache =
+        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
+    policy.headers.insert(
+        http::header::AUTHORIZATION,
+        HeaderValue::from_static("public"),
+    );
+
+    let err = client
+        .request(TextEndpoint {
+            policy,
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("bearer authorization collision should fail before cache or rate limit");
+
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
+            let msg = source.to_string();
+            assert!(msg.contains("Authorization"));
+            assert!(!msg.contains("BEARER_HEADER_COLLISION_SECRET"));
+        }
+        other => panic!("expected auth error, got {other:?}"),
+    }
+    assert_eq!(sent.sent_count().await, 0);
+    let events = events.lock().await.clone();
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.starts_with("cache_before:"))
+    );
+    assert!(!events.iter().any(|event| event == "cache_hit"));
+    assert!(!events.iter().any(|event| event == "rate_acquire"));
+    assert!(!events.iter().any(|event| event == "rate_response"));
+}
+
+#[tokio::test]
+async fn header_auth_collision_fresh_cache_hit_does_not_mask_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::hit(
+        events.clone(),
+        built_response("Text", StatusCode::OK, "cached"),
+    ));
+    let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+    );
+    let sent = transport.clone();
+    let mut client = client(
+        TestAuthVars {
+            token: Some("FRESH_CACHE_COLLISION_SECRET".to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    let mut policy = auth_policy(AuthPlacement::Bearer);
+    policy.cache =
+        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
+    policy.headers.insert(
+        http::header::AUTHORIZATION,
+        HeaderValue::from_static("public"),
+    );
+
+    let err = client
+        .request(TextEndpoint {
+            policy,
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("fresh cache hit must not mask header collision");
+
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
+            let msg = source.to_string();
+            assert!(msg.contains("Authorization"));
+            assert!(!msg.contains("FRESH_CACHE_COLLISION_SECRET"));
+        }
+        other => panic!("expected auth error, got {other:?}"),
+    }
+    assert_eq!(sent.sent_count().await, 0);
+    let events = events.lock().await.clone();
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.starts_with("cache_before:"))
+    );
+    assert!(!events.iter().any(|event| event == "cache_hit"));
+    assert!(!events.iter().any(|event| event == "rate_acquire"));
+    assert!(!events.iter().any(|event| event == "rate_response"));
+}
+
+#[tokio::test]
+async fn custom_header_auth_collision_fails_before_cache_and_rate_limit_case_insensitive() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::hit(
+        events.clone(),
+        built_response("Text", StatusCode::OK, "cached"),
+    ));
+    let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+    );
+    let sent = transport.clone();
+    let mut client = client(
+        TestAuthVars {
+            token: Some("HEADER_AUTH_COLLISION_SECRET".to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    let mut policy = auth_policy(AuthPlacement::Header("X-Api-Key"));
+    policy.cache =
+        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
+    policy.headers.insert(
+        HeaderName::from_static("x-api-key"),
+        HeaderValue::from_static("public"),
+    );
+
+    let err = client
+        .request(TextEndpoint {
+            policy,
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("custom header collision should fail before cache or rate limit");
+
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
+            let msg = source.to_string();
+            assert!(msg.contains("x-api-key"));
+            assert!(!msg.contains("HEADER_AUTH_COLLISION_SECRET"));
+        }
+        other => panic!("expected auth error, got {other:?}"),
+    }
+    assert_eq!(sent.sent_count().await, 0);
+    let events = events.lock().await.clone();
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.starts_with("cache_before:"))
+    );
+    assert!(!events.iter().any(|event| event == "cache_hit"));
+    assert!(!events.iter().any(|event| event == "rate_acquire"));
+    assert!(!events.iter().any(|event| event == "rate_response"));
 }
 
 #[tokio::test]

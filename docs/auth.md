@@ -197,11 +197,16 @@ can affect cache identity without materializing raw credentials into the cache
 key. Query-auth credentials do not collapse into the public URL cache key; the
 query key and safe auth identity are represented, but the raw query-auth value
 is not. If Concord cannot identify a protected request safely, it skips cache
-lookup and cache store for that request by default.
+lookup and cache store for that request by default. Query/header auth collisions
+are rejected before cache lookup, rate-limit acquisition, and transport.
 
 If a public query parameter already uses the same key as a query-auth
 credential, Concord rejects the request before transport with a typed auth
 configuration error. It does not append a duplicate credential query key or
 materialize the raw query-auth secret before reporting the collision.
+
+Header-auth placements reserve their header name as well. A public header that
+collides with a bearer, Basic, or custom header-auth header is rejected before
+transport, and header-name matching is case-insensitive.
 
 The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug/display output, diagnostics, cache/debug keys, and generated documentation, not to the request sent over transport.

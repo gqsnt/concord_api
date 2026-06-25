@@ -94,6 +94,13 @@ cache store are bypassed for that request. Protected auth rejections are never
 written as successful cache entries, and they do not use stale fallback by
 default.
 
+Public query parameters and public headers cannot silently collide with
+reserved auth names. Query-auth keys are rejected before cache lookup,
+rate-limit acquisition, and transport if the same query parameter already
+exists, and header-auth names are rejected case-insensitively before cache
+lookup, rate-limit acquisition, and transport if the same public header name
+already exists.
+
 Pagination follows the same per-page runtime order on each page request. If a
 later page would repeat any previously seen logical request identity in the
 same pagination run, Concord returns a typed non-progress pagination error

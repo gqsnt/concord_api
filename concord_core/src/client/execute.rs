@@ -165,6 +165,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let auth_attempt = self
                 .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
+            crate::transport::validate_transport_auth_collisions(&built).map_err(|source| {
+                ApiClientError::Auth {
+                    ctx: ctx.clone(),
+                    source,
+                }
+            })?;
             let url_str = built.debug_url();
             let cache_revalidation = match self.check_fresh_cache(&mut built).await {
                 CacheBeforeOutcome::Hit(cached) => {
@@ -422,6 +428,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let auth_attempt = self
                 .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
+            crate::transport::validate_transport_auth_collisions(&built).map_err(|source| {
+                ApiClientError::Auth {
+                    ctx: ctx.clone(),
+                    source,
+                }
+            })?;
             let url_str = built.debug_url();
 
             self.debug_planned_request(dbg, &plan, &built, &url_str);

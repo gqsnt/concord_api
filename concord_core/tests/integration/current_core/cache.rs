@@ -3,8 +3,8 @@ use bytes::Bytes;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthIdentity, AuthPlacement,
     BuiltRequest, BuiltResponse, CacheAfter, CacheBefore, CacheFuture, CacheKey, CacheRevalidation,
-    CacheStore, CredentialMaterial, DebugSink, PreparedAuthCredential, SecretCredential,
-    apply_secret_credential,
+    CacheStore, CredentialMaterial, DebugSink, PreparedAuthCredential, RequestMeta,
+    SecretCredential, apply_basic_credential, apply_secret_credential,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, ClientContext, DebugLevel, Endpoint};
 use http::{HeaderMap, Method, StatusCode};
@@ -672,6 +672,221 @@ async fn query_auth_cache_is_partitioned_without_raw_query_secret() -> Result<()
 }
 
 #[tokio::test]
+async fn header_auth_cache_is_partitioned_by_safe_identity() -> Result<(), ApiClientError> {
+    let cache = Arc::new(DefaultKeyMemoryCache::default());
+    let events_a = Arc::new(Mutex::new(Vec::new()));
+    let events_b = Arc::new(Mutex::new(Vec::new()));
+    let transport_a = MockTransport::new(
+        events_a,
+        vec![MockResponse::text(
+            StatusCode::OK,
+            "CACHE_RESPONSE_FOR_HEADER_AUTH_A",
+        )],
+    );
+    let transport_b = MockTransport::new(
+        events_b,
+        vec![MockResponse::text(
+            StatusCode::OK,
+            "CACHE_RESPONSE_FOR_HEADER_AUTH_B",
+        )],
+    );
+    let sent_a = transport_a.clone();
+    let sent_b = transport_b.clone();
+    let mut client_a = client(
+        TestAuthVars {
+            token: Some("HEADER_CACHE_SECRET_A".to_string()),
+            ..Default::default()
+        },
+        transport_a,
+    );
+    let mut client_b = client(
+        TestAuthVars {
+            token: Some("HEADER_CACHE_SECRET_B".to_string()),
+            ..Default::default()
+        },
+        transport_b,
+    );
+    configure_runtime(&mut client_a, Some(cache.clone()), None);
+    configure_runtime(&mut client_b, Some(cache.clone()), None);
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Header("X-Api-Key"));
+            policy.cache = concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new(),
+            );
+            policy
+        },
+        ..Default::default()
+    };
+
+    let first = client_a.request(endpoint.clone()).execute_decoded().await?;
+    let second = client_b.request(endpoint).execute_decoded().await?;
+
+    assert_eq!(first.value(), "CACHE_RESPONSE_FOR_HEADER_AUTH_A");
+    assert_eq!(second.value(), "CACHE_RESPONSE_FOR_HEADER_AUTH_B");
+    assert_eq!(sent_a.sent_count().await, 1);
+    assert_eq!(sent_b.sent_count().await, 1);
+    let keys = cache.keys().await;
+    assert_eq!(keys.len(), 2);
+    assert!(keys.iter().all(|key| key.contains("place:6:header")));
+    assert!(keys.iter().all(|key| key.contains("header:9:x-api-key")));
+    assert!(
+        keys.iter()
+            .all(|key| !key.contains("HEADER_CACHE_SECRET_A"))
+    );
+    assert!(
+        keys.iter()
+            .all(|key| !key.contains("HEADER_CACHE_SECRET_B"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn basic_auth_cache_is_partitioned_by_safe_identity() -> Result<(), ApiClientError> {
+    let cache = Arc::new(DefaultKeyMemoryCache::default());
+    let events_a = Arc::new(Mutex::new(Vec::new()));
+    let events_b = Arc::new(Mutex::new(Vec::new()));
+    let transport_a = MockTransport::new(
+        events_a,
+        vec![MockResponse::text(
+            StatusCode::OK,
+            "CACHE_RESPONSE_FOR_BASIC_AUTH_A",
+        )],
+    );
+    let transport_b = MockTransport::new(
+        events_b,
+        vec![MockResponse::text(
+            StatusCode::OK,
+            "CACHE_RESPONSE_FOR_BASIC_AUTH_B",
+        )],
+    );
+    let sent_a = transport_a.clone();
+    let sent_b = transport_b.clone();
+    let mut client_a = concord_core::prelude::ApiClient::<BasicCacheCx, _>::with_transport(
+        (),
+        BasicCacheVars {
+            username: "BASIC_CACHE_USERNAME_A".to_string(),
+            password: "BASIC_CACHE_PASSWORD_A".to_string(),
+        },
+        transport_a,
+    );
+    let mut client_b = concord_core::prelude::ApiClient::<BasicCacheCx, _>::with_transport(
+        (),
+        BasicCacheVars {
+            username: "BASIC_CACHE_USERNAME_B".to_string(),
+            password: "BASIC_CACHE_PASSWORD_B".to_string(),
+        },
+        transport_b,
+    );
+    configure_runtime(&mut client_a, Some(cache.clone()), None);
+    configure_runtime(&mut client_b, Some(cache.clone()), None);
+    let endpoint = BasicCacheEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Basic);
+            policy.cache = concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new(),
+            );
+            policy
+        },
+    };
+
+    let first = client_a.request(endpoint.clone()).execute_decoded().await?;
+    let second = client_b.request(endpoint).execute_decoded().await?;
+
+    assert_eq!(first.value(), "CACHE_RESPONSE_FOR_BASIC_AUTH_A");
+    assert_eq!(second.value(), "CACHE_RESPONSE_FOR_BASIC_AUTH_B");
+    assert_eq!(sent_a.sent_count().await, 1);
+    assert_eq!(sent_b.sent_count().await, 1);
+    let keys = cache.keys().await;
+    assert_eq!(keys.len(), 2);
+    assert!(keys.iter().all(|key| key.contains("place:5:basic")));
+    assert!(
+        keys.iter()
+            .all(|key| !key.contains("BASIC_CACHE_USERNAME_A"))
+    );
+    assert!(
+        keys.iter()
+            .all(|key| !key.contains("BASIC_CACHE_USERNAME_B"))
+    );
+    assert!(
+        keys.iter()
+            .all(|key| !key.contains("BASIC_CACHE_PASSWORD_A"))
+    );
+    assert!(
+        keys.iter()
+            .all(|key| !key.contains("BASIC_CACHE_PASSWORD_B"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn basic_auth_collision_fails_before_cache_and_rate_limit() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::hit(
+        events.clone(),
+        built_response("BasicCache", StatusCode::OK, "cached"),
+    ));
+    let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+    );
+    let sent = transport.clone();
+    let mut client = concord_core::prelude::ApiClient::<BasicCacheCx, _>::with_transport(
+        (),
+        BasicCacheVars {
+            username: "BASIC_COLLISION_USERNAME".to_string(),
+            password: "BASIC_COLLISION_PASSWORD".to_string(),
+        },
+        transport,
+    );
+    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    let endpoint = BasicCacheEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Basic);
+            policy.cache = concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new(),
+            );
+            policy.headers.insert(
+                http::header::AUTHORIZATION,
+                http::HeaderValue::from_static("public"),
+            );
+            policy
+        },
+    };
+
+    let err = client
+        .request(endpoint)
+        .execute_decoded()
+        .await
+        .expect_err("basic auth collision should fail before cache or rate limit");
+
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(
+                source.kind,
+                concord_core::advanced::AuthErrorKind::InvalidConfiguration
+            );
+            let msg = source.to_string();
+            assert!(msg.contains("Authorization"));
+            assert!(!msg.contains("BASIC_COLLISION_USERNAME"));
+            assert!(!msg.contains("BASIC_COLLISION_PASSWORD"));
+        }
+        other => panic!("expected auth error, got {other:?}"),
+    }
+    assert_eq!(sent.sent_count().await, 0);
+    let events = events.lock().await.clone();
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.starts_with("cache_before:"))
+    );
+    assert!(!events.iter().any(|event| event == "cache_hit"));
+    assert!(!events.iter().any(|event| event == "rate_acquire"));
+    assert!(!events.iter().any(|event| event == "rate_response"));
+}
+
+#[tokio::test]
 async fn same_auth_identity_hits_cache() -> Result<(), ApiClientError> {
     let cache = Arc::new(DefaultKeyMemoryCache::default());
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -712,6 +927,31 @@ async fn same_auth_identity_hits_cache() -> Result<(), ApiClientError> {
 }
 
 #[tokio::test]
+async fn public_unauthenticated_cache_still_works() -> Result<(), ApiClientError> {
+    let cache = Arc::new(DefaultKeyMemoryCache::default());
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "PUBLIC_CACHE_RESPONSE")],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    let endpoint = TextEndpoint {
+        policy: cache_policy(),
+        ..Default::default()
+    };
+
+    let first = client.request(endpoint.clone()).execute_decoded().await?;
+    let second = client.request(endpoint).execute_decoded().await?;
+
+    assert_eq!(first.value(), "PUBLIC_CACHE_RESPONSE");
+    assert_eq!(second.value(), "PUBLIC_CACHE_RESPONSE");
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
 async fn anonymous_protected_identity_bypasses_cache_runtime() -> Result<(), ApiClientError> {
     let cache = Arc::new(CountingCache::default());
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -744,6 +984,54 @@ async fn anonymous_protected_identity_bypasses_cache_runtime() -> Result<(), Api
     assert_eq!(*cache.before_count.lock().await, 0);
     assert_eq!(*cache.after_response_count.lock().await, 0);
     assert_eq!(*cache.after_error_count.lock().await, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn protected_request_without_safe_identity_does_not_use_stale_fallback()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response("Text", StatusCode::OK, "stale");
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let after_error_count = cache.after_error_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "remote-fail",
+        )],
+    );
+    let sent = transport.clone();
+    let mut client = ApiClient::<AnonymousCacheCx, _>::with_transport(
+        (),
+        AnonymousAuthVars {
+            token: "ANONYMOUS_CACHE_SECRET".to_string(),
+        },
+        transport,
+    );
+    client.configure(|cfg| {
+        cfg.cache_store(cache.clone());
+    });
+
+    let err = client
+        .request(AnonymousTextEndpoint)
+        .execute_decoded()
+        .await
+        .expect_err("protected request without safe identity should not serve stale");
+
+    assert!(err.to_string().contains("500"));
+    assert_eq!(sent.sent_count().await, 1);
+    assert_eq!(*after_error_count.lock().await, 0);
+    let events = events.lock().await.clone();
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.starts_with("cache_before:"))
+    );
+    assert!(!events.iter().any(|event| event == "cache_after_error"));
     Ok(())
 }
 
@@ -834,6 +1122,92 @@ impl Endpoint<AnonymousCacheCx> for AnonymousTextEndpoint {
             Method::GET,
             "/text",
             policy,
+            None,
+            decode_string,
+        ))
+    }
+}
+
+#[derive(Clone)]
+struct BasicCacheVars {
+    username: String,
+    password: String,
+}
+
+#[derive(Clone)]
+struct BasicCacheCx;
+
+impl ClientContext for BasicCacheCx {
+    type Vars = ();
+    type AuthVars = BasicCacheVars;
+    type AuthState = ();
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+    fn prepare_auth_requirement<'a>(
+        requirement: &'a concord_core::advanced::AuthRequirement,
+        request: &'a mut AuthApplicationRequest<'_>,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>> {
+        Box::pin(async move {
+            let material = concord_core::prelude::BasicCredential::new(
+                auth.username.clone(),
+                auth.password.clone(),
+            );
+            let application = apply_basic_credential(request, requirement, &material)?;
+            let applied = AuthAppliedCredential {
+                credential_id: requirement.credential.id.clone(),
+                usage_id: requirement.usage_id.clone(),
+                step_id: requirement.step_id,
+                generation: Some(1),
+                identity: application.identity().clone(),
+                provenance: requirement.provenance.clone(),
+            };
+            Ok(PreparedAuthCredential::new(applied, application))
+        })
+    }
+
+    fn handle_auth_response<'a>(
+        _requirement: &'a concord_core::advanced::AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        _auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+        _status: StatusCode,
+        _headers: &'a HeaderMap,
+    ) -> concord_core::advanced::AuthFuture<
+        'a,
+        Result<concord_core::advanced::AuthDecision, AuthError>,
+    > {
+        Box::pin(async { Ok(concord_core::advanced::AuthDecision::Continue) })
+    }
+}
+
+#[derive(Clone)]
+struct BasicCacheEndpoint {
+    policy: concord_core::internal::ResolvedPolicy,
+}
+
+impl Endpoint<BasicCacheCx> for BasicCacheEndpoint {
+    type Response = String;
+
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, BasicCacheCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            "BasicCache",
+            Method::GET,
+            "/text",
+            self.policy.clone(),
             None,
             decode_string,
         ))

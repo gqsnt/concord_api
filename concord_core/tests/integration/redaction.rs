@@ -374,6 +374,26 @@ mod query_auth_redaction {
         Ok((debug.events(), sent.requests().await))
     }
 
+    async fn run_cache_observation_request(
+        policy: ResolvedPolicy,
+    ) -> Result<String, ApiClientError> {
+        let events = Arc::new(TokioMutex::new(Vec::new()));
+        let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+        let cache = Arc::new(RecordingCache::default());
+        let mut client =
+            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        client.configure(|cfg| {
+            cfg.cache_store(cache.clone());
+        });
+
+        client
+            .request(RedactionEndpoint { policy })
+            .execute_decoded()
+            .await?;
+
+        Ok(cache.observations().await.join("\n"))
+    }
+
     #[derive(Clone)]
     struct FailingTransport {
         requests: Arc<TokioMutex<Vec<TransportRequest>>>,
@@ -606,6 +626,48 @@ mod query_auth_redaction {
         let requests = sent.requests().await;
         assert!(requests[0].url.as_str().contains(API_KEY_SECRET));
         assert_secret_absent(&format!("{:?}", requests[0]), API_KEY_SECRET);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cache_store_input_does_not_expose_query_auth_secret() -> Result<(), ApiClientError> {
+        let output = run_cache_observation_request(policy_with_query_auth("api_key")).await?;
+
+        assert_secret_absent(&output, API_KEY_SECRET);
+        assert!(output.contains("key:"));
+        assert!(output.contains("api_key=<redacted>"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cache_store_input_does_not_expose_header_auth_secret() -> Result<(), ApiClientError> {
+        let output =
+            run_cache_observation_request(auth_policy(AuthPlacement::Header("X-Api-Key"))).await?;
+
+        assert_secret_absent(&output, API_KEY_SECRET);
+        assert!(output.contains("key:"));
+        assert!(output.contains("https://example.com/text"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cache_store_input_does_not_expose_bearer_secret() -> Result<(), ApiClientError> {
+        let output = run_cache_observation_request(auth_policy(AuthPlacement::Bearer)).await?;
+
+        assert_secret_absent(&output, BEARER_SECRET);
+        assert!(output.contains("key:"));
+        assert!(output.contains("https://example.com/text"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn cache_store_input_does_not_expose_basic_auth_material() -> Result<(), ApiClientError> {
+        let output = run_cache_observation_request(auth_policy(AuthPlacement::Basic)).await?;
+
+        assert_secret_absent(&output, BASIC_USERNAME_SECRET);
+        assert_secret_absent(&output, PASSWORD_SECRET);
+        assert!(output.contains("key:"));
+        assert!(output.contains("hash:"));
         Ok(())
     }
 
@@ -872,6 +934,96 @@ mod query_auth_redaction {
         assert!(output.contains("hash:"));
         assert!(!output.contains("user:"));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn public_header_cannot_collide_with_bearer_authorization() {
+        let events = Arc::new(TokioMutex::new(Vec::new()));
+        let transport = MockTransport::new(
+            events,
+            vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+        );
+        let sent = transport.clone();
+        let mut client =
+            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        client.configure(|_| {});
+        let mut policy = auth_policy(AuthPlacement::Bearer);
+        policy.headers.insert(
+            http::header::AUTHORIZATION,
+            http::HeaderValue::from_static("public-bearer"),
+        );
+
+        let err = client
+            .request(RedactionEndpoint { policy })
+            .execute_decoded()
+            .await
+            .expect_err("bearer Authorization collision should fail before transport");
+
+        let output = format!("{err:?}\n{err}");
+        assert!(output.contains("collides"));
+        assert!(!output.contains(BEARER_SECRET));
+        assert_eq!(sent.sent_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn public_header_collision_is_case_insensitive_for_custom_header_auth() {
+        let events = Arc::new(TokioMutex::new(Vec::new()));
+        let transport = MockTransport::new(
+            events,
+            vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+        );
+        let sent = transport.clone();
+        let client =
+            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        let mut client = client;
+        client.configure(|_| {});
+        let mut policy = auth_policy(AuthPlacement::Header("X-Api-Key"));
+        policy.headers.insert(
+            http::HeaderName::from_static("x-api-key"),
+            http::HeaderValue::from_static("public-header"),
+        );
+
+        let err = client
+            .request(RedactionEndpoint { policy })
+            .execute_decoded()
+            .await
+            .expect_err("header auth collision should fail before transport");
+
+        let output = format!("{err:?}\n{err}");
+        assert!(output.contains("collides"));
+        assert!(!output.contains(API_KEY_SECRET));
+        assert_eq!(sent.sent_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn basic_auth_collision_with_authorization_header_is_rejected() {
+        let events = Arc::new(TokioMutex::new(Vec::new()));
+        let transport = MockTransport::new(
+            events,
+            vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+        );
+        let sent = transport.clone();
+        let client =
+            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        let mut client = client;
+        client.configure(|_| {});
+        let mut policy = auth_policy(AuthPlacement::Basic);
+        policy.headers.insert(
+            http::header::AUTHORIZATION,
+            http::HeaderValue::from_static("public-basic"),
+        );
+
+        let err = client
+            .request(RedactionEndpoint { policy })
+            .execute_decoded()
+            .await
+            .expect_err("basic auth collision should fail before transport");
+
+        let output = format!("{err:?}\n{err}");
+        assert!(output.contains("collides"));
+        assert_secret_absent(&output, BASIC_USERNAME_SECRET);
+        assert_secret_absent(&output, PASSWORD_SECRET);
+        assert_eq!(sent.sent_count().await, 0);
     }
 
     #[tokio::test]

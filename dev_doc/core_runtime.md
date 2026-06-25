@@ -62,6 +62,12 @@ safe identity, never the query-auth value. A protected request whose pending
 auth identity is anonymous or otherwise unsafe bypasses cache lookup, stale
 fallback, and cache write rather than sharing a public cache entry.
 
+Public query parameters and public headers cannot silently collide with reserved
+auth names. Query-auth keys are rejected before transport if they already exist
+as public query parameters, and bearer, Basic, and custom header-auth names are
+rejected before cache lookup, rate-limit acquisition, and transport if they
+already exist as public headers or query keys.
+
 Debug sinks and runtime hooks are body-free. They may observe safe metadata and
 redacted headers/URLs, but they must not receive live request or response body
 bytes, snippets, previews, or formatted excerpts.
