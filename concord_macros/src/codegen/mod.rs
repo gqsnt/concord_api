@@ -172,6 +172,21 @@ mod tests {
         }
     }
 
+    fn without_doc_attrs(expanded: &str) -> String {
+        let mut out = String::new();
+        let mut rest = expanded;
+        while let Some(start) = rest.find("#[doc=\"") {
+            out.push_str(&rest[..start]);
+            let after_start = &rest[start + "#[doc=\"".len()..];
+            let Some(end) = after_start.find("\"]") else {
+                break;
+            };
+            rest = &after_start[end + 2..];
+        }
+        out.push_str(rest);
+        out
+    }
+
     #[test]
     fn facade_ir_contains_endpoint_target_metadata() {
         let resolved = crate::sema::analyze_tokens_for_test(quote! {
@@ -934,6 +949,186 @@ mod tests {
             &out,
             &["#[doc=\"Behavior: `client_read`, `scope_read`, `endpoint_read`\"]"],
         );
+    }
+
+    #[test]
+    fn rustdoc_behavior_label_dedup_does_not_affect_policy() {
+        let out = expanded(quote! {
+            client LabelDedup {
+                base "https://example.com"
+                secret token: String
+                credential read_auth = bearer(secret.token)
+
+                retry read {
+                    max_attempts 2
+                    methods [GET]
+                }
+
+                rate_limit read_limit {
+                    bucket read by [host] {
+                        1 / 1s
+                    }
+                }
+
+                behaviors {
+                    behavior read {
+                        auth bearer read_auth
+                        retry read
+                        rate_limit read_limit
+                    }
+                }
+
+                defaults {
+                    behavior read
+                }
+            }
+
+            scope users {
+                path ["users"]
+                behavior read
+
+                GET Me
+                    path ["me"]
+                    behavior read
+                    -> Json<()>
+            }
+        });
+
+        assert_contains_all(&out, &["#[doc=\"Behavior: `read`\"]", "policy.set_retry"]);
+        assert_contains_all(&out, &["policy.add_rate_limit"]);
+        let behavior_doc_lines = generated_doc_attrs(&out)
+            .into_iter()
+            .filter(|doc| doc.contains("Behavior:`"))
+            .collect::<Vec<_>>();
+        assert_eq!(behavior_doc_lines.len(), 1);
+        for idx in 0..3 {
+            assert!(
+                out.contains(&format!("users::Me:{idx}:read_auth")),
+                "missing repeated auth step {idx}\n{out}"
+            );
+        }
+        assert_eq!(
+            out.match_indices("users::Me:0:read_auth")
+                .chain(out.match_indices("users::Me:1:read_auth"))
+                .chain(out.match_indices("users::Me:2:read_auth"))
+                .count(),
+            3
+        );
+        assert_eq!(
+            out.match_indices("RateLimitBucketUse::new(\"read\",\"read_limit_0\"")
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn behavior_profiles_do_not_reach_runtime_codegen() {
+        let alpha = expanded(quote! {
+            client BehaviorCodegen {
+                base "https://example.com"
+                secret token: String
+                credential session = bearer(secret.token)
+
+                retry read {
+                    max_attempts 2
+                    methods [GET]
+                    on [401, 403]
+                    retry_after
+                }
+
+                cache standard {
+                    ttl 30s
+                    revalidate
+                }
+
+                rate_limit app {
+                    bucket application by [host] {
+                        1 / 1s
+                    }
+                }
+
+                behaviors {
+                    behavior alpha {
+                        auth bearer session
+                        retry read
+                        cache standard
+                        rate_limit app
+                    }
+                }
+
+                defaults {
+                    behavior alpha
+                }
+            }
+
+            GET Ping
+                path ["ping"]
+                behavior alpha
+                -> Json<()>
+        });
+        let beta = expanded(quote! {
+            client BehaviorCodegen {
+                base "https://example.com"
+                secret token: String
+                credential session = bearer(secret.token)
+
+                retry read {
+                    max_attempts 2
+                    methods [GET]
+                    on [401, 403]
+                    retry_after
+                }
+
+                cache standard {
+                    ttl 30s
+                    revalidate
+                }
+
+                rate_limit app {
+                    bucket application by [host] {
+                        1 / 1s
+                    }
+                }
+
+                behaviors {
+                    behavior beta {
+                        auth bearer session
+                        retry read
+                        cache standard
+                        rate_limit app
+                    }
+                }
+
+                defaults {
+                    behavior beta
+                }
+            }
+
+            GET Ping
+                path ["ping"]
+                behavior beta
+                -> Json<()>
+        });
+
+        assert_contains_all(
+            &alpha,
+            &[
+                "#[doc=\"Behavior: `alpha`\"]",
+                "policy.set_cache",
+                "policy.set_retry",
+                "policy.add_rate_limit",
+            ],
+        );
+        assert_contains_all(
+            &beta,
+            &[
+                "#[doc=\"Behavior: `beta`\"]",
+                "policy.set_cache",
+                "policy.set_retry",
+                "policy.add_rate_limit",
+            ],
+        );
+        assert_eq!(without_doc_attrs(&alpha), without_doc_attrs(&beta));
     }
 
     #[test]

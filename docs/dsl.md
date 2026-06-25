@@ -189,10 +189,15 @@ Merge rules:
 - client defaults apply first
 - scope policies apply from outer to inner
 - endpoint policies apply last
+- behavior clauses at one site apply in source order
+- the same behavior name may be reused across different layers, but not more than once at the same defaults, scope, or endpoint site
 - explicit `retry` and `cache` override behavior-provided `retry` and `cache` at the same attachment site
+- `retry off` and `cache off` clear inherited policy
 - behavior-provided `rate_limit` combines with explicit local `rate_limit`
 - `rate_limit off` clears inherited rate-limit policy
 - behavior rate-limit key bindings are resolved where the behavior is attached
+- auth uses append in source order across client defaults, scopes, and endpoints
+- behavior names are preserved only as rustdoc labels; they do not affect resolved runtime policy
 
 Behavior profiles can also be grouped:
 

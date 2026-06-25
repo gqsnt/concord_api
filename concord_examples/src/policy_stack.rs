@@ -24,6 +24,15 @@ api! {
                     100 / 1s
                 }
             }
+
+        }
+
+        behaviors {
+            behavior read {
+                retry read
+                cache standard
+                rate_limit app
+            }
         }
 
         defaults {
@@ -50,6 +59,22 @@ api! {
         path ["limited"]
         cache off
         -> Text<String>
+
+    GET BehaviorText
+        as behavior_text
+        path ["behavior-text"]
+        behavior read
+        -> Text<String>
 }
 
 pub use self::policy_api::PolicyApi;
+
+#[cfg(test)]
+mod tests {
+    use super::PolicyApi;
+
+    #[test]
+    fn policy_behavior_merge_docs_examples_compile() {
+        let _ = std::mem::size_of::<PolicyApi>();
+    }
+}

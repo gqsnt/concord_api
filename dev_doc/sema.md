@@ -63,6 +63,7 @@ At each attachment site, behavior is applied before explicit local clauses. That
 ## Merge rules
 
 - Explicit `retry` and `cache` override behavior-provided `retry` and `cache` at the same attachment site.
+- `retry off` and `cache off` clear inherited policy.
 - Rate-limit profiles combine.
 - `rate_limit off` clears inherited rate-limit policy.
 - `only` replaces the local inherited profile set where applicable.
@@ -77,7 +78,7 @@ Behavior profiles are resolved in sema and lowered into normal auth/cache/retry/
 
 Behavior rate-limit specs are intentionally resolved at the attachment site, not at declaration time. This is required because `rate_limit key name = arg` bindings are contextual and may be visible only at a scope or endpoint.
 
-Sema rejects duplicate behavior names across multiple `behavior` clauses at one attachment site: one client defaults block, one scope body, or one endpoint body. The parser already rejects duplicates inside a single `behavior [...]` list. Cross-layer reuse remains valid.
+Sema rejects duplicate behavior names across multiple `behavior` clauses at one attachment site: one client defaults block, one scope body, or one endpoint body. The parser already rejects duplicates inside a single `behavior [...]` list. Cross-layer reuse remains valid. Behavior clauses at one site apply in source order, and behavior names are preserved only for rustdoc labels.
 
 Behavior use order is:
 

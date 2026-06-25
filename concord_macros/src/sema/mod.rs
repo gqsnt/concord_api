@@ -781,6 +781,16 @@ fn effective_endpoint_rate_limit_bucket_names(
 }
 
 #[cfg(test)]
+fn auth_use_names(auth: &[AuthUsePlanIr]) -> Vec<String> {
+    auth.iter()
+        .map(|plan| {
+            let AuthUsePlanIr::Use(auth_use) = plan;
+            auth_use_credential_ident_ir(auth_use).to_string()
+        })
+        .collect()
+}
+
+#[cfg(test)]
 fn debug_norm_tree(norm: &NormApiTree) -> String {
     fn walk(items: &[NormNode], depth: usize, out: &mut String) {
         for item in items {
@@ -2630,6 +2640,774 @@ mod tests {
         let endpoint = &resolved_api.endpoints[0];
 
         assert_eq!(endpoint.behavior_doc.names, vec!["read".to_string()]);
+    }
+
+    #[test]
+    fn behavior_merge_order_snapshot() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client MergeSnapshotApi {
+                    base "https://example.com"
+                    secret client_token: String
+                    secret outer_token: String
+                    secret inner_token: String
+                    secret endpoint_token: String
+                    secret direct_token: String
+
+                    credential client_auth = bearer(secret.client_token)
+                    credential outer_auth = api_key(secret.outer_token)
+                    credential inner_auth = api_key(secret.inner_token)
+                    credential endpoint_auth = api_key(secret.endpoint_token)
+                    credential direct_auth = api_key(secret.direct_token)
+
+                    retry client_retry {
+                        max_attempts 2
+                        methods [GET]
+                        on [401, 403]
+                        retry_after
+                    }
+
+                    retry outer_retry {
+                        max_attempts 3
+                        methods [GET]
+                        on [429]
+                    }
+
+                    retry inner_retry {
+                        max_attempts 4
+                        methods [GET]
+                        on [500]
+                    }
+
+                    retry endpoint_retry {
+                        max_attempts 5
+                        methods [GET]
+                        on [502]
+                    }
+
+                    cache client_cache {
+                        ttl 30s
+                        revalidate
+                    }
+
+                    cache outer_cache {
+                        ttl 60s
+                        revalidate
+                    }
+
+                    cache inner_cache {
+                        ttl 90s
+                        revalidate
+                    }
+
+                    cache endpoint_cache {
+                        ttl 120s
+                        revalidate
+                    }
+
+                    rate_limit client_limit {
+                        bucket client by [host] {
+                            1 / 1s
+                        }
+                    }
+
+                    rate_limit outer_limit {
+                        bucket outer by [host] {
+                            2 / 1s
+                        }
+                    }
+
+                    rate_limit inner_limit {
+                        bucket inner by [host] {
+                            3 / 1s
+                        }
+                    }
+
+                    rate_limit endpoint_limit {
+                        bucket endpoint by [host] {
+                            4 / 1s
+                        }
+                    }
+
+                    behaviors {
+                        behavior client_behavior {
+                            auth bearer client_auth
+                            retry client_retry
+                            cache client_cache
+                            rate_limit client_limit
+                        }
+
+                        behavior outer_behavior {
+                            auth header "X-Outer" = outer_auth
+                            retry outer_retry
+                            cache outer_cache
+                            rate_limit outer_limit
+                        }
+
+                        behavior inner_behavior {
+                            auth query "inner" = inner_auth
+                            retry inner_retry
+                            cache inner_cache
+                            rate_limit inner_limit
+                        }
+
+                        behavior endpoint_behavior {
+                            auth header "X-Endpoint" = endpoint_auth
+                            retry off
+                            cache off
+                        }
+                    }
+
+                    defaults {
+                        behavior client_behavior
+                    }
+                }
+
+                scope outer {
+                    path ["outer"]
+                    behavior outer_behavior
+
+                    scope inner {
+                        path ["inner"]
+                        behavior inner_behavior
+
+                        GET Show
+                            path ["show"]
+                            behavior endpoint_behavior
+                            auth query "direct" = direct_auth
+                            retry endpoint_retry
+                            cache endpoint_cache
+                            rate_limit endpoint_limit
+                            -> Json<()>
+                    }
+                }
+            }
+            "#,
+        );
+
+        let endpoint = endpoint_by_name(&resolved_api, "Show");
+        let auth_names = auth_use_names(&endpoint.policy.auth);
+        assert_eq!(
+            auth_names,
+            vec![
+                "client_auth".to_string(),
+                "outer_auth".to_string(),
+                "inner_auth".to_string(),
+                "endpoint_auth".to_string(),
+                "direct_auth".to_string(),
+            ]
+        );
+        assert_eq!(
+            endpoint.behavior_doc.names,
+            vec![
+                "client_behavior".to_string(),
+                "outer_behavior".to_string(),
+                "inner_behavior".to_string(),
+                "endpoint_behavior".to_string(),
+            ]
+        );
+        assert!(matches!(
+            resolved_api.client_policy.retry,
+            Some(RetryResolved::Set(RetryConfigResolved {
+                max_attempts: 2,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            resolved_api.client_policy.cache,
+            Some(CacheResolved::Set(CacheConfigResolved {
+                default_ttl_secs: Some(30),
+                revalidate: Some(true),
+                ..
+            }))
+        ));
+        assert!(matches!(
+            resolved_api.client_policy.rate_limit,
+            Some(RateLimitResolved::Add(_))
+        ));
+        let client_rate_limit = rate_limit_plan(
+            resolved_api
+                .client_policy
+                .rate_limit
+                .as_ref()
+                .expect("client rate limit"),
+        );
+        assert_eq!(client_rate_limit.buckets.len(), 1);
+        let client_bucket = &client_rate_limit.buckets[0];
+        assert_eq!(client_bucket.kind, "client");
+        assert_eq!(client_bucket.name, "client_limit_0");
+        assert!(matches!(
+            client_bucket.key.as_slice(),
+            [RateLimitKeyResolved::RouteHost]
+        ));
+        assert_eq!(client_bucket.cost, 1);
+        assert_eq!(
+            client_bucket
+                .windows
+                .iter()
+                .map(|window| (window.max, window.per_secs))
+                .collect::<Vec<_>>(),
+            vec![(1, 1)]
+        );
+
+        assert_eq!(endpoint.policy.scopes.len(), 2);
+        let outer_scope = &endpoint.policy.scopes[0];
+        let inner_scope = &endpoint.policy.scopes[1];
+        assert!(matches!(
+            outer_scope.retry,
+            Some(RetryResolved::Set(RetryConfigResolved {
+                max_attempts: 3,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            outer_scope.cache,
+            Some(CacheResolved::Set(CacheConfigResolved {
+                default_ttl_secs: Some(60),
+                ..
+            }))
+        ));
+        assert!(matches!(
+            outer_scope.rate_limit,
+            Some(RateLimitResolved::Add(_))
+        ));
+        assert!(matches!(
+            inner_scope.retry,
+            Some(RetryResolved::Set(RetryConfigResolved {
+                max_attempts: 4,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            inner_scope.cache,
+            Some(CacheResolved::Set(CacheConfigResolved {
+                default_ttl_secs: Some(90),
+                ..
+            }))
+        ));
+        assert!(matches!(
+            inner_scope.rate_limit,
+            Some(RateLimitResolved::Add(_))
+        ));
+
+        assert!(matches!(
+            endpoint.policy.endpoint.retry,
+            Some(RetryResolved::Set(RetryConfigResolved {
+                max_attempts: 5,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            endpoint.policy.endpoint.cache,
+            Some(CacheResolved::Set(CacheConfigResolved {
+                default_ttl_secs: Some(120),
+                ..
+            }))
+        ));
+        assert!(matches!(
+            endpoint.policy.endpoint.rate_limit,
+            Some(RateLimitResolved::Add(_))
+        ));
+        assert_eq!(
+            effective_endpoint_rate_limit_bucket_names(&resolved_api, endpoint),
+            vec![
+                "client_limit_0".to_string(),
+                "outer_limit_0".to_string(),
+                "inner_limit_0".to_string(),
+                "endpoint_limit_0".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn auth_append_order_snapshot() {
+        let source = r#"
+            api! {
+                client AuthOrderApi {
+                    base "https://example.com"
+                    secret client_token: String
+                    secret scope_token: String
+                    secret endpoint_token: String
+                    secret direct_token: String
+
+                    credential client_auth = bearer(secret.client_token)
+                    credential scope_auth = api_key(secret.scope_token)
+                    credential endpoint_auth = api_key(secret.endpoint_token)
+                    credential direct_auth = api_key(secret.direct_token)
+
+                    behaviors {
+                        behavior client_behavior {
+                            auth bearer client_auth
+                        }
+
+                        behavior scope_behavior {
+                            auth header "X-Scope" = scope_auth
+                        }
+
+                        behavior endpoint_behavior {
+                            auth query "X-Endpoint" = endpoint_auth
+                        }
+                    }
+
+                    defaults {
+                        behavior client_behavior
+                    }
+                }
+
+                scope protected {
+                    path ["protected"]
+                    behavior scope_behavior
+
+                    GET Show
+                        path ["show"]
+                        behavior endpoint_behavior
+                        auth header "X-Direct" = direct_auth
+                        -> Json<()>
+                }
+            }
+            "#;
+        let resolved_api = analyze_source(source);
+        let endpoint = endpoint_by_name(&resolved_api, "Show");
+
+        assert_eq!(
+            auth_use_names(&endpoint.policy.auth),
+            vec![
+                "client_auth".to_string(),
+                "scope_auth".to_string(),
+                "endpoint_auth".to_string(),
+                "direct_auth".to_string(),
+            ]
+        );
+        assert_eq!(endpoint.policy.auth.len(), 4);
+        assert!(matches!(
+            endpoint.policy.auth.as_slice(),
+            [
+                AuthUsePlanIr::Use(client),
+                AuthUsePlanIr::Use(scope),
+                AuthUsePlanIr::Use(endpoint_behavior),
+                AuthUsePlanIr::Use(direct),
+            ] if matches!(client.provenance, AuthUseProvenanceIr::Client)
+                && matches!(scope.provenance, AuthUseProvenanceIr::Scope(0))
+                && matches!(endpoint_behavior.provenance, AuthUseProvenanceIr::Endpoint)
+                && matches!(direct.provenance, AuthUseProvenanceIr::Endpoint)
+        ));
+
+        let emitted = crate::codegen::emit(analyze_source(source));
+        let emitted = emitted
+            .to_string()
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect::<String>();
+        for needle in [
+            "CredentialId::new(\"AuthOrderApi\",\"client_auth\")",
+            "CredentialId::new(\"AuthOrderApi\",\"scope_auth\")",
+            "CredentialId::new(\"AuthOrderApi\",\"endpoint_auth\")",
+            "CredentialId::new(\"AuthOrderApi\",\"direct_auth\")",
+            "AuthUsageId::new(\"bearer\")",
+            "AuthUsageId::new(\"header\")",
+            "AuthUsageId::new(\"query\")",
+            "protected::Show:0:client_auth",
+            "protected::Show:1:scope_auth",
+            "protected::Show:2:endpoint_auth",
+            "protected::Show:3:direct_auth",
+        ] {
+            assert!(
+                emitted.contains(needle),
+                "generated auth plan missing `{needle}`\n{emitted}"
+            );
+        }
+        let mut last = 0;
+        for needle in [
+            "protected::Show:0:client_auth",
+            "protected::Show:1:scope_auth",
+            "protected::Show:2:endpoint_auth",
+            "protected::Show:3:direct_auth",
+        ] {
+            let pos = emitted
+                .find(needle)
+                .unwrap_or_else(|| panic!("missing step id `{needle}`"));
+            assert!(pos >= last, "step ids out of order around `{needle}`");
+            last = pos;
+        }
+    }
+
+    #[test]
+    fn retry_replace_snapshot() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client RetrySnapshotApi {
+                    base "https://example.com"
+
+                    retry retry_a {
+                        max_attempts 2
+                        methods [GET]
+                        on [429]
+                    }
+
+                    retry retry_b {
+                        max_attempts 3
+                        methods [GET]
+                        on [500]
+                    }
+
+                    retry retry_c {
+                        max_attempts 4
+                        methods [GET]
+                        on [502]
+                    }
+
+                    behaviors {
+                        behavior client_retry {
+                            retry retry_a
+                        }
+
+                        behavior scope_retry {
+                            retry retry_b
+                        }
+
+                        behavior clear_retry {
+                            retry off
+                        }
+
+                        behavior replace_retry {
+                            retry retry_c
+                        }
+                    }
+
+                    defaults {
+                        behavior client_retry
+                    }
+                }
+
+                scope protected {
+                    path ["protected"]
+                    behavior scope_retry
+
+                    GET Clear
+                        path ["clear"]
+                        behavior clear_retry
+                        -> Json<()>
+
+                    GET Replace
+                        path ["replace"]
+                        behavior replace_retry
+                        -> Json<()>
+                }
+            }
+            "#,
+        );
+        assert!(matches!(
+            resolved_api.client_policy.retry,
+            Some(RetryResolved::Set(RetryConfigResolved {
+                max_attempts: 2,
+                ..
+            }))
+        ));
+
+        let clear_endpoint = endpoint_by_name(&resolved_api, "Clear");
+        assert!(matches!(
+            clear_endpoint.policy.scopes[0].retry,
+            Some(RetryResolved::Set(RetryConfigResolved {
+                max_attempts: 3,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            clear_endpoint.policy.endpoint.retry,
+            Some(RetryResolved::Clear)
+        ));
+
+        let replace_endpoint = endpoint_by_name(&resolved_api, "Replace");
+        assert!(matches!(
+            replace_endpoint.policy.scopes[0].retry,
+            Some(RetryResolved::Set(RetryConfigResolved {
+                max_attempts: 3,
+                ..
+            }))
+        ));
+        assert!(matches!(
+            replace_endpoint.policy.endpoint.retry,
+            Some(RetryResolved::Set(RetryConfigResolved {
+                max_attempts: 4,
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn cache_replace_snapshot() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client CacheSnapshotApi {
+                    base "https://example.com"
+
+                    cache cache_a {
+                        ttl 30s
+                        revalidate
+                    }
+
+                    cache cache_b {
+                        ttl 60s
+                        revalidate
+                    }
+
+                    cache cache_c {
+                        ttl 90s
+                        revalidate
+                    }
+
+                    behaviors {
+                        behavior client_cache {
+                            cache cache_a
+                        }
+
+                        behavior scope_cache {
+                            cache cache_b
+                        }
+
+                        behavior clear_cache {
+                            cache off
+                        }
+
+                        behavior replace_cache {
+                            cache cache_c
+                        }
+                    }
+
+                    defaults {
+                        behavior client_cache
+                    }
+                }
+
+                scope protected {
+                    path ["protected"]
+                    behavior scope_cache
+
+                    GET Clear
+                        path ["clear"]
+                        behavior clear_cache
+                        -> Json<()>
+
+                    GET Replace
+                        path ["replace"]
+                        behavior replace_cache
+                        -> Json<()>
+                }
+            }
+            "#,
+        );
+        assert!(matches!(
+            resolved_api.client_policy.cache,
+            Some(CacheResolved::Set(CacheConfigResolved {
+                default_ttl_secs: Some(30),
+                ..
+            }))
+        ));
+
+        let clear_endpoint = endpoint_by_name(&resolved_api, "Clear");
+        assert!(matches!(
+            clear_endpoint.policy.scopes[0].cache,
+            Some(CacheResolved::Set(CacheConfigResolved {
+                default_ttl_secs: Some(60),
+                ..
+            }))
+        ));
+        assert!(matches!(
+            clear_endpoint.policy.endpoint.cache,
+            Some(CacheResolved::Clear)
+        ));
+
+        let replace_endpoint = endpoint_by_name(&resolved_api, "Replace");
+        assert!(matches!(
+            replace_endpoint.policy.scopes[0].cache,
+            Some(CacheResolved::Set(CacheConfigResolved {
+                default_ttl_secs: Some(60),
+                ..
+            }))
+        ));
+        assert!(matches!(
+            replace_endpoint.policy.endpoint.cache,
+            Some(CacheResolved::Set(CacheConfigResolved {
+                default_ttl_secs: Some(90),
+                ..
+            }))
+        ));
+    }
+
+    #[test]
+    fn rate_limit_append_off_snapshot() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client RateLimitSnapshotApi {
+                    base "https://example.com"
+
+                    rate_limit client_limit {
+                        bucket client by [host] {
+                            1 / 1s
+                        }
+                    }
+
+                    rate_limit scope_limit {
+                        bucket scope by [host] {
+                            2 / 1s
+                        }
+                    }
+
+                    rate_limit endpoint_limit {
+                        bucket endpoint by [host] {
+                            3 / 1s
+                        }
+                    }
+
+                    behaviors {
+                        behavior client_limit_behavior {
+                            rate_limit client_limit
+                        }
+
+                        behavior scope_limit_behavior {
+                            rate_limit scope_limit
+                        }
+
+                        behavior endpoint_limit_behavior {
+                            rate_limit endpoint_limit
+                        }
+
+                        behavior clear_limit_behavior {
+                            rate_limit off
+                        }
+                    }
+
+                    defaults {
+                        behavior client_limit_behavior
+                    }
+                }
+
+                scope protected {
+                    path ["protected"]
+                    behavior scope_limit_behavior
+
+                    GET Append
+                        path ["append"]
+                        behavior endpoint_limit_behavior
+                        -> Json<()>
+
+                    GET Clear
+                        path ["clear"]
+                        behavior clear_limit_behavior
+                        -> Json<()>
+                }
+            }
+            "#,
+        );
+
+        let append_endpoint = endpoint_by_name(&resolved_api, "Append");
+        assert_eq!(
+            effective_endpoint_rate_limit_bucket_names(&resolved_api, append_endpoint),
+            vec![
+                "client_limit_0".to_string(),
+                "scope_limit_0".to_string(),
+                "endpoint_limit_0".to_string(),
+            ]
+        );
+        assert!(matches!(
+            append_endpoint.policy.scopes[0].rate_limit,
+            Some(RateLimitResolved::Add(_))
+        ));
+        assert!(matches!(
+            append_endpoint.policy.endpoint.rate_limit,
+            Some(RateLimitResolved::Add(_))
+        ));
+        let append_plan = rate_limit_plan(
+            append_endpoint
+                .policy
+                .endpoint
+                .rate_limit
+                .as_ref()
+                .expect("append endpoint rate limit"),
+        );
+        assert_eq!(
+            append_plan
+                .buckets
+                .iter()
+                .map(|bucket| {
+                    (
+                        bucket.kind.as_str(),
+                        bucket.name.as_str(),
+                        bucket
+                            .key
+                            .iter()
+                            .map(|key| match key {
+                                RateLimitKeyResolved::RouteHost => "host",
+                                RateLimitKeyResolved::Endpoint => "endpoint",
+                                RateLimitKeyResolved::Method => "method",
+                                RateLimitKeyResolved::Named { name, .. } => name.as_str(),
+                                RateLimitKeyResolved::EpField { name, .. } => name.as_str(),
+                                RateLimitKeyResolved::Static { value, .. } => value.as_str(),
+                            })
+                            .collect::<Vec<_>>(),
+                        bucket.cost,
+                        bucket
+                            .windows
+                            .iter()
+                            .map(|window| (window.max, window.per_secs))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![(
+                "endpoint",
+                "endpoint_limit_0",
+                vec!["host"],
+                1,
+                vec![(3, 1)]
+            )]
+        );
+
+        let clear_endpoint = endpoint_by_name(&resolved_api, "Clear");
+        assert!(matches!(
+            clear_endpoint.policy.endpoint.rate_limit,
+            Some(RateLimitResolved::Clear)
+        ));
+        assert!(
+            effective_endpoint_rate_limit_bucket_names(&resolved_api, clear_endpoint).is_empty()
+        );
+    }
+
+    #[test]
+    fn same_layer_duplicate_behavior_rejected() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client DuplicateBehaviorApi {
+                    base "https://example.com"
+
+                    behavior read {
+                        retry off
+                    }
+
+                    defaults {
+                        behavior read
+                        behavior read
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+
+        let err = analyze(ast).expect_err("same-site duplicate behavior must fail");
+        assert!(
+            err.to_string()
+                .contains("duplicate behavior `read` at this attachment site")
+        );
     }
 
     #[test]

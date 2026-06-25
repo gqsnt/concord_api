@@ -32,14 +32,17 @@ client defaults
 -> endpoint
 ```
 
+Behavior clauses at one site apply in source order. The same behavior name may be reused across different layers, but sema rejects attaching it more than once at the same defaults, scope, or endpoint site.
+
 ## Behaviors
 
 Behavior profiles are semantic labels for repeated auth/cache/retry/rate-limit combinations. They can inherit with `extends`.
 
 Behavior merge rules:
 
-- auth uses append
+- auth uses append in source order
 - child retry/cache replace parent retry/cache when present
+- `retry off` and `cache off` clear inherited policy
 - behavior rate-limit specs append and resolve at attachment site
 - explicit local retry/cache override behavior retry/cache at that site
 - explicit local rate-limit combines with behavior rate-limit
