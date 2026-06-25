@@ -25,6 +25,7 @@ async fn fresh_cache_hit_skips_transport_and_rate_limit() -> Result<(), ApiClien
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
     configure_runtime(&mut client, Some(cache), Some(limiter));
 
     let endpoint = TextEndpoint {
@@ -37,7 +38,9 @@ async fn fresh_cache_hit_skips_transport_and_rate_limit() -> Result<(), ApiClien
     assert_eq!(sent_transport.sent_count().await, 0);
     let events = events.lock().await.clone();
     assert!(!events.iter().any(|event| event == "rate_acquire"));
+    assert!(!events.iter().any(|event| event == "rate_response"));
     assert!(!events.iter().any(|event| event == "transport"));
+    assert!(!events.iter().any(|event| event == "classify_response"));
     Ok(())
 }
 
@@ -182,6 +185,76 @@ async fn stale_cache_fallback_happens_after_retry_exhaustion() -> Result<(), Api
     assert_eq!(decoded.value(), "stale");
     assert_eq!(sent_transport.sent_count().await, 2);
     assert_eq!(*after_error_count.lock().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn stale_fallback_remote_attempt_observes_rate_limit_once() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let stale = built_response("Text", StatusCode::OK, "stale");
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let after_error_count = cache.after_error_count.clone();
+    let after_response_count = cache.after_response_count.clone();
+    let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "retry-me",
+        )],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), Some(limiter));
+
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = retry_policy(1);
+            policy.cache = concord_core::internal::CacheSetting::Config(
+                concord_core::advanced::CacheConfig::new(),
+            );
+            policy
+        },
+        ..Default::default()
+    };
+    let decoded = client.request(endpoint).execute_decoded().await?;
+
+    assert_eq!(decoded.value(), "stale");
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert_eq!(*after_error_count.lock().await, 1);
+
+    let events = events.lock().await.clone();
+    let acquire = events
+        .iter()
+        .position(|event| event == "rate_acquire")
+        .expect("rate limit acquired");
+    let transport = events
+        .iter()
+        .position(|event| event == "transport")
+        .expect("transport sent");
+    let rate = events
+        .iter()
+        .position(|event| event == "rate_status:500 Internal Server Error")
+        .expect("rate limit observed failed response");
+    let stale = events
+        .iter()
+        .position(|event| event == "cache_after_error")
+        .expect("stale fallback recorded");
+    assert!(acquire < transport);
+    assert!(transport < rate);
+    assert!(rate < stale);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.starts_with("rate_status:"))
+            .count(),
+        1
+    );
+    assert!(!events.iter().any(|event| event == "cache_after_response"));
     Ok(())
 }
 

@@ -164,7 +164,9 @@ GET Search
 
 A response observer can translate provider headers into rate-limit observations.
 
-Rate-limit response observation is response-based transport metadata observation, not an endpoint-success hook. It may see responses that later become auth rejection, retry, stale fallback, or decode failure. Concord v1 does not expose a separate rate-limit observation API for pure transport errors.
+Rate-limit acquisition happens after fresh cache lookup and before transport send. It is transport-metadata only and does not run for fresh cache hits or requests that cannot be materialized into a valid host/route.
+
+Rate-limit response observation is response-based transport metadata observation, not an endpoint-success hook. It may see responses that later become auth rejection, retry, stale fallback, or decode failure. Concord v1 does not expose a separate rate-limit observation API for pure transport errors. Rate-limit contexts are metadata-only and do not expose response body bytes or raw auth material. Query-auth URLs are redacted structurally, and bearer/basic header values and basic usernames/passwords remain absent from the exposed context surface.
 
 ```rust
 #[derive(Default)]
@@ -211,6 +213,8 @@ An empty `rate_limit {}` block is rejected because it has no effect. Use `rate_l
 `[host]` is a strict key part. If a bucket uses `[host]`, the request URL must have a host; otherwise execution fails before rate-limit permit acquisition and before transport. Concord does not invent fallback host values such as `"<unknown-host>"`. Endpoint, method, static string, and named key parts do not require a URL host unless they are combined with `[host]`.
 
 Rate-limit runtime state failures, such as poisoned window or cooldown locks, return typed runtime-state errors. They are reported before transport when the state is required for permit acquisition or cooldown handling.
+
+`execute_raw()` bypasses cache lookup and store, but it still follows the transport scheduling layer, so rate-limit acquire/observe behavior remains in effect for raw execution.
 
 Internal auth HTTP responses use a separate 1 MiB body limit for token and credential-acquisition calls. That limit is independent from endpoint response reads and from cache `max_body`.
 

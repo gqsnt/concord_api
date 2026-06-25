@@ -29,7 +29,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let rate_limit_meta = RateLimitContext {
             endpoint: built.meta.endpoint,
             method: &built.meta.method,
-            url: built.url.as_str(),
+            url: send_ctx.url_str,
             url_host: built.url.host_str(),
             attempt: built.meta.attempt,
             page_index: built.meta.page_index,
@@ -141,7 +141,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         url_str: &str,
         ctx: &ErrorContext,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let observe_ctx = Self::response_observation_ctx(&resp);
+        let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
         let rate_limit_action = self.observe_rate_limit_response(observe_ctx).await?;
         match classify_status(resp.status) {
@@ -205,7 +205,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let has_cache_revalidation = built.cache_revalidation.is_some();
         let transport_resp = self.acquire_rate_limit_and_send(built, send_ctx).await?;
         if transport_resp.status == http::StatusCode::NOT_MODIFIED && has_cache_revalidation {
-            let observe_ctx = Self::response_observation_ctx(&transport_resp);
+            let observe_ctx = Self::response_observation_ctx(&transport_resp, send_ctx.url_str);
             self.run_post_response_hook(observe_ctx).await;
             let _ = self.observe_rate_limit_response(observe_ctx).await?;
             return Ok(BuiltResponse {
@@ -228,11 +228,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         .await
     }
 
-    fn response_observation_ctx(resp: &TransportResponse) -> ResponseObservationCtx<'_> {
+    fn response_observation_ctx<'a>(
+        resp: &'a TransportResponse,
+        url_str: &'a str,
+    ) -> ResponseObservationCtx<'a> {
         ResponseObservationCtx {
             endpoint: resp.meta.endpoint,
             method: &resp.meta.method,
-            url: resp.url.as_str(),
+            url: url_str,
             url_host: resp.url.host_str(),
             attempt: resp.meta.attempt,
             page_index: resp.meta.page_index,

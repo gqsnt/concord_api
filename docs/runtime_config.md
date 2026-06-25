@@ -46,7 +46,10 @@ redacted headers, statuses, retry/cache/rate-limit events, and safe endpoint
 metadata. They never receive request or response body bytes. Concord does not
 route body bytes through debug sinks, stderr logs, hooks, or callback APIs.
 Rate-limit observation follows the same metadata-only boundary and remains
-response-based rather than endpoint-success based.
+response-based rather than endpoint-success based. Rate-limit acquire and
+response contexts stay body-free and raw-auth-free; query-auth URLs are
+redacted structurally, and bearer/basic credentials do not appear in rate-limit
+context surfaces.
 Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run before stale fallback and endpoint decode/map. They do not see body bytes or raw auth material and cannot make a failed endpoint execution cache-admissible.
 
 Custom cache stores receive the logical `BuiltRequest`. Protected requests are

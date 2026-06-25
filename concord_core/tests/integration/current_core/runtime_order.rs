@@ -2272,6 +2272,7 @@ async fn execute_raw_uses_retry_but_bypasses_cache() -> Result<(), ApiClientErro
     let retry_events = Arc::new(Mutex::new(Vec::new()));
     let cache = Arc::new(RecordingCache::miss(events.clone()));
     let after_response_count = cache.after_response_count.clone();
+    let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
         vec![
@@ -2281,7 +2282,8 @@ async fn execute_raw_uses_retry_but_bypasses_cache() -> Result<(), ApiClientErro
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, Some(cache), Some(limiter));
     client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
         retry_events.clone(),
         RetryDecision::Retry,
@@ -2300,13 +2302,18 @@ async fn execute_raw_uses_retry_but_bypasses_cache() -> Result<(), ApiClientErro
     assert_eq!(raw.body, Bytes::from_static(b"raw"));
     assert_eq!(sent_transport.sent_count().await, 2);
     assert_eq!(*after_response_count.lock().await, 0);
+    let events = events.lock().await.clone();
     assert!(
         events
-            .lock()
-            .await
             .iter()
             .all(|event| !event.starts_with("cache_before:"))
     );
+    assert_eq!(positions(&events, "rate_acquire").len(), 2);
+    assert_eq!(
+        positions(&events, "rate_status:500 Internal Server Error").len(),
+        1
+    );
+    assert_eq!(positions(&events, "rate_status:200 OK").len(), 1);
     assert_eq!(
         positions(&retry_events.lock().await, "retry_decision:Retry").len(),
         1

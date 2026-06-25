@@ -1,14 +1,18 @@
 use super::common::*;
 
 use bytes::Bytes;
+use concord_core::advanced::{
+    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter,
+};
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
     RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
-use concord_core::prelude::ApiClientError;
-use concord_core::prelude::Endpoint;
+use concord_core::prelude::{ApiClientError, Endpoint, RateLimitObservation, RateLimitObserver};
 use http::{HeaderValue, Method, StatusCode};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -55,6 +59,40 @@ impl Endpoint<TestCx> for ObservationFailureEndpoint {
     }
 }
 
+#[derive(Clone)]
+struct HostlessEndpoint {
+    policy: ResolvedPolicy,
+}
+
+impl Endpoint<TestCx> for HostlessEndpoint {
+    type Response = String;
+
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        Ok(RequestPlan {
+            endpoint: EndpointPlan {
+                meta: EndpointMeta {
+                    name: "Hostless",
+                    method: Method::GET,
+                    idempotent: true,
+                    facade_path: &[],
+                },
+                route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "", "/hostless"),
+                policy: self.policy.clone(),
+                body: BodyPlan::None,
+                response: ResponsePlan {
+                    accept: Some(HeaderValue::from_static("text/plain")),
+                    no_content: false,
+                    format: concord_core::internal::Format::Text,
+                    decode: decode_string,
+                },
+                pagination: None,
+            },
+            args: RequestArgs::default(),
+            overrides: RequestOverrides::default(),
+        })
+    }
+}
+
 fn decode_observation_failure(
     resp: concord_core::advanced::BuiltResponse,
     ctx: concord_core::advanced::ErrorContext,
@@ -71,6 +109,123 @@ fn decode_observation_failure(
         content_type,
         std::io::Error::other("invalid JSON payload"),
     ))
+}
+
+#[derive(Clone)]
+struct RecordingRateLimitContextLimiter {
+    events: Arc<Mutex<Vec<String>>>,
+    response_action: RateLimitResponseAction,
+}
+
+impl RecordingRateLimitContextLimiter {
+    fn new(events: Arc<Mutex<Vec<String>>>, response_action: RateLimitResponseAction) -> Self {
+        Self {
+            events,
+            response_action,
+        }
+    }
+}
+
+impl RateLimiter for RecordingRateLimitContextLimiter {
+    fn acquire<'a>(
+        &'a self,
+        ctx: RateLimitContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
+        let events = self.events.clone();
+        let endpoint = ctx.endpoint;
+        let method = ctx.method.clone();
+        let url = ctx.url.to_string();
+        let url_host = ctx.url_host.map(str::to_string);
+        let attempt = ctx.attempt;
+        let page_index = ctx.page_index;
+        let idempotent = ctx.idempotent;
+        Box::pin(async move {
+            let mut events = events.lock().await;
+            events.push(format!(
+                "rate_acquire_meta:{endpoint}:{method}:{url}:{}:{attempt}:{page_index}:{idempotent}",
+                url_host.as_deref().unwrap_or("<none>")
+            ));
+            Ok(RateLimitPermit)
+        })
+    }
+
+    fn on_response<'a>(
+        &'a self,
+        ctx: RateLimitResponseContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
+        let events = self.events.clone();
+        let action = self.response_action.clone();
+        let meta = ctx.meta;
+        let url_host = meta.url_host.unwrap_or("<none>");
+        let status = ctx.status;
+        let headers = format!("{:?}", ctx.headers);
+        Box::pin(async move {
+            let mut events = events.lock().await;
+            events.push(format!(
+                "rate_response_meta:{}:{}:{}:{}:{}:{}:{}",
+                meta.endpoint,
+                meta.method,
+                meta.url,
+                url_host,
+                meta.attempt,
+                meta.page_index,
+                meta.idempotent,
+            ));
+            events.push(format!("rate_response_status:{status}"));
+            events.push(format!("rate_response_headers:{headers}"));
+            Ok(action)
+        })
+    }
+}
+
+#[derive(Clone)]
+enum ObserverMode {
+    Fixed(RateLimitObservation),
+    RetryAfter429,
+}
+
+#[derive(Clone)]
+struct RecordingRateLimitObserver {
+    events: Arc<Mutex<Vec<String>>>,
+    mode: ObserverMode,
+}
+
+impl RecordingRateLimitObserver {
+    fn fixed(events: Arc<Mutex<Vec<String>>>, observation: RateLimitObservation) -> Self {
+        Self {
+            events,
+            mode: ObserverMode::Fixed(observation),
+        }
+    }
+
+    fn retry_after_429(events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self {
+            events,
+            mode: ObserverMode::RetryAfter429,
+        }
+    }
+}
+
+impl RateLimitObserver for RecordingRateLimitObserver {
+    fn observe(&self, ctx: RateLimitResponseContext<'_>) -> RateLimitObservation {
+        let mut events = self.events.try_lock().expect("rate limit observer lock");
+        events.push(format!(
+            "rate_observe_meta:{}:{}:{}:{}:{}:{}:{}",
+            ctx.meta.endpoint,
+            ctx.meta.method,
+            ctx.meta.url,
+            ctx.meta.url_host.unwrap_or("<none>"),
+            ctx.meta.attempt,
+            ctx.meta.page_index,
+            ctx.meta.idempotent
+        ));
+        events.push(format!("rate_observe_status:{}", ctx.status));
+        events.push(format!("rate_observe_headers:{:?}", ctx.headers));
+        match &self.mode {
+            ObserverMode::Fixed(observation) => observation.clone(),
+            ObserverMode::RetryAfter429 => ctx.on_429().retry_after(),
+        }
+    }
 }
 
 #[tokio::test]
@@ -308,4 +463,511 @@ async fn rate_limit_does_not_observe_transport_error_as_response() {
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event.starts_with("rate_status:")));
+}
+
+#[tokio::test]
+async fn missing_host_fails_before_rate_limit_acquire() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(RecordingRateLimitContextLimiter::new(
+        events.clone(),
+        RateLimitResponseAction::Continue,
+    ));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, None, Some(limiter));
+
+    let err = client
+        .request(HostlessEndpoint {
+            policy: ResolvedPolicy::default(),
+        })
+        .execute_decoded()
+        .await
+        .expect_err("hostless route should fail before rate limit acquisition");
+
+    assert_eq!(err.category(), concord_core::error::ErrorCategory::Config);
+    assert!(err.to_string().contains("build url"));
+    assert_eq!(sent_transport.sent_count().await, 0);
+    let events = events.lock().await.clone();
+    assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn rate_limit_acquire_context_does_not_expose_bearer_auth() -> Result<(), ApiClientError> {
+    const BEARER_SENTINEL: &str = "PR67_BEARER_SECRET_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(RecordingRateLimitContextLimiter::new(
+        events.clone(),
+        RateLimitResponseAction::Continue,
+    ));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::bearer(BEARER_SENTINEL, "bearer", events.clone()),
+        transport,
+    );
+    configure_runtime(&mut client, None, Some(limiter));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_acquire_meta:"))
+    );
+    assert!(!events.iter().any(|event| event.contains(BEARER_SENTINEL)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_acquire_context_does_not_expose_query_auth() -> Result<(), ApiClientError> {
+    const QUERY_SENTINEL: &str = "PR67_QUERY_SECRET_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(RecordingRateLimitContextLimiter::new(
+        events.clone(),
+        RateLimitResponseAction::Continue,
+    ));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let mut client = client(
+        TestAuthVars {
+            token: Some(QUERY_SENTINEL.to_string()),
+            identity: "query",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, None, Some(limiter));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_acquire_meta:"))
+    );
+    assert!(!events.iter().any(|event| event.contains(QUERY_SENTINEL)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_acquire_context_does_not_expose_basic_auth_material()
+-> Result<(), ApiClientError> {
+    const USER_SENTINEL: &str = "PR67_BASIC_USERNAME_DO_NOT_LEAK";
+    const PASS_SENTINEL: &str = "PR67_BASIC_PASSWORD_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(RecordingRateLimitContextLimiter::new(
+        events.clone(),
+        RateLimitResponseAction::Continue,
+    ));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::basic(USER_SENTINEL, PASS_SENTINEL, "basic", events.clone()),
+        transport,
+    );
+    configure_runtime(&mut client, None, Some(limiter));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(concord_core::advanced::AuthPlacement::Basic),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_acquire_meta:"))
+    );
+    assert!(!events.iter().any(|event| event.contains(USER_SENTINEL)));
+    assert!(!events.iter().any(|event| event.contains(PASS_SENTINEL)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_response_context_does_not_expose_bearer_auth() -> Result<(), ApiClientError> {
+    const BEARER_SENTINEL: &str = "PR67_BEARER_SECRET_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(RecordingRateLimitContextLimiter::new(
+        events.clone(),
+        RateLimitResponseAction::Continue,
+    ));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::bearer(BEARER_SENTINEL, "bearer", events.clone()),
+        transport,
+    );
+    configure_runtime(&mut client, None, Some(limiter));
+
+    client
+        .request(TextEndpoint {
+            policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_response_meta:"))
+    );
+    assert!(!events.iter().any(|event| event.contains(BEARER_SENTINEL)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_response_context_does_not_expose_query_auth() -> Result<(), ApiClientError> {
+    const QUERY_SENTINEL: &str = "PR67_QUERY_SECRET_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(RecordingRateLimitContextLimiter::new(
+        events.clone(),
+        RateLimitResponseAction::Continue,
+    ));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let mut client = client(
+        TestAuthVars {
+            token: Some(QUERY_SENTINEL.to_string()),
+            identity: "query",
+        },
+        transport,
+    );
+    configure_runtime(&mut client, None, Some(limiter));
+
+    client
+        .request(TextEndpoint {
+            policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_response_meta:"))
+    );
+    assert!(!events.iter().any(|event| event.contains(QUERY_SENTINEL)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_response_context_does_not_expose_basic_auth_material()
+-> Result<(), ApiClientError> {
+    const USER_SENTINEL: &str = "PR67_BASIC_USERNAME_DO_NOT_LEAK";
+    const PASS_SENTINEL: &str = "PR67_BASIC_PASSWORD_DO_NOT_LEAK";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(RecordingRateLimitContextLimiter::new(
+        events.clone(),
+        RateLimitResponseAction::Continue,
+    ));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::basic(USER_SENTINEL, PASS_SENTINEL, "basic", events.clone()),
+        transport,
+    );
+    configure_runtime(&mut client, None, Some(limiter));
+
+    client
+        .request(TextEndpoint {
+            policy: auth_policy(concord_core::advanced::AuthPlacement::Basic),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_response_meta:"))
+    );
+    assert!(!events.iter().any(|event| event.contains(USER_SENTINEL)));
+    assert!(!events.iter().any(|event| event.contains(PASS_SENTINEL)));
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_response_huge_delay_returns_typed_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let observer = Arc::new(RecordingRateLimitObserver::fixed(
+        events.clone(),
+        RateLimitObservation::limited().with_delay(Duration::MAX),
+    ));
+    let rate_limiter =
+        Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::TOO_MANY_REQUESTS, "limited")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, None, Some(rate_limiter));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("overflowing rate-limit delay should return a typed error");
+
+    assert_eq!(
+        err.category(),
+        concord_core::error::ErrorCategory::InternalInvariant
+    );
+    assert!(err.to_string().contains("cooldown duration overflowed"));
+    assert_eq!(sent_transport.sent_count().await, 1);
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_observe_status:429"))
+    );
+}
+
+#[tokio::test]
+async fn rate_limit_response_zero_delay_is_allowed() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let observer = Arc::new(RecordingRateLimitObserver::fixed(
+        events.clone(),
+        RateLimitObservation::limited().with_delay(Duration::ZERO),
+    ));
+    let rate_limiter =
+        Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, None, Some(rate_limiter));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: retry_policy(2),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_observe_status:500"))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_observe_status:200"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let observer = Arc::new(RecordingRateLimitObserver::fixed(
+        events.clone(),
+        RateLimitObservation::limited().with_delay(Duration::ZERO),
+    ));
+    let rate_limiter =
+        Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::bearer("PR67_BEARER_SECRET_DO_NOT_LEAK", "bearer", events.clone()),
+        transport,
+    );
+    configure_runtime(&mut client, None, Some(rate_limiter));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("auth rejection should remain terminal");
+
+    assert!(err.to_string().contains("auth challenge rejected"));
+    assert_eq!(sent_transport.sent_count().await, 1);
+    let events = events.lock().await.clone();
+    let observe = first_event_with_prefix(&events, "rate_observe_status:403 Forbidden");
+    let auth = first_position(&events, "auth_rejection:403 Forbidden");
+    assert!(observe < auth);
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_response_action_cannot_make_failed_response_cacheable() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let observer = Arc::new(RecordingRateLimitObserver::fixed(
+        events.clone(),
+        RateLimitObservation::limited().with_delay(Duration::ZERO),
+    ));
+    let rate_limiter =
+        Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "fail",
+        )],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("failed response should remain terminal");
+
+    assert!(matches!(
+        err,
+        ApiClientError::HttpStatus {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            ..
+        }
+    ));
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert!(
+        events
+            .lock()
+            .await
+            .iter()
+            .any(|event| event.starts_with("cache_before:"))
+    );
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert!(
+        !events
+            .lock()
+            .await
+            .iter()
+            .any(|event| event == "cache_after_response")
+    );
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_observe_status:500"))
+    );
+}
+
+#[tokio::test]
+async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
+-> Result<(), ApiClientError> {
+    let started = std::time::Instant::now();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let observer = Arc::new(RecordingRateLimitObserver::retry_after_429(events.clone()));
+    let rate_limiter =
+        Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
+    let mut headers = http::HeaderMap::new();
+    headers.insert(http::header::RETRY_AFTER, HeaderValue::from_static("1"));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse {
+                status: StatusCode::TOO_MANY_REQUESTS,
+                headers,
+                body: Bytes::from_static(b"retry-me"),
+                content_length: None,
+                chunks: None,
+            },
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, None, Some(rate_limiter));
+
+    let handle = tokio::spawn(async move {
+        client
+            .request(TextEndpoint {
+                policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+                ..Default::default()
+            })
+            .execute_decoded()
+            .await
+    });
+    let decoded = tokio::time::timeout(Duration::from_secs(3), handle)
+        .await
+        .expect("request should finish without double sleeping")
+        .expect("join handle should succeed")?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(sent_transport.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    let first = first_event_with_prefix(&events, "rate_observe_status:429 Too Many Requests");
+    let second = first_event_with_prefix(&events, "rate_observe_status:200 OK");
+    assert!(first < second);
+    Ok(())
 }

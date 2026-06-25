@@ -32,6 +32,8 @@ Runtime hooks and rate-limit observation are transport-response metadata observa
 
 Retry is a bounded transport/status decision layer. It runs after transport-response observation and auth rejection handling, and before stale fallback and endpoint decode/map. Retry does not handle endpoint decode failures or map/transform failures, and it cannot make a failed endpoint execution cache-admissible. Fresh cache hits bypass retry. `execute_raw()` bypasses cache; its retry behavior follows the documented raw-execution path.
 
+Rate-limit acquisition is also transport-metadata only. Fresh cache hits return before rate-limit acquisition, and requests that cannot be materialized into a valid URL do not acquire a permit. Rate-limit contexts expose only sanitized request metadata and response metadata; they do not expose response body bytes or raw auth material. `execute_raw()` still follows the transport scheduling layer, so it uses rate-limit acquire/observation while bypassing cache lookup and store.
+
 ## Invariants
 
 A fresh cache hit returns before rate-limit acquisition or transport.
