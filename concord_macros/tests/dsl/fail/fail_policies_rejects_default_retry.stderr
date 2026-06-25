@@ -1,5 +1,0 @@
-error: default retry policy is not allowed in policies block; use defaults { ... } or default { ... }
-  --> tests/dsl/fail/fail_policies_rejects_default_retry.rs:13:13
-   |
-13 |             retry read
-   |             ^^^^^

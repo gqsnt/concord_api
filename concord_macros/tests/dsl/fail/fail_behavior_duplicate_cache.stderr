@@ -1,5 +1,0 @@
-error: duplicate cache policy in behavior
-  --> tests/dsl/fail/fail_behavior_duplicate_cache.rs:13:13
-   |
-13 |             cache off
-   |             ^^^^^

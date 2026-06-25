@@ -1,5 +1,0 @@
-error: generated public API name `get` for endpoint method conflicts with endpoint method in generated `users` scope facade
-  --> tests/usage/fail/fail_duplicate_alias.rs:15:16
-   |
-15 |             as get
-   |                ^^^

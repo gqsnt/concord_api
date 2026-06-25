@@ -1,5 +1,0 @@
-error: invalid item in auth block; expected secret or credential
- --> tests/dsl/fail/fail_auth_group_invalid_item.rs:8:13
-  |
-8 |             retry read
-  |             ^^^^^

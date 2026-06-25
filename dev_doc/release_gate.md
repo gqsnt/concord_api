@@ -7,10 +7,14 @@ credentials or network access.
 Run:
 
 ```bash
-./scripts/check_v1.sh
+bash ./scripts/check_v1.sh
 ```
 
-The commands below are the full local gate. `./scripts/check_v1.sh` runs the scripted gate and targeted smoke checks. The release gate is enforced primarily by behavior tests, trybuild diagnostics, generated API compile checks, clippy, and rustdoc. Manual review covers source and documentation consistency.
+The commands below are the full local gate. `./scripts/check_v1.sh` requires
+`cargo-nextest` and runs the scripted gate. The release gate is enforced
+primarily by behavior tests, trybuild diagnostics, generated API compile
+checks, clippy, and rustdoc. Manual review covers source and documentation
+consistency.
 
 ## Core invariants
 
@@ -61,29 +65,56 @@ The commands below are the full local gate. `./scripts/check_v1.sh` runs the scr
 
 ```bash
 cargo fmt --check
-cargo test -p concord_core redaction
-cargo test -p concord_core auth
-cargo test -p concord_core cache
-cargo test -p concord_core pagination
-cargo test -p concord_core
-cargo test -p concord_macros
-cargo test -p concord_examples
-cargo test --workspace
-cargo doc --workspace --no-deps
 cargo clippy --workspace --all-targets -- -D warnings
-./scripts/check_v1.sh
+cargo nextest run --workspace --all-targets
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+bash ./scripts/check_v1.sh
 ```
 
-Targeted checks included in `./scripts/check_v1.sh` are the same local gate
-commands listed above.
+Trybuild remains part of the full gate through
+`cargo nextest run --workspace --all-targets`. It is serialized in
+`.config/nextest.toml` with the `trybuild` test group because it drives many
+rustc fixture compilations.
 
 ## Trybuild Snapshot Refresh
 
-Snapshot refresh is not part of the default gate. Only use it when macro
-diagnostics intentionally change:
+Trybuild fixtures are split by public UI-contract category under
+`concord_macros/tests/trybuild/`.
+
+The current trybuild test functions are:
+
+- `trybuild_pass_contract_fixtures`
+- `trybuild_auth_and_secret_diagnostics`
+- `trybuild_route_and_fmt_diagnostics`
+- `trybuild_policy_diagnostics`
+- `trybuild_pagination_diagnostics`
+- `trybuild_codegen_contract_diagnostics`
+
+Run the full trybuild suite with:
 
 ```bash
-TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current current_trybuild_fixtures_match_expected_results
+cargo nextest run -p concord_macros --test trybuild_current
 ```
+
+Snapshot refresh is not part of the default gate. Only use
+`TRYBUILD=overwrite` when macro diagnostics intentionally change:
+
+```bash
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current -- --test-threads=1
+```
+
+Category-specific refresh examples:
+
+```bash
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_auth_and_secret_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_route_and_fmt_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_policy_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_pagination_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_codegen_contract_diagnostics -- --test-threads=1
+```
+
+Inspect the git diff of `.stderr` files before accepting updates. Path-only
+changes from fixture moves are acceptable; changed wording/spans must be
+reviewed.
 
 After refreshing snapshots, rerun the full local v1 gate.

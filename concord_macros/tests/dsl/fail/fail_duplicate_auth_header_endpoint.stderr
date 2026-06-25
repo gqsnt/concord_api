@@ -1,5 +1,0 @@
-error: duplicate auth header `X-Endpoint-Key` in the same layer
-  --> tests/dsl/fail/fail_duplicate_auth_header_endpoint.rs:15:21
-   |
-15 |         auth header "x-endpoint-key" = second_key
-   |                     ^^^^^^^^^^^^^^^^

@@ -1,5 +1,0 @@
-error: generated public API name `request` for root endpoint method conflicts with generated client method in generated client
- --> tests/usage/fail/fail_reserved_endpoint_method.rs:7:12
-  |
-7 |         as request
-  |            ^^^^^^^

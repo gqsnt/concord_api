@@ -1,5 +1,0 @@
-error: cache ttl overflows u64 seconds
- --> tests/dsl/fail/fail_cache_ttl_overflow.rs:9:17
-  |
-9 |             ttl 18446744073709551615m
-  |                 ^^^^^^^^^^^^^^^^^^^^^

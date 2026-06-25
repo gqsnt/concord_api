@@ -1,5 +1,0 @@
-error: invalid item in auth block; expected secret or credential
- --> tests/dsl/fail/fail_auth_group_rejects_auth_use.rs:8:13
-  |
-8 |             auth bearer session
-  |             ^^^^

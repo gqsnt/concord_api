@@ -1,5 +1,0 @@
-error: invalid item in behaviors block; expected behavior profile
- --> tests/dsl/fail/fail_behaviors_invalid_item.rs:8:13
-  |
-8 |             retry read
-  |             ^^^^^

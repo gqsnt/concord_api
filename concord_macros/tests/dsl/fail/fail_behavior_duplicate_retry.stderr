@@ -1,5 +1,0 @@
-error: duplicate retry policy in behavior
-  --> tests/dsl/fail/fail_behavior_duplicate_retry.rs:14:13
-   |
-14 |             retry off
-   |             ^^^^^

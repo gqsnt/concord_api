@@ -1,5 +1,0 @@
-error: BasicAuth requires BasicCredential material; `session` does not fit
-  --> tests/usage/fail/fail_endpoint_unknown_used_as_basic.rs:30:20
-   |
-30 |         auth basic session
-   |                    ^^^^^^^

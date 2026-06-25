@@ -1,5 +1,0 @@
-error: multiple default blocks are not allowed in the current DSL
-  --> tests/dsl/fail/fail_duplicate_default_and_defaults.rs:11:9
-   |
-11 |         defaults {
-   |         ^^^^^^^^

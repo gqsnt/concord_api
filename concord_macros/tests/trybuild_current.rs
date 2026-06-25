@@ -1,209 +1,64 @@
+static TRYBUILD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
-fn current_trybuild_fixtures_match_expected_results() {
-    set_unique_trybuild_target();
-
-    for path in [
-        "tests/dsl/pass/pass_endpoint_stanza.rs",
-        "tests/dsl/pass/pass_fmt.rs",
-        "tests/dsl/pass/behavior_scope.rs",
-        "tests/dsl/pass/behavior_endpoint_override.rs",
-        "tests/dsl/pass/behavior_extends.rs",
-        "tests/dsl/pass/behavior_list.rs",
-        "tests/dsl/pass/behavior_rate_limit_merge.rs",
-        "tests/dsl/pass/behavior_rate_limit_key_binding.rs",
-        "tests/dsl/pass/rate_limit_duplicate_across_layers_allowed.rs",
-        "tests/dsl/pass/behavior_default.rs",
-        "tests/dsl/pass/behavior_default_override.rs",
-        "tests/dsl/pass/behavior_group.rs",
-        "tests/dsl/pass/behavior_group_mixed.rs",
-        "tests/dsl/pass/auth_group.rs",
-        "tests/dsl/pass/auth_group_mixed.rs",
-        "tests/dsl/pass/policies_group.rs",
-        "tests/dsl/pass/policies_group_mixed.rs",
-        "tests/dsl/pass/cache_sizing.rs",
-        "tests/dsl/pass/cache_ttl_large_valid_value.rs",
-        "tests/dsl/pass/defaults_alias.rs",
-        "tests/dsl/pass/pass_query_shorthand.rs",
-        "tests/dsl/pass/pass_retry_default.rs",
-        "tests/usage/pass/custom_codec_body.rs",
-        "tests/usage/pass/custom_codec_response.rs",
-        "tests/usage/pass/custom_codec_body_and_response.rs",
-        "tests/usage/pass/custom_pagination_controller.rs",
-        "tests/usage/pass/pass_client_config.rs",
-        "tests/usage/pass/pass_execution_pagination_auth.rs",
-        "tests/usage/pass/pass_facade_navigation.rs",
-        "tests/usage/pass/pass_generated_public_api_shape.rs",
-        "tests/usage/pass/pass_param_builders.rs",
-    ]
-    .into_iter()
-    {
-        trybuild::TestCases::new().pass(path);
-    }
-
-    for path in [
-        "tests/dsl/fail/fail_duplicate_default.rs",
-        "tests/dsl/fail/fail_base_malformed_url.rs",
-        "tests/dsl/fail/fail_base_split_http.rs",
-        "tests/dsl/fail/fail_base_split_https.rs",
-        "tests/dsl/fail/fail_base_authority_at.rs",
-        "tests/dsl/fail/fail_base_backslash.rs",
-        "tests/dsl/fail/fail_base_query.rs",
-        "tests/dsl/fail/fail_base_fragment.rs",
-        "tests/dsl/fail/fail_duplicate_behavior.rs",
-        "tests/dsl/fail/fail_duplicate_behavior_in_list.rs",
-        "tests/dsl/fail/fail_duplicate_behavior_same_site_defaults.rs",
-        "tests/dsl/fail/fail_duplicate_behavior_same_site_scope.rs",
-        "tests/dsl/fail/fail_duplicate_behavior_same_site_endpoint.rs",
-        "tests/dsl/fail/fail_duplicate_behavior_same_site_mixed_list.rs",
-        "tests/dsl/fail/fail_unknown_behavior_use.rs",
-        "tests/dsl/fail/fail_unknown_behavior_parent.rs",
-        "tests/dsl/fail/fail_behavior_self_extends.rs",
-        "tests/dsl/fail/fail_behavior_cycle.rs",
-        "tests/dsl/fail/fail_behavior_invalid_item.rs",
-        "tests/dsl/fail/fail_behavior_empty_list_scope.rs",
-        "tests/dsl/fail/fail_behavior_empty_list_defaults.rs",
-        "tests/dsl/fail/fail_behavior_empty_list_endpoint.rs",
-        "tests/dsl/fail/fail_behavior_duplicate_cache.rs",
-        "tests/dsl/fail/fail_behavior_duplicate_retry.rs",
-        "tests/dsl/fail/fail_behavior_duplicate_rate_limit.rs",
-        "tests/dsl/fail/fail_rate_limit_duplicate_list_endpoint.rs",
-        "tests/dsl/fail/fail_rate_limit_duplicate_list_defaults.rs",
-        "tests/dsl/fail/fail_rate_limit_duplicate_list_behavior.rs",
-        "tests/dsl/fail/fail_rate_limit_empty_list_endpoint.rs",
-        "tests/dsl/fail/fail_rate_limit_empty_list_defaults.rs",
-        "tests/dsl/fail/fail_rate_limit_empty_list_behavior.rs",
-        "tests/dsl/fail/fail_rate_limit_empty_block_defaults.rs",
-        "tests/dsl/fail/fail_rate_limit_empty_block_scope.rs",
-        "tests/dsl/fail/fail_rate_limit_empty_block_endpoint.rs",
-        "tests/dsl/fail/fail_unknown_retry_profile_behavior.rs",
-        "tests/dsl/fail/fail_unknown_cache_profile_behavior.rs",
-        "tests/dsl/fail/fail_unknown_rate_limit_profile_behavior.rs",
-        "tests/dsl/fail/fail_unknown_retry_profile_defaults.rs",
-        "tests/dsl/fail/fail_unknown_rate_limit_profile_endpoint.rs",
-        "tests/dsl/fail/fail_unknown_retry_profile_endpoint.rs",
-        "tests/dsl/fail/fail_unknown_cache_profile_endpoint.rs",
-        "tests/dsl/fail/fail_unknown_default_behavior.rs",
-        "tests/dsl/fail/fail_behaviors_invalid_item.rs",
-        "tests/dsl/fail/fail_duplicate_behavior_flat_and_group.rs",
-        "tests/dsl/fail/fail_auth_group_invalid_item.rs",
-        "tests/dsl/fail/fail_auth_group_rejects_auth_use.rs",
-        "tests/dsl/fail/fail_duplicate_auth_header_client.rs",
-        "tests/dsl/fail/fail_duplicate_auth_query_scope.rs",
-        "tests/dsl/fail/fail_duplicate_auth_header_endpoint.rs",
-        "tests/dsl/fail/fail_policies_invalid_item.rs",
-        "tests/dsl/fail/fail_policies_rejects_default_retry.rs",
-        "tests/dsl/fail/fail_policies_rejects_default_cache.rs",
-        "tests/dsl/fail/fail_policies_rejects_default_rate_limit.rs",
-        "tests/dsl/fail/fail_policies_rejects_behavior.rs",
-        "tests/dsl/fail/fail_cache_capacity_zero.rs",
-        "tests/dsl/fail/fail_cache_capacity_missing_entries.rs",
-        "tests/dsl/fail/fail_cache_capacity_duplicate.rs",
-        "tests/dsl/fail/fail_cache_max_body_zero.rs",
-        "tests/dsl/fail/fail_cache_max_body_missing_unit.rs",
-        "tests/dsl/fail/fail_cache_max_body_invalid_unit.rs",
-        "tests/dsl/fail/fail_cache_max_body_duplicate.rs",
-        "tests/dsl/fail/fail_cache_shared_duplicate.rs",
-        "tests/dsl/fail/fail_cache_max_body_overflow.rs",
-        "tests/dsl/fail/fail_cache_ttl_overflow.rs",
-        "tests/dsl/fail/fail_retry_status_invalid.rs",
-        "tests/dsl/fail/fail_rate_limit_zero_max.rs",
-        "tests/dsl/fail/fail_rate_limit_zero_cost.rs",
-        "tests/dsl/fail/fail_rate_limit_cost_exceeds_max.rs",
-        "tests/dsl/fail/fail_codec_spec_missing_type_arg.rs",
-        "tests/dsl/fail/fail_oauth2_token_url_invalid.rs",
-        "tests/dsl/fail/fail_auth_in_policy_expr.rs",
-        "tests/dsl/fail/fail_raw_auth_in_policy_expr.rs",
-        "tests/dsl/fail/fail_secret_in_policy_expr.rs",
-        "tests/dsl/fail/fail_raw_secret_in_policy_expr.rs",
-        "tests/dsl/fail/fail_secret_expose_in_query.rs",
-        "tests/dsl/fail/fail_secret_expose_secret_in_query.rs",
-        "tests/dsl/fail/fail_secret_in_timeout_expr.rs",
-        "tests/dsl/fail/fail_auth_in_route_fmt.rs",
-        "tests/dsl/fail/fail_secret_macro_in_policy_expr.rs",
-        "tests/dsl/fail/fail_raw_secret_macro_in_policy_expr.rs",
-        "tests/dsl/fail/fail_auth_path_in_policy_expr.rs",
-        "tests/dsl/fail/fail_secret_path_in_policy_expr.rs",
-        "tests/dsl/fail/fail_secret_block_in_policy_expr.rs",
-        "tests/dsl/fail/fail_raw_cx_in_policy_expr.rs",
-        "tests/dsl/fail/fail_raw_request_in_policy_expr.rs",
-        "tests/dsl/fail/fail_auth_in_route_atom.rs",
-        "tests/dsl/fail/fail_secret_in_route_atom.rs",
-        "tests/dsl/fail/fail_raw_auth_in_route_atom.rs",
-        "tests/dsl/fail/fail_raw_secret_in_route_atom.rs",
-        "tests/dsl/fail/fail_generated_local_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_ep_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_vars_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_self_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_request_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_url_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_cache_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_transport_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_client_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_runtime_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_policy_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_req_in_policy_expr.rs",
-        "tests/dsl/fail/fail_generated_local_headers_in_policy_expr.rs",
-        "tests/dsl/fail/fail_secret_exposure_method_in_policy_expr.rs",
-        "tests/dsl/fail/fail_secret_exposure_secret_method_in_policy_expr.rs",
-        "tests/dsl/fail/fail_secret_exposure_method_macro_in_policy_expr.rs",
-        "tests/dsl/fail/fail_raw_secret_exposure_method_in_policy_expr.rs",
-        "tests/dsl/fail/fail_raw_secret_exposure_secret_method_in_policy_expr.rs",
-        "tests/dsl/fail/fail_raw_secret_exposure_method_macro_in_policy_expr.rs",
-        "tests/dsl/fail/fail_secret_in_policy_fmt.rs",
-        "tests/dsl/fail/fail_secret_in_pagination_assignment.rs",
-        "tests/dsl/fail/fail_auth_in_pagination_assignment.rs",
-        "tests/dsl/fail/fail_pagination_unknown_field.rs",
-        "tests/dsl/fail/fail_fake_builtin_pagination_path.rs",
-        "tests/dsl/fail/fail_body_paginate.rs",
-        "tests/dsl/fail/fail_vars_in_pagination_expr.rs",
-        "tests/dsl/fail/fail_duplicate_default_and_defaults.rs",
-        "tests/dsl/fail/fail_duplicate_defaults.rs",
-        "tests/dsl/fail/fail_endpoint_duplicate_response.rs",
-        "tests/dsl/fail/fail_endpoint_missing_response.rs",
-        "tests/dsl/fail/fail_fmt_empty.rs",
-        "tests/dsl/fail/fail_fmt_secret_in_path.rs",
-        "tests/dsl/fail/fail_map_before_response.rs",
-        "tests/dsl/fail/fail_max_attempts_zero.rs",
-        "tests/dsl/fail/fail_query_unknown.rs",
-        "tests/dsl/fail/fail_invalid_static_header_value.rs",
-        "tests/usage/fail/body_codec_missing_trait.rs",
-        "tests/usage/fail/custom_pagination_block.rs",
-        "tests/usage/fail/custom_pagination_missing_default.rs",
-        "tests/usage/fail/fail_collect_pages.rs",
-        "tests/usage/fail/fail_duplicate_alias.rs",
-        "tests/usage/fail/fail_endpoint_access_token_used_as_basic.rs",
-        "tests/usage/fail/fail_endpoint_basic_used_as_bearer.rs",
-        "tests/usage/fail/fail_endpoint_certificate_used_as_basic.rs",
-        "tests/usage/fail/fail_endpoint_unknown_used_as_basic.rs",
-        "tests/usage/fail/fail_generated_public_type_collision.rs",
-        "tests/usage/fail/fail_maybe_field.rs",
-        "tests/usage/fail/fail_missing_required_param.rs",
-        "tests/usage/fail/fail_non_credential_acquire_as.rs",
-        "tests/usage/fail/fail_non_paginated_paginate.rs",
-        "tests/usage/fail/fail_raw_identifier_public_name.rs",
-        "tests/usage/fail/fail_reserved_credential_auth_method.rs",
-        "tests/usage/fail/fail_reserved_endpoint_method.rs",
-        "tests/usage/fail/fail_reserved_scope_accessor.rs",
-        "tests/usage/fail/fail_reset_field.rs",
-        "tests/usage/fail/fail_with_configure.rs",
-        "tests/usage/fail/response_codec_missing_trait.rs",
-    ]
-    .into_iter()
-    {
-        trybuild::TestCases::new().compile_fail(path);
-    }
+fn trybuild_pass_contract_fixtures() {
+    run_trybuild(|t| {
+        t.pass("tests/trybuild/pass/*.rs");
+    });
 }
 
-fn set_unique_trybuild_target() {
+#[test]
+fn trybuild_auth_and_secret_diagnostics() {
+    run_trybuild(|t| {
+        t.compile_fail("tests/trybuild/fail/auth/*.rs");
+    });
+}
+
+#[test]
+fn trybuild_route_and_fmt_diagnostics() {
+    run_trybuild(|t| {
+        t.compile_fail("tests/trybuild/fail/route/*.rs");
+        t.compile_fail("tests/trybuild/fail/fmt/*.rs");
+    });
+}
+
+#[test]
+fn trybuild_policy_diagnostics() {
+    run_trybuild(|t| {
+        t.compile_fail("tests/trybuild/fail/policy/*.rs");
+    });
+}
+
+#[test]
+fn trybuild_pagination_diagnostics() {
+    run_trybuild(|t| {
+        t.compile_fail("tests/trybuild/fail/pagination/*.rs");
+    });
+}
+
+#[test]
+fn trybuild_codegen_contract_diagnostics() {
+    run_trybuild(|t| {
+        t.compile_fail("tests/trybuild/fail/codegen/*.rs");
+    });
+}
+
+fn run_trybuild(run: impl FnOnce(&trybuild::TestCases)) {
+    let _guard = TRYBUILD_LOCK.lock().expect("trybuild lock poisoned");
+    set_trybuild_target();
+
+    let t = trybuild::TestCases::new();
+    run(&t);
+}
+
+fn set_trybuild_target() {
     let target_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("target")
-        .join("trybuild-current")
-        .join(std::process::id().to_string());
+        .join("trybuild-current");
 
-    // The test binary has one test, so mutating the process environment here is
-    // bounded to this harness. A run-local target dir avoids stale Windows
-    // locks from interrupted trybuild pass executables.
+    // Keep trybuild artifacts out of the workspace target while allowing the
+    // serialized category tests to reuse dependency builds.
     unsafe {
         std::env::set_var("CARGO_TARGET_DIR", target_dir);
     }

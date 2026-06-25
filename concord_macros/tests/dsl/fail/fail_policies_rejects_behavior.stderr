@@ -1,5 +1,0 @@
-error: invalid item in policies block; expected retry, cache, rate_limit, or observe
- --> tests/dsl/fail/fail_policies_rejects_behavior.rs:8:13
-  |
-8 |             behavior read {
-  |             ^^^^^^^^

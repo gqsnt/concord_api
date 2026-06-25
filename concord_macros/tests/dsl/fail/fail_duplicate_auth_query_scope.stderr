@@ -1,5 +1,0 @@
-error: duplicate auth query parameter `api_key` in the same layer
-  --> tests/dsl/fail/fail_duplicate_auth_query_scope.rs:14:20
-   |
-14 |         auth query "api_key" = second_key
-   |                    ^^^^^^^^^

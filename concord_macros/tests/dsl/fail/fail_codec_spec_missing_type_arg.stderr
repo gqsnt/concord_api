@@ -1,5 +1,0 @@
-error: codec spec expects a type argument: `Enc<T>`
-  --> tests/dsl/fail/fail_codec_spec_missing_type_arg.rs:10:16
-   |
-10 |         -> Json<>
-   |                ^^

@@ -17,7 +17,7 @@ user_docs=(
 )
 
 public_examples=(concord_examples/src)
-public_macro_pass=(concord_macros/tests/usage/pass concord_macros/tests/dsl/pass)
+public_macro_pass=(concord_macros/tests/trybuild/pass)
 
 run_cargo() {
   if [[ -n "${CARGO:-}" ]]; then
@@ -70,14 +70,14 @@ require_match() {
 echo "== cargo fmt --check =="
 run_cargo fmt --check
 
-echo "== cargo test --all-features =="
-run_cargo test --all-features
+echo "== cargo nextest run --workspace --all-targets --all-features =="
+run_cargo nextest run --workspace --all-targets --all-features
 
-echo "== cargo clippy --all-targets --all-features -- -D warnings =="
-run_cargo clippy --all-targets --all-features -- -D warnings
+echo "== cargo clippy --workspace --all-targets --all-features -- -D warnings =="
+run_cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-echo "== cargo doc --no-deps --all-features =="
-run_cargo doc --no-deps --all-features
+echo "== RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps --all-features =="
+RUSTDOCFLAGS="-D warnings" run_cargo doc --workspace --no-deps --all-features
 
 echo "== no public versioned docs =="
 if find docs -maxdepth 4 \( -iname "*v5*" -o -iname "*v6*" -o -iname "*migration*" \) | grep .; then
@@ -101,9 +101,9 @@ fail_if_match \
   "${user_docs[@]}" "${public_examples[@]}" "${public_macro_pass[@]}"
 
 require_match \
-  "split base syntax has compile-fail fixtures" \
-  "base +(http|https) +\"" \
-  concord_macros/tests/dsl/fail
+  "malformed base URL has compile-fail fixture" \
+  "base +\"https://example\\.com/v1\"" \
+  concord_macros/tests/trybuild/fail/route
 
 echo "== secret namespace restricted to credential declarations =="
 secret_hits="$(mktemp)"
@@ -170,7 +170,7 @@ require_match \
 fail_if_match \
   "old custom codec signatures" \
   "fn content_type\\(\\) -> &.static str|fn accept\\(\\) -> &.static str|fn encode\\(value: &Self::Value|fn decode\\(bytes: &Bytes" \
-  concord_core/src docs concord_examples concord_macros/tests/usage/pass
+  concord_core/src docs concord_examples concord_macros/tests/trybuild/pass
 
 require_match \
   "custom pagination API documented" \
@@ -205,6 +205,6 @@ require_match \
 require_match \
   "custom pagination missing Default compile-fail fixture" \
   "struct HeaderCursorPagination" \
-  concord_macros/tests/usage/fail/custom_pagination_missing_default.rs
+  concord_macros/tests/trybuild/fail/pagination/custom_pagination_missing_default.rs
 
 echo "current audit passed"

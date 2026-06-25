@@ -4,11 +4,51 @@ Concord uses several layers of tests because the project spans macro syntax, gen
 
 ## Macro tests
 
-Trybuild pass/fail fixtures cover public DSL syntax and compile-time diagnostics. Parser diagnostics snapshots should be updated intentionally with:
+Trybuild pass/fail fixtures cover public macro UI contracts: downstream
+compile boundaries, intended user-facing diagnostics, and span-sensitive
+diagnostics. Fixtures are split by category under
+`concord_macros/tests/trybuild/`.
+
+The current trybuild test functions are:
+
+- `trybuild_pass_contract_fixtures`
+- `trybuild_auth_and_secret_diagnostics`
+- `trybuild_route_and_fmt_diagnostics`
+- `trybuild_policy_diagnostics`
+- `trybuild_pagination_diagnostics`
+- `trybuild_codegen_contract_diagnostics`
+
+Run the full trybuild suite with:
 
 ```bash
-TRYBUILD=overwrite cargo test -p concord_macros current_trybuild_fixtures_match_expected_results
+cargo nextest run -p concord_macros --test trybuild_current
 ```
+
+Refresh trybuild stderr output only when macro diagnostics intentionally
+change:
+
+```bash
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current -- --test-threads=1
+```
+
+Category-specific refresh examples:
+
+```bash
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_auth_and_secret_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_route_and_fmt_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_policy_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_pagination_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_codegen_contract_diagnostics -- --test-threads=1
+```
+
+Only use `TRYBUILD=overwrite` when diagnostics intentionally change. Inspect
+the git diff of `.stderr` files before accepting updates. Path-only changes
+from fixture moves are acceptable; changed wording/spans must be reviewed.
+
+Trybuild remains part of the full gate through
+`cargo nextest run --workspace --all-targets`. It is serialized in
+`.config/nextest.toml` with the `trybuild` test group because it drives many
+rustc fixture compilations.
 
 Parser unit tests cover smaller syntax rules and span-sensitive diagnostics.
 
@@ -41,6 +81,23 @@ Response body limit tests should cover `Content-Length` precheck, unknown-length
 The Riot fixture is the large real-world surface test. Do not change Riot semantics for unrelated macro or runtime work.
 
 Markdown prose is not validated by keyword tests in `cargo test`. Release review may include a manual source and documentation audit for stale wording, unsafe live calls, or validation-dependent codegen patterns, but that audit is not a substitute for behavior, compile, diagnostic, and runtime tests.
+
+## Full local gate
+
+Run:
+
+```bash
+bash ./scripts/check_v1.sh
+```
+
+`scripts/check_v1.sh` requires `cargo-nextest` and performs:
+
+```bash
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo nextest run --workspace --all-targets
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+```
 
 ## New DSL feature checklist
 

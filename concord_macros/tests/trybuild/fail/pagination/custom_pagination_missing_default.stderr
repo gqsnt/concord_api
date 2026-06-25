@@ -1,0 +1,19 @@
+error[E0277]: the trait bound `HeaderCursorPagination: std::default::Default` is not satisfied
+  --> tests/trybuild/fail/pagination/custom_pagination_missing_default.rs:62:18
+   |
+62 |         paginate HeaderCursorPagination
+   |                  ^^^^^^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `HeaderCursorPagination`
+   |
+note: required by a bound in `PaginationPlan::custom`
+  --> $WORKSPACE/concord_core/src/endpoint/plan.rs
+   |
+   |     pub fn custom<C, Page>() -> Self
+   |            ------ required by a bound in this associated function
+   |     where
+   |         C: PaginationController<Page> + Default,
+   |                                         ^^^^^^^ required by this bound in `PaginationPlan::custom`
+help: consider annotating `HeaderCursorPagination` with `#[derive(Default)]`
+   |
+21 + #[derive(Default)]
+22 | pub struct HeaderCursorPagination {
+   |

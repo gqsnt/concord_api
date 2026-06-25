@@ -1,5 +1,0 @@
-error: unknown pagination field `cursor` for OffsetLimitPagination; allowed fields: offset_key, limit_key, offset, limit
-  --> tests/dsl/fail/fail_pagination_unknown_field.rs:15:9
-   |
-15 |         cursor = start,
-   |         ^^^^^^

@@ -1,5 +1,0 @@
-error: empty rate_limit block has no effect
- --> tests/dsl/fail/fail_rate_limit_empty_block_defaults.rs:8:25
-  |
-8 |             rate_limit {}
-  |                         ^

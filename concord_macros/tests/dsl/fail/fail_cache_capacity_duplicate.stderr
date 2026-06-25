@@ -1,5 +1,0 @@
-error: duplicate cache capacity
- --> tests/dsl/fail/fail_cache_capacity_duplicate.rs:9:13
-  |
-9 |             capacity 20 entries
-  |             ^^^^^^^^

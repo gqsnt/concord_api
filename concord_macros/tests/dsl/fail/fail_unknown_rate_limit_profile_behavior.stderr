@@ -1,6 +1,0 @@
-error: unknown rate_limit profile `missing`
-       no rate_limit profiles are declared
- --> tests/dsl/fail/fail_unknown_rate_limit_profile_behavior.rs:8:24
-  |
-8 |             rate_limit missing
-  |                        ^^^^^^^

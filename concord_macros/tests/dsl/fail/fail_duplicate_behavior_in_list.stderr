@@ -1,5 +1,0 @@
-error: duplicate behavior `read` in behavior list
-  --> tests/dsl/fail/fail_duplicate_behavior_in_list.rs:12:29
-   |
-12 |             behavior [read, read]
-   |                             ^^^^

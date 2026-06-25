@@ -1,0 +1,17 @@
+# .config/nextest.toml
+
+[profile.default]
+# Keep default behavior, but make slow-test reporting explicit.
+slow-timeout = "60s"
+
+[test-groups.trybuild]
+max-threads = 1
+
+[[profile.default.overrides]]
+filter = 'package(concord_macros) and binary(trybuild_current)'
+# Trybuild is expected to be slow. Mark it slow later and terminate only if
+# it is genuinely stuck.
+slow-timeout = { period = "240s", terminate-after = 2 }
+# Run it after fast tests so real fast failures appear before the 3-minute UI suite.
+priority = -100
+test-group = 'trybuild'

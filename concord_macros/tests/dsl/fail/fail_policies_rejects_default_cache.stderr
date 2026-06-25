@@ -1,5 +1,0 @@
-error: default cache policy is not allowed in policies block; use defaults { ... } or default { ... }
-  --> tests/dsl/fail/fail_policies_rejects_default_cache.rs:12:13
-   |
-12 |             cache standard
-   |             ^^^^^

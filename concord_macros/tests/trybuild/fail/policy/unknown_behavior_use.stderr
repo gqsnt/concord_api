@@ -1,0 +1,5 @@
+error: unknown behavior `missing`
+  --> tests/trybuild/fail/policy/unknown_behavior_use.rs:10:18
+   |
+10 |         behavior missing
+   |                  ^^^^^^^

@@ -1,5 +1,0 @@
-error[E0599]: no method named `reset_count` found for struct `PendingRequest<'a, Cx, E, T>` in the current scope
-  --> tests/usage/fail/fail_reset_field.rs:19:26
-   |
-19 |     let _ = api.search().reset_count().await?;
-   |                          ^^^^^^^^^^^ method not found in `PendingRequest<'_, UsageResetFieldApiCx, EpSearchH5d929ff1619ac0c9, ReqwestTransport>`

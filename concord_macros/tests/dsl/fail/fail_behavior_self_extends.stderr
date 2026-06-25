@@ -1,5 +1,0 @@
-error: behavior inheritance cycle involving `read`
- --> tests/dsl/fail/fail_behavior_self_extends.rs:7:31
-  |
-7 |         behavior read extends read {
-  |                               ^^^^

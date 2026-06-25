@@ -1,5 +1,0 @@
-error: empty behavior list; expected at least one behavior name
-  --> tests/dsl/fail/fail_behavior_empty_list_scope.rs:10:18
-   |
-10 |         behavior []
-   |                  ^

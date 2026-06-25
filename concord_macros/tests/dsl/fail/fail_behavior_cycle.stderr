@@ -1,5 +1,0 @@
-error: behavior inheritance cycle involving `a`
- --> tests/dsl/fail/fail_behavior_cycle.rs:7:18
-  |
-7 |         behavior a extends b {
-  |                  ^

@@ -1,5 +1,0 @@
-error: raw Rust identifier `r#type` is not supported for generated public API endpoint names
- --> tests/usage/fail/fail_raw_identifier_public_name.rs:6:9
-  |
-6 |     GET r#type
-  |         ^^^^^^

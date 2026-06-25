@@ -1,5 +1,0 @@
-error: cache max_body byte size overflowed u64
- --> tests/dsl/fail/fail_cache_max_body_overflow.rs:8:22
-  |
-8 |             max_body 18_446_744_073_709_551_615 gib
-  |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^

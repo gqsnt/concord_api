@@ -1,5 +1,0 @@
-error: duplicate rate_limit profile `app` in rate_limit list
-  --> tests/dsl/fail/fail_rate_limit_duplicate_list_endpoint.rs:16:22
-   |
-16 |     rate_limit [app, app]
-   |                      ^^^

@@ -1,0 +1,5 @@
+error: cache capacity must be greater than zero
+ --> tests/trybuild/fail/policy/cache_capacity_zero.rs:8:22
+  |
+8 |             capacity 0 entries
+  |                      ^

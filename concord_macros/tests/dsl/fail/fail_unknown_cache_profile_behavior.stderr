@@ -1,6 +1,0 @@
-error: unknown cache profile `missing`
-       no cache profiles are declared
- --> tests/dsl/fail/fail_unknown_cache_profile_behavior.rs:8:19
-  |
-8 |             cache missing
-  |                   ^^^^^^^
