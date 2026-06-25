@@ -176,6 +176,15 @@ Default rejection behavior:
 | `401 Unauthorized` | yes | yes, for refreshable/reacquirable runtime credentials |
 | `403 Forbidden` | yes | yes, for refreshable/reacquirable runtime credentials |
 
+`AuthStepPolicy` remains a bool matrix in v1. The supported combinations are:
+
+| retry | invalidate | Observed behavior |
+| --- | --- | --- |
+| `true` | `true` | Default refresh path. Concord invalidates the applied generation and retries the protected request when the credential can be reacquired. |
+| `true` | `false` | Concord retries the protected request without first clearing the applied generation. The slot is left intact unless the credential provider itself refreshes. |
+| `false` | `true` | Concord invalidates the applied generation and returns a terminal auth rejection for the current request. No ordinary retry or stale fallback runs. |
+| `false` | `false` | Concord returns a terminal auth rejection and leaves the applied generation untouched. |
+
 Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` or `403` can invalidate the applied endpoint-backed generation, but it does not automatically call the auth endpoint again or retry the protected request into `MissingCredential`. Reacquire through the auth endpoint explicitly before sending another protected call.
 
 Normal retry policy still runs separately. Auth rejection handling happens after response classification but before the normal retry decision, so a protected `401` or `403` refresh path is tried before any ordinary retry decision. Protected auth rejections do not fall back to stale cached responses by default, and rejected auth responses are not cached as successful endpoint responses.

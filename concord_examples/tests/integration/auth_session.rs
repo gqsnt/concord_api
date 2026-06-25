@@ -141,6 +141,75 @@ async fn endpoint_backed_session_401_invalidates_without_automatic_retry() {
         .host("example.com")
         .path("/me")
         .header(http::header::AUTHORIZATION, "Bearer session-token");
+    let missing = api
+        .protected()
+        .me()
+        .execute()
+        .await
+        .expect_err("rejected endpoint-backed session should require explicit reacquire");
+    assert_eq!(missing.category(), ErrorCategory::MissingCredential);
+    assert!(missing.to_string().contains("acquire_auth_session"));
+    assert!(!rendered_error(&missing).contains("session-token"));
+    handle.assert_recorded_len(2);
+    handle.finish();
+}
+
+#[tokio::test]
+async fn endpoint_backed_session_403_invalidates_without_automatic_retry() {
+    let (transport, handle) = mock()
+        .reply(json_reply(r#"{"access_token":"session-token"}"#))
+        .reply(
+            MockReply::status(http::StatusCode::FORBIDDEN).with_body(Bytes::from_static(b"denied")),
+        )
+        .build();
+    let api = SessionApi::new_with_transport("upstream-secret".to_string(), transport);
+
+    api.auth_api()
+        .login_for_session(SessionLoginRequest {
+            username: "ada".to_string(),
+            password: "login-password".to_string(),
+        })
+        .acquire_as_session()
+        .await
+        .expect("session acquisition succeeds");
+
+    let err = api
+        .protected()
+        .me()
+        .execute()
+        .await
+        .expect_err("403 should remain the protected response outcome");
+
+    assert_eq!(err.category(), ErrorCategory::AuthRejected);
+    assert!(err.to_string().contains("auth challenge rejected"));
+    assert!(!err.to_string().contains("missing credential"));
+    assert!(
+        !api.auth_state()
+            .session()
+            .is_set()
+            .await
+            .expect("session state check succeeds")
+    );
+
+    let recorded = handle.recorded();
+    assert_eq!(recorded.len(), 2);
+    assert_request(&recorded[0])
+        .host("example.com")
+        .path("/login");
+    assert_request(&recorded[1])
+        .host("example.com")
+        .path("/me")
+        .header(http::header::AUTHORIZATION, "Bearer session-token");
+    let missing = api
+        .protected()
+        .me()
+        .execute()
+        .await
+        .expect_err("rejected endpoint-backed session should require explicit reacquire");
+    assert_eq!(missing.category(), ErrorCategory::MissingCredential);
+    assert!(missing.to_string().contains("acquire_auth_session"));
+    assert!(!rendered_error(&missing).contains("session-token"));
+    handle.assert_recorded_len(2);
     handle.finish();
 }
 

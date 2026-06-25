@@ -1171,53 +1171,66 @@ async fn auth_rejection_preempts_custom_retry_policy_for_403() -> Result<(), Api
 
 #[tokio::test]
 async fn never_refresh_auth_rejection_does_not_fall_through_to_custom_retry() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let retry_events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
-    );
-    let sent_transport = transport.clone();
-    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
-        (),
-        ObservationAuthVars::bearer(
-            "PR66_BEARER_REJECTION_DO_NOT_LEAK",
-            "user-a",
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let retry_events = Arc::new(Mutex::new(Vec::new()));
+        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
             events.clone(),
-        ),
-        transport,
-    );
-    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-    configure_runtime(
-        &mut client,
-        None,
-        Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
-    );
-    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
-        retry_events.clone(),
-        RetryDecision::Retry,
-        8,
-    )));
+            built_response("Text", StatusCode::OK, "stale"),
+        ));
+        let after_error_count = cache.after_error_count.clone();
+        let after_response_count = cache.after_response_count.clone();
+        let transport =
+            MockTransport::new(events.clone(), vec![MockResponse::text(status, "rejected")]);
+        let sent_transport = transport.clone();
+        let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+            (),
+            ObservationAuthVars::bearer(
+                "PR66_BEARER_REJECTION_DO_NOT_LEAK",
+                "user-a",
+                events.clone(),
+            ),
+            transport,
+        );
+        client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+        configure_runtime(
+            &mut client,
+            Some(cache),
+            Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+        );
+        client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+            retry_events.clone(),
+            RetryDecision::Retry,
+            8,
+        )));
 
-    let err = client
-        .request(TextEndpoint {
-            policy: auth_policy(AuthPlacement::Bearer),
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await
-        .expect_err("terminal auth rejection should win");
+        let err = client
+            .request(TextEndpoint {
+                policy: {
+                    let mut policy = auth_policy(AuthPlacement::Bearer);
+                    policy.auth.requirements[0].challenge =
+                        concord_core::advanced::AuthChallengePolicy::NeverRefresh;
+                    policy.cache = concord_core::internal::CacheSetting::Config(
+                        concord_core::advanced::CacheConfig::new(),
+                    );
+                    policy.retry = retry_policy_for_statuses(8, vec![status]).retry;
+                    policy
+                },
+                ..Default::default()
+            })
+            .execute_decoded()
+            .await
+            .expect_err("terminal auth rejection should win");
 
-    assert!(err.to_string().contains("auth challenge rejected"));
-    assert_eq!(sent_transport.sent_count().await, 1);
-    let events = events.lock().await.clone();
-    assert!(
-        events
-            .iter()
-            .any(|event| event.starts_with("rate_status:403 Forbidden"))
-    );
-    assert!(events.iter().any(|event| event.starts_with("auth_fail")));
-    assert!(retry_events.lock().await.is_empty());
+        assert!(err.to_string().contains("auth challenge rejected"));
+        assert_eq!(sent_transport.sent_count().await, 1);
+        assert_eq!(*after_error_count.lock().await, 0);
+        assert_eq!(*after_response_count.lock().await, 0);
+        let events = events.lock().await.clone();
+        assert!(events.iter().any(|event| event.starts_with("rate_status:")));
+        assert!(events.iter().any(|event| event.starts_with("auth_fail")));
+        assert!(retry_events.lock().await.is_empty());
+    }
 }
 
 #[tokio::test]

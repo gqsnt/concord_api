@@ -1,17 +1,21 @@
 use super::common::*;
+#[cfg(feature = "json")]
+use concord_core::advanced::OAuth2ClientCredentialsProvider;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthChallengePolicy, AuthDecision, AuthError,
     AuthErrorKind, AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
-    AuthStepPolicy, PreparedAuthCredential, RequestMeta, auth_decision_for_status,
+    AuthStepPolicy, BuiltRequest, BuiltResponse, CacheAfter, CacheBefore, CacheFuture,
+    CacheRevalidation, PreparedAuthCredential, RequestMeta, RetryDecision,
+    auth_decision_for_status,
 };
-#[cfg(feature = "json")]
 use concord_core::advanced::{
-    CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason,
-    OAuth2ClientCredentialsProvider,
+    CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason, CredentialSlot,
+    InvalidateReason,
 };
 use concord_core::internal::{ClientPlanContext, RequestPlan};
 use concord_core::prelude::{AccessToken, ApiClientError, ApiKey, ClientContext, Endpoint};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -115,6 +119,57 @@ async fn auth_rejection_does_not_store_cache_entry_forbidden() {
 }
 
 #[tokio::test]
+async fn auth_rejection_response_is_not_cache_admitted() {
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let cache = Arc::new(AdmittingCache::default());
+        let after_response_count = cache.after_response_count.clone();
+        let transport = MockTransport::new(
+            events.clone(),
+            vec![
+                MockResponse::text(status, "rejected"),
+                MockResponse::text(StatusCode::OK, "fresh"),
+            ],
+        );
+        let sent_transport = transport.clone();
+        let mut client = client(
+            TestAuthVars {
+                token: Some("bad".to_string()),
+                identity: "user-a",
+            },
+            transport,
+        );
+        configure_runtime(&mut client, Some(cache), None);
+        let endpoint = TextEndpoint {
+            policy: {
+                let mut policy = auth_policy(AuthPlacement::Bearer);
+                policy.cache = concord_core::internal::CacheSetting::Config(
+                    concord_core::advanced::CacheConfig::new(),
+                );
+                policy
+            },
+            ..Default::default()
+        };
+
+        let err = client
+            .request(endpoint.clone())
+            .execute_decoded()
+            .await
+            .expect_err("auth rejection should not be cache admitted");
+        assert!(err.to_string().contains("auth challenge rejected"));
+        assert_eq!(*after_response_count.lock().await, 0);
+
+        let decoded = client
+            .request(endpoint)
+            .execute_decoded()
+            .await
+            .expect("second request should hit transport, not a cached rejection");
+        assert_eq!(decoded.value(), "fresh");
+        assert_eq!(sent_transport.sent_count().await, 2);
+    }
+}
+
+#[tokio::test]
 async fn auth_rejection_is_handled_before_normal_retry() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -167,6 +222,147 @@ async fn auth_rejection_is_handled_before_normal_retry() {
         .expect("auth rejection recorded");
     assert!(transport < classify);
     assert!(classify < rejection);
+}
+
+#[tokio::test]
+async fn auth_rejection_errors_are_raw_secret_free() {
+    use std::error::Error as _;
+
+    fn rendered_chain(err: &ApiClientError) -> String {
+        let mut rendered = format!("{err}\n{err:?}");
+        let mut current = err.source();
+        while let Some(source) = current {
+            rendered.push('\n');
+            rendered.push_str(&source.to_string());
+            current = source.source();
+        }
+        rendered
+    }
+
+    let bearer_sentinel = "RAW_BEARER_SENTINEL";
+    let query_sentinel = "RAW_QUERY_AUTH_SENTINEL";
+    let header_sentinel = "RAW_HEADER_AUTH_SENTINEL";
+    let basic_user_sentinel = "RAW_BASIC_USERNAME_SENTINEL";
+    let basic_pass_sentinel = "RAW_BASIC_PASSWORD_SENTINEL";
+    let response_body_sentinel = "RAW_AUTH_REJECTION_RESPONSE_BODY_SENTINEL";
+
+    for placement in [
+        AuthPlacement::Bearer,
+        AuthPlacement::Query("api_key"),
+        AuthPlacement::Header("X-Api-Key"),
+    ] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let transport = MockTransport::new(
+            events.clone(),
+            vec![MockResponse::text(
+                StatusCode::UNAUTHORIZED,
+                response_body_sentinel,
+            )],
+        );
+        let mut client = client(
+            TestAuthVars {
+                token: Some(match placement {
+                    AuthPlacement::Bearer => bearer_sentinel.to_string(),
+                    AuthPlacement::Query(_) => query_sentinel.to_string(),
+                    AuthPlacement::Header(_) => header_sentinel.to_string(),
+                    AuthPlacement::Basic | AuthPlacement::Certificate => unreachable!(),
+                }),
+                identity: "user-a",
+            },
+            transport,
+        );
+        client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+        configure_runtime(
+            &mut client,
+            None,
+            Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+        );
+        client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+            events.clone(),
+            RetryDecision::Retry,
+            8,
+        )));
+
+        let err = client
+            .request(TextEndpoint {
+                policy: auth_policy(placement),
+                ..Default::default()
+            })
+            .execute_decoded()
+            .await
+            .expect_err("auth rejection should fail");
+
+        assert_eq!(err.context().endpoint, "Text");
+        assert_eq!(err.context().method, Method::GET);
+        let rendered = rendered_chain(&err);
+        for sentinel in [
+            bearer_sentinel,
+            query_sentinel,
+            header_sentinel,
+            response_body_sentinel,
+        ] {
+            assert!(!rendered.contains(sentinel));
+        }
+        let event_rendered = events.lock().await.clone().join("\n");
+        for sentinel in [
+            bearer_sentinel,
+            query_sentinel,
+            header_sentinel,
+            response_body_sentinel,
+        ] {
+            assert!(!event_rendered.contains(sentinel));
+        }
+    }
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(
+            StatusCode::FORBIDDEN,
+            response_body_sentinel,
+        )],
+    );
+    let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::basic(
+            basic_user_sentinel,
+            basic_pass_sentinel,
+            "user-a",
+            events.clone(),
+        ),
+        transport,
+    );
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(
+        &mut client,
+        None,
+        Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+    );
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
+
+    let err = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Basic),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("basic auth rejection should fail");
+
+    assert_eq!(err.context().endpoint, "Text");
+    assert_eq!(err.context().method, Method::GET);
+    let rendered = rendered_chain(&err);
+    assert!(!rendered.contains(basic_user_sentinel));
+    assert!(!rendered.contains(basic_pass_sentinel));
+    assert!(!rendered.contains(response_body_sentinel));
+    let event_rendered = events.lock().await.clone().join("\n");
+    assert!(!event_rendered.contains(basic_user_sentinel));
+    assert!(!event_rendered.contains(basic_pass_sentinel));
+    assert!(!event_rendered.contains(response_body_sentinel));
 }
 
 #[tokio::test]
@@ -567,12 +763,35 @@ async fn custom_header_auth_collision_fails_before_cache_and_rate_limit_case_ins
 }
 
 #[tokio::test]
-async fn auth_401_retries_and_invalidates_by_default() -> Result<(), ApiClientError> {
-    let harness = PolicyAuthHarness::new(AuthStepPolicy::default(), AuthChallengePolicy::Default);
-    let client = harness.client(vec![
+async fn auth_policy_default_401_invalidates_and_retries_runtime_reacquirable()
+-> Result<(), ApiClientError> {
+    let harness = RotatingPolicyAuthHarness::new(
+        AuthStepPolicy::default(),
+        AuthChallengePolicy::Default,
+        vec!["old-401".to_string(), "new-401".to_string()],
+    );
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        harness.events.clone(),
+        built_response("Text", StatusCode::OK, "stale"),
+    ));
+    let after_error_count = cache.after_error_count.clone();
+    let mut client = harness.client(vec![
         MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
         MockResponse::text(StatusCode::OK, "refreshed"),
     ]);
+    configure_runtime(
+        &mut client,
+        Some(cache),
+        Some(Arc::new(ObservationRateLimiter::new(
+            harness.events.clone(),
+        ))),
+    );
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
 
     let decoded = client
         .request(harness.endpoint(StatusCode::UNAUTHORIZED))
@@ -581,19 +800,45 @@ async fn auth_401_retries_and_invalidates_by_default() -> Result<(), ApiClientEr
 
     assert_eq!(decoded.value(), "refreshed");
     assert_eq!(harness.transport_attempts().await, 2);
-    assert_eq!(harness.event_count("acquire").await, 2);
     assert_eq!(harness.event_count("invalidate:Unauthorized").await, 1);
     assert_eq!(harness.event_count("retry:Unauthorized").await, 1);
+    assert_eq!(harness.event_count("prepare:old-401").await, 1);
+    assert_eq!(harness.event_count("prepare:new-401").await, 1);
+    assert!(retry_events.lock().await.is_empty());
+    assert_eq!(*after_error_count.lock().await, 0);
     Ok(())
 }
 
 #[tokio::test]
-async fn auth_403_retries_and_invalidates_by_default() -> Result<(), ApiClientError> {
-    let harness = PolicyAuthHarness::new(AuthStepPolicy::default(), AuthChallengePolicy::Default);
-    let client = harness.client(vec![
+async fn auth_policy_default_403_invalidates_and_retries_runtime_reacquirable()
+-> Result<(), ApiClientError> {
+    let harness = RotatingPolicyAuthHarness::new(
+        AuthStepPolicy::default(),
+        AuthChallengePolicy::Default,
+        vec!["old-403".to_string(), "new-403".to_string()],
+    );
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        harness.events.clone(),
+        built_response("Text", StatusCode::OK, "stale"),
+    ));
+    let after_error_count = cache.after_error_count.clone();
+    let mut client = harness.client(vec![
         MockResponse::text(StatusCode::FORBIDDEN, "forbidden"),
         MockResponse::text(StatusCode::OK, "refreshed"),
     ]);
+    configure_runtime(
+        &mut client,
+        Some(cache),
+        Some(Arc::new(ObservationRateLimiter::new(
+            harness.events.clone(),
+        ))),
+    );
+    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+        retry_events.clone(),
+        RetryDecision::Retry,
+        8,
+    )));
 
     let decoded = client
         .request(harness.endpoint(StatusCode::FORBIDDEN))
@@ -602,9 +847,12 @@ async fn auth_403_retries_and_invalidates_by_default() -> Result<(), ApiClientEr
 
     assert_eq!(decoded.value(), "refreshed");
     assert_eq!(harness.transport_attempts().await, 2);
-    assert_eq!(harness.event_count("acquire").await, 2);
     assert_eq!(harness.event_count("invalidate:Forbidden").await, 1);
     assert_eq!(harness.event_count("retry:Forbidden").await, 1);
+    assert_eq!(harness.event_count("prepare:old-403").await, 1);
+    assert_eq!(harness.event_count("prepare:new-403").await, 1);
+    assert!(retry_events.lock().await.is_empty());
+    assert_eq!(*after_error_count.lock().await, 0);
     Ok(())
 }
 
@@ -658,6 +906,204 @@ async fn auth_403_invalidates_only_when_policy_enables_forbidden_invalidation() 
 }
 
 #[tokio::test]
+async fn auth_policy_retry_true_invalidate_false_behavior_characterized()
+-> Result<(), ApiClientError> {
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let policy = AuthStepPolicy {
+            retry_on_unauthorized: status == StatusCode::UNAUTHORIZED,
+            retry_on_forbidden: status == StatusCode::FORBIDDEN,
+            invalidate_on_unauthorized: false,
+            invalidate_on_forbidden: false,
+            ..AuthStepPolicy::default()
+        };
+        let harness = PolicyAuthHarness::new(policy, AuthChallengePolicy::Default);
+        let retry_events = Arc::new(Mutex::new(Vec::new()));
+        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+            harness.events.clone(),
+            built_response("Text", StatusCode::OK, "stale"),
+        ));
+        let after_error_count = cache.after_error_count.clone();
+        let mut client = harness.client(vec![
+            MockResponse::text(status, "rejected"),
+            MockResponse::text(StatusCode::OK, "recovered"),
+        ]);
+        configure_runtime(
+            &mut client,
+            Some(cache),
+            Some(Arc::new(ObservationRateLimiter::new(
+                harness.events.clone(),
+            ))),
+        );
+        client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+            retry_events.clone(),
+            RetryDecision::Retry,
+            8,
+        )));
+
+        let decoded = client
+            .request(harness.endpoint(status))
+            .execute_decoded()
+            .await?;
+
+        assert_eq!(decoded.value(), "recovered");
+        assert_eq!(harness.transport_attempts().await, 2);
+        assert_eq!(harness.event_count("invalidate:Unauthorized").await, 0);
+        assert_eq!(harness.event_count("invalidate:Forbidden").await, 0);
+        assert_eq!(
+            harness.event_count("retry:Unauthorized").await,
+            if status == StatusCode::UNAUTHORIZED {
+                1
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            harness.event_count("retry:Forbidden").await,
+            if status == StatusCode::FORBIDDEN {
+                1
+            } else {
+                0
+            }
+        );
+        assert_eq!(harness.event_count("acquire").await, 2);
+        assert!(retry_events.lock().await.is_empty());
+        assert_eq!(*after_error_count.lock().await, 0);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn auth_policy_invalidate_true_retry_false_behavior_characterized()
+-> Result<(), ApiClientError> {
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let policy = AuthStepPolicy {
+            retry_on_unauthorized: false,
+            retry_on_forbidden: false,
+            invalidate_on_unauthorized: status == StatusCode::UNAUTHORIZED,
+            invalidate_on_forbidden: status == StatusCode::FORBIDDEN,
+            ..AuthStepPolicy::default()
+        };
+        let harness = RotatingPolicyAuthHarness::new(
+            policy,
+            AuthChallengePolicy::Default,
+            vec!["terminal-token".to_string()],
+        );
+        let retry_events = Arc::new(Mutex::new(Vec::new()));
+        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+            harness.events.clone(),
+            built_response("Text", StatusCode::OK, "stale"),
+        ));
+        let after_error_count = cache.after_error_count.clone();
+        let mut client = harness.client(vec![MockResponse::text(status, "rejected")]);
+        configure_runtime(
+            &mut client,
+            Some(cache),
+            Some(Arc::new(ObservationRateLimiter::new(
+                harness.events.clone(),
+            ))),
+        );
+        client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+            retry_events.clone(),
+            RetryDecision::Retry,
+            8,
+        )));
+
+        let err = client
+            .request(harness.endpoint(status))
+            .execute_decoded()
+            .await
+            .expect_err("invalidate-only auth rejection should be terminal");
+
+        assert_eq!(
+            err.category(),
+            concord_core::error::ErrorCategory::AuthRejected
+        );
+        assert!(err.to_string().contains("auth challenge rejected"));
+        assert_eq!(harness.transport_attempts().await, 1);
+        assert_eq!(
+            harness.event_count("invalidate:Unauthorized").await,
+            if status == StatusCode::UNAUTHORIZED {
+                1
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            harness.event_count("invalidate:Forbidden").await,
+            if status == StatusCode::FORBIDDEN {
+                1
+            } else {
+                0
+            }
+        );
+        assert_eq!(harness.event_count("retry:Unauthorized").await, 0);
+        assert_eq!(harness.event_count("retry:Forbidden").await, 0);
+        assert_eq!(harness.event_count("prepare:terminal-token").await, 1);
+        assert!(retry_events.lock().await.is_empty());
+        assert_eq!(*after_error_count.lock().await, 0);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn auth_policy_no_retry_no_invalidate_terminal_rejection() -> Result<(), ApiClientError> {
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let policy = AuthStepPolicy {
+            retry_on_unauthorized: false,
+            retry_on_forbidden: false,
+            invalidate_on_unauthorized: false,
+            invalidate_on_forbidden: false,
+            ..AuthStepPolicy::default()
+        };
+        let harness = RotatingPolicyAuthHarness::new(
+            policy,
+            AuthChallengePolicy::Default,
+            vec!["terminal-token".to_string()],
+        );
+        let retry_events = Arc::new(Mutex::new(Vec::new()));
+        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+            harness.events.clone(),
+            built_response("Text", StatusCode::OK, "stale"),
+        ));
+        let after_error_count = cache.after_error_count.clone();
+        let mut client = harness.client(vec![MockResponse::text(status, "rejected")]);
+        configure_runtime(
+            &mut client,
+            Some(cache),
+            Some(Arc::new(ObservationRateLimiter::new(
+                harness.events.clone(),
+            ))),
+        );
+        client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+            retry_events.clone(),
+            RetryDecision::Retry,
+            8,
+        )));
+
+        let err = client
+            .request(harness.endpoint(status))
+            .execute_decoded()
+            .await
+            .expect_err("non-refreshing auth rejection should be terminal");
+
+        assert_eq!(
+            err.category(),
+            concord_core::error::ErrorCategory::AuthRejected
+        );
+        assert!(err.to_string().contains("auth challenge rejected"));
+        assert_eq!(harness.transport_attempts().await, 1);
+        assert_eq!(harness.event_count("invalidate:Unauthorized").await, 0);
+        assert_eq!(harness.event_count("invalidate:Forbidden").await, 0);
+        assert_eq!(harness.event_count("retry:Unauthorized").await, 0);
+        assert_eq!(harness.event_count("retry:Forbidden").await, 0);
+        assert_eq!(harness.event_count("prepare:terminal-token").await, 1);
+        assert!(retry_events.lock().await.is_empty());
+        assert_eq!(*after_error_count.lock().await, 0);
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn auth_never_refresh_does_not_retry_or_invalidate() {
     let harness =
         PolicyAuthHarness::new(AuthStepPolicy::default(), AuthChallengePolicy::NeverRefresh);
@@ -702,26 +1148,133 @@ async fn auth_never_refresh_does_not_retry_or_invalidate_forbidden() {
 }
 
 #[tokio::test]
+async fn max_auth_retries_zero_behavior_characterized() {
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let harness = RotatingPolicyAuthHarness::new(
+            AuthStepPolicy::default(),
+            AuthChallengePolicy::Default,
+            vec!["token".to_string()],
+        );
+        let retry_events = Arc::new(Mutex::new(Vec::new()));
+        let mut client = harness.client(vec![MockResponse::text(status, "rejected")]);
+        client.set_max_auth_retries(0);
+        client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
+            retry_events.clone(),
+            RetryDecision::Retry,
+            8,
+        )));
+
+        let err = client
+            .request(harness.endpoint(status))
+            .execute_decoded()
+            .await
+            .expect_err("zero auth retry budget should stop refresh attempts");
+
+        assert_eq!(
+            err.category(),
+            concord_core::error::ErrorCategory::AuthRejected
+        );
+        assert_eq!(harness.transport_attempts().await, 1);
+        assert_eq!(harness.event_count("prepare:token").await, 1);
+        assert_eq!(
+            harness.event_count("invalidate:Unauthorized").await,
+            if status == StatusCode::UNAUTHORIZED {
+                1
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            harness.event_count("invalidate:Forbidden").await,
+            if status == StatusCode::FORBIDDEN {
+                1
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            harness.event_count("retry:Unauthorized").await,
+            if status == StatusCode::UNAUTHORIZED {
+                1
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            harness.event_count("retry:Forbidden").await,
+            if status == StatusCode::FORBIDDEN {
+                1
+            } else {
+                0
+            }
+        );
+        assert!(retry_events.lock().await.is_empty());
+    }
+}
+
+#[tokio::test]
 async fn auth_retry_respects_max_auth_retries() {
-    let harness = PolicyAuthHarness::new(AuthStepPolicy::default(), AuthChallengePolicy::Default);
-    let mut client = harness.client(vec![
-        MockResponse::text(StatusCode::UNAUTHORIZED, "expired-1"),
-        MockResponse::text(StatusCode::UNAUTHORIZED, "expired-2"),
-        MockResponse::text(StatusCode::OK, "should-not-send"),
-    ]);
-    client.set_max_auth_retries(1);
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let harness = RotatingPolicyAuthHarness::new(
+            AuthStepPolicy::default(),
+            AuthChallengePolicy::Default,
+            vec!["token-1".to_string(), "token-2".to_string()],
+        );
+        let mut client = harness.client(vec![
+            MockResponse::text(status, "expired-1"),
+            MockResponse::text(status, "expired-2"),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ]);
+        client.set_max_auth_retries(1);
 
-    let err = client
-        .request(harness.endpoint(StatusCode::UNAUTHORIZED))
-        .execute_decoded()
-        .await
-        .expect_err("auth retry budget should stop repeated refresh attempts with an auth error");
+        let err = client
+            .request(harness.endpoint(status))
+            .execute_decoded()
+            .await
+            .expect_err(
+                "auth retry budget should stop repeated refresh attempts with an auth error",
+            );
 
-    assert!(err.to_string().contains("auth challenge rejected"));
-    assert_eq!(harness.transport_attempts().await, 2);
-    assert_eq!(harness.event_count("acquire").await, 2);
-    assert_eq!(harness.event_count("invalidate:Unauthorized").await, 2);
-    assert_eq!(harness.event_count("retry:Unauthorized").await, 2);
+        assert_eq!(
+            err.category(),
+            concord_core::error::ErrorCategory::AuthRejected
+        );
+        assert_eq!(harness.transport_attempts().await, 2);
+        assert_eq!(harness.event_count("prepare:token-1").await, 1);
+        assert_eq!(harness.event_count("prepare:token-2").await, 1);
+        assert_eq!(
+            harness.event_count("invalidate:Unauthorized").await,
+            if status == StatusCode::UNAUTHORIZED {
+                2
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            harness.event_count("invalidate:Forbidden").await,
+            if status == StatusCode::FORBIDDEN {
+                2
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            harness.event_count("retry:Unauthorized").await,
+            if status == StatusCode::UNAUTHORIZED {
+                2
+            } else {
+                0
+            }
+        );
+        assert_eq!(
+            harness.event_count("retry:Forbidden").await,
+            if status == StatusCode::FORBIDDEN {
+                2
+            } else {
+                0
+            }
+        );
+    }
 }
 
 #[tokio::test]
@@ -1200,6 +1753,186 @@ impl Endpoint<PolicyAuthCx> for TextEndpoint {
     }
 }
 
+#[derive(Clone)]
+struct RotatingPolicyAuthVars {
+    tokens: Arc<Mutex<VecDeque<String>>>,
+    policy: AuthStepPolicy,
+    events: Arc<Mutex<Vec<String>>>,
+}
+
+#[derive(Clone)]
+struct RotatingPolicyAuthCx;
+
+impl ClientContext for RotatingPolicyAuthCx {
+    type Vars = ();
+    type AuthVars = RotatingPolicyAuthVars;
+    type AuthState = ();
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+    fn prepare_auth_requirement<'a>(
+        requirement: &'a AuthRequirement,
+        request: &'a mut AuthApplicationRequest<'_>,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>> {
+        Box::pin(async move {
+            let token = {
+                let mut tokens = auth.tokens.lock().await;
+                tokens.pop_front().ok_or_else(|| {
+                    AuthError::new(
+                        AuthErrorKind::MissingCredential,
+                        format!(
+                            "missing credential `{}`; acquire or configure it before sending request",
+                            requirement.credential.id
+                        ),
+                    )
+                })?
+            };
+            auth.events.lock().await.push(format!("prepare:{token}"));
+            let material = ApiKey::new(token);
+            let application =
+                concord_core::advanced::apply_secret_credential(request, requirement, &material)?;
+            let applied = AuthAppliedCredential {
+                credential_id: requirement.credential.id.clone(),
+                usage_id: requirement.usage_id.clone(),
+                step_id: requirement.step_id,
+                generation: Some(1),
+                identity: application.identity().clone(),
+                provenance: requirement.provenance.clone(),
+            };
+            Ok(PreparedAuthCredential::new(applied, application))
+        })
+    }
+
+    fn handle_auth_response<'a>(
+        requirement: &'a AuthRequirement,
+        applied: &'a AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+        status: StatusCode,
+        _headers: &'a HeaderMap,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
+        Box::pin(async move {
+            let Some(decision) =
+                auth_decision_for_status(status, requirement, applied, auth.policy)
+            else {
+                return Ok(AuthDecision::Continue);
+            };
+
+            if let Some(reason) = decision.invalidate_reason {
+                auth.events
+                    .lock()
+                    .await
+                    .push(format!("invalidate:{reason:?}"));
+            }
+            if let Some(reason) = decision.retry_reason {
+                auth.events.lock().await.push(format!("retry:{reason:?}"));
+                return Ok(AuthDecision::RetryAfterRefresh {
+                    credential: requirement.credential.clone(),
+                    generation: applied.generation,
+                    reason,
+                });
+            }
+
+            Ok(AuthDecision::Continue)
+        })
+    }
+}
+
+impl Endpoint<RotatingPolicyAuthCx> for TextEndpoint {
+    type Response = String;
+
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, RotatingPolicyAuthCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            self.name,
+            self.method.clone(),
+            self.path,
+            self.policy.clone(),
+            self.pagination.clone(),
+            decode_string,
+        ))
+    }
+}
+
+#[derive(Clone)]
+struct RotatingPolicyAuthHarness {
+    events: Arc<Mutex<Vec<String>>>,
+    policy: AuthStepPolicy,
+    challenge: AuthChallengePolicy,
+    tokens: Vec<String>,
+}
+
+impl RotatingPolicyAuthHarness {
+    fn new(policy: AuthStepPolicy, challenge: AuthChallengePolicy, tokens: Vec<String>) -> Self {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        Self {
+            events,
+            policy,
+            challenge,
+            tokens,
+        }
+    }
+
+    fn client(
+        &self,
+        responses: Vec<MockResponse>,
+    ) -> concord_core::prelude::ApiClient<RotatingPolicyAuthCx, MockTransport> {
+        let transport = MockTransport::new(self.events.clone(), responses);
+        let mut client =
+            concord_core::prelude::ApiClient::<RotatingPolicyAuthCx, _>::with_transport(
+                (),
+                RotatingPolicyAuthVars {
+                    tokens: Arc::new(Mutex::new(VecDeque::from(self.tokens.clone()))),
+                    policy: self.policy,
+                    events: self.events.clone(),
+                },
+                transport.clone(),
+            );
+        client.set_max_auth_retries(8);
+        client
+    }
+
+    fn endpoint(&self, retry_status: StatusCode) -> TextEndpoint {
+        let mut policy = auth_policy(AuthPlacement::Bearer);
+        policy.auth.requirements[0].challenge = self.challenge;
+        policy.retry = retry_policy_for_statuses(1, vec![retry_status]).retry;
+        TextEndpoint {
+            policy,
+            ..Default::default()
+        }
+    }
+
+    async fn event_count(&self, event: &str) -> usize {
+        self.events
+            .lock()
+            .await
+            .iter()
+            .filter(|seen| seen.as_str() == event)
+            .count()
+    }
+
+    async fn transport_attempts(&self) -> usize {
+        self.events
+            .lock()
+            .await
+            .iter()
+            .filter(|seen| seen.as_str() == "transport")
+            .count()
+    }
+}
+
 struct PolicyAuthHarness {
     events: Arc<Mutex<Vec<String>>>,
     policy: AuthStepPolicy,
@@ -1261,4 +1994,318 @@ impl PolicyAuthHarness {
             .filter(|seen| seen.as_str() == "transport")
             .count()
     }
+}
+
+#[derive(Default)]
+struct AdmittingCache {
+    entries: Mutex<HashMap<String, BuiltResponse>>,
+    after_response_count: Arc<Mutex<u32>>,
+}
+
+impl concord_core::advanced::CacheStore for AdmittingCache {
+    fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
+        Box::pin(async move {
+            let key = concord_core::advanced::default_cache_key(request);
+            self.entries
+                .lock()
+                .await
+                .get(key.as_str())
+                .cloned()
+                .map(CacheBefore::Hit)
+                .unwrap_or(CacheBefore::Miss)
+        })
+    }
+
+    fn after_response<'a>(
+        &'a self,
+        request: &'a BuiltRequest,
+        response: &'a BuiltResponse,
+        _revalidation: Option<CacheRevalidation>,
+    ) -> CacheFuture<'a, CacheAfter> {
+        Box::pin(async move {
+            *self.after_response_count.lock().await += 1;
+            let key = concord_core::advanced::default_cache_key(request);
+            self.entries
+                .lock()
+                .await
+                .insert(key.as_str().to_string(), response.clone());
+            CacheAfter::Stored
+        })
+    }
+}
+
+#[derive(Clone)]
+struct SlotAuthVars {
+    slot: Arc<CredentialSlot<SlotAuthCx, SlotTokenProvider>>,
+    events: Arc<Mutex<Vec<String>>>,
+}
+
+#[derive(Clone)]
+struct SlotAuthState {
+    slot: Arc<CredentialSlot<SlotAuthCx, SlotTokenProvider>>,
+}
+
+#[derive(Clone)]
+struct SlotAuthCx;
+
+#[derive(Clone)]
+struct SlotTokenProvider {
+    events: Arc<Mutex<Vec<String>>>,
+}
+
+impl CredentialProvider<SlotAuthCx> for SlotTokenProvider {
+    type Credential = AccessToken;
+
+    fn id(&self) -> CredentialId {
+        CredentialId::new("test", "slot-token")
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        ctx: CredentialContext<'a, SlotAuthCx>,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<Self::Credential, AuthError>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events
+                .lock()
+                .await
+                .push(format!("slot_acquire:{:?}", ctx.reason));
+            Ok(AccessToken::new("token-1".to_string()))
+        })
+    }
+
+    fn invalidate<'a>(
+        &'a self,
+        _ctx: CredentialContext<'a, SlotAuthCx>,
+        current: Option<&'a Self::Credential>,
+        reason: InvalidateReason,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events
+                .lock()
+                .await
+                .push(format!("slot_invalidate:{reason:?}:{}", current.is_some()));
+            Ok(())
+        })
+    }
+}
+
+impl ClientContext for SlotAuthCx {
+    type Vars = ();
+    type AuthVars = SlotAuthVars;
+    type AuthState = SlotAuthState;
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
+        SlotAuthState {
+            slot: auth.slot.clone(),
+        }
+    }
+
+    fn prepare_auth_requirement<'a>(
+        requirement: &'a AuthRequirement,
+        request: &'a mut AuthApplicationRequest<'_>,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        auth_state: &'a Self::AuthState,
+        executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>> {
+        Box::pin(async move {
+            let lease = auth
+                .slot
+                .get_or_refresh(
+                    CredentialContext {
+                        vars: _vars,
+                        auth,
+                        auth_state,
+                        executor,
+                        credential_id: requirement.credential.id.clone(),
+                        reason: CredentialRefreshReason::Missing,
+                    },
+                    AuthStepPolicy::default(),
+                )
+                .await?;
+            let application = concord_core::advanced::apply_secret_credential(
+                request,
+                requirement,
+                &lease.value,
+            )?;
+            let applied = AuthAppliedCredential {
+                credential_id: requirement.credential.id.clone(),
+                usage_id: requirement.usage_id.clone(),
+                step_id: requirement.step_id,
+                generation: Some(lease.generation),
+                identity: application.identity().clone(),
+                provenance: requirement.provenance.clone(),
+            };
+            Ok(PreparedAuthCredential::new(applied, application))
+        })
+    }
+
+    fn handle_auth_response<'a>(
+        requirement: &'a AuthRequirement,
+        applied: &'a AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        auth_state: &'a Self::AuthState,
+        executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        meta: &'a RequestMeta,
+        status: StatusCode,
+        headers: &'a HeaderMap,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
+        let events = auth.events.clone();
+        Box::pin(async move {
+            let Some(decision) =
+                auth_decision_for_status(status, requirement, applied, AuthStepPolicy::default())
+            else {
+                return Ok(AuthDecision::Continue);
+            };
+
+            if let Some(reason) = decision.invalidate_reason {
+                events
+                    .lock()
+                    .await
+                    .push(format!("slot_invalidate:{reason:?}"));
+                auth_state
+                    .slot
+                    .invalidate_generation(
+                        CredentialContext {
+                            vars: _vars,
+                            auth,
+                            auth_state,
+                            executor,
+                            credential_id: requirement.credential.id.clone(),
+                            reason: CredentialRefreshReason::Rejected,
+                        },
+                        applied.generation,
+                        match status {
+                            StatusCode::UNAUTHORIZED => InvalidateReason::Unauthorized,
+                            StatusCode::FORBIDDEN => InvalidateReason::Forbidden,
+                            _ => InvalidateReason::Manual,
+                        },
+                    )
+                    .await?;
+            }
+            if let Some(reason) = decision.retry_reason {
+                events.lock().await.push(format!("slot_retry:{reason:?}"));
+                return Ok(AuthDecision::RetryAfterRefresh {
+                    credential: requirement.credential.clone(),
+                    generation: applied.generation,
+                    reason,
+                });
+            }
+
+            let _ = (meta, headers);
+            Ok(AuthDecision::Continue)
+        })
+    }
+}
+
+impl Endpoint<SlotAuthCx> for TextEndpoint {
+    type Response = String;
+
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, SlotAuthCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            self.name,
+            self.method.clone(),
+            self.path,
+            self.policy.clone(),
+            self.pagination.clone(),
+            decode_string,
+        ))
+    }
+}
+
+#[tokio::test]
+async fn auth_rejection_stale_invalidation_cannot_clear_newer_generation()
+-> Result<(), ApiClientError> {
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let slot = Arc::new(CredentialSlot::new(SlotTokenProvider {
+            events: events.clone(),
+        }));
+        let transport = GateTransport::new(
+            events.clone(),
+            vec![
+                MockResponse::text(status, "expired"),
+                MockResponse::text(StatusCode::OK, "refreshed"),
+            ],
+        );
+        let sent_transport = transport.clone();
+        let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+            (),
+            SlotAuthVars {
+                slot: slot.clone(),
+                events: events.clone(),
+            },
+            transport,
+        );
+        client.set_max_auth_retries(8);
+        let client = Arc::new(client);
+
+        let request = TextEndpoint {
+            policy: auth_policy(AuthPlacement::Bearer),
+            ..Default::default()
+        };
+        let handle = {
+            let client = client.clone();
+            let request = request.clone();
+            tokio::spawn(async move {
+                client
+                    .request(request)
+                    .execute_decoded()
+                    .await
+                    .map(|response| response.into_value())
+            })
+        };
+
+        sent_transport.wait_for_sends(1).await;
+        slot.set_manual(AccessToken::new("token-2".to_string()))
+            .await
+            .expect("manual replacement should advance the generation");
+        sent_transport.release_all();
+
+        let decoded = handle
+            .await
+            .expect("request task should complete successfully")?;
+        assert_eq!(decoded, "refreshed");
+        assert_eq!(sent_transport.sent_count().await, 2);
+        let requests = sent_transport.requests().await;
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0]
+                .headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer token-1")
+        );
+        assert_eq!(
+            requests[1]
+                .headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer token-2")
+        );
+        let cached = client
+            .auth_state()
+            .slot
+            .get_cached()
+            .await
+            .expect("newer generation should remain valid");
+        assert_eq!(cached.generation, 2);
+        let events = events.lock().await.clone();
+        assert!(events.iter().any(|event| event == "slot_acquire:Missing"));
+        assert!(
+            events
+                .iter()
+                .any(|event| event.starts_with("slot_invalidate:"))
+        );
+    }
+    Ok(())
 }

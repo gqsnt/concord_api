@@ -77,6 +77,15 @@ Credential refresh is bounded by the client runtime `max_auth_retries` setting. 
 
 `AuthChallengePolicy::NeverRefresh` is part of the advanced core API. When a requirement uses it, auth rejection does not invalidate, retry, or stale-fallback for `401` or `403`. It is not exposed as public DSL syntax in v1.
 
+`AuthStepPolicy` is still the v1 bool matrix:
+
+| retry | invalidate | Meaning |
+| --- | --- | --- |
+| `true` | `true` | Default path. Invalidate the applied generation and retry if the credential can be reacquired. |
+| `true` | `false` | Retry without clearing the applied generation first. The provider may still return the same material. |
+| `false` | `true` | Invalidate the applied generation, then return a terminal auth rejection for the protected request. |
+| `false` | `false` | Terminal auth rejection with no invalidation and no retry. |
+
 Credential slots carry monotonic generation counters. Invalidating a rejected
 credential targets the generation that was applied to the failed request, so
 stale invalidation cannot clear newer credential material that was acquired
