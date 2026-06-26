@@ -76,6 +76,56 @@ Runtime lock/state tests should poison representative auth, cache, and rate-limi
 
 Response body limit tests should cover `Content-Length` precheck, unknown-length/chunked enforcement, exactly-at-limit success, decode/cache bypass on oversized bodies, auth HTTP token response limits, and separation between endpoint response read limits and cache `max_body`.
 
+## Deterministic async harness
+
+Runtime async, cancellation, and drop tests should use the test-only harness in
+`concord_core/tests/integration/current_core/common.rs` instead of sleeps or
+stress loops.
+
+The shared helpers are:
+
+- `PhaseGate`: records phase entry, waits for a phase count with a bounded
+  timeout, blocks entrants, releases one waiter, releases all waiters, and
+  preserves an ordered phase log. Release accounting is exact: duplicate
+  releases do not create surplus permits for future entrants, and cancelled
+  blocked waiters clean up their own accounting without leaking a future
+  release.
+- `DropProbe`: creates cloneable drop tokens, counts drops, and waits for a
+  drop count with a bounded timeout. It also tries to log a labeled drop event
+  when drop-time locking is available, but the count is the authoritative
+  signal.
+- `GateableTransport`: records transport send start and request metadata,
+  blocks at `transport_send`, returns configured responses or transport
+  errors, counts sends, and can attach a `DropProbe` to the in-flight send
+  future.
+- `GateableBodyTransport`: returns a streaming response body that blocks at
+  `body_chunk`, counts chunks read, can produce deterministic partial reads,
+  and can attach a `DropProbe` to the body stream.
+- `CountingRateLimiter`: records acquire start/completion, permit creation,
+  response observation, and deterministic lifecycle completion. The public
+  runtime permit type is currently a unit value, so this helper records the
+  observable lifecycle boundary rather than instrumenting the production
+  permit destructor.
+- `GateableCache`: blocks and records cache `before_request`,
+  `after_response`, and `after_error` phases while preserving cache ordering
+  assertions.
+- `GateableHooks` and `SafeRecordingDebugSink`: block or record hook/debug
+  phases using URL, status, and header metadata only.
+
+Every harness wait is bounded through `wait_bounded`, `PhaseGate::wait_for`, or
+`PhaseGate::try_wait_for`. Tests that assert a task is still blocked may use a
+short bounded negative wait such as `assert_still_pending`, but the phase event
+must be the synchronization point. Do not make correctness depend on arbitrary
+wall-clock sleeps.
+
+Harness event logs must remain safe metadata. They may include phase labels,
+sanitized URLs, statuses, and headers, but not request body bytes, response body
+bytes, raw auth material, or secret values. The harness self-tests live in
+`concord_core/tests/integration/current_core/async_harness.rs`; they prove
+blocking, release, drop observation, cache/rate/transport/body/hook ordering,
+bounded missing-phase waits, and safe observer surfaces. Full cancellation and
+timeout semantics are intentionally deferred to follow-up runtime tests.
+
 ## Examples and docs tests
 
 `concord_examples` compile-checks public usage. It includes small examples, public docs fixtures, generated API usage tests, and the Riot fixture.

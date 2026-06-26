@@ -18,11 +18,11 @@ use concord_core::prelude::{
 };
 use concord_core::prelude::{HasNextCursor, PageItems};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::{Mutex, Notify, watch};
 
@@ -1423,4 +1423,853 @@ pub fn configure_runtime<Cx: ClientContext, T: Transport>(
             cfg.rate_limiter(limiter);
         }
     });
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HarnessTimeout {
+    pub label: &'static str,
+}
+
+pub async fn wait_bounded<T>(label: &'static str, fut: impl Future<Output = T>) -> T {
+    tokio::time::timeout(Duration::from_secs(2), fut)
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {label}"))
+}
+
+pub async fn assert_still_pending(label: &'static str, fut: impl Future<Output = ()>) {
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), fut)
+            .await
+            .is_err(),
+        "{label} completed unexpectedly"
+    );
+}
+
+#[derive(Clone, Default)]
+pub struct PhaseGate {
+    inner: Arc<PhaseGateInner>,
+}
+
+#[derive(Default)]
+struct PhaseGateInner {
+    phases: StdMutex<HashMap<&'static str, PhaseState>>,
+    events: Mutex<Vec<String>>,
+    notify: Notify,
+}
+
+#[derive(Default)]
+struct PhaseState {
+    entered: usize,
+    waiting: usize,
+    blocked: bool,
+    waiters: VecDeque<Arc<PhaseWaiter>>,
+}
+
+struct PhaseWaiter {
+    notify: Notify,
+}
+
+impl PhaseGate {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub async fn block(&self, phase: &'static str) {
+        let mut phases = self
+            .inner
+            .phases
+            .lock()
+            .expect("phase mutex should not be poisoned");
+        let state = phases.entry(phase).or_insert_with(|| PhaseState {
+            ..PhaseState::default()
+        });
+        state.blocked = true;
+    }
+
+    pub async fn enter(&self, phase: &'static str) {
+        let maybe_waiter = {
+            let mut phases = self
+                .inner
+                .phases
+                .lock()
+                .expect("phase mutex should not be poisoned");
+            let state = phases.entry(phase).or_insert_with(|| PhaseState {
+                ..PhaseState::default()
+            });
+            state.entered += 1;
+            if state.blocked {
+                state.waiting += 1;
+                let waiter = Arc::new(PhaseWaiter {
+                    notify: Notify::new(),
+                });
+                state.waiters.push_back(waiter.clone());
+                Some(waiter)
+            } else {
+                None
+            }
+        };
+        self.inner.events.lock().await.push(phase.to_string());
+        self.inner.notify.notify_waiters();
+        if let Some(waiter) = maybe_waiter {
+            let token = PhaseWaiterToken {
+                gate: self.clone(),
+                phase,
+                waiter,
+                completed: false,
+            };
+            token.waiter.notify.notified().await;
+            let mut token = token;
+            token.completed = true;
+            token.finish();
+        }
+    }
+
+    pub async fn wait_for(&self, phase: &'static str, count: usize) {
+        self.try_wait_for(phase, count)
+            .await
+            .unwrap_or_else(|_| panic!("timed out waiting for phase {phase} count {count}"));
+    }
+
+    pub async fn try_wait_for(
+        &self,
+        phase: &'static str,
+        count: usize,
+    ) -> Result<(), HarnessTimeout> {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let notified = self.inner.notify.notified();
+                let entered = self
+                    .inner
+                    .phases
+                    .lock()
+                    .expect("phase mutex should not be poisoned")
+                    .get(phase)
+                    .map(|state| state.entered)
+                    .unwrap_or(0);
+                if entered >= count {
+                    break;
+                }
+                notified.await;
+            }
+        })
+        .await
+        .map_err(|_| HarnessTimeout { label: phase })
+    }
+
+    pub async fn release_one(&self, phase: &'static str) {
+        let waiter = {
+            let mut phases = self
+                .inner
+                .phases
+                .lock()
+                .expect("phase mutex should not be poisoned");
+            phases.get_mut(phase).and_then(|state| {
+                while let Some(waiter) = state.waiters.pop_front() {
+                    if Arc::strong_count(&waiter) > 1 {
+                        state.waiting = state.waiting.saturating_sub(1);
+                        return Some(waiter);
+                    }
+                }
+                None
+            })
+        };
+        if let Some(waiter) = waiter {
+            waiter.notify.notify_one();
+        }
+    }
+
+    pub async fn release_all(&self, phase: &'static str) {
+        let waiters = {
+            let mut phases = self
+                .inner
+                .phases
+                .lock()
+                .expect("phase mutex should not be poisoned");
+            phases
+                .get_mut(phase)
+                .map(|state| {
+                    let mut waiters = Vec::new();
+                    while let Some(waiter) = state.waiters.pop_front() {
+                        if Arc::strong_count(&waiter) > 1 {
+                            state.waiting = state.waiting.saturating_sub(1);
+                            waiters.push(waiter);
+                        }
+                    }
+                    waiters
+                })
+                .unwrap_or_default()
+        };
+        for waiter in waiters {
+            waiter.notify.notify_one();
+        }
+    }
+
+    pub async fn events(&self) -> Vec<String> {
+        self.inner.events.lock().await.clone()
+    }
+}
+
+struct PhaseWaiterToken {
+    gate: PhaseGate,
+    phase: &'static str,
+    waiter: Arc<PhaseWaiter>,
+    completed: bool,
+}
+
+impl PhaseWaiterToken {
+    fn finish(&mut self) {
+        if self.completed {
+            let mut phases = self
+                .gate
+                .inner
+                .phases
+                .lock()
+                .expect("phase mutex should not be poisoned");
+            if let Some(state) = phases.get_mut(self.phase) {
+                state.waiting = state.waiting.saturating_sub(1);
+            }
+        } else {
+            let mut phases = self
+                .gate
+                .inner
+                .phases
+                .lock()
+                .expect("phase mutex should not be poisoned");
+            if let Some(state) = phases.get_mut(self.phase) {
+                state.waiting = state.waiting.saturating_sub(1);
+                state
+                    .waiters
+                    .retain(|queued| !Arc::ptr_eq(queued, &self.waiter));
+            }
+        }
+    }
+}
+
+impl Drop for PhaseWaiterToken {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.finish();
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct DropProbe {
+    inner: Arc<DropProbeInner>,
+}
+
+struct DropProbeInner {
+    label: &'static str,
+    count: AtomicUsize,
+    notify: Notify,
+    events: Arc<Mutex<Vec<String>>>,
+}
+
+impl DropProbe {
+    pub fn new(label: &'static str, events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self {
+            inner: Arc::new(DropProbeInner {
+                label,
+                count: AtomicUsize::new(0),
+                notify: Notify::new(),
+                events,
+            }),
+        }
+    }
+
+    pub fn token(&self) -> DropProbeToken {
+        DropProbeToken {
+            inner: self.inner.clone(),
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        self.inner.count.load(AtomicOrdering::SeqCst)
+    }
+
+    pub async fn wait_for(&self, expected: usize) {
+        wait_bounded("drop probe", async {
+            loop {
+                let notified = self.inner.notify.notified();
+                if self.count() >= expected {
+                    break;
+                }
+                notified.await;
+            }
+        })
+        .await;
+    }
+}
+
+pub struct DropProbeToken {
+    inner: Arc<DropProbeInner>,
+}
+
+impl Drop for DropProbeToken {
+    fn drop(&mut self) {
+        self.inner.count.fetch_add(1, AtomicOrdering::SeqCst);
+        if let Ok(mut events) = self.inner.events.try_lock() {
+            events.push(format!("drop:{}", self.inner.label));
+        }
+        self.inner.notify.notify_waiters();
+    }
+}
+
+#[derive(Clone)]
+pub struct GateableTransport {
+    gate: PhaseGate,
+    outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
+    events: Arc<Mutex<Vec<String>>>,
+    requests: Arc<Mutex<Vec<TransportRequest>>>,
+    drop_probe: Option<DropProbe>,
+}
+
+impl GateableTransport {
+    pub fn new(
+        gate: PhaseGate,
+        events: Arc<Mutex<Vec<String>>>,
+        responses: Vec<MockResponse>,
+    ) -> Self {
+        Self::with_outcomes(
+            gate,
+            events,
+            responses.into_iter().map(Into::into).collect(),
+        )
+    }
+
+    pub fn with_outcomes(
+        gate: PhaseGate,
+        events: Arc<Mutex<Vec<String>>>,
+        outcomes: Vec<MockOutcome>,
+    ) -> Self {
+        Self {
+            gate,
+            outcomes: Arc::new(Mutex::new(outcomes.into())),
+            events,
+            requests: Arc::new(Mutex::new(Vec::new())),
+            drop_probe: None,
+        }
+    }
+
+    pub fn with_drop_probe(mut self, probe: DropProbe) -> Self {
+        self.drop_probe = Some(probe);
+        self
+    }
+
+    pub async fn sent_count(&self) -> usize {
+        self.requests.lock().await.len()
+    }
+}
+
+impl Transport for GateableTransport {
+    fn send(
+        &self,
+        req: TransportRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        let gate = self.gate.clone();
+        let outcomes = self.outcomes.clone();
+        let events = self.events.clone();
+        let requests = self.requests.clone();
+        let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
+        Box::pin(async move {
+            let _drop_token = drop_token;
+            events.lock().await.push("transport_send_start".to_string());
+            requests.lock().await.push(req.clone());
+            gate.enter("transport_send").await;
+            let outcome = outcomes
+                .lock()
+                .await
+                .pop_front()
+                .unwrap_or_else(|| MockResponse::text(StatusCode::OK, "ok").into());
+            let response = match outcome {
+                MockOutcome::Response(response) => response,
+                MockOutcome::TransportError(kind) => {
+                    return Err(TransportError::with_kind(
+                        kind,
+                        std::io::Error::other("gateable transport error"),
+                    ));
+                }
+            };
+            Ok(TransportResponse {
+                meta: req.meta,
+                url: req.url,
+                status: response.status,
+                headers: response.headers,
+                content_length: response.content_length.or_else(|| {
+                    response
+                        .chunks
+                        .is_none()
+                        .then_some(response.body.len() as u64)
+                }),
+                rate_limit: req.rate_limit,
+                body: if let Some(chunks) = response.chunks {
+                    Box::new(ChunkBody {
+                        chunks: chunks.into(),
+                        read_count: response.read_count.clone(),
+                    })
+                } else {
+                    Box::new(StaticBody {
+                        body: Some(response.body),
+                        read_count: response.read_count.clone(),
+                    })
+                },
+            })
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct GateableBodyTransport {
+    gate: PhaseGate,
+    events: Arc<Mutex<Vec<String>>>,
+    chunks: Arc<Mutex<Option<VecDeque<Bytes>>>>,
+    read_count: Arc<AtomicUsize>,
+    drop_probe: Option<DropProbe>,
+}
+
+impl GateableBodyTransport {
+    pub fn new(gate: PhaseGate, events: Arc<Mutex<Vec<String>>>, chunks: Vec<Bytes>) -> Self {
+        Self {
+            gate,
+            events,
+            chunks: Arc::new(Mutex::new(Some(chunks.into()))),
+            read_count: Arc::new(AtomicUsize::new(0)),
+            drop_probe: None,
+        }
+    }
+
+    pub fn with_drop_probe(mut self, probe: DropProbe) -> Self {
+        self.drop_probe = Some(probe);
+        self
+    }
+
+    pub fn read_count(&self) -> usize {
+        self.read_count.load(AtomicOrdering::SeqCst)
+    }
+}
+
+impl Transport for GateableBodyTransport {
+    fn send(
+        &self,
+        req: TransportRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        let gate = self.gate.clone();
+        let events = self.events.clone();
+        let chunks = self.chunks.clone();
+        let read_count = self.read_count.clone();
+        let drop_probe = self.drop_probe.clone();
+        Box::pin(async move {
+            events.lock().await.push("transport_send_start".to_string());
+            let body_chunks = chunks
+                .lock()
+                .await
+                .take()
+                .expect("gateable body response should be used once");
+            Ok(TransportResponse {
+                meta: req.meta,
+                url: req.url,
+                status: StatusCode::OK,
+                headers: {
+                    let mut h = HeaderMap::new();
+                    h.insert(
+                        http::header::CONTENT_TYPE,
+                        HeaderValue::from_static("text/plain"),
+                    );
+                    h
+                },
+                content_length: None,
+                rate_limit: req.rate_limit,
+                body: Box::new(GateableBody {
+                    gate,
+                    chunks: body_chunks,
+                    read_count,
+                    _drop_token: drop_probe.map(|probe| probe.token()),
+                }),
+            })
+        })
+    }
+}
+
+struct GateableBody {
+    gate: PhaseGate,
+    chunks: VecDeque<Bytes>,
+    read_count: Arc<AtomicUsize>,
+    _drop_token: Option<DropProbeToken>,
+}
+
+impl TransportBody for GateableBody {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.chunks.front().is_some() {
+                self.gate.enter("body_chunk").await;
+            }
+            let chunk = self.chunks.pop_front();
+            if chunk.is_some() {
+                self.read_count.fetch_add(1, AtomicOrdering::SeqCst);
+            }
+            Ok(chunk)
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct CountingRateLimiter {
+    pub events: Arc<Mutex<Vec<String>>>,
+    pub acquire_started: AtomicUsize,
+    pub acquire_completed: AtomicUsize,
+    pub permit_created: AtomicUsize,
+    pub response_lifecycle_completed: AtomicUsize,
+    pub response_observed: AtomicUsize,
+    gate: PhaseGate,
+    fail_acquire: bool,
+}
+
+impl CountingRateLimiter {
+    pub fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self {
+            events,
+            gate: PhaseGate::new(),
+            fail_acquire: false,
+            ..Self::default()
+        }
+    }
+
+    pub fn with_gate(mut self, gate: PhaseGate) -> Self {
+        self.gate = gate;
+        self
+    }
+
+    pub fn failing(mut self) -> Self {
+        self.fail_acquire = true;
+        self
+    }
+}
+
+impl RateLimiter for CountingRateLimiter {
+    fn acquire<'a>(
+        &'a self,
+        _ctx: RateLimitContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
+        Box::pin(async move {
+            self.acquire_started.fetch_add(1, AtomicOrdering::SeqCst);
+            self.events
+                .lock()
+                .await
+                .push("rate_acquire_started".to_string());
+            self.gate.enter("rate_acquire").await;
+            if self.fail_acquire {
+                return Err(ApiClientError::RuntimeState {
+                    ctx: concord_core::advanced::ErrorContext {
+                        endpoint: "Text",
+                        method: Method::GET,
+                    },
+                    subsystem: "rate-limit",
+                    msg: "counting limiter acquire failed",
+                });
+            }
+            self.acquire_completed.fetch_add(1, AtomicOrdering::SeqCst);
+            self.permit_created.fetch_add(1, AtomicOrdering::SeqCst);
+            self.events
+                .lock()
+                .await
+                .push("rate_permit_created".to_string());
+            Ok(RateLimitPermit)
+        })
+    }
+
+    fn on_response<'a>(
+        &'a self,
+        ctx: RateLimitResponseContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
+        Box::pin(async move {
+            self.response_observed.fetch_add(1, AtomicOrdering::SeqCst);
+            self.response_lifecycle_completed
+                .fetch_add(1, AtomicOrdering::SeqCst);
+            self.events
+                .lock()
+                .await
+                .push(format!("rate_response:{}", ctx.status));
+            self.events
+                .lock()
+                .await
+                .push("rate_lifecycle_completed".to_string());
+            Ok(RateLimitResponseAction::Continue)
+        })
+    }
+}
+
+pub struct GateableCache {
+    gate: PhaseGate,
+    events: Arc<Mutex<Vec<String>>>,
+    before: CacheBefore,
+    after_response_count: AtomicUsize,
+    after_error_count: AtomicUsize,
+    stale_response: Option<BuiltResponse>,
+    drop_probe: Option<DropProbe>,
+}
+
+impl GateableCache {
+    pub fn miss(gate: PhaseGate, events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self {
+            gate,
+            events,
+            before: CacheBefore::Miss,
+            after_response_count: AtomicUsize::new(0),
+            after_error_count: AtomicUsize::new(0),
+            stale_response: None,
+            drop_probe: None,
+        }
+    }
+
+    pub fn hit(gate: PhaseGate, events: Arc<Mutex<Vec<String>>>, response: BuiltResponse) -> Self {
+        Self {
+            gate,
+            events,
+            before: CacheBefore::Hit(response),
+            after_response_count: AtomicUsize::new(0),
+            after_error_count: AtomicUsize::new(0),
+            stale_response: None,
+            drop_probe: None,
+        }
+    }
+
+    pub fn stale_fallback(
+        gate: PhaseGate,
+        events: Arc<Mutex<Vec<String>>>,
+        cached_response: BuiltResponse,
+    ) -> Self {
+        Self {
+            gate,
+            events,
+            before: CacheBefore::Revalidate {
+                request_headers: HeaderMap::new(),
+                cached: CacheRevalidation {
+                    key: CacheKey::new("stale".to_string()),
+                    cached_response: cached_response.clone(),
+                },
+            },
+            after_response_count: AtomicUsize::new(0),
+            after_error_count: AtomicUsize::new(0),
+            stale_response: Some(cached_response),
+            drop_probe: None,
+        }
+    }
+
+    pub fn with_drop_probe(mut self, probe: DropProbe) -> Self {
+        self.drop_probe = Some(probe);
+        self
+    }
+
+    pub fn after_response_count(&self) -> usize {
+        self.after_response_count.load(AtomicOrdering::SeqCst)
+    }
+}
+
+impl CacheStore for GateableCache {
+    fn before_request<'a>(&'a self, _request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
+        Box::pin(async move {
+            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
+            let _drop_token = drop_token;
+            self.events
+                .lock()
+                .await
+                .push("cache_before_started".to_string());
+            self.gate.enter("cache_before").await;
+            self.before.clone()
+        })
+    }
+
+    fn after_response<'a>(
+        &'a self,
+        _request: &'a BuiltRequest,
+        _response: &'a BuiltResponse,
+        _revalidation: Option<CacheRevalidation>,
+    ) -> CacheFuture<'a, CacheAfter> {
+        Box::pin(async move {
+            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
+            let _drop_token = drop_token;
+            self.after_response_count
+                .fetch_add(1, AtomicOrdering::SeqCst);
+            self.events
+                .lock()
+                .await
+                .push("cache_after_response".to_string());
+            self.gate.enter("cache_after_response").await;
+            CacheAfter::Stored
+        })
+    }
+
+    fn after_error<'a>(
+        &'a self,
+        _request: &'a BuiltRequest,
+        _error: &'a ApiClientError,
+        _revalidation: Option<CacheRevalidation>,
+    ) -> CacheFuture<'a, Option<BuiltResponse>> {
+        Box::pin(async move {
+            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
+            let _drop_token = drop_token;
+            self.after_error_count.fetch_add(1, AtomicOrdering::SeqCst);
+            self.events
+                .lock()
+                .await
+                .push("cache_after_error".to_string());
+            self.gate.enter("cache_after_error").await;
+            self.stale_response.clone()
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct GateableHooks {
+    gate: PhaseGate,
+    events: Arc<Mutex<Vec<String>>>,
+    block_pre_send: bool,
+}
+
+impl GateableHooks {
+    pub fn new(gate: PhaseGate, events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self {
+            gate,
+            events,
+            block_pre_send: true,
+        }
+    }
+}
+
+impl RuntimeHooks for GateableHooks {
+    fn pre_send<'a>(
+        &'a self,
+        _ctx: PreSendHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ApiClientError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.events
+                .lock()
+                .await
+                .push("hook_pre_send_started".to_string());
+            if self.block_pre_send {
+                self.gate.enter("hook_pre_send").await;
+            }
+            Ok(())
+        })
+    }
+
+    fn post_response<'a>(
+        &'a self,
+        ctx: PostResponseHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            self.events
+                .lock()
+                .await
+                .push(format!("hook_post_response:{}", ctx.status));
+            self.gate.enter("hook_post_response").await;
+        })
+    }
+
+    fn transport_error<'a>(
+        &'a self,
+        _ctx: TransportErrorHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            self.events
+                .lock()
+                .await
+                .push("hook_transport_error".to_string());
+            self.gate.enter("hook_transport_error").await;
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct SafeRecordingDebugSink {
+    pub events: Arc<Mutex<Vec<String>>>,
+}
+
+impl SafeRecordingDebugSink {
+    pub fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl concord_core::advanced::DebugSink for SafeRecordingDebugSink {
+    fn request_start(
+        &self,
+        dbg: concord_core::prelude::DebugLevel,
+        method: &Method,
+        url: &str,
+        endpoint: &'static str,
+        page_index: u32,
+    ) {
+        self.events
+            .try_lock()
+            .expect("debug events lock")
+            .push(format!(
+                "debug_request:{dbg}:{method}:{url}:{endpoint}:{page_index}"
+            ));
+    }
+
+    fn request_headers(&self, _dbg: concord_core::prelude::DebugLevel, headers: &HeaderMap) {
+        self.events
+            .try_lock()
+            .expect("debug events lock")
+            .push(format!("debug_request_headers:{headers:?}"));
+    }
+
+    fn response_status(
+        &self,
+        dbg: concord_core::prelude::DebugLevel,
+        status: StatusCode,
+        url: &str,
+        ok: bool,
+    ) {
+        self.events
+            .try_lock()
+            .expect("debug events lock")
+            .push(format!("debug_response:{dbg}:{status}:{url}:{ok}"));
+    }
+
+    fn response_headers(&self, _dbg: concord_core::prelude::DebugLevel, headers: &HeaderMap) {
+        self.events
+            .try_lock()
+            .expect("debug events lock")
+            .push(format!("debug_response_headers:{headers:?}"));
+    }
+}
+
+pub fn rate_limit_policy() -> ResolvedPolicy {
+    let mut policy = ResolvedPolicy::default();
+    let mut plan = concord_core::advanced::RateLimitPlan::new();
+    plan.push_bucket(
+        concord_core::advanced::RateLimitBucketUse::new(
+            "async-harness",
+            "endpoint",
+            concord_core::advanced::RateLimitKey::new(vec![
+                concord_core::advanced::RateLimitKeyPart::endpoint(),
+            ]),
+        )
+        .with_window(concord_core::advanced::RateLimitWindow::new(
+            std::num::NonZeroU32::new(10).expect("non-zero"),
+            Duration::from_secs(1),
+        )),
+    );
+    policy.rate_limit = plan;
+    policy
+}
+
+pub fn cache_and_rate_limit_policy() -> ResolvedPolicy {
+    let mut policy = cache_policy();
+    policy.rate_limit = rate_limit_policy().rate_limit;
+    policy
+}
+
+pub async fn assert_events_do_not_contain(events: &Arc<Mutex<Vec<String>>>, sentinels: &[&str]) {
+    let rendered = events.lock().await.join("\n");
+    for sentinel in sentinels {
+        assert!(
+            !rendered.contains(sentinel),
+            "event log leaked sentinel {sentinel}: {rendered}"
+        );
+    }
 }

@@ -1,3 +1,5 @@
+#[path = "current_core/async_harness.rs"]
+mod async_harness;
 #[path = "current_core/auth.rs"]
 mod auth;
 #[path = "current_core/cache.rs"]
