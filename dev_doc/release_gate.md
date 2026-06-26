@@ -16,6 +16,10 @@ primarily by behavior tests, trybuild diagnostics, generated API compile
 checks, clippy, and rustdoc. Manual review covers source and documentation
 consistency.
 
+`scripts/check_v1.sh` now runs `scripts/check_features.sh` first so feature
+defaults, explicit optional backends, and unsupported no-default example
+combinations stay visible in one place.
+
 ## Core invariants
 
 - `BuiltRequest` is logical request state and does not contain raw auth material.
@@ -64,6 +68,7 @@ consistency.
 ## Command list
 
 ```bash
+bash ./scripts/check_features.sh
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo nextest run --workspace --all-targets

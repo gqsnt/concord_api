@@ -19,6 +19,8 @@ if ! "${CARGO[@]}" nextest --version >/dev/null 2>&1; then
   exit 127
 fi
 
+bash ./scripts/check_features.sh
+
 "${CARGO[@]}" fmt --check
 "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
 "${CARGO[@]}" nextest run --workspace --all-targets

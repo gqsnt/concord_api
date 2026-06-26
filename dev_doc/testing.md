@@ -58,6 +58,8 @@ Codegen tests should prefer generated API compile checks, type checks, trybuild 
 
 Macro strictness belongs primarily in semantic unit tests and trybuild pass/fail fixtures. Add trybuild fail fixtures when a rejected form needs a stable public diagnostic. Source-level keyword audits can be useful during review, but they should not be normal `cargo test` checks.
 
+Feature-surface drift is gated separately by `scripts/check_features.sh`. That script uses normal dependency trees for the crate-surface proof so dev-dependencies do not widen the default feature story. `scripts/check_v1.sh` calls it before the rest of the local gate.
+
 ## Core tests
 
 `concord_core` has runtime characterization tests for cache, concurrency, rate-limit, auth rejection, retry, stale fallback, decode, pagination, codecs, and runtime configuration.
@@ -93,6 +95,7 @@ bash ./scripts/check_v1.sh
 `scripts/check_v1.sh` requires `cargo-nextest` and performs:
 
 ```bash
+bash ./scripts/check_features.sh
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo nextest run --workspace --all-targets

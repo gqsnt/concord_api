@@ -16,9 +16,10 @@ pub use plan::{
 };
 pub use response::{
     DefaultRateLimitResponsePolicy, RateLimitObservation, RateLimitObserver,
-    RateLimitResponseAction, RateLimitResponsePolicy, RateLimitScopeHint, RateLimitTarget,
-    parse_retry_after,
+    RateLimitResponseAction, RateLimitResponsePolicy, RateLimitScopeHint, parse_retry_after,
 };
+#[allow(unused_imports)]
+pub use response::RateLimitTarget;
 
 #[cfg(not(feature = "rate-limit-governor"))]
 pub type DefaultRateLimiter = NoopRateLimiter;
