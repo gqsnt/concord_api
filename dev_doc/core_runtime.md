@@ -103,6 +103,16 @@ Endpoint response bodies are read into memory only through the bounded body read
 
 Runtime configuration is client-owned. `RuntimeConfig::default()` starts with no debug output, no-op hooks/cache/retry, the feature-selected default rate limiter, `max_auth_retries = 8`, pagination loop detection enabled, a 16 MiB endpoint response-body limit, and disabled dev body capture. Client configuration is applied before endpoint policy and pending-request overrides. Pending-request overrides cover request options such as debug level, timeout, attempt, and cache mode; v1 has no per-request override for body limit, cache store, hooks, rate limiter, retry policy, or auth retry budget. Cloned clients use clone-on-write runtime state, so configuring one clone does not mutate another clone or an in-flight request on that clone.
 
+Public runtime failures surface through `ApiClientError`. Tests should match
+variants or `ErrorCategory` for stable behavior and use string assertions only
+for safety checks such as proving raw auth, secrets, and body bytes are absent
+from `Display`, `Debug`, `source()` chains, debug sinks, hooks, rate-limit,
+retry, and cache metadata. Retry exhaustion in v1 returns the final
+transport/status error rather than a separate retry-exhausted wrapper. Cache
+store hooks are not fallible in the public trait signatures; backend
+implementations must report non-storage outcomes through `CacheAfter` and avoid
+panic paths.
+
 Pagination follows the same per-page runtime order on each page request: fresh cache lookup, rate limit, transport, classify, hooks, rate-limit observation, auth rejection handling, retry, stale fallback for ordinary failures, decode, map/transform, cache write after endpoint success. Page advancement happens only after the page response has completed endpoint decode/map successfully and the pagination runtime has accepted it. Protected auth rejections retry the same page and do not advance state or serve stale cached data.
 
 Decode and map/transform are the final semantic validation steps before successful cache admission and return. A decode failure does not trigger another transport retry.
