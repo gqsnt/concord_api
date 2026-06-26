@@ -18,6 +18,8 @@ mod pagination;
 mod public_api;
 #[path = "current_core/rate_limit.rs"]
 mod rate_limit;
+#[path = "current_core/release_gate.rs"]
+mod release_gate;
 #[path = "current_core/runtime_config.rs"]
 mod runtime_config;
 #[path = "current_core/runtime_order.rs"]
