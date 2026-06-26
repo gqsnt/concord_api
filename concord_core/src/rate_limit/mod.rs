@@ -14,12 +14,12 @@ pub use plan::{
     RateLimitBucketId, RateLimitBucketUse, RateLimitKey, RateLimitKeyPart, RateLimitKeyValue,
     RateLimitPlan, RateLimitSetting, RateLimitWindow,
 };
+#[allow(unused_imports)]
+pub use response::RateLimitTarget;
 pub use response::{
     DefaultRateLimitResponsePolicy, RateLimitObservation, RateLimitObserver,
     RateLimitResponseAction, RateLimitResponsePolicy, RateLimitScopeHint, parse_retry_after,
 };
-#[allow(unused_imports)]
-pub use response::RateLimitTarget;
 
 #[cfg(not(feature = "rate-limit-governor"))]
 pub type DefaultRateLimiter = NoopRateLimiter;

@@ -229,3 +229,25 @@ impl RuntimeConfig {
         self.debug.level
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_config_defaults_snapshot() {
+        let cfg = RuntimeConfig::default();
+
+        assert_eq!(cfg.auth.max_retries, 8);
+        assert!(cfg.pagination_detect_loops);
+        assert_eq!(cfg.debug.level, DebugLevel::None);
+        assert_eq!(cfg.max_response_body_bytes, Some(16 * 1024 * 1024));
+        assert!(cfg.dev_body_capture.is_none());
+
+        assert_eq!(Arc::strong_count(&cfg.hooks), 1);
+        assert_eq!(Arc::strong_count(&cfg.cache_store), 1);
+        assert_eq!(Arc::strong_count(&cfg.rate_limiter), 1);
+        assert_eq!(Arc::strong_count(&cfg.retry_policy), 1);
+        assert_eq!(Arc::strong_count(&cfg.debug.sink), 1);
+    }
+}

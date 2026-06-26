@@ -35,11 +35,50 @@ Common configuration methods include:
 - `max_response_body_bytes(...)`
 - `no_response_body_limit()`
 
+## Defaults And Precedence
+
+`RuntimeConfig::default()` currently uses:
+
+| Setting | Default |
+| --- | --- |
+| `debug_level` | `DebugLevel::None` |
+| `debug_sink` | stderr sink |
+| `runtime_hooks` | no-op hooks |
+| `cache_store` | no-op cache store |
+| `rate_limiter` | default rate limiter for the enabled feature set |
+| `retry_policy` | no retry |
+| `max_auth_retries` | `8` |
+| `pagination_detect_loops` | `true` |
+| `max_response_body_bytes` | `Some(16 * 1024 * 1024)` |
+| `dev_body_capture` | disabled |
+
+Configuration precedence is:
+
+```text
+RuntimeConfig defaults
+-> client configuration through configure/configure_mut or setter methods
+-> endpoint policy emitted by the DSL or advanced endpoint
+-> pending-request overrides where that API exists
+```
+
+Pending-request overrides exist for request options such as debug level,
+timeout, attempt, and cache mode. There is no per-request response-body-limit,
+cache-store, hook, rate-limiter, retry-policy, or auth-retry override in v1.
+
+Rust borrowing prevents mutating one client instance while a request borrowed
+from that same instance is executing. Cloned clients use clone-on-write runtime
+state: configuring one clone does not change an already-cloned client or an
+in-flight request running on that clone. Later requests on the reconfigured
+clone use the new configuration.
+
 Pagination page and item termination is chosen per request with
 `PaginationTermination`; there is no runtime-wide implicit page or item cap.
 `pagination_detect_loops(...)` changes the default controller loop-key
 detection setting for paginated calls. The runtime still enforces non-progress
 detection for repeated logical page identities regardless of this setting.
+For a pagination run, the client runtime configuration belongs to the client
+instance executing the run. Reconfiguring a separate clone while a run is in
+progress does not change later pages in that run.
 
 Debug sinks and runtime hooks are metadata-only. They may observe redacted URLs,
 redacted headers, statuses, retry/cache/rate-limit events, and safe endpoint
@@ -126,3 +165,6 @@ let value = api
     .execute()
     .await?;
 ```
+
+These pending-request overrides do not mutate the client default and do not
+leak into later requests.
