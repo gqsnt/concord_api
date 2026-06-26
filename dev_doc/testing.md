@@ -130,6 +130,13 @@ stale-fallback, and pagination work does not produce late semantic side
 effects. Timeout handling remains transport-delegated unless a runtime timer is
 explicitly documented elsewhere.
 
+The concurrency characterization suite in
+`concord_core/tests/integration/current_core/concurrency.rs` uses the same
+helpers to prove that concurrent requests keep request-local config, cache,
+rate-limit, auth identity, pagination state, decode/map, observer metadata,
+and cancellation outcomes isolated even when they share a client, cache store,
+limiter, hooks, or debug sink.
+
 ## Examples and docs tests
 
 `concord_examples` compile-checks public usage. It includes small examples, public docs fixtures, generated API usage tests, and the Riot fixture.

@@ -103,6 +103,8 @@ Endpoint response bodies are read into memory only through the bounded body read
 
 Runtime configuration is client-owned. `RuntimeConfig::default()` starts with no debug output, no-op hooks/cache/retry, the feature-selected default rate limiter, `max_auth_retries = 8`, pagination loop detection enabled, a 16 MiB endpoint response-body limit, and disabled dev body capture. Client configuration is applied before endpoint policy and pending-request overrides. Pending-request overrides cover request options such as debug level, timeout, attempt, and cache mode; v1 has no per-request override for body limit, cache store, hooks, rate limiter, retry policy, or auth retry budget. Cloned clients use clone-on-write runtime state, so configuring one clone does not mutate another clone or an in-flight request on that clone.
 
+Concurrent-request characterization tests cover the same clone/COW snapshot model under overlap: request-local config and pagination state stay isolated, cache hits and misses stay partitioned, auth identities and observer metadata remain request-scoped, and cancelled work does not poison later requests.
+
 Public runtime failures surface through `ApiClientError`. Tests should match
 variants or `ErrorCategory` for stable behavior and use string assertions only
 for safety checks such as proving raw auth, secrets, and body bytes are absent
@@ -127,3 +129,9 @@ admission, no late page advancement, and no leaked body/auth material in safe
 metadata. Timeout metadata is still passed through the runtime request plan and
 may be enforced by the transport layer rather than an in-runtime timer unless a
 specific API documents otherwise.
+
+Concurrent-request characterization tests also cover request-local isolation for
+pending overrides, cloned-client reconfiguration, cache hits versus cache
+misses, rate-limit key partitioning, auth identity partitioning, raw versus
+decoded execution, and cancelled requests. A shared client or shared observer
+must not turn those request-local decisions into cross-request leakage.
