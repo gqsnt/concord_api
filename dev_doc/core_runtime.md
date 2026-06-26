@@ -120,3 +120,10 @@ Decode and map/transform are the final semantic validation steps before successf
 Runtime order is covered by characterization tests in `concord_core`.
 
 Endpoint concurrency tests use deterministic gates and explicit arrival counts rather than short sleeps. Timeouts in those tests are deadlock guards, not timing assertions.
+
+Cancellation tests use the same deterministic harness to abort requests after a
+known phase entry. The supported proofs are phase-local cleanup, no late cache
+admission, no late page advancement, and no leaked body/auth material in safe
+metadata. Timeout metadata is still passed through the runtime request plan and
+may be enforced by the transport layer rather than an in-runtime timer unless a
+specific API documents otherwise.

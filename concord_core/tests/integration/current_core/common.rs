@@ -21,7 +21,7 @@ use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::{Mutex, Notify, watch};
@@ -1461,12 +1461,14 @@ struct PhaseGateInner {
 struct PhaseState {
     entered: usize,
     waiting: usize,
+    released_pending: usize,
     blocked: bool,
     waiters: VecDeque<Arc<PhaseWaiter>>,
 }
 
 struct PhaseWaiter {
     notify: Notify,
+    released: AtomicBool,
 }
 
 impl PhaseGate {
@@ -1501,6 +1503,7 @@ impl PhaseGate {
                 state.waiting += 1;
                 let waiter = Arc::new(PhaseWaiter {
                     notify: Notify::new(),
+                    released: AtomicBool::new(false),
                 });
                 state.waiters.push_back(waiter.clone());
                 Some(waiter)
@@ -1565,8 +1568,9 @@ impl PhaseGate {
                 .expect("phase mutex should not be poisoned");
             phases.get_mut(phase).and_then(|state| {
                 while let Some(waiter) = state.waiters.pop_front() {
-                    if Arc::strong_count(&waiter) > 1 {
-                        state.waiting = state.waiting.saturating_sub(1);
+                    if Arc::strong_count(&waiter) > 1 && state.waiting > state.released_pending {
+                        state.released_pending += 1;
+                        waiter.released.store(true, AtomicOrdering::SeqCst);
                         return Some(waiter);
                     }
                 }
@@ -1590,8 +1594,10 @@ impl PhaseGate {
                 .map(|state| {
                     let mut waiters = Vec::new();
                     while let Some(waiter) = state.waiters.pop_front() {
-                        if Arc::strong_count(&waiter) > 1 {
-                            state.waiting = state.waiting.saturating_sub(1);
+                        if Arc::strong_count(&waiter) > 1 && state.waiting > state.released_pending
+                        {
+                            state.released_pending += 1;
+                            waiter.released.store(true, AtomicOrdering::SeqCst);
                             waiters.push(waiter);
                         }
                     }
@@ -1627,6 +1633,9 @@ impl PhaseWaiterToken {
                 .expect("phase mutex should not be poisoned");
             if let Some(state) = phases.get_mut(self.phase) {
                 state.waiting = state.waiting.saturating_sub(1);
+                if self.waiter.released.load(AtomicOrdering::SeqCst) {
+                    state.released_pending = state.released_pending.saturating_sub(1);
+                }
             }
         } else {
             let mut phases = self
@@ -1637,6 +1646,9 @@ impl PhaseWaiterToken {
                 .expect("phase mutex should not be poisoned");
             if let Some(state) = phases.get_mut(self.phase) {
                 state.waiting = state.waiting.saturating_sub(1);
+                if self.waiter.released.load(AtomicOrdering::SeqCst) {
+                    state.released_pending = state.released_pending.saturating_sub(1);
+                }
                 state
                     .waiters
                     .retain(|queued| !Arc::ptr_eq(queued, &self.waiter));
@@ -1822,7 +1834,7 @@ impl Transport for GateableTransport {
 pub struct GateableBodyTransport {
     gate: PhaseGate,
     events: Arc<Mutex<Vec<String>>>,
-    chunks: Arc<Mutex<Option<VecDeque<Bytes>>>>,
+    chunks: Arc<Mutex<VecDeque<VecDeque<Bytes>>>>,
     read_count: Arc<AtomicUsize>,
     drop_probe: Option<DropProbe>,
 }
@@ -1832,7 +1844,7 @@ impl GateableBodyTransport {
         Self {
             gate,
             events,
-            chunks: Arc::new(Mutex::new(Some(chunks.into()))),
+            chunks: Arc::new(Mutex::new(vec![chunks.into()].into())),
             read_count: Arc::new(AtomicUsize::new(0)),
             drop_probe: None,
         }
@@ -1845,6 +1857,10 @@ impl GateableBodyTransport {
 
     pub fn read_count(&self) -> usize {
         self.read_count.load(AtomicOrdering::SeqCst)
+    }
+
+    pub async fn push_body(&self, chunks: Vec<Bytes>) {
+        self.chunks.lock().await.push_back(chunks.into());
     }
 }
 
@@ -1863,8 +1879,8 @@ impl Transport for GateableBodyTransport {
             let body_chunks = chunks
                 .lock()
                 .await
-                .take()
-                .expect("gateable body response should be used once");
+                .pop_front()
+                .expect("gateable body response should be available");
             Ok(TransportResponse {
                 meta: req.meta,
                 url: req.url,
@@ -1924,6 +1940,7 @@ pub struct CountingRateLimiter {
     pub response_observed: AtomicUsize,
     gate: PhaseGate,
     fail_acquire: bool,
+    drop_probe: Option<DropProbe>,
 }
 
 impl CountingRateLimiter {
@@ -1932,6 +1949,7 @@ impl CountingRateLimiter {
             events,
             gate: PhaseGate::new(),
             fail_acquire: false,
+            drop_probe: None,
             ..Self::default()
         }
     }
@@ -1945,6 +1963,11 @@ impl CountingRateLimiter {
         self.fail_acquire = true;
         self
     }
+
+    pub fn with_drop_probe(mut self, probe: DropProbe) -> Self {
+        self.drop_probe = Some(probe);
+        self
+    }
 }
 
 impl RateLimiter for CountingRateLimiter {
@@ -1953,6 +1976,8 @@ impl RateLimiter for CountingRateLimiter {
         _ctx: RateLimitContext<'a>,
     ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
         Box::pin(async move {
+            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
+            let _drop_token = drop_token;
             self.acquire_started.fetch_add(1, AtomicOrdering::SeqCst);
             self.events
                 .lock()
@@ -1984,6 +2009,8 @@ impl RateLimiter for CountingRateLimiter {
         ctx: RateLimitResponseContext<'a>,
     ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
         Box::pin(async move {
+            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
+            let _drop_token = drop_token;
             self.response_observed.fetch_add(1, AtomicOrdering::SeqCst);
             self.response_lifecycle_completed
                 .fetch_add(1, AtomicOrdering::SeqCst);
@@ -2065,6 +2092,10 @@ impl GateableCache {
     pub fn after_response_count(&self) -> usize {
         self.after_response_count.load(AtomicOrdering::SeqCst)
     }
+
+    pub fn after_error_count(&self) -> usize {
+        self.after_error_count.load(AtomicOrdering::SeqCst)
+    }
 }
 
 impl CacheStore for GateableCache {
@@ -2126,6 +2157,7 @@ pub struct GateableHooks {
     gate: PhaseGate,
     events: Arc<Mutex<Vec<String>>>,
     block_pre_send: bool,
+    drop_probe: Option<DropProbe>,
 }
 
 impl GateableHooks {
@@ -2134,7 +2166,13 @@ impl GateableHooks {
             gate,
             events,
             block_pre_send: true,
+            drop_probe: None,
         }
+    }
+
+    pub fn with_drop_probe(mut self, probe: DropProbe) -> Self {
+        self.drop_probe = Some(probe);
+        self
     }
 }
 
@@ -2144,6 +2182,8 @@ impl RuntimeHooks for GateableHooks {
         _ctx: PreSendHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<(), ApiClientError>> + Send + 'a>> {
         Box::pin(async move {
+            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
+            let _drop_token = drop_token;
             self.events
                 .lock()
                 .await
@@ -2160,6 +2200,8 @@ impl RuntimeHooks for GateableHooks {
         ctx: PostResponseHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
+            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
+            let _drop_token = drop_token;
             self.events
                 .lock()
                 .await
@@ -2173,6 +2215,8 @@ impl RuntimeHooks for GateableHooks {
         _ctx: TransportErrorHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
+            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
+            let _drop_token = drop_token;
             self.events
                 .lock()
                 .await

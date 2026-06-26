@@ -123,8 +123,12 @@ sanitized URLs, statuses, and headers, but not request body bytes, response body
 bytes, raw auth material, or secret values. The harness self-tests live in
 `concord_core/tests/integration/current_core/async_harness.rs`; they prove
 blocking, release, drop observation, cache/rate/transport/body/hook ordering,
-bounded missing-phase waits, and safe observer surfaces. Full cancellation and
-timeout semantics are intentionally deferred to follow-up runtime tests.
+bounded missing-phase waits, and safe observer surfaces. The cancellation
+suite in `concord_core/tests/integration/current_core/cancellation.rs` reuses
+those helpers to prove that aborted cache, rate-limit, hook, transport, body,
+stale-fallback, and pagination work does not produce late semantic side
+effects. Timeout handling remains transport-delegated unless a runtime timer is
+explicitly documented elsewhere.
 
 ## Examples and docs tests
 

@@ -4,6 +4,8 @@ mod async_harness;
 mod auth;
 #[path = "current_core/cache.rs"]
 mod cache;
+#[path = "current_core/cancellation.rs"]
+mod cancellation;
 #[path = "current_core/common.rs"]
 pub(super) mod common;
 #[path = "current_core/concurrency.rs"]
