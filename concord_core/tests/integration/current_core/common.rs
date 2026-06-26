@@ -22,6 +22,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::time::Duration;
 use tokio::sync::{Mutex, Notify, watch};
 
@@ -744,6 +745,7 @@ pub struct MockResponse {
     pub body: Bytes,
     pub content_length: Option<u64>,
     pub chunks: Option<Vec<Bytes>>,
+    pub read_count: Option<Arc<AtomicUsize>>,
 }
 
 impl MockResponse {
@@ -759,6 +761,7 @@ impl MockResponse {
             body: body.into(),
             content_length: None,
             chunks: None,
+            read_count: None,
         }
     }
 
@@ -769,6 +772,11 @@ impl MockResponse {
 
     pub fn with_chunks(mut self, chunks: Vec<Bytes>) -> Self {
         self.chunks = Some(chunks);
+        self
+    }
+
+    pub fn with_read_count(mut self, read_count: Arc<AtomicUsize>) -> Self {
+        self.read_count = Some(read_count);
         self
     }
 }
@@ -835,9 +843,13 @@ impl Transport for MockTransport {
                 body: if let Some(chunks) = response.chunks {
                     Box::new(ChunkBody {
                         chunks: chunks.into(),
+                        read_count: response.read_count.clone(),
                     })
                 } else {
-                    Box::new(StaticBody(Some(response.body)))
+                    Box::new(StaticBody {
+                        body: Some(response.body),
+                        read_count: response.read_count.clone(),
+                    })
                 },
             })
         })
@@ -946,34 +958,58 @@ impl Transport for GateTransport {
                 body: if let Some(chunks) = response.chunks {
                     Box::new(ChunkBody {
                         chunks: chunks.into(),
+                        read_count: response.read_count.clone(),
                     })
                 } else {
-                    Box::new(StaticBody(Some(response.body)))
+                    Box::new(StaticBody {
+                        body: Some(response.body),
+                        read_count: response.read_count.clone(),
+                    })
                 },
             })
         })
     }
 }
 
-struct StaticBody(Option<Bytes>);
+struct StaticBody {
+    body: Option<Bytes>,
+    read_count: Option<Arc<AtomicUsize>>,
+}
 
 impl TransportBody for StaticBody {
     fn next_chunk<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.0.take()) })
+        Box::pin(async move {
+            let chunk = self.body.take();
+            if chunk.is_some()
+                && let Some(read_count) = &self.read_count
+            {
+                read_count.fetch_add(1, AtomicOrdering::Relaxed);
+            }
+            Ok(chunk)
+        })
     }
 }
 
 struct ChunkBody {
     chunks: VecDeque<Bytes>,
+    read_count: Option<Arc<AtomicUsize>>,
 }
 
 impl TransportBody for ChunkBody {
     fn next_chunk<'a>(
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.chunks.pop_front()) })
+        Box::pin(async move {
+            let chunk = self.chunks.pop_front();
+            if chunk.is_some()
+                && let Some(read_count) = &self.read_count
+            {
+                read_count.fetch_add(1, AtomicOrdering::Relaxed);
+            }
+            Ok(chunk)
+        })
     }
 }
 

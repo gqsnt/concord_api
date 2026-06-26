@@ -107,6 +107,14 @@ limits. Cache `max_body` controls only whether a response is eligible for cache
 storage; it does not raise or lower the runtime body read limit used before
 decode.
 
+When a response includes `Content-Length`, Concord rejects bodies above the
+configured limit before reading any body chunks. Chunked or unknown-length
+responses are still bounded: Concord reads them cumulatively and fails as soon
+as the buffered body would exceed the limit. Body-limit failures are typed and
+remain body-free in debug sinks, hooks, rate-limit metadata, and retry
+metadata. `execute_raw()` follows the same response-body limit; it only bypasses
+endpoint decode/map and cache lookup/store.
+
 Per-request overrides stay on the pending request.
 
 ```rust

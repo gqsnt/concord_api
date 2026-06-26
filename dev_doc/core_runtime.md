@@ -51,6 +51,7 @@ Credential acquisition may coordinate waiters for the same slot, but auth locks
 must not be held across credential endpoint or token endpoint I/O.
 
 `BuiltRequest` is the logical request. It contains public route/query/header data, safe auth identities, and typed pending auth slots, but it does not contain raw auth material. Cache keys, debug sinks, hooks, and response metadata operate on this logical request.
+Request body bytes stay on the transport side of the boundary; they are not copied into cache keys, debug/hook/rate-limit metadata, retry context, or error context.
 
 Pagination drives one logical request per page and always checks page progress. The runtime records every logical request identity seen during a pagination run and returns a typed pagination error if a later page would reuse any previously seen identity instead of advancing. The old controller loop-key check remains an additional guard, but it is no longer the only defense against repeated pages.
 
@@ -82,6 +83,7 @@ outside explicit tests as a failure.
 Auth preparation does not receive `BuiltRequest` directly. Endpoint auth preparation and auth-internal preparation both receive an auth-only application request that exposes only pending-slot attachment, so custom client contexts cannot insert raw auth into logical headers, query strings, body data, policy data, or request metadata during credential preparation.
 
 `TransportRequest` is materialized only immediately before `Transport::send`. It is the boundary where bearer values, arbitrary auth headers, query-auth values, basic auth headers, and certificate transport metadata are inserted. Concord drops it after send and does not store it in `BuiltResponse` or `DecodedResponse<T>`. Custom transports receive real credentials and must not log them.
+Request bodies are also transport-only at this stage; they are visible to the transport implementation but not to the safe metadata surfaces above.
 
 Rate-limit keying is strict. A bucket keyed by `[host]` requires the logical request URL to have a host and fails before permit acquisition or transport if it does not. The runtime must not invent fallback key values such as `"<unknown-host>"`; endpoint, method, static, and named key parts remain valid without host data when used alone.
 

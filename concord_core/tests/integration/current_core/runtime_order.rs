@@ -10,6 +10,7 @@ use concord_core::internal::{
 };
 use concord_core::prelude::{ApiClientError, DebugLevel, Endpoint};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -337,6 +338,10 @@ fn first_position(events: &[String], needle: &str) -> usize {
         .unwrap_or_else(|| panic!("missing event `{needle}` in {events:?}"))
 }
 
+fn body_reads(counter: &Arc<AtomicUsize>) -> usize {
+    counter.load(AtomicOrdering::SeqCst)
+}
+
 #[derive(Clone)]
 struct UnsafeEndpoint {
     policy: ResolvedPolicy,
@@ -374,6 +379,7 @@ impl Endpoint<TestCx> for UnsafeEndpoint {
 #[derive(Clone)]
 struct BodyDebugEndpoint {
     request_body: Bytes,
+    policy: ResolvedPolicy,
 }
 
 impl Endpoint<TestCx> for BodyDebugEndpoint {
@@ -389,7 +395,7 @@ impl Endpoint<TestCx> for BodyDebugEndpoint {
                     facade_path: &[],
                 },
                 route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", "/body-debug"),
-                policy: ResolvedPolicy::default(),
+                policy: self.policy.clone(),
                 body: BodyPlan::Encoded {
                     content_type: Some(http::HeaderValue::from_static("text/plain")),
                     format: concord_core::internal::Format::Text,
@@ -1234,6 +1240,80 @@ async fn never_refresh_auth_rejection_does_not_fall_through_to_custom_retry() {
 }
 
 #[tokio::test]
+async fn auth_rejection_does_not_read_body() -> Result<(), ApiClientError> {
+    const RESPONSE_SENTINEL: &str = "PR74_AUTH_REJECTION_BODY_SENTINEL";
+
+    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let read_count = Arc::new(AtomicUsize::new(0));
+        let stale = built_response("Text", StatusCode::OK, "stale");
+        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+            events.clone(),
+            stale,
+        ));
+        let after_error_count = cache.after_error_count.clone();
+        let transport = MockTransport::new(
+            events.clone(),
+            vec![
+                MockResponse::text(status, RESPONSE_SENTINEL)
+                    .with_content_length(None)
+                    .with_chunks(vec![
+                        Bytes::from_static(b"abcd"),
+                        Bytes::from_static(RESPONSE_SENTINEL.as_bytes()),
+                    ])
+                    .with_read_count(read_count.clone()),
+            ],
+        );
+        let sent_transport = transport.clone();
+        let mut client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+            (),
+            ObservationAuthVars::bearer(
+                "PR74_AUTH_REJECTION_BODY_SENTINEL_AUTH",
+                "user-a",
+                events.clone(),
+            ),
+            transport,
+        );
+        client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+        configure_runtime(
+            &mut client,
+            Some(cache),
+            Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+        );
+
+        let err = client
+            .request(TextEndpoint {
+                policy: {
+                    let mut policy = auth_policy(AuthPlacement::Bearer);
+                    policy.cache = concord_core::internal::CacheSetting::Config(
+                        concord_core::advanced::CacheConfig::new(),
+                    );
+                    policy
+                },
+                ..Default::default()
+            })
+            .execute_decoded()
+            .await
+            .expect_err("auth rejection should happen before body read");
+
+        assert!(matches!(err, ApiClientError::Auth { .. }));
+        assert!(err.to_string().contains("auth challenge rejected"));
+        assert_eq!(sent_transport.sent_count().await, 1);
+        assert_eq!(body_reads(&read_count), 0);
+        assert_eq!(*after_error_count.lock().await, 0);
+        let events = events.lock().await.clone();
+        assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
+        assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
+        assert!(events.iter().any(|event| event.starts_with("hook_status:")));
+        assert!(events.iter().any(|event| event.starts_with("rate_status:")));
+        assert!(!events.iter().any(|event| event.contains(RESPONSE_SENTINEL)));
+        assert!(!format!("{events:?}").contains(RESPONSE_SENTINEL));
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn runtime_hooks_do_not_observe_body_on_http_status_error() {
     const RESPONSE_SENTINEL: &str = "PR65_RESPONSE_BODY_SENTINEL_DO_NOT_LEAK";
 
@@ -1522,7 +1602,8 @@ async fn stale_cache_fallback_happens_after_retry_exhaustion() -> Result<(), Api
     let decoded = client
         .request(TextEndpoint {
             policy: {
-                let mut policy = retry_policy(2);
+                let mut policy =
+                    retry_policy_for_statuses(2, vec![StatusCode::INTERNAL_SERVER_ERROR]);
                 policy.cache = concord_core::internal::CacheSetting::Config(
                     concord_core::advanced::CacheConfig::new(),
                 );
@@ -1691,6 +1772,105 @@ async fn custom_retry_exhaustion_then_stale_fallback() -> Result<(), ApiClientEr
     );
     assert!(!events.iter().any(|event| event == "cache_after_response"));
     Ok(())
+}
+
+#[tokio::test]
+async fn stale_fallback_prevents_oversized_live_body_read() -> Result<(), ApiClientError> {
+    const LIVE_SENTINEL: &str = "PR74_STALE_FALLBACK_LIVE_BODY_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let stale = built_response("Text", StatusCode::OK, "stale");
+    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
+        events.clone(),
+        stale,
+    ));
+    let after_error_count = cache.after_error_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::BAD_REQUEST, Bytes::from_static(b"abcde"))
+                .with_content_length(Some(5))
+                .with_chunks(vec![
+                    Bytes::from_static(b"abcde"),
+                    Bytes::from_static(LIVE_SENTINEL.as_bytes()),
+                ])
+                .with_read_count(read_count.clone()),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: {
+                let mut policy = retry_policy(2);
+                policy.cache = concord_core::internal::CacheSetting::Config(
+                    concord_core::advanced::CacheConfig::new(),
+                );
+                policy
+            },
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "stale");
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(*after_error_count.lock().await, 1);
+    let events = events.lock().await.clone();
+    assert!(events.iter().any(|event| event == "cache_after_error"));
+    assert!(!events.iter().any(|event| event == "cache_after_response"));
+    assert!(!format!("{events:?}").contains(LIVE_SENTINEL));
+    Ok(())
+}
+
+#[tokio::test]
+async fn oversized_live_body_without_stale_fallback_fails_typed() {
+    const LIVE_SENTINEL: &str = "PR74_OVERSIZED_LIVE_BODY_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::new())
+                .with_content_length(None)
+                .with_chunks(vec![
+                    Bytes::from_static(b"abcd"),
+                    Bytes::from_static(LIVE_SENTINEL.as_bytes()),
+                ])
+                .with_read_count(read_count.clone()),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("oversized live body without stale fallback should fail typed");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { limit: 4, .. }
+    ));
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(body_reads(&read_count), 2);
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert!(!err.to_string().contains(LIVE_SENTINEL));
 }
 
 #[tokio::test]
@@ -2460,6 +2640,7 @@ async fn very_verbose_debug_does_not_emit_request_or_response_body_bytes()
     let decoded = client
         .request(BodyDebugEndpoint {
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
+            policy: cache_policy(),
         })
         .execute_decoded()
         .await?;
@@ -2525,6 +2706,7 @@ async fn dev_body_capture_writes_response_only_to_safe_file() -> Result<(), ApiC
     let decoded = client
         .request(BodyDebugEndpoint {
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
+            policy: ResolvedPolicy::default(),
         })
         .execute_decoded()
         .await?;
@@ -2651,6 +2833,7 @@ async fn debug_sink_body_free_when_dev_body_capture_enabled() -> Result<(), ApiC
     let decoded = client
         .request(BodyDebugEndpoint {
             request_body: Bytes::from_static(b"PR64_DEBUG_SINK_REQUEST_SENTINEL"),
+            policy: ResolvedPolicy::default(),
         })
         .execute_decoded()
         .await?;
@@ -2691,6 +2874,7 @@ async fn runtime_hooks_body_free_when_dev_body_capture_enabled() -> Result<(), A
     let decoded = client
         .request(BodyDebugEndpoint {
             request_body: Bytes::from_static(b"PR64_RUNTIME_HOOK_REQUEST_SENTINEL"),
+            policy: ResolvedPolicy::default(),
         })
         .execute_decoded()
         .await?;
@@ -2934,6 +3118,344 @@ async fn response_below_limit_succeeds() -> Result<(), ApiClientError> {
 }
 
 #[tokio::test]
+async fn content_length_over_limit_rejects_before_body_read() {
+    const RESPONSE_SENTINEL: &str = "PR74_CONTENT_LENGTH_OVER_LIMIT_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL)
+                .with_content_length(Some(5))
+                .with_read_count(read_count.clone()),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    let debug = Arc::new(RecordingDebugSink::default());
+    client.set_debug_sink(debug.clone());
+    client.set_debug_level(DebugLevel::VV);
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, Some(cache), Some(limiter));
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("known content length above limit should fail before reading body");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseTooLarge {
+            limit: 4,
+            actual: 5,
+            ..
+        }
+    ));
+    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(*after_response_count.lock().await, 0);
+    let events = events.lock().await.clone();
+    assert!(events.iter().any(|event| event == "pre_send"));
+    assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
+    assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
+    let debug_output = debug.events().join("\n");
+    assert!(debug_output.contains("request_start:v:Text:0"));
+    assert!(!debug_output.contains(RESPONSE_SENTINEL));
+    assert!(!format!("{events:?}").contains(RESPONSE_SENTINEL));
+}
+
+#[tokio::test]
+async fn streaming_body_over_limit_rejects_during_bounded_read() {
+    const RESPONSE_SENTINEL: &str = "PR74_STREAMING_BODY_OVER_LIMIT_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::new())
+                .with_content_length(None)
+                .with_chunks(vec![
+                    Bytes::from_static(b"abcd"),
+                    Bytes::from_static(RESPONSE_SENTINEL.as_bytes()),
+                ])
+                .with_read_count(read_count.clone()),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    let debug = Arc::new(RecordingDebugSink::default());
+    client.set_debug_sink(debug.clone());
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, Some(cache), Some(limiter));
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("chunked body above limit should fail while reading");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { limit: 4, .. }
+    ));
+    assert_eq!(body_reads(&read_count), 2);
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(*after_response_count.lock().await, 0);
+    let events = events.lock().await.clone();
+    assert!(events.iter().any(|event| event == "transport"));
+    assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
+    assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
+    let debug_output = debug.events().join("\n");
+    assert!(debug_output.contains("request_start:v:Text:0"));
+    assert!(!debug_output.contains(RESPONSE_SENTINEL));
+    assert!(!format!("{events:?}").contains(RESPONSE_SENTINEL));
+}
+
+#[tokio::test]
+async fn body_at_exact_limit_succeeds() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "abcd")
+                .with_content_length(Some(4))
+                .with_read_count(read_count.clone()),
+        ],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "abcd");
+    assert_eq!(body_reads(&read_count), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_response_context_remains_body_free() {
+    const RESPONSE_SENTINEL: &str = "PR74_RATE_LIMIT_BODY_FREE_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL)
+                .with_content_length(Some(5))
+                .with_read_count(read_count.clone()),
+        ],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, Some(cache), Some(limiter));
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint {
+            policy: cache_policy(),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("body limit should fail before rate-limit metadata can expose body bytes");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseTooLarge {
+            limit: 4,
+            actual: 5,
+            ..
+        }
+    ));
+    assert_eq!(body_reads(&read_count), 0);
+    let events = events.lock().await.clone();
+    assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
+    assert!(events.iter().any(|event| event.starts_with("rate_status:")));
+    assert!(!format!("{events:?}").contains(RESPONSE_SENTINEL));
+    assert!(!err.to_string().contains(RESPONSE_SENTINEL));
+}
+
+#[tokio::test]
+async fn debug_hooks_never_receive_body_bytes_on_body_errors() {
+    const RESPONSE_SENTINEL: &str = "PR74_DEBUG_HOOK_BODY_FREE_SENTINEL";
+
+    let cases = [
+        (
+            MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL).with_content_length(Some(5)),
+            0usize,
+        ),
+        (
+            MockResponse::text(StatusCode::OK, Bytes::new())
+                .with_content_length(None)
+                .with_chunks(vec![
+                    Bytes::from_static(b"abcd"),
+                    Bytes::from_static(RESPONSE_SENTINEL.as_bytes()),
+                ]),
+            2usize,
+        ),
+    ];
+
+    for (response, expected_reads) in cases {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let read_count = Arc::new(AtomicUsize::new(0));
+        let cache = Arc::new(RecordingCache::miss(events.clone()));
+        let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
+        let transport = MockTransport::new(
+            events.clone(),
+            vec![response.with_read_count(read_count.clone())],
+        );
+        let mut client = client(TestAuthVars::default(), transport);
+        let debug = Arc::new(RecordingDebugSink::default());
+        client.set_debug_sink(debug.clone());
+        client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+        configure_runtime(&mut client, Some(cache), Some(limiter));
+        client.configure(|cfg| {
+            cfg.max_response_body_bytes(4);
+        });
+
+        let err = client
+            .request(TextEndpoint {
+                policy: cache_policy(),
+                ..Default::default()
+            })
+            .execute_decoded()
+            .await
+            .expect_err("body error should remain body-free in debug and hooks");
+
+        assert!(matches!(
+            err,
+            ApiClientError::ResponseTooLarge { .. }
+                | ApiClientError::ResponseBodyLimitExceeded { .. }
+        ));
+        assert!(!err.to_string().contains(RESPONSE_SENTINEL));
+        assert!(!format!("{err:?}").contains(RESPONSE_SENTINEL));
+        assert!(!debug.events().join("\n").contains(RESPONSE_SENTINEL));
+        assert_eq!(body_reads(&read_count), expected_reads);
+        let events = events.lock().await.clone();
+        assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
+        assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
+        assert!(!format!("{events:?}").contains(RESPONSE_SENTINEL));
+    }
+}
+
+#[tokio::test]
+async fn body_limit_plus_one_fails() {
+    const RESPONSE_SENTINEL: &[u8] = b"abcde";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::from_static(RESPONSE_SENTINEL))
+                .with_content_length(Some(5))
+                .with_read_count(read_count.clone()),
+        ],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("limit+1 body should fail");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseTooLarge {
+            limit: 4,
+            actual: 5,
+            ..
+        }
+    ));
+    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert!(!err.to_string().contains("abcde"));
+}
+
+#[tokio::test]
+async fn decode_failure_under_limit_is_not_body_limit() {
+    const RESPONSE_SENTINEL: &str = "PR74_DECODE_FAILURE_UNDER_LIMIT_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let body = Bytes::from_static(b"PR74_DECODE_FAILURE_UNDER_LIMIT_SENTINEL\xff");
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, body.clone())
+                .with_content_length(Some(body.len() as u64))
+                .with_read_count(read_count.clone()),
+        ],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(128);
+    });
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("invalid utf-8 below the body limit should fail as decode");
+
+    assert!(matches!(err, ApiClientError::Decode { .. }));
+    assert!(err.to_string().contains("decode error"));
+    assert!(!err.to_string().contains("response body exceeded limit"));
+    assert!(!err.to_string().contains(RESPONSE_SENTINEL));
+    assert_eq!(body_reads(&read_count), 1);
+    assert_eq!(*after_response_count.lock().await, 0);
+    let err_debug = format!("{err:?}");
+    assert!(!err_debug.contains(RESPONSE_SENTINEL));
+    let mut source = std::error::Error::source(&err);
+    while let Some(err_source) = source {
+        assert!(!err_source.to_string().contains(RESPONSE_SENTINEL));
+        source = std::error::Error::source(err_source);
+    }
+}
+
+#[tokio::test]
 async fn response_too_large_does_not_decode() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -3070,4 +3592,153 @@ async fn response_limit_smaller_than_cache_max_body_fails_before_cache() {
 
     assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
     assert_eq!(*after_response_count.lock().await, 0);
+}
+
+#[tokio::test]
+async fn body_limit_error_does_not_trigger_ordinary_retry() {
+    const RESPONSE_SENTINEL: &str = "PR74_BODY_LIMIT_RETRY_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL)
+                .with_content_length(Some(5))
+                .with_read_count(read_count.clone()),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint {
+            policy: retry_policy(2),
+            ..Default::default()
+        })
+        .execute_decoded()
+        .await
+        .expect_err("body limit should stop before ordinary retry");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseTooLarge {
+            limit: 4,
+            actual: 5,
+            ..
+        }
+    ));
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(*after_response_count.lock().await, 0);
+    assert!(!err.to_string().contains(RESPONSE_SENTINEL));
+}
+
+#[tokio::test]
+async fn execute_raw_body_limit_behavior_characterized() {
+    const RESPONSE_SENTINEL: &str = "PR74_EXECUTE_RAW_BODY_LIMIT_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let cache = Arc::new(RecordingCache::miss(events.clone()));
+    let after_response_count = cache.after_response_count.clone();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL)
+                .with_content_length(Some(5))
+                .with_read_count(read_count.clone()),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(cache), None);
+    client.configure(|cfg| {
+        cfg.max_response_body_bytes(4);
+    });
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_raw()
+        .await
+        .expect_err("execute_raw should enforce the same response body limit");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseTooLarge {
+            limit: 4,
+            actual: 5,
+            ..
+        }
+    ));
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(*after_response_count.lock().await, 0);
+    let events = events.lock().await.clone();
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.starts_with("cache_before:"))
+    );
+    assert!(!events.iter().any(|event| event == "cache_after_response"));
+    assert!(!err.to_string().contains(RESPONSE_SENTINEL));
+}
+
+#[tokio::test]
+async fn request_body_bytes_remain_transport_only() -> Result<(), ApiClientError> {
+    const REQUEST_SENTINEL: &str = "PR74_REQUEST_BODY_TRANSPORT_ONLY_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    let debug = Arc::new(RecordingDebugSink::default());
+    client.set_debug_sink(debug.clone());
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(
+        &mut client,
+        Some(Arc::new(RecordingCache::miss(events.clone()))),
+        Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+    );
+
+    let decoded = client
+        .request(BodyDebugEndpoint {
+            request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
+            policy: cache_policy(),
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    let requests = sent_transport.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].body.as_deref(),
+        Some(REQUEST_SENTINEL.as_bytes())
+    );
+    let request_debug = format!("{:?}", requests[0]);
+    assert!(!request_debug.contains(REQUEST_SENTINEL));
+    let debug_output = debug.events().join("\n");
+    assert!(!debug_output.contains(REQUEST_SENTINEL));
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("cache_before:"))
+    );
+    assert!(events.iter().any(|event| event == "pre_send"));
+    assert!(events.iter().any(|event| event == "rate_acquire"));
+    assert!(!format!("{events:?}").contains(REQUEST_SENTINEL));
+    Ok(())
 }

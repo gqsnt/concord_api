@@ -940,6 +940,7 @@ async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
                 body: Bytes::from_static(b"retry-me"),
                 content_length: None,
                 chunks: None,
+                read_count: None,
             },
             MockResponse::text(StatusCode::OK, "ok"),
         ],
