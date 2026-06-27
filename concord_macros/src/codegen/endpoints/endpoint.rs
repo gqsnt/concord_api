@@ -381,14 +381,13 @@ fn emit_endpoint_plan_route_policy(
         {
             policy.ensure_accept(__accept);
         }
-        let (headers, query, timeout, cache, retry, mut rate_limit) = policy.into_parts();
+        let (headers, query, timeout, retry, mut rate_limit) = policy.into_parts();
         rate_limit.canonicalize();
         let __resolved_policy = ::concord_core::internal::ResolvedPolicy {
             headers,
             query,
             timeout,
             auth: __auth_plan,
-            cache,
             retry,
             rate_limit,
         };

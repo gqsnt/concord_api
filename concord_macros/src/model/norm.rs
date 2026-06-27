@@ -1,9 +1,9 @@
 //! Canonical macro model produced by raw syntax normalization.
 
 use crate::ast::{
-    AuthCredentials, AuthUseKind, BehaviorProfilesBlock, BehaviorUseSpec, CacheProfilesBlock,
-    CacheSpec, CodecSpec, MapSpec, PaginateSpec, PolicyBlocks, RateLimitKeyBindingSpec,
-    RateLimitProfilesBlock, RateLimitSpec, RetryProfilesBlock, RetrySpec, RouteExpr, VarDeclNoWire,
+    AuthCredentials, AuthUseKind, BehaviorProfilesBlock, BehaviorUseSpec, CodecSpec, MapSpec,
+    PaginateSpec, PolicyBlocks, RateLimitKeyBindingSpec, RateLimitProfilesBlock, RateLimitSpec,
+    RetryProfilesBlock, RetrySpec, RouteExpr, VarDeclNoWire,
 };
 use crate::model::Scheme;
 use proc_macro2::Span;
@@ -33,8 +33,6 @@ pub(crate) struct NormClient {
     pub auth: Option<AuthCredentials>,
     pub auth_uses: Vec<NormAuthUse>,
     pub default_behavior_uses: Vec<BehaviorUseSpec>,
-    pub cache_profiles: Option<CacheProfilesBlock>,
-    pub cache: Option<CacheSpec>,
     pub retry_profiles: Option<RetryProfilesBlock>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitProfilesBlock>,
@@ -65,7 +63,6 @@ pub(crate) struct NormScope {
     pub policy: PolicyBlocks,
     pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<NormAuthUse>,
-    pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -100,7 +97,6 @@ pub(crate) struct NormEndpoint {
     pub policy: PolicyBlocks,
     pub behavior_uses: Vec<BehaviorUseSpec>,
     pub auth_uses: Vec<NormAuthUse>,
-    pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -133,8 +129,6 @@ mod tests {
             auth: None,
             auth_uses: Vec::new(),
             default_behavior_uses: Vec::new(),
-            cache_profiles: None,
-            cache: None,
             retry_profiles: None,
             retry: None,
             rate_limit: None,

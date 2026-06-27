@@ -1,4 +1,4 @@
-use concord_core::advanced::{NoopCacheStore, NoopRateLimiter};
+use concord_core::advanced::NoopRateLimiter;
 use concord_core::prelude::*;
 use concord_macros::api;
 use std::sync::Arc;
@@ -34,7 +34,6 @@ fn construction_and_configure() -> Result<(), ApiClientError> {
 
     let _api = UsageConfigApi::new("acme".to_string(), "key".to_string())
         .configure(|cfg| {
-            cfg.cache_store(Arc::new(NoopCacheStore));
             cfg.rate_limiter(Arc::new(NoopRateLimiter));
         });
 

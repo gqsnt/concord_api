@@ -24,7 +24,6 @@ struct EndpointBlockParts {
     policy: PolicyBlocks,
     behavior_uses: Vec<BehaviorUseSpec>,
     auth_uses: Vec<AuthUseDecl>,
-    cache: Option<CacheSpec>,
     retry: Option<RetrySpec>,
     rate_limit: Option<RateLimitSpec>,
     rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -38,7 +37,6 @@ impl EndpointBlockParts {
             policy: PolicyBlocks::default(),
             behavior_uses: Vec::new(),
             auth_uses: Vec::new(),
-            cache: None,
             retry: None,
             rate_limit: None,
             rate_limit_keys: Vec::new(),
@@ -67,12 +65,6 @@ impl EndpointBlockParts {
         }
         self.auth_uses.extend(other.auth_uses);
         self.behavior_uses.extend(other.behavior_uses);
-        if other.cache.is_some() {
-            if self.cache.is_some() {
-                return Err(syn::Error::new(name.span(), "duplicate cache policy in endpoint"));
-            }
-            self.cache = other.cache;
-        }
         if other.retry.is_some() {
             if self.retry.is_some() {
                 return Err(syn::Error::new(name.span(), "duplicate retry policy in endpoint"));
@@ -208,13 +200,6 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
-        } else if input.peek(kw::cache) {
-            if parts.cache.is_some() {
-                return Err(syn::Error::new(name.span(), "duplicate cache policy in endpoint"));
-            }
-            match parse_cache_decl(input)? {
-                CacheDecl::Spec(spec) => parts.cache = Some(spec),
-            }
         } else if input.peek(kw::retry) {
             match parse_retry_decl(input)? {
                 RetryDecl::Spec(spec) => {

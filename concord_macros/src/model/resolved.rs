@@ -35,7 +35,6 @@ pub(crate) struct ResolvedProfile {
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) enum ResolvedProfileKind {
-    Cache,
     Retry,
     RateLimit,
 }
@@ -106,7 +105,6 @@ pub(crate) struct ResolvedPolicy {
     pub auth_steps: Vec<String>,
     pub headers: Vec<(String, String)>,
     pub query: Vec<(String, String)>,
-    pub cache_profile: Option<String>,
     pub retry_profile: Option<String>,
     pub rate_limit_profile: Option<String>,
 }

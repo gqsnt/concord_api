@@ -4,7 +4,6 @@ struct WalkItemsCtx<'a> {
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
     client_default_behavior_names: &'a [String],
-    cache_profiles: &'a BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
     behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
@@ -18,7 +17,6 @@ struct EndpointAnalysisCtx<'a> {
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
     client_default_behavior_names: &'a [String],
-    cache_profiles: &'a BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
     behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
@@ -51,11 +49,6 @@ fn walk_items(
                     resolve_retry_spec(ld.retry.as_ref(), ctx.retry_profiles)?
                 } else {
                     behavior.policy.retry.clone()
-                };
-                policy.cache = if ld.cache.is_some() {
-                    resolve_cache_spec(ld.cache.as_ref(), ctx.cache_profiles)?
-                } else {
-                    behavior.policy.cache.clone()
                 };
                 let mut visible_keys = rate_limit_key_bindings_for_ancestry(ancestry, ctx.layers);
                 for binding in &key_bindings {
@@ -105,7 +98,6 @@ fn walk_items(
                     auth_credentials: ctx.auth_credentials,
                     client_auth: ctx.client_auth,
                     client_default_behavior_names: ctx.client_default_behavior_names,
-                    cache_profiles: ctx.cache_profiles,
                     retry_profiles: ctx.retry_profiles,
                     rate_limit_profiles: ctx.rate_limit_profiles,
                     behavior_profiles: ctx.behavior_profiles,
@@ -464,11 +456,6 @@ fn analyze_endpoint(
         resolve_retry_spec(ed.retry.as_ref(), ctx.retry_profiles)?
     } else {
         behavior.policy.retry.clone()
-    };
-    policy.cache = if ed.cache.is_some() {
-        resolve_cache_spec(ed.cache.as_ref(), ctx.cache_profiles)?
-    } else {
-        behavior.policy.cache.clone()
     };
     let endpoint_decls = ep_var_order
         .iter()

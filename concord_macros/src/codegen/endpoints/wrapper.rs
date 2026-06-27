@@ -207,37 +207,6 @@ fn emit_client_wrapper(
     } else {
         quote! {}
     };
-    let configure_cache_store = if resolved_api.cache_store_enabled {
-        let configure_cache_store_body = if let Some(config) = &resolved_api.cache_store_config {
-            let config = emit_cache_config(config);
-            quote! {
-                let __cache_config = #config;
-                __inner.set_cache_store(::std::sync::Arc::new(
-                    ::concord_core::advanced::MokaCacheStore::new(
-                        ::concord_core::advanced::MokaCacheConfig::from_cache_config(&__cache_config)
-                    )
-                ));
-            }
-        } else {
-            quote! {
-                __inner.set_cache_store(::std::sync::Arc::new(
-                    ::concord_core::advanced::MokaCacheStore::default()
-                ));
-            }
-        };
-        quote! {
-            #[cfg(not(feature = "cache-moka"))]
-            compile_error!(
-                "cache default backend requires a `cache-moka` crate feature that enables `concord_core/cache-moka`"
-            );
-            #[cfg(feature = "cache-moka")]
-            {
-                #configure_cache_store_body
-            }
-        }
-    } else {
-        quote! {}
-    };
     let auth_setters = facade_ir.auth_setters.iter().map(|setter| {
         let Some(v) = resolved_api
             .client_auth_vars
@@ -450,7 +419,6 @@ fn emit_client_wrapper(
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
                 let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, ::concord_core::advanced::ReqwestTransport>::new(vars, auth_vars);
                 #configure_rate_limiter
-                #configure_cache_store
                 Self { inner: __inner }
             }
 
@@ -465,7 +433,6 @@ fn emit_client_wrapper(
                 let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
                 let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, T2>::with_transport(vars, auth_vars, transport);
                 #configure_rate_limiter
-                #configure_cache_store
                 #client_ty { inner: __inner }
             }
 
@@ -1117,9 +1084,6 @@ fn facade_endpoint_docs(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResol
             ));
         }
     }
-    if endpoint_has_cache(ep, client_policy) {
-        docs.push(LitStr::new("Cache: configured", ep.name.span()));
-    }
     if endpoint_has_retry(ep, client_policy) {
         docs.push(LitStr::new("Retry: configured", ep.name.span()));
     }
@@ -1226,17 +1190,6 @@ fn endpoint_has_rate_limit(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksRe
             .iter()
             .any(|policy| policy.rate_limit.is_some())
         || ep.policy.endpoint.rate_limit.is_some()
-}
-
-#[allow(dead_code)]
-fn endpoint_has_cache(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> bool {
-    client_policy.cache.is_some()
-        || ep
-            .policy
-            .scopes
-            .iter()
-            .any(|policy| policy.cache.is_some())
-        || ep.policy.endpoint.cache.is_some()
 }
 
 #[allow(dead_code)]

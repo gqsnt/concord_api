@@ -61,9 +61,6 @@ async fn execution_usage(api: UsageExecutionApi) -> Result<(), ApiClientError> {
         .clear_timeout()
         .inherit_timeout()
         .attempt(1)
-        .cache_bypass()
-        .cache_refresh()
-        .cache_default()
         .execute_decoded()
         .await?;
     let _raw = api.list().execute_raw().await?;

@@ -7,7 +7,6 @@ pub(crate) struct BehaviorResolved {
 
 fn resolve_behavior_profiles(
     block: Option<&BehaviorProfilesBlock>,
-    cache_profiles: &BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &BTreeMap<String, RetryConfigResolved>,
 ) -> Result<BTreeMap<String, BehaviorResolved>> {
     let Some(block) = block else {
@@ -33,7 +32,6 @@ fn resolve_behavior_profiles(
             &raw_profiles,
             &mut visiting,
             &mut resolved,
-            cache_profiles,
             retry_profiles,
         )?;
     }
@@ -46,7 +44,6 @@ fn resolve_behavior_profile(
     raw_profiles: &BTreeMap<String, &BehaviorProfileDef>,
     visiting: &mut std::collections::BTreeSet<String>,
     resolved: &mut BTreeMap<String, BehaviorResolved>,
-    cache_profiles: &BTreeMap<String, CacheConfigResolved>,
     retry_profiles: &BTreeMap<String, RetryConfigResolved>,
 ) -> Result<BehaviorResolved> {
     if let Some(value) = resolved.get(name) {
@@ -85,7 +82,6 @@ fn resolve_behavior_profile(
             raw_profiles,
             visiting,
             resolved,
-            cache_profiles,
             retry_profiles,
         )?
     } else {
@@ -100,7 +96,6 @@ fn resolve_behavior_profile(
     let current = BehaviorResolved {
         auth_uses: normalize_auth_uses(profile.patch.auth_uses.clone())?,
         policy: PolicyBlocksResolved {
-            cache: resolve_cache_spec(profile.patch.cache.as_ref(), cache_profiles)?,
             retry: resolve_retry_spec(profile.patch.retry.as_ref(), retry_profiles)?,
             rate_limit: None,
             ..PolicyBlocksResolved::default()
@@ -180,9 +175,6 @@ fn resolve_behavior_rate_limit_specs(
 
 fn merge_behavior(mut parent: BehaviorResolved, child: BehaviorResolved) -> BehaviorResolved {
     parent.auth_uses.extend(child.auth_uses);
-    if child.policy.cache.is_some() {
-        parent.policy.cache = child.policy.cache;
-    }
     if child.policy.retry.is_some() {
         parent.policy.retry = child.policy.retry;
     }

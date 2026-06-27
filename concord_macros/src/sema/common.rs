@@ -1,10 +1,3 @@
-fn policy_uses_cache(policy: &PolicyBlocksResolved) -> bool {
-    policy
-        .cache
-        .as_ref()
-        .is_some_and(|cache| matches!(cache, CacheResolved::Set(_) | CacheResolved::Patch(_)))
-}
-
 fn unknown_name_message<T>(kind: &str, name: &Ident, available: &BTreeMap<String, T>) -> String {
     unknown_name_message_from_keys(kind, &name.to_string(), available.keys().cloned())
 }
@@ -78,11 +71,6 @@ fn levenshtein(a: &str, b: &str) -> usize {
         }
     }
     costs[b_chars.len()]
-}
-
-fn endpoint_uses_cache(endpoint: &ResolvedEndpoint) -> bool {
-    endpoint.policy.scopes.iter().any(policy_uses_cache)
-        || policy_uses_cache(&endpoint.policy.endpoint)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

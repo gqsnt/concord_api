@@ -60,8 +60,6 @@ impl Parse for RawClient {
         let mut auth_credentials: Vec<AuthCredentialDecl> = Vec::new();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
         let mut default_behavior_uses: Vec<BehaviorUseSpec> = Vec::new();
-        let mut cache_profiles: Option<CacheProfilesBlock> = None;
-        let mut cache: Option<CacheSpec> = None;
         let mut retry_profiles: Option<RetryProfilesBlock> = None;
         let mut retry: Option<RetrySpec> = None;
         let mut rate_limit: Option<RateLimitProfilesBlock> = None;
@@ -111,16 +109,6 @@ impl Parse for RawClient {
                 content.parse::<kw::credential>()?;
                 parse_client_credential_decl_into(&content, &mut auth_credentials)?;
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::cache) {
-                content.parse::<kw::cache>()?;
-                cache_profiles
-                    .get_or_insert_with(|| CacheProfilesBlock {
-                        profiles: Vec::new(),
-                        default: None,
-                    })
-                    .profiles
-                    .push(parse_cache_profile_decl_after_keyword(&content)?);
-                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::retry) {
                 content.parse::<kw::retry>()?;
                 retry_profiles
@@ -146,12 +134,7 @@ impl Parse for RawClient {
                 content.parse::<kw::policies>()?;
                 let policy_content;
                 braced!(policy_content in content);
-                parse_client_policies_group(
-                    &policy_content,
-                    &mut cache_profiles,
-                    &mut retry_profiles,
-                    &mut rate_limit,
-                )?;
+                parse_client_policies_group(&policy_content, &mut retry_profiles, &mut rate_limit)?;
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::behavior) {
                 content.parse::<kw::behavior>()?;
@@ -206,7 +189,6 @@ impl Parse for RawClient {
                     &mut policy,
                     &mut auth_uses,
                     &mut default_behavior_uses,
-                    &mut cache,
                     &mut retry,
                     &mut rate_limit,
                 )?;
@@ -291,8 +273,6 @@ impl Parse for RawClient {
             }),
             auth_uses,
             default_behavior_uses,
-            cache_profiles,
-            cache,
             name,
             scheme,
             host,
@@ -381,7 +361,6 @@ fn parse_client_credential_decl_into(
 
 fn parse_client_policies_group(
     input: ParseStream<'_>,
-    cache_profiles: &mut Option<CacheProfilesBlock>,
     retry_profiles: &mut Option<RetryProfilesBlock>,
     rate_limit: &mut Option<RateLimitProfilesBlock>,
 ) -> Result<()> {
@@ -399,7 +378,7 @@ fn parse_client_policies_group(
                 let tt: TokenTree = input.parse()?;
                 return Err(syn::Error::new(
                     tt.span(),
-                    "invalid item in policies block; expected retry, cache, rate_limit, or observe",
+                    "invalid item in policies block; expected retry, rate_limit, or observe",
                 ));
             }
             fork.parse::<Ident>()?;
@@ -422,42 +401,6 @@ fn parse_client_policies_group(
                 })
                 .profiles
                 .push(parse_retry_profile_decl_after_keyword(input)?);
-        } else if input.peek(kw::cache) {
-            let fork = input.fork();
-            fork.parse::<kw::cache>()?;
-            if fork.peek(kw::off) {
-                return Err(syn::Error::new(
-                    fork.span(),
-                    "default cache policy is not allowed in policies block; use defaults { ... } or default { ... }",
-                ));
-            }
-            if !fork.peek(Ident) {
-                let tt: TokenTree = input.parse()?;
-                return Err(syn::Error::new(
-                    tt.span(),
-                    "invalid item in policies block; expected retry, cache, rate_limit, or observe",
-                ));
-            }
-            fork.parse::<Ident>()?;
-            if fork.peek(kw::extends) {
-                fork.parse::<kw::extends>()?;
-                fork.parse::<Ident>()?;
-            }
-            if !fork.peek(token::Brace) {
-                return Err(syn::Error::new(
-                    input.span(),
-                    "default cache policy is not allowed in policies block; use defaults { ... } or default { ... }",
-                ));
-            }
-
-            input.parse::<kw::cache>()?;
-            cache_profiles
-                .get_or_insert_with(|| CacheProfilesBlock {
-                    profiles: Vec::new(),
-                    default: None,
-                })
-                .profiles
-                .push(parse_cache_profile_decl_after_keyword(input)?);
         } else if input.peek(kw::rate_limit) {
             let fork = input.fork();
             fork.parse::<kw::rate_limit>()?;
@@ -471,7 +414,7 @@ fn parse_client_policies_group(
                 let tt: TokenTree = input.parse()?;
                 return Err(syn::Error::new(
                     tt.span(),
-                    "invalid item in policies block; expected retry, cache, rate_limit, or observe",
+                    "invalid item in policies block; expected retry, rate_limit, or observe",
                 ));
             }
             fork.parse::<Ident>()?;
@@ -515,7 +458,7 @@ fn parse_client_policies_group(
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "invalid item in policies block; expected retry, cache, rate_limit, or observe",
+                "invalid item in policies block; expected retry, rate_limit, or observe",
             ));
         }
 
@@ -530,7 +473,6 @@ fn parse_client_default_block(
     policy: &mut PolicyBlocks,
     auth_uses: &mut Vec<AuthUseDecl>,
     default_behavior_uses: &mut Vec<BehaviorUseSpec>,
-    cache: &mut Option<CacheSpec>,
     retry: &mut Option<RetrySpec>,
     rate_limit: &mut Option<RateLimitProfilesBlock>,
 ) -> Result<()> {
@@ -568,16 +510,6 @@ fn parse_client_default_block(
             auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
         } else if input.peek(kw::behavior) {
             default_behavior_uses.push(parse_behavior_use_spec(input)?);
-        } else if input.peek(kw::cache) {
-            if cache.is_some() {
-                return Err(syn::Error::new(
-                    input.span(),
-                    "duplicate default cache policy",
-                ));
-            }
-            match parse_cache_decl(input)? {
-                CacheDecl::Spec(spec) => *cache = Some(spec),
-            }
         } else if input.peek(kw::retry) {
             if retry.is_some() {
                 return Err(syn::Error::new(
@@ -628,7 +560,6 @@ fn parse_client_default_block(
 include!("auth.rs");
 include!("endpoints.rs");
 include!("retry.rs");
-include!("cache.rs");
 include!("rate_limit.rs");
 include!("behavior.rs");
 include!("items.rs");
@@ -756,18 +687,12 @@ mod tests {
 
                     default {
                         retry read
-                        cache standard
                         rate_limit app
                     }
 
                     retry read {
                         max_attempts 2
                         methods [GET]
-                    }
-
-                    cache standard {
-                        ttl 30s
-                        revalidate
                     }
 
                     rate_limit app {
@@ -782,7 +707,6 @@ mod tests {
         .expect("current policy profiles parse");
 
         assert!(ast.client.retry_profiles.is_some());
-        assert!(ast.client.cache_profiles.is_some());
         assert!(ast.client.rate_limit.is_some());
     }
 
@@ -800,10 +724,6 @@ mod tests {
                             methods [GET]
                         }
 
-                        cache standard {
-                            ttl 60s
-                        }
-
                         rate_limit app {
                             bucket application by [host] {
                                 10 / 1s
@@ -819,7 +739,6 @@ mod tests {
         .expect("grouped policy profiles parse");
 
         assert!(ast.client.retry_profiles.is_some());
-        assert!(ast.client.cache_profiles.is_some());
         assert!(ast.client.rate_limit.is_some());
     }
 

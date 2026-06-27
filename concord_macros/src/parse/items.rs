@@ -34,7 +34,6 @@ impl Parse for RawScopeTaggedScope {
         let mut policy = PolicyBlocks::default();
         let mut behavior_uses = Vec::new();
         let mut auth_uses: Vec<AuthUseDecl> = Vec::new();
-        let mut cache: Option<CacheSpec> = None;
         let mut retry: Option<RetrySpec> = None;
         let mut rate_limit: Option<RateLimitSpec> = None;
         let mut rate_limit_keys = Vec::new();
@@ -106,17 +105,6 @@ impl Parse for RawScopeTaggedScope {
                 content.parse::<kw::auth>()?;
                 auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::cache) {
-                if cache.is_some() {
-                    return Err(syn::Error::new(
-                        content.span(),
-                        "duplicate cache policy in scope",
-                    ));
-                }
-                match parse_cache_decl(&content)? {
-                    CacheDecl::Spec(spec) => cache = Some(spec),
-                }
-                let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::retry) {
                 match parse_retry_decl(&content)? {
                     RetryDecl::Spec(spec) => {
@@ -168,7 +156,6 @@ impl Parse for RawScopeTaggedScope {
                 policy,
                 behavior_uses,
                 auth_uses,
-                cache,
                 retry,
                 rate_limit,
                 rate_limit_keys,
@@ -183,7 +170,6 @@ impl Parse for RawScopeTaggedScope {
                     policy: PolicyBlocks::default(),
                     behavior_uses: Vec::new(),
                     auth_uses: Vec::new(),
-                    cache: None,
                     retry: None,
                     rate_limit: None,
                     rate_limit_keys: Vec::new(),
@@ -201,7 +187,6 @@ impl Parse for RawScopeTaggedScope {
                 policy,
                 behavior_uses,
                 auth_uses,
-                cache,
                 retry,
                 rate_limit,
                 rate_limit_keys,
@@ -218,7 +203,6 @@ impl Parse for RawScopeTaggedScope {
                 policy,
                 behavior_uses,
                 auth_uses,
-                cache,
                 retry,
                 rate_limit,
                 rate_limit_keys,
@@ -235,7 +219,6 @@ impl Parse for RawScopeTaggedScope {
                 policy,
                 behavior_uses,
                 auth_uses,
-                cache,
                 retry,
                 rate_limit,
                 rate_limit_keys,
@@ -303,7 +286,6 @@ impl Parse for RawEndpoint {
                 inline_parts.policy,
                 inline_parts.behavior_uses,
                 inline_parts.auth_uses,
-                inline_parts.cache,
                 inline_parts.retry,
                 inline_parts.rate_limit,
                 inline_parts.rate_limit_keys,
@@ -331,7 +313,6 @@ impl Parse for RawEndpoint {
             inline_parts.policy,
             inline_parts.behavior_uses,
             inline_parts.auth_uses,
-            inline_parts.cache,
             inline_parts.retry,
             inline_parts.rate_limit,
             inline_parts.rate_limit_keys,
@@ -354,7 +335,6 @@ fn raw_endpoint(
     policy: PolicyBlocks,
     behavior_uses: Vec<BehaviorUseSpec>,
     auth_uses: Vec<AuthUseDecl>,
-    cache: Option<CacheSpec>,
     retry: Option<RetrySpec>,
     rate_limit: Option<RateLimitSpec>,
     rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
@@ -379,7 +359,6 @@ fn raw_endpoint(
         policy,
         behavior_uses,
         auth_uses,
-        cache,
         retry,
         rate_limit,
         rate_limit_keys,

@@ -13,7 +13,6 @@ pub struct BehaviorProfileDef {
 #[derive(Debug, Clone, Default)]
 pub struct BehaviorPatch {
     pub auth_uses: Vec<AuthUseDecl>,
-    pub cache: Option<CacheSpec>,
     pub retry: Option<RetrySpec>,
     pub rate_limit: Option<RateLimitSpec>,
 }

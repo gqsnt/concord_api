@@ -21,16 +21,6 @@ fn parse_behavior_patch_body(input: ParseStream<'_>) -> Result<BehaviorPatch> {
         if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             patch.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
-        } else if input.peek(kw::cache) {
-            if patch.cache.is_some() {
-                return Err(syn::Error::new(
-                    input.span(),
-                    "duplicate cache policy in behavior",
-                ));
-            }
-            match parse_cache_decl(input)? {
-                CacheDecl::Spec(spec) => patch.cache = Some(spec),
-            }
         } else if input.peek(kw::retry) {
             if patch.retry.is_some() {
                 return Err(syn::Error::new(
@@ -53,7 +43,7 @@ fn parse_behavior_patch_body(input: ParseStream<'_>) -> Result<BehaviorPatch> {
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "invalid item in behavior; expected auth, cache, retry, or rate_limit",
+                "invalid item in behavior; expected auth, retry, or rate_limit",
             ));
         }
         let _ = input.parse::<Option<Token![,]>>()?;

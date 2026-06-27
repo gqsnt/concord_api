@@ -7,12 +7,10 @@
 
 use crate::ast::{
     AuthCredentialKind, AuthCredentials, AuthUseKind, BehaviorProfileDef, BehaviorProfilesBlock,
-    BehaviorUseSpec, CacheCapacitySpec, CacheCapacityUnit, CacheDurationSpec, CacheOnErrorSpec,
-    CachePatch, CacheProfilesBlock, CacheSizeSpec, CacheSizeUnit, CacheSpec, CodecSpec, FmtPiece,
-    FmtSpec, KeySpec, PaginateSpec, PolicyBlock, PolicyBlocks, PolicyStmt, PolicyValue,
-    RateLimitDurationUnit, RateLimitKeyBindingSpec, RateLimitKeySpec, RateLimitPlanSpec,
-    RateLimitProfilesBlock, RateLimitSpec, RefScope, RetryIdempotencySpec, RetryPatch,
-    RetryProfilesBlock, RetrySpec, RouteAtom, SecretRef,
+    BehaviorUseSpec, CodecSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec, PolicyBlock,
+    PolicyBlocks, PolicyStmt, PolicyValue, RateLimitDurationUnit, RateLimitKeyBindingSpec,
+    RateLimitKeySpec, RateLimitPlanSpec, RateLimitProfilesBlock, RateLimitSpec, RefScope,
+    RetryIdempotencySpec, RetryPatch, RetryProfilesBlock, RetrySpec, RouteAtom, SecretRef,
 };
 use crate::emit_helpers;
 use crate::model::facade::{
@@ -109,14 +107,10 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         .map(|c| (c.name.to_string(), c.clone()))
         .collect();
 
-    let cache_profiles = resolve_cache_profiles(norm.client.cache_profiles.as_ref())?;
     let retry_profiles = resolve_retry_profiles(norm.client.retry_profiles.as_ref())?;
     let rate_limit_profiles = resolve_rate_limit_profiles(norm.client.rate_limit.as_ref())?;
-    let behavior_profiles = resolve_behavior_profiles(
-        norm.client.behavior_profiles.as_ref(),
-        &cache_profiles,
-        &retry_profiles,
-    )?;
+    let behavior_profiles =
+        resolve_behavior_profiles(norm.client.behavior_profiles.as_ref(), &retry_profiles)?;
     validate_behavior_uses_unique_at_site(&norm.client.default_behavior_uses)?;
     let client_default_behavior_names = behavior_use_names(&norm.client.default_behavior_uses);
     let default_behavior =
@@ -155,18 +149,6 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         Some(_) => explicit_client_retry,
         None => default_behavior.policy.retry.clone(),
     };
-    let explicit_client_cache = resolve_client_cache(
-        norm.client.cache.as_ref(),
-        norm.client
-            .cache_profiles
-            .as_ref()
-            .and_then(|block| block.default.as_ref()),
-        &cache_profiles,
-    )?;
-    client_policy.cache = match explicit_client_cache {
-        Some(_) => explicit_client_cache,
-        None => default_behavior.policy.cache.clone(),
-    };
     let explicit_default_rate_limit = resolve_client_rate_limit(
         norm.client.rate_limit.as_ref(),
         &rate_limit_profiles,
@@ -187,7 +169,6 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         auth_credentials: &auth_credential_map,
         client_auth: &client_auth,
         client_default_behavior_names: &client_default_behavior_names,
-        cache_profiles: &cache_profiles,
         retry_profiles: &retry_profiles,
         rate_limit_profiles: &rate_limit_profiles,
         behavior_profiles: &behavior_profiles,
@@ -195,15 +176,6 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         endpoints: &mut endpoints,
     };
     walk_items(&norm.items, &mut ancestry, &mut walk_ctx)?;
-
-    let cache_store_enabled = policy_uses_cache(&client_policy)
-        || layers.iter().any(|layer| policy_uses_cache(&layer.policy))
-        || endpoints.iter().any(endpoint_uses_cache);
-    let cache_store_config = match &client_policy.cache {
-        Some(CacheResolved::Set(config)) => Some(config.clone()),
-        Some(CacheResolved::Patch(patch)) => Some(cache_config_from_patch(patch)),
-        Some(CacheResolved::Clear) | None => None,
-    };
 
     let resolved_api = ResolvedApi {
         mod_name,
@@ -214,8 +186,6 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         client_auth_vars,
         client_auth_credentials,
         client_policy,
-        cache_store_enabled,
-        cache_store_config,
         rate_limit_response_policy: norm
             .client
             .rate_limit
@@ -730,7 +700,6 @@ fn push_error(errors: &mut Option<syn::Error>, error: syn::Error) {
 include!("common.rs");
 include!("auth.rs");
 include!("retry.rs");
-include!("cache.rs");
 include!("rate_limit.rs");
 include!("items.rs");
 include!("policy.rs");
@@ -798,7 +767,7 @@ fn debug_norm_tree(norm: &NormApiTree) -> String {
             match item {
                 NormNode::Layer(scope) => {
                     out.push_str(&format!(
-                        "{indent}scope {:?} kind={:?} params={} auth={} headers={} query={} retry={} cache={} rate_limit={}\n",
+                        "{indent}scope {:?} kind={:?} params={} auth={} headers={} query={} retry={} rate_limit={}\n",
                         scope.scope_name.as_ref().map(ToString::to_string),
                         scope.kind,
                         scope.params.len(),
@@ -806,7 +775,6 @@ fn debug_norm_tree(norm: &NormApiTree) -> String {
                         scope.policy.headers.as_ref().map_or(0, |h| h.stmts.len()),
                         scope.policy.query.as_ref().map_or(0, |q| q.stmts.len()),
                         scope.retry.is_some(),
-                        scope.cache.is_some(),
                         scope.rate_limit.is_some(),
                     ));
                     walk(&scope.items, depth + 1, out);
@@ -829,7 +797,7 @@ fn debug_norm_tree(norm: &NormApiTree) -> String {
     }
 
     let mut out = format!(
-        "client {} vars={} secrets={} auth={} retry_profiles={} cache_profiles={} rate_profiles={}\n",
+        "client {} vars={} secrets={} auth={} retry_profiles={} rate_profiles={}\n",
         norm.client.name,
         norm.client.vars.as_ref().map_or(0, |v| v.decls.len()),
         norm.client.auth_vars.as_ref().map_or(0, |v| v.decls.len()),
@@ -839,9 +807,6 @@ fn debug_norm_tree(norm: &NormApiTree) -> String {
             .as_ref()
             .map_or(0, |v| v.profiles.len()),
         norm.client
-            .cache_profiles
-            .as_ref()
-            .map_or(0, |v| v.profiles.len()),
         norm.client
             .rate_limit
             .as_ref()
@@ -860,13 +825,12 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
             ep.prefix_pieces, ep.scope_path_pieces, ep.route_pieces
         );
         let policy = format!(
-            "scopes={} headers={} query={} auth={} retry={} cache={} rate_limit={}",
+            "scopes={} headers={} query={} auth={} retry={} rate_limit={}",
             ep.policy.scopes.len(),
             ep.policy.endpoint.headers.len(),
             ep.policy.endpoint.query.len(),
             ep.policy.auth.len(),
             ep.policy.endpoint.retry.is_some(),
-            ep.policy.endpoint.cache.is_some(),
             ep.policy.endpoint.rate_limit.is_some()
         );
         let params = ep
@@ -1426,7 +1390,6 @@ mod tests {
 
                     default {
                         retry read_child
-                        cache standard
                         rate_limit app
                     }
 
@@ -1440,11 +1403,6 @@ mod tests {
                         retry_after
                     }
 
-                    cache standard {
-                        ttl 30s
-                        revalidate
-                    }
-
                     rate_limit app {
                         bucket application by [host] {
                             10 / 1s
@@ -1455,7 +1413,6 @@ mod tests {
                 GET Ping
                     path ["ping"]
                     retry off
-                    cache off
                     rate_limit only app
                     -> Json<()>
             }
@@ -1471,12 +1428,6 @@ mod tests {
         assert_eq!(client_retry.statuses, [429]);
         assert!(client_retry.respect_retry_after);
 
-        let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
-            panic!("expected default client cache");
-        };
-        assert_eq!(client_cache.default_ttl_secs, Some(30));
-        assert_eq!(client_cache.revalidate, Some(true));
-
         let Some(RateLimitResolved::Add(client_rate_limit)) =
             &resolved_api.client_policy.rate_limit
         else {
@@ -1486,70 +1437,9 @@ mod tests {
 
         let endpoint_policy = &resolved_api.endpoints[0].policy.endpoint;
         assert!(matches!(endpoint_policy.retry, Some(RetryResolved::Clear)));
-        assert!(matches!(endpoint_policy.cache, Some(CacheResolved::Clear)));
         assert!(matches!(
             endpoint_policy.rate_limit,
             Some(RateLimitResolved::Replace(_))
-        ));
-    }
-
-    #[test]
-    fn behavior_cache_profile_resolves_before_local_override() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    retry read {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
-                    cache standard {
-                        ttl 30s
-                    }
-
-                    rate_limit app {
-                        bucket application by [host] {
-                            10 / 1s
-                        }
-                    }
-
-                    behavior protected_read {
-                        retry read
-                        cache standard
-                        rate_limit app
-                    }
-                }
-
-                scope users {
-                    path ["users"]
-                    behavior protected_read
-
-                    GET Me
-                        path ["me"]
-                        cache off
-                        -> Json<()>
-                }
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-        let endpoint = &resolved_api.endpoints[0];
-
-        assert!(matches!(
-            endpoint
-                .policy
-                .scopes
-                .first()
-                .and_then(|scope| scope.cache.as_ref()),
-            Some(CacheResolved::Set(_))
-        ));
-        assert!(matches!(
-            endpoint.policy.endpoint.cache,
-            Some(CacheResolved::Clear)
         ));
     }
 
@@ -1646,179 +1536,6 @@ mod tests {
             root_bucket_names,
             vec!["app_0".to_string(), "users_0".to_string()]
         );
-    }
-
-    #[test]
-    fn cache_sizing_fields_resolve_and_inherit() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    cache base {
-                        http
-                        ttl 30s
-                        revalidate
-                        on_error serve_stale
-                        capacity 10_000 entries
-                        max_body 2 mib
-                        shared
-                    }
-
-                    cache child extends base {
-                        capacity 1_000 entries
-                        max_body 512 kib
-                    }
-
-                    defaults {
-                        cache child
-                    }
-                }
-
-                GET Ping
-                path ["ping"]
-                -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-
-        let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
-            panic!("expected client cache");
-        };
-        assert!(client_cache.http);
-        assert_eq!(client_cache.default_ttl_secs, Some(30));
-        assert_eq!(client_cache.revalidate, Some(true));
-        assert!(matches!(
-            client_cache.failure_mode,
-            Some(CacheFailureModeResolved::ServeStaleOnError)
-        ));
-        assert_eq!(client_cache.capacity_entries, Some(1_000));
-        assert_eq!(client_cache.max_body_bytes, Some(512 * 1_024));
-        assert_eq!(client_cache.shared, Some(true));
-    }
-
-    #[test]
-    fn cache_max_body_units_resolve_to_bytes() {
-        for (unit, expected) in [
-            ("kb", 2_000usize),
-            ("kib", 2_048usize),
-            ("mb", 2_000_000usize),
-            ("mib", 2_097_152usize),
-        ] {
-            let source = format!(
-                r#"
-                api! {{
-                    client Api {{
-                        base "https://example.com"
-
-                        cache standard {{
-                            max_body 2 {unit}
-                        }}
-
-                        defaults {{
-                            cache standard
-                        }}
-                    }}
-
-                    GET Ping
-                    path ["ping"]
-                    -> Json<()>
-                }}
-                "#
-            );
-            let ast: crate::ast::RawApi = syn::parse_str(&source).expect("valid api syntax");
-            let resolved_api = analyze(ast).expect("analysis succeeds");
-            let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
-                panic!("expected client cache");
-            };
-            assert_eq!(client_cache.max_body_bytes, Some(expected), "unit {unit}");
-        }
-    }
-
-    #[test]
-    fn local_cache_patch_preserves_inherited_sizing_and_updates_specified_fields() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    cache standard {
-                        capacity 10_000 entries
-                        max_body 2 mib
-                        shared
-                    }
-
-                    defaults {
-                        cache standard
-                    }
-                }
-
-                GET Ping
-                path ["ping"]
-                cache {
-                    max_body 128 kib
-                }
-                -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-
-        let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
-            panic!("expected client cache");
-        };
-        assert_eq!(client_cache.capacity_entries, Some(10_000));
-        assert_eq!(client_cache.max_body_bytes, Some(2 * 1_048_576));
-        assert_eq!(client_cache.shared, Some(true));
-
-        let Some(CacheResolved::Patch(endpoint_patch)) =
-            &resolved_api.endpoints[0].policy.endpoint.cache
-        else {
-            panic!("expected endpoint cache patch");
-        };
-        assert_eq!(endpoint_patch.capacity_entries, None);
-        assert_eq!(endpoint_patch.max_body_bytes, Some(128 * 1_024));
-        assert_eq!(endpoint_patch.shared, None);
-    }
-
-    #[test]
-    fn cache_off_still_clears_inherited_sizing_config() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    cache standard {
-                        capacity 10_000 entries
-                        max_body 2 mib
-                        shared
-                    }
-
-                    defaults {
-                        cache standard
-                    }
-                }
-
-                GET Ping
-                path ["ping"]
-                cache off
-                -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-
-        assert!(matches!(
-            resolved_api.endpoints[0].policy.endpoint.cache,
-            Some(CacheResolved::Clear)
-        ));
     }
 
     #[test]
@@ -1925,7 +1642,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_default_retry_and_cache_override_default_behavior() {
+    fn explicit_default_retry_overrides_default_behavior() {
         let resolved_api = analyze_source(
             r#"
             api! {
@@ -1942,23 +1659,13 @@ mod tests {
                         methods [GET]
                     }
 
-                    cache behavior_cache {
-                        ttl 30s
-                    }
-
-                    cache explicit_cache {
-                        ttl 45s
-                    }
-
                     behavior read_behavior {
                         retry behavior_retry
-                        cache behavior_cache
                     }
 
                     defaults {
                         behavior read_behavior
                         retry explicit_retry
-                        cache explicit_cache
                     }
                 }
 
@@ -1973,15 +1680,10 @@ mod tests {
             panic!("expected explicit default retry");
         };
         assert_eq!(client_retry.max_attempts, 2);
-
-        let Some(CacheResolved::Set(client_cache)) = &resolved_api.client_policy.cache else {
-            panic!("expected explicit default cache");
-        };
-        assert_eq!(client_cache.default_ttl_secs, Some(45));
     }
 
     #[test]
-    fn endpoint_explicit_retry_and_cache_override_endpoint_behavior() {
+    fn endpoint_explicit_retry_overrides_endpoint_behavior() {
         let resolved_api = analyze_source(
             r#"
             api! {
@@ -1998,17 +1700,8 @@ mod tests {
                         methods [GET]
                     }
 
-                    cache behavior_cache {
-                        ttl 30s
-                    }
-
-                    cache explicit_cache {
-                        ttl 45s
-                    }
-
                     behavior read_behavior {
                         retry behavior_retry
-                        cache behavior_cache
                     }
                 }
 
@@ -2016,7 +1709,6 @@ mod tests {
                     path ["me"]
                     behavior read_behavior
                     retry explicit_retry
-                    cache explicit_cache
                     -> Json<()>
             }
             "#,
@@ -2027,11 +1719,6 @@ mod tests {
             panic!("expected explicit endpoint retry");
         };
         assert_eq!(endpoint_retry.max_attempts, 2);
-
-        let Some(CacheResolved::Set(endpoint_cache)) = &endpoint.policy.endpoint.cache else {
-            panic!("expected explicit endpoint cache");
-        };
-        assert_eq!(endpoint_cache.default_ttl_secs, Some(45));
     }
 
     #[test]
@@ -2384,44 +2071,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_default_cache_overrides_default_behavior_cache() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    cache standard {
-                        ttl 30s
-                    }
-
-                    behavior cached {
-                        cache standard
-                    }
-
-                    default {
-                        behavior cached
-                        cache off
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-
-        assert!(matches!(
-            resolved_api.client_policy.cache,
-            Some(CacheResolved::Clear)
-        ));
-    }
-
-    #[test]
-    fn explicit_default_retry_and_cache_still_override_default_behavior() {
+    fn explicit_default_retry_still_overrides_default_behavior() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             api! {
@@ -2438,19 +2088,13 @@ mod tests {
                         methods [GET]
                     }
 
-                    cache standard {
-                        ttl 30s
-                    }
-
-                    behavior cached_read {
+                    behavior read_behavior {
                         retry from_behavior
-                        cache standard
                     }
 
                     default {
-                        behavior cached_read
+                        behavior read_behavior
                         retry explicit
-                        cache off
                     }
                 }
 
@@ -2467,11 +2111,6 @@ mod tests {
             panic!("expected explicit default retry");
         };
         assert_eq!(client_retry.max_attempts, 2);
-
-        assert!(matches!(
-            resolved_api.client_policy.cache,
-            Some(CacheResolved::Clear)
-        ));
     }
 
     #[test]
@@ -2686,26 +2325,6 @@ mod tests {
                         on [502]
                     }
 
-                    cache client_cache {
-                        ttl 30s
-                        revalidate
-                    }
-
-                    cache outer_cache {
-                        ttl 60s
-                        revalidate
-                    }
-
-                    cache inner_cache {
-                        ttl 90s
-                        revalidate
-                    }
-
-                    cache endpoint_cache {
-                        ttl 120s
-                        revalidate
-                    }
-
                     rate_limit client_limit {
                         bucket client by [host] {
                             1 / 1s
@@ -2734,28 +2353,24 @@ mod tests {
                         behavior client_behavior {
                             auth bearer client_auth
                             retry client_retry
-                            cache client_cache
                             rate_limit client_limit
                         }
 
                         behavior outer_behavior {
                             auth header "X-Outer" = outer_auth
                             retry outer_retry
-                            cache outer_cache
                             rate_limit outer_limit
                         }
 
                         behavior inner_behavior {
                             auth query "inner" = inner_auth
                             retry inner_retry
-                            cache inner_cache
                             rate_limit inner_limit
                         }
 
                         behavior endpoint_behavior {
                             auth header "X-Endpoint" = endpoint_auth
                             retry off
-                            cache off
                         }
                     }
 
@@ -2777,7 +2392,6 @@ mod tests {
                             behavior endpoint_behavior
                             auth query "direct" = direct_auth
                             retry endpoint_retry
-                            cache endpoint_cache
                             rate_limit endpoint_limit
                             -> Json<()>
                     }
@@ -2811,14 +2425,6 @@ mod tests {
             resolved_api.client_policy.retry,
             Some(RetryResolved::Set(RetryConfigResolved {
                 max_attempts: 2,
-                ..
-            }))
-        ));
-        assert!(matches!(
-            resolved_api.client_policy.cache,
-            Some(CacheResolved::Set(CacheConfigResolved {
-                default_ttl_secs: Some(30),
-                revalidate: Some(true),
                 ..
             }))
         ));
@@ -2862,13 +2468,6 @@ mod tests {
             }))
         ));
         assert!(matches!(
-            outer_scope.cache,
-            Some(CacheResolved::Set(CacheConfigResolved {
-                default_ttl_secs: Some(60),
-                ..
-            }))
-        ));
-        assert!(matches!(
             outer_scope.rate_limit,
             Some(RateLimitResolved::Add(_))
         ));
@@ -2876,13 +2475,6 @@ mod tests {
             inner_scope.retry,
             Some(RetryResolved::Set(RetryConfigResolved {
                 max_attempts: 4,
-                ..
-            }))
-        ));
-        assert!(matches!(
-            inner_scope.cache,
-            Some(CacheResolved::Set(CacheConfigResolved {
-                default_ttl_secs: Some(90),
                 ..
             }))
         ));
@@ -2895,13 +2487,6 @@ mod tests {
             endpoint.policy.endpoint.retry,
             Some(RetryResolved::Set(RetryConfigResolved {
                 max_attempts: 5,
-                ..
-            }))
-        ));
-        assert!(matches!(
-            endpoint.policy.endpoint.cache,
-            Some(CacheResolved::Set(CacheConfigResolved {
-                default_ttl_secs: Some(120),
                 ..
             }))
         ));
@@ -3131,107 +2716,6 @@ mod tests {
             replace_endpoint.policy.endpoint.retry,
             Some(RetryResolved::Set(RetryConfigResolved {
                 max_attempts: 4,
-                ..
-            }))
-        ));
-    }
-
-    #[test]
-    fn cache_replace_snapshot() {
-        let resolved_api = analyze_source(
-            r#"
-            api! {
-                client CacheSnapshotApi {
-                    base "https://example.com"
-
-                    cache cache_a {
-                        ttl 30s
-                        revalidate
-                    }
-
-                    cache cache_b {
-                        ttl 60s
-                        revalidate
-                    }
-
-                    cache cache_c {
-                        ttl 90s
-                        revalidate
-                    }
-
-                    behaviors {
-                        behavior client_cache {
-                            cache cache_a
-                        }
-
-                        behavior scope_cache {
-                            cache cache_b
-                        }
-
-                        behavior clear_cache {
-                            cache off
-                        }
-
-                        behavior replace_cache {
-                            cache cache_c
-                        }
-                    }
-
-                    defaults {
-                        behavior client_cache
-                    }
-                }
-
-                scope protected {
-                    path ["protected"]
-                    behavior scope_cache
-
-                    GET Clear
-                        path ["clear"]
-                        behavior clear_cache
-                        -> Json<()>
-
-                    GET Replace
-                        path ["replace"]
-                        behavior replace_cache
-                        -> Json<()>
-                }
-            }
-            "#,
-        );
-        assert!(matches!(
-            resolved_api.client_policy.cache,
-            Some(CacheResolved::Set(CacheConfigResolved {
-                default_ttl_secs: Some(30),
-                ..
-            }))
-        ));
-
-        let clear_endpoint = endpoint_by_name(&resolved_api, "Clear");
-        assert!(matches!(
-            clear_endpoint.policy.scopes[0].cache,
-            Some(CacheResolved::Set(CacheConfigResolved {
-                default_ttl_secs: Some(60),
-                ..
-            }))
-        ));
-        assert!(matches!(
-            clear_endpoint.policy.endpoint.cache,
-            Some(CacheResolved::Clear)
-        ));
-
-        let replace_endpoint = endpoint_by_name(&resolved_api, "Replace");
-        assert!(matches!(
-            replace_endpoint.policy.scopes[0].cache,
-            Some(CacheResolved::Set(CacheConfigResolved {
-                default_ttl_secs: Some(60),
-                ..
-            }))
-        ));
-        assert!(matches!(
-            replace_endpoint.policy.endpoint.cache,
-            Some(CacheResolved::Set(CacheConfigResolved {
-                default_ttl_secs: Some(90),
                 ..
             }))
         ));

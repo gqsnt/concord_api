@@ -778,7 +778,7 @@ mod tests {
                 "HeaderValue :: from_static (\"search\")",
                 ":: concord_core :: advanced :: AuthRequirement",
                 "policy.ensure_accept",
-                "let (headers , query , timeout , cache , retry , mut rate_limit) = policy.into_parts()",
+                "let (headers , query , timeout , retry , mut rate_limit) = policy.into_parts()",
                 "rate_limit.canonicalize()",
                 "let __resolved_policy = :: concord_core :: internal :: ResolvedPolicy",
                 "auth : __auth_plan",
@@ -1051,11 +1051,6 @@ mod tests {
                     retry_after
                 }
 
-                cache standard {
-                    ttl 30s
-                    revalidate
-                }
-
                 rate_limit app {
                     bucket application by [host] {
                         1 / 1s
@@ -1063,12 +1058,11 @@ mod tests {
                 }
 
                 behaviors {
-                    behavior alpha {
-                        auth bearer session
-                        retry read
-                        cache standard
-                        rate_limit app
-                    }
+                        behavior alpha {
+                            auth bearer session
+                            retry read
+                            rate_limit app
+                        }
                 }
 
                 defaults {
@@ -1094,11 +1088,6 @@ mod tests {
                     retry_after
                 }
 
-                cache standard {
-                    ttl 30s
-                    revalidate
-                }
-
                 rate_limit app {
                     bucket application by [host] {
                         1 / 1s
@@ -1106,12 +1095,11 @@ mod tests {
                 }
 
                 behaviors {
-                    behavior beta {
-                        auth bearer session
-                        retry read
-                        cache standard
-                        rate_limit app
-                    }
+                        behavior beta {
+                            auth bearer session
+                            retry read
+                            rate_limit app
+                        }
                 }
 
                 defaults {
@@ -1129,7 +1117,6 @@ mod tests {
             &alpha,
             &[
                 "#[doc=\"Behavior: `alpha`\"]",
-                "policy.set_cache",
                 "policy.set_retry",
                 "policy.add_rate_limit",
             ],
@@ -1138,7 +1125,6 @@ mod tests {
             &beta,
             &[
                 "#[doc=\"Behavior: `beta`\"]",
-                "policy.set_cache",
                 "policy.set_retry",
                 "policy.add_rate_limit",
             ],
@@ -1157,18 +1143,12 @@ mod tests {
 
                 default {
                     retry read
-                    cache standard
                     rate_limit app
                 }
 
                 retry read {
                     max_attempts 2
                     methods [GET, POST]
-                }
-
-                cache standard {
-                    ttl 30s
-                    revalidate
                 }
 
                 rate_limit app {
@@ -1211,7 +1191,6 @@ mod tests {
                 "#[doc=\"Headers: `X-Tenant`\"]",
                 "#[doc=\"Auth:\"]",
                 "#[doc=\"- header `X-Api-Key` = `key`\"]",
-                "#[doc=\"Cache: configured\"]",
                 "#[doc=\"Retry: configured\"]",
                 "#[doc=\"Rate limit: configured\"]",
                 "#[doc=\"Pagination: OffsetLimitPagination\"]",
@@ -1486,11 +1465,6 @@ mod tests {
                         retry_after
                     }
 
-                    cache standard {
-                        ttl 30s
-                        revalidate
-                    }
-
                     rate_limit app {
                         bucket application by [host] {
                             10 / 1s
@@ -1502,13 +1476,11 @@ mod tests {
                     behavior shared {
                         auth bearer session
                         retry read
-                        cache standard
                         rate_limit app
                     }
 
                     behavior endpoint_override {
                         retry off
-                        cache off
                     }
                 }
 
@@ -1523,15 +1495,6 @@ mod tests {
                 -> Json<String>
         });
 
-        match &resolved.client_policy.cache {
-            Some(CacheResolved::Set(config)) => {
-                assert_eq!(config.default_ttl_secs, Some(30));
-                assert_eq!(config.revalidate, Some(true));
-            }
-            other => panic!(
-                "expected resolved client cache from behavior/default lowering, got {other:?}"
-            ),
-        }
         match &resolved.client_policy.retry {
             Some(RetryResolved::Set(config)) => {
                 let expected_methods: Vec<syn::Ident> = vec![syn::parse_quote!(GET)];
@@ -1567,12 +1530,6 @@ mod tests {
             endpoint.behavior_doc.names,
             vec!["shared".to_string(), "endpoint_override".to_string()]
         );
-        match &endpoint.policy.endpoint.cache {
-            Some(CacheResolved::Clear) => {}
-            other => {
-                panic!("expected endpoint cache override to clear inherited cache, got {other:?}")
-            }
-        }
         match &endpoint.policy.endpoint.retry {
             Some(RetryResolved::Clear) => {}
             other => {
@@ -1589,14 +1546,10 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "policy.set_cache({letmut__cache=::concord_core::advanced::CacheConfig::new();",
-                "with_default_ttl(::std::time::Duration::from_secs(30u64))",
-                "with_revalidate(true)",
                 "policy.set_retry(::concord_core::advanced::RetryConfig{max_attempts:2u32",
                 "::http::Method::GET",
                 "::http::StatusCode::from_u16(401u16)",
                 "::http::StatusCode::from_u16(403u16)",
-                "policy.clear_cache();",
                 "policy.clear_retry();",
                 "policy.add_rate_limit(::concord_core::advanced::RateLimitPlan::from_buckets",
                 "RateLimitBucketUse::new(\"application\",\"app_0\"",

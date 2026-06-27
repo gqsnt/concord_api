@@ -250,9 +250,7 @@ fn public_expr_forbidden_ident_kind(ident: &str) -> Option<PublicExprForbiddenKi
         "auth" => Some(PublicExprForbiddenKind::Auth),
         "secret" | "secrets" => Some(PublicExprForbiddenKind::Secret),
         "ctx" | "cx" | "ep" | "vars" | "client" | "runtime" | "policy" | "req" | "request"
-        | "headers" | "url" | "cache" | "transport" | "self" => {
-            Some(PublicExprForbiddenKind::GeneratedLocal)
-        }
+        | "headers" | "url" | "transport" | "self" => Some(PublicExprForbiddenKind::GeneratedLocal),
         _ => None,
     }
 }

@@ -13,7 +13,6 @@ use syn::{Expr, Ident, LitBool, LitInt, LitStr, Path, Type};
 include!("common.rs");
 include!("auth.rs");
 include!("routing.rs");
-include!("cache.rs");
 include!("retry.rs");
 include!("rate_limit.rs");
 include!("behavior.rs");

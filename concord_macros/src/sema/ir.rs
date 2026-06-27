@@ -9,8 +9,6 @@ pub struct ResolvedApi {
     pub client_auth_vars: Vec<VarInfo>, // stable order
     pub client_auth_credentials: Vec<AuthCredentialIr>,
     pub client_policy: PolicyBlocksResolved,
-    pub cache_store_enabled: bool,
-    pub cache_store_config: Option<CacheConfigResolved>,
     pub rate_limit_response_policy: Option<syn::Path>,
 
     pub endpoints: Vec<ResolvedEndpoint>,
@@ -180,7 +178,6 @@ pub struct PolicyBlocksResolved {
     pub headers: Vec<PolicyOp>,
     pub query: Vec<PolicyOp>,
     pub timeout: Option<PublicValueKind>,
-    pub cache: Option<CacheResolved>,
     pub retry: Option<RetryResolved>,
     pub rate_limit: Option<RateLimitResolved>,
 }
@@ -190,41 +187,6 @@ pub enum RetryResolved {
     Set(RetryConfigResolved),
     Patch(RetryPatchResolved),
     Clear,
-}
-
-#[derive(Debug, Clone)]
-pub enum CacheResolved {
-    Set(CacheConfigResolved),
-    Patch(CacheConfigPatchResolved),
-    Clear,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct CacheConfigResolved {
-    pub http: bool,
-    pub default_ttl_secs: Option<u64>,
-    pub revalidate: Option<bool>,
-    pub failure_mode: Option<CacheFailureModeResolved>,
-    pub capacity_entries: Option<u64>,
-    pub max_body_bytes: Option<usize>,
-    pub shared: Option<bool>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct CacheConfigPatchResolved {
-    pub http: Option<bool>,
-    pub default_ttl_secs: Option<u64>,
-    pub revalidate: Option<bool>,
-    pub failure_mode: Option<CacheFailureModeResolved>,
-    pub capacity_entries: Option<u64>,
-    pub max_body_bytes: Option<usize>,
-    pub shared: Option<bool>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CacheFailureModeResolved {
-    Ignore,
-    ServeStaleOnError,
 }
 
 #[derive(Debug, Clone)]

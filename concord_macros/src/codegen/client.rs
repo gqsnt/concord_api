@@ -475,9 +475,6 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
         let ex = emit_value_expr(t, PolicyEmitCtx::ClientBase);
         ops.push(quote! { policy.set_timeout(#ex); });
     }
-    if let Some(cache) = emit_cache_op(&policy.cache) {
-        ops.push(cache);
-    }
     if let Some(retry) = emit_retry_op(&policy.retry) {
         ops.push(retry);
     }

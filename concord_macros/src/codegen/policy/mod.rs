@@ -1,6 +1,5 @@
 // Policy and route emission chunks.
 include!("context.rs");
-include!("cache.rs");
 include!("retry.rs");
 include!("rate_limit.rs");
 include!("ops.rs");

@@ -7,4 +7,4 @@ plan-shape:
 - ensure_accept(response content type) unless HEAD/no-content
 - policy.into_parts()
 - rate_limit.canonicalize()
-- ResolvedPolicy { headers, query, timeout, auth, cache, retry, rate_limit }
+- ResolvedPolicy { headers, query, timeout, auth, retry, rate_limit }
