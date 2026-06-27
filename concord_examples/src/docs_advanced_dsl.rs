@@ -49,16 +49,6 @@ api! {
                 idempotency header "Idempotency-Key"
             }
 
-            cache short {
-                http
-                ttl 30s
-                revalidate
-                on_error ignore
-                capacity 1_000 entries
-                max_body 512 kib
-                shared
-            }
-
             rate_limit tenant {
                 bucket method by [host, endpoint, method, "tenant", tenant_key] {
                     cost 2
@@ -73,7 +63,6 @@ api! {
             behavior basic_write {
                 auth basic basic_login
                 retry write
-                cache short
             }
 
             behavior tenant_read {
@@ -96,7 +85,6 @@ api! {
         path ["users"]
         header "X-Request-Id" = request_id,
         query "tenant" = tenant_id,
-        cache stale_on_error
         rate_limit only tenant
         behavior tenant_read
         -> Json<Vec<AdvancedUser>>

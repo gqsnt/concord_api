@@ -301,7 +301,6 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
                     usage_id: requirement.usage_id.clone(),
                     step_id: requirement.step_id,
                     generation: ::core::option::Option::Some(lease.generation),
-                    identity: application.identity().clone(),
                     provenance: requirement.provenance.clone(),
                 };
                 return ::core::result::Result::Ok(

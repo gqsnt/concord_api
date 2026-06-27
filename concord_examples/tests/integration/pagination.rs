@@ -76,7 +76,7 @@ async fn cursor_pagination_for_each_page_uses_next_cursor() {
 }
 
 #[tokio::test]
-async fn auth_retry_on_page_n_preserves_offset_and_items() {
+async fn session_header_pagination_preserves_offset_and_items() {
     let (transport, handle) = mock()
         .reply(json_reply(r#"[{"id":1},{"id":2}]"#))
         .reply(MockReply::status(StatusCode::UNAUTHORIZED))

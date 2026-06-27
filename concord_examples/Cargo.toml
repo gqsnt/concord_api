@@ -21,6 +21,3 @@ url.workspace = true
 trybuild = "1"
 concord_test_support = { path = "../concord_test_support" }
 
-[features]
-default = ["cache-moka"]
-cache-moka = ["concord_core/cache-moka"]

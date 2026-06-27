@@ -13,12 +13,6 @@ api! {
                 retry_after
             }
 
-            cache standard {
-                ttl 60s
-                revalidate
-                on_error serve_stale
-            }
-
             rate_limit app {
                 bucket application by [host] {
                     100 / 1s
@@ -30,14 +24,12 @@ api! {
         behaviors {
             behavior read {
                 retry read
-                cache standard
                 rate_limit app
             }
         }
 
         defaults {
             retry read
-            cache standard
             rate_limit app
         }
     }
@@ -50,14 +42,12 @@ api! {
     GET RetryOnly
         as retry_only
         path ["retry"]
-        cache off
         rate_limit off
         -> Text<String>
 
     GET RateLimited
         as rate_limited
         path ["limited"]
-        cache off
         -> Text<String>
 
     GET BehaviorText

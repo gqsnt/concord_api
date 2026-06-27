@@ -1,10 +1,9 @@
 #![allow(unused_imports)]
 
 use concord_core::advanced::{
-    CacheBefore, CacheFuture, CacheStore, DebugSink, PostResponseHookContext, PreSendHookContext,
-    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, RuntimeHooks, Transport, TransportBody, TransportError,
-    TransportRequest, TransportResponse,
+    DebugSink, PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
+    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks,
+    Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -21,12 +20,6 @@ api! {
         var tenant: String
 
         policies {
-            cache standard {
-                ttl 60s
-                revalidate
-                on_error serve_stale
-            }
-
             rate_limit app {
                 bucket application by [host] {
                     100 / 1s
@@ -35,7 +28,6 @@ api! {
         }
 
         defaults {
-            cache standard
             rate_limit app
         }
     }
@@ -118,31 +110,6 @@ impl Transport for RecordingTransport {
                 rate_limit: Default::default(),
                 body: Box::new(StaticBody(Some(bytes::Bytes::from_static(b"\"ok\"")))),
             })
-        })
-    }
-}
-
-#[derive(Clone)]
-struct RecordingCache {
-    records: RecordingEvents,
-}
-
-impl RecordingCache {
-    fn new(records: RecordingEvents) -> Self {
-        Self { records }
-    }
-}
-
-impl CacheStore for RecordingCache {
-    fn before_request<'a>(
-        &'a self,
-        request: &'a concord_core::advanced::BuiltRequest,
-    ) -> CacheFuture<'a, CacheBefore> {
-        let records = self.records.clone();
-        let url = request.url.as_str().to_string();
-        Box::pin(async move {
-            records.push(format!("cache_before:{url}"));
-            CacheBefore::Miss
         })
     }
 }
@@ -285,13 +252,11 @@ impl TransportBody for StaticBody {
 
 fn configure_client(
     client: UrlHardeningApi<RecordingTransport>,
-    cache: Arc<dyn CacheStore>,
     rate_limiter: Arc<dyn RateLimiter>,
     hooks: Arc<dyn RuntimeHooks>,
     debug_sink: Arc<dyn DebugSink>,
 ) -> UrlHardeningApi<RecordingTransport> {
     client.configure(|cfg| {
-        cfg.cache_store(cache);
         cfg.rate_limiter(rate_limiter);
         cfg.runtime_hooks(hooks);
         cfg.debug_sink(debug_sink);
@@ -307,13 +272,11 @@ async fn dynamic_host_accepts_valid_labels_deterministically() -> Result<(), Api
     ] {
         let records = RecordingEvents::default();
         let transport = RecordingTransport::new(records.clone());
-        let cache = Arc::new(RecordingCache::new(records.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-            cache,
             rate_limiter,
             hooks,
             debug_sink,
@@ -334,8 +297,6 @@ async fn dynamic_host_accepts_valid_labels_deterministically() -> Result<(), Api
         );
 
         let events = records.snapshot();
-        assert!(events.iter().any(|event| event
-            == &format!("cache_before:https://{expected_host}/v1/items/item/p-prefix")));
         assert!(events.iter().any(|event| event
             == &format!(
                 "rate_acquire:https://{expected_host}/v1/items/item/p-prefix:{expected_host}"
@@ -381,13 +342,11 @@ async fn dynamic_host_rejects_dangerous_values() {
     ] {
         let records = RecordingEvents::default();
         let transport = RecordingTransport::new(records.clone());
-        let cache = Arc::new(RecordingCache::new(records.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-            cache,
             rate_limiter,
             hooks,
             debug_sink,
@@ -413,13 +372,11 @@ async fn dynamic_path_slash_backslash_rejected_before_side_effects() {
     for bad in ["a/b", "a\\b"] {
         let records = RecordingEvents::default();
         let transport = RecordingTransport::new(records.clone());
-        let cache = Arc::new(RecordingCache::new(records.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-            cache,
             rate_limiter,
             hooks,
             debug_sink,
@@ -445,13 +402,11 @@ async fn dynamic_path_dot_segments_are_safe() {
     for bad in [".", "..", "a/../b"] {
         let records = RecordingEvents::default();
         let transport = RecordingTransport::new(records.clone());
-        let cache = Arc::new(RecordingCache::new(records.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-            cache,
             rate_limiter,
             hooks,
             debug_sink,
@@ -477,13 +432,11 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
     for bad in ["a/b", "a\\b"] {
         let records = RecordingEvents::default();
         let transport = RecordingTransport::new(records.clone());
-        let cache = Arc::new(RecordingCache::new(records.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-            cache,
             rate_limiter,
             hooks,
             debug_sink,
@@ -506,13 +459,11 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
     for bad in [".", "..", "a/b", "a\\b"] {
         let records = RecordingEvents::default();
         let transport = RecordingTransport::new(records.clone());
-        let cache = Arc::new(RecordingCache::new(records.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-            cache,
             rate_limiter,
             hooks,
             debug_sink,
@@ -538,13 +489,11 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
     ] {
         let records = RecordingEvents::default();
         let transport = RecordingTransport::new(records.clone());
-        let cache = Arc::new(RecordingCache::new(records.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
         let hooks = Arc::new(RecordingHooks::new(records.clone()));
         let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
         let client = configure_client(
             UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-            cache,
             rate_limiter,
             hooks,
             debug_sink,
@@ -571,13 +520,11 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
 async fn execute_raw_obeys_same_url_host_path_validation() {
     let records = RecordingEvents::default();
     let transport = RecordingTransport::new(records.clone());
-    let cache = Arc::new(RecordingCache::new(records.clone()));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
     let hooks = Arc::new(RecordingHooks::new(records.clone()));
     let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
     let client = configure_client(
         UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-        cache,
         rate_limiter,
         hooks,
         debug_sink,
@@ -596,17 +543,15 @@ async fn execute_raw_obeys_same_url_host_path_validation() {
 }
 
 #[tokio::test]
-async fn sanitized_url_consistent_for_cache_rate_limit_hooks_debug_transport()
+async fn sanitized_url_consistent_for_rate_limit_hooks_debug_transport()
 -> Result<(), ApiClientError> {
     let records = RecordingEvents::default();
     let transport = RecordingTransport::new(records.clone());
-    let cache = Arc::new(RecordingCache::new(records.clone()));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
     let hooks = Arc::new(RecordingHooks::new(records.clone()));
     let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
     let client = configure_client(
         UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-        cache,
         rate_limiter,
         hooks,
         debug_sink,
@@ -620,11 +565,6 @@ async fn sanitized_url_consistent_for_cache_rate_limit_hooks_debug_transport()
     assert_eq!(decoded, "ok");
     let expected = "https://tenant.api.example.com/v1/items/item/p-prefix";
     let events = records.snapshot();
-    assert!(
-        events
-            .iter()
-            .any(|event| event == &format!("cache_before:{expected}"))
-    );
     assert!(
         events
             .iter()
@@ -657,13 +597,11 @@ async fn sanitized_url_consistent_for_cache_rate_limit_hooks_debug_transport()
 async fn dynamic_path_values_are_percent_encoded_in_final_url() -> Result<(), ApiClientError> {
     let records = RecordingEvents::default();
     let transport = RecordingTransport::new(records.clone());
-    let cache = Arc::new(RecordingCache::new(records.clone()));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(records.clone()));
     let hooks = Arc::new(RecordingHooks::new(records.clone()));
     let debug_sink = Arc::new(RecordingDebugSink::new(records.clone()));
     let client = configure_client(
         UrlHardeningApi::new_with_transport("client".to_string(), transport.clone()),
-        cache,
         rate_limiter,
         hooks,
         debug_sink,
@@ -677,12 +615,6 @@ async fn dynamic_path_values_are_percent_encoded_in_final_url() -> Result<(), Ap
     assert_eq!(decoded, "ok");
     let expected = "https://tenant.api.example.com/v1/items/item%201/p-%C2%B5";
     assert_eq!(transport.requests()[0].url.as_str(), expected);
-    assert!(
-        records
-            .snapshot()
-            .iter()
-            .any(|event| event == &format!("cache_before:{expected}"))
-    );
     assert!(
         records
             .snapshot()

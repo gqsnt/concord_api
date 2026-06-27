@@ -36,11 +36,6 @@ api! {
 
             observe rate_limit RiotRateLimitHeaders
 
-            cache live_game_1m {
-                http
-                ttl 60s
-            }
-
             rate_limit app {
                 bucket application by [host] {
                     500 / 10s
@@ -245,7 +240,6 @@ api! {
 
             behavior spectator_live_game_read {
                 rate_limit spectator_live_game
-                cache live_game_1m
             }
         }
 

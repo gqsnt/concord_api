@@ -68,6 +68,7 @@ api! {
 api! {
     client PaginationAuthApi {
         base "https://example.com"
+
         secret token: String
         credential session = bearer(secret.token)
     }
