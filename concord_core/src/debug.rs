@@ -52,16 +52,6 @@ pub trait DebugSink: Send + Sync + 'static {
 
     fn response_status(&self, dbg: DebugLevel, status: StatusCode, url: &str, ok: bool);
     fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap);
-
-    fn stale_fallback(
-        &self,
-        _dbg: DebugLevel,
-        _method: &Method,
-        _url: &str,
-        _endpoint: &'static str,
-        _page_index: u32,
-    ) {
-    }
 }
 
 #[derive(Default)]
@@ -122,19 +112,6 @@ impl DebugSink for StderrDebugSink {
             let vs = header_value_for_debug(k, v);
             eprintln!("  {}: {}", k, vs);
         }
-    }
-    fn stale_fallback(
-        &self,
-        dbg: DebugLevel,
-        method: &Method,
-        url: &str,
-        endpoint: &'static str,
-        page_index: u32,
-    ) {
-        eprintln!(
-            "[client_api:{}] stale fallback {} {} ({}) page={}",
-            dbg, method, url, endpoint, page_index
-        );
     }
 }
 

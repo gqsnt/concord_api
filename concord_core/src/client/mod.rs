@@ -2,7 +2,6 @@ use crate::auth::{
     AuthDecision, AuthError, AuthErrorKind, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse,
     AuthMode, AuthRequirementId,
 };
-use crate::cache::{CacheAfter, CacheBefore, CacheRequestMode, CacheRevalidation, CacheStore};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::endpoint::{BodyPlan, ClientPlanContext, Endpoint, RequestPlan};
 use crate::error::{ApiClientError, ErrorContext};

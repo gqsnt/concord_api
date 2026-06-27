@@ -1,4 +1,3 @@
-use crate::cache::{CacheStore, NoopCacheStore};
 use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
 use crate::runtime::RuntimeConfig;
@@ -8,7 +7,6 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct ClientRuntimeState {
     hooks: Arc<dyn RuntimeHooks>,
-    cache_store: Arc<dyn CacheStore>,
     rate_limiter: Arc<dyn RateLimiter>,
     retry_policy: Arc<dyn RetryPolicy>,
     max_auth_retries: u32,
@@ -21,7 +19,6 @@ impl Default for ClientRuntimeState {
     fn default() -> Self {
         Self {
             hooks: Arc::new(NoopRuntimeHooks),
-            cache_store: Arc::new(NoopCacheStore),
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
             max_auth_retries: 8,
@@ -36,7 +33,6 @@ impl ClientRuntimeState {
     pub fn from_config(config: RuntimeConfig) -> Self {
         Self {
             hooks: config.hooks,
-            cache_store: config.cache_store,
             rate_limiter: config.rate_limiter,
             retry_policy: config.retry_policy,
             max_auth_retries: config.auth.max_retries,
@@ -58,16 +54,6 @@ impl ClientRuntimeState {
     #[inline]
     pub fn set_hooks(&mut self, hooks: Arc<dyn RuntimeHooks>) {
         self.hooks = hooks;
-    }
-
-    #[inline]
-    pub fn cache_store(&self) -> &Arc<dyn CacheStore> {
-        &self.cache_store
-    }
-
-    #[inline]
-    pub fn set_cache_store(&mut self, cache_store: Arc<dyn CacheStore>) {
-        self.cache_store = cache_store;
     }
 
     #[inline]

@@ -3,7 +3,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         plan: &RequestPlan,
         meta: RequestMeta,
-        cache_mode: CacheRequestMode,
     ) -> Result<BuiltRequest, ApiClientError> {
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
@@ -43,11 +42,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             headers,
             body: plan.args.body.clone(),
             timeout: policy.timeout,
-            cache: policy.cache,
-            cache_mode,
             retry: policy.retry,
             rate_limit,
-            cache_revalidation: None,
             extensions: Default::default(),
         })
     }

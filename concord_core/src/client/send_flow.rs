@@ -202,21 +202,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let has_cache_revalidation = built.cache_revalidation.is_some();
         let transport_resp = self.acquire_rate_limit_and_send(built, send_ctx).await?;
-        if transport_resp.status == http::StatusCode::NOT_MODIFIED && has_cache_revalidation {
-            let observe_ctx = Self::response_observation_ctx(&transport_resp, send_ctx.url_str);
-            self.run_post_response_hook(observe_ctx).await;
-            let _ = self.observe_rate_limit_response(observe_ctx).await?;
-            return Ok(BuiltResponse {
-                meta: transport_resp.meta,
-                url: transport_resp.url,
-                status: transport_resp.status,
-                headers: transport_resp.headers,
-                body: Bytes::new(),
-                rate_limit: transport_resp.rate_limit,
-            });
-        }
         self.classify_transport_response(
             transport_resp,
             send_ctx.dbg,

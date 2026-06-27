@@ -1,6 +1,4 @@
-use super::{
-    AuthIdentity, AuthProvenance, AuthStepPolicy, AuthUsageId, CredentialId, InvalidateReason,
-};
+use super::{AuthProvenance, AuthStepPolicy, AuthUsageId, CredentialId, InvalidateReason};
 use crate::secret::SecretString;
 use http::HeaderName;
 use std::fmt;
@@ -44,7 +42,6 @@ pub struct PendingAuthSlot {
     pub usage_id: AuthUsageId,
     pub step_id: Option<&'static str>,
     pub generation: Option<u64>,
-    pub identity: AuthIdentity,
     pub provenance: AuthProvenance,
     pub placement: PendingAuthPlacement,
 }
@@ -84,7 +81,6 @@ impl fmt::Debug for PendingAuthSlot {
             .field("usage_id", &self.usage_id)
             .field("step_id", &self.step_id)
             .field("generation", &self.generation)
-            .field("identity", &"<redacted>")
             .field("provenance", &self.provenance)
             .field("placement", &self.placement)
             .finish()
@@ -150,15 +146,7 @@ impl fmt::Debug for AuthTransportMaterial {
 
 #[derive(Clone, Debug)]
 pub struct AuthApplication {
-    identity: AuthIdentity,
     material: AuthTransportMaterial,
-}
-
-impl AuthApplication {
-    #[inline]
-    pub fn identity(&self) -> &AuthIdentity {
-        &self.identity
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -286,7 +274,6 @@ pub struct AuthAppliedCredential {
     pub usage_id: AuthUsageId,
     pub step_id: Option<&'static str>,
     pub generation: Option<u64>,
-    pub identity: AuthIdentity,
     pub provenance: AuthProvenance,
 }
 
@@ -384,19 +371,16 @@ pub fn apply_secret_credential<M: crate::auth::SecretCredential>(
             ));
         }
     };
-    let identity = crate::auth::CredentialMaterial::safe_identity(material);
     request.push_pending_slot(PendingAuthSlot {
         id: slot_id,
         credential: requirement.credential.clone(),
         usage_id: requirement.usage_id.clone(),
         step_id: requirement.step_id,
         generation: None,
-        identity: identity.clone(),
         provenance: requirement.provenance.clone(),
         placement,
     });
     Ok(AuthApplication {
-        identity,
         material: AuthTransportMaterial::Secret {
             slot_id,
             secret: SecretString::new(material.secret_value().to_string()),
@@ -416,19 +400,16 @@ pub fn apply_basic_credential(
         ));
     }
     let slot_id = AuthSlotId::next()?;
-    let identity = crate::auth::CredentialMaterial::safe_identity(material);
     request.push_pending_slot(PendingAuthSlot {
         id: slot_id,
         credential: requirement.credential.clone(),
         usage_id: requirement.usage_id.clone(),
         step_id: requirement.step_id,
         generation: None,
-        identity: identity.clone(),
         provenance: requirement.provenance.clone(),
         placement: PendingAuthPlacement::Basic,
     });
     Ok(AuthApplication {
-        identity,
         material: AuthTransportMaterial::Basic {
             slot_id,
             username: material.username.clone(),
@@ -449,19 +430,16 @@ pub fn apply_certificate_credential(
         ));
     }
     let slot_id = AuthSlotId::next()?;
-    let identity = crate::auth::CredentialMaterial::safe_identity(material);
     request.push_pending_slot(PendingAuthSlot {
         id: slot_id,
         credential: requirement.credential.clone(),
         usage_id: requirement.usage_id.clone(),
         step_id: requirement.step_id,
         generation: None,
-        identity: identity.clone(),
         provenance: requirement.provenance.clone(),
         placement: PendingAuthPlacement::Certificate,
     });
     Ok(AuthApplication {
-        identity,
         material: AuthTransportMaterial::Certificate {
             slot_id,
             identity_id: material.identity_id.clone(),
@@ -518,7 +496,6 @@ mod tests {
             usage_id: AuthUsageId::new("test.token"),
             step_id: None,
             generation: Some(1),
-            identity: AuthIdentity::Anonymous,
             provenance: AuthProvenance::default(),
         }
     }

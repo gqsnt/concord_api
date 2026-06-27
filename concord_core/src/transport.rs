@@ -1,5 +1,4 @@
 use crate::auth::{PendingAuthPlacement, RequestExtensions};
-use crate::cache::{CacheRequestMode, CacheRevalidation, CacheSetting};
 use crate::rate_limit::RateLimitPlan;
 use crate::retry::RetrySetting;
 use bytes::Bytes;
@@ -30,9 +29,6 @@ pub struct BuiltRequest {
     pub timeout: Option<Duration>,
     pub retry: RetrySetting,
     pub rate_limit: RateLimitPlan,
-    pub cache: CacheSetting,
-    pub cache_mode: CacheRequestMode,
-    pub cache_revalidation: Option<CacheRevalidation>,
     pub extensions: RequestExtensions,
 }
 
@@ -52,9 +48,6 @@ impl fmt::Debug for BuiltRequest {
             .field("timeout", &self.timeout)
             .field("retry", &self.retry)
             .field("rate_limit", &self.rate_limit)
-            .field("cache", &self.cache)
-            .field("cache_mode", &self.cache_mode)
-            .field("cache_revalidation", &self.cache_revalidation)
             .field("extensions", &self.extensions)
             .finish()
     }

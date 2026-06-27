@@ -1,7 +1,7 @@
 use super::errors::{AuthError, AuthErrorKind, CredentialRefreshReason, InvalidateReason};
 use super::future::AuthFuture;
 use super::http::AuthHttpExecutor;
-use super::ids::{AuthIdentity, CredentialId};
+use super::ids::CredentialId;
 use crate::client::ClientContext;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -13,10 +13,6 @@ use tokio::sync::futures::OwnedNotified;
 pub trait CredentialMaterial: Clone + Send + Sync + 'static {
     fn expires_at(&self) -> Option<Instant> {
         None
-    }
-
-    fn safe_identity(&self) -> AuthIdentity {
-        AuthIdentity::Anonymous
     }
 }
 

@@ -248,22 +248,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
-    pub fn cache_store(&self) -> &Arc<dyn CacheStore> {
-        self.runtime_state.cache_store()
-    }
-
-    #[inline]
-    pub fn set_cache_store(&mut self, cache_store: Arc<dyn CacheStore>) {
-        Arc::make_mut(&mut self.runtime_state).set_cache_store(cache_store);
-    }
-
-    #[inline]
-    pub fn with_cache_store(mut self, cache_store: Arc<dyn CacheStore>) -> Self {
-        Arc::make_mut(&mut self.runtime_state).set_cache_store(cache_store);
-        self
-    }
-
-    #[inline]
     pub fn runtime_state(&self) -> &Arc<ClientRuntimeState> {
         &self.runtime_state
     }
@@ -294,7 +278,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     pub fn configure(&mut self, f: impl FnOnce(&mut crate::runtime::RuntimeConfig)) -> &mut Self {
         let mut config = crate::runtime::RuntimeConfig {
             hooks: self.runtime_state.hooks().clone(),
-            cache_store: self.runtime_state.cache_store().clone(),
             rate_limiter: self.runtime_state.rate_limiter().clone(),
             retry_policy: self.runtime_state.retry_policy().clone(),
             auth: crate::runtime::AuthRuntimeConfig {

@@ -132,11 +132,8 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     headers,
                     body,
                     timeout: policy.timeout,
-                    cache: crate::cache::CacheSetting::Off,
-                    cache_mode: CacheRequestMode::Default,
                     retry: RetrySetting::Inherit,
                     rate_limit: RateLimitPlan::new(),
-                    cache_revalidation: None,
                     extensions: Default::default(),
                 };
 

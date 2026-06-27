@@ -1,5 +1,4 @@
 pub mod auth;
-mod cache;
 mod client;
 mod codec;
 mod debug;
@@ -40,7 +39,7 @@ pub mod internal {
         PaginationTermination, ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
-    pub use crate::{cache::CacheSetting, retry::RetrySetting};
+    pub use crate::retry::RetrySetting;
 }
 pub mod prelude {
     pub use crate::auth::{AccessToken, ApiKey, BasicCredential};
@@ -68,24 +67,16 @@ pub mod advanced {
     pub use crate::auth::{
         AuthApplication, AuthApplicationRequest, AuthAppliedCredential, AuthAttemptSummary,
         AuthChallengePolicy, AuthDecision, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor,
-        AuthHttpRequest, AuthHttpResponse, AuthIdentity, AuthInternalPolicy, AuthMode,
-        AuthPlacement, AuthPlan, AuthProvenance, AuthRejectionDecision, AuthRequirement,
-        AuthRequirementId, AuthRetryReason, AuthStepPolicy, AuthUsageId, ClientCertificate,
-        CredentialContext, CredentialId, CredentialLease, CredentialMaterial, CredentialProvider,
-        CredentialRef, CredentialRefreshReason, CredentialSlot, InvalidateReason,
-        ManualCredentialProvider, PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential,
-        PreparedInternalAuth, SecretCredential, StaticApiKeyProvider, StaticBasicProvider,
-        StaticBearerProvider, apply_basic_credential, apply_certificate_credential,
-        apply_secret_credential, auth_decision_for_status, invalidate_rejected_credential,
-        read_auth_lock, write_auth_lock,
+        AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode, AuthPlacement, AuthPlan,
+        AuthProvenance, AuthRejectionDecision, AuthRequirement, AuthRequirementId, AuthRetryReason,
+        AuthStepPolicy, AuthUsageId, ClientCertificate, CredentialContext, CredentialId,
+        CredentialLease, CredentialMaterial, CredentialProvider, CredentialRef,
+        CredentialRefreshReason, CredentialSlot, InvalidateReason, ManualCredentialProvider,
+        PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential, PreparedInternalAuth,
+        SecretCredential, StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider,
+        apply_basic_credential, apply_certificate_credential, apply_secret_credential,
+        auth_decision_for_status, invalidate_rejected_credential, read_auth_lock, write_auth_lock,
     };
-    pub use crate::cache::{
-        CacheAfter, CacheBefore, CacheCapacity, CacheConfig, CacheEntryId, CacheFailureMode,
-        CacheFuture, CacheKey, CacheMode, CachePrimaryKey, CacheRequestMode, CacheRevalidation,
-        CacheSkipReason, CacheStore, NoopCacheStore, default_cache_key,
-    };
-    #[cfg(feature = "cache-moka")]
-    pub use crate::cache::{MokaCacheConfig, MokaCacheStore};
     pub use crate::codec::{
         BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
     };

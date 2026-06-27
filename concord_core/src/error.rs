@@ -241,7 +241,6 @@ pub enum ErrorCategory {
     Decode,
     Pagination,
     RateLimit,
-    Cache,
     InternalInvariant,
 }
 

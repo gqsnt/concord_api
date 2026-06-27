@@ -21,7 +21,7 @@ pub use http::{
     AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode,
     AuthRequirementId, RequestExtensions,
 };
-pub use ids::{AuthIdentity, AuthProvenance, AuthUsageId, CredentialId};
+pub use ids::{AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential, ClientCertificate};
 pub(crate) use plan::AuthTransportMaterial;
 pub use plan::{

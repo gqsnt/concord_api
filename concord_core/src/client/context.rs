@@ -83,11 +83,6 @@ struct AuthPreparation {
     materials: Vec<crate::auth::AuthTransportMaterial>,
 }
 
-enum CacheBeforeOutcome {
-    Hit(BuiltResponse),
-    Continue(Option<CacheRevalidation>),
-}
-
 struct AuthRejectionCtx<'a, Cx: ClientContext, T: Transport> {
     plan: &'a RequestPlan,
     auth_state: &'a Cx::AuthState,

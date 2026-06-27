@@ -1,4 +1,3 @@
-use crate::cache::{CacheStore, NoopCacheStore};
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
@@ -121,7 +120,6 @@ fn safe_capture_path(dir: &Path, filename: &str) -> PathBuf {
 #[derive(Clone)]
 pub struct RuntimeConfig {
     pub(crate) hooks: Arc<dyn RuntimeHooks>,
-    pub(crate) cache_store: Arc<dyn CacheStore>,
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) retry_policy: Arc<dyn RetryPolicy>,
     pub(crate) auth: AuthRuntimeConfig,
@@ -136,7 +134,6 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             hooks: Arc::new(NoopRuntimeHooks),
-            cache_store: Arc::new(NoopCacheStore),
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
             auth: AuthRuntimeConfig::default(),
@@ -179,12 +176,6 @@ impl RuntimeConfig {
     #[inline]
     pub fn runtime_hooks(&mut self, hooks: Arc<dyn RuntimeHooks>) -> &mut Self {
         self.hooks = hooks;
-        self
-    }
-
-    #[inline]
-    pub fn cache_store(&mut self, store: Arc<dyn CacheStore>) -> &mut Self {
-        self.cache_store = store;
         self
     }
 
@@ -245,7 +236,6 @@ mod tests {
         assert!(cfg.dev_body_capture.is_none());
 
         assert_eq!(Arc::strong_count(&cfg.hooks), 1);
-        assert_eq!(Arc::strong_count(&cfg.cache_store), 1);
         assert_eq!(Arc::strong_count(&cfg.rate_limiter), 1);
         assert_eq!(Arc::strong_count(&cfg.retry_policy), 1);
         assert_eq!(Arc::strong_count(&cfg.debug.sink), 1);

@@ -1,4 +1,3 @@
-use crate::cache::CacheRequestMode;
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{CustomPaginationPlan, Endpoint, PaginatedEndpoint, PaginationPlan};
@@ -24,7 +23,6 @@ pub(crate) struct RequestOptions {
     pub debug_level: Option<DebugLevel>,
     pub timeout_override: TimeoutOverride,
     pub attempt: u32,
-    pub cache_mode: CacheRequestMode,
 }
 impl Default for RequestOptions {
     fn default() -> Self {
@@ -32,7 +30,6 @@ impl Default for RequestOptions {
             debug_level: None,
             timeout_override: TimeoutOverride::Inherit,
             attempt: 0,
-            cache_mode: CacheRequestMode::Default,
         }
     }
 }
@@ -92,23 +89,6 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     }
 
     #[inline]
-    pub fn cache_default(mut self) -> Self {
-        self.opts.cache_mode = CacheRequestMode::Default;
-        self
-    }
-
-    #[inline]
-    pub fn cache_bypass(mut self) -> Self {
-        self.opts.cache_mode = CacheRequestMode::Bypass;
-        self
-    }
-
-    #[inline]
-    pub fn cache_refresh(mut self) -> Self {
-        self.opts.cache_mode = CacheRequestMode::Refresh;
-        self
-    }
-
     #[inline]
     pub async fn execute(self) -> Result<E::Response, ApiClientError> {
         Ok(self.execute_decoded().await?.value)
@@ -166,7 +146,6 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         plan.overrides.debug_level = self.opts.debug_level;
         plan.overrides.attempt = self.opts.attempt;
         plan.overrides.page_index = 0;
-        plan.overrides.cache_mode = self.opts.cache_mode;
         Ok(plan)
     }
 
@@ -282,7 +261,6 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             plan.overrides.debug_level = self.pending.opts.debug_level;
             plan.overrides.attempt = self.pending.opts.attempt;
             plan.overrides.page_index = page_index;
-            plan.overrides.cache_mode = self.pending.opts.cache_mode;
             let expected_items = runner.apply_query(&mut plan)?;
             let request_identity = pagination_request_identity(&plan);
             state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
@@ -418,7 +396,6 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             plan.overrides.debug_level = self.pending.opts.debug_level;
             plan.overrides.attempt = self.pending.opts.attempt;
             plan.overrides.page_index = page_index;
-            plan.overrides.cache_mode = self.pending.opts.cache_mode;
             let expected_items = runner.apply_query(&mut plan)?;
             let request_identity = pagination_request_identity(&plan);
             state.ensure_progress(request_identity.clone(), &ctx, page_index)?;

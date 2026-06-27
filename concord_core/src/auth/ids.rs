@@ -56,35 +56,6 @@ impl fmt::Display for AuthUsageId {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum AuthIdentity {
-    Anonymous,
-    Static(&'static str),
-    User(String),
-    Tenant(String),
-    ScopeAudience {
-        scope: Vec<String>,
-        audience: Option<String>,
-    },
-    OpaqueHash(String),
-}
-
-impl AuthIdentity {
-    #[inline]
-    pub fn safe_fragment(&self) -> String {
-        match self {
-            Self::Anonymous => "anon".to_string(),
-            Self::Static(v) => format!("static:{v}"),
-            Self::User(v) => format!("user:{v}"),
-            Self::Tenant(v) => format!("tenant:{v}"),
-            Self::ScopeAudience { scope, audience } => {
-                format!("scope:{};aud:{:?}", scope.join(","), audience)
-            }
-            Self::OpaqueHash(v) => format!("hash:{v}"),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct AuthProvenance {
     pub layer: &'static str,
 }

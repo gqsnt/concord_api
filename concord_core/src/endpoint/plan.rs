@@ -55,7 +55,6 @@ pub struct RequestOverrides {
     pub timeout: Option<std::time::Duration>,
     pub attempt: u32,
     pub page_index: u32,
-    pub cache_mode: crate::cache::CacheRequestMode,
 }
 
 #[derive(Clone, Debug)]
@@ -70,7 +69,6 @@ pub struct AttemptState {
     pub attempt: u32,
     pub page_index: u32,
     pub auth_attempt: crate::auth::AuthAttemptSummary,
-    pub cache_revalidation: Option<crate::cache::CacheRevalidation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

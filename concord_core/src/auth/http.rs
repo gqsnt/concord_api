@@ -127,7 +127,6 @@ pub trait AuthHttpExecutor: Send + Sync {
 
 #[derive(Clone, Debug, Default)]
 pub struct RequestExtensions {
-    pub auth_identities: Vec<String>,
     pub sensitive_query_keys: Vec<String>,
     pub pending_auth_slots: Vec<crate::auth::PendingAuthSlot>,
 }

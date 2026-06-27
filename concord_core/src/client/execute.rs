@@ -10,9 +10,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         plan: &RequestPlan,
         meta: RequestMeta,
-        cache_mode: CacheRequestMode,
     ) -> Result<BuiltRequest, ApiClientError> {
-        self.build_request_from_plan(plan, meta, cache_mode)
+        self.build_request_from_plan(plan, meta)
     }
 
     async fn prepare_auth(
@@ -23,10 +22,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         built: &mut BuiltRequest,
     ) -> Result<AuthPreparation, ApiClientError> {
         self.prepare_auth_plan(plan, auth_state, executor, built).await
-    }
-
-    async fn check_fresh_cache(&self, built: &mut BuiltRequest) -> CacheBeforeOutcome {
-        self.prepare_cache_before_request(built).await
     }
 
     async fn handle_auth_rejection(
@@ -65,58 +60,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(Some(delay))
     }
 
-    async fn maybe_serve_stale(
-        &self,
-        built_for_cache: &BuiltRequest,
-        err: &ApiClientError,
-        cache_revalidation: Option<CacheRevalidation>,
-        dbg: DebugLevel,
-        url_str: &str,
-    ) -> Result<Option<BuiltResponse>, ApiClientError> {
-        if built_for_cache.cache_mode != CacheRequestMode::Default {
-            return Ok(None);
-        }
-        if !crate::cache::auth_cache_identity_is_safe(built_for_cache) {
-            return Ok(None);
-        }
-        let Some(cached) = self
-            .runtime_state
-            .cache_store()
-            .after_error(built_for_cache, err, cache_revalidation)
-            .await
-        else {
-            return Ok(None);
-        };
-        if dbg.is_verbose() {
-            self.debug_sink.stale_fallback(
-                dbg,
-                &built_for_cache.meta.method,
-                url_str,
-                built_for_cache.meta.endpoint,
-                built_for_cache.meta.page_index,
-            );
-        }
-        Ok(Some(cached))
-    }
-
-    async fn admit_successful_cache_response(
-        &self,
-        built_for_cache: &BuiltRequest,
-        resp: &BuiltResponse,
-        cache_revalidation: Option<CacheRevalidation>,
-    ) {
-        if built_for_cache.cache_mode == CacheRequestMode::Bypass
-            || !crate::cache::auth_cache_identity_is_safe(built_for_cache)
-        {
-            return;
-        }
-        let _ = self
-            .runtime_state
-            .cache_store()
-            .after_response(built_for_cache, resp, cache_revalidation)
-            .await;
-    }
-
     pub async fn execute_plan<R>(
         &self,
         plan: RequestPlan,
@@ -146,8 +89,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut attempt_index: u32 = 0;
         let mut transport_retry_index: u32 = 0;
         let mut auth_retry_index: u32 = 0;
-        let mut force_cache_refresh_for_next_attempt = false;
-        let mut used_revalidation_refetch = false;
 
         loop {
             let current_attempt = checked_attempt(base_attempt, attempt_index, &ctx)?;
@@ -155,13 +96,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .endpoint
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
-            let cache_mode = if force_cache_refresh_for_next_attempt {
-                force_cache_refresh_for_next_attempt = false;
-                CacheRequestMode::Refresh
-            } else {
-                plan.overrides.cache_mode
-            };
-            let mut built = self.build_attempt_request(&plan, meta, cache_mode)?;
+            let mut built = self.build_attempt_request(&plan, meta)?;
             let auth_attempt = self
                 .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
@@ -172,19 +107,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 }
             })?;
             let url_str = built.debug_url();
-            let cache_revalidation = match self.check_fresh_cache(&mut built).await {
-                CacheBeforeOutcome::Hit(cached) => {
-                    self.maybe_capture_dev_response_body(&plan, &cached);
-                    self.debug_planned_response(dbg, &cached, &url_str);
-                    return Self::decode_planned_response::<R>(&plan, cached, ctx);
-                }
-                CacheBeforeOutcome::Continue(cache_revalidation) => cache_revalidation,
-            };
 
             self.debug_planned_request(dbg, &plan, &built, &url_str);
             let retry_config = built.retry.clone();
             let retry_request_headers = built.headers.clone();
-            let built_for_cache = built.clone();
             let send_result = self
                 .send_and_classify_once(
                     built,
@@ -242,60 +168,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         }
                         AuthRejectionOutcome::NotProtected => {}
                     }
-
-                    let was_revalidation_304 =
-                        resp.status == StatusCode::NOT_MODIFIED && cache_revalidation.is_some();
-                    let resp = if was_revalidation_304 {
-                        let cache_after = if built_for_cache.cache_mode == CacheRequestMode::Bypass
-                            || !crate::cache::auth_cache_identity_is_safe(&built_for_cache)
-                        {
-                            None
-                        } else {
-                            Some(
-                                self.runtime_state
-                                    .cache_store()
-                                    .after_response(
-                                        &built_for_cache,
-                                        &resp,
-                                        cache_revalidation.clone(),
-                                    )
-                                    .await,
-                            )
-                        };
-                        let updated = match cache_after {
-                            Some(CacheAfter::Updated(updated)) => Some(*updated),
-                            _ => None,
-                        };
-                        if updated.is_none() && !used_revalidation_refetch {
-                            used_revalidation_refetch = true;
-                            force_cache_refresh_for_next_attempt = true;
-                            attempt_index = next_attempt_counter(attempt_index, &ctx)?;
-                            continue;
-                        }
-                        updated.unwrap_or(resp)
-                    } else {
-                        resp
-                    };
-
                     self.maybe_capture_dev_response_body(&plan, &resp);
                     self.debug_planned_response(dbg, &resp, &url_str);
-                    let resp_for_cache = if was_revalidation_304
-                        || built_for_cache.cache_mode == CacheRequestMode::Bypass
-                        || !crate::cache::auth_cache_identity_is_safe(&built_for_cache)
-                    {
-                        None
-                    } else {
-                        Some(resp.clone())
-                    };
                     let decoded = Self::decode_planned_response::<R>(&plan, resp, ctx.clone())?;
-                    if let Some(resp_for_cache) = resp_for_cache.as_ref() {
-                        self.admit_successful_cache_response(
-                            &built_for_cache,
-                            resp_for_cache,
-                            cache_revalidation.clone(),
-                        )
-                        .await;
-                    }
                     return Ok(decoded);
                 }
                 Err(err) => {
@@ -364,20 +239,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         &retry_ctx,
                         transport_retry_index,
                     )? else {
-                        if let Some(cached) = self
-                            .maybe_serve_stale(
-                                &built_for_cache,
-                                &err,
-                                cache_revalidation.clone(),
-                                dbg,
-                                &url_str,
-                            )
-                            .await?
-                        {
-                            self.maybe_capture_dev_response_body(&plan, &cached);
-                            self.debug_planned_response(dbg, &cached, &url_str);
-                            return Self::decode_planned_response::<R>(&plan, cached, ctx);
-                        }
                         return Err(err);
                     };
                     if !delay.is_zero() {
@@ -423,8 +284,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .endpoint
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
-            let mut built =
-                self.build_attempt_request(&plan, meta, plan.overrides.cache_mode)?;
+            let mut built = self.build_attempt_request(&plan, meta)?;
             let auth_attempt = self
                 .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
@@ -610,10 +470,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             })?;
             attach_prepared_auth_generation(built, &prepared);
             let applied = prepared.applied;
-            built
-                .extensions
-                .auth_identities
-                .push(applied.identity.safe_fragment());
             summary.applied.push(applied);
             materials.push(prepared.material);
         }
@@ -692,31 +548,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 ctx,
                 source: "planned response decoder returned an unexpected type".into(),
             })
-    }
-
-    async fn prepare_cache_before_request(&self, built: &mut BuiltRequest) -> CacheBeforeOutcome {
-        if !crate::cache::auth_cache_identity_is_safe(built) {
-            return CacheBeforeOutcome::Continue(None);
-        }
-        match built.cache_mode {
-            CacheRequestMode::Default => {
-                match self.runtime_state.cache_store().before_request(built).await {
-                    CacheBefore::Hit(cached) => CacheBeforeOutcome::Hit(cached),
-                    CacheBefore::Revalidate {
-                        request_headers,
-                        cached,
-                    } => {
-                        built.headers = request_headers;
-                        built.cache_revalidation = Some(cached.clone());
-                        CacheBeforeOutcome::Continue(Some(cached))
-                    }
-                    CacheBefore::Miss | CacheBefore::Bypass => CacheBeforeOutcome::Continue(None),
-                }
-            }
-            CacheRequestMode::Bypass | CacheRequestMode::Refresh => {
-                CacheBeforeOutcome::Continue(None)
-            }
-        }
     }
 
     fn debug_planned_request(&self, dbg: DebugLevel, plan: &RequestPlan, built: &BuiltRequest, url_str: &str) {

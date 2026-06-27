@@ -1,4 +1,3 @@
-use crate::cache::{CacheConfig, CacheSetting};
 use crate::rate_limit::RateLimitPlan;
 use crate::retry::{RetryConfig, RetrySetting};
 use core::time::Duration;
@@ -16,7 +15,6 @@ pub type PolicySnapshot = (
     HeaderMap,
     Vec<(String, String)>,
     Option<Duration>,
-    CacheSetting,
     RetrySetting,
     RateLimitPlan,
 );
@@ -38,7 +36,6 @@ pub struct Policy {
     headers: HeaderMap,
     query: Vec<(String, String)>,
     timeout: Option<Duration>,
-    cache: CacheSetting,
     retry: RetrySetting,
     rate_limit: RateLimitPlan,
     // Current layer used for provenance decisions (not exposed in into_parts()).
@@ -55,7 +52,6 @@ impl Policy {
             headers: HeaderMap::new(),
             query: Vec::new(),
             timeout: None,
-            cache: CacheSetting::Inherit,
             retry: RetrySetting::Inherit,
             rate_limit: RateLimitPlan::new(),
             layer: PolicyLayer::Client,
@@ -87,24 +83,6 @@ impl Policy {
     #[inline]
     pub fn clear_timeout(&mut self) {
         self.timeout = None;
-    }
-
-    #[inline]
-    pub fn cache(&self) -> Option<&CacheConfig> {
-        match &self.cache {
-            CacheSetting::Config(config) => Some(config),
-            CacheSetting::Inherit | CacheSetting::Off => None,
-        }
-    }
-
-    #[inline]
-    pub fn set_cache(&mut self, cache: CacheConfig) {
-        self.cache = CacheSetting::Config(cache);
-    }
-
-    #[inline]
-    pub fn clear_cache(&mut self) {
-        self.cache = CacheSetting::Off;
     }
 
     #[inline]
@@ -206,7 +184,6 @@ impl Policy {
             self.headers,
             self.query,
             self.timeout,
-            self.cache,
             self.retry,
             self.rate_limit,
         )
@@ -219,7 +196,6 @@ impl From<ResolvedPolicy> for Policy {
             headers: resolved.headers,
             query: resolved.query,
             timeout: resolved.timeout,
-            cache: resolved.cache,
             retry: resolved.retry,
             rate_limit: resolved.rate_limit,
             layer: PolicyLayer::Runtime,
