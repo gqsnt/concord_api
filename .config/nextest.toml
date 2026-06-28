@@ -8,4 +8,4 @@ priority = -100
 test-group = 'trybuild'
 
 [test-groups.trybuild]
-max-threads = 1
+max-threads = 3
