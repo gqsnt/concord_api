@@ -6,6 +6,7 @@ use futures_core::Stream;
 use http::{HeaderMap, Method, StatusCode};
 use std::fmt;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::time::Duration;
 use url::Url;
@@ -83,12 +84,16 @@ pub struct TransportByteStream {
 }
 
 impl TransportByteStream {
-    pub fn new<S>(stream: S) -> Self
+    pub fn new<S, E>(stream: S) -> Self
     where
-        S: Stream<Item = Result<bytes::Bytes, TransportError>> + Send + 'static,
+        S: Stream<Item = Result<bytes::Bytes, E>> + Send + 'static,
+        E: Into<TransportError> + Send + 'static,
     {
         Self {
-            inner: Box::pin(stream),
+            inner: Box::pin(MapIntoTransportErrorStream::<S, E> {
+                inner: Box::pin(stream),
+                _marker: PhantomData,
+            }),
         }
     }
 }
@@ -107,6 +112,32 @@ impl Stream for TransportByteStream {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         self.get_mut().inner.as_mut().poll_next(cx)
+    }
+}
+
+struct MapIntoTransportErrorStream<S, E> {
+    inner: Pin<Box<S>>,
+    _marker: PhantomData<fn() -> E>,
+}
+
+impl<S, E> Stream for MapIntoTransportErrorStream<S, E>
+where
+    S: Stream<Item = Result<bytes::Bytes, E>> + Send + 'static,
+    E: Into<TransportError> + Send + 'static,
+{
+    type Item = Result<bytes::Bytes, TransportError>;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        match this.inner.as_mut().poll_next(cx) {
+            std::task::Poll::Ready(Some(Ok(bytes))) => std::task::Poll::Ready(Some(Ok(bytes))),
+            std::task::Poll::Ready(Some(Err(err))) => std::task::Poll::Ready(Some(Err(err.into()))),
+            std::task::Poll::Ready(None) => std::task::Poll::Ready(None),
+            std::task::Poll::Pending => std::task::Poll::Pending,
+        }
     }
 }
 

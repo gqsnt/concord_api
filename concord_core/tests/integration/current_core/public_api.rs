@@ -36,6 +36,16 @@ fn public_v1_surface_compiles() {
     uses_type::<advanced::TransportResponse>();
     uses_type::<advanced::TransportError>();
     uses_type::<advanced::TransportErrorKind>();
+    uses_type::<advanced::StreamBody>();
+    uses_type::<advanced::StreamBodyError>();
+    uses_type::<advanced::BodySizeHint>();
+    uses_type::<advanced::OctetStream>();
+    uses_type::<advanced::Mp3>();
+    uses_type::<advanced::Mp4>();
+    uses_type::<advanced::Pdf>();
+    uses_type::<advanced::Zip>();
+    uses_type::<advanced::Png>();
+    uses_type::<advanced::Jpeg>();
     uses_type::<advanced::RateLimitContext<'static>>();
     uses_type::<advanced::RateLimitPermit>();
     uses_type::<advanced::RateLimitResponseContext<'static>>();

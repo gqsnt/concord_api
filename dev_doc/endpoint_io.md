@@ -294,9 +294,7 @@ api.import_logs(body).await?;
 
 Incorrect examples:
 
-```rust
-StreamBody::<Mp3>::from_file(...)
-```
+Do not make `StreamBody` generic over `Mp3` or any other media marker.
 
 ```rust
 RecordBody::<LogEntry, NdJson>::from_iter(...)

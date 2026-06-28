@@ -4,6 +4,7 @@ mod codec;
 mod debug;
 mod endpoint;
 pub mod error;
+mod media;
 mod pagination;
 mod policy;
 mod rate_limit;
@@ -15,6 +16,7 @@ pub mod runtime;
 mod runtime_hooks;
 mod runtime_state;
 mod secret;
+mod stream_body;
 mod timeout;
 pub mod transport;
 mod types;
@@ -82,6 +84,7 @@ pub mod advanced {
     };
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::error::{ErrorContext, FxError};
+    pub use crate::media::{Jpeg, MediaType, Mp3, Mp4, OctetStream, Pdf, Png, Zip};
     pub use crate::pagination::{
         Control, HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
         PaginationCaps, PaginationController, PaginationTermination, ProgressKey,
@@ -104,6 +107,7 @@ pub mod advanced {
         TransportErrorHookContext,
     };
     pub use crate::runtime_state::ClientRuntimeState;
+    pub use crate::stream_body::{BodySizeHint, StreamBody, StreamBodyError};
     pub use crate::transport::{
         BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta, ReqwestTransport, Transport,
         TransportAuth, TransportBody, TransportByteStream, TransportError, TransportErrorKind,
