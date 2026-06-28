@@ -37,12 +37,13 @@ pub struct VarDeclNoWire {
     pub default: Option<Expr>,
 }
 
-/// `Json<T>` (encoding type = `Json`, decoded/body type = `T`)
+/// `Json<T>` (family marker = `Json`, decoded/body type = `T`)
 #[derive(Debug, Clone)]
 pub struct RawIoSpec {
     pub marker: Type,
     pub enc: Path,
     pub ty: Type,
+    pub args: Vec<Type>,
 }
 
 pub type RawRequestIo = Option<RawIoSpec>;

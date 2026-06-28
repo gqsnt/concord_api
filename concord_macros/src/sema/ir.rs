@@ -41,6 +41,7 @@ pub struct BehaviorDocMeta {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ResolvedEndpoint {
     pub name: Ident,
     pub alias: Option<Ident>,
@@ -57,6 +58,8 @@ pub struct ResolvedEndpoint {
     pub route_pieces: Vec<PathPiece>,
 
     pub vars: Vec<VarInfo>, // endpoint vars (union, stable)
+    pub request_io: ResolvedRequestBodyIo,
+    pub response_io: ResolvedResponseBodyIo,
     pub body: RawRequestIo,
     pub response: RawResponseIo,
 
@@ -65,6 +68,61 @@ pub struct ResolvedEndpoint {
 
     pub paginate: Option<PaginateResolved>,
     pub map: Option<MapResolved>,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct BufferedCodecIo {
+    pub marker: Type,
+    pub codec_path: Path,
+    pub value_ty: Type,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum ResolvedRequestBodyIo {
+    None,
+    BufferedCodec(BufferedCodecIo),
+    BufferedBytes,
+    RawStream { media_ty: Type },
+    Records { item_ty: Type, format_ty: Type },
+    Multipart { value_ty: Type, format_ty: Type },
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum ResolvedResponseBodyIo {
+    BufferedCodec(BufferedCodecIo),
+    BufferedBytes,
+    NoContent,
+    RawStream { media_ty: Type },
+    Records { item_ty: Type, format_ty: Type },
+    Multipart { part_ty: Type, format_ty: Type },
+    Sse { event_ty: Type, codec_ty: Type },
+}
+
+#[allow(dead_code)]
+impl ResolvedRequestBodyIo {
+    pub fn is_none(&self) -> bool {
+        matches!(self, ResolvedRequestBodyIo::None)
+    }
+
+    pub fn as_buffered_codec(&self) -> Option<&BufferedCodecIo> {
+        match self {
+            ResolvedRequestBodyIo::BufferedCodec(io) => Some(io),
+            _ => None,
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl ResolvedResponseBodyIo {
+    pub fn buffered_codec(&self) -> Option<&BufferedCodecIo> {
+        match self {
+            ResolvedResponseBodyIo::BufferedCodec(io) => Some(io),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]

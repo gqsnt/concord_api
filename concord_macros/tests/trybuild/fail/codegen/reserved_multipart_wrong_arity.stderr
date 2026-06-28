@@ -1,0 +1,5 @@
+error: reserved endpoint I/O family `Multipart` expects one or two type arguments
+ --> tests/trybuild/fail/codegen/reserved_multipart_wrong_arity.rs:6:23
+  |
+6 |     POST Upload(body: Multipart<String, String, String>)
+  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

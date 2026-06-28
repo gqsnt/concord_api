@@ -536,6 +536,11 @@ fn analyze_endpoint(
         }
     }
 
+    let request_io = classify_request_io(ed.body.as_ref())?;
+    let response_io = classify_response_io(&ed.response)?;
+    ensure_codegen_supported_request_io(&request_io, ed.body.as_ref())?;
+    ensure_codegen_supported_response_io(&response_io, &ed.response)?;
+
     // 4) Resolve paginate, if any.
     if ed.body.is_some() && ed.paginate.is_some() {
         return Err(syn::Error::new(
@@ -568,6 +573,8 @@ fn analyze_endpoint(
         // Stable declaration order.
         vars: endpoint_decls,
 
+        request_io,
+        response_io,
         body: ed.body.clone(),
         response: ed.response.clone(),
 
@@ -582,5 +589,284 @@ fn analyze_endpoint(
         paginate,
         map,
     })
+}
+
+#[derive(Copy, Clone)]
+enum EndpointIoPosition {
+    Request,
+    Response,
+}
+
+fn endpoint_io_family_name(spec: &RawIoSpec) -> Option<&syn::Ident> {
+    match &spec.marker {
+        syn::Type::Path(tp) => tp.path.segments.last().map(|segment| &segment.ident),
+        _ => None,
+    }
+}
+
+fn endpoint_io_arg_count(spec: &RawIoSpec) -> usize {
+    spec.args.len()
+}
+
+fn buffered_codec_io(spec: &RawIoSpec) -> BufferedCodecIo {
+    BufferedCodecIo {
+        marker: spec.marker.clone(),
+        codec_path: spec.enc.clone(),
+        value_ty: spec.ty.clone(),
+    }
+}
+
+fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo> {
+    let Some(spec) = spec else {
+        return Ok(ResolvedRequestBodyIo::None);
+    };
+    classify_endpoint_io(spec, EndpointIoPosition::Request).map(|io| match io {
+        EndpointIoClassification::BufferedCodec(io) => ResolvedRequestBodyIo::BufferedCodec(io),
+        EndpointIoClassification::BufferedBytes => ResolvedRequestBodyIo::BufferedBytes,
+        EndpointIoClassification::NoContent => ResolvedRequestBodyIo::None,
+        EndpointIoClassification::RawStream { media_ty } => ResolvedRequestBodyIo::RawStream {
+            media_ty,
+        },
+        EndpointIoClassification::Records { item_ty, format_ty } => {
+            ResolvedRequestBodyIo::Records { item_ty, format_ty }
+        }
+        EndpointIoClassification::Multipart { value_ty, format_ty } => {
+            ResolvedRequestBodyIo::Multipart { value_ty, format_ty }
+        }
+        EndpointIoClassification::Sse { .. } => ResolvedRequestBodyIo::None,
+    })
+}
+
+fn classify_response_io(spec: &RawResponseIo) -> Result<ResolvedResponseBodyIo> {
+    classify_endpoint_io(spec, EndpointIoPosition::Response).map(|io| match io {
+        EndpointIoClassification::BufferedCodec(io) => ResolvedResponseBodyIo::BufferedCodec(io),
+        EndpointIoClassification::BufferedBytes => ResolvedResponseBodyIo::BufferedBytes,
+        EndpointIoClassification::NoContent => ResolvedResponseBodyIo::NoContent,
+        EndpointIoClassification::RawStream { media_ty } => ResolvedResponseBodyIo::RawStream {
+            media_ty,
+        },
+        EndpointIoClassification::Records { item_ty, format_ty } => {
+            ResolvedResponseBodyIo::Records { item_ty, format_ty }
+        }
+        EndpointIoClassification::Multipart { value_ty, format_ty } => {
+            ResolvedResponseBodyIo::Multipart {
+                part_ty: value_ty,
+                format_ty,
+            }
+        }
+        EndpointIoClassification::Sse {
+            event_ty,
+            codec_ty,
+        } => ResolvedResponseBodyIo::Sse {
+            event_ty,
+            codec_ty,
+        },
+    })
+}
+
+enum EndpointIoClassification {
+    BufferedCodec(BufferedCodecIo),
+    BufferedBytes,
+    NoContent,
+    RawStream {
+        media_ty: Type,
+    },
+    Records {
+        item_ty: Type,
+        format_ty: Type,
+    },
+    Multipart {
+        value_ty: Type,
+        format_ty: Type,
+    },
+    Sse {
+        event_ty: Type,
+        codec_ty: Type,
+    },
+}
+
+fn classify_endpoint_io(
+    spec: &RawIoSpec,
+    position: EndpointIoPosition,
+) -> Result<EndpointIoClassification> {
+    let family = endpoint_io_family_name(spec)
+        .map(ToString::to_string)
+        .unwrap_or_default();
+    let arg_count = endpoint_io_arg_count(spec);
+
+    match family.as_str() {
+        "Bytes" => {
+            if arg_count != 0 {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "reserved endpoint I/O family `Bytes` does not take type arguments",
+                ));
+            }
+            Ok(EndpointIoClassification::BufferedBytes)
+        }
+        "NoContent" => {
+            if arg_count != 0 {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "reserved endpoint I/O family `NoContent` does not take type arguments",
+                ));
+            }
+            if matches!(position, EndpointIoPosition::Request) {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "`NoContent` is only valid as an endpoint response",
+                ));
+            }
+            Ok(EndpointIoClassification::NoContent)
+        }
+        "Stream" => {
+            if arg_count != 1 {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "reserved endpoint I/O family `Stream` expects exactly one type argument",
+                ));
+            }
+            Ok(EndpointIoClassification::RawStream {
+                media_ty: spec.args[0].clone(),
+            })
+        }
+        "Records" => {
+            if arg_count != 2 {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "reserved endpoint I/O family `Records` expects exactly two type arguments",
+                ));
+            }
+            Ok(EndpointIoClassification::Records {
+                item_ty: spec.args[0].clone(),
+                format_ty: spec.args[1].clone(),
+            })
+        }
+        "Multipart" => {
+            if !(arg_count == 1 || arg_count == 2) {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "reserved endpoint I/O family `Multipart` expects one or two type arguments",
+                ));
+            }
+            let value_ty = spec.args[0].clone();
+            let format_ty = spec
+                .args
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| syn::parse_quote!(FormData));
+            Ok(EndpointIoClassification::Multipart { value_ty, format_ty })
+        }
+        "Sse" => {
+            if !(arg_count == 1 || arg_count == 2) {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "reserved endpoint I/O family `Sse` expects one or two type arguments",
+                ));
+            }
+            if matches!(position, EndpointIoPosition::Request) {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "`Sse` is only valid as an endpoint response",
+                ));
+            }
+            Ok(EndpointIoClassification::Sse {
+                event_ty: spec.args[0].clone(),
+                codec_ty: spec
+                    .args
+                    .get(1)
+                    .cloned()
+                    .unwrap_or_else(|| syn::parse_quote!(JsonSse)),
+            })
+        }
+        "WebSocket" => {
+            if !(arg_count == 2 || arg_count == 3) {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "reserved endpoint I/O family `WebSocket` expects two or three type arguments",
+                ));
+            }
+            if matches!(position, EndpointIoPosition::Request) {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "`WebSocket` is only valid as an endpoint response",
+                ));
+            }
+            Err(syn::Error::new_spanned(
+                spec.marker.clone(),
+                "`WebSocket` endpoint I/O is reserved but not supported yet",
+            ))
+        }
+        _ => {
+            if arg_count > 1 {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "codec spec expects exactly one type argument: `Enc<T>`",
+                ));
+            }
+            Ok(EndpointIoClassification::BufferedCodec(buffered_codec_io(spec)))
+        }
+    }
+}
+
+fn ensure_codegen_supported_request_io(
+    io: &ResolvedRequestBodyIo,
+    spec: Option<&RawIoSpec>,
+) -> Result<()> {
+    let Some(spec) = spec else {
+        return Ok(());
+    };
+    match io {
+        ResolvedRequestBodyIo::None | ResolvedRequestBodyIo::BufferedCodec(_) => Ok(()),
+        ResolvedRequestBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`Bytes` endpoint I/O is reserved but not supported yet",
+        )),
+        ResolvedRequestBodyIo::RawStream { .. } => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`Stream` endpoint I/O is reserved but not supported yet",
+        )),
+        ResolvedRequestBodyIo::Records { .. } => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`Records` endpoint I/O is reserved but not supported yet",
+        )),
+        ResolvedRequestBodyIo::Multipart { .. } => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`Multipart` endpoint I/O is reserved but not supported yet",
+        )),
+    }
+}
+
+fn ensure_codegen_supported_response_io(
+    io: &ResolvedResponseBodyIo,
+    spec: &RawResponseIo,
+) -> Result<()> {
+    match io {
+        ResolvedResponseBodyIo::BufferedCodec(_) => Ok(()),
+        ResolvedResponseBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`Bytes` endpoint I/O is reserved but not supported yet",
+        )),
+        ResolvedResponseBodyIo::NoContent => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`NoContent` endpoint I/O is reserved but not supported yet",
+        )),
+        ResolvedResponseBodyIo::RawStream { .. } => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`Stream` endpoint I/O is reserved but not supported yet",
+        )),
+        ResolvedResponseBodyIo::Records { .. } => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`Records` endpoint I/O is reserved but not supported yet",
+        )),
+        ResolvedResponseBodyIo::Multipart { .. } => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`Multipart` endpoint I/O is reserved but not supported yet",
+        )),
+        ResolvedResponseBodyIo::Sse { .. } => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`Sse` endpoint I/O is reserved but not supported yet",
+        )),
+    }
 }
 

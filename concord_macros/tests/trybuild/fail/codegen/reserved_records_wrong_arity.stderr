@@ -1,0 +1,5 @@
+error: reserved endpoint I/O family `Records` expects exactly two type arguments
+ --> tests/trybuild/fail/codegen/reserved_records_wrong_arity.rs:8:12
+  |
+8 |         -> Records<String>
+  |            ^^^^^^^^^^^^^^^

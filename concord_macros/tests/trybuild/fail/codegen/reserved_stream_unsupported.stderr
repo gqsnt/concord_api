@@ -1,0 +1,5 @@
+error: `Stream` endpoint I/O is reserved but not supported yet
+ --> tests/trybuild/fail/codegen/reserved_stream_unsupported.rs:8:12
+  |
+8 |         -> Stream<String>
+  |            ^^^^^^^^^^^^^^

@@ -323,37 +323,25 @@ impl Parse for RawIoSpec {
             ));
         };
 
-        // Extract exactly one type argument `T` from `Enc<T>`.
-        // If there is no `<T>`, default to `()` (useful for NoContentEncoding).
-        let ty: Type = match &last.arguments {
+        let args: Vec<Type> = match &last.arguments {
             syn::PathArguments::AngleBracketed(ab) => {
-                let mut found: Option<Type> = None;
+                let mut out = Vec::new();
 
                 for arg in ab.args.iter() {
                     match arg {
-                        syn::GenericArgument::Type(t) => {
-                            if found.is_some() {
-                                return Err(syn::Error::new_spanned(
-                                    ab,
-                                    "codec spec expects exactly one type argument: `Enc<T>`",
-                                ));
-                            }
-                            found = Some(t.clone());
-                        }
+                        syn::GenericArgument::Type(t) => out.push(t.clone()),
                         _ => {
                             return Err(syn::Error::new_spanned(
                                 arg,
-                                "codec spec only supports a single type argument: `Enc<T>`",
+                                "codec spec only supports type arguments: `Enc<T>`",
                             ));
                         }
                     }
                 }
 
-                found.ok_or_else(|| {
-                    syn::Error::new_spanned(ab, "codec spec expects a type argument: `Enc<T>`")
-                })?
+                out
             }
-            syn::PathArguments::None => syn::parse_quote!(()),
+            syn::PathArguments::None => Vec::new(),
             other => {
                 return Err(syn::Error::new_spanned(
                     other,
@@ -362,6 +350,11 @@ impl Parse for RawIoSpec {
             }
         };
 
+        let ty: Type = args
+            .first()
+            .cloned()
+            .unwrap_or_else(|| syn::parse_quote!(()));
+
         // Strip `<T>` from the encoding path so codegen can use `Decoded<Enc, T>`.
         last.arguments = syn::PathArguments::None;
 
@@ -369,6 +362,7 @@ impl Parse for RawIoSpec {
             marker,
             enc: path,
             ty,
+            args,
         })
     }
 }

@@ -1,0 +1,5 @@
+error: reserved endpoint I/O family `Bytes` does not take type arguments
+ --> tests/trybuild/fail/codegen/reserved_bytes_wrong_arity.rs:8:12
+  |
+8 |         -> Bytes<u8>
+  |            ^^^^^^^^^

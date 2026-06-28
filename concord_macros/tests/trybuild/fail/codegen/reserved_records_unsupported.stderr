@@ -1,0 +1,5 @@
+error: `Records` endpoint I/O is reserved but not supported yet
+ --> tests/trybuild/fail/codegen/reserved_records_unsupported.rs:8:12
+  |
+8 |         -> Records<String, String>
+  |            ^^^^^^^^^^^^^^^^^^^^^^^
