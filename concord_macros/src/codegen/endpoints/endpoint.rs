@@ -443,7 +443,8 @@ fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenS
         }
         ResolvedRequestBodyIo::BufferedCodec(_)
         | ResolvedRequestBodyIo::RawStream { .. }
-        | ResolvedRequestBodyIo::Records { .. } => {
+        | ResolvedRequestBodyIo::Records { .. }
+        | ResolvedRequestBodyIo::Multipart { .. } => {
             let Some(body) = ep.body.as_ref() else {
                 return Err(emit_helpers::compile_error_tokens(
                     "endpoint request body unexpectedly missing from resolved IR",
@@ -455,6 +456,8 @@ fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenS
             } else if matches!(ep.request_io, ResolvedRequestBodyIo::Records { .. }) {
                 let ty = &body.ty;
                 Ok(Some(quote! { ::concord_core::advanced::RecordBody<#ty> }))
+            } else if matches!(ep.request_io, ResolvedRequestBodyIo::Multipart { .. }) {
+                Ok(Some(quote! { ::concord_core::advanced::MultipartBody }))
             } else {
                 let ty = &body.ty;
                 Ok(Some(quote! { #ty }))
@@ -462,10 +465,6 @@ fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenS
         }
         ResolvedRequestBodyIo::BufferedBytes => Err(emit_helpers::compile_error_tokens(
             "`Bytes` endpoint I/O is reserved but not supported yet",
-            ep.name.span(),
-        )),
-        ResolvedRequestBodyIo::Multipart { .. } => Err(emit_helpers::compile_error_tokens(
-            "`Multipart` endpoint I/O is reserved but not supported yet",
             ep.name.span(),
         )),
     }
@@ -558,12 +557,33 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
             let __request_args = ::concord_core::internal::RequestArgs::with_record_body::<#item_ty, #format_ty>(__body_value);
         })
         }
+        ResolvedRequestBodyIo::Multipart { format_ty, .. } => {
+            if ep.body.as_ref().is_none() {
+                return Err(emit_helpers::compile_error_tokens(
+                    "endpoint request body unexpectedly missing from resolved IR",
+                    ep.name.span(),
+                ));
+            }
+            Ok(quote! {
+            let __body_value = self
+                .body
+                .lock()
+                .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                .take()
+                .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+            let __body_plan = ::concord_core::internal::BodyPlan::Multipart {
+                content_type: __body_value.content_type::<#format_ty>(),
+                format: ::concord_core::internal::Format::Text,
+            };
+            let __request_args = ::concord_core::internal::RequestArgs::with_multipart_body::<#format_ty>(__body_value)
+                .map_err(|source| ::concord_core::prelude::ApiClientError::codec_error(
+                    ctx_err.clone(),
+                    ::concord_core::advanced::CodecError::new(source.to_string()),
+                ))?;
+        })
+        }
         ResolvedRequestBodyIo::BufferedBytes => Err(emit_helpers::compile_error_tokens(
             "`Bytes` endpoint I/O is reserved but not supported yet",
-            ep.name.span(),
-        )),
-        ResolvedRequestBodyIo::Multipart { .. } => Err(emit_helpers::compile_error_tokens(
-            "`Multipart` endpoint I/O is reserved but not supported yet",
             ep.name.span(),
         )),
     }
@@ -571,6 +591,9 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
 
 fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
     match &ep.response_io {
+        ResolvedResponseBodyIo::Multipart { part_ty, .. } => quote! {
+            ::concord_core::advanced::MultipartStream<#part_ty>
+        },
         ResolvedResponseBodyIo::Records { item_ty, .. } => quote! {
             ::concord_core::advanced::RecordStream<#item_ty>
         },
@@ -590,6 +613,11 @@ fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
 
 fn endpoint_response_accept_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
     match &ep.response_io {
+        ResolvedResponseBodyIo::Multipart { format_ty, .. } => quote! {
+            ::core::option::Option::Some(::http::HeaderValue::from_static(
+                <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
+            ))
+        },
         ResolvedResponseBodyIo::Records { format_ty, .. } => quote! {
             ::core::option::Option::Some(::http::HeaderValue::from_static(
                 <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
@@ -611,7 +639,9 @@ fn endpoint_response_no_content_tokens(
     response_dec: &syn::Type,
 ) -> TokenStream2 {
     match &ep.response_io {
-        ResolvedResponseBodyIo::RawStream { .. } | ResolvedResponseBodyIo::Records { .. } => {
+        ResolvedResponseBodyIo::RawStream { .. }
+        | ResolvedResponseBodyIo::Records { .. }
+        | ResolvedResponseBodyIo::Multipart { .. } => {
             quote! { false }
         }
         _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::is_no_content() },
@@ -623,6 +653,7 @@ fn endpoint_response_format_tokens(
     response_dec: &syn::Type,
 ) -> TokenStream2 {
     match &ep.response_io {
+        ResolvedResponseBodyIo::Multipart { .. } => quote! { ::concord_core::internal::Format::Text },
         ResolvedResponseBodyIo::RawStream { .. } => quote! { ::concord_core::internal::Format::Binary },
         ResolvedResponseBodyIo::Records { .. } => quote! { ::concord_core::internal::Format::Text },
         _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::format() },
@@ -637,6 +668,17 @@ fn endpoint_response_decode_fn(
 ) -> TokenStream2 {
     let decode_fn = emit_helpers::ident(&format!("__decode_{ty_name}"), Span::call_site());
     match &ep.response_io {
+        ResolvedResponseBodyIo::Multipart { .. } => quote! {
+            fn #decode_fn(
+                _resp: ::concord_core::transport::BuiltResponse,
+                ctx: ::concord_core::error::ErrorContext,
+            ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
+                Err(::concord_core::prelude::ApiClientError::PolicyViolation {
+                    ctx,
+                    msg: "multipart responses must use multipart execution".into(),
+                })
+            }
+        },
         ResolvedResponseBodyIo::RawStream { .. } => quote! {
             fn #decode_fn(
                 _resp: ::concord_core::transport::BuiltResponse,
@@ -712,6 +754,28 @@ fn endpoint_response_decode_fn(
 
 fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStream2 {
     match &ep.response_io {
+        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => quote! {
+            fn execute<'a, T>(
+                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+                plan: ::concord_core::internal::RequestPlan,
+            ) -> ::core::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::core::future::Future<
+                            Output = ::core::result::Result<
+                                Self::Response,
+                                ::concord_core::prelude::ApiClientError,
+                            >,
+                        > + Send + 'a,
+                >,
+            >
+            where
+                T: ::concord_core::advanced::Transport + 'a,
+            {
+                ::std::boxed::Box::pin(async move {
+                    client.execute_plan_multipart::<#part_ty, #format_ty>(plan).await
+                })
+            }
+        },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
             fn execute<'a, T>(
                 client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
@@ -766,6 +830,12 @@ fn endpoint_response_marker_impl(
     cx_ty: &Ident,
 ) -> TokenStream2 {
     match &ep.response_io {
+        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => quote! {
+            impl ::concord_core::prelude::MultipartResponseEndpoint<super::#cx_ty> for #ty_name {
+                type Part = #part_ty;
+                type Format = #format_ty;
+            }
+        },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
             impl ::concord_core::prelude::StreamResponseEndpoint<super::#cx_ty> for #ty_name {
                 type Media = #media_ty;

@@ -1,0 +1,5 @@
+error: `map` is only supported for buffered responses
+  --> tests/trybuild/fail/codegen/multipart_response_map.rs:11:9
+   |
+11 |     GET Download
+   |         ^^^^^^^^

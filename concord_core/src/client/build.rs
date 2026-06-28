@@ -90,36 +90,32 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     });
                 }
             },
-                BodyPlan::Multipart { content_type, .. } => match std::mem::replace(
+            BodyPlan::Multipart { content_type, .. } => match std::mem::replace(
                 &mut args.body,
                 crate::transport::TransportRequestBody::Empty,
             ) {
                 crate::transport::TransportRequestBody::Stream(stream) => {
-                    match args.multipart_content_type.as_ref() {
-                        Some(actual) if actual != content_type => {
+                    let Some(actual_content_type) = args.multipart_content_type.as_ref() else {
+                        return Err(ApiClientError::PolicyViolation {
+                            ctx,
+                            msg: "multipart body args are missing multipart content type metadata",
+                        });
+                    };
+                    if actual_content_type != content_type {
+                        return Err(ApiClientError::PolicyViolation {
+                            ctx,
+                            msg: "multipart content type must match multipart body boundary",
+                        });
+                    }
+                    if let Some(actual) = headers.get(CONTENT_TYPE) {
+                        if actual != content_type {
                             return Err(ApiClientError::PolicyViolation {
                                 ctx,
                                 msg: "multipart content type must match multipart body boundary",
                             });
                         }
-                        Some(_) => {
-                            if let Some(actual) = headers.get(CONTENT_TYPE) {
-                                if actual != content_type {
-                                    return Err(ApiClientError::PolicyViolation {
-                                        ctx,
-                                        msg: "multipart content type must match multipart body boundary",
-                                    });
-                                }
-                            } else {
-                                headers.insert(CONTENT_TYPE, content_type.clone());
-                            }
-                        }
-                        None => {
-                            return Err(ApiClientError::PolicyViolation {
-                                ctx,
-                                msg: "multipart body args are missing multipart content type metadata",
-                            });
-                        }
+                    } else {
+                        headers.insert(CONTENT_TYPE, content_type.clone());
                     }
                     crate::transport::TransportRequestBody::Stream(stream)
                 }

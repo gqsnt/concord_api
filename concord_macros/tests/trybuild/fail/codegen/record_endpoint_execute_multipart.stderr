@@ -1,0 +1,20 @@
+error[E0599]: the method `execute_multipart` exists for struct `PendingRequest<'_, RecordEndpointExecuteMultipartApiCx, EpTailH03da57fb09094b03, ReqwestTransport>`, but its trait bounds were not satisfied
+  --> tests/trybuild/fail/codegen/record_endpoint_execute_multipart.rs:16:24
+   |
+ 5 | / api! {
+ 6 | |     client RecordEndpointExecuteMultipartApi {
+ 7 | |         base "https://example.com"
+...  |
+10 | |     GET Tail
+   | |____________- doesn't satisfy `_: MultipartResponseEndpoint<RecordEndpointExecuteMultipartApiCx>`
+...
+16 |       let _ = api.tail().execute_multipart().await.unwrap();
+   |                          ^^^^^^^^^^^^^^^^^
+   |
+   = note: the following trait bounds were not satisfied:
+           `EpTailH03da57fb09094b03: MultipartResponseEndpoint<RecordEndpointExecuteMultipartApiCx>`
+note: the trait `MultipartResponseEndpoint` must be implemented
+  --> $WORKSPACE/concord_core/src/endpoint.rs
+   |
+   | pub trait MultipartResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

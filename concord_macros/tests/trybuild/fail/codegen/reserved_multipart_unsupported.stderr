@@ -1,5 +1,0 @@
-error: `Multipart` endpoint I/O is reserved but not supported yet
- --> tests/trybuild/fail/codegen/reserved_multipart_unsupported.rs:6:23
-  |
-6 |     POST Upload(body: Multipart<String>)
-  |                       ^^^^^^^^^^^^^^^^^

@@ -1,6 +1,8 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::error::ApiClientError;
 use crate::media::MediaType;
+use crate::multipart::MultipartFormat;
+use crate::multipart_response::{MultipartDecodePart, MultipartStream};
 use crate::record::{RecordFormat, RecordStream};
 use crate::stream_response::StreamResponse;
 use crate::transport::DecodedResponse;
@@ -170,6 +172,28 @@ pub trait RecordResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
         Box::pin(async move {
             client
                 .execute_plan_records::<Self::Item, Self::Format>(plan)
+                .await
+        })
+    }
+}
+
+/// Marker implemented only for endpoints whose primary response is multipart.
+pub trait MultipartResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
+    type Part: MultipartDecodePart<Self::Format>;
+    type Format: MultipartFormat;
+
+    fn execute_multipart<'a, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<MultipartStream<Self::Part>, ApiClientError>> + Send + 'a>,
+    >
+    where
+        T: Transport + 'a,
+    {
+        Box::pin(async move {
+            client
+                .execute_plan_multipart::<Self::Part, Self::Format>(plan)
                 .await
         })
     }

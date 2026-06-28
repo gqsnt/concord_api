@@ -540,7 +540,9 @@ fn analyze_endpoint(
     let response_io = classify_response_io(&ed.response)?;
     if matches!(
         response_io,
-        ResolvedResponseBodyIo::RawStream { .. } | ResolvedResponseBodyIo::Records { .. }
+        ResolvedResponseBodyIo::RawStream { .. }
+            | ResolvedResponseBodyIo::Records { .. }
+            | ResolvedResponseBodyIo::Multipart { .. }
     ) {
         if ed.map.is_some() {
             return Err(syn::Error::new(
@@ -837,14 +839,11 @@ fn ensure_codegen_supported_request_io(
         ResolvedRequestBodyIo::None
         | ResolvedRequestBodyIo::BufferedCodec(_)
         | ResolvedRequestBodyIo::RawStream { .. }
-        | ResolvedRequestBodyIo::Records { .. } => Ok(()),
+        | ResolvedRequestBodyIo::Records { .. }
+        | ResolvedRequestBodyIo::Multipart { .. } => Ok(()),
         ResolvedRequestBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`Bytes` endpoint I/O is reserved but not supported yet",
-        )),
-        ResolvedRequestBodyIo::Multipart { .. } => Err(syn::Error::new_spanned(
-            spec.marker.clone(),
-            "`Multipart` endpoint I/O is reserved but not supported yet",
         )),
     }
 }
@@ -856,7 +855,8 @@ fn ensure_codegen_supported_response_io(
     match io {
         ResolvedResponseBodyIo::BufferedCodec(_)
         | ResolvedResponseBodyIo::RawStream { .. }
-        | ResolvedResponseBodyIo::Records { .. } => Ok(()),
+        | ResolvedResponseBodyIo::Records { .. }
+        | ResolvedResponseBodyIo::Multipart { .. } => Ok(()),
         ResolvedResponseBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`Bytes` endpoint I/O is reserved but not supported yet",
@@ -864,10 +864,6 @@ fn ensure_codegen_supported_response_io(
         ResolvedResponseBodyIo::NoContent => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`NoContent` endpoint I/O is reserved but not supported yet",
-        )),
-        ResolvedResponseBodyIo::Multipart { .. } => Err(syn::Error::new_spanned(
-            spec.marker.clone(),
-            "`Multipart` endpoint I/O is reserved but not supported yet",
         )),
         ResolvedResponseBodyIo::Sse { .. } => Err(syn::Error::new_spanned(
             spec.marker.clone(),

@@ -292,6 +292,30 @@ mod tests {
     }
 
     #[test]
+    fn facade_ir_uses_multipart_body_for_multipart_request_endpoints() {
+        let resolved = crate::sema::analyze_tokens_for_test(quote! {
+            client MultipartMeta {
+                base "https://example.com"
+            }
+
+            POST Upload(body: Multipart<RawResponsePart>)
+                path ["upload"]
+                -> Json<String>
+        });
+        let ir = build_facade_ir(&resolved);
+
+        let endpoint = &ir.endpoints[0];
+        assert_eq!(
+            endpoint
+                .required_args
+                .iter()
+                .map(|arg| (arg.name.as_str(), arg.ty.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("body", "::concord_core::advanced::MultipartBody")]
+        );
+    }
+
+    #[test]
     fn emit_uses_stream_request_and_response_codegen() {
         let expanded = expanded(quote! {
             api! {
@@ -341,6 +365,33 @@ mod tests {
                 "RecordStream < LogEntry >",
                 "execute_plan_records::< LogEntry , NdJson >",
                 "RecordResponseEndpoint",
+            ],
+        );
+    }
+
+    #[test]
+    fn emit_uses_multipart_request_and_response_codegen() {
+        let expanded = expanded(quote! {
+            api! {
+                client MultipartCodegen {
+                    base "https://example.com"
+                }
+
+                POST Upload(body: Multipart<RawResponsePart>)
+                    path ["upload"]
+                    -> Multipart<RawResponsePart, Mixed>
+            }
+        });
+
+        assert_contains_all(
+            &expanded,
+            &[
+                "MultipartBody",
+                "BodyPlan::Multipart",
+                "RequestArgs::with_multipart_body::< FormData >",
+                "MultipartStream < RawResponsePart >",
+                "execute_plan_multipart::< RawResponsePart , Mixed >",
+                "MultipartResponseEndpoint",
             ],
         );
     }

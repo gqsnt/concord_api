@@ -400,6 +400,14 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
     }
     if let Some(body) = &ep.body {
         let body_summary = match &ep.request_io {
+            ResolvedRequestBodyIo::Multipart {
+                value_ty,
+                format_ty,
+            } => format!(
+                "Body: Multipart<{}, {}>",
+                quote::quote!(#value_ty),
+                quote::quote!(#format_ty)
+            ),
             ResolvedRequestBodyIo::Records { item_ty, format_ty } => format!(
                 "Body: Records<{}, {}>",
                 quote::quote!(#item_ty),
@@ -416,6 +424,11 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
         });
     }
     let response_summary = match &ep.response_io {
+        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => format!(
+            "Response: Multipart<{}, {}>",
+            quote::quote!(#part_ty),
+            quote::quote!(#format_ty)
+        ),
         ResolvedResponseBodyIo::Records { item_ty, format_ty } => format!(
             "Response: Records<{}, {}>",
             quote::quote!(#item_ty),
@@ -478,12 +491,15 @@ fn facade_setter_docs(ep: &ResolvedEndpoint, var: &VarInfo) -> (String, String, 
 fn facade_request_body_ty(ep: &ResolvedEndpoint) -> Option<String> {
     match &ep.request_io {
         ResolvedRequestBodyIo::None => None,
-        ResolvedRequestBodyIo::BufferedCodec(_)
-        | ResolvedRequestBodyIo::BufferedBytes
-        | ResolvedRequestBodyIo::Multipart { .. } => ep.body.as_ref().map(|body| {
-            let ty = &body.ty;
-            quote::quote!(#ty).to_string()
-        }),
+        ResolvedRequestBodyIo::BufferedCodec(_) | ResolvedRequestBodyIo::BufferedBytes => {
+            ep.body.as_ref().map(|body| {
+                let ty = &body.ty;
+                quote::quote!(#ty).to_string()
+            })
+        }
+        ResolvedRequestBodyIo::Multipart { .. } => {
+            Some("::concord_core::advanced::MultipartBody".to_string())
+        }
         ResolvedRequestBodyIo::Records { item_ty, .. } => Some(format!(
             "::concord_core::advanced::RecordBody<{}>",
             quote::quote!(#item_ty)
