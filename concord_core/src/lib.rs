@@ -19,6 +19,7 @@ pub mod runtime;
 mod runtime_hooks;
 mod runtime_state;
 mod secret;
+mod sse;
 mod stream_body;
 mod stream_response;
 mod timeout;
@@ -55,6 +56,7 @@ pub mod internal {
         NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
     };
     pub use crate::retry::RetrySetting;
+    pub use crate::sse::{JsonSse, SseCodec, SseEvent, SseRawEvent, SseStream};
 }
 pub mod prelude {
     pub use crate::auth::{AccessToken, ApiKey, BasicCredential};
@@ -134,6 +136,7 @@ pub mod advanced {
         TransportErrorHookContext,
     };
     pub use crate::runtime_state::ClientRuntimeState;
+    pub use crate::sse::{JsonSse, SseCodec, SseEvent, SseRawEvent, SseStream};
     pub use crate::stream_body::{BodySizeHint, StreamBody, StreamBodyError};
     pub use crate::stream_response::StreamResponse;
     pub use crate::transport::{

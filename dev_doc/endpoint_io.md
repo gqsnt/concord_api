@@ -24,14 +24,13 @@ It does not implement any of those behaviors.
 
 ## Current Baseline
 
-The current implementation remains buffered-codec shaped.
+The current implementation distinguishes buffered codecs from the reserved endpoint I/O families that now have dedicated runtime support.
 
-- Macro raw AST is still buffered-codec shaped.
-- `RawEndpoint` currently has `body: Option<CodecSpec>` and `response: CodecSpec`.
-- `CodecSpec` is suitable for current buffered codecs, not for stream, records, multipart, SSE, or WebSocket families.
-- Current codegen emits buffered codec calls through the existing `BodyCodec` and `ResponseCodec` paths.
-- Current core request bodies are buffered.
-- Current response transport is chunk-capable, but runtime currently buffers before decode.
+- Macro raw AST and semantic IR carry explicit endpoint I/O shapes.
+- `CodecSpec` remains the buffered-codec shape for non-reserved families.
+- Current codegen still emits buffered codec calls through the existing `BodyCodec` and `ResponseCodec` paths for non-reserved families.
+- Current core request bodies are buffered for non-reserved families.
+- Current response transport is chunk-capable, and dedicated stream/record/multipart/SSE runtime paths avoid buffering where appropriate.
 - `.execute_raw()` remains bounded-buffered.
 - Custom buffered codecs are already open-ended and must stay that way.
 
@@ -132,14 +131,14 @@ For large or unbounded byte transfer, future PRs should use `Stream<OctetStream>
 `Sse<T>` and `Sse<T, C>` are reserved server-sent event families.
 
 - `Sse<T>` defaults to `Sse<T, JsonSse>`.
-- It is a long-lived HTTP event response.
-- It is response-only initially.
-- Future response value: `SseStream<T>`.
-- Future trait: `SseCodec<T>`.
-- Future default codec: `JsonSse`.
-- It handles `text/event-stream` parsing in future PRs.
-- Automatic reconnect is out of scope initially.
-- `last_event_id()` belongs in the future runtime API, not now.
+- Core runtime support now exists for SSE responses.
+- Macro/codegen support for `Sse<T>` and `Sse<T, C>` remains future work.
+- Runtime response value: `SseStream<T>`.
+- Runtime codec trait: `SseCodec<T>`.
+- Built-in codec: `JsonSse`.
+- SSE responses parse `text/event-stream` incrementally and expose decoded events through `SseStream<T>`.
+- SSE responses are stream-like and do not support map or pagination.
+- SSE reconnect, `Last-Event-ID` resume, and browser/EventSource compatibility remain future work.
 - It must not be implemented through `ResponseCodec`.
 
 ### WebSocketEndpoint

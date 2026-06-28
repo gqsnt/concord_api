@@ -18,6 +18,7 @@ use crate::runtime_hooks::{
     HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
 };
 use crate::runtime_state::ClientRuntimeState;
+use crate::sse::{SseCodec, SseStream};
 use crate::transport::{BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta};
 use crate::transport::{
     ReqwestTransport, Transport, TransportBody, TransportError, TransportResponse,
