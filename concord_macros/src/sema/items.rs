@@ -159,16 +159,76 @@ fn collect_endpoint_output_types_into(
                         format!("duplicate endpoint `{key}`"),
                     ));
                 }
-                let output_ty = endpoint
-                    .map
-                    .as_ref()
-                    .map(|m| m.out_ty.clone())
-                    .unwrap_or_else(|| endpoint.response.ty.clone());
+                let output_ty = endpoint_public_output_ty(endpoint);
                 out.insert(key, output_ty);
             }
         }
     }
     Ok(())
+}
+
+fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Type {
+    if let Some(map) = &endpoint.map {
+        return map.out_ty.clone();
+    }
+
+    let family = endpoint_io_family_name(&endpoint.response)
+        .map(ToString::to_string)
+        .unwrap_or_default();
+    match family.as_str() {
+        "Stream" => {
+            let media_ty = endpoint
+                .response
+                .args
+                .first()
+                .cloned()
+                .unwrap_or_else(|| endpoint.response.ty.clone());
+            syn::parse_quote!(::concord_core::advanced::StreamResponse<#media_ty>)
+        }
+        "Records" => {
+            let item_ty = endpoint
+                .response
+                .args
+                .first()
+                .cloned()
+                .unwrap_or_else(|| endpoint.response.ty.clone());
+            syn::parse_quote!(::concord_core::advanced::RecordStream<#item_ty>)
+        }
+        "Multipart" => {
+            let part_ty = endpoint
+                .response
+                .args
+                .first()
+                .cloned()
+                .unwrap_or_else(|| endpoint.response.ty.clone());
+            syn::parse_quote!(::concord_core::advanced::MultipartStream<#part_ty>)
+        }
+        "Sse" => {
+            let event_ty = endpoint
+                .response
+                .args
+                .first()
+                .cloned()
+                .unwrap_or_else(|| endpoint.response.ty.clone());
+            syn::parse_quote!(::concord_core::advanced::SseStream<#event_ty>)
+        }
+        "WebSocket" => {
+            let out_ty = endpoint
+                .response
+                .args
+                .first()
+                .cloned()
+                .unwrap_or_else(|| endpoint.response.ty.clone());
+            let in_ty = endpoint
+                .response
+                .args
+                .get(1)
+                .cloned()
+                .unwrap_or_else(|| endpoint.response.ty.clone());
+            syn::parse_quote!(::concord_core::advanced::WebSocketClient<#out_ty, #in_ty>)
+        }
+        _ => endpoint.response.ty.clone(),
+    }
 }
 
 fn endpoint_scope_key(scope_modules: &[Ident], endpoint: &Ident) -> String {
@@ -538,12 +598,36 @@ fn analyze_endpoint(
 
     let request_io = classify_request_io(ed.body.as_ref())?;
     let response_io = classify_response_io(&ed.response)?;
+    let is_websocket_endpoint = ed.method == "WS";
+    if is_websocket_endpoint && !request_io.is_none() {
+        return Err(syn::Error::new(
+            ed.body
+                .as_ref()
+                .map(|body| body.marker.span())
+                .unwrap_or_else(|| ed.method.span()),
+            "`WS` endpoints do not support request bodies",
+        ));
+    }
+    if is_websocket_endpoint {
+        if !matches!(response_io, ResolvedResponseBodyIo::WebSocket { .. }) {
+            return Err(syn::Error::new(
+                ed.response.marker.span(),
+                "`WS` endpoints must return `WebSocket<Out, In>`",
+            ));
+        }
+    } else if matches!(response_io, ResolvedResponseBodyIo::WebSocket { .. }) {
+        return Err(syn::Error::new(
+            ed.response.marker.span(),
+            "`WebSocket` endpoint I/O is only valid for `WS` endpoints",
+        ));
+    }
     if matches!(
         response_io,
         ResolvedResponseBodyIo::RawStream { .. }
             | ResolvedResponseBodyIo::Records { .. }
             | ResolvedResponseBodyIo::Multipart { .. }
             | ResolvedResponseBodyIo::Sse { .. }
+            | ResolvedResponseBodyIo::WebSocket { .. }
     ) {
         if ed.map.is_some() {
             return Err(syn::Error::new(
@@ -660,6 +744,12 @@ fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo
                 "`Sse` is only valid as an endpoint response",
             ));
         }
+        EndpointIoClassification::WebSocket { .. } => {
+            return Err(syn::Error::new_spanned(
+                spec.marker.clone(),
+                "`WebSocket` is only valid as an endpoint response",
+            ));
+        }
     })
 }
 
@@ -688,6 +778,15 @@ fn classify_response_io(spec: &RawResponseIo) -> Result<ResolvedResponseBodyIo> 
             event_ty,
             codec_ty,
         },
+        EndpointIoClassification::WebSocket {
+            out_ty,
+            in_ty,
+            codec_ty,
+        } => ResolvedResponseBodyIo::WebSocket {
+            out_ty,
+            in_ty,
+            codec_ty,
+        },
     })
 }
 
@@ -708,6 +807,11 @@ enum EndpointIoClassification {
     },
     Sse {
         event_ty: Type,
+        codec_ty: Type,
+    },
+    WebSocket {
+        out_ty: Type,
+        in_ty: Type,
         codec_ty: Type,
     },
 }
@@ -819,10 +923,17 @@ fn classify_endpoint_io(
                     "`WebSocket` is only valid as an endpoint response",
                 ));
             }
-            Err(syn::Error::new_spanned(
-                spec.marker.clone(),
-                "`WebSocket` endpoint I/O is reserved but not supported yet",
-            ))
+            Ok(EndpointIoClassification::WebSocket {
+                out_ty: spec.args[0].clone(),
+                in_ty: spec.args[1].clone(),
+                codec_ty: spec
+                    .args
+                    .get(2)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        syn::parse_quote!(::concord_core::advanced::JsonWebSocket)
+                    }),
+            })
         }
         _ => {
             if arg_count > 1 {
@@ -865,7 +976,8 @@ fn ensure_codegen_supported_response_io(
         | ResolvedResponseBodyIo::RawStream { .. }
         | ResolvedResponseBodyIo::Records { .. }
         | ResolvedResponseBodyIo::Multipart { .. }
-        | ResolvedResponseBodyIo::Sse { .. } => Ok(()),
+        | ResolvedResponseBodyIo::Sse { .. }
+        | ResolvedResponseBodyIo::WebSocket { .. } => Ok(()),
         ResolvedResponseBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`Bytes` endpoint I/O is reserved but not supported yet",

@@ -434,6 +434,16 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
             quote::quote!(#item_ty),
             quote::quote!(#format_ty)
         ),
+        ResolvedResponseBodyIo::WebSocket {
+            out_ty,
+            in_ty,
+            codec_ty,
+        } => format!(
+            "Response: WebSocket<{}, {}, {}>",
+            quote::quote!(#out_ty),
+            quote::quote!(#in_ty),
+            quote::quote!(#codec_ty)
+        ),
         ResolvedResponseBodyIo::RawStream { media_ty } => {
             format!("Response: Stream<{}>", quote::quote!(#media_ty))
         }

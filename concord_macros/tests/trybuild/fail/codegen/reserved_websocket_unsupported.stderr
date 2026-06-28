@@ -1,5 +1,5 @@
-error: `WebSocket` endpoint I/O is reserved but not supported yet
+error: `WebSocket` endpoint I/O is only valid for `WS` endpoints
  --> tests/trybuild/fail/codegen/reserved_websocket_unsupported.rs:8:12
   |
 8 |         -> WebSocket<String, String>
-  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |            ^^^^^^^^^

@@ -1,0 +1,5 @@
+error: `WebSocket` is only valid as an endpoint response
+ --> tests/trybuild/fail/codegen/reserved_websocket_request_invalid.rs:8:21
+  |
+8 |     POST Send(body: WebSocket<String, String>)
+  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,5 @@
+error: `WebSocket` endpoint I/O is only valid for `WS` endpoints
+  --> tests/trybuild/fail/codegen/websocket_http_post_response.rs:10:12
+   |
+10 |         -> WebSocket<String, String>
+   |            ^^^^^^^^^

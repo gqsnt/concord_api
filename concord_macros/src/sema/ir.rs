@@ -99,6 +99,11 @@ pub enum ResolvedResponseBodyIo {
     Records { item_ty: Type, format_ty: Type },
     Multipart { part_ty: Type, format_ty: Type },
     Sse { event_ty: Type, codec_ty: Type },
+    WebSocket {
+        out_ty: Type,
+        in_ty: Type,
+        codec_ty: Type,
+    },
 }
 
 #[allow(dead_code)]

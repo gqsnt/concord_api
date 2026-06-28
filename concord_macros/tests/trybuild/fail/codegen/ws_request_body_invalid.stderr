@@ -1,0 +1,5 @@
+error: `WS` endpoints do not support request bodies
+ --> tests/trybuild/fail/codegen/ws_request_body_invalid.rs:8:22
+  |
+8 |     WS Connect(body: Json<String>)
+  |                      ^^^^

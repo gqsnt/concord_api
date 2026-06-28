@@ -449,6 +449,58 @@ mod tests {
     }
 
     #[test]
+    fn emit_uses_websocket_response_codegen() {
+        let expanded = expanded(quote! {
+            api! {
+                client WebSocketCodegen {
+                    base "https://example.com"
+                }
+
+                WS Connect
+                    path ["ws"]
+                    -> WebSocket<ClientMsg, ServerMsg>
+            }
+        });
+
+        assert_contains_all(
+            &expanded,
+            &[
+                "WebSocketClient < ClientMsg , ServerMsg >",
+                "execute_plan_websocket::< ClientMsg , ServerMsg , ::concord_core::advanced::JsonWebSocket >",
+                "WebSocketEndpoint",
+                "BodyPlan::None",
+                "GET",
+            ],
+        );
+    }
+
+    #[test]
+    fn emit_uses_explicit_websocket_codec_codegen() {
+        let expanded = expanded(quote! {
+            api! {
+                client ExplicitWebSocketCodegen {
+                    base "https://example.com"
+                }
+
+                WS Connect
+                    path ["ws"]
+                    -> WebSocket<ClientMsg, ServerMsg, MyCodec>
+            }
+        });
+
+        assert_contains_all(
+            &expanded,
+            &[
+                "WebSocketClient < ClientMsg , ServerMsg >",
+                "execute_plan_websocket::< ClientMsg , ServerMsg , MyCodec >",
+                "WebSocketEndpoint",
+                "BodyPlan::None",
+                "GET",
+            ],
+        );
+    }
+
+    #[test]
     fn facade_ir_contains_scope_method_metadata() {
         let resolved = crate::sema::analyze_tokens_for_test(quote! {
             client ScopeMeta {

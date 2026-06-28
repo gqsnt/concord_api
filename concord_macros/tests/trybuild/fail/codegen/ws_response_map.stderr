@@ -1,0 +1,5 @@
+error: `map` is only supported for buffered responses
+ --> tests/trybuild/fail/codegen/ws_response_map.rs:8:8
+  |
+8 |     WS Connect
+  |        ^^^^^^^

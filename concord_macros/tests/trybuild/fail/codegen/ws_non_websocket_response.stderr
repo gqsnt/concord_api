@@ -1,0 +1,5 @@
+error: `WS` endpoints must return `WebSocket<Out, In>`
+  --> tests/trybuild/fail/codegen/ws_non_websocket_response.rs:10:12
+   |
+10 |         -> Json<String>
+   |            ^^^^

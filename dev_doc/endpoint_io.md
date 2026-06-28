@@ -31,6 +31,7 @@ The current implementation distinguishes buffered codecs from the reserved endpo
 - Current codegen still emits buffered codec calls through the existing `BodyCodec` and `ResponseCodec` paths for non-reserved families.
 - Current core request bodies are buffered for non-reserved families.
 - Current response transport is chunk-capable, and dedicated stream/record/multipart/SSE runtime paths avoid buffering where appropriate.
+- Macro/codegen support now exists for `Stream<M>`, `Records<T, F>`, `Multipart<T, F>`, `Sse<T, C>`, and `WebSocket<Out, In, C>`.
 - `.execute_raw()` remains bounded-buffered.
 - Custom buffered codecs are already open-ended and must stay that way.
 
@@ -150,6 +151,9 @@ For large or unbounded byte transfer, future PRs should use `Stream<OctetStream>
 - Endpoint method mode: `WS`.
 - `WebSocket<Out, In>` defaults to `WebSocket<Out, In, JsonWebSocket>`.
 - Core runtime support exists for WebSocket connections.
+- Macro/codegen support now exists for `WS ... -> WebSocket<Out, In>` and `WS ... -> WebSocket<Out, In, C>`.
+- Generated response endpoints return `WebSocketClient<Out, In>`.
+- Generated endpoints expose `.execute_websocket()`, and `.execute()` also routes through WebSocket execution.
 - WebSocket is endpoint mode, not an HTTP response body shape.
 - Runtime value: `WebSocketClient<Out, In>`.
 - Runtime codec trait: `WebSocketCodec<Out, In>`.
@@ -158,7 +162,8 @@ For large or unbounded byte transfer, future PRs should use `Stream<OctetStream>
 - Rate-limit applies before the connect/upgrade attempt.
 - Auth, header, query, and path construction apply before upgrade.
 - Reconnect, replay, pooling, multiplexing, and server-side WebSocket are out of scope initially.
-- Macro/codegen support for `WebSocket<Out, In, C>` remains future work.
+- WebSocket request bodies remain unsupported.
+- WebSocket map and pagination remain unsupported.
 - HTTP response body planning must not be contaminated with WebSocket semantics.
 
 ## Reserved Endpoint I/O Names

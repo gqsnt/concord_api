@@ -1,3 +1,15 @@
+fn endpoint_is_websocket(ep: &ResolvedEndpoint) -> bool {
+    ep.method == "WS"
+}
+
+fn endpoint_http_method_ident(ep: &ResolvedEndpoint) -> Ident {
+    if endpoint_is_websocket(ep) {
+        emit_helpers::ident("GET", ep.method.span())
+    } else {
+        ep.method.clone()
+    }
+}
+
 fn emit_endpoint_def(
     resolved_api: &ResolvedApi,
     facade: &FacadeEndpoint,
@@ -5,7 +17,8 @@ fn emit_endpoint_def(
     ty_name: &Ident,
     cx_ty: &Ident,
 ) -> TokenStream2 {
-    let method = &ep.method;
+    let method = endpoint_http_method_ident(ep);
+    let is_websocket = endpoint_is_websocket(ep);
     let endpoint_name_str = endpoint_qualified_name(ep);
     let endpoint_name = LitStr::new(&endpoint_name_str, ep.name.span());
     let endpoint_docs = facade_endpoint_docs(ep, &resolved_api.client_policy);
@@ -127,11 +140,12 @@ fn emit_endpoint_def(
 
     let route_policy = emit_endpoint_plan_route_policy(
         ep,
-        method,
+        &method,
         &endpoint_name,
         cx_ty,
         &response_plan_accept,
         &response_plan_no_content,
+        is_websocket,
     );
     let auth_plan = emit_endpoint_auth_plan(resolved_api, ep);
     let body_plan = match endpoint_request_body_plan(ep) {
@@ -236,7 +250,11 @@ fn emit_endpoint_def(
                         meta: ::concord_core::internal::EndpointMeta {
                             name: #endpoint_name,
                             method: ::http::Method::#method,
-                            idempotent: matches!(::http::Method::#method, ::http::Method::GET | ::http::Method::HEAD | ::http::Method::PUT | ::http::Method::DELETE | ::http::Method::OPTIONS),
+                            idempotent: if #is_websocket {
+                                false
+                            } else {
+                                matches!(::http::Method::#method, ::http::Method::GET | ::http::Method::HEAD | ::http::Method::PUT | ::http::Method::DELETE | ::http::Method::OPTIONS)
+                            },
                             facade_path: &[],
                         },
                         route: __resolved_route,
@@ -282,6 +300,7 @@ fn emit_endpoint_plan_route_policy(
     cx_ty: &Ident,
     response_accept: &TokenStream2,
     response_no_content: &TokenStream2,
+    is_websocket: bool,
 ) -> TokenStream2 {
     let ep_opt = ep_optionals(ep);
     let prefix_layer_route_ops = emit_prefix_route_apply(&ep.prefix_pieces, Some(&ep_opt));
@@ -320,7 +339,8 @@ fn emit_endpoint_plan_route_policy(
             policy.set_layer(__prev);
         }
         policy.set_layer(::concord_core::internal::PolicyLayer::Runtime);
-        if ::http::Method::#method != ::http::Method::HEAD
+        if !#is_websocket
+            && ::http::Method::#method != ::http::Method::HEAD
             && !#response_no_content
             && let ::core::option::Option::Some(__accept) = #response_accept
         {
@@ -600,6 +620,9 @@ fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
         ResolvedResponseBodyIo::Records { item_ty, .. } => quote! {
             ::concord_core::advanced::RecordStream<#item_ty>
         },
+        ResolvedResponseBodyIo::WebSocket { out_ty, in_ty, .. } => quote! {
+            ::concord_core::advanced::WebSocketClient<#out_ty, #in_ty>
+        },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
             ::concord_core::advanced::StreamResponse<#media_ty>
         },
@@ -629,6 +652,9 @@ fn endpoint_response_accept_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Ty
                 <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
             ))
         },
+        ResolvedResponseBodyIo::WebSocket { .. } => quote! {
+            ::core::option::Option::None
+        },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
             ::core::option::Option::Some(::http::HeaderValue::from_static(
                 <#media_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
@@ -651,6 +677,7 @@ fn endpoint_response_no_content_tokens(
         | ResolvedResponseBodyIo::Sse { .. } => {
             quote! { false }
         }
+        ResolvedResponseBodyIo::WebSocket { .. } => quote! { false },
         _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::is_no_content() },
     }
 }
@@ -664,6 +691,7 @@ fn endpoint_response_format_tokens(
         ResolvedResponseBodyIo::RawStream { .. } => quote! { ::concord_core::internal::Format::Binary },
         ResolvedResponseBodyIo::Records { .. } => quote! { ::concord_core::internal::Format::Text },
         ResolvedResponseBodyIo::Sse { .. } => quote! { ::concord_core::internal::Format::Text },
+        ResolvedResponseBodyIo::WebSocket { .. } => quote! { ::concord_core::internal::Format::Text },
         _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::format() },
     }
 }
@@ -717,6 +745,17 @@ fn endpoint_response_decode_fn(
                 Err(::concord_core::prelude::ApiClientError::PolicyViolation {
                     ctx,
                     msg: "sse responses must use sse execution".into(),
+                })
+            }
+        },
+        ResolvedResponseBodyIo::WebSocket { .. } => quote! {
+            fn #decode_fn(
+                _resp: ::concord_core::transport::BuiltResponse,
+                ctx: ::concord_core::error::ErrorContext,
+            ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
+                Err(::concord_core::prelude::ApiClientError::PolicyViolation {
+                    ctx,
+                    msg: "websocket endpoints must use websocket execution".into(),
                 })
             }
         },
@@ -817,6 +856,32 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStrea
                 })
             }
         },
+        ResolvedResponseBodyIo::WebSocket {
+            out_ty,
+            in_ty,
+            codec_ty,
+        } => quote! {
+            fn execute<'a, T>(
+                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+                plan: ::concord_core::internal::RequestPlan,
+            ) -> ::core::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::core::future::Future<
+                            Output = ::core::result::Result<
+                                Self::Response,
+                                ::concord_core::prelude::ApiClientError,
+                            >,
+                        > + Send + 'a,
+                >,
+            >
+            where
+                T: ::concord_core::advanced::Transport + 'a,
+            {
+                ::std::boxed::Box::pin(async move {
+                    client.execute_plan_websocket::<#out_ty, #in_ty, #codec_ty>(plan).await
+                })
+            }
+        },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
             fn execute<'a, T>(
                 client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
@@ -880,6 +945,17 @@ fn endpoint_response_marker_impl(
         ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => quote! {
             impl ::concord_core::prelude::SseResponseEndpoint<super::#cx_ty> for #ty_name {
                 type Event = #event_ty;
+                type Codec = #codec_ty;
+            }
+        },
+        ResolvedResponseBodyIo::WebSocket {
+            out_ty,
+            in_ty,
+            codec_ty,
+        } => quote! {
+            impl ::concord_core::prelude::WebSocketEndpoint<super::#cx_ty> for #ty_name {
+                type Out = #out_ty;
+                type In = #in_ty;
                 type Codec = #codec_ty;
             }
         },

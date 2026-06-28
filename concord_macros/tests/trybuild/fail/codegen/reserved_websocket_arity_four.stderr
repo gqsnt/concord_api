@@ -1,0 +1,5 @@
+error: reserved endpoint I/O family `WebSocket` expects two or three type arguments
+  --> tests/trybuild/fail/codegen/reserved_websocket_arity_four.rs:10:12
+   |
+10 |         -> WebSocket<A, B, C, D>
+   |            ^^^^^^^^^^^^^^^^^^^^^
