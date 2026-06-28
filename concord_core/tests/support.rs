@@ -2,14 +2,13 @@
 
 use bytes::Bytes;
 use concord_core::advanced::{
-    BuiltRequest, BuiltResponse, CacheAfter, CacheBefore, CacheFuture, CacheKey, CacheRevalidation,
-    CacheStore, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
     RateLimitResponseContext, RateLimiter, Transport, TransportBody, TransportError,
     TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::prelude::ApiClientError;
 use http::{HeaderMap, StatusCode};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -115,82 +114,6 @@ impl TransportBody for StaticBody {
         &'a mut self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
         Box::pin(async move { Ok(self.next.take()) })
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct FakeCache {
-    entries: Arc<Mutex<HashMap<String, BuiltResponse>>>,
-    pub events: EventRecorder,
-}
-
-impl FakeCache {
-    pub fn insert(&self, key: impl Into<String>, response: BuiltResponse) {
-        self.entries
-            .lock()
-            .expect("fake cache poisoned")
-            .insert(key.into(), response);
-    }
-}
-
-impl CacheStore for FakeCache {
-    fn key_for(&self, request: &BuiltRequest) -> Option<CacheKey> {
-        Some(concord_core::advanced::default_cache_key(request))
-    }
-
-    fn get<'a>(&'a self, key: &'a CacheKey) -> CacheFuture<'a, Option<BuiltResponse>> {
-        let key = key.as_str().to_string();
-        let entries = self.entries.clone();
-        let events = self.events.clone();
-        Box::pin(async move {
-            events.record("cache_get");
-            entries
-                .lock()
-                .expect("fake cache poisoned")
-                .get(&key)
-                .cloned()
-        })
-    }
-
-    fn put<'a>(&'a self, key: CacheKey, response: BuiltResponse) -> CacheFuture<'a, ()> {
-        let entries = self.entries.clone();
-        let events = self.events.clone();
-        Box::pin(async move {
-            events.record("cache_put");
-            entries
-                .lock()
-                .expect("fake cache poisoned")
-                .insert(key.as_str().to_string(), response);
-        })
-    }
-
-    fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-        let Some(key) = self.key_for(request) else {
-            return Box::pin(async { CacheBefore::Miss });
-        };
-        Box::pin(async move {
-            match self.get(&key).await {
-                Some(response) => CacheBefore::Hit(response),
-                None => CacheBefore::Miss,
-            }
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        request: &'a BuiltRequest,
-        response: &'a BuiltResponse,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, CacheAfter> {
-        let Some(key) = self.key_for(request) else {
-            return Box::pin(async {
-                CacheAfter::NotStored(concord_core::advanced::CacheSkipReason::Disabled)
-            });
-        };
-        Box::pin(async move {
-            self.put(key, response.clone()).await;
-            CacheAfter::Stored
-        })
     }
 }
 

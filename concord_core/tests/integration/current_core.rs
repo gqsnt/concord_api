@@ -2,8 +2,6 @@
 mod async_harness;
 #[path = "current_core/auth.rs"]
 mod auth;
-#[path = "current_core/cache.rs"]
-mod cache;
 #[path = "current_core/cancellation.rs"]
 mod cancellation;
 #[path = "current_core/common.rs"]

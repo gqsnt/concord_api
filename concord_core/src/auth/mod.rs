@@ -6,7 +6,6 @@ mod ids;
 mod materials;
 mod plan;
 mod providers;
-mod util;
 
 pub use credentials::{
     AuthStepPolicy, CredentialContext, CredentialLease, CredentialMaterial, CredentialProvider,

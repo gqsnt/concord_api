@@ -1,8 +1,8 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, DebugSink, NoopCacheStore, NoopRateLimiter, RetryContext, RetryDecision,
-    RetryPolicy, TransportErrorKind,
+    AuthPlacement, DebugSink, NoopRateLimiter, RetryContext, RetryDecision, RetryPolicy,
+    TransportErrorKind,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
@@ -30,7 +30,6 @@ fn record_order_event(event: &str) {
 
 #[derive(Clone, Copy)]
 enum MapMode {
-    Success,
     Fail,
 }
 
@@ -45,7 +44,6 @@ impl Endpoint<TestCx> for OrderingEndpoint {
 
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         let decode = match self.map_mode {
-            MapMode::Success => decode_ordering_success,
             MapMode::Fail => decode_ordering_fail,
         };
         Ok(request_plan(
@@ -121,28 +119,6 @@ fn decode_observation_failure(
     ))
 }
 
-fn decode_ordering_success(
-    resp: concord_core::advanced::BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    record_order_event("decode");
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let value = std::str::from_utf8(&resp.body)
-        .map(str::to_string)
-        .map_err(|e| ApiClientError::decode_error(ctx, resp.status, content_type, e))?;
-    record_order_event("map");
-    Ok(Box::new(concord_core::transport::DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value,
-    }))
-}
-
 fn decode_ordering_fail(
     resp: concord_core::advanced::BuiltResponse,
     ctx: concord_core::advanced::ErrorContext,
@@ -160,167 +136,6 @@ fn decode_ordering_fail(
         ctx,
         source: std::io::Error::other(format!("mapping failed for {value}")).into(),
     })
-}
-
-#[derive(Default)]
-struct OrderingCache {
-    cached: Arc<StdMutex<Option<concord_core::advanced::BuiltResponse>>>,
-    after_response_count: Arc<StdMutex<u32>>,
-}
-
-impl concord_core::advanced::CacheStore for OrderingCache {
-    fn before_request<'a>(
-        &'a self,
-        _request: &'a concord_core::advanced::BuiltRequest,
-    ) -> concord_core::advanced::CacheFuture<'a, concord_core::advanced::CacheBefore> {
-        Box::pin(async move {
-            let cached = self.cached.lock().expect("order cache entry lock").clone();
-            match cached {
-                Some(response) => concord_core::advanced::CacheBefore::Hit(response),
-                None => concord_core::advanced::CacheBefore::Miss,
-            }
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        _request: &'a concord_core::advanced::BuiltRequest,
-        _response: &'a concord_core::advanced::BuiltResponse,
-        _revalidation: Option<concord_core::advanced::CacheRevalidation>,
-    ) -> concord_core::advanced::CacheFuture<'a, concord_core::advanced::CacheAfter> {
-        Box::pin(async move {
-            *self
-                .after_response_count
-                .lock()
-                .expect("order cache count lock") += 1;
-            record_order_event("store");
-            *self.cached.lock().expect("order cache entry lock") = Some(_response.clone());
-            concord_core::advanced::CacheAfter::Stored
-        })
-    }
-}
-
-struct UpdatingRevalidationCache {
-    cached: Arc<Mutex<concord_core::advanced::BuiltResponse>>,
-    after_response_count: Arc<StdMutex<u32>>,
-    revalidation_seen: Arc<StdMutex<Vec<bool>>>,
-    updated: Arc<StdMutex<bool>>,
-}
-
-impl UpdatingRevalidationCache {
-    fn new(cached: concord_core::advanced::BuiltResponse) -> Self {
-        Self {
-            cached: Arc::new(Mutex::new(cached)),
-            after_response_count: Arc::new(StdMutex::new(0)),
-            revalidation_seen: Arc::new(StdMutex::new(Vec::new())),
-            updated: Arc::new(StdMutex::new(false)),
-        }
-    }
-}
-
-impl concord_core::advanced::CacheStore for UpdatingRevalidationCache {
-    fn before_request<'a>(
-        &'a self,
-        _request: &'a concord_core::advanced::BuiltRequest,
-    ) -> concord_core::advanced::CacheFuture<'a, concord_core::advanced::CacheBefore> {
-        Box::pin(async move {
-            let cached = self.cached.lock().await.clone();
-            if *self.updated.lock().expect("updated flag lock") {
-                concord_core::advanced::CacheBefore::Hit(cached)
-            } else {
-                concord_core::advanced::CacheBefore::Revalidate {
-                    request_headers: HeaderMap::new(),
-                    cached: concord_core::advanced::CacheRevalidation {
-                        key: concord_core::advanced::CacheKey::new("revalidate".to_string()),
-                        cached_response: cached,
-                    },
-                }
-            }
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        _request: &'a concord_core::advanced::BuiltRequest,
-        response: &'a concord_core::advanced::BuiltResponse,
-        revalidation: Option<concord_core::advanced::CacheRevalidation>,
-    ) -> concord_core::advanced::CacheFuture<'a, concord_core::advanced::CacheAfter> {
-        Box::pin(async move {
-            *self
-                .after_response_count
-                .lock()
-                .expect("revalidation count lock") += 1;
-            self.revalidation_seen
-                .lock()
-                .expect("revalidation seen lock")
-                .push(revalidation.is_some());
-            if let Some(revalidation) = revalidation {
-                if response.status == StatusCode::NOT_MODIFIED {
-                    let mut updated = revalidation.cached_response.clone();
-                    updated.status = response.status;
-                    updated.headers = response.headers.clone();
-                    *self.cached.lock().await = updated.clone();
-                    *self.updated.lock().expect("updated flag lock") = true;
-                    return concord_core::advanced::CacheAfter::Updated(Box::new(updated));
-                }
-                if response.status.is_success() {
-                    let mut updated = response.clone();
-                    updated.status = response.status;
-                    *self.cached.lock().await = updated.clone();
-                    *self.updated.lock().expect("updated flag lock") = true;
-                    return concord_core::advanced::CacheAfter::Updated(Box::new(updated));
-                }
-            }
-            concord_core::advanced::CacheAfter::Stored
-        })
-    }
-}
-
-#[tokio::test]
-async fn fresh_cache_hit_bypasses_rate_limit_and_transport() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "transport")],
-    );
-    let sent_transport = transport.clone();
-    let cache = Arc::new(RecordingCache::hit(
-        events.clone(),
-        built_response("Text", StatusCode::OK, "cached"),
-    ));
-    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let mut client = client(
-        TestAuthVars {
-            token: Some("secret-token".to_string()),
-            identity: "user-a",
-        },
-        transport,
-    );
-    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), Some(limiter));
-
-    let mut policy = cache_policy();
-    policy.auth = auth_policy(AuthPlacement::Bearer).auth;
-    let endpoint = TextEndpoint {
-        policy,
-        ..Default::default()
-    };
-    let decoded = client.request(endpoint).execute_decoded().await?;
-
-    assert_eq!(decoded.value(), "cached");
-    assert_eq!(sent_transport.sent_count().await, 0);
-    let events = events.lock().await.clone();
-    assert!(events.iter().any(|event| event == "cache_hit"));
-    assert!(
-        events
-            .iter()
-            .any(|event| event.starts_with("cache_before:hash:"))
-    );
-    assert!(!events.iter().any(|event| event.contains("secret-token")));
-    assert!(!events.iter().any(|event| event == "pre_send"));
-    assert!(!events.iter().any(|event| event == "rate_acquire"));
-    assert!(!events.iter().any(|event| event == "transport"));
-    Ok(())
 }
 
 fn positions(events: &[String], needle: &str) -> Vec<usize> {
@@ -644,7 +459,7 @@ async fn custom_retry_decision_happens_after_hook_and_rate_limit_observation()
     let sent = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
     client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
         events.clone(),
         RetryDecision::Retry,
@@ -852,7 +667,7 @@ async fn rate_limit_acquire_runs_before_each_transport_attempt() -> Result<(), A
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     let decoded = client
         .request(TextEndpoint {
@@ -887,7 +702,7 @@ async fn rate_limit_observation_runs_before_retry_decision() -> Result<(), ApiCl
     );
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     let decoded = client
         .request(TextEndpoint {
@@ -907,38 +722,6 @@ async fn rate_limit_observation_runs_before_retry_decision() -> Result<(), ApiCl
     Ok(())
 }
 
-#[tokio::test]
-async fn retryable_status_is_not_cached_before_retry() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
-            MockResponse::text(StatusCode::OK, "fresh"),
-        ],
-    );
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let endpoint = TextEndpoint {
-        policy: {
-            let mut policy = retry_policy(2);
-            policy.cache = concord_core::internal::CacheSetting::Config(
-                concord_core::advanced::CacheConfig::new(),
-            );
-            policy
-        },
-        ..Default::default()
-    };
-    let decoded = client.request(endpoint).execute_decoded().await?;
-
-    assert_eq!(decoded.value(), "fresh");
-    assert_eq!(*after_response_count.lock().await, 1);
-    Ok(())
-}
-
 fn first_event_with_prefix(events: &[String], prefix: &str) -> usize {
     events
         .iter()
@@ -952,8 +735,6 @@ async fn runtime_hooks_observe_200_before_decode_failure() {
     const RESPONSE_SENTINEL: &str = "PR65_RESPONSE_BODY_SENTINEL_DO_NOT_LEAK";
 
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let mut response = MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL);
     response.headers.insert(
         http::header::CONTENT_TYPE,
@@ -962,11 +743,11 @@ async fn runtime_hooks_observe_200_before_decode_failure() {
     let transport = MockTransport::new(events.clone(), vec![response]);
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
 
     let err = client
         .request(ObservationFailureEndpoint {
-            policy: cache_policy(),
+            policy: ResolvedPolicy::default(),
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
         })
         .execute_decoded()
@@ -975,7 +756,6 @@ async fn runtime_hooks_observe_200_before_decode_failure() {
 
     assert_eq!(err.category(), concord_core::error::ErrorCategory::Decode);
     assert!(err.to_string().contains("decode error"));
-    assert_eq!(*after_response_count.lock().await, 0);
     let events = events.lock().await.clone();
     assert!(
         events
@@ -1095,7 +875,6 @@ async fn auth_rejection_preempts_custom_retry_policy_for_401() -> Result<(), Api
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
     configure_runtime(
         &mut client,
-        None,
         Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
     );
     client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
@@ -1145,7 +924,6 @@ async fn auth_rejection_preempts_custom_retry_policy_for_403() -> Result<(), Api
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
     configure_runtime(
         &mut client,
-        None,
         Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
     );
     client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
@@ -1180,12 +958,6 @@ async fn never_refresh_auth_rejection_does_not_fall_through_to_custom_retry() {
     for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
         let events = Arc::new(Mutex::new(Vec::new()));
         let retry_events = Arc::new(Mutex::new(Vec::new()));
-        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-            events.clone(),
-            built_response("Text", StatusCode::OK, "stale"),
-        ));
-        let after_error_count = cache.after_error_count.clone();
-        let after_response_count = cache.after_response_count.clone();
         let transport =
             MockTransport::new(events.clone(), vec![MockResponse::text(status, "rejected")]);
         let sent_transport = transport.clone();
@@ -1201,7 +973,6 @@ async fn never_refresh_auth_rejection_does_not_fall_through_to_custom_retry() {
         client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
         configure_runtime(
             &mut client,
-            Some(cache),
             Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
         );
         client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
@@ -1216,9 +987,6 @@ async fn never_refresh_auth_rejection_does_not_fall_through_to_custom_retry() {
                     let mut policy = auth_policy(AuthPlacement::Bearer);
                     policy.auth.requirements[0].challenge =
                         concord_core::advanced::AuthChallengePolicy::NeverRefresh;
-                    policy.cache = concord_core::internal::CacheSetting::Config(
-                        concord_core::advanced::CacheConfig::new(),
-                    );
                     policy.retry = retry_policy_for_statuses(8, vec![status]).retry;
                     policy
                 },
@@ -1230,8 +998,6 @@ async fn never_refresh_auth_rejection_does_not_fall_through_to_custom_retry() {
 
         assert!(err.to_string().contains("auth challenge rejected"));
         assert_eq!(sent_transport.sent_count().await, 1);
-        assert_eq!(*after_error_count.lock().await, 0);
-        assert_eq!(*after_response_count.lock().await, 0);
         let events = events.lock().await.clone();
         assert!(events.iter().any(|event| event.starts_with("rate_status:")));
         assert!(events.iter().any(|event| event.starts_with("auth_fail")));
@@ -1246,12 +1012,6 @@ async fn auth_rejection_does_not_read_body() -> Result<(), ApiClientError> {
     for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
         let events = Arc::new(Mutex::new(Vec::new()));
         let read_count = Arc::new(AtomicUsize::new(0));
-        let stale = built_response("Text", StatusCode::OK, "stale");
-        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-            events.clone(),
-            stale,
-        ));
-        let after_error_count = cache.after_error_count.clone();
         let transport = MockTransport::new(
             events.clone(),
             vec![
@@ -1277,19 +1037,12 @@ async fn auth_rejection_does_not_read_body() -> Result<(), ApiClientError> {
         client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
         configure_runtime(
             &mut client,
-            Some(cache),
             Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
         );
 
         let err = client
             .request(TextEndpoint {
-                policy: {
-                    let mut policy = auth_policy(AuthPlacement::Bearer);
-                    policy.cache = concord_core::internal::CacheSetting::Config(
-                        concord_core::advanced::CacheConfig::new(),
-                    );
-                    policy
-                },
+                policy: auth_policy(AuthPlacement::Bearer),
                 ..Default::default()
             })
             .execute_decoded()
@@ -1300,7 +1053,6 @@ async fn auth_rejection_does_not_read_body() -> Result<(), ApiClientError> {
         assert!(err.to_string().contains("auth challenge rejected"));
         assert_eq!(sent_transport.sent_count().await, 1);
         assert_eq!(body_reads(&read_count), 0);
-        assert_eq!(*after_error_count.lock().await, 0);
         let events = events.lock().await.clone();
         assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
         assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
@@ -1367,7 +1119,6 @@ async fn transport_observation_does_not_leak_basic_auth_material() -> Result<(),
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
     configure_runtime(
         &mut client,
-        None,
         Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
     );
 
@@ -1579,265 +1330,11 @@ async fn custom_retry_context_does_not_expose_basic_auth_material() {
 }
 
 #[tokio::test]
-async fn stale_cache_fallback_happens_after_retry_exhaustion() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let stale = built_response("Text", StatusCode::OK, "stale");
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        events.clone(),
-        stale,
-    ));
-    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "still-failing"),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), Some(limiter));
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: {
-                let mut policy =
-                    retry_policy_for_statuses(2, vec![StatusCode::INTERNAL_SERVER_ERROR]);
-                policy.cache = concord_core::internal::CacheSetting::Config(
-                    concord_core::advanced::CacheConfig::new(),
-                );
-                policy
-            },
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(decoded.value(), "stale");
-    assert_eq!(sent_transport.sent_count().await, 2);
-    let events = events.lock().await.clone();
-    let observes = positions(&events, "rate_response");
-    let second_acquire = positions(&events, "rate_acquire")[1];
-    let stale_fallback = first_position(&events, "cache_after_error");
-    assert!(observes[0] < second_acquire);
-    assert!(observes[1] < stale_fallback);
-    assert!(!events.iter().any(|event| event == "cache_after_response"));
-    Ok(())
-}
-
-#[tokio::test]
-async fn stale_cache_fallback_happens_after_retry_declines() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let stale = built_response("Text", StatusCode::OK, "stale");
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        events.clone(),
-        stale,
-    ));
-    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::BAD_REQUEST, "do-not-retry")],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), Some(limiter));
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: {
-                let mut policy = retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]);
-                policy.cache = concord_core::internal::CacheSetting::Config(
-                    concord_core::advanced::CacheConfig::new(),
-                );
-                policy
-            },
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(decoded.value(), "stale");
-    assert_eq!(sent_transport.sent_count().await, 1);
-    let events = events.lock().await.clone();
-    assert!(first_position(&events, "transport") < first_position(&events, "classify_response"));
-    assert!(
-        first_position(&events, "classify_response") < first_position(&events, "rate_response")
-    );
-    assert!(
-        first_position(&events, "rate_response") < first_position(&events, "cache_after_error")
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn custom_retry_declines_before_stale_fallback() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let stale = built_response("Text", StatusCode::OK, "stale");
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        events.clone(),
-        stale,
-    ));
-    let after_response_count = cache.after_response_count.clone();
-    let after_error_count = cache.after_error_count.clone();
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "do-not-retry",
-        )],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
-        events.clone(),
-        RetryDecision::Stop,
-        8,
-    )));
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(decoded.value(), "stale");
-    assert_eq!(sent_transport.sent_count().await, 1);
-    assert_eq!(*after_response_count.lock().await, 0);
-    assert_eq!(*after_error_count.lock().await, 1);
-    let events = events.lock().await.clone();
-    let retry = first_position(&events, "retry_decision:Stop");
-    let stale_fallback = first_position(&events, "cache_after_error");
-    assert!(retry < stale_fallback);
-    assert!(!events.iter().any(|event| event == "cache_after_response"));
-    Ok(())
-}
-
-#[tokio::test]
-async fn custom_retry_exhaustion_then_stale_fallback() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let stale = built_response("Text", StatusCode::OK, "stale");
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        events.clone(),
-        stale,
-    ));
-    let after_response_count = cache.after_response_count.clone();
-    let after_error_count = cache.after_error_count.clone();
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "still-failing"),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
-        events.clone(),
-        RetryDecision::RetryAfter(Duration::ZERO),
-        1,
-    )));
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(decoded.value(), "stale");
-    assert_eq!(sent_transport.sent_count().await, 2);
-    assert_eq!(*after_response_count.lock().await, 0);
-    assert_eq!(*after_error_count.lock().await, 1);
-    let events = events.lock().await.clone();
-    let retry = first_event_with_prefix(&events, "retry_decision:RetryAfter");
-    let stale_fallback = first_position(&events, "cache_after_error");
-    let transports = positions(&events, "transport");
-    assert_eq!(transports.len(), 2);
-    assert!(transports[0] < retry);
-    assert!(retry < transports[1]);
-    assert!(transports[1] < stale_fallback);
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.starts_with("retry_decision:RetryAfter"))
-            .count(),
-        1
-    );
-    assert!(!events.iter().any(|event| event == "cache_after_response"));
-    Ok(())
-}
-
-#[tokio::test]
-async fn stale_fallback_prevents_oversized_live_body_read() -> Result<(), ApiClientError> {
-    const LIVE_SENTINEL: &str = "PR74_STALE_FALLBACK_LIVE_BODY_SENTINEL";
-
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let read_count = Arc::new(AtomicUsize::new(0));
-    let stale = built_response("Text", StatusCode::OK, "stale");
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        events.clone(),
-        stale,
-    ));
-    let after_error_count = cache.after_error_count.clone();
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::BAD_REQUEST, Bytes::from_static(b"abcde"))
-                .with_content_length(Some(5))
-                .with_chunks(vec![
-                    Bytes::from_static(b"abcde"),
-                    Bytes::from_static(LIVE_SENTINEL.as_bytes()),
-                ])
-                .with_read_count(read_count.clone()),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-    client.configure(|cfg| {
-        cfg.max_response_body_bytes(4);
-    });
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: {
-                let mut policy = retry_policy(2);
-                policy.cache = concord_core::internal::CacheSetting::Config(
-                    concord_core::advanced::CacheConfig::new(),
-                );
-                policy
-            },
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(decoded.value(), "stale");
-    assert_eq!(sent_transport.sent_count().await, 1);
-    assert_eq!(body_reads(&read_count), 0);
-    assert_eq!(*after_error_count.lock().await, 1);
-    let events = events.lock().await.clone();
-    assert!(events.iter().any(|event| event == "cache_after_error"));
-    assert!(!events.iter().any(|event| event == "cache_after_response"));
-    assert!(!format!("{events:?}").contains(LIVE_SENTINEL));
-    Ok(())
-}
-
-#[tokio::test]
-async fn oversized_live_body_without_stale_fallback_fails_typed() {
+async fn oversized_live_body_fails_typed() {
     const LIVE_SENTINEL: &str = "PR74_OVERSIZED_LIVE_BODY_SENTINEL";
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let read_count = Arc::new(AtomicUsize::new(0));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
         events,
         vec![
@@ -1852,7 +1349,7 @@ async fn oversized_live_body_without_stale_fallback_fails_typed() {
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });
@@ -1861,7 +1358,7 @@ async fn oversized_live_body_without_stale_fallback_fails_typed() {
         .request(TextEndpoint::default())
         .execute_decoded()
         .await
-        .expect_err("oversized live body without stale fallback should fail typed");
+        .expect_err("oversized live body should fail typed");
 
     assert!(matches!(
         err,
@@ -1869,70 +1366,13 @@ async fn oversized_live_body_without_stale_fallback_fails_typed() {
     ));
     assert_eq!(sent_transport.sent_count().await, 1);
     assert_eq!(body_reads(&read_count), 2);
-    assert_eq!(*after_response_count.lock().await, 0);
     assert!(!err.to_string().contains(LIVE_SENTINEL));
-}
-
-#[tokio::test]
-async fn decode_failure_does_not_store_cache() -> Result<(), ApiClientError> {
-    let order_events = Arc::new(StdMutex::new(Vec::new()));
-    let cache = Arc::new(OrderingCache::default());
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        Arc::new(Mutex::new(Vec::new())),
-        vec![
-            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xff")),
-            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xfe")),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let err = ORDER_EVENTS
-        .scope(order_events, async {
-            client
-                .request(OrderingEndpoint {
-                    policy: cache_policy(),
-                    map_mode: MapMode::Success,
-                })
-                .execute_decoded()
-                .await
-        })
-        .await
-        .expect_err("invalid body should fail decode");
-
-    assert!(err.to_string().contains("decode error"));
-    assert_eq!(
-        *after_response_count.lock().expect("order cache count lock"),
-        0
-    );
-    assert_eq!(sent_transport.sent_count().await, 1);
-
-    let err = ORDER_EVENTS
-        .scope(Arc::new(StdMutex::new(Vec::new())), async {
-            client
-                .request(OrderingEndpoint {
-                    policy: cache_policy(),
-                    map_mode: MapMode::Success,
-                })
-                .execute_decoded()
-                .await
-        })
-        .await
-        .expect_err("invalid body should fail decode again");
-
-    assert!(err.to_string().contains("decode error"));
-    assert_eq!(sent_transport.sent_count().await, 2);
-    Ok(())
 }
 
 #[tokio::test]
 async fn custom_retry_policy_not_invoked_for_decode_failure() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let retry_events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
         events.clone(),
         vec![
@@ -1942,7 +1382,7 @@ async fn custom_retry_policy_not_invoked_for_decode_failure() {
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
     client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
         retry_events.clone(),
         RetryDecision::Retry,
@@ -1951,7 +1391,7 @@ async fn custom_retry_policy_not_invoked_for_decode_failure() {
 
     let err = client
         .request(TextEndpoint {
-            policy: cache_policy(),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .execute_decoded()
@@ -1960,7 +1400,6 @@ async fn custom_retry_policy_not_invoked_for_decode_failure() {
 
     assert_eq!(err.category(), concord_core::error::ErrorCategory::Decode);
     assert_eq!(sent_transport.sent_count().await, 1);
-    assert_eq!(*after_response_count.lock().await, 0);
     assert!(retry_events.lock().await.is_empty());
 }
 
@@ -1968,8 +1407,6 @@ async fn custom_retry_policy_not_invoked_for_decode_failure() {
 async fn decode_failure_does_not_consume_retry_budget() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let retry_events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
         events.clone(),
         vec![
@@ -1979,7 +1416,7 @@ async fn decode_failure_does_not_consume_retry_budget() {
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
     client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
         retry_events.clone(),
         RetryDecision::Retry,
@@ -1988,7 +1425,7 @@ async fn decode_failure_does_not_consume_retry_budget() {
 
     let err = client
         .request(TextEndpoint {
-            policy: cache_policy(),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .execute_decoded()
@@ -1997,67 +1434,11 @@ async fn decode_failure_does_not_consume_retry_budget() {
 
     assert_eq!(err.category(), concord_core::error::ErrorCategory::Decode);
     assert_eq!(sent_transport.sent_count().await, 1);
-    assert_eq!(*after_response_count.lock().await, 0);
     assert!(retry_events.lock().await.is_empty());
 }
 
 #[tokio::test]
-async fn map_failure_does_not_store_cache() -> Result<(), ApiClientError> {
-    let cache = Arc::new(OrderingCache::default());
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        Arc::new(Mutex::new(Vec::new())),
-        vec![
-            MockResponse::text(StatusCode::OK, "mapped"),
-            MockResponse::text(StatusCode::OK, "mapped-again"),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let err = ORDER_EVENTS
-        .scope(Arc::new(StdMutex::new(Vec::new())), async {
-            client
-                .request(OrderingEndpoint {
-                    policy: cache_policy(),
-                    map_mode: MapMode::Fail,
-                })
-                .execute_decoded()
-                .await
-        })
-        .await
-        .expect_err("map failure should be terminal");
-
-    assert!(err.to_string().contains("transform error"));
-    assert_eq!(
-        *after_response_count.lock().expect("order cache count lock"),
-        0
-    );
-    assert_eq!(sent_transport.sent_count().await, 1);
-
-    let err = ORDER_EVENTS
-        .scope(Arc::new(StdMutex::new(Vec::new())), async {
-            client
-                .request(OrderingEndpoint {
-                    policy: cache_policy(),
-                    map_mode: MapMode::Fail,
-                })
-                .execute_decoded()
-                .await
-        })
-        .await
-        .expect_err("map failure should be terminal again");
-
-    assert!(err.to_string().contains("transform error"));
-    assert_eq!(sent_transport.sent_count().await, 2);
-    Ok(())
-}
-
-#[tokio::test]
 async fn custom_retry_policy_not_invoked_for_map_failure() -> Result<(), ApiClientError> {
-    let cache = Arc::new(OrderingCache::default());
-    let after_response_count = cache.after_response_count.clone();
     let retry_events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         Arc::new(Mutex::new(Vec::new())),
@@ -2068,7 +1449,7 @@ async fn custom_retry_policy_not_invoked_for_map_failure() -> Result<(), ApiClie
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
     client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
         retry_events.clone(),
         RetryDecision::Retry,
@@ -2079,7 +1460,7 @@ async fn custom_retry_policy_not_invoked_for_map_failure() -> Result<(), ApiClie
         .scope(Arc::new(StdMutex::new(Vec::new())), async {
             client
                 .request(OrderingEndpoint {
-                    policy: cache_policy(),
+                    policy: ResolvedPolicy::default(),
                     map_mode: MapMode::Fail,
                 })
                 .execute_decoded()
@@ -2089,267 +1470,8 @@ async fn custom_retry_policy_not_invoked_for_map_failure() -> Result<(), ApiClie
         .expect_err("map failure should be terminal");
 
     assert!(err.to_string().contains("transform error"));
-    assert_eq!(
-        *after_response_count.lock().expect("order cache count lock"),
-        0
-    );
     assert_eq!(sent_transport.sent_count().await, 1);
     assert!(retry_events.lock().await.is_empty());
-    Ok(())
-}
-
-#[tokio::test]
-async fn revalidation_304_without_existing_entry_does_not_create_cache_entry() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        events,
-        vec![MockResponse::text(StatusCode::NOT_MODIFIED, "")],
-    );
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let err = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await
-        .expect_err("304 without revalidation state should not be cached");
-
-    assert!(err.to_string().contains("304"));
-    assert_eq!(*after_response_count.lock().await, 0);
-}
-
-#[tokio::test]
-async fn revalidation_304_updates_existing_decoded_entry_only() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(UpdatingRevalidationCache::new(built_response(
-        "Text",
-        StatusCode::OK,
-        "cached",
-    )));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::NOT_MODIFIED, "")],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(decoded.value(), "cached");
-    assert_eq!(
-        *after_response_count
-            .lock()
-            .expect("revalidation count lock"),
-        1
-    );
-    assert_eq!(sent_transport.sent_count().await, 1);
-    Ok(())
-}
-
-#[tokio::test]
-async fn revalidation_200_after_decode_preserves_revalidation_context() -> Result<(), ApiClientError>
-{
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(UpdatingRevalidationCache::new(built_response(
-        "Text",
-        StatusCode::OK,
-        "cached",
-    )));
-    let after_response_count = cache.after_response_count.clone();
-    let revalidation_seen = cache.revalidation_seen.clone();
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "fresh")],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(decoded.value(), "fresh");
-    assert_eq!(
-        *after_response_count
-            .lock()
-            .expect("revalidation count lock"),
-        1
-    );
-    assert_eq!(
-        revalidation_seen
-            .lock()
-            .expect("revalidation seen lock")
-            .as_slice(),
-        &[true]
-    );
-    assert_eq!(sent_transport.sent_count().await, 1);
-
-    let cached = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(cached.value(), "fresh");
-    assert_eq!(sent_transport.sent_count().await, 1);
-    Ok(())
-}
-
-#[tokio::test]
-async fn stale_fallback_remote_decode_failure_does_not_store_remote_failure() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let stale = built_response("Text", StatusCode::OK, "stale");
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        events.clone(),
-        stale,
-    ));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xff")),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let err = client
-        .request(TextEndpoint {
-            policy: {
-                let mut policy = retry_policy(2);
-                policy.cache = concord_core::internal::CacheSetting::Config(
-                    concord_core::advanced::CacheConfig::new(),
-                );
-                policy
-            },
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await
-        .expect_err("decode failure should be terminal");
-
-    assert!(err.to_string().contains("decode error"));
-    assert_eq!(sent_transport.sent_count().await, 1);
-    assert_eq!(*after_response_count.lock().await, 0);
-    let events = events.lock().await.clone();
-    assert!(!events.iter().any(|event| event == "cache_after_error"));
-}
-
-#[tokio::test]
-async fn successful_decode_and_map_stores_cache() -> Result<(), ApiClientError> {
-    let order_events = Arc::new(StdMutex::new(Vec::new()));
-    let cache = Arc::new(OrderingCache::default());
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        Arc::new(Mutex::new(Vec::new())),
-        vec![MockResponse::text(StatusCode::OK, "stored")],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let decoded = ORDER_EVENTS
-        .scope(order_events.clone(), async {
-            client
-                .request(OrderingEndpoint {
-                    policy: cache_policy(),
-                    map_mode: MapMode::Success,
-                })
-                .execute_decoded()
-                .await
-        })
-        .await?;
-
-    assert_eq!(decoded.value(), "stored");
-    assert_eq!(
-        *after_response_count.lock().expect("order cache count lock"),
-        1
-    );
-    assert_eq!(sent_transport.sent_count().await, 1);
-    let events = order_events.lock().expect("order events lock").clone();
-    assert_eq!(events, vec!["decode", "map", "store"]);
-
-    let decoded = ORDER_EVENTS
-        .scope(order_events.clone(), async {
-            client
-                .request(OrderingEndpoint {
-                    policy: cache_policy(),
-                    map_mode: MapMode::Success,
-                })
-                .execute_decoded()
-                .await
-        })
-        .await?;
-    assert_eq!(decoded.value(), "stored");
-    assert_eq!(sent_transport.sent_count().await, 1);
-    Ok(())
-}
-
-#[tokio::test]
-async fn transport_error_retry_exhaustion_then_stale_fallback() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let stale = built_response("Text", StatusCode::OK, "stale");
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        events.clone(),
-        stale,
-    ));
-    let transport = MockTransport::with_outcomes(
-        events.clone(),
-        vec![
-            MockOutcome::TransportError(TransportErrorKind::Timeout),
-            MockOutcome::TransportError(TransportErrorKind::Timeout),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), None);
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: {
-                let mut policy =
-                    retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]);
-                policy.cache = concord_core::internal::CacheSetting::Config(
-                    concord_core::advanced::CacheConfig::new(),
-                );
-                policy
-            },
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(decoded.value(), "stale");
-    assert_eq!(sent_transport.sent_count().await, 2);
-    let events = events.lock().await.clone();
-    assert_eq!(positions(&events, "transport_error").len(), 2);
-    assert!(
-        positions(&events, "transport_error")[1] < first_position(&events, "cache_after_error")
-    );
-    assert!(!events.iter().any(|event| event == "rate_response"));
     Ok(())
 }
 
@@ -2419,52 +1541,9 @@ async fn execute_raw_returns_classified_raw_response() -> Result<(), ApiClientEr
 }
 
 #[tokio::test]
-async fn execute_raw_does_not_lookup_or_store_cache() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, "raw-1"),
-            MockResponse::text(StatusCode::OK, "raw-2"),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let first = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_raw()
-        .await?;
-    let second = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_raw()
-        .await?;
-
-    assert_eq!(first.body, Bytes::from_static(b"raw-1"));
-    assert_eq!(second.body, Bytes::from_static(b"raw-2"));
-    assert_eq!(sent_transport.sent_count().await, 2);
-    assert_eq!(*after_response_count.lock().await, 0);
-    let events = events.lock().await.clone();
-    assert!(!events.iter().any(|event| event == "cache_before:<none>"));
-    assert!(!events.iter().any(|event| event == "cache_after_response"));
-    Ok(())
-}
-
-#[tokio::test]
-async fn execute_raw_uses_retry_but_bypasses_cache() -> Result<(), ApiClientError> {
+async fn execute_raw_uses_retry() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let retry_events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -2476,7 +1555,7 @@ async fn execute_raw_uses_retry_but_bypasses_cache() -> Result<(), ApiClientErro
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
     client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
         retry_events.clone(),
         RetryDecision::Retry,
@@ -2485,7 +1564,7 @@ async fn execute_raw_uses_retry_but_bypasses_cache() -> Result<(), ApiClientErro
 
     let raw = client
         .request(TextEndpoint {
-            policy: cache_policy(),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .execute_raw()
@@ -2494,13 +1573,7 @@ async fn execute_raw_uses_retry_but_bypasses_cache() -> Result<(), ApiClientErro
     assert_eq!(raw.status, StatusCode::OK);
     assert_eq!(raw.body, Bytes::from_static(b"raw"));
     assert_eq!(sent_transport.sent_count().await, 2);
-    assert_eq!(*after_response_count.lock().await, 0);
     let events = events.lock().await.clone();
-    assert!(
-        events
-            .iter()
-            .all(|event| !event.starts_with("cache_before:"))
-    );
     assert_eq!(positions(&events, "rate_acquire").len(), 2);
     assert_eq!(
         positions(&events, "rate_status:500 Internal Server Error").len(),
@@ -2509,59 +1582,6 @@ async fn execute_raw_uses_retry_but_bypasses_cache() -> Result<(), ApiClientErro
     assert_eq!(positions(&events, "rate_status:200 OK").len(), 1);
     assert_eq!(
         positions(&retry_events.lock().await, "retry_decision:Retry").len(),
-        1
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn decoded_cache_entry_does_not_affect_execute_raw() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, "cached"),
-            MockResponse::text(StatusCode::OK, "raw"),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await?;
-    assert_eq!(decoded.value(), "cached");
-    assert_eq!(*after_response_count.lock().await, 1);
-
-    let raw = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_raw()
-        .await?;
-    assert_eq!(raw.body, Bytes::from_static(b"raw"));
-    assert_eq!(sent_transport.sent_count().await, 2);
-    let events = events.lock().await.clone();
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.as_str() == "cache_before:<none>")
-            .count(),
-        1
-    );
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.as_str() == "cache_after_response")
-            .count(),
         1
     );
     Ok(())
@@ -2582,7 +1602,6 @@ async fn per_call_overrides_apply_to_pending_request() -> Result<(), ApiClientEr
         .debug_level(DebugLevel::V)
         .timeout(Duration::from_millis(250))
         .attempt(7)
-        .cache_bypass()
         .execute_decoded()
         .await?;
 
@@ -2640,7 +1659,7 @@ async fn very_verbose_debug_does_not_emit_request_or_response_body_bytes()
     let decoded = client
         .request(BodyDebugEndpoint {
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
-            policy: cache_policy(),
+            policy: ResolvedPolicy::default(),
         })
         .execute_decoded()
         .await?;
@@ -2999,7 +2018,7 @@ async fn decode_error_does_not_trigger_transport_retry() {
 }
 
 #[tokio::test]
-async fn runtime_config_applies_debug_cache_rate_limit_transport_and_pagination_loop_detection()
+async fn runtime_config_applies_debug_rate_limit_transport_and_pagination_loop_detection()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -3009,7 +2028,6 @@ async fn runtime_config_applies_debug_cache_rate_limit_transport_and_pagination_
     let mut client = client(TestAuthVars::default(), transport.clone());
     client.configure(|cfg| {
         cfg.debug(concord_core::prelude::DebugLevel::VV);
-        cfg.cache_store(Arc::new(NoopCacheStore));
         cfg.rate_limiter(Arc::new(NoopRateLimiter::new()));
         cfg.pagination_detect_loops(false);
     });
@@ -3123,8 +2141,6 @@ async fn content_length_over_limit_rejects_before_body_read() {
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let read_count = Arc::new(AtomicUsize::new(0));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -3140,14 +2156,14 @@ async fn content_length_over_limit_rejects_before_body_read() {
     client.set_debug_sink(debug.clone());
     client.set_debug_level(DebugLevel::VV);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });
 
     let err = client
         .request(TextEndpoint {
-            policy: cache_policy(),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .execute_decoded()
@@ -3164,7 +2180,6 @@ async fn content_length_over_limit_rejects_before_body_read() {
     ));
     assert_eq!(body_reads(&read_count), 0);
     assert_eq!(sent_transport.sent_count().await, 1);
-    assert_eq!(*after_response_count.lock().await, 0);
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event == "pre_send"));
     assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
@@ -3181,8 +2196,6 @@ async fn streaming_body_over_limit_rejects_during_bounded_read() {
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let read_count = Arc::new(AtomicUsize::new(0));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -3201,14 +2214,14 @@ async fn streaming_body_over_limit_rejects_during_bounded_read() {
     let debug = Arc::new(RecordingDebugSink::default());
     client.set_debug_sink(debug.clone());
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });
 
     let err = client
         .request(TextEndpoint {
-            policy: cache_policy(),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .execute_decoded()
@@ -3221,7 +2234,6 @@ async fn streaming_body_over_limit_rejects_during_bounded_read() {
     ));
     assert_eq!(body_reads(&read_count), 2);
     assert_eq!(sent_transport.sent_count().await, 1);
-    assert_eq!(*after_response_count.lock().await, 0);
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event == "transport"));
     assert!(events.iter().any(|event| event.starts_with("hook_meta:")));
@@ -3265,7 +2277,6 @@ async fn rate_limit_response_context_remains_body_free() {
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let read_count = Arc::new(AtomicUsize::new(0));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -3277,14 +2288,14 @@ async fn rate_limit_response_context_remains_body_free() {
     );
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, Some(cache), Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });
 
     let err = client
         .request(TextEndpoint {
-            policy: cache_policy(),
+            policy: ResolvedPolicy::default(),
             ..Default::default()
         })
         .execute_decoded()
@@ -3330,7 +2341,6 @@ async fn debug_hooks_never_receive_body_bytes_on_body_errors() {
     for (response, expected_reads) in cases {
         let events = Arc::new(Mutex::new(Vec::new()));
         let read_count = Arc::new(AtomicUsize::new(0));
-        let cache = Arc::new(RecordingCache::miss(events.clone()));
         let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
         let transport = MockTransport::new(
             events.clone(),
@@ -3340,14 +2350,14 @@ async fn debug_hooks_never_receive_body_bytes_on_body_errors() {
         let debug = Arc::new(RecordingDebugSink::default());
         client.set_debug_sink(debug.clone());
         client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-        configure_runtime(&mut client, Some(cache), Some(limiter));
+        configure_runtime(&mut client, Some(limiter));
         client.configure(|cfg| {
             cfg.max_response_body_bytes(4);
         });
 
         let err = client
             .request(TextEndpoint {
-                policy: cache_policy(),
+                policy: ResolvedPolicy::default(),
                 ..Default::default()
             })
             .execute_decoded()
@@ -3376,8 +2386,6 @@ async fn body_limit_plus_one_fails() {
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let read_count = Arc::new(AtomicUsize::new(0));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
         events,
         vec![
@@ -3387,7 +2395,7 @@ async fn body_limit_plus_one_fails() {
         ],
     );
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });
@@ -3407,7 +2415,6 @@ async fn body_limit_plus_one_fails() {
         }
     ));
     assert_eq!(body_reads(&read_count), 0);
-    assert_eq!(*after_response_count.lock().await, 0);
     assert!(!err.to_string().contains("abcde"));
 }
 
@@ -3417,8 +2424,6 @@ async fn decode_failure_under_limit_is_not_body_limit() {
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let read_count = Arc::new(AtomicUsize::new(0));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let body = Bytes::from_static(b"PR74_DECODE_FAILURE_UNDER_LIMIT_SENTINEL\xff");
     let transport = MockTransport::new(
         events,
@@ -3429,7 +2434,7 @@ async fn decode_failure_under_limit_is_not_body_limit() {
         ],
     );
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
     client.configure(|cfg| {
         cfg.max_response_body_bytes(128);
     });
@@ -3445,7 +2450,6 @@ async fn decode_failure_under_limit_is_not_body_limit() {
     assert!(!err.to_string().contains("response body exceeded limit"));
     assert!(!err.to_string().contains(RESPONSE_SENTINEL));
     assert_eq!(body_reads(&read_count), 1);
-    assert_eq!(*after_response_count.lock().await, 0);
     let err_debug = format!("{err:?}");
     assert!(!err_debug.contains(RESPONSE_SENTINEL));
     let mut source = std::error::Error::source(&err);
@@ -3481,33 +2485,7 @@ async fn response_too_large_does_not_decode() {
 }
 
 #[tokio::test]
-async fn body_limit_failure_does_not_store_cache() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "large")]);
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-    client.configure(|cfg| {
-        cfg.max_response_body_bytes(4);
-    });
-
-    let endpoint = TextEndpoint {
-        policy: cache_policy(),
-        ..Default::default()
-    };
-    let err = client
-        .request(endpoint)
-        .execute_decoded()
-        .await
-        .expect_err("body limit should fail before cache write");
-
-    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
-    assert_eq!(*after_response_count.lock().await, 0);
-}
-
-#[tokio::test]
-async fn response_limit_applies_when_cache_is_off() {
+async fn response_limit_applies() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "large")]);
     let mut client = client(TestAuthVars::default(), transport);
@@ -3519,79 +2497,9 @@ async fn response_limit_applies_when_cache_is_off() {
         .request(TextEndpoint::default())
         .execute_decoded()
         .await
-        .expect_err("response limit applies independently from cache");
+        .expect_err("response limit applies");
 
     assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
-}
-
-#[tokio::test]
-async fn cache_max_body_smaller_than_response_limit_skips_store_but_decode_succeeds()
--> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "2k")],
-    );
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-    client.configure(|cfg| {
-        cfg.max_response_body_bytes(4 * 1024);
-    });
-
-    let endpoint = TextEndpoint {
-        policy: ResolvedPolicy {
-            cache: concord_core::internal::CacheSetting::Config(
-                concord_core::advanced::CacheConfig::new().with_max_body_bytes(1),
-            ),
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    let decoded = client.request(endpoint).execute_decoded().await?;
-
-    assert_eq!(decoded.value(), "2k");
-    assert_eq!(*after_response_count.lock().await, 1);
-    assert!(
-        events
-            .lock()
-            .await
-            .iter()
-            .any(|event| event == "cache_max_body_skip")
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn response_limit_smaller_than_cache_max_body_fails_before_cache() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "large")]);
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-    client.configure(|cfg| {
-        cfg.max_response_body_bytes(4);
-    });
-
-    let endpoint = TextEndpoint {
-        policy: ResolvedPolicy {
-            cache: concord_core::internal::CacheSetting::Config(
-                concord_core::advanced::CacheConfig::new().with_max_body_bytes(4 * 1024),
-            ),
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    let err = client
-        .request(endpoint)
-        .execute_decoded()
-        .await
-        .expect_err("response limit should fail before cache max_body is considered");
-
-    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
-    assert_eq!(*after_response_count.lock().await, 0);
 }
 
 #[tokio::test]
@@ -3600,8 +2508,6 @@ async fn body_limit_error_does_not_trigger_ordinary_retry() {
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let read_count = Arc::new(AtomicUsize::new(0));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
         events,
         vec![
@@ -3613,7 +2519,7 @@ async fn body_limit_error_does_not_trigger_ordinary_retry() {
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });
@@ -3637,7 +2543,6 @@ async fn body_limit_error_does_not_trigger_ordinary_retry() {
     ));
     assert_eq!(sent_transport.sent_count().await, 1);
     assert_eq!(body_reads(&read_count), 0);
-    assert_eq!(*after_response_count.lock().await, 0);
     assert!(!err.to_string().contains(RESPONSE_SENTINEL));
 }
 
@@ -3647,8 +2552,6 @@ async fn execute_raw_body_limit_behavior_characterized() {
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let read_count = Arc::new(AtomicUsize::new(0));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
         events.clone(),
         vec![
@@ -3660,7 +2563,7 @@ async fn execute_raw_body_limit_behavior_characterized() {
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
     client.configure(|cfg| {
         cfg.max_response_body_bytes(4);
     });
@@ -3681,14 +2584,6 @@ async fn execute_raw_body_limit_behavior_characterized() {
     ));
     assert_eq!(sent_transport.sent_count().await, 1);
     assert_eq!(body_reads(&read_count), 0);
-    assert_eq!(*after_response_count.lock().await, 0);
-    let events = events.lock().await.clone();
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
-    assert!(!events.iter().any(|event| event == "cache_after_response"));
     assert!(!err.to_string().contains(RESPONSE_SENTINEL));
 }
 
@@ -3708,14 +2603,13 @@ async fn request_body_bytes_remain_transport_only() -> Result<(), ApiClientError
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
     configure_runtime(
         &mut client,
-        Some(Arc::new(RecordingCache::miss(events.clone()))),
         Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
     );
 
     let decoded = client
         .request(BodyDebugEndpoint {
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
-            policy: cache_policy(),
+            policy: ResolvedPolicy::default(),
         })
         .execute_decoded()
         .await?;
@@ -3732,11 +2626,6 @@ async fn request_body_bytes_remain_transport_only() -> Result<(), ApiClientError
     let debug_output = debug.events().join("\n");
     assert!(!debug_output.contains(REQUEST_SENTINEL));
     let events = events.lock().await.clone();
-    assert!(
-        events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
     assert!(events.iter().any(|event| event == "pre_send"));
     assert!(events.iter().any(|event| event == "rate_acquire"));
     assert!(!format!("{events:?}").contains(REQUEST_SENTINEL));

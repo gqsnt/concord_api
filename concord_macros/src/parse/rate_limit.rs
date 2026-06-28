@@ -196,25 +196,3 @@ fn parse_rate_limit_key_spec(input: ParseStream<'_>) -> Result<RateLimitKeySpec>
     }
 }
 
-fn parse_rate_limit_duration_unit(input: ParseStream<'_>) -> Result<RateLimitDurationUnit> {
-    if input.peek(kw::second) {
-        input.parse::<kw::second>()?;
-        Ok(RateLimitDurationUnit::Seconds)
-    } else if input.peek(kw::seconds) {
-        input.parse::<kw::seconds>()?;
-        Ok(RateLimitDurationUnit::Seconds)
-    } else if input.peek(kw::minute) {
-        input.parse::<kw::minute>()?;
-        Ok(RateLimitDurationUnit::Minutes)
-    } else if input.peek(kw::minutes) {
-        input.parse::<kw::minutes>()?;
-        Ok(RateLimitDurationUnit::Minutes)
-    } else {
-        let tt: TokenTree = input.parse()?;
-        Err(syn::Error::new(
-            tt.span(),
-            "expected rate_limit duration unit `second(s)` or `minute(s)`",
-        ))
-    }
-}
-

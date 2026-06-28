@@ -807,7 +807,6 @@ fn debug_norm_tree(norm: &NormApiTree) -> String {
             .as_ref()
             .map_or(0, |v| v.profiles.len()),
         norm.client
-        norm.client
             .rate_limit
             .as_ref()
             .map_or(0, |v| v.profiles.len()),

@@ -112,8 +112,6 @@ expect_check_failure_contains() {
 
 run_check check -p concord_core --no-default-features
 run_check check -p concord_core --no-default-features --features json
-run_check check -p concord_core --no-default-features --features cache-moka
-run_check check -p concord_core --no-default-features --features json,cache-moka
 
 run_check check -p concord_macros --no-default-features
 run_check check -p concord_macros
@@ -123,31 +121,15 @@ run_check nextest run -p concord_examples
 
 manifest_contains "concord_core Cargo.toml" "concord_core/Cargo.toml" 'default = ["rate-limit-governor"]'
 manifest_not_contains "concord_macros Cargo.toml" "concord_macros/Cargo.toml" '[features]'
-manifest_contains "concord_examples Cargo.toml" "concord_examples/Cargo.toml" 'default = ["cache-moka"]'
 
 tree_contains "concord_core default feature tree" 'governor feature "default"' -p concord_core --edges normal,features
-tree_not_contains "concord_core default feature tree" 'moka feature "default"' -p concord_core --edges normal,features
-tree_not_contains "concord_core default feature tree" 'http-cache-semantics' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'async-compression' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'brotli' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'flate2' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'cookie_store' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'cookie ' -p concord_core --edges normal,features
 tree_not_contains "concord_core no-default feature tree" 'governor feature "default"' -p concord_core --edges normal,features --no-default-features
-tree_not_contains "concord_core no-default feature tree" 'moka v' -p concord_core --edges normal,features --no-default-features
-tree_not_contains "concord_core no-default feature tree" 'http-cache-semantics v' -p concord_core --edges normal,features --no-default-features
 tree_not_contains "concord_core no-default feature tree" 'serde_json v' -p concord_core --edges normal,features --no-default-features
 
 tree_same "concord_macros default feature tree" -p concord_macros --edges normal,features
-tree_not_contains "concord_macros default feature tree" 'moka feature "default"' -p concord_macros --edges normal,features
-tree_not_contains "concord_macros default feature tree" 'http-cache-semantics' -p concord_macros --edges normal,features
-tree_not_contains "concord_macros default feature tree" 'moka v' -p concord_macros --edges normal,features
-tree_not_contains "concord_macros default feature tree" 'http-cache-semantics v' -p concord_macros --edges normal,features
 tree_not_contains "concord_macros default feature tree" 'serde_json v' -p concord_macros --edges normal,features
-
-tree_contains "concord_examples default feature tree" 'moka v' -p concord_examples --edges normal,features
-tree_contains "concord_examples default feature tree" 'http-cache-semantics v' -p concord_examples --edges normal,features
-expect_check_failure_contains \
-  "concord_examples no-default build" \
-  'cache default backend requires a `cache-moka` crate feature' \
-  check -p concord_examples --no-default-features

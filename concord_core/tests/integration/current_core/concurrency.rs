@@ -2,12 +2,11 @@ use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthAppliedCredential, AuthDecision, AuthError, AuthFuture, AuthPlacement, AuthRequirement,
-    AuthStepPolicy, BuiltRequest, BuiltResponse, CacheAfter, CacheBefore, CacheFuture,
-    CacheRevalidation, CacheStore, CredentialContext, CredentialId, CredentialProvider,
-    CredentialRefreshReason, CredentialSlot, PreparedAuthCredential, RateLimitBucketUse,
-    RateLimitContext, RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, RequestMeta, Transport, TransportBody, TransportError,
-    TransportErrorKind, TransportRequest, TransportResponse, apply_secret_credential,
+    AuthStepPolicy, CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason,
+    CredentialSlot, PreparedAuthCredential, RateLimitBucketUse, RateLimitContext, RateLimitKeyPart,
+    RateLimitPermit, RateLimitPlan, RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
+    RequestMeta, Transport, TransportBody, TransportError, TransportErrorKind, TransportRequest,
+    TransportResponse, apply_secret_credential,
 };
 use concord_core::internal::{PaginationPlan, ResolvedPolicy};
 use concord_core::prelude::{
@@ -100,120 +99,6 @@ async fn identical_concurrent_post_requests_are_not_coalesced() -> Result<(), Ap
 }
 
 #[tokio::test]
-async fn cache_hit_after_completed_response_still_avoids_transport() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(StoringCache::default());
-    let transport = MockTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::OK, "stored"),
-            MockResponse::text(StatusCode::OK, "unexpected"),
-        ],
-    );
-    let sent = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-    let endpoint = TextEndpoint {
-        policy: cache_policy(),
-        ..Default::default()
-    };
-
-    let first = client.request(endpoint.clone()).execute_decoded().await?;
-    let second = client.request(endpoint).execute_decoded().await?;
-
-    assert_eq!(first.value(), "stored");
-    assert_eq!(second.value(), "stored");
-    assert_eq!(sent.sent_count().await, 1);
-    Ok(())
-}
-
-#[tokio::test]
-async fn concurrent_cache_miss_requests_both_send_transport() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(StoringCache::default());
-    let transport = GateTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::OK, "first"),
-            MockResponse::text(StatusCode::OK, "second"),
-        ],
-    );
-    let sent = transport.clone();
-    let mut client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-    let client = Arc::new(client);
-    let endpoint = TextEndpoint {
-        policy: cache_policy(),
-        ..Default::default()
-    };
-
-    let a = spawn_text_request(client.clone(), endpoint.clone());
-    let b = spawn_text_request(client, endpoint);
-
-    sent.wait_for_sends(2).await;
-    assert_eq!(sent.sent_count().await, 2);
-    sent.release_all();
-
-    let mut values = vec![
-        a.await.expect("request task panicked")?,
-        b.await.expect("request task panicked")?,
-    ];
-    values.sort();
-    assert_eq!(values, vec!["first".to_string(), "second".to_string()]);
-    assert_eq!(sent.sent_count().await, 2);
-    Ok(())
-}
-
-#[tokio::test]
-async fn concurrent_fresh_cache_hits_bypass_transport() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::hit(
-        events.clone(),
-        built_response("Text", StatusCode::OK, "cached"),
-    ));
-    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "unexpected")],
-    );
-    let sent = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), Some(limiter));
-    let client = Arc::new(client);
-    let endpoint = TextEndpoint {
-        policy: cache_policy(),
-        ..Default::default()
-    };
-
-    let a = spawn_text_request(client.clone(), endpoint.clone());
-    let b = spawn_text_request(client, endpoint);
-
-    let values = vec![
-        a.await.expect("request task panicked")?,
-        b.await.expect("request task panicked")?,
-    ];
-    assert_eq!(values, vec!["cached".to_string(), "cached".to_string()]);
-    assert_eq!(sent.sent_count().await, 0);
-
-    let events = events.lock().await.clone();
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.as_str() == "rate_acquire")
-            .count(),
-        0
-    );
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.as_str() == "transport")
-            .count(),
-        0
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn rate_limit_still_observes_each_non_coalesced_request() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
@@ -226,7 +111,7 @@ async fn rate_limit_still_observes_each_non_coalesced_request() -> Result<(), Ap
     );
     let sent = transport.clone();
     let mut client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
     let client = Arc::new(client);
 
     let a = spawn_text_request(client.clone(), TextEndpoint::default());
@@ -487,110 +372,9 @@ async fn concurrent_clone_reconfigure_does_not_affect_in_flight_request() {
 }
 
 #[tokio::test]
-async fn concurrent_cache_hit_and_miss_order_is_deterministic() -> Result<(), ApiClientError> {
+async fn concurrent_success_and_decode_failure_are_isolated() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let gate = PhaseGate::new();
-    let cache = Arc::new(RoutedCache::new(CacheKeyMode::Path, events.clone()));
-    cache
-        .insert("/hit", built_response("Text", StatusCode::OK, "cached"))
-        .await;
-    let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let transport = RoutedTransport::new(gate.clone(), events.clone());
-    transport
-        .insert(
-            "/miss",
-            MockOutcome::Response(
-                MockResponse::text(StatusCode::OK, "live").with_content_length(Some(4)),
-            ),
-        )
-        .await;
-    let mut client =
-        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-    client.configure(|cfg| {
-        cfg.cache_store(cache.clone());
-        cfg.rate_limiter(limiter.clone());
-    });
-    let hit = TextEndpoint {
-        name: "Hit",
-        path: "/hit",
-        policy: cache_and_rate_limit_policy(),
-        ..Default::default()
-    };
-    let miss = TextEndpoint {
-        name: "Miss",
-        path: "/miss",
-        policy: cache_and_rate_limit_policy(),
-        ..Default::default()
-    };
-
-    gate.block("transport_send").await;
-    let hit_task = tokio::spawn({
-        let client = client.clone();
-        let hit = hit.clone();
-        async move {
-            client
-                .request(hit)
-                .execute_decoded()
-                .await
-                .map(|response| response.into_value())
-        }
-    });
-    let miss_task = tokio::spawn({
-        let client = client.clone();
-        async move {
-            client
-                .request(miss)
-                .execute_decoded()
-                .await
-                .map(|response| response.into_value())
-        }
-    });
-
-    let hit_value = hit_task
-        .await
-        .expect("hit task should join")
-        .expect("hit request should complete from cache");
-    assert_eq!(hit_value, "cached");
-    assert_eq!(transport.sent_count().await, 1);
-    assert_eq!(cache.after_response_count(), 0);
-
-    gate.release_all("transport_send").await;
-    let miss_value = miss_task
-        .await
-        .expect("miss task should join")
-        .expect("miss request should complete");
-    assert_eq!(miss_value, "live");
-    assert_eq!(transport.sent_count().await, 1);
-    assert_eq!(cache.after_response_count(), 1);
-    assert_eq!(
-        limiter
-            .events
-            .lock()
-            .await
-            .iter()
-            .filter(|event| *event == "rate_acquire")
-            .count(),
-        1
-    );
-    assert_eq!(
-        limiter
-            .events
-            .lock()
-            .await
-            .iter()
-            .filter(|event| *event == "rate_response")
-            .count(),
-        1
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn concurrent_success_and_decode_failure_cache_admission_isolated()
--> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let gate = PhaseGate::new();
-    let cache = Arc::new(RoutedCache::new(CacheKeyMode::Path, events.clone()));
     let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = RoutedTransport::new(gate.clone(), events.clone());
     transport
@@ -608,19 +392,18 @@ async fn concurrent_success_and_decode_failure_cache_admission_isolated()
     let mut client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
     client.configure(|cfg| {
-        cfg.cache_store(cache.clone());
         cfg.rate_limiter(limiter.clone());
     });
     let ok = TextEndpoint {
         name: "Ok",
         path: "/ok",
-        policy: cache_and_rate_limit_policy(),
+        policy: rate_limit_policy(),
         ..Default::default()
     };
     let bad = TextEndpoint {
         name: "Bad",
         path: "/bad",
-        policy: cache_and_rate_limit_policy(),
+        policy: rate_limit_policy(),
         ..Default::default()
     };
 
@@ -647,9 +430,6 @@ async fn concurrent_success_and_decode_failure_cache_admission_isolated()
         .expect("bad task should join")
         .expect_err("bad request should fail to decode");
     assert!(matches!(bad_err, ApiClientError::Decode { .. }));
-    assert_eq!(cache.after_response_count(), 1);
-    assert_eq!(cache.after_error_count(), 0);
-    assert_eq!(cache.entry_count().await, 1);
     assert_eq!(transport.sent_count().await, 2);
     Ok(())
 }
@@ -755,87 +535,9 @@ async fn concurrent_rate_limit_keys_are_isolated() -> Result<(), ApiClientError>
 }
 
 #[tokio::test]
-async fn concurrent_cache_hit_bypasses_rate_limit_while_other_request_waits()
--> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let gate = PhaseGate::new();
-    let cache = Arc::new(RoutedCache::new(CacheKeyMode::Path, events.clone()));
-    cache
-        .insert("/hit", built_response("Text", StatusCode::OK, "cached"))
-        .await;
-    let limiter_policy_miss = rate_limit_policy_with_bucket("bucket-miss", "route", "miss");
-    let blocked_label = rate_limit_plan_label(&limiter_policy_miss.rate_limit);
-    let limiter = Arc::new(KeyBlockingRateLimiter::new(
-        events.clone(),
-        gate.clone(),
-        blocked_label,
-        "rate_acquire_miss",
-    ));
-    let transport = RoutedTransport::new(gate.clone(), events.clone());
-    transport
-        .insert(
-            "/miss",
-            MockOutcome::Response(MockResponse::text(StatusCode::OK, "live")),
-        )
-        .await;
-    let mut client =
-        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-    client.configure(|cfg| {
-        cfg.cache_store(cache.clone());
-        cfg.rate_limiter(limiter.clone());
-    });
-    let hit = TextEndpoint {
-        name: "Hit",
-        path: "/hit",
-        policy: cache_policy(),
-        ..Default::default()
-    };
-    let miss = TextEndpoint {
-        name: "Miss",
-        path: "/miss",
-        policy: limiter_policy_miss,
-        ..Default::default()
-    };
-
-    gate.block("rate_acquire_miss").await;
-    let hit_task = tokio::spawn({
-        let client = client.clone();
-        let hit = hit.clone();
-        async move { client.request(hit).execute_decoded().await }
-    });
-    let miss_task = tokio::spawn({
-        let client = client.clone();
-        async move { client.request(miss).execute_decoded().await }
-    });
-
-    gate.wait_for("rate_acquire_miss", 1).await;
-
-    let hit_value = hit_task
-        .await
-        .expect("hit task should join")
-        .expect("hit request should complete from cache");
-    assert_eq!(hit_value.value(), "cached");
-    assert!(!miss_task.is_finished());
-    assert_eq!(transport.sent_count().await, 0);
-    assert_eq!(limiter.response_observed.load(AtomicOrdering::SeqCst), 0);
-    assert_eq!(limiter.acquire_started.load(AtomicOrdering::SeqCst), 1);
-
-    gate.release_all("rate_acquire_miss").await;
-    let miss_value = miss_task
-        .await
-        .expect("miss task should join")
-        .expect("miss request should complete");
-    assert_eq!(miss_value.value(), "live");
-    assert_eq!(transport.sent_count().await, 1);
-    assert_eq!(limiter.response_observed.load(AtomicOrdering::SeqCst), 1);
-    Ok(())
-}
-
-#[tokio::test]
 async fn concurrent_transport_error_and_success_are_isolated() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let gate = PhaseGate::new();
-    let cache = Arc::new(RoutedCache::new(CacheKeyMode::Path, events.clone()));
     let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = RoutedTransport::new(gate.clone(), events.clone());
     transport
@@ -853,19 +555,18 @@ async fn concurrent_transport_error_and_success_are_isolated() -> Result<(), Api
     let mut client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
     client.configure(|cfg| {
-        cfg.cache_store(cache.clone());
         cfg.rate_limiter(limiter.clone());
     });
     let ok = TextEndpoint {
         name: "Ok",
         path: "/ok",
-        policy: cache_and_rate_limit_policy(),
+        policy: rate_limit_policy(),
         ..Default::default()
     };
     let err = TextEndpoint {
         name: "Err",
         path: "/err",
-        policy: cache_and_rate_limit_policy(),
+        policy: rate_limit_policy(),
         ..Default::default()
     };
 
@@ -892,8 +593,6 @@ async fn concurrent_transport_error_and_success_are_isolated() -> Result<(), Api
         .expect("err task should join")
         .expect_err("err request should fail");
     assert!(matches!(err_value, ApiClientError::Transport { .. }));
-    assert_eq!(cache.after_response_count(), 1);
-    assert_eq!(cache.entry_count().await, 1);
     assert_eq!(
         limiter
             .events
@@ -904,63 +603,6 @@ async fn concurrent_transport_error_and_success_are_isolated() -> Result<(), Api
             .count(),
         1
     );
-    Ok(())
-}
-
-#[tokio::test]
-async fn concurrent_auth_identities_do_not_share_cache_identity() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RoutedCache::new(CacheKeyMode::Default, events.clone()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, "shared"),
-            MockResponse::text(StatusCode::OK, "shared"),
-        ],
-    );
-    let mut client_a = client(
-        TestAuthVars {
-            token: Some("token-a".to_string()),
-            identity: "alpha",
-        },
-        transport.clone(),
-    );
-    let mut client_b = client(
-        TestAuthVars {
-            token: Some("token-b".to_string()),
-            identity: "beta",
-        },
-        transport.clone(),
-    );
-    client_a.configure(|cfg| {
-        cfg.cache_store(cache.clone());
-    });
-    client_b.configure(|cfg| {
-        cfg.cache_store(cache.clone());
-    });
-    let endpoint = TextEndpoint {
-        policy: {
-            let mut policy = cache_policy();
-            policy.auth = auth_policy(AuthPlacement::Bearer).auth;
-            policy
-        },
-        ..Default::default()
-    };
-
-    let first_a = client_a.request(endpoint.clone()).execute_decoded();
-    let first_b = client_b.request(endpoint.clone()).execute_decoded();
-    let (first_a, first_b) = tokio::join!(first_a, first_b);
-    assert_eq!(first_a?.value(), "shared");
-    assert_eq!(first_b?.value(), "shared");
-    assert_eq!(cache.entry_count().await, 2);
-    assert_eq!(transport.sent_count().await, 2);
-
-    let second_a = client_a.request(endpoint.clone()).execute_decoded();
-    let second_b = client_b.request(endpoint).execute_decoded();
-    let (second_a, second_b) = tokio::join!(second_a, second_b);
-    assert_eq!(second_a?.value(), "shared");
-    assert_eq!(second_b?.value(), "shared");
-    assert_eq!(transport.sent_count().await, 2);
     Ok(())
 }
 
@@ -1095,12 +737,10 @@ async fn concurrent_observer_surfaces_are_body_auth_free() -> Result<(), ApiClie
                 .with_content_length(Some(RESPONSE_BODY_SENTINEL_PR80_B.len() as u64)),
         ],
     );
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
     let hooks = Arc::new(ObservationRuntimeHooks::new(events.clone()));
 
     let mut policy = auth_policy(AuthPlacement::Bearer);
-    policy.cache = cache_policy().cache;
     policy.rate_limit = rate_limit_policy().rate_limit;
 
     let mut client_a = ApiClient::<ObservationAuthCx, _>::with_transport(
@@ -1109,7 +749,6 @@ async fn concurrent_observer_surfaces_are_body_auth_free() -> Result<(), ApiClie
         transport.clone(),
     );
     client_a.configure(|cfg| {
-        cfg.cache_store(cache.clone());
         cfg.rate_limiter(limiter.clone());
         cfg.debug_level(concord_core::prelude::DebugLevel::VV);
     });
@@ -1124,7 +763,6 @@ async fn concurrent_observer_surfaces_are_body_auth_free() -> Result<(), ApiClie
         transport.clone(),
     );
     client_b.configure(|cfg| {
-        cfg.cache_store(cache.clone());
         cfg.rate_limiter(limiter.clone());
         cfg.debug_level(concord_core::prelude::DebugLevel::VV);
     });
@@ -1210,130 +848,6 @@ async fn concurrent_observer_surfaces_are_body_auth_free() -> Result<(), ApiClie
     Ok(())
 }
 
-#[tokio::test]
-async fn concurrent_execute_raw_and_decoded_request_do_not_share_endpoint_cache()
--> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let gate = PhaseGate::new();
-    let cache = Arc::new(RoutedCache::new(CacheKeyMode::Path, events.clone()));
-    cache
-        .insert("/shared", built_response("Text", StatusCode::OK, "cached"))
-        .await;
-    let transport = RoutedTransport::new(gate.clone(), events.clone());
-    transport
-        .insert(
-            "/shared",
-            MockOutcome::Response(MockResponse::text(StatusCode::OK, "live")),
-        )
-        .await;
-    let mut client =
-        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-    client.configure(|cfg| {
-        cfg.cache_store(cache.clone());
-    });
-    let endpoint = TextEndpoint {
-        name: "Shared",
-        path: "/shared",
-        policy: cache_policy(),
-        ..Default::default()
-    };
-
-    gate.block("transport_send").await;
-    let raw_task = tokio::spawn({
-        let client = client.clone();
-        let endpoint = endpoint.clone();
-        async move { client.request(endpoint).execute_raw().await }
-    });
-    let decoded_task = tokio::spawn({
-        let client = client.clone();
-        async move { client.request(endpoint).execute_decoded().await }
-    });
-
-    let decoded = decoded_task
-        .await
-        .expect("decoded task should join")
-        .expect("decoded request should use cache");
-    assert_eq!(decoded.value(), "cached");
-    assert_eq!(cache.after_response_count(), 0);
-    assert_eq!(cache.after_error_count(), 0);
-    assert_eq!(transport.sent_count().await, 1);
-    gate.release_one("transport_send").await;
-    let raw = raw_task
-        .await
-        .expect("raw task should join")
-        .expect("raw request should complete");
-    assert_eq!(raw.status, StatusCode::OK);
-    assert_eq!(raw.body, Bytes::from_static(b"live"));
-    assert_eq!(transport.sent_count().await, 1);
-    assert_eq!(cache.after_response_count(), 0);
-    assert_eq!(cache.after_error_count(), 0);
-    assert_eq!(
-        events
-            .lock()
-            .await
-            .iter()
-            .filter(|event| event.starts_with("cache_before:"))
-            .count(),
-        1
-    );
-    Ok(())
-}
-
-#[tokio::test]
-async fn concurrent_cancelled_request_does_not_admit_or_poison_successful_request()
--> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let gate = PhaseGate::new();
-    let transport_probe = DropProbe::new("transport", events.clone());
-    let cache = Arc::new(RoutedCache::new(CacheKeyMode::Path, events.clone()));
-    let transport = GateableTransport::new(
-        gate.clone(),
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, "one").with_content_length(Some(3)),
-            MockResponse::text(StatusCode::OK, "two").with_content_length(Some(3)),
-        ],
-    )
-    .with_drop_probe(transport_probe.clone());
-    let mut client =
-        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-    client.configure(|cfg| {
-        cfg.cache_store(cache.clone());
-    });
-    let endpoint = TextEndpoint {
-        policy: cache_policy(),
-        ..Default::default()
-    };
-
-    gate.block("transport_send").await;
-    let cancelled = tokio::spawn({
-        let client = client.clone();
-        let endpoint = endpoint.clone();
-        async move { client.request(endpoint).execute_decoded().await }
-    });
-    let survivor = tokio::spawn({
-        let client = client.clone();
-        async move { client.request(endpoint).execute_decoded().await }
-    });
-
-    gate.wait_for("transport_send", 2).await;
-    cancelled.abort();
-    let cancelled_join = cancelled.await;
-    assert!(cancelled_join.is_err());
-    transport_probe.wait_for(1).await;
-    gate.release_all("transport_send").await;
-    let survivor = survivor
-        .await
-        .expect("survivor task should join")
-        .expect("survivor request should complete");
-    assert_eq!(survivor.value(), "one");
-    transport_probe.wait_for(2).await;
-    assert_eq!(cache.after_response_count(), 1);
-    assert_eq!(transport.sent_count().await, 2);
-    assert_eq!(cache.entry_count().await, 1);
-    Ok(())
-}
-
 fn spawn_text_request<T>(
     client: Arc<ApiClient<TestCx, T>>,
     endpoint: TextEndpoint,
@@ -1364,34 +878,6 @@ where
             .await
             .map(|response| response.into_value())
     })
-}
-
-#[derive(Default)]
-struct StoringCache {
-    response: Mutex<Option<BuiltResponse>>,
-}
-
-impl CacheStore for StoringCache {
-    fn before_request<'a>(&'a self, _request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-        Box::pin(async move {
-            match self.response.lock().await.clone() {
-                Some(response) => CacheBefore::Hit(response),
-                None => CacheBefore::Miss,
-            }
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        _request: &'a BuiltRequest,
-        response: &'a BuiltResponse,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, CacheAfter> {
-        Box::pin(async move {
-            *self.response.lock().await = Some(response.clone());
-            CacheAfter::Stored
-        })
-    }
 }
 
 #[derive(Clone)]
@@ -1448,7 +934,6 @@ impl ClientContext for SingleFlightCx {
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(lease.generation),
-                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
             };
             Ok(PreparedAuthCredential::new(applied, application))
@@ -1555,107 +1040,6 @@ impl CredentialProvider<SingleFlightCx> for ControlledTokenProvider {
             }
 
             Ok(AccessToken::new(self.token.to_string()))
-        })
-    }
-}
-
-#[derive(Clone, Copy)]
-enum CacheKeyMode {
-    Path,
-    Default,
-}
-
-#[derive(Clone)]
-struct RoutedCache {
-    mode: CacheKeyMode,
-    entries: Arc<Mutex<HashMap<String, BuiltResponse>>>,
-    events: Arc<Mutex<Vec<String>>>,
-    after_response_count: Arc<AtomicUsize>,
-    after_error_count: Arc<AtomicUsize>,
-}
-
-impl RoutedCache {
-    fn new(mode: CacheKeyMode, events: Arc<Mutex<Vec<String>>>) -> Self {
-        Self {
-            mode,
-            entries: Arc::new(Mutex::new(HashMap::new())),
-            events,
-            after_response_count: Arc::new(AtomicUsize::new(0)),
-            after_error_count: Arc::new(AtomicUsize::new(0)),
-        }
-    }
-
-    fn key_for_request(&self, request: &BuiltRequest) -> String {
-        match self.mode {
-            CacheKeyMode::Path => request.url.path().to_string(),
-            CacheKeyMode::Default => concord_core::advanced::default_cache_key(request)
-                .as_str()
-                .to_string(),
-        }
-    }
-
-    async fn insert(&self, key: impl Into<String>, response: BuiltResponse) {
-        self.entries.lock().await.insert(key.into(), response);
-    }
-
-    async fn entry_count(&self) -> usize {
-        self.entries.lock().await.len()
-    }
-
-    fn after_response_count(&self) -> usize {
-        self.after_response_count.load(AtomicOrdering::SeqCst)
-    }
-
-    fn after_error_count(&self) -> usize {
-        self.after_error_count.load(AtomicOrdering::SeqCst)
-    }
-}
-
-impl CacheStore for RoutedCache {
-    fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-        Box::pin(async move {
-            let key = self.key_for_request(request);
-            self.events.lock().await.push(format!("cache_before:{key}"));
-            match self.entries.lock().await.get(&key).cloned() {
-                Some(response) => CacheBefore::Hit(response),
-                None => CacheBefore::Miss,
-            }
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        request: &'a BuiltRequest,
-        response: &'a BuiltResponse,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, CacheAfter> {
-        Box::pin(async move {
-            let key = self.key_for_request(request);
-            self.after_response_count
-                .fetch_add(1, AtomicOrdering::SeqCst);
-            self.events
-                .lock()
-                .await
-                .push(format!("cache_after_response:{key}"));
-            self.entries.lock().await.insert(key, response.clone());
-            CacheAfter::Stored
-        })
-    }
-
-    fn after_error<'a>(
-        &'a self,
-        request: &'a BuiltRequest,
-        _error: &'a ApiClientError,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, Option<BuiltResponse>> {
-        Box::pin(async move {
-            let key = self.key_for_request(request);
-            self.after_error_count.fetch_add(1, AtomicOrdering::SeqCst);
-            self.events
-                .lock()
-                .await
-                .push(format!("cache_after_error:{key}"));
-            None
         })
     }
 }

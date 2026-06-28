@@ -1,25 +1,3 @@
-use std::hash::BuildHasher;
-use std::sync::OnceLock;
-
-static SECRET_FINGERPRINT_STATE: OnceLock<std::collections::hash_map::RandomState> =
-    OnceLock::new();
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct SecretFingerprint(String);
-
-impl std::fmt::Display for SecretFingerprint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-pub(crate) fn secret_fingerprint(value: &str) -> SecretFingerprint {
-    // Process-local keyed SipHash label. This is for redacted partitioning and
-    // diagnostics only; it is not a stable persistent identifier.
-    let state = SECRET_FINGERPRINT_STATE.get_or_init(std::collections::hash_map::RandomState::new);
-    SecretFingerprint(format!("{:016x}", state.hash_one(value)))
-}
-
 pub(crate) fn is_sensitive_name(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     matches!(
@@ -57,29 +35,6 @@ pub(crate) fn is_sensitive_name(name: &str) -> bool {
 
 pub(crate) fn should_redact_header_name(name: &http::HeaderName) -> bool {
     is_sensitive_name(name.as_str())
-}
-
-pub(crate) fn hashed_sensitive_value(value: &str) -> String {
-    format!("<sensitive:{}>", secret_fingerprint(value))
-}
-
-pub(crate) fn sanitized_url_for_key(url: &url::Url) -> String {
-    if url.query().is_none() {
-        return url.to_string();
-    }
-    let mut out = url.clone();
-    out.query_pairs_mut().clear();
-    {
-        let mut pairs = out.query_pairs_mut();
-        for (key, value) in url.query_pairs() {
-            if is_sensitive_name(&key) {
-                pairs.append_pair(&key, &hashed_sensitive_value(&value));
-            } else {
-                pairs.append_pair(&key, &value);
-            }
-        }
-    }
-    out.to_string()
 }
 
 pub(crate) fn sanitize_url_for_debug<I, S>(url: &url::Url, sensitive_query_keys: I) -> String
@@ -135,19 +90,6 @@ mod tests {
         }
 
         assert!(!is_sensitive_name("accept"));
-    }
-
-    #[test]
-    fn sanitized_url_hashes_sensitive_query_values() {
-        let url: url::Url = "https://example.com/items?api_key=secret&visible=plain"
-            .parse()
-            .expect("valid url");
-
-        let rendered = sanitized_url_for_key(&url);
-
-        assert!(rendered.contains("visible=plain"));
-        assert!(rendered.contains("api_key=%3Csensitive%3A"));
-        assert!(!rendered.contains("secret"));
     }
 
     #[test]

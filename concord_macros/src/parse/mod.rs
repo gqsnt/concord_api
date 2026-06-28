@@ -11,8 +11,7 @@ use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{
-    Expr, Ident, LitBool, LitInt, LitStr, Path, Result, Token, Type, braced, bracketed,
-    parenthesized, token,
+    Expr, Ident, LitInt, LitStr, Path, Result, Token, Type, braced, bracketed, parenthesized, token,
 };
 
 impl Parse for RawApi {

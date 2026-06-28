@@ -1,16 +1,14 @@
 use super::common::{
     GateTransport, ItemsEndpoint, MockResponse, MockTransport, ObservationRateLimiter,
-    RecordingCache, RecordingRateLimiter, TestAuthVars, TestCx, TextEndpoint, auth_policy,
-    cache_policy, client,
+    RecordingRateLimiter, TestAuthVars, TestCx, TextEndpoint, auth_policy, client,
 };
 use bytes::Bytes;
 use concord_core::advanced::{
-    BuiltRequest, BuiltResponse, CacheAfter, CacheBefore, CacheFuture, CacheRevalidation,
-    CacheStore, DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
+    DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
     RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
     RateLimitResponseContext, RateLimitWindow, RateLimiter, RuntimeHooks,
 };
-use concord_core::internal::{CacheSetting, PaginationPlan, ResolvedPolicy};
+use concord_core::internal::{PaginationPlan, ResolvedPolicy};
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel, PaginationTermination};
 use http::{HeaderMap, Method, StatusCode};
 use std::num::NonZeroU32;
@@ -168,7 +166,7 @@ async fn per_request_timeout_override_wins_and_does_not_leak() -> Result<(), Api
         timeout: Some(Duration::from_secs(5)),
         ..ResolvedPolicy::default()
     };
-    policy.rate_limit = cache_policy_with_rate_limit(None).rate_limit;
+    policy.rate_limit = rate_limit_policy().rate_limit;
     let endpoint = TextEndpoint {
         policy,
         ..TextEndpoint::default()
@@ -213,52 +211,6 @@ async fn per_request_attempt_override_wins_and_does_not_leak() -> Result<(), Api
     let requests = transport.requests().await;
     assert_eq!(requests[0].meta.attempt, 7);
     assert_eq!(requests[1].meta.attempt, 0);
-    Ok(())
-}
-
-#[tokio::test]
-async fn per_request_cache_mode_override_wins_and_does_not_leak() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, "one"),
-            MockResponse::text(StatusCode::OK, "two"),
-        ],
-    );
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let mut client = client(TestAuthVars::default(), transport);
-    client.configure(|cfg| {
-        cfg.cache_store(cache);
-    });
-    let endpoint = TextEndpoint {
-        policy: cache_policy(),
-        ..TextEndpoint::default()
-    };
-
-    client
-        .request(endpoint.clone())
-        .cache_bypass()
-        .execute_decoded()
-        .await?;
-    client.request(endpoint).execute_decoded().await?;
-
-    let events = transport_events(&events).await;
-    assert_eq!(events.first().map(String::as_str), Some("transport"));
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.starts_with("cache_before"))
-            .count(),
-        1
-    );
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.as_str() == "cache_after_response")
-            .count(),
-        1
-    );
     Ok(())
 }
 
@@ -321,7 +273,6 @@ async fn execute_raw_uses_same_runtime_safety_config() {
                 .with_read_count(read_count.clone()),
         ],
     );
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
     let hooks = Arc::new(NamedHooks::new("raw", events.clone()));
     let debug = Arc::new(RecordingDebugSink::default());
@@ -336,13 +287,11 @@ async fn execute_raw_uses_same_runtime_safety_config() {
         cfg.max_response_body_bytes(4)
             .debug_level(DebugLevel::VV)
             .debug_sink(debug.clone())
-            .cache_store(cache)
             .rate_limiter(limiter)
             .runtime_hooks(hooks);
     });
     let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
-    policy.cache = cache_policy_with_rate_limit(None).cache;
-    policy.rate_limit = cache_policy_with_rate_limit(None).rate_limit;
+    policy.rate_limit = rate_limit_policy().rate_limit;
 
     let err = client
         .request(TextEndpoint {
@@ -356,11 +305,6 @@ async fn execute_raw_uses_same_runtime_safety_config() {
     assert_response_too_large(&err);
     assert_eq!(body_reads(&read_count), 0);
     let event_snapshot = transport_events(&events).await;
-    assert!(
-        !event_snapshot
-            .iter()
-            .any(|event| event.starts_with("cache_before"))
-    );
     assert!(event_snapshot.contains(&"rate_acquire".to_string()));
     assert!(event_snapshot.contains(&"hook_pre_send:raw".to_string()));
     assert!(event_snapshot.contains(&"hook_post_response:raw:200 OK".to_string()));
@@ -377,7 +321,6 @@ async fn disabled_body_limit_behavior_characterized() -> Result<(), ApiClientErr
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, RESPONSE_BODY_SENTINEL)],
     );
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
     let limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let debug = Arc::new(RecordingDebugSink::default());
     let hooks = Arc::new(NamedHooks::new("disabled", events.clone()));
@@ -386,14 +329,13 @@ async fn disabled_body_limit_behavior_characterized() -> Result<(), ApiClientErr
         cfg.no_response_body_limit()
             .debug_level(DebugLevel::VV)
             .debug_sink(debug.clone())
-            .cache_store(cache)
             .rate_limiter(limiter)
             .runtime_hooks(hooks);
     });
 
     let decoded = client
         .request(TextEndpoint {
-            policy: cache_policy_with_rate_limit(Some(4)),
+            policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
         .execute_decoded()
@@ -402,70 +344,6 @@ async fn disabled_body_limit_behavior_characterized() -> Result<(), ApiClientErr
     assert_eq!(decoded.value, RESPONSE_BODY_SENTINEL);
     let joined = all_observed_text(&events, &debug).await;
     assert!(!joined.contains(RESPONSE_BODY_SENTINEL));
-    assert!(joined.contains("cache_max_body_skip"));
-    Ok(())
-}
-
-#[tokio::test]
-async fn cache_max_body_does_not_raise_runtime_body_limit() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, Bytes::from_static(b"abcde"))
-                .with_content_length(Some(5)),
-        ],
-    );
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let mut client = client(TestAuthVars::default(), transport);
-    client.configure(|cfg| {
-        cfg.max_response_body_bytes(4).cache_store(cache.clone());
-    });
-
-    let err = client
-        .request(TextEndpoint {
-            policy: cache_policy_with_rate_limit(Some(1024)),
-            ..TextEndpoint::default()
-        })
-        .execute_decoded()
-        .await
-        .expect_err("runtime body limit should win over larger cache max_body");
-
-    assert_response_too_large(&err);
-    assert_eq!(*cache.after_response_count.lock().await, 0);
-}
-
-#[tokio::test]
-async fn runtime_body_limit_does_not_change_cache_max_body() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(
-            StatusCode::OK,
-            Bytes::from_static(b"abcde"),
-        )],
-    );
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let mut client = client(TestAuthVars::default(), transport);
-    client.configure(|cfg| {
-        cfg.max_response_body_bytes(1024).cache_store(cache.clone());
-    });
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: cache_policy_with_rate_limit(Some(4)),
-            ..TextEndpoint::default()
-        })
-        .execute_decoded()
-        .await?;
-
-    assert_eq!(decoded.value, "abcde");
-    assert_eq!(*cache.after_response_count.lock().await, 1);
-    assert!(
-        transport_events(&events)
-            .await
-            .contains(&"cache_max_body_skip".to_string())
-    );
     Ok(())
 }
 
@@ -535,7 +413,7 @@ async fn rate_limiter_config_is_request_scoped() -> Result<(), ApiClientError> {
     });
     client
         .request(TextEndpoint {
-            policy: cache_policy_with_rate_limit(None),
+            policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
         .execute_decoded()
@@ -545,7 +423,7 @@ async fn rate_limiter_config_is_request_scoped() -> Result<(), ApiClientError> {
     });
     client
         .request(TextEndpoint {
-            policy: cache_policy_with_rate_limit(None),
+            policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
         .execute_decoded()
@@ -560,60 +438,22 @@ async fn rate_limiter_config_is_request_scoped() -> Result<(), ApiClientError> {
     Ok(())
 }
 
-#[tokio::test]
-async fn cache_store_config_is_request_scoped() -> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, "one"),
-            MockResponse::text(StatusCode::OK, "two"),
-        ],
-    );
-    let mut client = client(TestAuthVars::default(), transport);
-    let endpoint = TextEndpoint {
-        policy: cache_policy(),
-        ..TextEndpoint::default()
-    };
-
-    client.configure(|cfg| {
-        cfg.cache_store(Arc::new(NamedCache::new("A", events.clone())));
-    });
-    client.request(endpoint.clone()).execute_decoded().await?;
-    client.configure(|cfg| {
-        cfg.cache_store(Arc::new(NamedCache::new("B", events.clone())));
-    });
-    client.request(endpoint).execute_decoded().await?;
-
-    let events = transport_events(&events).await;
-    assert!(events.contains(&"cache_before:A".to_string()));
-    assert!(events.contains(&"cache_after:A:3".to_string()));
-    assert!(events.contains(&"cache_before:B".to_string()));
-    assert!(events.contains(&"cache_after:B:3".to_string()));
-    assert_no_body_or_auth(&events.join("\n"));
-    Ok(())
-}
-
-fn cache_policy_with_rate_limit(cache_max_body: Option<usize>) -> ResolvedPolicy {
-    let mut policy = cache_policy();
-    if let Some(max_body) = cache_max_body {
-        policy.cache = CacheSetting::Config(
-            concord_core::advanced::CacheConfig::new().with_max_body_bytes(max_body),
-        );
+fn rate_limit_policy() -> ResolvedPolicy {
+    ResolvedPolicy {
+        rate_limit: RateLimitPlan::from_buckets(vec![
+            RateLimitBucketUse::new(
+                "test",
+                "runtime_config",
+                RateLimitKey::new(vec![
+                    RateLimitKeyPart::endpoint(),
+                    RateLimitKeyPart::method(),
+                ]),
+            )
+            .with_window(RateLimitWindow::from_u32(10, Duration::from_secs(1)).unwrap())
+            .with_cost(NonZeroU32::new(1).unwrap()),
+        ]),
+        ..Default::default()
     }
-    policy.rate_limit = RateLimitPlan::from_buckets(vec![
-        RateLimitBucketUse::new(
-            "test",
-            "runtime_config",
-            RateLimitKey::new(vec![
-                RateLimitKeyPart::endpoint(),
-                RateLimitKeyPart::method(),
-            ]),
-        )
-        .with_window(RateLimitWindow::from_u32(10, Duration::from_secs(1)).unwrap())
-        .with_cost(NonZeroU32::new(1).unwrap()),
-    ]);
-    policy
 }
 
 async fn run_debug_safety_request(level: DebugLevel) -> Result<Vec<String>, ApiClientError> {
@@ -789,45 +629,6 @@ impl RateLimiter for NamedRateLimiter {
                 .await
                 .push(format!("rate_response:{}:{}", self.name, ctx.status));
             Ok(RateLimitResponseAction::Continue)
-        })
-    }
-}
-
-struct NamedCache {
-    name: &'static str,
-    events: Arc<Mutex<Vec<String>>>,
-}
-
-impl NamedCache {
-    fn new(name: &'static str, events: Arc<Mutex<Vec<String>>>) -> Self {
-        Self { name, events }
-    }
-}
-
-impl CacheStore for NamedCache {
-    fn before_request<'a>(&'a self, _request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-        Box::pin(async move {
-            self.events
-                .lock()
-                .await
-                .push(format!("cache_before:{}", self.name));
-            CacheBefore::Miss
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        _request: &'a BuiltRequest,
-        response: &'a BuiltResponse,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, CacheAfter> {
-        Box::pin(async move {
-            self.events.lock().await.push(format!(
-                "cache_after:{}:{}",
-                self.name,
-                response.body.len()
-            ));
-            CacheAfter::Stored
         })
     }
 }

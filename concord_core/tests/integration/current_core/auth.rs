@@ -4,9 +4,7 @@ use concord_core::advanced::OAuth2ClientCredentialsProvider;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthChallengePolicy, AuthDecision, AuthError,
     AuthErrorKind, AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
-    AuthStepPolicy, BuiltRequest, BuiltResponse, CacheAfter, CacheBefore, CacheFuture,
-    CacheRevalidation, PreparedAuthCredential, RequestMeta, RetryDecision,
-    auth_decision_for_status,
+    AuthStepPolicy, PreparedAuthCredential, RequestMeta, RetryDecision, auth_decision_for_status,
 };
 use concord_core::advanced::{
     CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason, CredentialSlot,
@@ -15,7 +13,7 @@ use concord_core::advanced::{
 use concord_core::internal::{ClientPlanContext, RequestPlan};
 use concord_core::prelude::{AccessToken, ApiClientError, ApiKey, ClientContext, Endpoint};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -42,131 +40,6 @@ async fn missing_credential_error_is_actionable() {
     assert!(msg.contains("missing credential"));
     assert!(msg.contains("test.token"));
     assert!(msg.contains("acquire or configure"));
-}
-
-#[tokio::test]
-async fn auth_rejection_does_not_store_cache_entry() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        events,
-        vec![MockResponse::text(StatusCode::UNAUTHORIZED, "nope")],
-    );
-    let mut client = client(
-        TestAuthVars {
-            token: Some("bad".to_string()),
-            identity: "user-a",
-        },
-        transport,
-    );
-    configure_runtime(&mut client, Some(cache), None);
-    let endpoint = TextEndpoint {
-        policy: {
-            let mut policy = auth_policy(AuthPlacement::Bearer);
-            policy.cache = concord_core::internal::CacheSetting::Config(
-                concord_core::advanced::CacheConfig::new(),
-            );
-            policy
-        },
-        ..Default::default()
-    };
-
-    let err = client
-        .request(endpoint)
-        .execute_decoded()
-        .await
-        .expect_err("401 auth rejection should fail");
-    assert!(err.to_string().contains("auth challenge rejected"));
-    assert_eq!(*after_response_count.lock().await, 0);
-}
-
-#[tokio::test]
-async fn auth_rejection_does_not_store_cache_entry_forbidden() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let transport = MockTransport::new(
-        events,
-        vec![MockResponse::text(StatusCode::FORBIDDEN, "forbidden")],
-    );
-    let mut client = client(
-        TestAuthVars {
-            token: Some("bad".to_string()),
-            identity: "user-a",
-        },
-        transport,
-    );
-    configure_runtime(&mut client, Some(cache), None);
-    let endpoint = TextEndpoint {
-        policy: {
-            let mut policy = auth_policy(AuthPlacement::Bearer);
-            policy.cache = concord_core::internal::CacheSetting::Config(
-                concord_core::advanced::CacheConfig::new(),
-            );
-            policy
-        },
-        ..Default::default()
-    };
-
-    let err = client
-        .request(endpoint)
-        .execute_decoded()
-        .await
-        .expect_err("403 auth rejection should fail");
-    assert!(err.to_string().contains("auth challenge rejected"));
-    assert_eq!(*after_response_count.lock().await, 0);
-}
-
-#[tokio::test]
-async fn auth_rejection_response_is_not_cache_admitted() {
-    for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let cache = Arc::new(AdmittingCache::default());
-        let after_response_count = cache.after_response_count.clone();
-        let transport = MockTransport::new(
-            events.clone(),
-            vec![
-                MockResponse::text(status, "rejected"),
-                MockResponse::text(StatusCode::OK, "fresh"),
-            ],
-        );
-        let sent_transport = transport.clone();
-        let mut client = client(
-            TestAuthVars {
-                token: Some("bad".to_string()),
-                identity: "user-a",
-            },
-            transport,
-        );
-        configure_runtime(&mut client, Some(cache), None);
-        let endpoint = TextEndpoint {
-            policy: {
-                let mut policy = auth_policy(AuthPlacement::Bearer);
-                policy.cache = concord_core::internal::CacheSetting::Config(
-                    concord_core::advanced::CacheConfig::new(),
-                );
-                policy
-            },
-            ..Default::default()
-        };
-
-        let err = client
-            .request(endpoint.clone())
-            .execute_decoded()
-            .await
-            .expect_err("auth rejection should not be cache admitted");
-        assert!(err.to_string().contains("auth challenge rejected"));
-        assert_eq!(*after_response_count.lock().await, 0);
-
-        let decoded = client
-            .request(endpoint)
-            .execute_decoded()
-            .await
-            .expect("second request should hit transport, not a cached rejection");
-        assert_eq!(decoded.value(), "fresh");
-        assert_eq!(sent_transport.sent_count().await, 2);
-    }
 }
 
 #[tokio::test]
@@ -274,7 +147,6 @@ async fn auth_rejection_errors_are_raw_secret_free() {
         client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
         configure_runtime(
             &mut client,
-            None,
             Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
         );
         client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
@@ -335,7 +207,6 @@ async fn auth_rejection_errors_are_raw_secret_free() {
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
     configure_runtime(
         &mut client,
-        None,
         Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
     );
     client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
@@ -528,12 +399,8 @@ async fn query_auth_key_collision_fails_before_transport_without_leaking_secret(
 }
 
 #[tokio::test]
-async fn query_auth_collision_fails_before_cache_and_rate_limit() {
+async fn query_auth_collision_fails_before_rate_limit() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::hit(
-        events.clone(),
-        built_response("Text", StatusCode::OK, "cached"),
-    ));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -547,10 +414,8 @@ async fn query_auth_collision_fails_before_cache_and_rate_limit() {
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
     let mut policy = auth_policy(AuthPlacement::Query("api_key"));
-    policy.cache =
-        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
     policy
         .query
         .push(("api_key".to_string(), "public-value".to_string()));
@@ -562,7 +427,7 @@ async fn query_auth_collision_fails_before_cache_and_rate_limit() {
         })
         .execute_decoded()
         .await
-        .expect_err("query auth collision should fail before cache or rate limit");
+        .expect_err("query auth collision should fail before rate limit");
 
     match err {
         ApiClientError::Auth { source, .. } => {
@@ -575,23 +440,13 @@ async fn query_auth_collision_fails_before_cache_and_rate_limit() {
     }
     assert_eq!(sent.sent_count().await, 0);
     let events = events.lock().await.clone();
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
-    assert!(!events.iter().any(|event| event == "cache_hit"));
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "rate_response"));
 }
 
 #[tokio::test]
-async fn public_header_auth_collision_fails_before_cache_and_rate_limit() {
+async fn public_header_auth_collision_fails_before_rate_limit() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::hit(
-        events.clone(),
-        built_response("Text", StatusCode::OK, "cached"),
-    ));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -605,10 +460,8 @@ async fn public_header_auth_collision_fails_before_cache_and_rate_limit() {
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
     let mut policy = auth_policy(AuthPlacement::Bearer);
-    policy.cache =
-        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
     policy.headers.insert(
         http::header::AUTHORIZATION,
         HeaderValue::from_static("public"),
@@ -621,7 +474,7 @@ async fn public_header_auth_collision_fails_before_cache_and_rate_limit() {
         })
         .execute_decoded()
         .await
-        .expect_err("bearer authorization collision should fail before cache or rate limit");
+        .expect_err("bearer authorization collision should fail before rate limit");
 
     match err {
         ApiClientError::Auth { source, .. } => {
@@ -634,82 +487,13 @@ async fn public_header_auth_collision_fails_before_cache_and_rate_limit() {
     }
     assert_eq!(sent.sent_count().await, 0);
     let events = events.lock().await.clone();
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
-    assert!(!events.iter().any(|event| event == "cache_hit"));
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "rate_response"));
 }
 
 #[tokio::test]
-async fn header_auth_collision_fresh_cache_hit_does_not_mask_error() {
+async fn custom_header_auth_collision_fails_before_rate_limit_case_insensitive() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::hit(
-        events.clone(),
-        built_response("Text", StatusCode::OK, "cached"),
-    ));
-    let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
-    );
-    let sent = transport.clone();
-    let mut client = client(
-        TestAuthVars {
-            token: Some("FRESH_CACHE_COLLISION_SECRET".to_string()),
-            identity: "user-a",
-        },
-        transport,
-    );
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
-    let mut policy = auth_policy(AuthPlacement::Bearer);
-    policy.cache =
-        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
-    policy.headers.insert(
-        http::header::AUTHORIZATION,
-        HeaderValue::from_static("public"),
-    );
-
-    let err = client
-        .request(TextEndpoint {
-            policy,
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await
-        .expect_err("fresh cache hit must not mask header collision");
-
-    match err {
-        ApiClientError::Auth { source, .. } => {
-            assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
-            let msg = source.to_string();
-            assert!(msg.contains("Authorization"));
-            assert!(!msg.contains("FRESH_CACHE_COLLISION_SECRET"));
-        }
-        other => panic!("expected auth error, got {other:?}"),
-    }
-    assert_eq!(sent.sent_count().await, 0);
-    let events = events.lock().await.clone();
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
-    assert!(!events.iter().any(|event| event == "cache_hit"));
-    assert!(!events.iter().any(|event| event == "rate_acquire"));
-    assert!(!events.iter().any(|event| event == "rate_response"));
-}
-
-#[tokio::test]
-async fn custom_header_auth_collision_fails_before_cache_and_rate_limit_case_insensitive() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::hit(
-        events.clone(),
-        built_response("Text", StatusCode::OK, "cached"),
-    ));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -723,10 +507,8 @@ async fn custom_header_auth_collision_fails_before_cache_and_rate_limit_case_ins
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
     let mut policy = auth_policy(AuthPlacement::Header("X-Api-Key"));
-    policy.cache =
-        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
     policy.headers.insert(
         HeaderName::from_static("x-api-key"),
         HeaderValue::from_static("public"),
@@ -739,7 +521,7 @@ async fn custom_header_auth_collision_fails_before_cache_and_rate_limit_case_ins
         })
         .execute_decoded()
         .await
-        .expect_err("custom header collision should fail before cache or rate limit");
+        .expect_err("custom header collision should fail before rate limit");
 
     match err {
         ApiClientError::Auth { source, .. } => {
@@ -752,12 +534,6 @@ async fn custom_header_auth_collision_fails_before_cache_and_rate_limit_case_ins
     }
     assert_eq!(sent.sent_count().await, 0);
     let events = events.lock().await.clone();
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
-    assert!(!events.iter().any(|event| event == "cache_hit"));
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "rate_response"));
 }
@@ -771,18 +547,12 @@ async fn auth_policy_default_401_invalidates_and_retries_runtime_reacquirable()
         vec!["old-401".to_string(), "new-401".to_string()],
     );
     let retry_events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        harness.events.clone(),
-        built_response("Text", StatusCode::OK, "stale"),
-    ));
-    let after_error_count = cache.after_error_count.clone();
     let mut client = harness.client(vec![
         MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
         MockResponse::text(StatusCode::OK, "refreshed"),
     ]);
     configure_runtime(
         &mut client,
-        Some(cache),
         Some(Arc::new(ObservationRateLimiter::new(
             harness.events.clone(),
         ))),
@@ -805,7 +575,6 @@ async fn auth_policy_default_401_invalidates_and_retries_runtime_reacquirable()
     assert_eq!(harness.event_count("prepare:old-401").await, 1);
     assert_eq!(harness.event_count("prepare:new-401").await, 1);
     assert!(retry_events.lock().await.is_empty());
-    assert_eq!(*after_error_count.lock().await, 0);
     Ok(())
 }
 
@@ -818,18 +587,12 @@ async fn auth_policy_default_403_invalidates_and_retries_runtime_reacquirable()
         vec!["old-403".to_string(), "new-403".to_string()],
     );
     let retry_events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        harness.events.clone(),
-        built_response("Text", StatusCode::OK, "stale"),
-    ));
-    let after_error_count = cache.after_error_count.clone();
     let mut client = harness.client(vec![
         MockResponse::text(StatusCode::FORBIDDEN, "forbidden"),
         MockResponse::text(StatusCode::OK, "refreshed"),
     ]);
     configure_runtime(
         &mut client,
-        Some(cache),
         Some(Arc::new(ObservationRateLimiter::new(
             harness.events.clone(),
         ))),
@@ -852,7 +615,6 @@ async fn auth_policy_default_403_invalidates_and_retries_runtime_reacquirable()
     assert_eq!(harness.event_count("prepare:old-403").await, 1);
     assert_eq!(harness.event_count("prepare:new-403").await, 1);
     assert!(retry_events.lock().await.is_empty());
-    assert_eq!(*after_error_count.lock().await, 0);
     Ok(())
 }
 
@@ -918,18 +680,12 @@ async fn auth_policy_retry_true_invalidate_false_behavior_characterized()
         };
         let harness = PolicyAuthHarness::new(policy, AuthChallengePolicy::Default);
         let retry_events = Arc::new(Mutex::new(Vec::new()));
-        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-            harness.events.clone(),
-            built_response("Text", StatusCode::OK, "stale"),
-        ));
-        let after_error_count = cache.after_error_count.clone();
         let mut client = harness.client(vec![
             MockResponse::text(status, "rejected"),
             MockResponse::text(StatusCode::OK, "recovered"),
         ]);
         configure_runtime(
             &mut client,
-            Some(cache),
             Some(Arc::new(ObservationRateLimiter::new(
                 harness.events.clone(),
             ))),
@@ -967,7 +723,6 @@ async fn auth_policy_retry_true_invalidate_false_behavior_characterized()
         );
         assert_eq!(harness.event_count("acquire").await, 2);
         assert!(retry_events.lock().await.is_empty());
-        assert_eq!(*after_error_count.lock().await, 0);
     }
     Ok(())
 }
@@ -989,15 +744,9 @@ async fn auth_policy_invalidate_true_retry_false_behavior_characterized()
             vec!["terminal-token".to_string()],
         );
         let retry_events = Arc::new(Mutex::new(Vec::new()));
-        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-            harness.events.clone(),
-            built_response("Text", StatusCode::OK, "stale"),
-        ));
-        let after_error_count = cache.after_error_count.clone();
         let mut client = harness.client(vec![MockResponse::text(status, "rejected")]);
         configure_runtime(
             &mut client,
-            Some(cache),
             Some(Arc::new(ObservationRateLimiter::new(
                 harness.events.clone(),
             ))),
@@ -1040,7 +789,6 @@ async fn auth_policy_invalidate_true_retry_false_behavior_characterized()
         assert_eq!(harness.event_count("retry:Forbidden").await, 0);
         assert_eq!(harness.event_count("prepare:terminal-token").await, 1);
         assert!(retry_events.lock().await.is_empty());
-        assert_eq!(*after_error_count.lock().await, 0);
     }
     Ok(())
 }
@@ -1061,15 +809,9 @@ async fn auth_policy_no_retry_no_invalidate_terminal_rejection() -> Result<(), A
             vec!["terminal-token".to_string()],
         );
         let retry_events = Arc::new(Mutex::new(Vec::new()));
-        let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-            harness.events.clone(),
-            built_response("Text", StatusCode::OK, "stale"),
-        ));
-        let after_error_count = cache.after_error_count.clone();
         let mut client = harness.client(vec![MockResponse::text(status, "rejected")]);
         configure_runtime(
             &mut client,
-            Some(cache),
             Some(Arc::new(ObservationRateLimiter::new(
                 harness.events.clone(),
             ))),
@@ -1098,7 +840,6 @@ async fn auth_policy_no_retry_no_invalidate_terminal_rejection() -> Result<(), A
         assert_eq!(harness.event_count("retry:Forbidden").await, 0);
         assert_eq!(harness.event_count("prepare:terminal-token").await, 1);
         assert!(retry_events.lock().await.is_empty());
-        assert_eq!(*after_error_count.lock().await, 0);
     }
     Ok(())
 }
@@ -1502,7 +1243,6 @@ impl ClientContext for AuthHttpLimitCx {
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(1),
-                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
             };
             Ok(PreparedAuthCredential::new(applied, application))
@@ -1596,7 +1336,6 @@ impl ClientContext for RecordingAuthCx {
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(1),
-                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
             };
             Ok(PreparedAuthCredential::new(applied, application))
@@ -1690,7 +1429,6 @@ impl ClientContext for PolicyAuthCx {
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(1),
-                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
             };
             Ok(PreparedAuthCredential::new(applied, application))
@@ -1803,7 +1541,6 @@ impl ClientContext for RotatingPolicyAuthCx {
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(1),
-                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
             };
             Ok(PreparedAuthCredential::new(applied, application))
@@ -1996,44 +1733,6 @@ impl PolicyAuthHarness {
     }
 }
 
-#[derive(Default)]
-struct AdmittingCache {
-    entries: Mutex<HashMap<String, BuiltResponse>>,
-    after_response_count: Arc<Mutex<u32>>,
-}
-
-impl concord_core::advanced::CacheStore for AdmittingCache {
-    fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-        Box::pin(async move {
-            let key = concord_core::advanced::default_cache_key(request);
-            self.entries
-                .lock()
-                .await
-                .get(key.as_str())
-                .cloned()
-                .map(CacheBefore::Hit)
-                .unwrap_or(CacheBefore::Miss)
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        request: &'a BuiltRequest,
-        response: &'a BuiltResponse,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, CacheAfter> {
-        Box::pin(async move {
-            *self.after_response_count.lock().await += 1;
-            let key = concord_core::advanced::default_cache_key(request);
-            self.entries
-                .lock()
-                .await
-                .insert(key.as_str().to_string(), response.clone());
-            CacheAfter::Stored
-        })
-    }
-}
-
 #[derive(Clone)]
 struct SlotAuthVars {
     slot: Arc<CredentialSlot<SlotAuthCx, SlotTokenProvider>>,
@@ -2138,7 +1837,6 @@ impl ClientContext for SlotAuthCx {
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(lease.generation),
-                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
             };
             Ok(PreparedAuthCredential::new(applied, application))

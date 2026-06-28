@@ -1,12 +1,11 @@
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
-    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltRequest, BuiltResponse,
-    CacheAfter, CacheBefore, CacheConfig, CacheFuture, CacheKey, CacheRevalidation, CacheStore,
-    DecodedResponse, PostResponseHookContext, PreSendHookContext, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RequestMeta, RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, Transport,
-    TransportBody, TransportError, TransportErrorHookContext, TransportErrorKind, TransportRequest,
+    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltResponse, DecodedResponse,
+    PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
+    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestMeta,
+    RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, Transport, TransportBody,
+    TransportError, TransportErrorHookContext, TransportErrorKind, TransportRequest,
     TransportResponse, apply_basic_credential,
 };
 use concord_core::internal::{
@@ -96,7 +95,6 @@ impl ClientContext for TestCx {
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(1),
-                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
             };
             Ok(concord_core::advanced::PreparedAuthCredential::new(
@@ -597,7 +595,6 @@ impl ClientContext for ObservationAuthCx {
                 usage_id: requirement.usage_id.clone(),
                 step_id: requirement.step_id,
                 generation: Some(1),
-                identity: application.identity().clone(),
                 provenance: requirement.provenance.clone(),
             };
             Ok(concord_core::advanced::PreparedAuthCredential::new(
@@ -671,13 +668,6 @@ pub fn auth_policy(placement: AuthPlacement) -> ResolvedPolicy {
                 challenge: Default::default(),
             }],
         },
-        ..Default::default()
-    }
-}
-
-pub fn cache_policy() -> ResolvedPolicy {
-    ResolvedPolicy {
-        cache: concord_core::internal::CacheSetting::Config(CacheConfig::new()),
         ..Default::default()
     }
 }
@@ -1245,180 +1235,17 @@ impl RuntimeHooks for RecordingRuntimeHooks {
     }
 }
 
-pub struct RecordingCache {
-    pub before: CacheBefore,
-    pub events: Arc<Mutex<Vec<String>>>,
-    pub after_response_count: Arc<Mutex<u32>>,
-    pub after_error_count: Arc<Mutex<u32>>,
-    pub serve_stale_on_error: bool,
-}
-
-impl RecordingCache {
-    pub fn miss(events: Arc<Mutex<Vec<String>>>) -> Self {
-        Self {
-            before: CacheBefore::Miss,
-            events,
-            after_response_count: Arc::new(Mutex::new(0)),
-            after_error_count: Arc::new(Mutex::new(0)),
-            serve_stale_on_error: false,
-        }
-    }
-
-    pub fn hit(events: Arc<Mutex<Vec<String>>>, response: BuiltResponse) -> Self {
-        Self {
-            before: CacheBefore::Hit(response),
-            events,
-            after_response_count: Arc::new(Mutex::new(0)),
-            after_error_count: Arc::new(Mutex::new(0)),
-            serve_stale_on_error: false,
-        }
-    }
-
-    pub fn revalidate(events: Arc<Mutex<Vec<String>>>, cached_response: BuiltResponse) -> Self {
-        Self {
-            before: CacheBefore::Revalidate {
-                request_headers: HeaderMap::new(),
-                cached: CacheRevalidation {
-                    key: CacheKey::new("stale".to_string()),
-                    cached_response,
-                },
-            },
-            events,
-            after_response_count: Arc::new(Mutex::new(0)),
-            after_error_count: Arc::new(Mutex::new(0)),
-            serve_stale_on_error: false,
-        }
-    }
-
-    pub fn revalidate_stale_on_error(
-        events: Arc<Mutex<Vec<String>>>,
-        cached_response: BuiltResponse,
-    ) -> Self {
-        Self {
-            before: CacheBefore::Revalidate {
-                request_headers: HeaderMap::new(),
-                cached: CacheRevalidation {
-                    key: CacheKey::new("stale".to_string()),
-                    cached_response,
-                },
-            },
-            events,
-            after_response_count: Arc::new(Mutex::new(0)),
-            after_error_count: Arc::new(Mutex::new(0)),
-            serve_stale_on_error: true,
-        }
-    }
-}
-
-impl CacheStore for RecordingCache {
-    fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-        Box::pin(async move {
-            self.events.lock().await.push(format!(
-                "cache_before:{}",
-                request
-                    .extensions
-                    .auth_identities
-                    .first()
-                    .map(String::as_str)
-                    .unwrap_or("<none>")
-            ));
-            if matches!(self.before, CacheBefore::Hit(_)) {
-                self.events.lock().await.push("cache_hit".to_string());
-            }
-            self.before.clone()
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        request: &'a BuiltRequest,
-        response: &'a BuiltResponse,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, CacheAfter> {
-        Box::pin(async move {
-            *self.after_response_count.lock().await += 1;
-            self.events
-                .lock()
-                .await
-                .push("cache_after_response".to_string());
-            if let concord_core::internal::CacheSetting::Config(config) = &request.cache
-                && let Some(max_body_bytes) = config.max_body_bytes
-                && response.body.len() > max_body_bytes
-            {
-                self.events
-                    .lock()
-                    .await
-                    .push("cache_max_body_skip".to_string());
-                return CacheAfter::NotStored(concord_core::advanced::CacheSkipReason::TooLarge);
-            }
-            CacheAfter::Stored
-        })
-    }
-
-    fn after_error<'a>(
-        &'a self,
-        _request: &'a BuiltRequest,
-        _error: &'a ApiClientError,
-        revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, Option<BuiltResponse>> {
-        Box::pin(async move {
-            *self.after_error_count.lock().await += 1;
-            self.events
-                .lock()
-                .await
-                .push("cache_after_error".to_string());
-            if self.serve_stale_on_error {
-                revalidation.map(|cached| cached.cached_response)
-            } else {
-                None
-            }
-        })
-    }
-}
-
-pub fn built_response(
-    endpoint: &'static str,
-    status: StatusCode,
-    body: impl Into<Bytes>,
-) -> BuiltResponse {
-    BuiltResponse {
-        meta: RequestMeta {
-            endpoint,
-            method: Method::GET,
-            idempotent: true,
-            attempt: 0,
-            page_index: 0,
-        },
-        url: "https://example.com/text".parse().expect("test url"),
-        status,
-        headers: {
-            let mut h = HeaderMap::new();
-            h.insert(
-                http::header::CONTENT_TYPE,
-                HeaderValue::from_static("text/plain"),
-            );
-            h
-        },
-        body: body.into(),
-        rate_limit: Default::default(),
-    }
-}
-
 pub fn client(auth: TestAuthVars, transport: MockTransport) -> ApiClient<TestCx, MockTransport> {
     ApiClient::with_transport((), auth, transport)
 }
 
 pub fn configure_runtime<Cx: ClientContext, T: Transport>(
     client: &mut ApiClient<Cx, T>,
-    cache: Option<Arc<dyn CacheStore>>,
     limiter: Option<Arc<dyn RateLimiter>>,
 ) {
     client.configure(|cfg| {
         cfg.debug(concord_core::prelude::DebugLevel::V);
         cfg.pagination_detect_loops(true);
-        if let Some(cache) = cache {
-            cfg.cache_store(cache);
-        }
         if let Some(limiter) = limiter {
             cfg.rate_limiter(limiter);
         }
@@ -1858,10 +1685,6 @@ impl GateableBodyTransport {
     pub fn read_count(&self) -> usize {
         self.read_count.load(AtomicOrdering::SeqCst)
     }
-
-    pub async fn push_body(&self, chunks: Vec<Bytes>) {
-        self.chunks.lock().await.push_back(chunks.into());
-    }
 }
 
 impl Transport for GateableBodyTransport {
@@ -2027,131 +1850,6 @@ impl RateLimiter for CountingRateLimiter {
     }
 }
 
-pub struct GateableCache {
-    gate: PhaseGate,
-    events: Arc<Mutex<Vec<String>>>,
-    before: CacheBefore,
-    after_response_count: AtomicUsize,
-    after_error_count: AtomicUsize,
-    stale_response: Option<BuiltResponse>,
-    drop_probe: Option<DropProbe>,
-}
-
-impl GateableCache {
-    pub fn miss(gate: PhaseGate, events: Arc<Mutex<Vec<String>>>) -> Self {
-        Self {
-            gate,
-            events,
-            before: CacheBefore::Miss,
-            after_response_count: AtomicUsize::new(0),
-            after_error_count: AtomicUsize::new(0),
-            stale_response: None,
-            drop_probe: None,
-        }
-    }
-
-    pub fn hit(gate: PhaseGate, events: Arc<Mutex<Vec<String>>>, response: BuiltResponse) -> Self {
-        Self {
-            gate,
-            events,
-            before: CacheBefore::Hit(response),
-            after_response_count: AtomicUsize::new(0),
-            after_error_count: AtomicUsize::new(0),
-            stale_response: None,
-            drop_probe: None,
-        }
-    }
-
-    pub fn stale_fallback(
-        gate: PhaseGate,
-        events: Arc<Mutex<Vec<String>>>,
-        cached_response: BuiltResponse,
-    ) -> Self {
-        Self {
-            gate,
-            events,
-            before: CacheBefore::Revalidate {
-                request_headers: HeaderMap::new(),
-                cached: CacheRevalidation {
-                    key: CacheKey::new("stale".to_string()),
-                    cached_response: cached_response.clone(),
-                },
-            },
-            after_response_count: AtomicUsize::new(0),
-            after_error_count: AtomicUsize::new(0),
-            stale_response: Some(cached_response),
-            drop_probe: None,
-        }
-    }
-
-    pub fn with_drop_probe(mut self, probe: DropProbe) -> Self {
-        self.drop_probe = Some(probe);
-        self
-    }
-
-    pub fn after_response_count(&self) -> usize {
-        self.after_response_count.load(AtomicOrdering::SeqCst)
-    }
-
-    pub fn after_error_count(&self) -> usize {
-        self.after_error_count.load(AtomicOrdering::SeqCst)
-    }
-}
-
-impl CacheStore for GateableCache {
-    fn before_request<'a>(&'a self, _request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-        Box::pin(async move {
-            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
-            let _drop_token = drop_token;
-            self.events
-                .lock()
-                .await
-                .push("cache_before_started".to_string());
-            self.gate.enter("cache_before").await;
-            self.before.clone()
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        _request: &'a BuiltRequest,
-        _response: &'a BuiltResponse,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, CacheAfter> {
-        Box::pin(async move {
-            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
-            let _drop_token = drop_token;
-            self.after_response_count
-                .fetch_add(1, AtomicOrdering::SeqCst);
-            self.events
-                .lock()
-                .await
-                .push("cache_after_response".to_string());
-            self.gate.enter("cache_after_response").await;
-            CacheAfter::Stored
-        })
-    }
-
-    fn after_error<'a>(
-        &'a self,
-        _request: &'a BuiltRequest,
-        _error: &'a ApiClientError,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, Option<BuiltResponse>> {
-        Box::pin(async move {
-            let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
-            let _drop_token = drop_token;
-            self.after_error_count.fetch_add(1, AtomicOrdering::SeqCst);
-            self.events
-                .lock()
-                .await
-                .push("cache_after_error".to_string());
-            self.gate.enter("cache_after_error").await;
-            self.stale_response.clone()
-        })
-    }
-}
-
 #[derive(Clone)]
 pub struct GateableHooks {
     gate: PhaseGate,
@@ -2299,12 +1997,6 @@ pub fn rate_limit_policy() -> ResolvedPolicy {
         )),
     );
     policy.rate_limit = plan;
-    policy
-}
-
-pub fn cache_and_rate_limit_policy() -> ResolvedPolicy {
-    let mut policy = cache_policy();
-    policy.rate_limit = rate_limit_policy().rate_limit;
     policy
 }
 

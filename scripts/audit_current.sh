@@ -11,7 +11,6 @@ user_docs=(
   docs/auth.md
   docs/pagination.md
   docs/customization.md
-  docs/cache_retry_rate_limit.md
   docs/runtime_config.md
   docs/advanced_endpoints.md
 )
@@ -118,7 +117,7 @@ rm -f "$secret_hits"
 
 fail_if_match \
   "internal runtime names in user-facing docs/examples" \
-  "use concord_core::internal|RequestPlan|EndpointPlan|AuthPlan|RateLimitPermit|CacheKey|runtime_state" \
+  "use concord_core::internal|RequestPlan|EndpointPlan|AuthPlan|RateLimitPermit|runtime_state" \
   "${user_docs[@]}" "${public_examples[@]}"
 
 fail_if_match \

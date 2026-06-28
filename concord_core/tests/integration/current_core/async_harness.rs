@@ -1,11 +1,10 @@
 use super::common::{
-    GateableBodyTransport, GateableCache, GateableHooks, GateableTransport, MockResponse,
-    PhaseGate, SafeRecordingDebugSink, TestAuthVars, TestCx, TextEndpoint,
-    assert_events_do_not_contain, assert_still_pending, auth_policy, built_response,
-    cache_and_rate_limit_policy, cache_policy, rate_limit_policy, wait_bounded,
+    GateableBodyTransport, GateableHooks, GateableTransport, MockResponse, PhaseGate,
+    SafeRecordingDebugSink, TestAuthVars, TestCx, TextEndpoint, assert_events_do_not_contain,
+    assert_still_pending, auth_policy, rate_limit_policy, wait_bounded,
 };
 use bytes::Bytes;
-use concord_core::advanced::{AuthPlacement, CacheStore};
+use concord_core::advanced::AuthPlacement;
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use http::StatusCode;
 use std::sync::Arc;
@@ -458,126 +457,6 @@ async fn counting_rate_limiter_records_lifecycle_completion() {
 }
 
 #[tokio::test]
-async fn gateable_cache_blocks_lookup_and_records_no_transport_before_release() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let gate = PhaseGate::new();
-    gate.block("cache_before").await;
-    let cache = Arc::new(GateableCache::miss(gate.clone(), events.clone()));
-    let cache_counts = cache.clone();
-    let transport = GateableTransport::new(
-        gate.clone(),
-        events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "ok")],
-    );
-    let sent = transport.clone();
-    let mut client: ApiClient<TestCx, GateableTransport> =
-        ApiClient::with_transport((), TestAuthVars::default(), transport);
-    client.configure(|cfg| {
-        cfg.cache_store(cache as Arc<dyn CacheStore>);
-    });
-
-    let task = tokio::spawn(async move {
-        client
-            .request(TextEndpoint {
-                policy: cache_policy(),
-                ..TextEndpoint::default()
-            })
-            .execute_decoded()
-            .await
-    });
-
-    gate.wait_for("cache_before", 1).await;
-    assert_eq!(sent.sent_count().await, 0);
-    gate.release_all("cache_before").await;
-    let decoded = task
-        .await
-        .expect("task should join")
-        .expect("request should succeed");
-    assert_eq!(decoded.value(), "ok");
-    assert_eq!(cache_counts.after_response_count(), 1);
-    let events = events.lock().await.clone();
-    let cache_pos = events
-        .iter()
-        .position(|event| event == "cache_before_started")
-        .expect("cache lookup event");
-    let transport_pos = events
-        .iter()
-        .position(|event| event == "transport_send_start")
-        .expect("transport event");
-    assert!(cache_pos < transport_pos);
-}
-
-#[tokio::test]
-async fn gateable_cache_supports_fresh_hit_and_stale_fallback_modes() {
-    let hit_events = Arc::new(Mutex::new(Vec::new()));
-    let hit_probe = super::common::DropProbe::new("cache_hit", hit_events.clone());
-    let hit_cache = GateableCache::hit(
-        PhaseGate::new(),
-        hit_events.clone(),
-        built_response("Text", StatusCode::OK, "cached-hit"),
-    )
-    .with_drop_probe(hit_probe.clone());
-    let transport = GateableTransport::new(
-        PhaseGate::new(),
-        hit_events.clone(),
-        vec![MockResponse::text(StatusCode::OK, "unexpected")],
-    );
-    let sent = transport.clone();
-    let mut client: ApiClient<TestCx, GateableTransport> =
-        ApiClient::with_transport((), TestAuthVars::default(), transport);
-    client.configure(|cfg| {
-        cfg.cache_store(Arc::new(hit_cache) as Arc<dyn CacheStore>);
-    });
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..TextEndpoint::default()
-        })
-        .execute_decoded()
-        .await
-        .expect("cache hit should succeed");
-    assert_eq!(decoded.value(), "cached-hit");
-    assert_eq!(sent.sent_count().await, 0);
-    hit_probe.wait_for(1).await;
-
-    let stale_events = Arc::new(Mutex::new(Vec::new()));
-    let stale_probe = super::common::DropProbe::new("cache_stale", stale_events.clone());
-    let stale_cache = GateableCache::stale_fallback(
-        PhaseGate::new(),
-        stale_events.clone(),
-        built_response("Text", StatusCode::OK, "cached-stale"),
-    )
-    .with_drop_probe(stale_probe.clone());
-    let transport = GateableTransport::new(
-        PhaseGate::new(),
-        stale_events.clone(),
-        vec![MockResponse::text(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "fail",
-        )],
-    );
-    let sent = transport.clone();
-    let mut client: ApiClient<TestCx, GateableTransport> =
-        ApiClient::with_transport((), TestAuthVars::default(), transport);
-    client.configure(|cfg| {
-        cfg.cache_store(Arc::new(stale_cache) as Arc<dyn CacheStore>);
-    });
-
-    let decoded = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..TextEndpoint::default()
-        })
-        .execute_decoded()
-        .await
-        .expect("stale fallback should succeed");
-    assert_eq!(decoded.value(), "cached-stale");
-    assert_eq!(sent.sent_count().await, 1);
-    stale_probe.wait_for(1).await;
-}
-
-#[tokio::test]
 async fn gateable_hooks_block_pre_send_before_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let gate = PhaseGate::new();
@@ -639,10 +518,7 @@ async fn harness_observer_surfaces_remain_body_auth_free() {
         transport,
     );
     client.configure(|cfg| {
-        cfg.cache_store(Arc::new(super::common::RecordingCache::miss(
-            events.clone(),
-        )))
-        .rate_limiter(Arc::new(super::common::ObservationRateLimiter::new(
+        cfg.rate_limiter(Arc::new(super::common::ObservationRateLimiter::new(
             events.clone(),
         )))
         .runtime_hooks(Arc::new(super::common::ObservationRuntimeHooks::new(
@@ -653,9 +529,7 @@ async fn harness_observer_surfaces_remain_body_auth_free() {
     });
 
     let mut policy = auth_policy(AuthPlacement::Bearer);
-    let cache_and_rate = cache_and_rate_limit_policy();
-    policy.cache = cache_and_rate.cache;
-    policy.rate_limit = cache_and_rate.rate_limit;
+    policy.rate_limit = rate_limit_policy().rate_limit;
 
     let decoded = client
         .request(TextEndpoint {

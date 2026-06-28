@@ -1,10 +1,9 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, BuiltRequest, BuiltResponse, CacheAfter, CacheBefore, CacheFuture,
-    CacheRevalidation, CacheStore, PageAdvance, PageDecision, PageInit, PageRequest,
-    PaginationController, ProgressKey, RateLimitContext, RateLimitFuture, RateLimitPermit,
-    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, default_cache_key,
+    AuthPlacement, PageAdvance, PageDecision, PageInit, PageRequest, PaginationController,
+    ProgressKey, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter,
 };
 use concord_core::internal::PaginationPlan;
 use concord_core::prelude::{ApiClientError, CursorPagination, PaginationTermination};
@@ -396,47 +395,6 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::PaginatedE
 }
 
 #[derive(Default)]
-struct RecordingLookupUrlCache {
-    lookups: Arc<Mutex<Vec<String>>>,
-}
-
-impl RecordingLookupUrlCache {
-    fn new(lookups: Arc<Mutex<Vec<String>>>) -> Self {
-        Self { lookups }
-    }
-}
-
-impl CacheStore for RecordingLookupUrlCache {
-    fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-        Box::pin(async move {
-            self.lookups
-                .lock()
-                .await
-                .push(default_cache_key(request).as_str().to_string());
-            CacheBefore::Miss
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        _request: &'a BuiltRequest,
-        _response: &'a BuiltResponse,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, CacheAfter> {
-        Box::pin(async move { CacheAfter::Stored })
-    }
-
-    fn after_error<'a>(
-        &'a self,
-        _request: &'a BuiltRequest,
-        _error: &'a ApiClientError,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, Option<BuiltResponse>> {
-        Box::pin(async move { None })
-    }
-}
-
-#[derive(Default)]
 struct RecordingSanitizedUrlRateLimiter {
     acquires: Arc<Mutex<Vec<String>>>,
 }
@@ -464,47 +422,6 @@ impl RateLimiter for RecordingSanitizedUrlRateLimiter {
         _ctx: RateLimitResponseContext<'a>,
     ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
         Box::pin(async move { Ok(RateLimitResponseAction::Continue) })
-    }
-}
-
-#[derive(Clone, Default)]
-struct RecordingKeyCache {
-    keys: Arc<Mutex<Vec<String>>>,
-}
-
-impl RecordingKeyCache {
-    fn new(keys: Arc<Mutex<Vec<String>>>) -> Self {
-        Self { keys }
-    }
-}
-
-impl CacheStore for RecordingKeyCache {
-    fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-        Box::pin(async move {
-            self.keys
-                .lock()
-                .await
-                .push(default_cache_key(request).as_str().to_string());
-            CacheBefore::Miss
-        })
-    }
-
-    fn after_response<'a>(
-        &'a self,
-        _request: &'a BuiltRequest,
-        _response: &'a BuiltResponse,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, CacheAfter> {
-        Box::pin(async move { CacheAfter::Stored })
-    }
-
-    fn after_error<'a>(
-        &'a self,
-        _request: &'a BuiltRequest,
-        _error: &'a ApiClientError,
-        _revalidation: Option<CacheRevalidation>,
-    ) -> CacheFuture<'a, Option<BuiltResponse>> {
-        Box::pin(async move { None })
     }
 }
 
@@ -2579,66 +2496,6 @@ async fn max_pages_error_includes_seen_items() {
 }
 
 #[tokio::test]
-async fn pagination_cache_keys_change_per_page_and_keep_auth_partitioning()
--> Result<(), ApiClientError> {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let key_events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingKeyCache::new(key_events.clone()));
-    let transport = MockTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
-            MockResponse::text(StatusCode::OK, "c|next="),
-        ],
-    );
-    let sent = transport.clone();
-    let mut client = client(
-        TestAuthVars {
-            token: Some("CACHE_PARTITION_TOKEN".to_string()),
-            identity: "tenant-a",
-        },
-        transport,
-    );
-    configure_runtime(&mut client, Some(cache), None);
-
-    let endpoint = CursorItemsEndpoint {
-        policy: {
-            let mut policy = auth_policy(AuthPlacement::Bearer);
-            policy.cache = concord_core::internal::CacheSetting::Config(
-                concord_core::advanced::CacheConfig::new(),
-            );
-            policy
-        },
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "limit".into(),
-            cursor: Some("start".to_string()),
-            per_page: 2,
-            send_cursor_on_first: true,
-            stop_when_cursor_missing: true,
-        }),
-    };
-
-    let items = client
-        .request(endpoint)
-        .paginate(PaginationTermination::hard_page_cap(100))
-        .collect()
-        .await?;
-
-    assert_eq!(
-        items,
-        vec!["a".to_string(), "b".to_string(), "c".to_string()]
-    );
-    assert_eq!(sent.sent_count().await, 2);
-    let keys = key_events.lock().await.clone();
-    assert_eq!(keys.len(), 2);
-    assert_ne!(keys[0], keys[1]);
-    assert!(keys.iter().all(|key| key.contains("|auth=")));
-    assert!(!keys.iter().any(|key| key.contains("CACHE_PARTITION_TOKEN")));
-    Ok(())
-}
-
-#[tokio::test]
 async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -2694,130 +2551,8 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
 }
 
 #[tokio::test]
-async fn auth_refresh_on_page_n_preserves_page_state_and_does_not_use_stale_fallback()
--> Result<(), ApiClientError> {
+async fn paginated_page_decode_failure_does_not_advance_page_state() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let stale = built_response(
-        "Items",
-        StatusCode::OK,
-        "STALE_PROTECTED_RESPONSE_MUST_NOT_BE_SERVED_AFTER_AUTH_REJECTION",
-    );
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        events.clone(),
-        stale,
-    ));
-    let after_error_count = cache.after_error_count.clone();
-    let transport = MockTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::OK, "a,b"),
-            MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
-            MockResponse::text(StatusCode::OK, "c"),
-        ],
-    );
-    let sent = transport.clone();
-    let mut client = client(
-        TestAuthVars {
-            token: Some("refreshable".to_string()),
-            identity: "refresh",
-        },
-        transport,
-    );
-    configure_runtime(&mut client, Some(cache), None);
-
-    let endpoint = ItemsEndpoint {
-        policy: {
-            let mut policy = auth_policy(AuthPlacement::Bearer);
-            policy.cache = concord_core::internal::CacheSetting::Config(
-                concord_core::advanced::CacheConfig::new(),
-            );
-            policy
-        },
-        pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
-            offset: 0,
-            limit: 2,
-        },
-    };
-
-    let items = client
-        .request(endpoint)
-        .paginate(PaginationTermination::hard_page_cap(100))
-        .collect()
-        .await?;
-
-    assert_eq!(
-        items,
-        vec!["a".to_string(), "b".to_string(), "c".to_string()]
-    );
-    let requests = sent.requests().await;
-    assert_eq!(requests.len(), 3);
-    assert_eq!(requests[1].meta.page_index, 1);
-    assert_eq!(requests[2].meta.page_index, 1);
-    assert_eq!(
-        query_value(&requests[1].url, "offset"),
-        Some("2".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[2].url, "offset"),
-        Some("2".to_string())
-    );
-    assert_eq!(*after_error_count.lock().await, 0);
-    Ok(())
-}
-
-#[tokio::test]
-async fn stale_decode_failure_does_not_advance_page_state() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let stale = built_response("Items", StatusCode::OK, Bytes::from_static(b"\xff"));
-    let cache = Arc::new(RecordingCache::revalidate_stale_on_error(
-        events.clone(),
-        stale,
-    ));
-    let transport = MockTransport::new(
-        events,
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
-            MockResponse::text(StatusCode::OK, "should-not-request-next-page"),
-        ],
-    );
-    let sent = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
-
-    let endpoint = ItemsEndpoint {
-        policy: cache_policy(),
-        pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
-            offset: 0,
-            limit: 2,
-        },
-    };
-
-    let err = client
-        .request(endpoint)
-        .paginate(PaginationTermination::hard_page_cap(4))
-        .collect()
-        .await
-        .expect_err("invalid stale page should fail before page advance");
-
-    assert!(err.to_string().contains("decode error"));
-    let requests = sent.requests().await;
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].meta.page_index, 0);
-    assert_eq!(
-        query_value(&requests[0].url, "offset"),
-        Some("0".to_string())
-    );
-}
-
-#[tokio::test]
-async fn paginated_page_decode_failure_does_not_store_page_cache() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
         events.clone(),
         vec![MockResponse::text(
@@ -2827,10 +2562,10 @@ async fn paginated_page_decode_failure_does_not_store_page_cache() {
     );
     let sent = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
 
     let endpoint = NoHintItemsEndpoint {
-        policy: cache_policy(),
+        policy: Default::default(),
         pagination: PaginationPlan::custom::<Pr63PaginatedDecodeFailurePagination, NoHintItems>(),
     };
 
@@ -2839,10 +2574,9 @@ async fn paginated_page_decode_failure_does_not_store_page_cache() {
         .paginate(PaginationTermination::hard_page_cap(4))
         .collect()
         .await
-        .expect_err("invalid page should fail before cache store");
+        .expect_err("invalid page should fail before page advance");
 
     assert!(err.to_string().contains("decode error"));
-    assert_eq!(*after_response_count.lock().await, 0);
     assert_eq!(sent.sent_count().await, 1);
     assert_eq!(
         PR63_PAGINATED_DECODE_FAILURE_ADVANCES.load(AtomicOrdering::SeqCst),
@@ -2851,20 +2585,18 @@ async fn paginated_page_decode_failure_does_not_store_page_cache() {
 }
 
 #[tokio::test]
-async fn paginated_successful_page_stores_after_decode() -> Result<(), ApiClientError> {
+async fn paginated_successful_page_decodes_after_custom_pagination() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let transport = MockTransport::new(
         events.clone(),
         vec![MockResponse::text(StatusCode::OK, "a,b")],
     );
     let sent = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), None);
+    configure_runtime(&mut client, None);
 
     let endpoint = NoHintItemsEndpoint {
-        policy: cache_policy(),
+        policy: Default::default(),
         pagination: PaginationPlan::custom::<StopAfterFirstNoHintPagination, NoHintItems>(),
     };
 
@@ -2875,7 +2607,6 @@ async fn paginated_successful_page_stores_after_decode() -> Result<(), ApiClient
         .await?;
 
     assert_eq!(items, vec!["a".to_string(), "b".to_string()]);
-    assert_eq!(*after_response_count.lock().await, 1);
     assert_eq!(sent.sent_count().await, 1);
     Ok(())
 }
@@ -2896,7 +2627,7 @@ async fn custom_pagination_example_short_page_stop_is_runtime_owned() -> Result<
     let client = client(TestAuthVars::default(), transport);
 
     let endpoint = PageOnlyItemsEndpoint {
-        policy: cache_policy(),
+        policy: Default::default(),
         pagination: PaginationPlan::custom::<Pr64RuntimeOwnedShortPagePagination, PageOnlyItems>(),
     };
 
@@ -2925,9 +2656,6 @@ async fn custom_pagination_example_short_page_stop_is_runtime_owned() -> Result<
 #[tokio::test]
 async fn page_request_set_invalid_header_name_returns_typed_error_before_side_effects() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let after_error_count = cache.after_error_count.clone();
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -2936,12 +2664,12 @@ async fn page_request_set_invalid_header_name_returns_typed_error_before_side_ef
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
     let mut client = client;
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
     let endpoint = PaginationEndpoint {
         name: "Items",
         path: "/items",
-        policy: cache_policy(),
+        policy: Default::default(),
         pagination: Some(PaginationPlan::custom::<InvalidHeaderPagination, Vec<String>>()),
     };
 
@@ -2957,14 +2685,7 @@ async fn page_request_set_invalid_header_name_returns_typed_error_before_side_ef
     assert_eq!(err.context().method, Method::GET);
     assert!(err.to_string().contains("invalid pagination header name"));
     assert_eq!(sent.sent_count().await, 0);
-    assert_eq!(*after_response_count.lock().await, 0);
-    assert_eq!(*after_error_count.lock().await, 0);
     let events = events.lock().await.clone();
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "transport"));
 }
@@ -2972,9 +2693,6 @@ async fn page_request_set_invalid_header_name_returns_typed_error_before_side_ef
 #[tokio::test]
 async fn controller_invalid_header_value_construction_returns_typed_error_before_side_effects() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let after_error_count = cache.after_error_count.clone();
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -2982,12 +2700,12 @@ async fn controller_invalid_header_value_construction_returns_typed_error_before
     );
     let sent = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
     let endpoint = PaginationEndpoint {
         name: "Items",
         path: "/items",
-        policy: cache_policy(),
+        policy: Default::default(),
         pagination: Some(PaginationPlan::custom::<
             InvalidHeaderValuePagination,
             Vec<String>,
@@ -3007,14 +2725,7 @@ async fn controller_invalid_header_value_construction_returns_typed_error_before
     assert!(err.to_string().contains("invalid pagination header value"));
     assert!(!err.to_string().contains("should-not-send"));
     assert_eq!(sent.sent_count().await, 0);
-    assert_eq!(*after_response_count.lock().await, 0);
-    assert_eq!(*after_error_count.lock().await, 0);
     let events = events.lock().await.clone();
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "transport"));
 }
@@ -3028,12 +2739,12 @@ async fn custom_pagination_header_error_has_endpoint_context() {
         vec![MockResponse::text(StatusCode::OK, "unused")],
     );
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, None, Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
     let endpoint = PaginationEndpoint {
         name: "Items",
         path: "/items",
-        policy: cache_policy(),
+        policy: Default::default(),
         pagination: Some(PaginationPlan::custom::<InvalidHeaderPagination, Vec<String>>()),
     };
 
@@ -3053,9 +2764,6 @@ async fn custom_pagination_cannot_override_pending_auth_query_material() {
     const QUERY_AUTH_SENTINEL: &str = "RAW_QUERY_AUTH_SENTINEL";
 
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let after_error_count = cache.after_error_count.clone();
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -3069,11 +2777,9 @@ async fn custom_pagination_cannot_override_pending_auth_query_material() {
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
-    let mut policy = auth_policy(AuthPlacement::Query("api_key"));
-    policy.cache =
-        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
+    let policy = auth_policy(AuthPlacement::Query("api_key"));
     let endpoint = PaginationEndpoint {
         name: "Items",
         path: "/items",
@@ -3089,7 +2795,7 @@ async fn custom_pagination_cannot_override_pending_auth_query_material() {
         .paginate(PaginationTermination::hard_page_cap(2))
         .collect()
         .await
-        .expect_err("auth query collision should fail before cache or transport");
+        .expect_err("auth query collision should fail before rate-limit or transport");
 
     match err {
         ApiClientError::Auth { source, .. } => {
@@ -3104,14 +2810,7 @@ async fn custom_pagination_cannot_override_pending_auth_query_material() {
         other => panic!("expected auth error, got {other:?}"),
     }
     assert_eq!(sent.sent_count().await, 0);
-    assert_eq!(*after_response_count.lock().await, 0);
-    assert_eq!(*after_error_count.lock().await, 0);
     let events = events.lock().await.clone();
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "transport"));
 }
@@ -3121,9 +2820,6 @@ async fn custom_pagination_cannot_override_pending_auth_header_material() {
     const HEADER_AUTH_SENTINEL: &str = "RAW_HEADER_AUTH_SENTINEL";
 
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let after_error_count = cache.after_error_count.clone();
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -3137,11 +2833,9 @@ async fn custom_pagination_cannot_override_pending_auth_header_material() {
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
-    let mut policy = auth_policy(AuthPlacement::Header("X-Api-Key"));
-    policy.cache =
-        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
+    let policy = auth_policy(AuthPlacement::Header("X-Api-Key"));
     let endpoint = PaginationEndpoint {
         name: "Items",
         path: "/items",
@@ -3157,7 +2851,7 @@ async fn custom_pagination_cannot_override_pending_auth_header_material() {
         .paginate(PaginationTermination::hard_page_cap(2))
         .collect()
         .await
-        .expect_err("auth header collision should fail before cache or transport");
+        .expect_err("auth header collision should fail before rate-limit or transport");
 
     match err {
         ApiClientError::Auth { source, .. } => {
@@ -3172,14 +2866,7 @@ async fn custom_pagination_cannot_override_pending_auth_header_material() {
         other => panic!("expected auth error, got {other:?}"),
     }
     assert_eq!(sent.sent_count().await, 0);
-    assert_eq!(*after_response_count.lock().await, 0);
-    assert_eq!(*after_error_count.lock().await, 0);
     let events = events.lock().await.clone();
-    assert!(
-        !events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "transport"));
 }
@@ -3223,7 +2910,6 @@ async fn mutation_error_is_raw_secret_free() {
 
     let query_err = {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let cache = Arc::new(RecordingCache::miss(events.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
         let transport = MockTransport::new(
             events.clone(),
@@ -3236,11 +2922,8 @@ async fn mutation_error_is_raw_secret_free() {
             },
             transport,
         );
-        configure_runtime(&mut client, Some(cache), Some(rate_limiter));
-        let mut policy = auth_policy(AuthPlacement::Query("api_key"));
-        policy.cache = concord_core::internal::CacheSetting::Config(
-            concord_core::advanced::CacheConfig::new(),
-        );
+        configure_runtime(&mut client, Some(rate_limiter));
+        let policy = auth_policy(AuthPlacement::Query("api_key"));
         let endpoint = PaginationEndpoint {
             name: "Items",
             path: "/items",
@@ -3261,7 +2944,6 @@ async fn mutation_error_is_raw_secret_free() {
 
     let header_err = {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let cache = Arc::new(RecordingCache::miss(events.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
         let transport = MockTransport::new(
             events.clone(),
@@ -3274,11 +2956,8 @@ async fn mutation_error_is_raw_secret_free() {
             },
             transport,
         );
-        configure_runtime(&mut client, Some(cache), Some(rate_limiter));
-        let mut policy = auth_policy(AuthPlacement::Header("X-Api-Key"));
-        policy.cache = concord_core::internal::CacheSetting::Config(
-            concord_core::advanced::CacheConfig::new(),
-        );
+        configure_runtime(&mut client, Some(rate_limiter));
+        let policy = auth_policy(AuthPlacement::Header("X-Api-Key"));
         let endpoint = PaginationEndpoint {
             name: "Items",
             path: "/items",
@@ -3299,7 +2978,6 @@ async fn mutation_error_is_raw_secret_free() {
 
     let bearer_err = {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let cache = Arc::new(RecordingCache::miss(events.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
         let transport = MockTransport::new(
             events.clone(),
@@ -3312,11 +2990,8 @@ async fn mutation_error_is_raw_secret_free() {
             },
             transport,
         );
-        configure_runtime(&mut client, Some(cache), Some(rate_limiter));
-        let mut policy = auth_policy(AuthPlacement::Bearer);
-        policy.cache = concord_core::internal::CacheSetting::Config(
-            concord_core::advanced::CacheConfig::new(),
-        );
+        configure_runtime(&mut client, Some(rate_limiter));
+        let policy = auth_policy(AuthPlacement::Bearer);
         let endpoint = PaginationEndpoint {
             name: "Items",
             path: "/items",
@@ -3337,7 +3012,6 @@ async fn mutation_error_is_raw_secret_free() {
 
     let basic_err = {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let cache = Arc::new(RecordingCache::miss(events.clone()));
         let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
         let transport = MockTransport::new(
             events.clone(),
@@ -3353,14 +3027,11 @@ async fn mutation_error_is_raw_secret_free() {
             ),
             transport,
         );
-        configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+        configure_runtime(&mut client, Some(rate_limiter));
         let mut policy = auth_policy(AuthPlacement::Basic);
         policy.headers.insert(
             http::header::AUTHORIZATION,
             HeaderValue::from_static("public-value"),
-        );
-        policy.cache = concord_core::internal::CacheSetting::Config(
-            concord_core::advanced::CacheConfig::new(),
         );
         let endpoint = PaginationEndpoint {
             name: "Items",
@@ -3385,16 +3056,13 @@ async fn mutation_error_is_raw_secret_free() {
 }
 
 #[tokio::test]
-async fn mutation_runs_before_auth_collision_validation_and_cache_lookup() {
+async fn mutation_runs_before_auth_collision_validation() {
     let events = Arc::new(StdMutex::new(Vec::new()));
     let events_for_scope = events.clone();
-    let cache_events = Arc::new(Mutex::new(Vec::new()));
-    let rate_limiter = Arc::new(RecordingRateLimiter::new(cache_events.clone()));
-    let cache = Arc::new(RecordingCache::miss(cache_events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let after_error_count = cache.after_error_count.clone();
+    let runtime_events = Arc::new(Mutex::new(Vec::new()));
+    let rate_limiter = Arc::new(RecordingRateLimiter::new(runtime_events.clone()));
     let transport = MockTransport::new(
-        cache_events.clone(),
+        runtime_events.clone(),
         vec![MockResponse::text(StatusCode::OK, "should-not-send")],
     );
     let sent = transport.clone();
@@ -3405,10 +3073,8 @@ async fn mutation_runs_before_auth_collision_validation_and_cache_lookup() {
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
-    let mut policy = auth_policy(AuthPlacement::Query("api_key"));
-    policy.cache =
-        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
+    configure_runtime(&mut client, Some(rate_limiter));
+    let policy = auth_policy(AuthPlacement::Query("api_key"));
     let endpoint = PaginationEndpoint {
         name: "Items",
         path: "/items",
@@ -3440,26 +3106,17 @@ async fn mutation_runs_before_auth_collision_validation_and_cache_lookup() {
         &["mutation", "auth_collision_validation_error"]
     );
     assert_eq!(sent.sent_count().await, 0);
-    assert_eq!(*after_response_count.lock().await, 0);
-    assert_eq!(*after_error_count.lock().await, 0);
-    let cache_events = cache_events.lock().await.clone();
-    assert!(
-        !cache_events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
-    assert!(!cache_events.iter().any(|event| event == "rate_acquire"));
-    assert!(!cache_events.iter().any(|event| event == "transport"));
+    let runtime_events = runtime_events.lock().await.clone();
+    assert!(!runtime_events.iter().any(|event| event == "rate_acquire"));
+    assert!(!runtime_events.iter().any(|event| event == "transport"));
 }
 
 #[tokio::test]
-async fn final_sanitized_url_after_mutation_used_by_cache_rate_limit_and_transport()
+async fn final_sanitized_url_after_mutation_used_by_rate_limit_and_transport()
 -> Result<(), ApiClientError> {
     const QUERY_AUTH_SENTINEL: &str = "RAW_QUERY_AUTH_SENTINEL";
 
-    let cache_lookups = Arc::new(Mutex::new(Vec::new()));
     let rate_urls = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingLookupUrlCache::new(cache_lookups.clone()));
     let rate_limiter = Arc::new(RecordingSanitizedUrlRateLimiter::new(rate_urls.clone()));
     let transport = MockTransport::new(
         Arc::new(Mutex::new(Vec::new())),
@@ -3473,10 +3130,8 @@ async fn final_sanitized_url_after_mutation_used_by_cache_rate_limit_and_transpo
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
-    let mut policy = auth_policy(AuthPlacement::Query("api_key"));
-    policy.cache =
-        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
+    configure_runtime(&mut client, Some(rate_limiter));
+    let policy = auth_policy(AuthPlacement::Query("api_key"));
     let endpoint = PaginationEndpoint {
         name: "Items",
         path: "/items",
@@ -3495,18 +3150,14 @@ async fn final_sanitized_url_after_mutation_used_by_cache_rate_limit_and_transpo
 
     assert_eq!(items, vec!["ok".to_string()]);
     assert_eq!(sent.sent_count().await, 1);
-    let cache_key = cache_lookups.lock().await.clone();
     let rate_url = rate_urls.lock().await.clone();
-    assert_eq!(cache_key.len(), 1);
     assert_eq!(rate_url.len(), 1);
-    assert!(cache_key[0].contains("page=7"));
     assert!(rate_url[0].contains("page=7"));
     let requests = sent.requests().await;
     let transport_debug = format!("{:?}", requests[0]);
     assert!(transport_debug.contains("page=7"));
     assert!(rate_url[0].contains("api_key=<redacted>"));
     assert!(transport_debug.contains("api_key=<redacted>"));
-    assert!(!cache_key[0].contains(QUERY_AUTH_SENTINEL));
     assert!(!rate_url[0].contains(QUERY_AUTH_SENTINEL));
     assert!(!transport_debug.contains(QUERY_AUTH_SENTINEL));
     assert_eq!(
@@ -3519,7 +3170,6 @@ async fn final_sanitized_url_after_mutation_used_by_cache_rate_limit_and_transpo
 #[tokio::test]
 async fn public_query_and_header_mutation_still_reaches_transport() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -3527,12 +3177,12 @@ async fn public_query_and_header_mutation_still_reaches_transport() -> Result<()
     );
     let sent = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
     let endpoint = PaginationEndpoint {
         name: "Items",
         path: "/items",
-        policy: cache_policy(),
+        policy: Default::default(),
         pagination: Some(PaginationPlan::custom::<
             PublicMutationPagination,
             Vec<String>,
@@ -3557,11 +3207,6 @@ async fn public_query_and_header_mutation_still_reaches_transport() -> Result<()
         Some("7")
     );
     let events = events.lock().await.clone();
-    assert!(
-        events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
     assert!(events.iter().any(|event| event == "rate_acquire"));
     assert!(events.iter().any(|event| event == "transport"));
     Ok(())
@@ -3570,7 +3215,6 @@ async fn public_query_and_header_mutation_still_reaches_transport() -> Result<()
 #[tokio::test]
 async fn execute_raw_static_auth_collision_validates_before_rate_limit_and_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
     let transport = MockTransport::new(
         events.clone(),
@@ -3584,13 +3228,11 @@ async fn execute_raw_static_auth_collision_validates_before_rate_limit_and_trans
         },
         transport,
     );
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
     let mut policy = auth_policy(AuthPlacement::Query("api_key"));
     policy
         .query
         .push(("api_key".to_string(), "public-value".to_string()));
-    policy.cache =
-        concord_core::internal::CacheSetting::Config(concord_core::advanced::CacheConfig::new());
     let endpoint = PaginationEndpoint {
         name: "Items",
         path: "/items",
@@ -3606,14 +3248,9 @@ async fn execute_raw_static_auth_collision_validates_before_rate_limit_and_trans
 
     assert!(matches!(err, ApiClientError::Auth { .. }));
     assert_eq!(sent.sent_count().await, 0);
-    let cache_events = events.lock().await.clone();
-    assert!(
-        !cache_events
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
-    assert!(!cache_events.iter().any(|event| event == "rate_acquire"));
-    assert!(!cache_events.iter().any(|event| event == "transport"));
+    let events = events.lock().await.clone();
+    assert!(!events.iter().any(|event| event == "rate_acquire"));
+    assert!(!events.iter().any(|event| event == "transport"));
 }
 
 fn query_value(url: &url::Url, name: &str) -> Option<String> {

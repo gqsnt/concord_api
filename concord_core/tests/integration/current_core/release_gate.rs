@@ -18,10 +18,7 @@ fn check_v1_invokes_feature_matrix() {
 fn release_gate_documents_all_required_invariants() {
     let doc = read_repo_file("dev_doc/release_gate.md");
     for heading in [
-        "cache-admission-after-endpoint-success",
         "body-auth-redaction-safety",
-        "auth-cache-identity-partitioning",
-        "page-mutation-before-auth-collision-cache-rate-transport",
         "url-host-path-hardening",
         "body-limit-behavior",
         "feature-dependency-matrix",
@@ -65,7 +62,6 @@ fn examples_cover_v1_usage_surface() {
     assert!(minimal.contains(".execute_decoded()"));
 
     let policy = read_repo_file("concord_examples/tests/integration/policy_stack.rs");
-    assert!(policy.contains("cache_store"));
     assert!(policy.contains("rate_limiter"));
     assert!(policy.contains("retry_only"));
 

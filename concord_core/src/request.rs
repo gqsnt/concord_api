@@ -89,7 +89,6 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     }
 
     #[inline]
-    #[inline]
     pub async fn execute(self) -> Result<E::Response, ApiClientError> {
         Ok(self.execute_decoded().await?.value)
     }

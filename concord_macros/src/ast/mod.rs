@@ -7,7 +7,7 @@
 use crate::model::{Scheme, SetOp};
 use proc_macro2::Span;
 use syn::spanned::Spanned;
-use syn::{Expr, Ident, LitBool, LitInt, LitStr, Path, Type};
+use syn::{Expr, Ident, LitInt, LitStr, Path, Type};
 
 // Keep AST definitions grouped by DSL concept while preserving a single ast namespace.
 include!("common.rs");

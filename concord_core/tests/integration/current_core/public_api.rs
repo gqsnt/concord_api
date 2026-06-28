@@ -10,7 +10,6 @@ fn public_v1_surface_compiles() {
     fn uses_client_context<Cx: prelude::ClientContext>() {}
     fn uses_transport<T: advanced::Transport>() {}
     fn uses_body<B: advanced::TransportBody>() {}
-    fn uses_cache<C: advanced::CacheStore>() {}
     fn uses_rate_limiter<L: advanced::RateLimiter>() {}
     fn uses_hooks<H: advanced::RuntimeHooks>() {}
     fn uses_debug_sink<S: advanced::DebugSink>() {}
@@ -25,7 +24,6 @@ fn public_v1_surface_compiles() {
     uses_client_context::<super::common::TestCx>();
     uses_transport::<super::common::MockTransport>();
     uses_body::<EmptyBody>();
-    uses_cache::<advanced::NoopCacheStore>();
     uses_rate_limiter::<advanced::NoopRateLimiter>();
     uses_hooks::<advanced::NoopRuntimeHooks>();
     uses_debug_sink::<advanced::NoopDebugSink>();
@@ -36,9 +34,6 @@ fn public_v1_surface_compiles() {
     uses_type::<advanced::TransportResponse>();
     uses_type::<advanced::TransportError>();
     uses_type::<advanced::TransportErrorKind>();
-    uses_type::<advanced::CacheBefore>();
-    uses_type::<advanced::CacheAfter>();
-    uses_type::<advanced::CacheRevalidation>();
     uses_type::<advanced::RateLimitContext<'static>>();
     uses_type::<advanced::RateLimitPermit>();
     uses_type::<advanced::RateLimitResponseContext<'static>>();
@@ -78,7 +73,6 @@ fn prelude_surface_contains_normal_user_api() {
 #[test]
 fn advanced_surface_contains_extension_api() {
     let mut cfg = advanced::RuntimeConfig::default();
-    cfg.cache_store(Arc::new(advanced::NoopCacheStore));
     cfg.rate_limiter(Arc::new(advanced::NoopRateLimiter::new()));
     cfg.retry_policy(Arc::new(advanced::ConfiguredRetryPolicy::new(
         advanced::RetryConfig {

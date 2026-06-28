@@ -7,11 +7,10 @@ mod query_auth_redaction {
     use concord_core::advanced::{
         AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
         AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
-        AuthRequirementId, AuthRetryReason, BuiltRequest, CacheAfter, CacheBefore, CacheFuture,
-        CacheStore, DebugSink, DecodedResponse, PreparedInternalAuth, RequestMeta,
-        ReqwestTransport, RuntimeHooks, Transport, TransportAuth, TransportError,
+        AuthRequirementId, AuthRetryReason, DebugSink, DecodedResponse, PreparedInternalAuth,
+        RequestMeta, ReqwestTransport, RuntimeHooks, Transport, TransportAuth, TransportError,
         TransportErrorHookContext, TransportRequest, TransportResponse, apply_basic_credential,
-        apply_certificate_credential, apply_secret_credential, default_cache_key,
+        apply_certificate_credential, apply_secret_credential,
     };
     use concord_core::advanced::{BuiltResponse, PreparedAuthCredential, RateLimitPlan};
     #[cfg(feature = "json")]
@@ -203,7 +202,6 @@ mod query_auth_redaction {
                     usage_id: requirement.usage_id.clone(),
                     step_id: requirement.step_id,
                     generation: Some(1),
-                    identity: application.identity().clone(),
                     provenance: requirement.provenance.clone(),
                 };
                 Ok(PreparedAuthCredential::new(applied, application))
@@ -289,20 +287,6 @@ mod query_auth_redaction {
         }
 
         fn response_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
-
-        fn stale_fallback(
-            &self,
-            _dbg: DebugLevel,
-            _method: &Method,
-            url: &str,
-            _endpoint: &'static str,
-            _page_index: u32,
-        ) {
-            self.events
-                .lock()
-                .expect("debug events lock")
-                .push(format!("stale:{url}"));
-        }
     }
 
     #[derive(Default)]
@@ -374,26 +358,6 @@ mod query_auth_redaction {
         Ok((debug.events(), sent.requests().await))
     }
 
-    async fn run_cache_observation_request(
-        policy: ResolvedPolicy,
-    ) -> Result<String, ApiClientError> {
-        let events = Arc::new(TokioMutex::new(Vec::new()));
-        let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
-        let cache = Arc::new(RecordingCache::default());
-        let mut client =
-            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
-        client.configure(|cfg| {
-            cfg.cache_store(cache.clone());
-        });
-
-        client
-            .request(RedactionEndpoint { policy })
-            .execute_decoded()
-            .await?;
-
-        Ok(cache.observations().await.join("\n"))
-    }
-
     #[derive(Clone)]
     struct FailingTransport {
         requests: Arc<TokioMutex<Vec<TransportRequest>>>,
@@ -425,41 +389,6 @@ mod query_auth_redaction {
                     std::io::Error::other("redaction transport failure"),
                 ))
             })
-        }
-    }
-
-    #[derive(Default)]
-    struct RecordingCache {
-        observations: TokioMutex<Vec<String>>,
-    }
-
-    impl RecordingCache {
-        async fn observations(&self) -> Vec<String> {
-            self.observations.lock().await.clone()
-        }
-    }
-
-    impl CacheStore for RecordingCache {
-        fn before_request<'a>(&'a self, request: &'a BuiltRequest) -> CacheFuture<'a, CacheBefore> {
-            Box::pin(async move {
-                let mut observations = self.observations.lock().await;
-                observations.push(format!("key:{}", default_cache_key(request).as_str()));
-                observations.push(format!("request:{request:?}"));
-                observations.push(format!(
-                    "identities:{:?}",
-                    request.extensions.auth_identities
-                ));
-                CacheBefore::Miss
-            })
-        }
-
-        fn after_response<'a>(
-            &'a self,
-            _request: &'a BuiltRequest,
-            _response: &'a concord_core::advanced::BuiltResponse,
-            _revalidation: Option<concord_core::advanced::CacheRevalidation>,
-        ) -> CacheFuture<'a, CacheAfter> {
-            Box::pin(async { CacheAfter::Stored })
         }
     }
 
@@ -598,76 +527,22 @@ mod query_auth_redaction {
     }
 
     #[tokio::test]
-    async fn built_request_and_transport_request_debug_redact_query_auth_secret()
-    -> Result<(), ApiClientError> {
+    async fn transport_request_debug_redacts_query_auth_secret() -> Result<(), ApiClientError> {
         let events = Arc::new(TokioMutex::new(Vec::new()));
         let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
         let sent = transport.clone();
-        let cache = Arc::new(RecordingCache::default());
-        let mut policy = policy_with_query_auth("api_key");
-        policy.cache = concord_core::internal::CacheSetting::Config(
-            concord_core::advanced::CacheConfig::new(),
-        );
-        let mut client =
+        let policy = policy_with_query_auth("api_key");
+        let client =
             ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
-        client.configure(|cfg| {
-            cfg.cache_store(cache.clone());
-        });
 
         client
             .request(RedactionEndpoint { policy })
             .execute_decoded()
             .await?;
 
-        let cache_output = cache.observations().await.join("\n");
-        assert_secret_absent(&cache_output, API_KEY_SECRET);
-        assert!(cache_output.contains("api_key=<redacted>"));
-
         let requests = sent.requests().await;
         assert!(requests[0].url.as_str().contains(API_KEY_SECRET));
         assert_secret_absent(&format!("{:?}", requests[0]), API_KEY_SECRET);
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn cache_store_input_does_not_expose_query_auth_secret() -> Result<(), ApiClientError> {
-        let output = run_cache_observation_request(policy_with_query_auth("api_key")).await?;
-
-        assert_secret_absent(&output, API_KEY_SECRET);
-        assert!(output.contains("key:"));
-        assert!(output.contains("api_key=<redacted>"));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn cache_store_input_does_not_expose_header_auth_secret() -> Result<(), ApiClientError> {
-        let output =
-            run_cache_observation_request(auth_policy(AuthPlacement::Header("X-Api-Key"))).await?;
-
-        assert_secret_absent(&output, API_KEY_SECRET);
-        assert!(output.contains("key:"));
-        assert!(output.contains("https://example.com/text"));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn cache_store_input_does_not_expose_bearer_secret() -> Result<(), ApiClientError> {
-        let output = run_cache_observation_request(auth_policy(AuthPlacement::Bearer)).await?;
-
-        assert_secret_absent(&output, BEARER_SECRET);
-        assert!(output.contains("key:"));
-        assert!(output.contains("https://example.com/text"));
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn cache_store_input_does_not_expose_basic_auth_material() -> Result<(), ApiClientError> {
-        let output = run_cache_observation_request(auth_policy(AuthPlacement::Basic)).await?;
-
-        assert_secret_absent(&output, BASIC_USERNAME_SECRET);
-        assert_secret_absent(&output, PASSWORD_SECRET);
-        assert!(output.contains("key:"));
-        assert!(output.contains("hash:"));
         Ok(())
     }
 
@@ -909,34 +784,6 @@ mod query_auth_redaction {
     }
 
     #[tokio::test]
-    async fn basic_auth_username_secret_absent_from_cache_key() -> Result<(), ApiClientError> {
-        let events = Arc::new(TokioMutex::new(Vec::new()));
-        let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
-        let cache = Arc::new(RecordingCache::default());
-        let mut policy = auth_policy(AuthPlacement::Basic);
-        policy.cache = concord_core::internal::CacheSetting::Config(
-            concord_core::advanced::CacheConfig::new(),
-        );
-        let mut client =
-            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
-        client.configure(|cfg| {
-            cfg.cache_store(cache.clone());
-        });
-
-        client
-            .request(RedactionEndpoint { policy })
-            .execute_decoded()
-            .await?;
-
-        let output = cache.observations().await.join("\n");
-        assert_secret_absent(&output, BASIC_USERNAME_SECRET);
-        assert_secret_absent(&output, PASSWORD_SECRET);
-        assert!(output.contains("hash:"));
-        assert!(!output.contains("user:"));
-        Ok(())
-    }
-
-    #[tokio::test]
     async fn public_header_cannot_collide_with_bearer_authorization() {
         let events = Arc::new(TokioMutex::new(Vec::new()));
         let transport = MockTransport::new(
@@ -1157,7 +1004,6 @@ mod query_auth_redaction {
                         usage_id: requirement.usage_id.clone(),
                         step_id: requirement.step_id,
                         generation: Some((prepare_index + 1) as u64),
-                        identity: application.identity().clone(),
                         provenance: requirement.provenance.clone(),
                     };
                     Ok(PreparedAuthCredential::new(applied, application))
@@ -1313,7 +1159,6 @@ mod query_auth_redaction {
                         usage_id: requirement.usage_id.clone(),
                         step_id: requirement.step_id,
                         generation: Some(7),
-                        identity: application.identity().clone(),
                         provenance: requirement.provenance.clone(),
                     };
                     Ok(PreparedAuthCredential::new(applied, application))
@@ -1456,7 +1301,6 @@ mod query_auth_redaction {
                         usage_id: requirement.usage_id.clone(),
                         step_id: requirement.step_id,
                         generation: Some(1),
-                        identity: application.identity().clone(),
                         provenance: requirement.provenance.clone(),
                     };
                     Ok(PreparedAuthCredential::new(applied, application))

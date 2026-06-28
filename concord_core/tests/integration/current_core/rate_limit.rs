@@ -239,7 +239,7 @@ async fn rate_limit_observation_happens_after_response_classification() -> Resul
     );
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     client
         .request(TextEndpoint::default())
@@ -289,8 +289,6 @@ async fn rate_limit_observes_200_before_decode_failure() {
     const RESPONSE_SENTINEL: &str = "PR65_RESPONSE_BODY_SENTINEL_DO_NOT_LEAK";
 
     let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
     let mut response = MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL);
     response.headers.insert(
         http::header::CONTENT_TYPE,
@@ -300,14 +298,13 @@ async fn rate_limit_observes_200_before_decode_failure() {
     let mut client = client(TestAuthVars::default(), transport);
     configure_runtime(
         &mut client,
-        Some(cache),
         Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
     );
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
 
     let err = client
         .request(ObservationFailureEndpoint {
-            policy: cache_policy(),
+            policy: Default::default(),
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
         })
         .execute_decoded()
@@ -315,7 +312,6 @@ async fn rate_limit_observes_200_before_decode_failure() {
         .expect_err("invalid payload should fail decode");
 
     assert_eq!(err.category(), concord_core::error::ErrorCategory::Decode);
-    assert_eq!(*after_response_count.lock().await, 0);
     let events = events.lock().await.clone();
     assert!(
         events
@@ -357,7 +353,7 @@ async fn rate_limit_observes_retryable_status_before_retry() -> Result<(), ApiCl
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     let decoded = client
         .request(TextEndpoint {
@@ -399,7 +395,7 @@ async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientEr
         transport,
     );
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     let err = client
         .request(TextEndpoint {
@@ -451,7 +447,7 @@ async fn rate_limit_does_not_observe_transport_error_as_response() {
         )],
     );
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     let err = client
         .request(TextEndpoint::default())
@@ -478,7 +474,7 @@ async fn missing_host_fails_before_rate_limit_acquire() {
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     let err = client
         .request(HostlessEndpoint {
@@ -513,7 +509,7 @@ async fn rate_limit_acquire_context_does_not_expose_bearer_auth() -> Result<(), 
         ObservationAuthVars::bearer(BEARER_SENTINEL, "bearer", events.clone()),
         transport,
     );
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     let decoded = client
         .request(TextEndpoint {
@@ -554,7 +550,7 @@ async fn rate_limit_acquire_context_does_not_expose_query_auth() -> Result<(), A
         },
         transport,
     );
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     let decoded = client
         .request(TextEndpoint {
@@ -595,7 +591,7 @@ async fn rate_limit_acquire_context_does_not_expose_basic_auth_material()
         ObservationAuthVars::basic(USER_SENTINEL, PASS_SENTINEL, "basic", events.clone()),
         transport,
     );
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     let decoded = client
         .request(TextEndpoint {
@@ -635,7 +631,7 @@ async fn rate_limit_response_context_does_not_expose_bearer_auth() -> Result<(),
         ObservationAuthVars::bearer(BEARER_SENTINEL, "bearer", events.clone()),
         transport,
     );
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     client
         .request(TextEndpoint {
@@ -675,7 +671,7 @@ async fn rate_limit_response_context_does_not_expose_query_auth() -> Result<(), 
         },
         transport,
     );
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     client
         .request(TextEndpoint {
@@ -715,7 +711,7 @@ async fn rate_limit_response_context_does_not_expose_basic_auth_material()
         ObservationAuthVars::basic(USER_SENTINEL, PASS_SENTINEL, "basic", events.clone()),
         transport,
     );
-    configure_runtime(&mut client, None, Some(limiter));
+    configure_runtime(&mut client, Some(limiter));
 
     client
         .request(TextEndpoint {
@@ -751,7 +747,7 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, None, Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
     let err = client
         .request(TextEndpoint {
@@ -794,7 +790,7 @@ async fn rate_limit_response_zero_delay_is_allowed() -> Result<(), ApiClientErro
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, None, Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
     let decoded = client
         .request(TextEndpoint {
@@ -839,7 +835,7 @@ async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(),
         ObservationAuthVars::bearer("PR67_BEARER_SECRET_DO_NOT_LEAK", "bearer", events.clone()),
         transport,
     );
-    configure_runtime(&mut client, None, Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
     let err = client
         .request(TextEndpoint {
@@ -857,68 +853,6 @@ async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(),
     let auth = first_position(&events, "auth_rejection:403 Forbidden");
     assert!(observe < auth);
     Ok(())
-}
-
-#[tokio::test]
-async fn rate_limit_response_action_cannot_make_failed_response_cacheable() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let cache = Arc::new(RecordingCache::miss(events.clone()));
-    let after_response_count = cache.after_response_count.clone();
-    let observer = Arc::new(RecordingRateLimitObserver::fixed(
-        events.clone(),
-        RateLimitObservation::limited().with_delay(Duration::ZERO),
-    ));
-    let rate_limiter =
-        Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "fail",
-        )],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(cache), Some(rate_limiter));
-
-    let err = client
-        .request(TextEndpoint {
-            policy: cache_policy(),
-            ..Default::default()
-        })
-        .execute_decoded()
-        .await
-        .expect_err("failed response should remain terminal");
-
-    assert!(matches!(
-        err,
-        ApiClientError::HttpStatus {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            ..
-        }
-    ));
-    assert_eq!(sent_transport.sent_count().await, 1);
-    assert!(
-        events
-            .lock()
-            .await
-            .iter()
-            .any(|event| event.starts_with("cache_before:"))
-    );
-    assert_eq!(*after_response_count.lock().await, 0);
-    assert!(
-        !events
-            .lock()
-            .await
-            .iter()
-            .any(|event| event == "cache_after_response")
-    );
-    let events = events.lock().await.clone();
-    assert!(
-        events
-            .iter()
-            .any(|event| event.starts_with("rate_observe_status:500"))
-    );
 }
 
 #[tokio::test]
@@ -947,7 +881,7 @@ async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
     );
     let sent_transport = transport.clone();
     let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, None, Some(rate_limiter));
+    configure_runtime(&mut client, Some(rate_limiter));
 
     let handle = tokio::spawn(async move {
         client

@@ -1,8 +1,7 @@
 use super::common::{
     CursorItems, CursorItemsEndpoint, MockOutcome, MockResponse, MockTransport,
-    ObservationRateLimiter, ObservationRuntimeHooks, RecordingCache, TestAuthVars, TestCx,
-    TextEndpoint, auth_policy, cache_policy, client, request_plan, retry_policy,
-    retry_policy_for_statuses,
+    ObservationRateLimiter, ObservationRuntimeHooks, TestAuthVars, TestCx, TextEndpoint,
+    auth_policy, client, request_plan, retry_policy, retry_policy_for_statuses,
 };
 use bytes::Bytes;
 use concord_core::advanced::{
@@ -27,7 +26,6 @@ const REQUEST_BODY_SENTINEL_PR77: &str = "REQUEST_BODY_SENTINEL_PR77";
 const RESPONSE_BODY_SENTINEL_PR77: &str = "RESPONSE_BODY_SENTINEL_PR77";
 const QUERY_SECRET_SENTINEL_PR77: &str = "QUERY_SECRET_SENTINEL_PR77";
 const HEADER_SECRET_SENTINEL_PR77: &str = "HEADER_SECRET_SENTINEL_PR77";
-const CACHE_KEY_SENTINEL_PR77: &str = "CACHE_KEY_SENTINEL_PR77";
 
 #[derive(Clone)]
 struct InvalidParamEndpoint;
@@ -137,22 +135,6 @@ impl DebugSink for CapturingDebugSink {
             .expect("debug events lock")
             .push(format!("debug_response_headers:{headers:?}"));
     }
-
-    fn stale_fallback(
-        &self,
-        dbg: DebugLevel,
-        method: &Method,
-        url: &str,
-        endpoint: &'static str,
-        page_index: u32,
-    ) {
-        self.events
-            .try_lock()
-            .expect("debug events lock")
-            .push(format!(
-                "debug_stale:{dbg}:{method}:{url}:{endpoint}:{page_index}"
-            ));
-    }
 }
 
 struct FailingRateLimiter {
@@ -208,7 +190,6 @@ fn assert_error_safe(err: &ApiClientError) {
         RESPONSE_BODY_SENTINEL_PR77,
         QUERY_SECRET_SENTINEL_PR77,
         HEADER_SECRET_SENTINEL_PR77,
-        CACHE_KEY_SENTINEL_PR77,
     ] {
         assert!(
             !rendered.contains(sentinel),
@@ -225,7 +206,6 @@ async fn assert_observers_safe(events: &Arc<Mutex<Vec<String>>>) {
         RESPONSE_BODY_SENTINEL_PR77,
         QUERY_SECRET_SENTINEL_PR77,
         HEADER_SECRET_SENTINEL_PR77,
-        CACHE_KEY_SENTINEL_PR77,
     ] {
         assert!(
             !rendered.contains(sentinel),
@@ -238,24 +218,25 @@ fn body_read_count(counter: &Arc<AtomicUsize>) -> usize {
     counter.load(Ordering::Relaxed)
 }
 
-fn cache_and_rate_policy() -> ResolvedPolicy {
-    let mut policy = cache_policy();
-    policy.rate_limit = {
-        let mut plan = concord_core::advanced::RateLimitPlan::new();
-        plan.push_bucket(
-            RateLimitBucketUse::new(
-                "test",
-                "errors",
-                RateLimitKey::new(vec![RateLimitKeyPart::endpoint()]),
-            )
-            .with_window(RateLimitWindow::new(
-                NonZeroU32::new(10).expect("non-zero"),
-                std::time::Duration::from_secs(1),
-            )),
-        );
-        plan
-    };
-    policy
+fn rate_policy() -> ResolvedPolicy {
+    ResolvedPolicy {
+        rate_limit: {
+            let mut plan = concord_core::advanced::RateLimitPlan::new();
+            plan.push_bucket(
+                RateLimitBucketUse::new(
+                    "test",
+                    "errors",
+                    RateLimitKey::new(vec![RateLimitKeyPart::endpoint()]),
+                )
+                .with_window(RateLimitWindow::new(
+                    NonZeroU32::new(10).expect("non-zero"),
+                    std::time::Duration::from_secs(1),
+                )),
+            );
+            plan
+        },
+        ..Default::default()
+    }
 }
 
 fn with_runtime_observers(
@@ -265,7 +246,6 @@ fn with_runtime_observers(
     client.configure(|cfg| {
         cfg.debug_level(DebugLevel::VV)
             .debug_sink(Arc::new(CapturingDebugSink::new(events.clone())))
-            .cache_store(Arc::new(RecordingCache::miss(events.clone())))
             .rate_limiter(Arc::new(ObservationRateLimiter::new(events.clone())))
             .runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events)));
     });
@@ -406,7 +386,7 @@ async fn request_construction_errors_are_typed_and_pre_transport() {
 }
 
 #[tokio::test]
-async fn auth_collision_errors_are_typed_and_pre_cache_rate_transport() {
+async fn auth_collision_errors_are_typed_and_pre_rate_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events.clone(),
@@ -421,8 +401,7 @@ async fn auth_collision_errors_are_typed_and_pre_cache_rate_transport() {
     );
     with_runtime_observers(&mut client, events.clone());
     let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
-    policy.cache = cache_and_rate_policy().cache;
-    policy.rate_limit = cache_and_rate_policy().rate_limit;
+    policy.rate_limit = rate_policy().rate_limit;
     policy.headers.insert(
         http::header::AUTHORIZATION,
         HeaderValue::from_static("public-value"),
@@ -441,7 +420,6 @@ async fn auth_collision_errors_are_typed_and_pre_cache_rate_transport() {
     assert_eq!(err.category(), ErrorCategory::AuthRejected);
     assert_eq!(transport.sent_count().await, 0);
     let events = events.lock().await.clone();
-    assert!(!events.iter().any(|event| event.starts_with("cache_before")));
     assert!(!events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "transport"));
     assert_error_safe(&err);
@@ -449,7 +427,7 @@ async fn auth_collision_errors_are_typed_and_pre_cache_rate_transport() {
 }
 
 #[tokio::test]
-async fn auth_rejection_error_is_distinct_from_status_retry_and_stale() {
+async fn auth_rejection_error_is_distinct_from_status_retry() {
     for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
         let events = Arc::new(Mutex::new(Vec::new()));
         let response_reads = Arc::new(AtomicUsize::new(0));
@@ -469,8 +447,7 @@ async fn auth_rejection_error_is_distinct_from_status_retry_and_stale() {
         );
         with_runtime_observers(&mut client, events.clone());
         let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
-        policy.cache = cache_and_rate_policy().cache;
-        policy.rate_limit = cache_and_rate_policy().rate_limit;
+        policy.rate_limit = rate_policy().rate_limit;
         policy.retry = retry_policy_for_statuses(2, vec![status]).retry;
 
         let err = client
@@ -489,7 +466,6 @@ async fn auth_rejection_error_is_distinct_from_status_retry_and_stale() {
         let events = events.lock().await.clone();
         assert!(events.iter().any(|event| event == "rate_acquire"));
         assert!(!events.iter().any(|event| event.starts_with("retry_ctx")));
-        assert!(!events.iter().any(|event| event == "cache_after_error"));
         assert_error_safe(&err);
         assert_observers_safe(&Arc::new(Mutex::new(events))).await;
     }
@@ -507,7 +483,7 @@ async fn transport_error_is_distinct_from_http_status_error() {
 
     let err = client
         .request(TextEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
             ..TextEndpoint::default()
         })
         .execute_decoded()
@@ -542,7 +518,7 @@ async fn http_status_error_is_distinct_from_transport_and_auth() {
 
     let err = client
         .request(TextEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
             ..TextEndpoint::default()
         })
         .execute_decoded()
@@ -597,8 +573,7 @@ async fn rate_limit_acquire_error_is_typed_and_pre_transport() {
     );
     let mut client = client(TestAuthVars::default(), transport.clone());
     client.configure(|cfg| {
-        cfg.cache_store(Arc::new(RecordingCache::miss(events.clone())))
-            .rate_limiter(Arc::new(FailingRateLimiter::new(events.clone())))
+        cfg.rate_limiter(Arc::new(FailingRateLimiter::new(events.clone())))
             .runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())))
             .debug_level(DebugLevel::VV)
             .debug_sink(Arc::new(CapturingDebugSink::new(events.clone())));
@@ -606,7 +581,7 @@ async fn rate_limit_acquire_error_is_typed_and_pre_transport() {
 
     let err = client
         .request(TextEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
             ..TextEndpoint::default()
         })
         .execute_decoded()
@@ -623,7 +598,6 @@ async fn rate_limit_acquire_error_is_typed_and_pre_transport() {
     assert_eq!(err.category(), ErrorCategory::InternalInvariant);
     assert_eq!(transport.sent_count().await, 0);
     let events = events.lock().await.clone();
-    assert!(events.iter().any(|event| event.starts_with("cache_before")));
     assert!(events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "transport"));
     assert_error_safe(&err);
@@ -665,7 +639,7 @@ async fn body_limit_errors_are_distinguishable_and_safe() {
 
         let err = match client
             .request(TextEndpoint {
-                policy: cache_and_rate_policy(),
+                policy: rate_policy(),
                 ..TextEndpoint::default()
             })
             .execute_decoded()
@@ -685,7 +659,6 @@ async fn body_limit_errors_are_distinguishable_and_safe() {
         }
         assert_eq!(err.category(), ErrorCategory::Decode);
         let events = events.lock().await.clone();
-        assert!(!events.iter().any(|event| event == "cache_after_response"));
         assert_error_safe(&err);
         assert_observers_safe(&Arc::new(Mutex::new(events))).await;
     }
@@ -714,7 +687,7 @@ async fn decode_and_transform_errors_are_distinct_and_safe() {
 
     let decode_err = client
         .request(TextEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
             ..TextEndpoint::default()
         })
         .execute_decoded()
@@ -726,7 +699,7 @@ async fn decode_and_transform_errors_are_distinct_and_safe() {
 
     let transform_err = client
         .request(TransformEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
         })
         .execute_decoded()
         .await
@@ -735,13 +708,6 @@ async fn decode_and_transform_errors_are_distinct_and_safe() {
     assert_eq!(transform_err.category(), ErrorCategory::Decode);
     assert_error_safe(&transform_err);
     let events = events.lock().await.clone();
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event.as_str() == "cache_after_response")
-            .count(),
-        0
-    );
     assert_observers_safe(&Arc::new(Mutex::new(events))).await;
 }
 
@@ -760,7 +726,7 @@ async fn pagination_error_is_distinct_and_safe() {
 
     let err = client
         .request(CursorItemsEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
             pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
                 cursor_key: "cursor".into(),
                 per_page_key: "limit".into(),
@@ -808,7 +774,7 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
 
     let transport_err = raw_client
         .request(TextEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
             ..TextEndpoint::default()
         })
         .execute_raw()
@@ -819,7 +785,7 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
 
     let body_err = raw_client
         .request(TextEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
             ..TextEndpoint::default()
         })
         .execute_raw()
@@ -831,7 +797,7 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
 
     let status_err = raw_client
         .request(TextEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
             ..TextEndpoint::default()
         })
         .execute_raw()
@@ -845,8 +811,6 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
     );
 
     let events = events.lock().await.clone();
-    assert!(!events.iter().any(|event| event.starts_with("cache_before")));
-    assert!(!events.iter().any(|event| event == "cache_after_response"));
     assert_error_safe(&transport_err);
     assert_error_safe(&body_err);
     assert_error_safe(&status_err);
@@ -859,8 +823,7 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
     );
     let mut rate_client = client(TestAuthVars::default(), rate_transport.clone());
     rate_client.configure(|cfg| {
-        cfg.cache_store(Arc::new(RecordingCache::miss(rate_events.clone())))
-            .rate_limiter(Arc::new(FailingRateLimiter::new(rate_events.clone())))
+        cfg.rate_limiter(Arc::new(FailingRateLimiter::new(rate_events.clone())))
             .runtime_hooks(Arc::new(ObservationRuntimeHooks::new(rate_events.clone())))
             .debug_level(DebugLevel::VV)
             .debug_sink(Arc::new(CapturingDebugSink::new(rate_events.clone())));
@@ -868,7 +831,7 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
 
     let rate_err = rate_client
         .request(TextEndpoint {
-            policy: cache_and_rate_policy(),
+            policy: rate_policy(),
             ..TextEndpoint::default()
         })
         .execute_raw()
@@ -885,11 +848,6 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
     assert_eq!(rate_err.category(), ErrorCategory::InternalInvariant);
     assert_eq!(rate_transport.sent_count().await, 0);
     let rate_events = rate_events.lock().await.clone();
-    assert!(
-        !rate_events
-            .iter()
-            .any(|event| event.starts_with("cache_before"))
-    );
     assert!(rate_events.iter().any(|event| event == "rate_acquire"));
     assert!(!rate_events.iter().any(|event| event == "transport"));
     assert_error_safe(&rate_err);

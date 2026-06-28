@@ -1,6 +1,5 @@
 mod integration {
     mod auth_runtime;
-    mod cache_runtime;
     mod current_core;
     mod custom_codec_traits;
     mod pagination_runtime;
