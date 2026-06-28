@@ -149,12 +149,16 @@ For large or unbounded byte transfer, future PRs should use `Stream<OctetStream>
 
 - Endpoint method mode: `WS`.
 - `WebSocket<Out, In>` defaults to `WebSocket<Out, In, JsonWebSocket>`.
+- Core runtime support exists for WebSocket connections.
 - WebSocket is endpoint mode, not an HTTP response body shape.
-- Future value: `WebSocketClient<Out, In>`.
-- Future trait: `WebSocketCodec<Out, In>`.
-- Rate-limit may apply to the handshake.
+- Runtime value: `WebSocketClient<Out, In>`.
+- Runtime codec trait: `WebSocketCodec<Out, In>`.
+- Built-in codec: `JsonWebSocket`.
+- Handshake URL schemes map `https -> wss` and `http -> ws`.
+- Rate-limit applies before the connect/upgrade attempt.
 - Auth, header, query, and path construction apply before upgrade.
 - Reconnect, replay, pooling, multiplexing, and server-side WebSocket are out of scope initially.
+- Macro/codegen support for `WebSocket<Out, In, C>` remains future work.
 - HTTP response body planning must not be contaminated with WebSocket semantics.
 
 ## Reserved Endpoint I/O Names

@@ -25,6 +25,7 @@ mod stream_response;
 mod timeout;
 pub mod transport;
 mod types;
+mod websocket;
 
 pub mod internal {
     #[doc(hidden)]
@@ -39,6 +40,7 @@ pub mod internal {
         MultipartResponseEndpoint, PaginatedEndpoint, PaginationPlan, RecordResponseEndpoint,
         RequestArgs, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute, ResponsePlan,
         ResponseSpec, SseResponseEndpoint, StreamResponseEndpoint, Transform, TransformResp,
+        WebSocketEndpoint,
     };
     pub use crate::multipart::{
         FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
@@ -57,6 +59,9 @@ pub mod internal {
     };
     pub use crate::retry::RetrySetting;
     pub use crate::sse::{JsonSse, SseCodec, SseEvent, SseRawEvent, SseStream};
+    pub use crate::websocket::{
+        JsonWebSocket, WebSocketClient, WebSocketClose, WebSocketCodec, WebSocketMessage,
+    };
 }
 pub mod prelude {
     pub use crate::auth::{AccessToken, ApiKey, BasicCredential};
@@ -67,7 +72,7 @@ pub mod prelude {
     pub use crate::debug::DebugLevel;
     pub use crate::endpoint::{
         Endpoint, MultipartResponseEndpoint, PaginatedEndpoint, RecordResponseEndpoint,
-        SseResponseEndpoint, StreamResponseEndpoint,
+        SseResponseEndpoint, StreamResponseEndpoint, WebSocketEndpoint,
     };
     pub use crate::error::{ApiClientError, ErrorCategory};
     pub use crate::pagination::{
@@ -103,7 +108,7 @@ pub mod advanced {
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::endpoint::{
         MultipartResponseEndpoint, RecordResponseEndpoint, SseResponseEndpoint,
-        StreamResponseEndpoint,
+        StreamResponseEndpoint, WebSocketEndpoint,
     };
     pub use crate::error::{ErrorContext, FxError};
     pub use crate::media::{Jpeg, MediaType, Mp3, Mp4, OctetStream, Pdf, Png, Zip};
@@ -143,9 +148,13 @@ pub mod advanced {
     pub use crate::transport::{
         BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta, ReqwestTransport, Transport,
         TransportAuth, TransportBody, TransportByteStream, TransportError, TransportErrorKind,
-        TransportRequest, TransportRequestBody, TransportResponse,
+        TransportRequest, TransportRequestBody, TransportResponse, TransportWebSocket,
+        TransportWebSocketConnection, TransportWsClose, TransportWsMessage,
     };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,
+    };
+    pub use crate::websocket::{
+        JsonWebSocket, WebSocketClient, WebSocketClose, WebSocketCodec, WebSocketMessage,
     };
 }

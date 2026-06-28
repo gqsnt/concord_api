@@ -34,3 +34,5 @@ mod sse;
 mod stream_response;
 #[path = "current_core/stream_runtime.rs"]
 mod stream_runtime;
+#[path = "current_core/websocket.rs"]
+mod websocket;
