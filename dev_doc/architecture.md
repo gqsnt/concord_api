@@ -35,3 +35,5 @@ Behavior profiles are semantic sugar. They are lowered before runtime into ordin
 The generated client is a typed facade over request plans. The public API should stay facade-first, while advanced endpoint structs remain available for tests and request planning.
 
 Public docs are in `docs/`. Maintainer docs are in `dev_doc/`.
+
+For endpoint I/O expansion work, see [endpoint_io.md](endpoint_io.md).

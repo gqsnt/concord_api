@@ -15,6 +15,7 @@ These documents describe how Concord is built internally. Public DSL usage lives
 - [policies_and_behaviors.md](policies_and_behaviors.md): policy declarations, attachments, behaviors, and why behavior is not a runtime concept.
 - [auth_runtime.md](auth_runtime.md): secrets, credentials, auth state, endpoint-backed auth, refresh, and redaction boundaries.
 - [pagination_and_codecs.md](pagination_and_codecs.md): codec and pagination extension points.
+- [endpoint_io.md](endpoint_io.md): endpoint I/O expansion contract, reserved families, and runtime compatibility rules.
 - [testing.md](testing.md): test strategy and the checklist for adding DSL features.
 - [release_gate.md](release_gate.md): local v1 release gate and invariant checklist.
 - [release_checklist.md](release_checklist.md): local v1 gate, release verification commands, and manual audit list.
