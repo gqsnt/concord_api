@@ -32,9 +32,5 @@ run_step() {
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
 run_step "clippy workspace all targets" "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
-run_step "macro trybuild diagnostics" "${CARGO[@]}" nextest run -p concord_macros --test trybuild_current
-run_step "macro integration tests" "${CARGO[@]}" nextest run -p concord_macros --test main
-run_step "core tests" "${CARGO[@]}" nextest run -p concord_core
-run_step "example tests" "${CARGO[@]}" nextest run -p concord_examples
 run_step "workspace all-target tests" "${CARGO[@]}" nextest run --workspace --all-targets
 run_step "rustdoc warnings denied" env RUSTDOCFLAGS="-D warnings" "${CARGO[@]}" doc --workspace --no-deps
