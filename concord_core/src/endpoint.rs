@@ -1,5 +1,7 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::error::ApiClientError;
+use crate::media::MediaType;
+use crate::stream_response::StreamResponse;
 use crate::transport::DecodedResponse;
 use crate::transport::Transport;
 use std::future::Future;
@@ -134,3 +136,20 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
 /// to make an endpoint paginated; the endpoint plan must also carry an
 /// explicit pagination controller.
 pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx> {}
+
+/// Marker implemented only for endpoints whose primary response is a stream.
+pub trait StreamResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
+    type Media: MediaType;
+
+    fn execute_stream<'a, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<StreamResponse<Self::Media>, ApiClientError>> + Send + 'a>,
+    >
+    where
+        T: Transport + 'a,
+    {
+        Box::pin(async move { client.execute_plan_stream::<Self::Media>(plan).await })
+    }
+}

@@ -139,6 +139,7 @@ fn emit_endpoint_def(
         Err(err) => return err,
     };
     let execute_override = endpoint_execute_override(ep, cx_ty);
+    let stream_response_marker_impl = endpoint_stream_response_marker_impl(ep, ty_name, cx_ty);
 
     let pagination_plan = emit_endpoint_pagination_plan(ep);
     let pagination_marker_impl = if ep.paginate.is_some() {
@@ -254,6 +255,8 @@ fn emit_endpoint_def(
                 })
             }
         }
+
+        #stream_response_marker_impl
 
         #pagination_marker_impl
 
@@ -693,6 +696,22 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStrea
             ::std::boxed::Box::pin(async move {
                 client.execute_plan_stream::<#media_ty>(plan).await
             })
+        }
+    }
+}
+
+fn endpoint_stream_response_marker_impl(
+    ep: &ResolvedEndpoint,
+    ty_name: &Ident,
+    cx_ty: &Ident,
+) -> TokenStream2 {
+    let ResolvedResponseBodyIo::RawStream { media_ty } = &ep.response_io else {
+        return quote! {};
+    };
+
+    quote! {
+        impl ::concord_core::prelude::StreamResponseEndpoint<super::#cx_ty> for #ty_name {
+            type Media = #media_ty;
         }
     }
 }

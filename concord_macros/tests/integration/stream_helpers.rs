@@ -405,3 +405,67 @@ async fn generated_stream_response_returns_stream_without_buffering() {
         3
     );
 }
+
+#[tokio::test]
+async fn generated_stream_response_execute_stream_returns_stream_without_buffering() {
+    const SENTINEL: &[u8] = b"SECRET_STREAM_RESPONSE_SENTINEL_MUST_NOT_APPEAR";
+    let poll_flag = Arc::new(AtomicBool::new(false));
+    let transport = RecordingTransport::streamed_response(
+        vec![
+            Bytes::from_static(b"hello"),
+            Bytes::from_static(b" "),
+            Bytes::from_static(SENTINEL),
+        ],
+        poll_flag.clone(),
+    );
+    let api = StreamHelperApi::new_with_transport(transport.clone());
+
+    let mut response: StreamResponse<OctetStream> = api
+        .download()
+        .execute_stream()
+        .await
+        .expect("stream download succeeds");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.media_type(), "application/octet-stream");
+    assert_eq!(
+        response
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/octet-stream")
+    );
+    assert!(!poll_flag.load(Ordering::SeqCst));
+    assert_eq!(
+        response.content_length(),
+        Some((5 + 1 + SENTINEL.len()) as u64)
+    );
+
+    let response_debug = format!("{:?}", response);
+    assert!(!response_debug.contains("SECRET_STREAM_RESPONSE_SENTINEL_MUST_NOT_APPEAR"));
+
+    let mut received = Vec::new();
+    while let Some(chunk) = response.next_chunk().await.expect("stream chunk") {
+        received.extend_from_slice(&chunk);
+    }
+
+    assert!(poll_flag.load(Ordering::SeqCst));
+    assert_eq!(received, [b"hello".as_slice(), b" ", SENTINEL].concat());
+    let events = transport.events();
+    let transport_idx = events
+        .iter()
+        .position(|event| event == "transport_send")
+        .expect("transport send event");
+    let stream_idx = events
+        .iter()
+        .position(|event| event == "response_stream_poll")
+        .expect("response stream poll event");
+    assert!(transport_idx < stream_idx);
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.as_str() == "response_stream_poll")
+            .count(),
+        3
+    );
+}

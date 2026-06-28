@@ -1,6 +1,8 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
-use crate::endpoint::{CustomPaginationPlan, Endpoint, PaginatedEndpoint, PaginationPlan};
+use crate::endpoint::{
+    CustomPaginationPlan, Endpoint, PaginatedEndpoint, PaginationPlan, StreamResponseEndpoint,
+};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
     Control, PageAdvance, PageInit, PageItems, PageRequest, PaginationCaps, PaginationTermination,
@@ -166,6 +168,22 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         E::Response: PageItems,
     {
         self.paginate(termination)
+    }
+}
+
+impl<'a, Cx, E, T> PendingRequest<'a, Cx, E, T>
+where
+    Cx: ClientContext + 'a,
+    E: StreamResponseEndpoint<Cx> + 'a,
+    T: crate::transport::Transport + 'a,
+{
+    #[inline]
+    pub async fn execute_stream(
+        self,
+    ) -> Result<crate::stream_response::StreamResponse<E::Media>, ApiClientError> {
+        let client = self.client;
+        let plan = self.request_plan()?;
+        E::execute_stream(client, plan).await
     }
 }
 

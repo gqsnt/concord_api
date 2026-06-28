@@ -289,6 +289,7 @@ mod tests {
                 "RequestArgs::with_stream_body",
                 "StreamResponse<OctetStream>",
                 "execute_plan_stream::<OctetStream>",
+                "StreamResponseEndpoint",
             ],
         );
     }

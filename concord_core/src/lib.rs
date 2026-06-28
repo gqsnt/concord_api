@@ -33,7 +33,8 @@ pub mod internal {
     pub use crate::endpoint::{
         BodyPlan, ClientPlanContext, Decoded, EndpointMeta, EndpointPlan, Mapped, MappedResp,
         PaginatedEndpoint, PaginationPlan, RequestArgs, RequestOverrides, RequestPlan,
-        RequestPlanView, ResolvedRoute, ResponsePlan, ResponseSpec, Transform, TransformResp,
+        RequestPlanView, ResolvedRoute, ResponsePlan, ResponseSpec, StreamResponseEndpoint,
+        Transform, TransformResp,
     };
     #[doc(hidden)]
     pub use crate::pagination::{
@@ -51,7 +52,7 @@ pub mod prelude {
     pub use crate::codec::json::Json;
     pub use crate::codec::{NoContent, text::Text};
     pub use crate::debug::DebugLevel;
-    pub use crate::endpoint::{Endpoint, PaginatedEndpoint};
+    pub use crate::endpoint::{Endpoint, PaginatedEndpoint, StreamResponseEndpoint};
     pub use crate::error::{ApiClientError, ErrorCategory};
     pub use crate::pagination::{
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
@@ -84,6 +85,7 @@ pub mod advanced {
         BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
     };
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
+    pub use crate::endpoint::StreamResponseEndpoint;
     pub use crate::error::{ErrorContext, FxError};
     pub use crate::media::{Jpeg, MediaType, Mp3, Mp4, OctetStream, Pdf, Png, Zip};
     pub use crate::pagination::{
