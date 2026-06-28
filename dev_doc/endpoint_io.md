@@ -97,11 +97,12 @@ For large or unbounded byte transfer, future PRs should use `Stream<OctetStream>
 - `T` is the item type.
 - `F` is the record format.
 - `Records<T>` has no default format in the initial contract; callers must spell the format explicitly, such as `Records<LogEntry, NdJson>`.
-- Future request value: `RecordBody<T>`.
-- Future response value: `RecordStream<T>`.
-- Future traits: `RecordFormat<T>`, `RecordEncoder<T>`, and `RecordDecoder<T>`.
+- Runtime values are `RecordBody<T>` and `RecordStream<T>`; they are not format-generic.
+- Custom formats implement `MediaType + RecordFormat<T>`.
 - The first intended built-in format is `NdJson`.
 - CSV is not part of the initial design.
+- Request bodies are stream-like and non-replayable.
+- Response bodies are incremental and do not support map or pagination.
 - It must not be implemented through `BodyCodec` or `ResponseCodec`.
 
 ### Multipart

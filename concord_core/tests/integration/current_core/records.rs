@@ -1,10 +1,11 @@
 use super::common::{TestAuthVars, TestCx, auth_policy, decode_string};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, DebugSink, MediaType, NdJson, PostResponseHookContext, PreSendHookContext,
-    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, RecordBody, RuntimeHooks, Transport, TransportBody,
-    TransportError, TransportErrorKind, TransportRequest, TransportResponse,
+    AuthPlacement, CodecError, DebugSink, MediaType, NdJson, PostResponseHookContext,
+    PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
+    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RecordBody, RecordDecoder,
+    RecordEncoder, RecordFormat, RuntimeHooks, Transport, TransportBody, TransportError,
+    TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
@@ -193,14 +194,33 @@ struct ResponseFixture {
 }
 
 impl ResponseFixture {
-    fn ndjson(status: StatusCode, chunks: Vec<Bytes>) -> Self {
+    fn buffered_json(body: &'static str) -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        Self {
+            status: StatusCode::OK,
+            headers,
+            chunks: vec![Bytes::from_static(body.as_bytes())],
+            content_length: Some(body.len() as u64),
+            poll_flag: None,
+        }
+    }
+
+    fn streamed_with_content_type(
+        status: StatusCode,
+        content_type: &'static str,
+        chunks: Vec<Bytes>,
+    ) -> Self {
         let content_length = chunks.iter().fold(Some(0u64), |acc, chunk| {
             acc.and_then(|len| len.checked_add(chunk.len() as u64))
         });
         let mut headers = HeaderMap::new();
         headers.insert(
             http::header::CONTENT_TYPE,
-            HeaderValue::from_static(NdJson::CONTENT_TYPE),
+            HeaderValue::from_static(content_type),
         );
         Self {
             status,
@@ -209,6 +229,10 @@ impl ResponseFixture {
             content_length,
             poll_flag: None,
         }
+    }
+
+    fn ndjson(status: StatusCode, chunks: Vec<Bytes>) -> Self {
+        Self::streamed_with_content_type(status, NdJson::CONTENT_TYPE, chunks)
     }
 
     fn with_flag(mut self, flag: Arc<AtomicBool>) -> Self {
@@ -258,6 +282,10 @@ impl RecordTransport {
 
     fn send_count(&self) -> usize {
         self.send_count.load(Ordering::SeqCst)
+    }
+
+    fn events(&self) -> Vec<String> {
+        self.events.lock().expect("events lock").clone()
     }
 
     fn captured(&self) -> Vec<CapturedRequest> {
@@ -431,7 +459,143 @@ struct RecordItem {
     id: u32,
 }
 
+fn pipe_record_bytes(entries: &[PipeRecord]) -> Bytes {
+    let mut out = String::new();
+    for entry in entries {
+        out.push_str(&format!("{}|{}\n", entry.id, entry.message));
+    }
+    Bytes::from(out)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PipeRecord {
+    id: u64,
+    message: String,
+}
+
+const PIPE_RECORD_SENTINEL: &str = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR";
+
+#[derive(Clone, Copy, Debug, Default)]
+struct PipeText;
+
+impl MediaType for PipeText {
+    const CONTENT_TYPE: &'static str = "text/x-pipe-records";
+}
+
+struct PipeTextEncoder;
+
+impl RecordEncoder<PipeRecord> for PipeTextEncoder {
+    fn encode_record(&mut self, value: PipeRecord) -> Result<Bytes, CodecError> {
+        if value.message.contains('|')
+            || value.message.contains('\n')
+            || value.message.contains('\r')
+        {
+            return Err(CodecError::new(PIPE_RECORD_SENTINEL));
+        }
+        Ok(Bytes::from(format!("{}|{}\n", value.id, value.message)))
+    }
+}
+
+#[derive(Default)]
+struct PipeTextDecoder {
+    buffer: Vec<u8>,
+}
+
+impl PipeTextDecoder {
+    fn decode_line(&self, line: &[u8]) -> Result<PipeRecord, CodecError> {
+        let text = std::str::from_utf8(line).map_err(|_| CodecError::new(PIPE_RECORD_SENTINEL))?;
+        if text.is_empty() || text.contains('\r') {
+            return Err(CodecError::new(PIPE_RECORD_SENTINEL));
+        }
+        let mut parts = text.split('|');
+        let id = parts
+            .next()
+            .ok_or_else(|| CodecError::new(PIPE_RECORD_SENTINEL))?;
+        let message = parts
+            .next()
+            .ok_or_else(|| CodecError::new(PIPE_RECORD_SENTINEL))?;
+        if parts.next().is_some() || id.is_empty() {
+            return Err(CodecError::new(PIPE_RECORD_SENTINEL));
+        }
+        let id = id
+            .parse::<u64>()
+            .map_err(|_| CodecError::new(PIPE_RECORD_SENTINEL))?;
+        Ok(PipeRecord {
+            id,
+            message: message.to_string(),
+        })
+    }
+
+    fn parse_available(&mut self, finalizing: bool) -> Result<Vec<PipeRecord>, CodecError> {
+        let mut out = Vec::new();
+        while let Some(pos) = self.buffer.iter().position(|byte| *byte == b'\n') {
+            let mut line: Vec<u8> = self.buffer.drain(..=pos).collect();
+            line.pop();
+            out.push(self.decode_line(&line)?);
+        }
+        if finalizing && !self.buffer.is_empty() {
+            let line = std::mem::take(&mut self.buffer);
+            out.push(self.decode_line(&line)?);
+        }
+        Ok(out)
+    }
+}
+
+impl RecordDecoder<PipeRecord> for PipeTextDecoder {
+    fn push_chunk(&mut self, chunk: Bytes) -> Result<Vec<PipeRecord>, CodecError> {
+        self.buffer.extend_from_slice(&chunk);
+        self.parse_available(false)
+    }
+
+    fn finish(&mut self) -> Result<Vec<PipeRecord>, CodecError> {
+        self.parse_available(true)
+    }
+}
+
+impl RecordFormat<PipeRecord> for PipeText {
+    fn encoder() -> Box<dyn RecordEncoder<PipeRecord>> {
+        Box::new(PipeTextEncoder)
+    }
+
+    fn decoder() -> Box<dyn RecordDecoder<PipeRecord>> {
+        Box::new(PipeTextDecoder::default())
+    }
+}
+
 fn record_request_plan(
+    name: &'static str,
+    method: Method,
+    path: &'static str,
+    policy: ResolvedPolicy,
+    body: BodyPlan,
+    args: RequestArgs,
+    accept: &'static str,
+) -> RequestPlan {
+    RequestPlan {
+        endpoint: EndpointPlan {
+            meta: EndpointMeta {
+                name,
+                method: method.clone(),
+                idempotent: matches!(method, Method::GET | Method::HEAD),
+                facade_path: &[],
+            },
+            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
+            policy,
+            body,
+            response: ResponsePlan {
+                accept: Some(HeaderValue::from_static(accept)),
+                no_content: false,
+                format: concord_core::internal::Format::Text,
+                decode: decode_string,
+            },
+            pagination: None,
+        },
+        args,
+        overrides: RequestOverrides::default(),
+    }
+}
+
+fn record_response_plan_with_accept(
     name: &'static str,
     method: Method,
     path: &'static str,
@@ -472,28 +636,7 @@ fn record_response_plan(
     body: BodyPlan,
     args: RequestArgs,
 ) -> RequestPlan {
-    RequestPlan {
-        endpoint: EndpointPlan {
-            meta: EndpointMeta {
-                name,
-                method: method.clone(),
-                idempotent: matches!(method, Method::GET | Method::HEAD),
-                facade_path: &[],
-            },
-            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
-            policy,
-            body,
-            response: ResponsePlan {
-                accept: Some(HeaderValue::from_static(NdJson::CONTENT_TYPE)),
-                no_content: false,
-                format: concord_core::internal::Format::Text,
-                decode: decode_string,
-            },
-            pagination: None,
-        },
-        args,
-        overrides: RequestOverrides::default(),
-    }
+    record_response_plan_with_accept(name, method, path, policy, body, args, NdJson::CONTENT_TYPE)
 }
 
 fn record_retry_policy() -> ResolvedPolicy {
@@ -1057,4 +1200,338 @@ async fn record_stream_debug_is_body_free() -> Result<(), ApiClientError> {
     assert!(rendered.contains("<record stream>"));
     assert!(!rendered.contains(sentinel));
     Ok(())
+}
+
+#[tokio::test]
+async fn custom_record_request_reaches_transport_and_is_body_free_in_debug()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::buffered_json(r#"{"ok":true}"#)],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.set_debug_sink(Arc::new(RecordingDebugSink::new(events.clone())));
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+        cfg.debug(DebugLevel::VV);
+    });
+
+    let sentinel = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR".to_string();
+    let plan = record_request_plan(
+        "PipeRecordRequest",
+        Method::POST,
+        "/pipe-records",
+        ResolvedPolicy::default(),
+        BodyPlan::Records {
+            content_type: HeaderValue::from_static(PipeText::CONTENT_TYPE),
+            format: concord_core::internal::Format::Text,
+        },
+        RequestArgs::with_record_body::<PipeRecord, PipeText>(RecordBody::from_iter(vec![
+            PipeRecord {
+                id: 1,
+                message: sentinel.clone(),
+            },
+            PipeRecord {
+                id: 2,
+                message: "world".to_string(),
+            },
+        ])),
+        PipeText::CONTENT_TYPE,
+    );
+
+    let decoded = client.execute_plan::<String>(plan).await?;
+    assert_eq!(decoded.into_value(), "{\"ok\":true}");
+    assert_eq!(transport.send_count(), 1);
+    let captured = transport.captured();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(
+        captured[0].content_type.as_deref(),
+        Some(PipeText::CONTENT_TYPE)
+    );
+    match &captured[0].body {
+        CapturedBody::Stream(bytes) => {
+            assert_eq!(
+                bytes,
+                &pipe_record_bytes(&[
+                    PipeRecord {
+                        id: 1,
+                        message: sentinel.clone(),
+                    },
+                    PipeRecord {
+                        id: 2,
+                        message: "world".to_string(),
+                    },
+                ])
+            );
+        }
+        other => panic!("expected streamed pipe body, got {other:?}"),
+    }
+    assert!(!captured[0].debug.contains(&sentinel));
+    let events = transport.events();
+    assert!(events.iter().any(|event| event == "rate_limit_acquire"));
+    assert!(events.iter().any(|event| event == "record_request_poll"));
+    let transport_idx = events
+        .iter()
+        .position(|event| event == "transport")
+        .expect("transport event");
+    let poll_idx = events
+        .iter()
+        .position(|event| event == "record_request_poll")
+        .expect("request stream poll event");
+    assert!(transport_idx < poll_idx);
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_record_response_yields_records_incrementally() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::streamed_with_content_type(
+            StatusCode::OK,
+            PipeText::CONTENT_TYPE,
+            vec![
+                Bytes::from_static(b"1|hello\n2|wor"),
+                Bytes::from_static(b"ld"),
+            ],
+        )],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.set_debug_sink(Arc::new(RecordingDebugSink::new(events.clone())));
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+        cfg.debug(DebugLevel::VV);
+    });
+
+    let mut stream = client
+        .execute_plan_records::<PipeRecord, PipeText>(record_response_plan_with_accept(
+            "PipeRecordResponse",
+            Method::GET,
+            "/pipe-records-response",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+            PipeText::CONTENT_TYPE,
+        ))
+        .await?;
+
+    let events_before = transport.events();
+    assert!(
+        !events_before
+            .iter()
+            .any(|event| event == "response_record_poll")
+    );
+    let first = stream
+        .next_record()
+        .await?
+        .expect("first record should exist");
+    assert_eq!(
+        first,
+        PipeRecord {
+            id: 1,
+            message: "hello".to_string(),
+        }
+    );
+    assert!(
+        transport
+            .events()
+            .iter()
+            .any(|event| event == "record_chunk_poll")
+    );
+    let second = stream
+        .next_record()
+        .await?
+        .expect("second record should exist");
+    assert_eq!(
+        second,
+        PipeRecord {
+            id: 2,
+            message: "world".to_string(),
+        }
+    );
+    assert!(stream.next_record().await?.is_none());
+    let rendered = format!("{stream:?}");
+    assert!(rendered.contains("<record stream>"));
+    assert!(!rendered.contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_record_response_decoder_error_is_sanitized() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let sentinel = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR";
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::streamed_with_content_type(
+            StatusCode::OK,
+            PipeText::CONTENT_TYPE,
+            vec![Bytes::from_static(b"bad|line|extra\n")],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut stream = client
+        .execute_plan_records::<PipeRecord, PipeText>(record_response_plan_with_accept(
+            "PipeRecordResponseError",
+            Method::GET,
+            "/pipe-records-response-error",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+            PipeText::CONTENT_TYPE,
+        ))
+        .await?;
+
+    let err = stream
+        .next_record()
+        .await
+        .expect_err("malformed pipe record should fail");
+    assert!(matches!(err, ApiClientError::Decode { .. }));
+    assert!(!format!("{err:?}").contains(sentinel));
+    assert!(!format!("{err}").contains(sentinel));
+    Ok(())
+}
+
+#[tokio::test]
+async fn custom_record_encoder_error_is_sanitized() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let sentinel = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR".to_string();
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::buffered_json(r#"{"ok":true}"#)],
+    );
+    let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
+
+    let err = client
+        .execute_plan::<String>(record_request_plan(
+            "PipeRecordEncodeError",
+            Method::POST,
+            "/pipe-record-encode-error",
+            ResolvedPolicy::default(),
+            BodyPlan::Records {
+                content_type: HeaderValue::from_static(PipeText::CONTENT_TYPE),
+                format: concord_core::internal::Format::Text,
+            },
+            RequestArgs::with_record_body::<PipeRecord, PipeText>(RecordBody::from_iter(vec![
+                PipeRecord {
+                    id: 1,
+                    message: "bad|value".to_string(),
+                },
+            ])),
+            PipeText::CONTENT_TYPE,
+        ))
+        .await
+        .expect_err("pipe encoding should fail");
+
+    assert!(matches!(err, ApiClientError::Codec { .. }));
+    assert!(!format!("{err:?}").contains(&sentinel));
+    assert!(!format!("{err}").contains(&sentinel));
+}
+
+#[tokio::test]
+async fn custom_record_request_stream_limit_applies() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::buffered_json(r#"{"ok":true}"#)],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_request_body_bytes(10);
+    });
+
+    let err = client
+        .execute_plan::<String>(record_request_plan(
+            "PipeRecordRequestLimit",
+            Method::POST,
+            "/pipe-record-request-limit",
+            ResolvedPolicy::default(),
+            BodyPlan::Records {
+                content_type: HeaderValue::from_static(PipeText::CONTENT_TYPE),
+                format: concord_core::internal::Format::Text,
+            },
+            RequestArgs::with_record_body::<PipeRecord, PipeText>(RecordBody::from_iter(vec![
+                PipeRecord {
+                    id: 1,
+                    message: "hello".to_string(),
+                },
+                PipeRecord {
+                    id: 2,
+                    message: "world".to_string(),
+                },
+            ])),
+            PipeText::CONTENT_TYPE,
+        ))
+        .await
+        .expect_err("request stream limit should fail");
+
+    assert!(matches!(
+        err,
+        ApiClientError::RequestBodyLimitExceeded { limit: 10, .. }
+    ));
+    assert_eq!(transport.send_count(), 1);
+}
+
+#[tokio::test]
+async fn custom_record_response_stream_limit_applies() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![
+            ResponseFixture::streamed_with_content_type(
+                StatusCode::OK,
+                PipeText::CONTENT_TYPE,
+                vec![
+                    Bytes::from_static(b"1|hello\n"),
+                    Bytes::from_static(b"2|world\n"),
+                ],
+            )
+            .content_length(None),
+        ],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_response_body_bytes(12);
+    });
+
+    let mut stream = client
+        .execute_plan_records::<PipeRecord, PipeText>(record_response_plan_with_accept(
+            "PipeRecordResponseLimit",
+            Method::GET,
+            "/pipe-record-response-limit",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+            PipeText::CONTENT_TYPE,
+        ))
+        .await
+        .expect("response should return stream");
+
+    assert_eq!(
+        stream
+            .next_record()
+            .await
+            .expect("first record should decode"),
+        Some(PipeRecord {
+            id: 1,
+            message: "hello".to_string(),
+        })
+    );
+    let err = stream
+        .next_record()
+        .await
+        .expect_err("response limit should fail");
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
+    assert!(!format!("{err:?}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
 }
