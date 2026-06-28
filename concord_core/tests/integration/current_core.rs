@@ -12,6 +12,8 @@ mod concurrency;
 mod errors;
 #[path = "current_core/multipart.rs"]
 mod multipart;
+#[path = "current_core/multipart_response.rs"]
+mod multipart_response;
 #[path = "current_core/pagination.rs"]
 mod pagination;
 #[path = "current_core/public_api.rs"]

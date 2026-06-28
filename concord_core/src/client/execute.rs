@@ -713,6 +713,263 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         ))
     }
 
+    pub async fn execute_plan_multipart<PartT, Fmt>(
+        &self,
+        plan: RequestPlan,
+    ) -> Result<crate::multipart_response::MultipartStream<PartT>, ApiClientError>
+    where
+        PartT: crate::multipart_response::MultipartDecodePart<Fmt>,
+        Fmt: crate::multipart::MultipartFormat,
+    {
+        let RequestPlan {
+            mut endpoint,
+            mut args,
+            overrides,
+        } = plan;
+        if endpoint.response.accept.is_none() {
+            endpoint.response.accept = Some(http::HeaderValue::from_static(Fmt::CONTENT_TYPE));
+        }
+        let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
+        let ctx = ErrorContext {
+            endpoint: plan.endpoint.meta.name,
+            method: plan.endpoint.meta.method.clone(),
+        };
+        if plan.endpoint.pagination.is_some() {
+            return Err(ApiClientError::PolicyViolation {
+                ctx: ctx.clone(),
+                msg: "multipart responses do not support pagination".into(),
+            });
+        }
+        if plan.endpoint.response.no_content {
+            return Err(ApiClientError::PolicyViolation {
+                ctx: ctx.clone(),
+                msg: "multipart responses cannot use a no-content response plan".into(),
+            });
+        }
+        let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
+        let dbg_verbose = dbg.is_verbose();
+        let dbg_vv = dbg.is_very_verbose();
+        let response_limit = self.runtime_state.max_stream_response_body_bytes();
+        if let RetrySetting::Config(config) = &plan.endpoint.policy.retry {
+            config.validate(ctx.clone())?; 
+        }
+        let base_attempt: u32 = plan.overrides.attempt;
+        let max_auth_retries = self.runtime_state.max_auth_retries();
+        let auth_state_snapshot =
+            self.try_auth_state()
+                .map_err(|source| ApiClientError::Auth {
+                    ctx: ctx.clone(),
+                    source,
+                })?;
+        let auth_http = ClientAuthHttpExecutor { client: self };
+        let mut attempt_index: u32 = 0;
+        let mut transport_retry_index: u32 = 0;
+        let mut auth_retry_index: u32 = 0;
+
+        loop {
+            let current_attempt = checked_attempt(base_attempt, attempt_index, &ctx)?;
+            let meta = plan
+                .endpoint
+                .meta
+                .request_meta(current_attempt, plan.overrides.page_index);
+            let mut built = self.build_attempt_request(&plan, &mut args, meta)?;
+            let auth_attempt = self
+                .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
+                .await?;
+            crate::transport::validate_transport_auth_collisions(&built).map_err(|source| {
+                ApiClientError::Auth {
+                    ctx: ctx.clone(),
+                    source,
+                }
+            })?;
+            let has_stream_body = built.has_stream_body();
+            let url_str = built.debug_url();
+
+            self.debug_planned_request(dbg, &plan, &built, &url_str);
+            let retry_config = built.retry.clone();
+            let retry_request_headers = built.headers.clone();
+            let send_result = self
+                .send_and_classify_multipart_once::<PartT, Fmt>(
+                    built,
+                    SendClassifyCtx {
+                        dbg,
+                        dbg_verbose,
+                        dbg_vv,
+                        url_str: &url_str,
+                        error_ctx: &ctx,
+                        auth_materials: &auth_attempt.materials,
+                    },
+                    response_limit,
+                )
+                .await;
+
+            match send_result {
+                Ok(resp) => {
+                    if has_stream_body
+                        && Self::is_protected_auth_rejection(&plan, resp.status)
+                    {
+                        return Err(ApiClientError::Auth {
+                            ctx: ctx.clone(),
+                            source: AuthError::new(
+                                AuthErrorKind::ProviderRejected,
+                                "auth challenge rejected",
+                            ),
+                        });
+                    }
+                    match self
+                        .handle_auth_rejection(
+                            AuthRejectionCtx {
+                                plan: &plan,
+                                auth_state: &auth_state_snapshot,
+                                auth_http: &auth_http,
+                                meta: &resp.meta,
+                                status: resp.status,
+                                headers: &resp.headers,
+                                auth_attempt: &auth_attempt.summary,
+                            },
+                        )
+                        .await?
+                    {
+                        AuthRejectionOutcome::Retry => {
+                            if auth_retry_index >= max_auth_retries {
+                                return Err(ApiClientError::Auth {
+                                    ctx: ctx.clone(),
+                                    source: AuthError::new(
+                                        AuthErrorKind::ProviderRejected,
+                                        format!(
+                                            "auth retry budget exhausted (max_auth_retries={max_auth_retries})"
+                                        ),
+                                    ),
+                                });
+                            }
+                            auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
+                            attempt_index = next_attempt_counter(attempt_index, &ctx)?;
+                            continue;
+                        }
+                        AuthRejectionOutcome::Terminal => {
+                            return Err(ApiClientError::Auth {
+                                ctx: ctx.clone(),
+                                source: AuthError::new(
+                                    AuthErrorKind::ProviderRejected,
+                                    "auth challenge rejected",
+                                ),
+                            });
+                        }
+                        AuthRejectionOutcome::NotProtected => {}
+                    }
+                    let boundary = crate::multipart_response::parse_response_boundary::<Fmt>(
+                        &resp.headers,
+                        ctx.clone(),
+                    )?;
+                    if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
+                        if actual > limit as u64 {
+                            return Err(ApiClientError::ResponseTooLarge {
+                                ctx: ctx.clone(),
+                                limit,
+                                actual,
+                            });
+                        }
+                    }
+                    return Ok(crate::multipart_response::MultipartStream::new(
+                        resp,
+                        boundary,
+                        response_limit,
+                        PartT::decode_headers,
+                        PartT::decode_part,
+                    ));
+                }
+                Err(err) => {
+                    if let ApiClientError::HttpStatus { status, headers, .. } = &err {
+                        if has_stream_body
+                            && Self::is_protected_auth_rejection(&plan, *status)
+                        {
+                            return Err(ApiClientError::Auth {
+                                ctx: ctx.clone(),
+                                source: AuthError::new(
+                                    AuthErrorKind::ProviderRejected,
+                                    "auth challenge rejected",
+                                ),
+                            });
+                        }
+                        let response_meta = plan
+                            .endpoint
+                            .meta
+                            .request_meta(current_attempt, plan.overrides.page_index);
+                        match self
+                            .handle_auth_rejection(
+                                AuthRejectionCtx {
+                                    plan: &plan,
+                                    auth_state: &auth_state_snapshot,
+                                    auth_http: &auth_http,
+                                    meta: &response_meta,
+                                    status: *status,
+                                    headers: headers.as_ref(),
+                                    auth_attempt: &auth_attempt.summary,
+                                },
+                            )
+                            .await?
+                        {
+                            AuthRejectionOutcome::Retry => {
+                                if auth_retry_index >= max_auth_retries {
+                                    return Err(ApiClientError::Auth {
+                                        ctx: ctx.clone(),
+                                        source: AuthError::new(
+                                            AuthErrorKind::ProviderRejected,
+                                            "auth challenge rejected",
+                                        ),
+                                    });
+                                }
+                                auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
+                                attempt_index = next_attempt_counter(attempt_index, &ctx)?;
+                                continue;
+                            }
+                            AuthRejectionOutcome::Terminal => {
+                                return Err(ApiClientError::Auth {
+                                    ctx: ctx.clone(),
+                                    source: AuthError::new(
+                                        AuthErrorKind::ProviderRejected,
+                                        "auth challenge rejected",
+                                    ),
+                                });
+                            }
+                            AuthRejectionOutcome::NotProtected => {}
+                        }
+                    }
+                    if has_stream_body {
+                        return Err(err);
+                    }
+                    let outcome = Self::retry_outcome_from_error(&err);
+                    let response_headers = Self::retry_response_headers_from_error(&err);
+                    let retry_ctx = RetryContext {
+                        endpoint: plan.endpoint.meta.name,
+                        method: &plan.endpoint.meta.method,
+                        url: &url_str,
+                        attempt: current_attempt,
+                        retry_count: transport_retry_index,
+                        page_index: plan.overrides.page_index,
+                        idempotent: plan.endpoint.meta.idempotent,
+                        request_headers: &retry_request_headers,
+                        response_headers,
+                        outcome,
+                    };
+                    let Some(delay) = self.decide_retry(
+                        &err,
+                        &retry_config,
+                        &retry_ctx,
+                        transport_retry_index,
+                    )? else {
+                        return Err(err);
+                    };
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
+                    }
+                    transport_retry_index = next_attempt_counter(transport_retry_index, &ctx)?;
+                    attempt_index = next_attempt_counter(attempt_index, &ctx)?;
+                }
+            }
+        }
+    }
+
     async fn prepare_auth_plan(
         &self,
         plan: &crate::endpoint::RequestPlanView,

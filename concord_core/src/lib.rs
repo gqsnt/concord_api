@@ -6,6 +6,7 @@ mod endpoint;
 pub mod error;
 mod media;
 mod multipart;
+mod multipart_response;
 mod pagination;
 mod policy;
 mod rate_limit;
@@ -42,6 +43,7 @@ pub mod internal {
         FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
         MultipartFormat, RawPart,
     };
+    pub use crate::multipart_response::{MultipartDecodePart, MultipartStream, RawResponsePart};
     #[doc(hidden)]
     pub use crate::pagination::{
         Control, CursorPagination, HasNextCursor, OffsetLimitPagination, PageAdvance, PageDecision,
@@ -103,6 +105,7 @@ pub mod advanced {
         FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
         MultipartFormat, RawPart,
     };
+    pub use crate::multipart_response::{MultipartDecodePart, MultipartStream, RawResponsePart};
     pub use crate::pagination::{
         Control, HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
         PaginationCaps, PaginationController, PaginationTermination, ProgressKey,
