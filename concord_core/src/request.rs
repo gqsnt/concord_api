@@ -90,7 +90,9 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
 
     #[inline]
     pub async fn execute(self) -> Result<E::Response, ApiClientError> {
-        Ok(self.execute_decoded().await?.value)
+        let client = self.client;
+        let plan = self.request_plan()?;
+        E::execute(client, plan).await
     }
 
     pub async fn execute_and_store_manual<F>(self, slot: F) -> Result<(), ApiClientError>

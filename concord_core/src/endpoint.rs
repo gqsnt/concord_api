@@ -1,7 +1,10 @@
-use crate::client::ClientContext;
+use crate::client::{ApiClient, ClientContext};
 use crate::error::ApiClientError;
 use crate::transport::DecodedResponse;
+use crate::transport::Transport;
+use std::future::Future;
 use std::marker::PhantomData;
+use std::pin::Pin;
 
 pub mod plan;
 #[allow(unused_imports)]
@@ -113,6 +116,16 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
     type Response: Send + 'static;
 
     fn plan(&self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError>;
+
+    fn execute<'a, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        Box::pin(async move { Ok(client.execute_plan::<Self::Response>(plan).await?.value) })
+    }
 }
 
 /// Marker implemented only for endpoints that declare pagination.

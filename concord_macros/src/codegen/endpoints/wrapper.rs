@@ -882,15 +882,11 @@ fn emit_facade_endpoint_method(
         .iter()
         .map(|v| v.rust.to_string())
         .collect::<std::collections::BTreeSet<_>>();
-    let body_arg = facade
-        .required_args
-        .iter()
-        .find(|arg| arg.name == "body")
-        .and(ep.body.as_ref())
-        .map(|body| {
-            let ty = &body.ty;
-            quote! { body: #ty }
-        });
+    let body_arg = match endpoint_request_body_inner_ty(ep) {
+        Ok(Some(ty)) => Some(quote! { body: #ty }),
+        Ok(None) => None,
+        Err(err) => return err,
+    };
     let call_args: Vec<TokenStream2> = ep
         .vars
         .iter()

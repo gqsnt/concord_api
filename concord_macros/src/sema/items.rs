@@ -538,6 +538,20 @@ fn analyze_endpoint(
 
     let request_io = classify_request_io(ed.body.as_ref())?;
     let response_io = classify_response_io(&ed.response)?;
+    if matches!(response_io, ResolvedResponseBodyIo::RawStream { .. }) {
+        if ed.map.is_some() {
+            return Err(syn::Error::new(
+                ed.name.span(),
+                "`map` is only supported for buffered responses",
+            ));
+        }
+        if ed.paginate.is_some() {
+            return Err(syn::Error::new(
+                ed.name.span(),
+                "pagination is only supported for buffered responses",
+            ));
+        }
+    }
     ensure_codegen_supported_request_io(&request_io, ed.body.as_ref())?;
     ensure_codegen_supported_response_io(&response_io, &ed.response)?;
 
@@ -817,14 +831,12 @@ fn ensure_codegen_supported_request_io(
         return Ok(());
     };
     match io {
-        ResolvedRequestBodyIo::None | ResolvedRequestBodyIo::BufferedCodec(_) => Ok(()),
+        ResolvedRequestBodyIo::None
+        | ResolvedRequestBodyIo::BufferedCodec(_)
+        | ResolvedRequestBodyIo::RawStream { .. } => Ok(()),
         ResolvedRequestBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`Bytes` endpoint I/O is reserved but not supported yet",
-        )),
-        ResolvedRequestBodyIo::RawStream { .. } => Err(syn::Error::new_spanned(
-            spec.marker.clone(),
-            "`Stream` endpoint I/O is reserved but not supported yet",
         )),
         ResolvedRequestBodyIo::Records { .. } => Err(syn::Error::new_spanned(
             spec.marker.clone(),
@@ -842,7 +854,9 @@ fn ensure_codegen_supported_response_io(
     spec: &RawResponseIo,
 ) -> Result<()> {
     match io {
-        ResolvedResponseBodyIo::BufferedCodec(_) => Ok(()),
+        ResolvedResponseBodyIo::BufferedCodec(_) | ResolvedResponseBodyIo::RawStream { .. } => {
+            Ok(())
+        }
         ResolvedResponseBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`Bytes` endpoint I/O is reserved but not supported yet",
@@ -850,10 +864,6 @@ fn ensure_codegen_supported_response_io(
         ResolvedResponseBodyIo::NoContent => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`NoContent` endpoint I/O is reserved but not supported yet",
-        )),
-        ResolvedResponseBodyIo::RawStream { .. } => Err(syn::Error::new_spanned(
-            spec.marker.clone(),
-            "`Stream` endpoint I/O is reserved but not supported yet",
         )),
         ResolvedResponseBodyIo::Records { .. } => Err(syn::Error::new_spanned(
             spec.marker.clone(),

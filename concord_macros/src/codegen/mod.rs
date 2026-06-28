@@ -244,6 +244,56 @@ mod tests {
     }
 
     #[test]
+    fn facade_ir_uses_stream_body_for_stream_request_endpoints() {
+        let resolved = crate::sema::analyze_tokens_for_test(quote! {
+            client StreamMeta {
+                base "https://example.com"
+            }
+
+            POST Upload(body: Stream<OctetStream>)
+                path ["upload"]
+                -> Json<String>
+        });
+        let ir = build_facade_ir(&resolved);
+
+        let endpoint = &ir.endpoints[0];
+        assert_eq!(
+            endpoint
+                .required_args
+                .iter()
+                .map(|arg| (arg.name.as_str(), arg.ty.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("body", "StreamBody")]
+        );
+    }
+
+    #[test]
+    fn emit_uses_stream_request_and_response_codegen() {
+        let expanded = expanded(quote! {
+            api! {
+                client StreamCodegen {
+                    base "https://example.com"
+                }
+
+                POST Upload(body: Stream<OctetStream>)
+                    path ["upload"]
+                    -> Stream<OctetStream>
+            }
+        });
+
+        assert_contains_all(
+            &expanded,
+            &[
+                "StreamBody",
+                "BodyPlan::RawStream",
+                "RequestArgs::with_stream_body",
+                "StreamResponse<OctetStream>",
+                "execute_plan_stream::<OctetStream>",
+            ],
+        );
+    }
+
+    #[test]
     fn facade_ir_contains_scope_method_metadata() {
         let resolved = crate::sema::analyze_tokens_for_test(quote! {
             client ScopeMeta {

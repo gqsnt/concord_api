@@ -326,11 +326,10 @@ fn facade_endpoint_from_resolved(ep: &ResolvedEndpoint) -> FacadeEndpoint {
             }
         })
         .collect::<Vec<_>>();
-    if let Some(body) = &ep.body {
-        let ty = &body.ty;
+    if let Some(body_ty) = facade_request_body_ty(ep) {
         required_args.push(FacadeArg {
             name: "body".to_string(),
-            ty: quote::quote!(#ty).to_string(),
+            ty: body_ty,
         });
     }
     let setters = ep
@@ -451,6 +450,20 @@ fn facade_setter_docs(ep: &ResolvedEndpoint, var: &VarInfo) -> (String, String, 
                     .unwrap_or_default()
             ),
         )
+    }
+}
+
+fn facade_request_body_ty(ep: &ResolvedEndpoint) -> Option<String> {
+    match &ep.request_io {
+        ResolvedRequestBodyIo::None => None,
+        ResolvedRequestBodyIo::BufferedCodec(_)
+        | ResolvedRequestBodyIo::BufferedBytes
+        | ResolvedRequestBodyIo::Records { .. }
+        | ResolvedRequestBodyIo::Multipart { .. } => ep.body.as_ref().map(|body| {
+            let ty = &body.ty;
+            quote::quote!(#ty).to_string()
+        }),
+        ResolvedRequestBodyIo::RawStream { .. } => Some("StreamBody".to_string()),
     }
 }
 
