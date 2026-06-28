@@ -1,7 +1,8 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{
-    CustomPaginationPlan, Endpoint, PaginatedEndpoint, PaginationPlan, StreamResponseEndpoint,
+    CustomPaginationPlan, Endpoint, PaginatedEndpoint, PaginationPlan, RecordResponseEndpoint,
+    StreamResponseEndpoint,
 };
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
@@ -184,6 +185,22 @@ where
         let client = self.client;
         let plan = self.request_plan()?;
         E::execute_stream(client, plan).await
+    }
+}
+
+impl<'a, Cx, E, T> PendingRequest<'a, Cx, E, T>
+where
+    Cx: ClientContext + 'a,
+    E: RecordResponseEndpoint<Cx> + 'a,
+    T: crate::transport::Transport + 'a,
+{
+    #[inline]
+    pub async fn execute_records(
+        self,
+    ) -> Result<crate::record::RecordStream<E::Item>, ApiClientError> {
+        let client = self.client;
+        let plan = self.request_plan()?;
+        E::execute_records(client, plan).await
     }
 }
 

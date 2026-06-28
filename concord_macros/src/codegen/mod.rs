@@ -268,6 +268,30 @@ mod tests {
     }
 
     #[test]
+    fn facade_ir_uses_record_body_for_record_request_endpoints() {
+        let resolved = crate::sema::analyze_tokens_for_test(quote! {
+            client RecordMeta {
+                base "https://example.com"
+            }
+
+            POST Upload(body: Records<LogEntry, NdJson>)
+                path ["upload"]
+                -> Json<String>
+        });
+        let ir = build_facade_ir(&resolved);
+
+        let endpoint = &ir.endpoints[0];
+        assert_eq!(
+            endpoint
+                .required_args
+                .iter()
+                .map(|arg| (arg.name.as_str(), arg.ty.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("body", "::concord_core::advanced::RecordBody<LogEntry>")]
+        );
+    }
+
+    #[test]
     fn emit_uses_stream_request_and_response_codegen() {
         let expanded = expanded(quote! {
             api! {
@@ -290,6 +314,33 @@ mod tests {
                 "StreamResponse<OctetStream>",
                 "execute_plan_stream::<OctetStream>",
                 "StreamResponseEndpoint",
+            ],
+        );
+    }
+
+    #[test]
+    fn emit_uses_record_request_and_response_codegen() {
+        let expanded = expanded(quote! {
+            api! {
+                client RecordCodegen {
+                    base "https://example.com"
+                }
+
+                POST Upload(body: Records<LogEntry, NdJson>)
+                    path ["upload"]
+                    -> Records<LogEntry, NdJson>
+            }
+        });
+
+        assert_contains_all(
+            &expanded,
+            &[
+                "RecordBody < LogEntry >",
+                "BodyPlan::Records",
+                "RequestArgs::with_record_body::< LogEntry , NdJson >",
+                "RecordStream < LogEntry >",
+                "execute_plan_records::< LogEntry , NdJson >",
+                "RecordResponseEndpoint",
             ],
         );
     }

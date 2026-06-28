@@ -399,13 +399,35 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
         });
     }
     if let Some(body) = &ep.body {
+        let body_summary = match &ep.request_io {
+            ResolvedRequestBodyIo::Records { item_ty, format_ty } => format!(
+                "Body: Records<{}, {}>",
+                quote::quote!(#item_ty),
+                quote::quote!(#format_ty)
+            ),
+            ResolvedRequestBodyIo::RawStream { media_ty } => {
+                format!("Body: Stream<{}>", quote::quote!(#media_ty))
+            }
+            _ => format!("Body: {}", doc_codec(&body.enc, &body.ty)),
+        };
         docs.push(FacadeDoc {
-            summary: format!("Body: {}", doc_codec(&body.enc, &body.ty)),
+            summary: body_summary,
             details: Vec::new(),
         });
     }
+    let response_summary = match &ep.response_io {
+        ResolvedResponseBodyIo::Records { item_ty, format_ty } => format!(
+            "Response: Records<{}, {}>",
+            quote::quote!(#item_ty),
+            quote::quote!(#format_ty)
+        ),
+        ResolvedResponseBodyIo::RawStream { media_ty } => {
+            format!("Response: Stream<{}>", quote::quote!(#media_ty))
+        }
+        _ => format!("Response: {}", doc_codec(&ep.response.enc, &ep.response.ty)),
+    };
     docs.push(FacadeDoc {
-        summary: format!("Response: {}", doc_codec(&ep.response.enc, &ep.response.ty)),
+        summary: response_summary,
         details: Vec::new(),
     });
     docs
@@ -458,11 +480,14 @@ fn facade_request_body_ty(ep: &ResolvedEndpoint) -> Option<String> {
         ResolvedRequestBodyIo::None => None,
         ResolvedRequestBodyIo::BufferedCodec(_)
         | ResolvedRequestBodyIo::BufferedBytes
-        | ResolvedRequestBodyIo::Records { .. }
         | ResolvedRequestBodyIo::Multipart { .. } => ep.body.as_ref().map(|body| {
             let ty = &body.ty;
             quote::quote!(#ty).to_string()
         }),
+        ResolvedRequestBodyIo::Records { item_ty, .. } => Some(format!(
+            "::concord_core::advanced::RecordBody<{}>",
+            quote::quote!(#item_ty)
+        )),
         ResolvedRequestBodyIo::RawStream { .. } => Some("StreamBody".to_string()),
     }
 }

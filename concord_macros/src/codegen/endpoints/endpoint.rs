@@ -139,7 +139,7 @@ fn emit_endpoint_def(
         Err(err) => return err,
     };
     let execute_override = endpoint_execute_override(ep, cx_ty);
-    let stream_response_marker_impl = endpoint_stream_response_marker_impl(ep, ty_name, cx_ty);
+    let response_marker_impl = endpoint_response_marker_impl(ep, ty_name, cx_ty);
 
     let pagination_plan = emit_endpoint_pagination_plan(ep);
     let pagination_marker_impl = if ep.paginate.is_some() {
@@ -256,7 +256,7 @@ fn emit_endpoint_def(
             }
         }
 
-        #stream_response_marker_impl
+        #response_marker_impl
 
         #pagination_marker_impl
 
@@ -442,7 +442,8 @@ fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenS
             Ok(None)
         }
         ResolvedRequestBodyIo::BufferedCodec(_)
-        | ResolvedRequestBodyIo::RawStream { .. } => {
+        | ResolvedRequestBodyIo::RawStream { .. }
+        | ResolvedRequestBodyIo::Records { .. } => {
             let Some(body) = ep.body.as_ref() else {
                 return Err(emit_helpers::compile_error_tokens(
                     "endpoint request body unexpectedly missing from resolved IR",
@@ -451,6 +452,9 @@ fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenS
             };
             if matches!(ep.request_io, ResolvedRequestBodyIo::RawStream { .. }) {
                 Ok(Some(quote! { ::concord_core::advanced::StreamBody }))
+            } else if matches!(ep.request_io, ResolvedRequestBodyIo::Records { .. }) {
+                let ty = &body.ty;
+                Ok(Some(quote! { ::concord_core::advanced::RecordBody<#ty> }))
             } else {
                 let ty = &body.ty;
                 Ok(Some(quote! { #ty }))
@@ -458,10 +462,6 @@ fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenS
         }
         ResolvedRequestBodyIo::BufferedBytes => Err(emit_helpers::compile_error_tokens(
             "`Bytes` endpoint I/O is reserved but not supported yet",
-            ep.name.span(),
-        )),
-        ResolvedRequestBodyIo::Records { .. } => Err(emit_helpers::compile_error_tokens(
-            "`Records` endpoint I/O is reserved but not supported yet",
             ep.name.span(),
         )),
         ResolvedRequestBodyIo::Multipart { .. } => Err(emit_helpers::compile_error_tokens(
@@ -535,12 +535,31 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
             let __request_args = ::concord_core::internal::RequestArgs::with_stream_body(__body_value);
         })
         }
+        ResolvedRequestBodyIo::Records { item_ty, format_ty } => {
+            if ep.body.as_ref().is_none() {
+                return Err(emit_helpers::compile_error_tokens(
+                    "endpoint request body unexpectedly missing from resolved IR",
+                    ep.name.span(),
+                ));
+            }
+            Ok(quote! {
+            let __body_value = self
+                .body
+                .lock()
+                .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                .take()
+                .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+            let __body_plan = ::concord_core::internal::BodyPlan::Records {
+                content_type: ::http::HeaderValue::from_static(
+                    <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
+                ),
+                format: ::concord_core::internal::Format::Text,
+            };
+            let __request_args = ::concord_core::internal::RequestArgs::with_record_body::<#item_ty, #format_ty>(__body_value);
+        })
+        }
         ResolvedRequestBodyIo::BufferedBytes => Err(emit_helpers::compile_error_tokens(
             "`Bytes` endpoint I/O is reserved but not supported yet",
-            ep.name.span(),
-        )),
-        ResolvedRequestBodyIo::Records { .. } => Err(emit_helpers::compile_error_tokens(
-            "`Records` endpoint I/O is reserved but not supported yet",
             ep.name.span(),
         )),
         ResolvedRequestBodyIo::Multipart { .. } => Err(emit_helpers::compile_error_tokens(
@@ -552,6 +571,9 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
 
 fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
     match &ep.response_io {
+        ResolvedResponseBodyIo::Records { item_ty, .. } => quote! {
+            ::concord_core::advanced::RecordStream<#item_ty>
+        },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
             ::concord_core::advanced::StreamResponse<#media_ty>
         },
@@ -568,6 +590,11 @@ fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
 
 fn endpoint_response_accept_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
     match &ep.response_io {
+        ResolvedResponseBodyIo::Records { format_ty, .. } => quote! {
+            ::core::option::Option::Some(::http::HeaderValue::from_static(
+                <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
+            ))
+        },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
             ::core::option::Option::Some(::http::HeaderValue::from_static(
                 <#media_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
@@ -584,7 +611,9 @@ fn endpoint_response_no_content_tokens(
     response_dec: &syn::Type,
 ) -> TokenStream2 {
     match &ep.response_io {
-        ResolvedResponseBodyIo::RawStream { .. } => quote! { false },
+        ResolvedResponseBodyIo::RawStream { .. } | ResolvedResponseBodyIo::Records { .. } => {
+            quote! { false }
+        }
         _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::is_no_content() },
     }
 }
@@ -594,9 +623,8 @@ fn endpoint_response_format_tokens(
     response_dec: &syn::Type,
 ) -> TokenStream2 {
     match &ep.response_io {
-        ResolvedResponseBodyIo::RawStream { .. } => {
-            quote! { ::concord_core::internal::Format::Binary }
-        }
+        ResolvedResponseBodyIo::RawStream { .. } => quote! { ::concord_core::internal::Format::Binary },
+        ResolvedResponseBodyIo::Records { .. } => quote! { ::concord_core::internal::Format::Text },
         _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::format() },
     }
 }
@@ -617,6 +645,17 @@ fn endpoint_response_decode_fn(
                 Err(::concord_core::prelude::ApiClientError::PolicyViolation {
                     ctx,
                     msg: "stream responses must use stream execution".into(),
+                })
+            }
+        },
+        ResolvedResponseBodyIo::Records { .. } => quote! {
+            fn #decode_fn(
+                _resp: ::concord_core::transport::BuiltResponse,
+                ctx: ::concord_core::error::ErrorContext,
+            ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
+                Err(::concord_core::prelude::ApiClientError::PolicyViolation {
+                    ctx,
+                    msg: "record responses must use record execution".into(),
                 })
             }
         },
@@ -672,47 +711,74 @@ fn endpoint_response_decode_fn(
 }
 
 fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStream2 {
-    let ResolvedResponseBodyIo::RawStream { media_ty } = &ep.response_io else {
-        return quote! {};
-    };
-
-    quote! {
-        fn execute<'a, T>(
-            client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
-            plan: ::concord_core::internal::RequestPlan,
-        ) -> ::core::pin::Pin<
-            ::std::boxed::Box<
-                dyn ::core::future::Future<
-                        Output = ::core::result::Result<
-                            Self::Response,
-                            ::concord_core::prelude::ApiClientError,
-                        >,
-                    > + Send + 'a,
-            >,
-        >
-        where
-            T: ::concord_core::advanced::Transport + 'a,
-        {
-            ::std::boxed::Box::pin(async move {
-                client.execute_plan_stream::<#media_ty>(plan).await
-            })
-        }
+    match &ep.response_io {
+        ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
+            fn execute<'a, T>(
+                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+                plan: ::concord_core::internal::RequestPlan,
+            ) -> ::core::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::core::future::Future<
+                            Output = ::core::result::Result<
+                                Self::Response,
+                                ::concord_core::prelude::ApiClientError,
+                            >,
+                        > + Send + 'a,
+                >,
+            >
+            where
+                T: ::concord_core::advanced::Transport + 'a,
+            {
+                ::std::boxed::Box::pin(async move {
+                    client.execute_plan_stream::<#media_ty>(plan).await
+                })
+            }
+        },
+        ResolvedResponseBodyIo::Records { item_ty, format_ty } => quote! {
+            fn execute<'a, T>(
+                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+                plan: ::concord_core::internal::RequestPlan,
+            ) -> ::core::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::core::future::Future<
+                            Output = ::core::result::Result<
+                                Self::Response,
+                                ::concord_core::prelude::ApiClientError,
+                            >,
+                        > + Send + 'a,
+                >,
+            >
+            where
+                T: ::concord_core::advanced::Transport + 'a,
+            {
+                ::std::boxed::Box::pin(async move {
+                    client.execute_plan_records::<#item_ty, #format_ty>(plan).await
+                })
+            }
+        },
+        _ => quote! {},
     }
 }
 
-fn endpoint_stream_response_marker_impl(
+fn endpoint_response_marker_impl(
     ep: &ResolvedEndpoint,
     ty_name: &Ident,
     cx_ty: &Ident,
 ) -> TokenStream2 {
-    let ResolvedResponseBodyIo::RawStream { media_ty } = &ep.response_io else {
-        return quote! {};
-    };
-
-    quote! {
-        impl ::concord_core::prelude::StreamResponseEndpoint<super::#cx_ty> for #ty_name {
-            type Media = #media_ty;
+    match &ep.response_io {
+        ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
+            impl ::concord_core::prelude::StreamResponseEndpoint<super::#cx_ty> for #ty_name {
+                type Media = #media_ty;
+            }
         }
+        ,
+        ResolvedResponseBodyIo::Records { item_ty, format_ty } => quote! {
+            impl ::concord_core::prelude::RecordResponseEndpoint<super::#cx_ty> for #ty_name {
+                type Item = #item_ty;
+                type Format = #format_ty;
+            }
+        },
+        _ => quote! {},
     }
 }
 

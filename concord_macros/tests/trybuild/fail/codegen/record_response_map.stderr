@@ -1,0 +1,13 @@
+error: `map` is only supported for buffered responses
+  --> tests/trybuild/fail/codegen/record_response_map.rs:11:9
+   |
+11 |     GET Download
+   |         ^^^^^^^^
+
+warning: unused import: `concord_core::advanced::NdJson`
+ --> tests/trybuild/fail/codegen/record_response_map.rs:1:5
+  |
+1 | use concord_core::advanced::NdJson;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
