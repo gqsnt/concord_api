@@ -110,11 +110,13 @@ For large or unbounded byte transfer, future PRs should use `Stream<OctetStream>
 `Multipart<T>` and `Multipart<T, F>` are reserved multipart families.
 
 - `Multipart<T>` defaults to `Multipart<T, FormData>`.
-- It is an HTTP body container with per-part headers.
-- Future request values: typed forms implementing `MultipartEncode<F>` or `MultipartBody`.
-- Future response value: `MultipartStream<T>`.
-- Future traits: `MultipartFormat`, `MultipartEncode<F>`, and `MultipartDecodePart<F>`.
-- Built-in formats: `FormData` and `Mixed`.
+- Core request-side runtime values are `MultipartBody` and `RawPart`.
+- `MultipartBody` is not format-generic; the multipart format is selected by the plan/format generic `F`.
+- Core request-side traits are `MultipartFormat`, with built-in formats `FormData` and `Mixed`.
+- `MultipartBody` lowers to stream-backed transport bodies with generated boundaries and CRLF framing.
+- Multipart request bodies are stream-like and non-replayable.
+- Multipart request bodies use the existing stream byte limits.
+- Multipart response parsing is still future work.
 - `Related` and `ByteRanges` are later possibilities.
 - Nested multipart, derive macros, automatic filename inference, and byteranges semantics are out of scope initially.
 - It must not be implemented through `BodyCodec` or `ResponseCodec`.

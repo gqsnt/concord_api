@@ -10,6 +10,8 @@ pub(super) mod common;
 mod concurrency;
 #[path = "current_core/errors.rs"]
 mod errors;
+#[path = "current_core/multipart.rs"]
+mod multipart;
 #[path = "current_core/pagination.rs"]
 mod pagination;
 #[path = "current_core/public_api.rs"]

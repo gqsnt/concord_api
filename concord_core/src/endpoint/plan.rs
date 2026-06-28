@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use crate::advanced::{MultipartBody, MultipartBodyError, MultipartFormat};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
     HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
@@ -51,6 +52,7 @@ pub struct EndpointPlan {
 pub struct RequestArgs {
     pub body: TransportRequestBody,
     pub(crate) stream_size_hint: Option<crate::stream_body::BodySizeHint>,
+    pub(crate) multipart_content_type: Option<HeaderValue>,
 }
 
 impl RequestArgs {
@@ -62,6 +64,7 @@ impl RequestArgs {
         Self {
             body: TransportRequestBody::from_bytes(body),
             stream_size_hint: None,
+            multipart_content_type: None,
         }
     }
 
@@ -70,6 +73,7 @@ impl RequestArgs {
         Self {
             body: body.into_transport_body(),
             stream_size_hint: Some(stream_size_hint),
+            multipart_content_type: None,
         }
     }
 
@@ -81,7 +85,20 @@ impl RequestArgs {
         Self {
             body: body.into_transport_body::<F>(),
             stream_size_hint: None,
+            multipart_content_type: None,
         }
+    }
+
+    pub fn with_multipart_body<F>(body: MultipartBody) -> Result<Self, MultipartBodyError>
+    where
+        F: MultipartFormat,
+    {
+        let multipart_content_type = body.content_type::<F>();
+        Ok(Self {
+            body: body.into_transport_body::<F>()?,
+            stream_size_hint: None,
+            multipart_content_type: Some(multipart_content_type),
+        })
     }
 }
 
@@ -154,6 +171,10 @@ pub enum BodyPlan {
     },
     RawStream {
         content_type: HeaderValue,
+    },
+    Multipart {
+        content_type: HeaderValue,
+        format: crate::codec::Format,
     },
     Records {
         content_type: HeaderValue,

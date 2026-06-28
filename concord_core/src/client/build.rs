@@ -40,6 +40,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 BodyPlan::RawStream { content_type } => {
                     headers.insert(CONTENT_TYPE, content_type.clone());
                 }
+                BodyPlan::Multipart { content_type, .. } => {
+                    headers.insert(CONTENT_TYPE, content_type.clone());
+                }
                 BodyPlan::Records { content_type, .. } => {
                     headers.insert(CONTENT_TYPE, content_type.clone());
                 }
@@ -84,6 +87,47 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     return Err(ApiClientError::PolicyViolation {
                         ctx,
                         msg: "raw stream body plan requires a stream request body",
+                    });
+                }
+            },
+                BodyPlan::Multipart { content_type, .. } => match std::mem::replace(
+                &mut args.body,
+                crate::transport::TransportRequestBody::Empty,
+            ) {
+                crate::transport::TransportRequestBody::Stream(stream) => {
+                    match args.multipart_content_type.as_ref() {
+                        Some(actual) if actual != content_type => {
+                            return Err(ApiClientError::PolicyViolation {
+                                ctx,
+                                msg: "multipart content type must match multipart body boundary",
+                            });
+                        }
+                        Some(_) => {
+                            if let Some(actual) = headers.get(CONTENT_TYPE) {
+                                if actual != content_type {
+                                    return Err(ApiClientError::PolicyViolation {
+                                        ctx,
+                                        msg: "multipart content type must match multipart body boundary",
+                                    });
+                                }
+                            } else {
+                                headers.insert(CONTENT_TYPE, content_type.clone());
+                            }
+                        }
+                        None => {
+                            return Err(ApiClientError::PolicyViolation {
+                                ctx,
+                                msg: "multipart body args are missing multipart content type metadata",
+                            });
+                        }
+                    }
+                    crate::transport::TransportRequestBody::Stream(stream)
+                }
+                crate::transport::TransportRequestBody::Empty
+                | crate::transport::TransportRequestBody::Bytes(_) => {
+                    return Err(ApiClientError::PolicyViolation {
+                        ctx,
+                        msg: "multipart body plan requires a stream request body",
                     });
                 }
             },

@@ -5,6 +5,7 @@ mod debug;
 mod endpoint;
 pub mod error;
 mod media;
+mod multipart;
 mod pagination;
 mod policy;
 mod rate_limit;
@@ -36,6 +37,10 @@ pub mod internal {
         PaginatedEndpoint, PaginationPlan, RecordResponseEndpoint, RequestArgs, RequestOverrides,
         RequestPlan, RequestPlanView, ResolvedRoute, ResponsePlan, ResponseSpec,
         StreamResponseEndpoint, Transform, TransformResp,
+    };
+    pub use crate::multipart::{
+        FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
+        MultipartFormat, RawPart,
     };
     #[doc(hidden)]
     pub use crate::pagination::{
@@ -94,6 +99,10 @@ pub mod advanced {
     pub use crate::endpoint::{RecordResponseEndpoint, StreamResponseEndpoint};
     pub use crate::error::{ErrorContext, FxError};
     pub use crate::media::{Jpeg, MediaType, Mp3, Mp4, OctetStream, Pdf, Png, Zip};
+    pub use crate::multipart::{
+        FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
+        MultipartFormat, RawPart,
+    };
     pub use crate::pagination::{
         Control, HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
         PaginationCaps, PaginationController, PaginationTermination, ProgressKey,
