@@ -8,6 +8,7 @@ mod media;
 mod pagination;
 mod policy;
 mod rate_limit;
+mod record;
 mod redaction;
 mod request;
 mod response_classify;
@@ -43,6 +44,9 @@ pub mod internal {
         PaginationTermination, ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
+    pub use crate::record::{
+        NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
+    };
     pub use crate::retry::RetrySetting;
 }
 pub mod prelude {
@@ -98,6 +102,9 @@ pub mod advanced {
         RateLimitKeyPart, RateLimitKeyValue, RateLimitPermit, RateLimitPlan,
         RateLimitResponseAction, RateLimitResponseContext, RateLimitResponsePolicy,
         RateLimitScopeHint, RateLimitSetting, RateLimitWindow, RateLimiter, parse_retry_after,
+    };
+    pub use crate::record::{
+        NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
     };
     pub use crate::retry::{
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,

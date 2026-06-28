@@ -6,6 +6,7 @@ use crate::pagination::{
     PaginationController, ProgressKey,
 };
 use crate::policy::ResolvedPolicy;
+use crate::record::RecordBody;
 use crate::stream_body::StreamBody;
 use crate::transport::RequestMeta;
 use crate::transport::TransportRequestBody;
@@ -69,6 +70,17 @@ impl RequestArgs {
         Self {
             body: body.into_transport_body(),
             stream_size_hint: Some(stream_size_hint),
+        }
+    }
+
+    pub fn with_record_body<T, F>(body: RecordBody<T>) -> Self
+    where
+        F: crate::record::RecordFormat<T>,
+        T: Send + 'static,
+    {
+        Self {
+            body: body.into_transport_body::<F>(),
+            stream_size_hint: None,
         }
     }
 }
@@ -142,6 +154,10 @@ pub enum BodyPlan {
     },
     RawStream {
         content_type: HeaderValue,
+    },
+    Records {
+        content_type: HeaderValue,
+        format: crate::codec::Format,
     },
 }
 

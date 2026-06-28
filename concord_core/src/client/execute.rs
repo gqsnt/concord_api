@@ -698,6 +698,21 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
+    pub async fn execute_plan_records<Item, F>(
+        &self,
+        plan: RequestPlan,
+    ) -> Result<crate::record::RecordStream<Item>, ApiClientError>
+    where
+        Item: Send + 'static,
+        F: crate::record::RecordFormat<Item>,
+    {
+        let stream = self.execute_plan_stream::<F>(plan).await?;
+        Ok(crate::record::RecordStream::new(
+            stream.into_transport_response(),
+            F::decoder(),
+        ))
+    }
+
     async fn prepare_auth_plan(
         &self,
         plan: &crate::endpoint::RequestPlanView,

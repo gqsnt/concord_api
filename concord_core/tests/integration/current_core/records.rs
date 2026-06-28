@@ -1,0 +1,1060 @@
+use super::common::{TestAuthVars, TestCx, auth_policy, decode_string};
+use bytes::Bytes;
+use concord_core::advanced::{
+    AuthPlacement, DebugSink, MediaType, NdJson, PostResponseHookContext, PreSendHookContext,
+    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter, RecordBody, RuntimeHooks, Transport, TransportBody,
+    TransportError, TransportErrorKind, TransportRequest, TransportResponse,
+};
+use concord_core::internal::{
+    BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
+    ResolvedPolicy, ResolvedRoute, ResponsePlan,
+};
+use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
+use futures_core::Stream;
+use http::{HeaderMap, HeaderValue, Method, StatusCode};
+use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
+use std::task::{Context, Poll};
+
+#[derive(Clone)]
+struct RecordingDebugSink {
+    events: Arc<StdMutex<Vec<String>>>,
+}
+
+impl RecordingDebugSink {
+    fn new(events: Arc<StdMutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl DebugSink for RecordingDebugSink {
+    fn request_start(
+        &self,
+        dbg: concord_core::prelude::DebugLevel,
+        _method: &Method,
+        _url: &str,
+        endpoint: &'static str,
+        page_index: u32,
+    ) {
+        self.events
+            .lock()
+            .expect("debug lock")
+            .push(format!("debug_request:{dbg}:{endpoint}:{page_index}"));
+    }
+
+    fn request_headers(&self, dbg: concord_core::prelude::DebugLevel, _headers: &HeaderMap) {
+        self.events
+            .lock()
+            .expect("debug lock")
+            .push(format!("debug_request_headers:{dbg}"));
+    }
+
+    fn response_status(
+        &self,
+        dbg: concord_core::prelude::DebugLevel,
+        status: StatusCode,
+        _url: &str,
+        ok: bool,
+    ) {
+        self.events
+            .lock()
+            .expect("debug lock")
+            .push(format!("debug_response:{dbg}:{status}:{ok}"));
+    }
+
+    fn response_headers(&self, dbg: concord_core::prelude::DebugLevel, _headers: &HeaderMap) {
+        self.events
+            .lock()
+            .expect("debug lock")
+            .push(format!("debug_response_headers:{dbg}"));
+    }
+}
+
+#[derive(Clone)]
+struct RecordingHooks {
+    events: Arc<StdMutex<Vec<String>>>,
+}
+
+impl RecordingHooks {
+    fn new(events: Arc<StdMutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl RuntimeHooks for RecordingHooks {
+    fn pre_send<'a>(
+        &'a self,
+        ctx: PreSendHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ApiClientError>> + Send + 'a>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events
+                .lock()
+                .expect("hooks lock")
+                .push(format!("hook_pre_send:{}", ctx.meta.endpoint));
+            Ok(())
+        })
+    }
+
+    fn post_response<'a>(
+        &'a self,
+        ctx: PostResponseHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events
+                .lock()
+                .expect("hooks lock")
+                .push(format!("hook_post_response:{}", ctx.meta.endpoint));
+        })
+    }
+
+    fn transport_error<'a>(
+        &'a self,
+        ctx: concord_core::advanced::TransportErrorHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events
+                .lock()
+                .expect("hooks lock")
+                .push(format!("hook_transport_error:{}", ctx.meta.endpoint));
+        })
+    }
+}
+
+#[derive(Clone)]
+struct RecordingRateLimiter {
+    events: Arc<StdMutex<Vec<String>>>,
+}
+
+impl RecordingRateLimiter {
+    fn new(events: Arc<StdMutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl RateLimiter for RecordingRateLimiter {
+    fn acquire<'a>(
+        &'a self,
+        _ctx: RateLimitContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events
+                .lock()
+                .expect("rate limit lock")
+                .push("rate_limit_acquire".to_string());
+            Ok(RateLimitPermit)
+        })
+    }
+
+    fn on_response<'a>(
+        &'a self,
+        _ctx: RateLimitResponseContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            events
+                .lock()
+                .expect("rate limit lock")
+                .push("rate_limit_response".to_string());
+            Ok(RateLimitResponseAction::Continue)
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CapturedBody {
+    Empty,
+    Bytes(Bytes),
+    Stream(Bytes),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CapturedRequest {
+    debug: String,
+    content_type: Option<String>,
+    body: CapturedBody,
+}
+
+#[derive(Clone, Debug)]
+struct ResponseFixture {
+    status: StatusCode,
+    headers: HeaderMap,
+    chunks: Vec<Bytes>,
+    content_length: Option<u64>,
+    poll_flag: Option<Arc<AtomicBool>>,
+}
+
+impl ResponseFixture {
+    fn ndjson(status: StatusCode, chunks: Vec<Bytes>) -> Self {
+        let content_length = chunks.iter().fold(Some(0u64), |acc, chunk| {
+            acc.and_then(|len| len.checked_add(chunk.len() as u64))
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static(NdJson::CONTENT_TYPE),
+        );
+        Self {
+            status,
+            headers,
+            chunks,
+            content_length,
+            poll_flag: None,
+        }
+    }
+
+    fn with_flag(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.poll_flag = Some(flag);
+        self
+    }
+
+    fn content_length(mut self, value: Option<u64>) -> Self {
+        self.content_length = value;
+        self
+    }
+}
+
+#[derive(Clone)]
+struct RecordTransport {
+    events: Arc<StdMutex<Vec<String>>>,
+    captured: Arc<StdMutex<Vec<CapturedRequest>>>,
+    responses: Arc<StdMutex<VecDeque<ResponseFixture>>>,
+    transport_error: Option<TransportErrorKind>,
+    send_count: Arc<AtomicUsize>,
+}
+
+impl RecordTransport {
+    fn new(events: Arc<StdMutex<Vec<String>>>, responses: Vec<ResponseFixture>) -> Self {
+        Self {
+            events,
+            captured: Arc::new(StdMutex::new(Vec::new())),
+            responses: Arc::new(StdMutex::new(responses.into())),
+            transport_error: None,
+            send_count: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn transport_error(
+        events: Arc<StdMutex<Vec<String>>>,
+        responses: Vec<ResponseFixture>,
+        kind: TransportErrorKind,
+    ) -> Self {
+        Self {
+            events,
+            captured: Arc::new(StdMutex::new(Vec::new())),
+            responses: Arc::new(StdMutex::new(responses.into())),
+            transport_error: Some(kind),
+            send_count: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn send_count(&self) -> usize {
+        self.send_count.load(Ordering::SeqCst)
+    }
+
+    fn captured(&self) -> Vec<CapturedRequest> {
+        self.captured
+            .lock()
+            .expect("captured requests lock")
+            .clone()
+    }
+}
+
+impl Transport for RecordTransport {
+    fn send(
+        &self,
+        req: TransportRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        let events = self.events.clone();
+        let captured = self.captured.clone();
+        let responses = self.responses.clone();
+        let transport_error = self.transport_error;
+        let send_count = self.send_count.clone();
+        Box::pin(async move {
+            send_count.fetch_add(1, Ordering::SeqCst);
+            let debug = format!("{req:?}");
+            events
+                .lock()
+                .expect("record events lock")
+                .push("transport".to_string());
+            events
+                .lock()
+                .expect("record events lock")
+                .push(format!("transport_debug:{debug}"));
+            let content_type = req
+                .headers
+                .get(http::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            let body = match req.body {
+                concord_core::advanced::TransportRequestBody::Empty => CapturedBody::Empty,
+                concord_core::advanced::TransportRequestBody::Bytes(bytes) => {
+                    CapturedBody::Bytes(bytes)
+                }
+                concord_core::advanced::TransportRequestBody::Stream(stream) => {
+                    CapturedBody::Stream(collect_stream(stream, &events).await?)
+                }
+            };
+            captured
+                .lock()
+                .expect("captured requests lock")
+                .push(CapturedRequest {
+                    debug,
+                    content_type,
+                    body,
+                });
+            if let Some(kind) = transport_error {
+                return Err(TransportError::with_kind(
+                    kind,
+                    std::io::Error::other("record transport failure"),
+                ));
+            }
+            let mut responses = responses.lock().expect("responses lock");
+            let response = responses.pop_front().ok_or_else(|| {
+                TransportError::with_kind(
+                    TransportErrorKind::Other,
+                    std::io::Error::other("record transport exhausted"),
+                )
+            })?;
+            Ok(TransportResponse {
+                meta: req.meta,
+                url: req.url,
+                status: response.status,
+                headers: response.headers,
+                content_length: response.content_length,
+                rate_limit: req.rate_limit,
+                body: Box::new(ChunkBody::new(
+                    events.clone(),
+                    response.chunks,
+                    response.poll_flag,
+                )),
+            })
+        })
+    }
+}
+
+struct ChunkBody {
+    events: Arc<StdMutex<Vec<String>>>,
+    chunks: VecDeque<Bytes>,
+    poll_flag: Option<Arc<AtomicBool>>,
+}
+
+impl ChunkBody {
+    fn new(
+        events: Arc<StdMutex<Vec<String>>>,
+        chunks: Vec<Bytes>,
+        poll_flag: Option<Arc<AtomicBool>>,
+    ) -> Self {
+        Self {
+            events,
+            chunks: chunks.into(),
+            poll_flag,
+        }
+    }
+}
+
+impl TransportBody for ChunkBody {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
+        let events = self.events.clone();
+        let poll_flag = self.poll_flag.clone();
+        let chunk = self.chunks.pop_front();
+        Box::pin(async move {
+            if let Some(flag) = poll_flag {
+                flag.store(true, Ordering::SeqCst);
+            }
+            events
+                .lock()
+                .expect("events lock")
+                .push("record_chunk_poll".to_string());
+            Ok(chunk)
+        })
+    }
+}
+
+struct PollFlagRecordStream {
+    polled: Arc<AtomicBool>,
+    item: Option<RecordItem>,
+}
+
+impl PollFlagRecordStream {
+    fn new(polled: Arc<AtomicBool>, item: RecordItem) -> Self {
+        Self {
+            polled,
+            item: Some(item),
+        }
+    }
+}
+
+impl Stream for PollFlagRecordStream {
+    type Item = Result<RecordItem, concord_core::advanced::CodecError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.polled.store(true, Ordering::SeqCst);
+        Poll::Ready(self.item.take().map(Ok))
+    }
+}
+
+struct ErrorRecordStream {
+    item: Option<Result<RecordItem, concord_core::advanced::CodecError>>,
+}
+
+impl ErrorRecordStream {
+    fn new() -> Self {
+        Self {
+            item: Some(Err(concord_core::advanced::CodecError::new(
+                "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR",
+            ))),
+        }
+    }
+}
+
+impl Stream for ErrorRecordStream {
+    type Item = Result<RecordItem, concord_core::advanced::CodecError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Poll::Ready(self.item.take())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct RecordItem {
+    id: u32,
+}
+
+fn record_request_plan(
+    name: &'static str,
+    method: Method,
+    path: &'static str,
+    policy: ResolvedPolicy,
+    body: BodyPlan,
+    args: RequestArgs,
+    accept: &'static str,
+) -> RequestPlan {
+    RequestPlan {
+        endpoint: EndpointPlan {
+            meta: EndpointMeta {
+                name,
+                method: method.clone(),
+                idempotent: matches!(method, Method::GET | Method::HEAD),
+                facade_path: &[],
+            },
+            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
+            policy,
+            body,
+            response: ResponsePlan {
+                accept: Some(HeaderValue::from_static(accept)),
+                no_content: false,
+                format: concord_core::internal::Format::Text,
+                decode: decode_string,
+            },
+            pagination: None,
+        },
+        args,
+        overrides: RequestOverrides::default(),
+    }
+}
+
+fn record_response_plan(
+    name: &'static str,
+    method: Method,
+    path: &'static str,
+    policy: ResolvedPolicy,
+    body: BodyPlan,
+    args: RequestArgs,
+) -> RequestPlan {
+    RequestPlan {
+        endpoint: EndpointPlan {
+            meta: EndpointMeta {
+                name,
+                method: method.clone(),
+                idempotent: matches!(method, Method::GET | Method::HEAD),
+                facade_path: &[],
+            },
+            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
+            policy,
+            body,
+            response: ResponsePlan {
+                accept: Some(HeaderValue::from_static(NdJson::CONTENT_TYPE)),
+                no_content: false,
+                format: concord_core::internal::Format::Text,
+                decode: decode_string,
+            },
+            pagination: None,
+        },
+        args,
+        overrides: RequestOverrides::default(),
+    }
+}
+
+fn record_retry_policy() -> ResolvedPolicy {
+    ResolvedPolicy {
+        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
+            max_attempts: 2,
+            methods: Vec::new(),
+            statuses: Vec::new(),
+            transport_errors: vec![TransportErrorKind::Other],
+            backoff: concord_core::advanced::RetryBackoff::None,
+            respect_retry_after: false,
+            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
+        }),
+        ..Default::default()
+    }
+}
+
+async fn collect_stream(
+    mut stream: concord_core::advanced::TransportByteStream,
+    events: &Arc<StdMutex<Vec<String>>>,
+) -> Result<Bytes, TransportError> {
+    let mut out = Vec::new();
+    loop {
+        let next = std::future::poll_fn(|cx| Pin::new(&mut stream).poll_next(cx)).await;
+        match next {
+            Some(Ok(chunk)) => {
+                events
+                    .lock()
+                    .expect("record transport events lock")
+                    .push("record_request_poll".to_string());
+                out.extend_from_slice(&chunk);
+            }
+            Some(Err(error)) => return Err(error),
+            None => break,
+        }
+    }
+    Ok(Bytes::from(out))
+}
+
+#[tokio::test]
+async fn ndjson_record_request_reaches_transport_and_is_body_free_in_debug()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":10}\n")],
+        )],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.set_debug_sink(Arc::new(RecordingDebugSink::new(events.clone())));
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+        cfg.debug(DebugLevel::VV);
+    });
+
+    #[derive(Serialize, Deserialize)]
+    struct SensitiveRecord {
+        msg: String,
+    }
+
+    let sentinel = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR".to_string();
+    let plan = record_request_plan(
+        "RecordRequest",
+        Method::POST,
+        "/records",
+        ResolvedPolicy::default(),
+        BodyPlan::Records {
+            content_type: HeaderValue::from_static(NdJson::CONTENT_TYPE),
+            format: concord_core::internal::Format::Text,
+        },
+        RequestArgs::with_record_body::<SensitiveRecord, NdJson>(RecordBody::from_iter(vec![
+            SensitiveRecord {
+                msg: sentinel.clone(),
+            },
+        ])),
+        NdJson::CONTENT_TYPE,
+    );
+
+    let decoded = client.execute_plan::<String>(plan).await?;
+    assert_eq!(decoded.into_value(), "{\"id\":10}\n");
+    assert_eq!(transport.send_count(), 1);
+    let captured = transport.captured();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(
+        captured[0].content_type.as_deref(),
+        Some(NdJson::CONTENT_TYPE)
+    );
+    match &captured[0].body {
+        CapturedBody::Stream(bytes) => {
+            assert_eq!(bytes, &Bytes::from(format!("{{\"msg\":\"{sentinel}\"}}\n")))
+        }
+        other => panic!("expected streamed record body, got {other:?}"),
+    }
+    assert!(!captured[0].debug.contains(&sentinel));
+    let rendered = captured
+        .iter()
+        .map(|request| format!("{} {:?}", request.debug, request.content_type))
+        .collect::<Vec<_>>()
+        .join("|");
+    assert!(!rendered.contains(&sentinel));
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_request_is_not_polled_before_auth_collision_validation() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let polled = Arc::new(AtomicBool::new(false));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n")],
+        )],
+    );
+    let client = ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars {
+            token: Some("token".to_string()),
+            identity: "anon",
+        },
+        transport.clone(),
+    );
+    let mut policy = auth_policy(AuthPlacement::Bearer);
+    policy.headers.insert(
+        http::header::AUTHORIZATION,
+        HeaderValue::from_static("public"),
+    );
+
+    let err = client
+        .execute_plan::<String>(record_request_plan(
+            "RecordAuthCollision",
+            Method::POST,
+            "/record-auth-collision",
+            policy,
+            BodyPlan::Records {
+                content_type: HeaderValue::from_static(NdJson::CONTENT_TYPE),
+                format: concord_core::internal::Format::Text,
+            },
+            RequestArgs::with_record_body::<RecordItem, NdJson>(RecordBody::from_stream(
+                PollFlagRecordStream::new(polled.clone(), RecordItem { id: 1 }),
+            )),
+            NdJson::CONTENT_TYPE,
+        ))
+        .await
+        .expect_err("auth collision should fail before transport");
+
+    assert!(matches!(err, ApiClientError::Auth { .. }));
+    assert_eq!(transport.send_count(), 0);
+    assert!(!polled.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn record_request_is_not_polled_before_rate_limit_acquisition() -> Result<(), ApiClientError>
+{
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n")],
+        )],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.set_debug_sink(Arc::new(RecordingDebugSink::new(events.clone())));
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+        cfg.debug(DebugLevel::VV);
+    });
+
+    let decoded = client
+        .execute_plan::<String>(record_request_plan(
+            "RecordOrdering",
+            Method::POST,
+            "/record-ordering",
+            ResolvedPolicy::default(),
+            BodyPlan::Records {
+                content_type: HeaderValue::from_static(NdJson::CONTENT_TYPE),
+                format: concord_core::internal::Format::Text,
+            },
+            RequestArgs::with_record_body::<RecordItem, NdJson>(RecordBody::from_iter(vec![
+                RecordItem { id: 1 },
+            ])),
+            NdJson::CONTENT_TYPE,
+        ))
+        .await?;
+
+    assert_eq!(decoded.into_value(), "{\"id\":1}\n");
+    let events = events.lock().expect("event lock").clone();
+    let rate_limit = events
+        .iter()
+        .position(|event| event == "rate_limit_acquire")
+        .expect("rate limit acquisition");
+    let transport = events
+        .iter()
+        .position(|event| event == "transport")
+        .expect("transport send");
+    let request_poll = events
+        .iter()
+        .position(|event| event == "record_request_poll")
+        .expect("request poll");
+    assert!(rate_limit < transport);
+    assert!(transport < request_poll);
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_request_is_not_retried_on_transport_error() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::transport_error(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n")],
+        )],
+        TransportErrorKind::Other,
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let err = client
+        .execute_plan::<String>(record_request_plan(
+            "RecordNoRetry",
+            Method::GET,
+            "/record-no-retry",
+            record_retry_policy(),
+            BodyPlan::Records {
+                content_type: HeaderValue::from_static(NdJson::CONTENT_TYPE),
+                format: concord_core::internal::Format::Text,
+            },
+            RequestArgs::with_record_body::<RecordItem, NdJson>(RecordBody::from_iter(vec![
+                RecordItem { id: 1 },
+                RecordItem { id: 2 },
+            ])),
+            NdJson::CONTENT_TYPE,
+        ))
+        .await
+        .expect_err("stream-like record requests must not retry");
+
+    assert_eq!(transport.send_count(), 1);
+    assert!(matches!(err, ApiClientError::Transport { .. }));
+}
+
+#[tokio::test]
+async fn record_request_encoding_error_maps_to_codec_error() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n")],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let err = client
+        .execute_plan::<String>(record_request_plan(
+            "RecordCodecError",
+            Method::POST,
+            "/record-codec-error",
+            ResolvedPolicy::default(),
+            BodyPlan::Records {
+                content_type: HeaderValue::from_static(NdJson::CONTENT_TYPE),
+                format: concord_core::internal::Format::Text,
+            },
+            RequestArgs::with_record_body::<RecordItem, NdJson>(RecordBody::from_stream(
+                ErrorRecordStream::new(),
+            )),
+            NdJson::CONTENT_TYPE,
+        ))
+        .await
+        .expect_err("request encoding error should surface as codec error");
+
+    assert_eq!(transport.send_count(), 1);
+    assert!(matches!(err, ApiClientError::Codec { .. }));
+    assert!(!format!("{err:?}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
+    assert!(!format!("{err}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
+}
+
+#[tokio::test]
+async fn record_request_limit_applies_to_encoded_stream() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n")],
+        )],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_request_body_bytes(10);
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+    });
+    let err = client
+        .execute_plan::<String>(record_request_plan(
+            "RecordLimit",
+            Method::POST,
+            "/record-limit",
+            ResolvedPolicy::default(),
+            BodyPlan::Records {
+                content_type: HeaderValue::from_static(NdJson::CONTENT_TYPE),
+                format: concord_core::internal::Format::Text,
+            },
+            RequestArgs::with_record_body::<RecordItem, NdJson>(RecordBody::from_iter(vec![
+                RecordItem { id: 1 },
+                RecordItem { id: 2 },
+            ])),
+            NdJson::CONTENT_TYPE,
+        ))
+        .await
+        .expect_err("request stream limit should fail");
+
+    assert_eq!(transport.send_count(), 1);
+    assert!(matches!(
+        err,
+        ApiClientError::RequestBodyLimitExceeded { limit: 10, .. }
+    ));
+}
+
+#[tokio::test]
+async fn ndjson_record_response_yields_records_incrementally() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![
+                Bytes::from_static(b"{\"id\":1}\n{\"id\":"),
+                Bytes::from_static(b"2}"),
+            ],
+        )],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.set_debug_sink(Arc::new(RecordingDebugSink::new(events.clone())));
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+        cfg.debug(DebugLevel::VV);
+    });
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordResponse",
+            Method::GET,
+            "/records-response",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let events_before = events.lock().expect("events lock").clone();
+    assert!(
+        !events_before
+            .iter()
+            .any(|event| event == "record_chunk_poll")
+    );
+    assert!(!format!("{response:?}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
+    let first = response
+        .next_record()
+        .await?
+        .expect("first record should exist");
+    let second = response
+        .next_record()
+        .await?
+        .expect("second record should exist");
+    assert_eq!(first, RecordItem { id: 1 });
+    assert_eq!(second, RecordItem { id: 2 });
+    assert!(response.next_record().await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_response_final_line_without_newline_is_accepted() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n{\"id\":2}")],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordFinalLine",
+            Method::GET,
+            "/record-final-line",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    assert_eq!(response.next_record().await?.unwrap(), RecordItem { id: 1 });
+    assert_eq!(response.next_record().await?.unwrap(), RecordItem { id: 2 });
+    assert!(response.next_record().await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_response_middle_blank_line_is_rejected() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![
+                Bytes::from_static(b"{\"id\":1}\n"),
+                Bytes::from_static(b"\n{\"id\":2}\n"),
+            ],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordBlankLine",
+            Method::GET,
+            "/record-blank-line",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    assert_eq!(response.next_record().await?.unwrap(), RecordItem { id: 1 });
+    let err = response
+        .next_record()
+        .await
+        .expect_err("blank line should be rejected");
+    assert!(!format!("{err:?}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
+    assert!(!format!("{err}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_response_content_length_exceeds_limit_before_body_exposure() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let polled = Arc::new(AtomicBool::new(false));
+    let transport = RecordTransport::new(
+        events,
+        vec![
+            ResponseFixture::ndjson(StatusCode::OK, vec![Bytes::from_static(b"{\"id\":1}\n")])
+                .content_length(Some(32))
+                .with_flag(polled.clone()),
+        ],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_response_body_bytes(8);
+    });
+
+    let err = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordResponseLimit",
+            Method::GET,
+            "/record-response-limit",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await
+        .expect_err("content length above limit should fail");
+
+    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
+    assert!(!polled.load(Ordering::SeqCst));
+    assert_eq!(transport.send_count(), 1);
+}
+
+#[tokio::test]
+async fn record_response_unknown_length_is_counted_while_reading() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![
+            ResponseFixture::ndjson(
+                StatusCode::OK,
+                vec![
+                    Bytes::from_static(b"{\"id\":1}\n"),
+                    Bytes::from_static(b"{\"id\":2}\n"),
+                ],
+            )
+            .content_length(None),
+        ],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_response_body_bytes(10);
+    });
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordUnknownLimit",
+            Method::GET,
+            "/record-unknown-limit",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    assert_eq!(response.next_record().await?.unwrap(), RecordItem { id: 1 });
+    let err = response
+        .next_record()
+        .await
+        .expect_err("second record should exceed configured limit");
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
+    assert!(!format!("{err:?}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_stream_debug_is_body_free() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let sentinel = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR";
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from(format!("{{\"msg\":\"{sentinel}\"}}\n"))],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    let response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordDebug",
+            Method::GET,
+            "/record-debug",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let events_before = transport.events.lock().expect("events lock").clone();
+    assert!(
+        !events_before
+            .iter()
+            .any(|event| event == "record_chunk_poll")
+    );
+    let rendered = format!("{response:?}");
+    assert!(rendered.contains("<record stream>"));
+    assert!(!rendered.contains(sentinel));
+    Ok(())
+}

@@ -1,4 +1,5 @@
 use crate::auth::{PendingAuthPlacement, RequestExtensions};
+use crate::codec::CodecError;
 use crate::rate_limit::RateLimitPlan;
 use crate::retry::RetrySetting;
 use bytes::Bytes;
@@ -685,6 +686,12 @@ impl From<reqwest::Error> for TransportError {
             kind,
             source: Box::new(e),
         }
+    }
+}
+
+impl From<CodecError> for TransportError {
+    fn from(error: CodecError) -> Self {
+        TransportError::with_kind(TransportErrorKind::Request, error)
     }
 }
 

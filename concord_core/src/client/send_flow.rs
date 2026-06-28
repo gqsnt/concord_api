@@ -132,6 +132,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Ok(resp)
             }
             Err(e) => {
+                if let Some(_codec_error) = e
+                    .source_error()
+                    .downcast_ref::<crate::codec::CodecError>()
+                {
+                    return Err(ApiClientError::Codec {
+                        ctx: ctx.clone(),
+                        source: Box::new(crate::codec::CodecError::new(
+                            "request body encoding failed",
+                        )),
+                    });
+                }
                 if let Some(limit_error) = e
                     .source_error()
                     .downcast_ref::<crate::transport::StreamBodyLimitError>()
