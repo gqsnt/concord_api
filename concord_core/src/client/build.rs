@@ -2,7 +2,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     fn build_request_from_plan(
         &self,
         plan: &crate::endpoint::RequestPlanView,
-        args: &crate::endpoint::RequestArgs,
+        args: &mut crate::endpoint::RequestArgs,
         meta: RequestMeta,
     ) -> Result<BuiltRequest, ApiClientError> {
         let ctx = ErrorContext {
@@ -30,26 +30,60 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
 
         let mut headers = policy.headers.clone();
-        if !headers.contains_key(CONTENT_TYPE)
-            && let BodyPlan::Encoded { content_type, .. } = &plan.endpoint.body
-            && let Some(content_type) = content_type
-        {
-            headers.insert(CONTENT_TYPE, content_type.clone());
+        if !headers.contains_key(CONTENT_TYPE) {
+            match &plan.endpoint.body {
+                BodyPlan::Encoded { content_type, .. } => {
+                    if let Some(content_type) = content_type {
+                        headers.insert(CONTENT_TYPE, content_type.clone());
+                    }
+                }
+                BodyPlan::RawStream { content_type } => {
+                    headers.insert(CONTENT_TYPE, content_type.clone());
+                }
+                BodyPlan::None => {}
+            }
         }
 
-        let body = match &args.body {
-            crate::transport::TransportRequestBody::Empty => {
+        let body = match &plan.endpoint.body {
+            BodyPlan::None => match &args.body {
+                crate::transport::TransportRequestBody::Empty => {
+                    crate::transport::TransportRequestBody::Empty
+                }
+                crate::transport::TransportRequestBody::Bytes(_)
+                | crate::transport::TransportRequestBody::Stream(_) => {
+                    return Err(ApiClientError::PolicyViolation {
+                        ctx,
+                        msg: "request body is not allowed for this endpoint",
+                    });
+                }
+            },
+            BodyPlan::Encoded { .. } => match &args.body {
+                crate::transport::TransportRequestBody::Bytes(bytes) => {
+                    crate::transport::TransportRequestBody::from_bytes(bytes.clone())
+                }
                 crate::transport::TransportRequestBody::Empty
-            }
-            crate::transport::TransportRequestBody::Bytes(bytes) => {
-                crate::transport::TransportRequestBody::from_bytes(bytes.clone())
-            }
-            crate::transport::TransportRequestBody::Stream(_) => {
-                return Err(ApiClientError::PolicyViolation {
-                    ctx,
-                    msg: "stream request bodies are not supported yet",
-                });
-            }
+                | crate::transport::TransportRequestBody::Stream(_) => {
+                    return Err(ApiClientError::PolicyViolation {
+                        ctx,
+                        msg: "encoded request body plan requires buffered bytes",
+                    });
+                }
+            },
+            BodyPlan::RawStream { .. } => match std::mem::replace(
+                &mut args.body,
+                crate::transport::TransportRequestBody::Empty,
+            ) {
+                crate::transport::TransportRequestBody::Stream(stream) => {
+                    crate::transport::TransportRequestBody::Stream(stream)
+                }
+                crate::transport::TransportRequestBody::Empty
+                | crate::transport::TransportRequestBody::Bytes(_) => {
+                    return Err(ApiClientError::PolicyViolation {
+                        ctx,
+                        msg: "raw stream body plan requires a stream request body",
+                    });
+                }
+            },
         };
 
         Ok(BuiltRequest {

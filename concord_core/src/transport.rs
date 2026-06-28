@@ -168,6 +168,11 @@ impl fmt::Debug for BuiltRequest {
 }
 
 impl BuiltRequest {
+    #[inline]
+    pub fn has_stream_body(&self) -> bool {
+        self.body.is_stream()
+    }
+
     pub(crate) fn debug_url(&self) -> String {
         let mut url = self.url.clone();
         if self

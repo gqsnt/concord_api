@@ -6,6 +6,7 @@ use crate::pagination::{
     PaginationController, ProgressKey,
 };
 use crate::policy::ResolvedPolicy;
+use crate::stream_body::StreamBody;
 use crate::transport::RequestMeta;
 use crate::transport::TransportRequestBody;
 use bytes::Bytes;
@@ -58,6 +59,12 @@ impl RequestArgs {
     pub fn with_body_bytes(body: Bytes) -> Self {
         Self {
             body: TransportRequestBody::from_bytes(body),
+        }
+    }
+
+    pub fn with_stream_body(body: StreamBody) -> Self {
+        Self {
+            body: body.into_transport_body(),
         }
     }
 }
@@ -128,6 +135,9 @@ pub enum BodyPlan {
     Encoded {
         content_type: Option<HeaderValue>,
         format: crate::codec::Format,
+    },
+    RawStream {
+        content_type: HeaderValue,
     },
 }
 

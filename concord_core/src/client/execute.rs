@@ -9,7 +9,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     fn build_attempt_request(
         &self,
         plan: &crate::endpoint::RequestPlanView,
-        args: &crate::endpoint::RequestArgs,
+        args: &mut crate::endpoint::RequestArgs,
         meta: RequestMeta,
     ) -> Result<BuiltRequest, ApiClientError> {
         self.build_request_from_plan(plan, args, meta)
@@ -73,7 +73,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let RequestPlan {
             endpoint,
-            args,
+            mut args,
             overrides,
         } = plan;
         let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
@@ -106,7 +106,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .endpoint
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
-            let mut built = self.build_attempt_request(&plan, &args, meta)?;
+            let mut built = self.build_attempt_request(&plan, &mut args, meta)?;
             let auth_attempt = self
                 .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
@@ -116,6 +116,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     source,
                 }
             })?;
+            let has_stream_body = built.has_stream_body();
             let url_str = built.debug_url();
 
             self.debug_planned_request(dbg, &plan, &built, &url_str);
@@ -137,6 +138,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
             match send_result {
                 Ok(resp) => {
+                    if has_stream_body
+                        && Self::is_protected_auth_rejection(&plan, resp.status)
+                    {
+                        return Err(ApiClientError::Auth {
+                            ctx: ctx.clone(),
+                            source: AuthError::new(
+                                AuthErrorKind::ProviderRejected,
+                                "auth challenge rejected",
+                            ),
+                        });
+                    }
                     match self
                         .handle_auth_rejection(
                             AuthRejectionCtx {
@@ -185,6 +197,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 }
                 Err(err) => {
                     if let ApiClientError::HttpStatus { status, headers, .. } = &err {
+                        if has_stream_body
+                            && Self::is_protected_auth_rejection(&plan, *status)
+                        {
+                            return Err(ApiClientError::Auth {
+                                ctx: ctx.clone(),
+                                source: AuthError::new(
+                                    AuthErrorKind::ProviderRejected,
+                                    "auth challenge rejected",
+                                ),
+                            });
+                        }
                         let response_meta = plan
                             .endpoint
                             .meta
@@ -229,6 +252,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             AuthRejectionOutcome::NotProtected => {}
                         }
                     }
+                    if has_stream_body {
+                        return Err(err);
+                    }
                     let outcome = Self::retry_outcome_from_error(&err);
                     let response_headers = Self::retry_response_headers_from_error(&err);
                     let retry_ctx = RetryContext {
@@ -267,7 +293,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     ) -> Result<BuiltResponse, ApiClientError> {
         let RequestPlan {
             endpoint,
-            args,
+            mut args,
             overrides,
         } = plan;
         let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
@@ -300,7 +326,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .endpoint
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
-            let mut built = self.build_attempt_request(&plan, &args, meta)?;
+            let mut built = self.build_attempt_request(&plan, &mut args, meta)?;
             let auth_attempt = self
                 .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
@@ -310,6 +336,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     source,
                 }
             })?;
+            let has_stream_body = built.has_stream_body();
             let url_str = built.debug_url();
 
             self.debug_planned_request(dbg, &plan, &built, &url_str);
@@ -331,6 +358,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
             match send_result {
                 Ok(resp) => {
+                    if has_stream_body
+                        && Self::is_protected_auth_rejection(&plan, resp.status)
+                    {
+                        return Err(ApiClientError::Auth {
+                            ctx: ctx.clone(),
+                            source: AuthError::new(
+                                AuthErrorKind::ProviderRejected,
+                                "auth challenge rejected",
+                            ),
+                        });
+                    }
                     match self
                         .handle_auth_rejection(
                             AuthRejectionCtx {
@@ -378,6 +416,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 }
                 Err(err) => {
                     if let ApiClientError::HttpStatus { status, headers, .. } = &err {
+                        if has_stream_body
+                            && Self::is_protected_auth_rejection(&plan, *status)
+                        {
+                            return Err(ApiClientError::Auth {
+                                ctx: ctx.clone(),
+                                source: AuthError::new(
+                                    AuthErrorKind::ProviderRejected,
+                                    "auth challenge rejected",
+                                ),
+                            });
+                        }
                         let response_meta = plan
                             .endpoint
                             .meta
@@ -421,6 +470,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             }
                             AuthRejectionOutcome::NotProtected => {}
                         }
+                    }
+                    if has_stream_body {
+                        return Err(err);
                     }
                     let outcome = Self::retry_outcome_from_error(&err);
                     let response_headers = Self::retry_response_headers_from_error(&err);
