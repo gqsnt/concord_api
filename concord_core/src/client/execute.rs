@@ -541,6 +541,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
+        let stream_response_limit = self.runtime_state.max_stream_response_body_bytes();
         if let RetrySetting::Config(config) = &plan.endpoint.policy.retry {
             config.validate(ctx.clone())?;
         }
@@ -590,6 +591,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         error_ctx: &ctx,
                         auth_materials: &auth_attempt.materials,
                     },
+                    stream_response_limit,
                 )
                 .await;
 
@@ -598,6 +600,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     return Ok(resp);
                 }
                 Err(err) => {
+                    if matches!(
+                        &err,
+                        ApiClientError::ResponseTooLarge { .. }
+                            | ApiClientError::ResponseBodyLimitExceeded { .. }
+                    ) {
+                        return Err(err);
+                    }
                     if let ApiClientError::HttpStatus { status, headers, .. } = &err {
                         if has_stream_body
                             && Self::is_protected_auth_rejection(&plan, *status)

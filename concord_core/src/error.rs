@@ -49,6 +49,15 @@ pub enum ApiClientError {
     #[error("{ctx}: response body exceeded limit {limit} bytes while reading")]
     ResponseBodyLimitExceeded { ctx: ErrorContext, limit: usize },
 
+    #[error(
+        "{ctx}: stream request body exceeded configured size limit {limit} bytes (seen {actual} bytes)"
+    )]
+    RequestBodyLimitExceeded {
+        ctx: ErrorContext,
+        limit: usize,
+        actual: u64,
+    },
+
     #[error("{ctx}: status {status}")]
     HttpStatus {
         ctx: ErrorContext,
@@ -144,6 +153,12 @@ impl Debug for ApiClientError {
                 .debug_struct("ResponseBodyLimitExceeded")
                 .field("ctx", ctx)
                 .field("limit", limit)
+                .finish(),
+            Self::RequestBodyLimitExceeded { ctx, limit, actual } => f
+                .debug_struct("RequestBodyLimitExceeded")
+                .field("ctx", ctx)
+                .field("limit", limit)
+                .field("actual", actual)
                 .finish(),
             Self::HttpStatus {
                 ctx,
@@ -300,6 +315,7 @@ impl ApiClientError {
             | ApiClientError::Transport { ctx, .. }
             | ApiClientError::ResponseTooLarge { ctx, .. }
             | ApiClientError::ResponseBodyLimitExceeded { ctx, .. }
+            | ApiClientError::RequestBodyLimitExceeded { ctx, .. }
             | ApiClientError::HttpStatus { ctx, .. }
             | ApiClientError::Decode { ctx, .. }
             | ApiClientError::HeadRequiresNoContent { ctx }
@@ -329,6 +345,7 @@ impl ApiClientError {
             ApiClientError::Transport { .. } => ErrorCategory::Transport,
             ApiClientError::ResponseTooLarge { .. }
             | ApiClientError::ResponseBodyLimitExceeded { .. } => ErrorCategory::Decode,
+            ApiClientError::RequestBodyLimitExceeded { .. } => ErrorCategory::Config,
             ApiClientError::HttpStatus { rate_limit, .. } if rate_limit.is_some() => {
                 ErrorCategory::RateLimit
             }

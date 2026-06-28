@@ -1,6 +1,9 @@
 use crate::error::{ApiClientError, ErrorContext};
 use crate::media::MediaType;
-use crate::transport::{TransportBody, TransportError, TransportErrorKind, TransportResponse};
+use crate::transport::{
+    StreamBodyLimitError, StreamLimitDirection, TransportBody, TransportError, TransportErrorKind,
+    TransportResponse,
+};
 use bytes::Bytes;
 use http::{HeaderMap, StatusCode};
 use std::fmt;
@@ -14,7 +17,25 @@ pub struct StreamResponse<M> {
 }
 
 impl<M> StreamResponse<M> {
-    pub(crate) fn new(resp: TransportResponse) -> Self {
+    pub(crate) fn new(resp: TransportResponse, limit: Option<usize>) -> Self {
+        let TransportResponse {
+            meta,
+            url,
+            status,
+            headers,
+            content_length,
+            rate_limit,
+            body,
+        } = resp;
+        let resp = TransportResponse {
+            body: Box::new(LimitedTransportBody::new(body, meta.clone(), limit)),
+            meta,
+            url,
+            status,
+            headers,
+            content_length,
+            rate_limit,
+        };
         Self {
             resp,
             _media: PhantomData,
@@ -100,6 +121,14 @@ impl<M> StreamResponse<M> {
     }
 
     fn sanitize_body_error(ctx: ErrorContext, source: TransportError) -> ApiClientError {
+        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>() {
+            if matches!(limit_error.direction, StreamLimitDirection::Response) {
+                return ApiClientError::ResponseBodyLimitExceeded {
+                    ctx,
+                    limit: limit_error.limit,
+                };
+            }
+        }
         Self::transport_error(ctx, source.kind(), "stream response body read failed")
     }
 
@@ -145,5 +174,64 @@ impl<M: MediaType> fmt::Debug for StreamResponse<M> {
             .field("body", &"<stream>")
             .field("media_type", &M::CONTENT_TYPE)
             .finish()
+    }
+}
+
+struct LimitedTransportBody {
+    body: Box<dyn TransportBody>,
+    limit: Option<usize>,
+    seen: usize,
+    meta: crate::transport::RequestMeta,
+    exhausted: bool,
+}
+
+impl LimitedTransportBody {
+    fn new(
+        body: Box<dyn TransportBody>,
+        meta: crate::transport::RequestMeta,
+        limit: Option<usize>,
+    ) -> Self {
+        Self {
+            body,
+            limit,
+            seen: 0,
+            meta,
+            exhausted: false,
+        }
+    }
+}
+
+impl TransportBody for LimitedTransportBody {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            if self.exhausted {
+                return Ok(None);
+            }
+            let Some(chunk) = self.body.next_chunk().await? else {
+                self.exhausted = true;
+                return Ok(None);
+            };
+            if let Some(limit) = self.limit {
+                let next_seen = self.seen.checked_add(chunk.len()).unwrap_or(usize::MAX);
+                if next_seen > limit {
+                    self.exhausted = true;
+                    return Err(TransportError::with_kind(
+                        TransportErrorKind::Request,
+                        StreamBodyLimitError {
+                            meta: self.meta.clone(),
+                            direction: StreamLimitDirection::Response,
+                            limit,
+                            seen: next_seen,
+                        },
+                    ));
+                }
+                self.seen = next_seen;
+            }
+            Ok(Some(chunk))
+        })
     }
 }

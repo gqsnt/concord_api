@@ -206,6 +206,11 @@ impl ResponseFixture {
         }
         self
     }
+
+    fn content_length(mut self, value: Option<u64>) -> Self {
+        self.content_length = value;
+        self
+    }
 }
 
 #[derive(Clone)]
@@ -572,6 +577,140 @@ async fn stream_response_no_content_plan_is_rejected_before_transport() {
             .contains("stream responses cannot use a no-content response plan")
     );
     assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn stream_response_content_length_exceeds_limit_before_body_polling() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let polled = Arc::new(AtomicBool::new(false));
+    let transport = StreamTransport::new(
+        events.clone(),
+        vec![
+            ResponseFixture::octet_stream(
+                StatusCode::OK,
+                vec![Bytes::from_static(b"hello"), Bytes::from_static(b"world")],
+            )
+            .content_length(Some(16))
+            .with_flag(polled.clone()),
+        ],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_response_body_bytes(8);
+    });
+
+    let err = client
+        .execute_plan_stream::<OctetStream>(empty_response_plan(
+            "RawStreamResponseLimit",
+            "/raw-stream-response-limit",
+        ))
+        .await
+        .expect_err("content length above limit should fail before body exposure");
+
+    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
+    assert!(!polled.load(Ordering::SeqCst));
+    assert_eq!(transport.send_count(), 1);
+    assert!(
+        err.to_string()
+            .contains("response Content-Length 16 exceeds limit 8 bytes")
+    );
+}
+
+#[tokio::test]
+async fn stream_response_unknown_length_is_counted_while_reading() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = StreamTransport::new(
+        events.clone(),
+        vec![
+            ResponseFixture::octet_stream(
+                StatusCode::OK,
+                vec![Bytes::from_static(b"abcd"), Bytes::from_static(b"efgh")],
+            )
+            .content_length(None),
+        ],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_response_body_bytes(5);
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+        cfg.debug(DebugLevel::VV);
+    });
+
+    let mut response = client
+        .execute_plan_stream::<OctetStream>(empty_response_plan(
+            "RawStreamUnknownLimit",
+            "/raw-stream-unknown-limit",
+        ))
+        .await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.next_chunk().await?.as_deref(),
+        Some(b"abcd".as_slice())
+    );
+    let err = response
+        .next_chunk()
+        .await
+        .expect_err("second chunk should exceed the configured limit");
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
+    assert!(!format!("{err:?}").contains("SECRET_STREAM_RESPONSE_SENTINEL_MUST_NOT_APPEAR"));
+    assert!(!format!("{err}").contains("SECRET_STREAM_RESPONSE_SENTINEL_MUST_NOT_APPEAR"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn stream_response_write_to_file_enforces_limit() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = StreamTransport::new(
+        events,
+        vec![
+            ResponseFixture::octet_stream(
+                StatusCode::OK,
+                vec![Bytes::from_static(b"abcd"), Bytes::from_static(b"efgh")],
+            )
+            .content_length(None),
+        ],
+    );
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_response_body_bytes(5);
+    });
+
+    let mut response = client
+        .execute_plan_stream::<OctetStream>(empty_response_plan(
+            "RawStreamWriteLimit",
+            "/raw-stream-write-limit",
+        ))
+        .await?;
+
+    let path = std::env::temp_dir().join(format!(
+        "concord_stream_response_limit_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock before unix epoch")
+            .as_nanos()
+    ));
+    let err = response
+        .write_to_file(&path)
+        .await
+        .expect_err("write_to_file should enforce response limit");
+    let written = std::fs::read(&path).expect("read output file");
+    let _ = std::fs::remove_file(&path);
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
+    assert_eq!(written, b"abcd");
+    assert!(!format!("{err:?}").contains("SECRET_STREAM_RESPONSE_SENTINEL_MUST_NOT_APPEAR"));
+    Ok(())
 }
 
 #[tokio::test]

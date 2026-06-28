@@ -11,6 +11,8 @@ pub struct ClientRuntimeState {
     retry_policy: Arc<dyn RetryPolicy>,
     max_auth_retries: u32,
     max_response_body_bytes: Option<usize>,
+    max_stream_request_body_bytes: Option<usize>,
+    max_stream_response_body_bytes: Option<usize>,
     #[allow(deprecated)]
     dev_body_capture: Option<crate::runtime::DevBodyCaptureConfig>,
 }
@@ -23,6 +25,8 @@ impl Default for ClientRuntimeState {
             retry_policy: Arc::new(NoRetryPolicy),
             max_auth_retries: 8,
             max_response_body_bytes: Some(16 * 1024 * 1024),
+            max_stream_request_body_bytes: Some(16 * 1024 * 1024),
+            max_stream_response_body_bytes: Some(16 * 1024 * 1024),
             dev_body_capture: None,
         }
     }
@@ -37,6 +41,8 @@ impl ClientRuntimeState {
             retry_policy: config.retry_policy,
             max_auth_retries: config.auth.max_retries,
             max_response_body_bytes: config.max_response_body_bytes,
+            max_stream_request_body_bytes: config.max_stream_request_body_bytes,
+            max_stream_response_body_bytes: config.max_stream_response_body_bytes,
             dev_body_capture: config.dev_body_capture,
         }
     }
@@ -79,6 +85,16 @@ impl ClientRuntimeState {
     #[inline]
     pub fn max_response_body_bytes(&self) -> Option<usize> {
         self.max_response_body_bytes
+    }
+
+    #[inline]
+    pub fn max_stream_request_body_bytes(&self) -> Option<usize> {
+        self.max_stream_request_body_bytes
+    }
+
+    #[inline]
+    pub fn max_stream_response_body_bytes(&self) -> Option<usize> {
+        self.max_stream_response_body_bytes
     }
 
     #[allow(deprecated)]

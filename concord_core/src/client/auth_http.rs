@@ -45,6 +45,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     url,
                     headers,
                     body,
+                    stream_size_hint: None,
                     timeout: policy.timeout,
                     retry: RetrySetting::Inherit,
                     rate_limit: RateLimitPlan::new(),
@@ -77,6 +78,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         url: base_request.url.clone(),
                         headers: base_request.headers.clone(),
                         body,
+                        stream_size_hint: None,
                         timeout: base_request.timeout,
                         retry: base_request.retry.clone(),
                         rate_limit: base_request.rate_limit.clone(),
@@ -150,10 +152,14 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     }
 
                     let transport_req =
-                        crate::transport::materialize_transport_request(built, &auth_materials)
-                            .map_err(|source| {
-                                AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
-                            })?;
+                        crate::transport::materialize_transport_request(
+                            built,
+                            &auth_materials,
+                            None,
+                        )
+                        .map_err(|source| {
+                            AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
+                        })?;
                     let resp = self.client.transport.send(transport_req).await;
                     let mut resp = match resp {
                         Ok(resp) => resp,

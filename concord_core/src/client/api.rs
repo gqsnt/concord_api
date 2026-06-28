@@ -289,6 +289,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 sink: self.debug_sink.clone(),
             },
             max_response_body_bytes: self.runtime_state.max_response_body_bytes(),
+            max_stream_request_body_bytes: self
+                .runtime_state
+                .max_stream_request_body_bytes(),
+            max_stream_response_body_bytes: self
+                .runtime_state
+                .max_stream_response_body_bytes(),
             dev_body_capture: self.runtime_state.dev_body_capture().cloned(),
         };
         f(&mut config);

@@ -91,6 +91,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             url,
             headers,
             body,
+            stream_size_hint: std::mem::take(&mut args.stream_size_hint),
             timeout: policy.timeout,
             retry: policy.retry,
             rate_limit,

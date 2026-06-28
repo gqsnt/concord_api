@@ -85,11 +85,13 @@ enum ResponseFixture {
         status: StatusCode,
         headers: HeaderMap,
         body: Bytes,
+        content_length: Option<u64>,
     },
     Stream {
         status: StatusCode,
         headers: HeaderMap,
         chunks: Vec<Bytes>,
+        content_length: Option<u64>,
         poll_flag: Arc<AtomicBool>,
     },
 }
@@ -105,6 +107,7 @@ impl ResponseFixture {
             status: StatusCode::OK,
             headers,
             body: Bytes::from_static(body.as_bytes()),
+            content_length: Some(body.len() as u64),
         }
     }
 
@@ -114,12 +117,28 @@ impl ResponseFixture {
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("application/octet-stream"),
         );
+        let content_length = chunks.iter().map(|chunk| chunk.len() as u64).sum();
         Self::Stream {
             status: StatusCode::OK,
             headers,
             chunks,
+            content_length: Some(content_length),
             poll_flag,
         }
+    }
+
+    fn content_length(mut self, content_length: Option<u64>) -> Self {
+        match &mut self {
+            ResponseFixture::Buffered {
+                content_length: len,
+                ..
+            } => *len = content_length,
+            ResponseFixture::Stream {
+                content_length: len,
+                ..
+            } => *len = content_length,
+        }
+        self
     }
 }
 
@@ -195,12 +214,13 @@ impl Transport for RecordingTransport {
                     status,
                     headers,
                     body,
+                    content_length,
                 } => Ok(TransportResponse {
                     meta: req.meta,
                     url: req.url,
                     status,
                     headers,
-                    content_length: Some(body.len() as u64),
+                    content_length,
                     rate_limit: req.rate_limit,
                     body: Box::new(StaticBody(Some(body))),
                 }),
@@ -208,15 +228,14 @@ impl Transport for RecordingTransport {
                     status,
                     headers,
                     chunks,
+                    content_length,
                     poll_flag,
                 } => Ok(TransportResponse {
                     meta: req.meta,
                     url: req.url,
                     status,
                     headers,
-                    content_length: chunks.iter().fold(Some(0u64), |acc, chunk| {
-                        acc.and_then(|len| len.checked_add(chunk.len() as u64))
-                    }),
+                    content_length,
                     rate_limit: req.rate_limit,
                     body: Box::new(ChunkBody::new(transport.events.clone(), chunks, poll_flag)),
                 }),
@@ -468,4 +487,71 @@ async fn generated_stream_response_execute_stream_returns_stream_without_bufferi
             .count(),
         3
     );
+}
+
+#[tokio::test]
+async fn generated_stream_request_enforces_configured_request_limit() {
+    const SENTINEL: &[u8] = b"SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR";
+    let transport = RecordingTransport::buffered_response(r#"{"ok":true}"#);
+    let api = StreamHelperApi::new_with_transport(transport.clone());
+    let api = api.configure(|cfg| {
+        cfg.max_stream_request_body_bytes(4);
+    });
+
+    let err = api
+        .upload(StreamBody::from_bytes(Bytes::from_static(SENTINEL)))
+        .execute()
+        .await
+        .expect_err("stream upload should fail when limit is exceeded");
+
+    assert!(matches!(
+        err,
+        ApiClientError::RequestBodyLimitExceeded { limit: 4, .. }
+    ));
+    assert!(
+        err.to_string()
+            .contains("stream request body exceeded configured size limit")
+    );
+    assert_eq!(transport.send_count(), 0);
+    assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
+async fn generated_stream_response_enforces_configured_response_limit() {
+    let poll_flag = Arc::new(AtomicBool::new(false));
+    let transport = RecordingTransport::new(
+        ResponseFixture::streamed(
+            vec![Bytes::from_static(b"abcd"), Bytes::from_static(b"efgh")],
+            poll_flag.clone(),
+        )
+        .content_length(None),
+    );
+    let api = StreamHelperApi::new_with_transport(transport.clone());
+    let api = api.configure(|cfg| {
+        cfg.max_stream_response_body_bytes(5);
+    });
+
+    let mut response: StreamResponse<OctetStream> = api
+        .download()
+        .execute_stream()
+        .await
+        .expect("stream response should be returned before limit is hit");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(transport.send_count(), 1);
+    assert!(!poll_flag.load(Ordering::SeqCst));
+    assert_eq!(
+        response.next_chunk().await.unwrap().as_deref(),
+        Some(b"abcd".as_slice())
+    );
+    let err = response
+        .next_chunk()
+        .await
+        .expect_err("second chunk should exceed configured limit");
+
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
+    assert!(!format!("{err:?}").contains("SECRET_STREAM_RESPONSE_SENTINEL_MUST_NOT_APPEAR"));
 }

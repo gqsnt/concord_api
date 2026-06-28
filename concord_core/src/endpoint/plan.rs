@@ -49,6 +49,7 @@ pub struct EndpointPlan {
 #[derive(Debug, Default)]
 pub struct RequestArgs {
     pub body: TransportRequestBody,
+    pub(crate) stream_size_hint: Option<crate::stream_body::BodySizeHint>,
 }
 
 impl RequestArgs {
@@ -59,12 +60,15 @@ impl RequestArgs {
     pub fn with_body_bytes(body: Bytes) -> Self {
         Self {
             body: TransportRequestBody::from_bytes(body),
+            stream_size_hint: None,
         }
     }
 
     pub fn with_stream_body(body: StreamBody) -> Self {
+        let stream_size_hint = body.size_hint();
         Self {
             body: body.into_transport_body(),
+            stream_size_hint: Some(stream_size_hint),
         }
     }
 }

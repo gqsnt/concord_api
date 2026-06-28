@@ -63,6 +63,36 @@ impl TransportRequestBody {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StreamLimitDirection {
+    Request,
+    Response,
+}
+
+#[derive(Debug)]
+pub(crate) struct StreamBodyLimitError {
+    pub(crate) meta: RequestMeta,
+    pub(crate) direction: StreamLimitDirection,
+    pub(crate) limit: usize,
+    pub(crate) seen: usize,
+}
+
+impl fmt::Display for StreamBodyLimitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let direction = match self.direction {
+            StreamLimitDirection::Request => "request",
+            StreamLimitDirection::Response => "response",
+        };
+        write!(
+            f,
+            "{} {} stream body exceeded configured size limit {} bytes (seen {} bytes)",
+            self.meta.method, direction, self.limit, self.seen
+        )
+    }
+}
+
+impl Error for StreamBodyLimitError {}
+
 impl Default for TransportRequestBody {
     fn default() -> Self {
         Self::Empty
@@ -81,6 +111,7 @@ impl fmt::Debug for TransportRequestBody {
 
 pub struct TransportByteStream {
     inner: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, TransportError>> + Send>>,
+    limit: Option<StreamByteLimit>,
 }
 
 impl TransportByteStream {
@@ -94,7 +125,19 @@ impl TransportByteStream {
                 inner: Box::pin(stream),
                 _marker: PhantomData,
             }),
+            limit: None,
         }
+    }
+
+    pub(crate) fn with_limit(mut self, limit: usize, meta: RequestMeta) -> Self {
+        self.limit = Some(StreamByteLimit {
+            meta,
+            direction: StreamLimitDirection::Request,
+            limit,
+            seen: 0,
+            exceeded: false,
+        });
+        self
     }
 }
 
@@ -111,8 +154,42 @@ impl Stream for TransportByteStream {
         self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        self.get_mut().inner.as_mut().poll_next(cx)
+        let this = self.get_mut();
+        if this.limit.as_ref().is_some_and(|limit| limit.exceeded) {
+            return std::task::Poll::Ready(None);
+        }
+        match this.inner.as_mut().poll_next(cx) {
+            std::task::Poll::Ready(Some(Ok(bytes))) => {
+                if let Some(limit) = this.limit.as_mut() {
+                    let next_seen = limit.seen.checked_add(bytes.len()).unwrap_or(usize::MAX);
+                    if next_seen > limit.limit {
+                        limit.exceeded = true;
+                        let error = StreamBodyLimitError {
+                            meta: limit.meta.clone(),
+                            direction: limit.direction,
+                            limit: limit.limit,
+                            seen: next_seen,
+                        };
+                        return std::task::Poll::Ready(Some(Err(TransportError::with_kind(
+                            TransportErrorKind::Request,
+                            error,
+                        ))));
+                    }
+                    limit.seen = next_seen;
+                }
+                std::task::Poll::Ready(Some(Ok(bytes)))
+            }
+            other => other,
+        }
     }
+}
+
+struct StreamByteLimit {
+    meta: RequestMeta,
+    direction: StreamLimitDirection,
+    limit: usize,
+    seen: usize,
+    exceeded: bool,
 }
 
 struct MapIntoTransportErrorStream<S, E> {
@@ -146,6 +223,7 @@ pub struct BuiltRequest {
     pub url: Url,
     pub headers: HeaderMap,
     pub body: TransportRequestBody,
+    pub(crate) stream_size_hint: Option<crate::stream_body::BodySizeHint>,
     pub timeout: Option<Duration>,
     pub retry: RetrySetting,
     pub rate_limit: RateLimitPlan,
@@ -159,6 +237,7 @@ impl fmt::Debug for BuiltRequest {
             .field("url", &self.debug_url())
             .field("headers", &crate::debug::RedactedHeaders(&self.headers))
             .field("body", &self.body)
+            .field("stream_size_hint", &self.stream_size_hint)
             .field("timeout", &self.timeout)
             .field("retry", &self.retry)
             .field("rate_limit", &self.rate_limit)
@@ -363,6 +442,7 @@ pub(crate) fn validate_transport_auth_collisions(
 pub(crate) fn materialize_transport_request(
     built: BuiltRequest,
     materials: &[crate::auth::AuthTransportMaterial],
+    stream_request_limit: Option<usize>,
 ) -> Result<TransportRequest, crate::auth::AuthError> {
     use base64::Engine;
     use http::header::{AUTHORIZATION, HeaderValue};
@@ -473,7 +553,29 @@ pub(crate) fn materialize_transport_request(
         }
     }
 
+    if let (Some(limit), TransportRequestBody::Stream(stream)) =
+        (stream_request_limit, &mut req.body)
+    {
+        let meta = req.meta.clone();
+        let stream = std::mem::replace(stream, TransportByteStream::new(EmptyStream::default()));
+        req.body = TransportRequestBody::Stream(stream.with_limit(limit, meta));
+    }
+
     Ok(req)
+}
+
+#[derive(Default)]
+struct EmptyStream;
+
+impl Stream for EmptyStream {
+    type Item = Result<bytes::Bytes, TransportError>;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::task::Poll::Ready(None)
+    }
 }
 
 impl<T> DecodedResponse<T> {

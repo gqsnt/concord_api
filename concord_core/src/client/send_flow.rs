@@ -25,6 +25,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
+        stream_request_limit: Option<usize>,
     ) -> Result<TransportResponse, ApiClientError> {
         let rate_limit_meta = RateLimitContext {
             endpoint: built.meta.endpoint,
@@ -41,6 +42,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .rate_limiter()
             .acquire(rate_limit_meta)
             .await?;
+        if let (Some(limit), Some(hint)) = (stream_request_limit, built.stream_size_hint) {
+            if let Some(actual) = hint.upper() {
+                if actual > limit as u64 {
+                    return Err(ApiClientError::RequestBodyLimitExceeded {
+                        ctx: send_ctx.error_ctx.clone(),
+                        limit,
+                        actual,
+                    });
+                }
+            }
+        }
         let pre_send_meta = HookMeta {
             endpoint: built.meta.endpoint,
             method: &built.meta.method,
@@ -56,8 +68,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 headers: &built.headers,
             })
             .await?;
-        self.send_built_request(built, send_ctx.auth_materials, send_ctx.error_ctx)
-            .await
+        self.send_built_request(
+            built,
+            send_ctx.auth_materials,
+            send_ctx.error_ctx,
+            stream_request_limit,
+        )
+        .await
     }
 
     async fn observe_rate_limit_response(
@@ -89,6 +106,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         built: BuiltRequest,
         auth_materials: &[crate::auth::AuthTransportMaterial],
         ctx: &ErrorContext,
+        stream_request_limit: Option<usize>,
     ) -> Result<TransportResponse, ApiClientError> {
         let endpoint = built.meta.endpoint;
         let method = built.meta.method.clone();
@@ -97,8 +115,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let idempotent = built.meta.idempotent;
         let url = built.debug_url();
         let request_url = built.url.clone();
-
-        let transport_req = crate::transport::materialize_transport_request(built, auth_materials)
+        let transport_req =
+            crate::transport::materialize_transport_request(
+                built,
+                auth_materials,
+                stream_request_limit,
+            )
             .map_err(|source| ApiClientError::Auth {
                 ctx: ctx.clone(),
                 source,
@@ -110,6 +132,21 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Ok(resp)
             }
             Err(e) => {
+                if let Some(limit_error) = e
+                    .source_error()
+                    .downcast_ref::<crate::transport::StreamBodyLimitError>()
+                {
+                    if matches!(
+                        limit_error.direction,
+                        crate::transport::StreamLimitDirection::Request
+                    ) {
+                        return Err(ApiClientError::RequestBodyLimitExceeded {
+                            ctx: ctx.clone(),
+                            limit: limit_error.limit,
+                            actual: limit_error.seen as u64,
+                        });
+                    }
+                }
                 let hook_meta = HookMeta {
                     endpoint,
                     method: &method,
@@ -202,11 +239,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
+        response_limit: Option<usize>,
     ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
     where
         M: crate::media::MediaType,
     {
-        let transport_resp = self.acquire_rate_limit_and_send(built, send_ctx).await?;
+        let transport_resp = self
+            .acquire_rate_limit_and_send(
+                built,
+                send_ctx,
+                self.runtime_state.max_stream_request_body_bytes(),
+            )
+            .await?;
         self.classify_transport_stream_response::<M>(
             transport_resp,
             send_ctx.dbg,
@@ -214,6 +258,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             send_ctx.dbg_vv,
             send_ctx.url_str,
             send_ctx.error_ctx,
+            response_limit,
         )
         .await
     }
@@ -226,6 +271,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         _dbg_vv: bool,
         url_str: &str,
         ctx: &ErrorContext,
+        response_limit: Option<usize>,
     ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
     where
         M: crate::media::MediaType,
@@ -261,7 +307,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         msg: "stream response content type did not match expected media type",
                     });
                 }
-                Ok(crate::stream_response::StreamResponse::new(resp))
+                if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
+                    if actual > limit as u64 {
+                        return Err(ApiClientError::ResponseTooLarge {
+                            ctx: ctx.clone(),
+                            limit,
+                            actual,
+                        });
+                    }
+                }
+                Ok(crate::stream_response::StreamResponse::new(resp, response_limit))
             }
         }
     }
@@ -271,7 +326,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let transport_resp = self.acquire_rate_limit_and_send(built, send_ctx).await?;
+        let transport_resp = self
+            .acquire_rate_limit_and_send(
+                built,
+                send_ctx,
+                self.runtime_state.max_stream_request_body_bytes(),
+            )
+            .await?;
         self.classify_transport_response(
             transport_resp,
             send_ctx.dbg,

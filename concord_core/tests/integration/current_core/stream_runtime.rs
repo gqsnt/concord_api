@@ -1,10 +1,10 @@
 use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy, decode_string};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, DebugSink, PostResponseHookContext, PreSendHookContext, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RuntimeHooks, StreamBody, Transport, TransportBody, TransportError,
-    TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
+    AuthPlacement, BodySizeHint, DebugSink, PostResponseHookContext, PreSendHookContext,
+    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter, RuntimeHooks, StreamBody, Transport, TransportBody,
+    TransportError, TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
 };
 use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
@@ -13,6 +13,7 @@ use concord_core::internal::{
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use futures_core::Stream;
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
+use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -330,6 +331,26 @@ impl futures_core::Stream for RecordingChunkStream {
             .expect("stream events lock")
             .push("stream_poll".to_string());
         Poll::Ready(self.chunk.take().map(Ok))
+    }
+}
+
+struct MultiChunkStream {
+    chunks: VecDeque<Bytes>,
+}
+
+impl MultiChunkStream {
+    fn new(chunks: Vec<Bytes>) -> Self {
+        Self {
+            chunks: chunks.into(),
+        }
+    }
+}
+
+impl futures_core::Stream for MultiChunkStream {
+    type Item = Result<Bytes, concord_core::advanced::StreamBodyError>;
+
+    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Poll::Ready(self.get_mut().chunks.pop_front().map(Ok))
     }
 }
 
@@ -731,6 +752,129 @@ async fn stream_request_is_not_retried_after_auth_rejection() {
 
     assert_eq!(transport.send_count(), 1);
     assert!(matches!(err, ApiClientError::Auth { .. }));
+}
+
+#[tokio::test]
+async fn stream_request_size_hint_exceeds_limit_before_transport() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let polled = Arc::new(AtomicBool::new(false));
+    let transport =
+        StreamTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_request_body_bytes(4);
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+        cfg.debug(DebugLevel::VV);
+    });
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+
+    let err = client
+        .execute_plan::<String>(stream_request_plan(
+            "RawStreamPreflightLimit",
+            Method::POST,
+            "/raw-stream-preflight-limit",
+            ResolvedPolicy::default(),
+            StreamBody::from_byte_stream(PollFlagStream::new(
+                polled.clone(),
+                Bytes::from_static(b"chunk"),
+            ))
+            .with_size_hint(BodySizeHint::exact(5)),
+            HeaderValue::from_static("application/octet-stream"),
+        ))
+        .await
+        .expect_err("size hint limit should fail before transport");
+
+    assert_eq!(transport.send_count(), 0);
+    assert!(!polled.load(Ordering::SeqCst));
+    assert!(matches!(
+        err,
+        ApiClientError::RequestBodyLimitExceeded { .. }
+    ));
+    assert!(
+        err.to_string()
+            .contains("stream request body exceeded configured size limit")
+    );
+    let events = events.lock().expect("event log lock").clone();
+    assert!(events.iter().any(|event| event == "rate_limit_acquire"));
+    assert!(
+        !events
+            .iter()
+            .any(|event| event == "hook_pre_send:RawStreamPreflightLimit")
+    );
+    assert!(!events.iter().any(|event| event == "transport"));
+    assert!(!events.iter().any(|event| event == "stream_poll"));
+    assert!(!format!("{err:?}").contains("SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR"));
+}
+
+#[tokio::test]
+async fn stream_request_is_counted_while_transport_consumes_it() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport =
+        StreamTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_request_body_bytes(5);
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+    });
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+
+    let err = client
+        .execute_plan::<String>(stream_request_plan(
+            "RawStreamConsumeLimit",
+            Method::POST,
+            "/raw-stream-consume-limit",
+            ResolvedPolicy::default(),
+            StreamBody::from_byte_stream(MultiChunkStream::new(vec![
+                Bytes::from_static(b"abcd"),
+                Bytes::from_static(b"efgh"),
+            ]))
+            .with_size_hint(BodySizeHint::unknown()),
+            HeaderValue::from_static("application/octet-stream"),
+        ))
+        .await;
+
+    let err = err.expect_err("request body limit should fail while transport consumes");
+    assert_eq!(transport.send_count(), 1);
+    assert!(matches!(
+        err,
+        ApiClientError::RequestBodyLimitExceeded {
+            limit: 5,
+            actual: 8,
+            ..
+        }
+    ));
+    assert!(!format!("{err:?}").contains("SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR"));
+    let events = events.lock().expect("event log lock").clone();
+    assert_eq!(
+        events
+            .iter()
+            .position(|event| event == "rate_limit_acquire")
+            .expect("rate limit acquire event"),
+        0
+    );
+    assert_eq!(
+        events
+            .iter()
+            .position(|event| event == "hook_pre_send:RawStreamConsumeLimit")
+            .expect("pre-send event"),
+        1
+    );
+    assert_eq!(
+        events
+            .iter()
+            .position(|event| event == "transport")
+            .expect("transport event"),
+        2
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.as_str() == "stream_poll")
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

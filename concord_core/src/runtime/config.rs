@@ -126,6 +126,8 @@ pub struct RuntimeConfig {
     pub(crate) pagination_detect_loops: bool,
     pub(crate) debug: DebugConfig,
     pub(crate) max_response_body_bytes: Option<usize>,
+    pub(crate) max_stream_request_body_bytes: Option<usize>,
+    pub(crate) max_stream_response_body_bytes: Option<usize>,
     #[allow(deprecated)]
     pub(crate) dev_body_capture: Option<DevBodyCaptureConfig>,
 }
@@ -140,6 +142,8 @@ impl Default for RuntimeConfig {
             pagination_detect_loops: true,
             debug: DebugConfig::default(),
             max_response_body_bytes: Some(16 * 1024 * 1024),
+            max_stream_request_body_bytes: Some(16 * 1024 * 1024),
+            max_stream_response_body_bytes: Some(16 * 1024 * 1024),
             dev_body_capture: None,
         }
     }
@@ -216,6 +220,30 @@ impl RuntimeConfig {
     }
 
     #[inline]
+    pub fn max_stream_request_body_bytes(&mut self, bytes: usize) -> &mut Self {
+        self.max_stream_request_body_bytes = Some(bytes);
+        self
+    }
+
+    #[inline]
+    pub fn no_stream_request_body_limit(&mut self) -> &mut Self {
+        self.max_stream_request_body_bytes = None;
+        self
+    }
+
+    #[inline]
+    pub fn max_stream_response_body_bytes(&mut self, bytes: usize) -> &mut Self {
+        self.max_stream_response_body_bytes = Some(bytes);
+        self
+    }
+
+    #[inline]
+    pub fn no_stream_response_body_limit(&mut self) -> &mut Self {
+        self.max_stream_response_body_bytes = None;
+        self
+    }
+
+    #[inline]
     pub fn debug_level_value(&self) -> DebugLevel {
         self.debug.level
     }
@@ -233,6 +261,8 @@ mod tests {
         assert!(cfg.pagination_detect_loops);
         assert_eq!(cfg.debug.level, DebugLevel::None);
         assert_eq!(cfg.max_response_body_bytes, Some(16 * 1024 * 1024));
+        assert_eq!(cfg.max_stream_request_body_bytes, Some(16 * 1024 * 1024));
+        assert_eq!(cfg.max_stream_response_body_bytes, Some(16 * 1024 * 1024));
         assert!(cfg.dev_body_capture.is_none());
 
         assert_eq!(Arc::strong_count(&cfg.hooks), 1);

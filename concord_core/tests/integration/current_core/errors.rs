@@ -317,6 +317,15 @@ async fn error_taxonomy_variant_snapshot() {
             ErrorCategory::Decode,
         ),
         (
+            "request streaming body limit",
+            ApiClientError::RequestBodyLimitExceeded {
+                ctx: ctx.clone(),
+                limit: 4,
+                actual: 5,
+            },
+            ErrorCategory::Config,
+        ),
+        (
             "decode",
             ApiClientError::decode_error(
                 ctx.clone(),
