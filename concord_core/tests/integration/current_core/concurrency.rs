@@ -1061,7 +1061,7 @@ struct RoutedTransport {
     gate: PhaseGate,
     events: Arc<Mutex<Vec<String>>>,
     routes: Arc<Mutex<HashMap<String, VecDeque<MockOutcome>>>>,
-    requests: Arc<Mutex<Vec<TransportRequest>>>,
+    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
 }
 
 impl RoutedTransport {
@@ -1098,9 +1098,28 @@ impl Transport for RoutedTransport {
         let routes = self.routes.clone();
         let requests = self.requests.clone();
         Box::pin(async move {
-            let path = req.url.path().to_string();
+            let TransportRequest {
+                meta,
+                url,
+                headers,
+                body,
+                timeout,
+                rate_limit,
+                transport_auth,
+                extensions,
+            } = req;
+            let path = url.path().to_string();
             events.lock().await.push(format!("transport_send:{path}"));
-            requests.lock().await.push(req.clone());
+            requests.lock().await.push(CapturedTransportRequest {
+                meta: meta.clone(),
+                url: url.clone(),
+                headers: headers.clone(),
+                body,
+                timeout,
+                rate_limit: rate_limit.clone(),
+                transport_auth: transport_auth.clone(),
+                extensions: extensions.clone(),
+            });
             gate.enter("transport_send").await;
             let outcome = routes
                 .lock()
@@ -1118,8 +1137,8 @@ impl Transport for RoutedTransport {
                 }
             };
             Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
+                meta,
+                url,
                 status: response.status,
                 headers: response.headers,
                 content_length: response.content_length.or_else(|| {
@@ -1128,7 +1147,7 @@ impl Transport for RoutedTransport {
                         .is_none()
                         .then_some(response.body.len() as u64)
                 }),
-                rate_limit: req.rate_limit,
+                rate_limit,
                 body: Box::new(RoutedStaticBody {
                     body: Some(response.body),
                 }),

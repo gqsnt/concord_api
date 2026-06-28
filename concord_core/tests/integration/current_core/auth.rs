@@ -1226,7 +1226,7 @@ impl ClientContext for AuthHttpLimitCx {
                         method: Method::POST,
                         url: "https://auth.example.com/token".parse().expect("auth url"),
                         headers: HeaderMap::new(),
-                        body: None,
+                        body: concord_core::advanced::TransportRequestBody::Empty,
                         mode: AuthMode::SkipAuth,
                         policy: AuthInternalPolicy {
                             max_body_bytes: auth.max_body_bytes,

@@ -1,4 +1,4 @@
-use concord_core::advanced::{RateLimitPlan, TransportRequest};
+use concord_core::advanced::{RateLimitPlan, TransportRequest, TransportRequestBody};
 use concord_core::transport::RequestMeta;
 
 use crate::support;
@@ -35,7 +35,7 @@ fn request(endpoint: &'static str) -> TransportRequest {
         },
         url: "https://example.com/test".parse().expect("valid url"),
         headers: http::HeaderMap::new(),
-        body: None,
+        body: TransportRequestBody::Empty,
         timeout: None,
         rate_limit: RateLimitPlan::new(),
         transport_auth: None,

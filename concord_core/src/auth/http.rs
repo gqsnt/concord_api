@@ -1,17 +1,17 @@
 use super::errors::AuthError;
 use super::future::AuthFuture;
+use crate::transport::TransportRequestBody;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 use std::fmt;
 use std::time::Duration;
 use url::Url;
 
-#[derive(Clone)]
 pub struct AuthHttpRequest {
     pub method: Method,
     pub url: Url,
     pub headers: HeaderMap,
-    pub body: Option<Bytes>,
+    pub body: TransportRequestBody,
     pub mode: AuthMode,
     pub policy: AuthInternalPolicy,
 }
@@ -25,13 +25,7 @@ impl fmt::Debug for AuthHttpRequest {
                 &crate::redaction::sanitize_url_for_debug(&self.url, [] as [&str; 0]),
             )
             .field("headers", &crate::debug::RedactedHeaders(&self.headers))
-            .field(
-                "body",
-                &self
-                    .body
-                    .as_ref()
-                    .map(|body| format!("<{} bytes>", body.len())),
-            )
+            .field("body", &self.body)
             .field("mode", &self.mode)
             .field("policy", &self.policy)
             .finish()

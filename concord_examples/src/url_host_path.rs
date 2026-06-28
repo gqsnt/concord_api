@@ -3,7 +3,8 @@
 use concord_core::advanced::{
     DebugSink, PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
     RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks,
-    Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
+    Transport, TransportBody, TransportError, TransportRequest, TransportRequestBody,
+    TransportResponse,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -66,10 +67,18 @@ impl RecordingEvents {
     }
 }
 
+struct RecordedRequest {
+    meta: concord_core::transport::RequestMeta,
+    url: url::Url,
+    headers: http::HeaderMap,
+    body: TransportRequestBody,
+    timeout: Option<std::time::Duration>,
+}
+
 #[derive(Clone)]
 struct RecordingTransport {
     records: RecordingEvents,
-    requests: Arc<StdMutex<Vec<TransportRequest>>>,
+    requests: Arc<StdMutex<Vec<RecordedRequest>>>,
 }
 
 impl RecordingTransport {
@@ -80,11 +89,8 @@ impl RecordingTransport {
         }
     }
 
-    fn requests(&self) -> Vec<TransportRequest> {
-        self.requests
-            .lock()
-            .expect("transport requests lock")
-            .clone()
+    fn requests(&self) -> Vec<RecordedRequest> {
+        std::mem::take(&mut *self.requests.lock().expect("transport requests lock"))
     }
 }
 
@@ -97,13 +103,27 @@ impl Transport for RecordingTransport {
         let requests = self.requests.clone();
         Box::pin(async move {
             records.push(format!("transport:{}", req.url.as_str()));
+            let TransportRequest {
+                meta,
+                url,
+                headers,
+                body,
+                timeout,
+                ..
+            } = req;
             requests
                 .lock()
                 .expect("transport requests lock")
-                .push(req.clone());
+                .push(RecordedRequest {
+                    meta: meta.clone(),
+                    url: url.clone(),
+                    headers,
+                    body,
+                    timeout,
+                });
             Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
+                meta,
+                url,
                 status: StatusCode::OK,
                 headers: HeaderMap::new(),
                 content_length: Some(4),

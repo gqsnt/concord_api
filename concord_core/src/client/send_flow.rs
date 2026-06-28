@@ -96,8 +96,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let page_index = built.meta.page_index;
         let idempotent = built.meta.idempotent;
         let url = built.debug_url();
+        let request_url = built.url.clone();
 
-        let transport_req = crate::transport::materialize_transport_request(&built, auth_materials)
+        let transport_req = crate::transport::materialize_transport_request(built, auth_materials)
             .map_err(|source| ApiClientError::Auth {
                 ctx: ctx.clone(),
                 source,
@@ -105,7 +106,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
         match self.transport.send(transport_req).await {
             Ok(mut resp) => {
-                resp.url = built.url;
+                resp.url = request_url;
                 Ok(resp)
             }
             Err(e) => {

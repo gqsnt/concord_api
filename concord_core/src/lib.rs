@@ -30,7 +30,7 @@ pub mod internal {
     pub use crate::endpoint::{
         BodyPlan, ClientPlanContext, Decoded, EndpointMeta, EndpointPlan, Mapped, MappedResp,
         PaginatedEndpoint, PaginationPlan, RequestArgs, RequestOverrides, RequestPlan,
-        ResolvedRoute, ResponsePlan, ResponseSpec, Transform, TransformResp,
+        RequestPlanView, ResolvedRoute, ResponsePlan, ResponseSpec, Transform, TransformResp,
     };
     #[doc(hidden)]
     pub use crate::pagination::{
@@ -106,8 +106,8 @@ pub mod advanced {
     pub use crate::runtime_state::ClientRuntimeState;
     pub use crate::transport::{
         BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta, ReqwestTransport, Transport,
-        TransportAuth, TransportBody, TransportError, TransportErrorKind, TransportRequest,
-        TransportResponse,
+        TransportAuth, TransportBody, TransportByteStream, TransportError, TransportErrorKind,
+        TransportRequest, TransportRequestBody, TransportResponse,
     };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,

@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-reqwest = { workspace = true, features = ["default-tls", "http2"] }
+reqwest = { workspace = true, features = ["default-tls", "http2", "stream"] }
 http.workspace = true
 bytes.workspace = true
 serde = { workspace = true, optional = true, features = ["derive"] }
@@ -17,6 +17,7 @@ urlencoding.workspace = true
 httpdate.workspace = true
 tokio.workspace = true
 governor = { workspace = true, optional = true }
+futures-core.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }

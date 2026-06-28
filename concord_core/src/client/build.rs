@@ -1,7 +1,8 @@
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     fn build_request_from_plan(
         &self,
-        plan: &RequestPlan,
+        plan: &crate::endpoint::RequestPlanView,
+        args: &crate::endpoint::RequestArgs,
         meta: RequestMeta,
     ) -> Result<BuiltRequest, ApiClientError> {
         let ctx = ErrorContext {
@@ -36,11 +37,26 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             headers.insert(CONTENT_TYPE, content_type.clone());
         }
 
+        let body = match &args.body {
+            crate::transport::TransportRequestBody::Empty => {
+                crate::transport::TransportRequestBody::Empty
+            }
+            crate::transport::TransportRequestBody::Bytes(bytes) => {
+                crate::transport::TransportRequestBody::from_bytes(bytes.clone())
+            }
+            crate::transport::TransportRequestBody::Stream(_) => {
+                return Err(ApiClientError::PolicyViolation {
+                    ctx,
+                    msg: "stream request bodies are not supported yet",
+                });
+            }
+        };
+
         Ok(BuiltRequest {
             meta,
             url,
             headers,
-            body: plan.args.body.clone(),
+            body,
             timeout: policy.timeout,
             retry: policy.retry,
             rate_limit,

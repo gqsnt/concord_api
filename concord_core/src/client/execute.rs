@@ -8,15 +8,16 @@ enum AuthRejectionOutcome {
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     fn build_attempt_request(
         &self,
-        plan: &RequestPlan,
+        plan: &crate::endpoint::RequestPlanView,
+        args: &crate::endpoint::RequestArgs,
         meta: RequestMeta,
     ) -> Result<BuiltRequest, ApiClientError> {
-        self.build_request_from_plan(plan, meta)
+        self.build_request_from_plan(plan, args, meta)
     }
 
     async fn prepare_auth(
         &self,
-        plan: &RequestPlan,
+        plan: &crate::endpoint::RequestPlanView,
         auth_state: &Cx::AuthState,
         executor: &dyn AuthHttpExecutor,
         built: &mut BuiltRequest,
@@ -37,7 +38,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(AuthRejectionOutcome::Terminal)
     }
 
-    fn is_protected_auth_rejection(plan: &RequestPlan, status: StatusCode) -> bool {
+    fn is_protected_auth_rejection(
+        plan: &crate::endpoint::RequestPlanView,
+        status: StatusCode,
+    ) -> bool {
         matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
             && !plan.endpoint.policy.auth.requirements.is_empty()
     }
@@ -67,6 +71,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     where
         R: Send + 'static,
     {
+        let RequestPlan {
+            endpoint,
+            args,
+            overrides,
+        } = plan;
+        let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
@@ -96,7 +106,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .endpoint
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
-            let mut built = self.build_attempt_request(&plan, meta)?;
+            let mut built = self.build_attempt_request(&plan, &args, meta)?;
             let auth_attempt = self
                 .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
@@ -255,6 +265,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         plan: RequestPlan,
     ) -> Result<BuiltResponse, ApiClientError> {
+        let RequestPlan {
+            endpoint,
+            args,
+            overrides,
+        } = plan;
+        let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
         let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
@@ -284,7 +300,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .endpoint
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
-            let mut built = self.build_attempt_request(&plan, meta)?;
+            let mut built = self.build_attempt_request(&plan, &args, meta)?;
             let auth_attempt = self
                 .prepare_auth(&plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
@@ -440,7 +456,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     async fn prepare_auth_plan(
         &self,
-        plan: &RequestPlan,
+        plan: &crate::endpoint::RequestPlanView,
         auth_state: &Cx::AuthState,
         executor: &dyn AuthHttpExecutor,
         built: &mut BuiltRequest,
@@ -522,7 +538,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     fn decode_planned_response<R>(
-        plan: &RequestPlan,
+        plan: &crate::endpoint::RequestPlanView,
         resp: BuiltResponse,
         ctx: ErrorContext,
     ) -> Result<DecodedResponse<R>, ApiClientError>
@@ -550,7 +566,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             })
     }
 
-    fn debug_planned_request(&self, dbg: DebugLevel, plan: &RequestPlan, built: &BuiltRequest, url_str: &str) {
+    fn debug_planned_request(&self, dbg: DebugLevel, plan: &crate::endpoint::RequestPlanView, built: &BuiltRequest, url_str: &str) {
         if dbg.is_verbose() {
             self.debug_sink.request_start(
                 dbg,
@@ -575,7 +591,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[allow(deprecated)]
-    fn maybe_capture_dev_response_body(&self, plan: &RequestPlan, resp: &BuiltResponse) {
+    fn maybe_capture_dev_response_body(&self, plan: &crate::endpoint::RequestPlanView, resp: &BuiltResponse) {
         let Some(capture) = self.runtime_state.dev_body_capture() else {
             return;
         };

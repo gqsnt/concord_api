@@ -31,6 +31,8 @@ fn public_v1_surface_compiles() {
     uses_next_cursor::<Vec<String>>();
 
     uses_type::<advanced::TransportRequest>();
+    uses_type::<advanced::TransportRequestBody>();
+    uses_type::<advanced::TransportByteStream>();
     uses_type::<advanced::TransportResponse>();
     uses_type::<advanced::TransportError>();
     uses_type::<advanced::TransportErrorKind>();

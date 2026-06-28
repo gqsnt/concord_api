@@ -95,7 +95,7 @@ async fn generated_pagination_for_each_page_and_max_items_work() {
     assert!(err.to_string().contains("hard item cap"));
 }
 
-fn assert_query(request: &TransportRequest, key: &str, expected: &str) {
+fn assert_query(request: &RecordedRequest, key: &str, expected: &str) {
     let value = request
         .url
         .query_pairs()
@@ -107,7 +107,69 @@ fn assert_query(request: &TransportRequest, key: &str, expected: &str) {
 #[derive(Clone)]
 struct RecordingTransport {
     responses: Arc<Mutex<VecDeque<ResponseFixture>>>,
-    requests: Arc<Mutex<Vec<TransportRequest>>>,
+    requests: Arc<Mutex<Vec<RecordedRequest>>>,
+}
+
+struct RecordedRequest {
+    meta: concord_core::transport::RequestMeta,
+    url: url::Url,
+    headers: http::HeaderMap,
+    body: RecordedBody,
+    timeout: Option<std::time::Duration>,
+}
+
+#[derive(Clone, Debug)]
+enum RecordedBody {
+    Empty,
+    Bytes(Bytes),
+    Stream,
+}
+
+impl RecordedBody {
+    fn as_bytes(&self) -> Option<&Bytes> {
+        match self {
+            Self::Bytes(bytes) => Some(bytes),
+            Self::Empty | Self::Stream => None,
+        }
+    }
+}
+
+struct EmptyDebugStream;
+
+impl futures_core::Stream for EmptyDebugStream {
+    type Item = Result<Bytes, TransportError>;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::task::Poll::Ready(None)
+    }
+}
+
+impl std::fmt::Debug for RecordedRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let body = match &self.body {
+            RecordedBody::Empty => concord_core::advanced::TransportRequestBody::Empty,
+            RecordedBody::Bytes(body) => {
+                concord_core::advanced::TransportRequestBody::from_bytes(body.clone())
+            }
+            RecordedBody::Stream => concord_core::advanced::TransportRequestBody::Stream(
+                concord_core::advanced::TransportByteStream::new(EmptyDebugStream),
+            ),
+        };
+        let temp = TransportRequest {
+            meta: self.meta.clone(),
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            body,
+            timeout: self.timeout,
+            rate_limit: RateLimitPlan::default(),
+            transport_auth: None,
+            extensions: concord_core::auth::RequestExtensions::default(),
+        };
+        write!(f, "{temp:?}")
+    }
 }
 
 impl RecordingTransport {
@@ -118,8 +180,9 @@ impl RecordingTransport {
         }
     }
 
-    async fn requests(&self) -> Vec<TransportRequest> {
-        self.requests.lock().await.clone()
+    async fn requests(&self) -> Vec<RecordedRequest> {
+        let mut requests = self.requests.lock().await;
+        std::mem::take(&mut *requests)
     }
 }
 
@@ -131,7 +194,20 @@ impl Transport for RecordingTransport {
         let responses = self.responses.clone();
         let requests = self.requests.clone();
         Box::pin(async move {
-            requests.lock().await.push(req.clone());
+            let body = match req.body {
+                concord_core::advanced::TransportRequestBody::Empty => RecordedBody::Empty,
+                concord_core::advanced::TransportRequestBody::Bytes(body) => {
+                    RecordedBody::Bytes(body)
+                }
+                concord_core::advanced::TransportRequestBody::Stream(_) => RecordedBody::Stream,
+            };
+            requests.lock().await.push(RecordedRequest {
+                meta: req.meta.clone(),
+                url: req.url.clone(),
+                headers: req.headers.clone(),
+                body,
+                timeout: req.timeout,
+            });
             let response = responses.lock().await.pop_front().expect("test response");
             Ok(TransportResponse {
                 meta: req.meta,

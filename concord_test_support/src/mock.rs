@@ -8,11 +8,35 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
+pub enum RecordedBody {
+    Empty,
+    Bytes(Bytes),
+    Stream,
+}
+
+impl RecordedBody {
+    pub fn as_bytes(&self) -> Option<&Bytes> {
+        match self {
+            Self::Bytes(bytes) => Some(bytes),
+            Self::Empty | Self::Stream => None,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty)
+    }
+
+    pub fn is_stream(&self) -> bool {
+        matches!(self, Self::Stream)
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct RecordedRequest {
     pub meta: RequestMeta,
     pub url: url::Url,
     pub headers: http::HeaderMap,
-    pub body: Option<Bytes>,
+    pub body: RecordedBody,
     pub timeout: Option<Duration>,
 }
 
@@ -207,7 +231,11 @@ impl concord_core::advanced::Transport for MockTransport {
                 meta: req.meta.clone(),
                 url: req.url.clone(),
                 headers: req.headers.clone(),
-                body: req.body.clone(),
+                body: match req.body {
+                    TransportRequestBody::Empty => RecordedBody::Empty,
+                    TransportRequestBody::Bytes(body) => RecordedBody::Bytes(body),
+                    TransportRequestBody::Stream(_) => RecordedBody::Stream,
+                },
                 timeout: req.timeout,
             });
 

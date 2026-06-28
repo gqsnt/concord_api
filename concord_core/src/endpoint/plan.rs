@@ -7,6 +7,7 @@ use crate::pagination::{
 };
 use crate::policy::ResolvedPolicy;
 use crate::transport::RequestMeta;
+use crate::transport::TransportRequestBody;
 use bytes::Bytes;
 use http::HeaderValue;
 use http::Method;
@@ -44,9 +45,21 @@ pub struct EndpointPlan {
     pub pagination: Option<PaginationPlan>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct RequestArgs {
-    pub body: Option<Bytes>,
+    pub body: TransportRequestBody,
+}
+
+impl RequestArgs {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn with_body_bytes(body: Bytes) -> Self {
+        Self {
+            body: TransportRequestBody::from_bytes(body),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -57,10 +70,16 @@ pub struct RequestOverrides {
     pub page_index: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct RequestPlan {
     pub endpoint: EndpointPlan,
     pub args: RequestArgs,
+    pub overrides: RequestOverrides,
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestPlanView {
+    pub endpoint: EndpointPlan,
     pub overrides: RequestOverrides,
 }
 

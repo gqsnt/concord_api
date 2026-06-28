@@ -191,7 +191,7 @@ fn emit_endpoint_def(
                 content_type: <#enc as ::concord_core::advanced::BodyCodec>::content_type(),
                 format: __body_format,
             };
-            let __request_args = ::concord_core::internal::RequestArgs { body: ::core::option::Option::Some(__body_bytes) };
+            let __request_args = ::concord_core::internal::RequestArgs::with_body_bytes(__body_bytes);
         }
     } else {
         quote! {

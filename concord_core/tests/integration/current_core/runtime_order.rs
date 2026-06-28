@@ -93,9 +93,7 @@ impl Endpoint<TestCx> for ObservationFailureEndpoint {
                 },
                 pagination: None,
             },
-            args: RequestArgs {
-                body: Some(self.request_body.clone()),
-            },
+            args: RequestArgs::with_body_bytes(self.request_body.clone()),
             overrides: RequestOverrides::default(),
         })
     }
@@ -223,9 +221,7 @@ impl Endpoint<TestCx> for BodyDebugEndpoint {
                 },
                 pagination: None,
             },
-            args: RequestArgs {
-                body: Some(self.request_body.clone()),
-            },
+            args: RequestArgs::with_body_bytes(self.request_body.clone()),
             overrides: RequestOverrides {
                 debug_level: Some(DebugLevel::VV),
                 ..Default::default()
@@ -2618,7 +2614,7 @@ async fn request_body_bytes_remain_transport_only() -> Result<(), ApiClientError
     let requests = sent_transport.requests().await;
     assert_eq!(requests.len(), 1);
     assert_eq!(
-        requests[0].body.as_deref(),
+        requests[0].body.as_bytes().map(|body| body.as_ref()),
         Some(REQUEST_SENTINEL.as_bytes())
     );
     let request_debug = format!("{:?}", requests[0]);
@@ -2629,5 +2625,34 @@ async fn request_body_bytes_remain_transport_only() -> Result<(), ApiClientError
     assert!(events.iter().any(|event| event == "pre_send"));
     assert!(events.iter().any(|event| event == "rate_acquire"));
     assert!(!format!("{events:?}").contains(REQUEST_SENTINEL));
+    Ok(())
+}
+
+#[tokio::test]
+async fn request_without_body_reaches_transport_as_empty() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(
+        &mut client,
+        Some(Arc::new(ObservationRateLimiter::new(events.clone()))),
+    );
+
+    let decoded = client
+        .request(UnsafeEndpoint {
+            policy: ResolvedPolicy::default(),
+        })
+        .execute_decoded()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    let requests = sent_transport.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].body.is_empty());
     Ok(())
 }

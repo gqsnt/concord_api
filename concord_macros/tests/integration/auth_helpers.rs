@@ -565,7 +565,7 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
     assert_eq!(
         requests[0]
             .body
-            .as_ref()
+            .as_bytes()
             .and_then(|body| std::str::from_utf8(body).ok()),
         Some("grant_type=client_credentials&scope=read%3Ame")
     );
@@ -579,7 +579,7 @@ async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
         Some("Bearer LEAK_SENTINEL_OAUTH_ACCESS_TOKEN")
     );
     assert!(!requests[1].url.as_str().contains(CLIENT_SECRET));
-    assert!(!requests[1].body.as_ref().is_some_and(|body| {
+    assert!(!requests[1].body.as_bytes().is_some_and(|body| {
         body.windows(CLIENT_SECRET.len())
             .any(|window| window == CLIENT_SECRET.as_bytes())
     }));
@@ -708,14 +708,14 @@ async fn generated_oauth_client_credentials_token_failure_blocks_protected_reque
     assert_eq!(requests[0].meta.endpoint, "<auth>");
 }
 
-fn assert_header(req: &TransportRequest, name: &'static str, expected: &'static str) {
+fn assert_header(req: &RecordedRequest, name: &'static str, expected: &'static str) {
     assert_eq!(
         req.headers.get(name).and_then(|value| value.to_str().ok()),
         Some(expected)
     );
 }
 
-fn assert_url_contains(req: &TransportRequest, expected: &'static str) {
+fn assert_url_contains(req: &RecordedRequest, expected: &'static str) {
     assert!(
         req.url.as_str().contains(expected),
         "expected URL `{}` to contain `{expected}`",
@@ -726,7 +726,59 @@ fn assert_url_contains(req: &TransportRequest, expected: &'static str) {
 #[derive(Clone)]
 struct RecordingTransport {
     responses: Arc<Mutex<VecDeque<ResponseFixture>>>,
-    requests: Arc<Mutex<Vec<TransportRequest>>>,
+    requests: Arc<Mutex<Vec<RecordedRequest>>>,
+}
+
+struct RecordedRequest {
+    meta: concord_core::transport::RequestMeta,
+    url: url::Url,
+    headers: http::HeaderMap,
+    body: RecordedBody,
+    timeout: Option<std::time::Duration>,
+    rate_limit: RateLimitPlan,
+    transport_auth: Option<TransportAuth>,
+    extensions: concord_core::auth::RequestExtensions,
+}
+
+#[derive(Clone, Debug)]
+enum RecordedBody {
+    Empty,
+    Bytes(Bytes),
+    Stream,
+}
+
+impl RecordedBody {
+    fn as_bytes(&self) -> Option<&Bytes> {
+        match self {
+            Self::Bytes(bytes) => Some(bytes),
+            Self::Empty | Self::Stream => None,
+        }
+    }
+}
+
+impl std::fmt::Debug for RecordedRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let body = match &self.body {
+            RecordedBody::Empty => concord_core::advanced::TransportRequestBody::Empty,
+            RecordedBody::Bytes(body) => {
+                concord_core::advanced::TransportRequestBody::from_bytes(body.clone())
+            }
+            RecordedBody::Stream => concord_core::advanced::TransportRequestBody::Stream(
+                concord_core::advanced::TransportByteStream::new(EmptyDebugStream),
+            ),
+        };
+        let temp = TransportRequest {
+            meta: self.meta.clone(),
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            body,
+            timeout: self.timeout,
+            rate_limit: self.rate_limit.clone(),
+            transport_auth: self.transport_auth.clone(),
+            extensions: self.extensions.clone(),
+        };
+        write!(f, "{temp:?}")
+    }
 }
 
 impl RecordingTransport {
@@ -741,8 +793,9 @@ impl RecordingTransport {
         self.requests.lock().await.len()
     }
 
-    async fn requests(&self) -> Vec<TransportRequest> {
-        self.requests.lock().await.clone()
+    async fn requests(&self) -> Vec<RecordedRequest> {
+        let mut requests = self.requests.lock().await;
+        std::mem::take(&mut *requests)
     }
 }
 
@@ -754,7 +807,23 @@ impl Transport for RecordingTransport {
         let responses = self.responses.clone();
         let requests = self.requests.clone();
         Box::pin(async move {
-            requests.lock().await.push(req.clone());
+            let body = match req.body {
+                concord_core::advanced::TransportRequestBody::Empty => RecordedBody::Empty,
+                concord_core::advanced::TransportRequestBody::Bytes(body) => {
+                    RecordedBody::Bytes(body)
+                }
+                concord_core::advanced::TransportRequestBody::Stream(_) => RecordedBody::Stream,
+            };
+            requests.lock().await.push(RecordedRequest {
+                meta: req.meta.clone(),
+                url: req.url.clone(),
+                headers: req.headers.clone(),
+                body,
+                timeout: req.timeout,
+                rate_limit: req.rate_limit.clone(),
+                transport_auth: req.transport_auth.clone(),
+                extensions: req.extensions.clone(),
+            });
             let response = responses.lock().await.pop_front().expect("test response");
             Ok(TransportResponse {
                 meta: req.meta,

@@ -51,9 +51,7 @@ impl Endpoint<TestCx> for ObservationFailureEndpoint {
                 },
                 pagination: None,
             },
-            args: RequestArgs {
-                body: Some(self.request_body.clone()),
-            },
+            args: RequestArgs::with_body_bytes(self.request_body.clone()),
             overrides: RequestOverrides::default(),
         })
     }

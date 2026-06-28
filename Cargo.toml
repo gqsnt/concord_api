@@ -24,6 +24,7 @@ thiserror = "2.0.18"
 urlencoding = "2.1.3"
 url = "2.5.8"
 httpdate = "1.0.3"
+futures-core = "0.3.32"
 
 dotenvy = "0.15.7"
 governor = "0.10.4"

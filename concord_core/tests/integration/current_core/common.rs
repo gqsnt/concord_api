@@ -5,8 +5,8 @@ use concord_core::advanced::{
     PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
     RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestMeta,
     RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, Transport, TransportBody,
-    TransportError, TransportErrorHookContext, TransportErrorKind, TransportRequest,
-    TransportResponse, apply_basic_credential,
+    TransportByteStream, TransportError, TransportErrorHookContext, TransportErrorKind,
+    TransportRequest, TransportRequestBody, TransportResponse, apply_basic_credential,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
@@ -18,12 +18,60 @@ use concord_core::prelude::{
 use concord_core::prelude::{HasNextCursor, PageItems};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::{Mutex, Notify, watch};
+
+pub struct CapturedTransportRequest {
+    pub meta: RequestMeta,
+    pub url: url::Url,
+    pub headers: HeaderMap,
+    pub body: TransportRequestBody,
+    pub timeout: Option<Duration>,
+    pub rate_limit: concord_core::advanced::RateLimitPlan,
+    pub transport_auth: Option<concord_core::advanced::TransportAuth>,
+    pub extensions: concord_core::auth::RequestExtensions,
+}
+
+impl fmt::Debug for CapturedTransportRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let body = match &self.body {
+            TransportRequestBody::Empty => TransportRequestBody::Empty,
+            TransportRequestBody::Bytes(bytes) => TransportRequestBody::from_bytes(bytes.clone()),
+            TransportRequestBody::Stream(_) => {
+                TransportRequestBody::Stream(TransportByteStream::new(EmptyDebugStream))
+            }
+        };
+        let temp = TransportRequest {
+            meta: self.meta.clone(),
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            body,
+            timeout: self.timeout,
+            rate_limit: self.rate_limit.clone(),
+            transport_auth: self.transport_auth.clone(),
+            extensions: self.extensions.clone(),
+        };
+        write!(f, "{temp:?}")
+    }
+}
+
+struct EmptyDebugStream;
+
+impl futures_core::Stream for EmptyDebugStream {
+    type Item = Result<Bytes, TransportError>;
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::task::Poll::Ready(None)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct TestAuthVars {
@@ -713,7 +761,7 @@ pub fn retry_policy_for_transport_errors(
 pub struct MockTransport {
     outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
     events: Arc<Mutex<Vec<String>>>,
-    requests: Arc<Mutex<Vec<TransportRequest>>>,
+    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
 }
 
 #[derive(Clone)]
@@ -788,8 +836,9 @@ impl MockTransport {
         self.requests.lock().await.len()
     }
 
-    pub async fn requests(&self) -> Vec<TransportRequest> {
-        self.requests.lock().await.clone()
+    pub async fn requests(&self) -> Vec<CapturedTransportRequest> {
+        let mut requests = self.requests.lock().await;
+        std::mem::take(&mut *requests)
     }
 }
 
@@ -802,8 +851,27 @@ impl Transport for MockTransport {
         let events = self.events.clone();
         let requests = self.requests.clone();
         Box::pin(async move {
+            let TransportRequest {
+                meta,
+                url,
+                headers,
+                body,
+                timeout,
+                rate_limit,
+                transport_auth,
+                extensions,
+            } = req;
             events.lock().await.push("transport".to_string());
-            requests.lock().await.push(req.clone());
+            requests.lock().await.push(CapturedTransportRequest {
+                meta: meta.clone(),
+                url: url.clone(),
+                headers: headers.clone(),
+                body,
+                timeout,
+                rate_limit: rate_limit.clone(),
+                transport_auth: transport_auth.clone(),
+                extensions: extensions.clone(),
+            });
             let outcome = outcomes
                 .lock()
                 .await
@@ -819,8 +887,8 @@ impl Transport for MockTransport {
                 }
             };
             Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
+                meta,
+                url,
                 status: response.status,
                 headers: response.headers,
                 content_length: response.content_length.or_else(|| {
@@ -829,7 +897,7 @@ impl Transport for MockTransport {
                         .is_none()
                         .then_some(response.body.len() as u64)
                 }),
-                rate_limit: req.rate_limit,
+                rate_limit,
                 body: if let Some(chunks) = response.chunks {
                     Box::new(ChunkBody {
                         chunks: chunks.into(),
@@ -850,7 +918,7 @@ impl Transport for MockTransport {
 pub struct GateTransport {
     outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
     events: Arc<Mutex<Vec<String>>>,
-    requests: Arc<Mutex<Vec<TransportRequest>>>,
+    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
     arrived: Arc<Notify>,
     release: watch::Sender<bool>,
 }
@@ -875,8 +943,9 @@ impl GateTransport {
         self.requests.lock().await.len()
     }
 
-    pub async fn requests(&self) -> Vec<TransportRequest> {
-        self.requests.lock().await.clone()
+    pub async fn requests(&self) -> Vec<CapturedTransportRequest> {
+        let mut requests = self.requests.lock().await;
+        std::mem::take(&mut *requests)
     }
 
     pub async fn wait_for_sends(&self, expected: usize) {
@@ -909,8 +978,27 @@ impl Transport for GateTransport {
         let arrived = self.arrived.clone();
         let mut release = self.release.subscribe();
         Box::pin(async move {
+            let TransportRequest {
+                meta,
+                url,
+                headers,
+                body,
+                timeout,
+                rate_limit,
+                transport_auth,
+                extensions,
+            } = req;
             events.lock().await.push("transport".to_string());
-            requests.lock().await.push(req.clone());
+            requests.lock().await.push(CapturedTransportRequest {
+                meta: meta.clone(),
+                url: url.clone(),
+                headers: headers.clone(),
+                body,
+                timeout,
+                rate_limit: rate_limit.clone(),
+                transport_auth: transport_auth.clone(),
+                extensions: extensions.clone(),
+            });
             let outcome = outcomes
                 .lock()
                 .await
@@ -934,8 +1022,8 @@ impl Transport for GateTransport {
                 }
             };
             Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
+                meta,
+                url,
                 status: response.status,
                 headers: response.headers,
                 content_length: response.content_length.or_else(|| {
@@ -944,7 +1032,7 @@ impl Transport for GateTransport {
                         .is_none()
                         .then_some(response.body.len() as u64)
                 }),
-                rate_limit: req.rate_limit,
+                rate_limit,
                 body: if let Some(chunks) = response.chunks {
                     Box::new(ChunkBody {
                         chunks: chunks.into(),
@@ -1559,7 +1647,7 @@ pub struct GateableTransport {
     gate: PhaseGate,
     outcomes: Arc<Mutex<VecDeque<MockOutcome>>>,
     events: Arc<Mutex<Vec<String>>>,
-    requests: Arc<Mutex<Vec<TransportRequest>>>,
+    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
     drop_probe: Option<DropProbe>,
 }
 
@@ -1611,9 +1699,28 @@ impl Transport for GateableTransport {
         let requests = self.requests.clone();
         let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
         Box::pin(async move {
+            let TransportRequest {
+                meta,
+                url,
+                headers,
+                body,
+                timeout,
+                rate_limit,
+                transport_auth,
+                extensions,
+            } = req;
             let _drop_token = drop_token;
             events.lock().await.push("transport_send_start".to_string());
-            requests.lock().await.push(req.clone());
+            requests.lock().await.push(CapturedTransportRequest {
+                meta: meta.clone(),
+                url: url.clone(),
+                headers: headers.clone(),
+                body,
+                timeout,
+                rate_limit: rate_limit.clone(),
+                transport_auth: transport_auth.clone(),
+                extensions: extensions.clone(),
+            });
             gate.enter("transport_send").await;
             let outcome = outcomes
                 .lock()
@@ -1630,8 +1737,8 @@ impl Transport for GateableTransport {
                 }
             };
             Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
+                meta,
+                url,
                 status: response.status,
                 headers: response.headers,
                 content_length: response.content_length.or_else(|| {
@@ -1640,7 +1747,7 @@ impl Transport for GateableTransport {
                         .is_none()
                         .then_some(response.body.len() as u64)
                 }),
-                rate_limit: req.rate_limit,
+                rate_limit,
                 body: if let Some(chunks) = response.chunks {
                     Box::new(ChunkBody {
                         chunks: chunks.into(),

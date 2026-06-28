@@ -11,6 +11,8 @@ use super::http::{AuthHttpRequest, AuthInternalPolicy, AuthMode};
 #[cfg(feature = "json")]
 use crate::secret::SecretString;
 #[cfg(feature = "json")]
+use crate::transport::TransportRequestBody;
+#[cfg(feature = "json")]
 use base64::Engine;
 #[cfg(feature = "json")]
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
@@ -266,7 +268,7 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
                         )
                     })?,
                     headers,
-                    body: Some(Bytes::from(body.into_bytes())),
+                    body: TransportRequestBody::from_bytes(Bytes::from(body.into_bytes())),
                     mode: AuthMode::SkipAuth,
                     policy: AuthInternalPolicy::default(),
                 })

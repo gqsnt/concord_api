@@ -1,6 +1,7 @@
 mod query_auth_redaction {
     use super::super::current_core::common::{
-        MockResponse, MockTransport, auth_policy, decode_string, request_plan,
+        CapturedTransportRequest, MockResponse, MockTransport, auth_policy, decode_string,
+        request_plan,
     };
     use bytes::Bytes;
     use concord_core::advanced::ClientCertificate;
@@ -333,7 +334,7 @@ mod query_auth_redaction {
     async fn run_debug_request(
         policy: ResolvedPolicy,
         status: StatusCode,
-    ) -> Result<(Vec<String>, Vec<TransportRequest>), ApiClientError> {
+    ) -> Result<(Vec<String>, Vec<CapturedTransportRequest>), ApiClientError> {
         let events = Arc::new(TokioMutex::new(Vec::new()));
         let transport = MockTransport::new(events, vec![MockResponse::text(status, "ok")]);
         let sent = transport.clone();
@@ -360,7 +361,7 @@ mod query_auth_redaction {
 
     #[derive(Clone)]
     struct FailingTransport {
-        requests: Arc<TokioMutex<Vec<TransportRequest>>>,
+        requests: Arc<TokioMutex<Vec<CapturedTransportRequest>>>,
     }
 
     impl FailingTransport {
@@ -370,8 +371,9 @@ mod query_auth_redaction {
             }
         }
 
-        async fn requests(&self) -> Vec<TransportRequest> {
-            self.requests.lock().await.clone()
+        async fn requests(&self) -> Vec<CapturedTransportRequest> {
+            let mut requests = self.requests.lock().await;
+            std::mem::take(&mut *requests)
         }
     }
 
@@ -383,7 +385,26 @@ mod query_auth_redaction {
         {
             let requests = self.requests.clone();
             Box::pin(async move {
-                requests.lock().await.push(req);
+                let TransportRequest {
+                    meta,
+                    url,
+                    headers,
+                    body,
+                    timeout,
+                    rate_limit,
+                    transport_auth,
+                    extensions,
+                } = req;
+                requests.lock().await.push(CapturedTransportRequest {
+                    meta,
+                    url,
+                    headers,
+                    body,
+                    timeout,
+                    rate_limit,
+                    transport_auth,
+                    extensions,
+                });
                 Err(TransportError::with_kind(
                     concord_core::advanced::TransportErrorKind::Connect,
                     std::io::Error::other("redaction transport failure"),
@@ -394,7 +415,7 @@ mod query_auth_redaction {
 
     async fn run_transport_error_request(
         policy: ResolvedPolicy,
-    ) -> Result<(String, Vec<TransportRequest>), ApiClientError> {
+    ) -> Result<(String, Vec<CapturedTransportRequest>), ApiClientError> {
         let transport = FailingTransport::new();
         let sent = transport.clone();
         let mut client =
@@ -564,7 +585,7 @@ mod query_auth_redaction {
             },
             url,
             headers: HeaderMap::new(),
-            body: None,
+            body: concord_core::advanced::TransportRequestBody::Empty,
             timeout: Some(Duration::from_secs(1)),
             rate_limit: RateLimitPlan::default(),
             transport_auth: None,
@@ -1287,7 +1308,7 @@ mod query_auth_redaction {
                                 .parse()
                                 .expect("auth url"),
                             headers: HeaderMap::new(),
-                            body: None,
+                            body: concord_core::advanced::TransportRequestBody::Empty,
                             mode: AuthMode::UseAuth(AuthRequirementId::new("test", "internal")),
                             policy: AuthInternalPolicy::default(),
                         })

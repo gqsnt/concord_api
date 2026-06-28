@@ -7,7 +7,8 @@ pub mod plan;
 #[allow(unused_imports)]
 pub use plan::{
     AttemptState, BodyPlan, CursorNextFn, CustomPaginationPlan, EndpointMeta, EndpointPlan,
-    PaginationPlan, RequestArgs, RequestOverrides, RequestPlan, ResolvedRoute, ResponsePlan,
+    PaginationPlan, RequestArgs, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute,
+    ResponsePlan,
 };
 
 pub struct ClientPlanContext<'a, Cx: ClientContext> {

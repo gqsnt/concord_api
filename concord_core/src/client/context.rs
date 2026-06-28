@@ -84,7 +84,7 @@ struct AuthPreparation {
 }
 
 struct AuthRejectionCtx<'a, Cx: ClientContext, T: Transport> {
-    plan: &'a RequestPlan,
+    plan: &'a crate::endpoint::RequestPlanView,
     auth_state: &'a Cx::AuthState,
     auth_http: &'a ClientAuthHttpExecutor<'a, Cx, T>,
     meta: &'a RequestMeta,

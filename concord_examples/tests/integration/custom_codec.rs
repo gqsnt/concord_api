@@ -38,6 +38,9 @@ async fn custom_codec_controls_body_accept_and_decode() {
         .header(http::header::ACCEPT, "application/x-concord-compact")
         .header(http::header::CONTENT_TYPE, "application/x-concord-compact")
         .body_present();
-    assert_eq!(recorded[0].body.as_deref(), Some(&b"Ada"[..]));
+    assert_eq!(
+        recorded[0].body.as_bytes().map(|bytes| bytes.as_ref()),
+        Some(&b"Ada"[..])
+    );
     handle.finish();
 }

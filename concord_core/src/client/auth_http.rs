@@ -22,7 +22,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
         req: AuthHttpRequest,
     ) -> crate::auth::AuthFuture<'a, Result<AuthHttpResponse, AuthError>> {
         Box::pin(async move {
-            with_auth_internal_stack(async {
+            with_auth_internal_stack(async move {
                 let AuthHttpRequest {
                     method,
                     url,
@@ -40,92 +40,6 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     page_index: 0,
                 };
 
-                if matches!(&mode, AuthMode::SkipAuth) {
-                    let auth_url = url.as_str().to_string();
-                    let base_request = crate::transport::TransportRequest {
-                        meta,
-                        url,
-                        headers,
-                        body,
-                        timeout: policy.timeout,
-                        rate_limit: RateLimitPlan::new(),
-                        transport_auth: None,
-                        extensions: Default::default(),
-                    };
-                    let mut attempt: u32 = 0;
-                    loop {
-                        let mut built = base_request.clone();
-                        built.meta.attempt = attempt;
-
-                        if policy.use_rate_limiter {
-                            let _permit = self
-                                .client
-                                .runtime_state
-                                .rate_limiter()
-                                .acquire(RateLimitContext {
-                                    endpoint: "<auth>",
-                                    method: &built.meta.method,
-                                    url: &auth_url,
-                                    url_host: built.url.host_str(),
-                                    attempt,
-                                    page_index: 0,
-                                    idempotent: built.meta.idempotent,
-                                    plan: &built.rate_limit,
-                                })
-                                .await
-                                .map_err(|source| {
-                                    AuthError::new(
-                                        AuthErrorKind::AcquireFailed,
-                                        source.to_string(),
-                                    )
-                                })?;
-                        }
-
-                        let resp = self.client.transport.send(built).await;
-                        let mut resp = match resp {
-                            Ok(resp) => resp,
-                            Err(source) => {
-                                if attempt >= policy.max_transport_retries {
-                                    return Err(AuthError::new(
-                                        AuthErrorKind::AcquireFailed,
-                                        source.to_string(),
-                                    ));
-                                }
-                                attempt = next_auth_transport_attempt(attempt)?;
-                                continue;
-                            }
-                        };
-                        let body = match read_body_all_limited(
-                            resp.body.as_mut(),
-                            resp.content_length,
-                            Some(policy.max_body_bytes),
-                        )
-                        .await
-                        {
-                            Ok(body) => body,
-                            Err(BodyReadError::Transport(source)) => {
-                                if attempt >= policy.max_transport_retries {
-                                    return Err(AuthError::new(
-                                        AuthErrorKind::AcquireFailed,
-                                        source.to_string(),
-                                    ));
-                                }
-                                attempt = next_auth_transport_attempt(attempt)?;
-                                continue;
-                            }
-                            Err(source @ BodyReadError::ContentLengthTooLarge { .. })
-                            | Err(source @ BodyReadError::LimitExceeded { .. }) => {
-                                return Err(auth_body_too_large_error(source));
-                            }
-                        };
-                        return Ok(AuthHttpResponse {
-                            status: resp.status,
-                            headers: resp.headers,
-                            body,
-                        });
-                    }
-                }
-
                 let mut base_request = BuiltRequest {
                     meta,
                     url,
@@ -136,6 +50,39 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     rate_limit: RateLimitPlan::new(),
                     extensions: Default::default(),
                 };
+
+                fn make_built_request(
+                    base_request: &BuiltRequest,
+                    attempt: u32,
+                ) -> Result<BuiltRequest, AuthError> {
+                    let body = match &base_request.body {
+                        crate::transport::TransportRequestBody::Empty => {
+                            crate::transport::TransportRequestBody::Empty
+                        }
+                        crate::transport::TransportRequestBody::Bytes(bytes) => {
+                            crate::transport::TransportRequestBody::from_bytes(bytes.clone())
+                        }
+                        crate::transport::TransportRequestBody::Stream(_) => {
+                            return Err(AuthError::new(
+                                AuthErrorKind::UnsupportedScheme,
+                                "stream auth request bodies are not supported yet",
+                            ));
+                        }
+                    };
+                    Ok(BuiltRequest {
+                        meta: RequestMeta {
+                            attempt,
+                            ..base_request.meta.clone()
+                        },
+                        url: base_request.url.clone(),
+                        headers: base_request.headers.clone(),
+                        body,
+                        timeout: base_request.timeout,
+                        retry: base_request.retry.clone(),
+                        rate_limit: base_request.rate_limit.clone(),
+                        extensions: base_request.extensions.clone(),
+                    })
+                }
 
                 let mut auth_materials = Vec::new();
                 match mode {
@@ -148,7 +95,9 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         if recursive {
                             return Err(AuthError::new(
                                 AuthErrorKind::RecursionDetected,
-                                format!("internal auth recursion detected for requirement `{requirement}`"),
+                                format!(
+                                    "internal auth recursion detected for requirement `{requirement}`"
+                                ),
                             ));
                         }
 
@@ -177,8 +126,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                 let auth_url = base_request.url.as_str().to_string();
                 let mut attempt: u32 = 0;
                 loop {
-                    let mut built = base_request.clone();
-                    built.meta.attempt = attempt;
+                    let built = make_built_request(&base_request, attempt)?;
 
                     if policy.use_rate_limiter {
                         let _permit = self
@@ -199,58 +147,13 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                             .map_err(|source| {
                                 AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
                             })?;
-                        let transport_req =
-                            crate::transport::materialize_transport_request(&built, &auth_materials)
-                                .map_err(|source| {
-                                    AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
-                                })?;
-                        let resp = self.client.transport.send(transport_req).await;
-                        let mut resp = match resp {
-                            Ok(resp) => resp,
-                            Err(source) => {
-                                if attempt >= policy.max_transport_retries {
-                                    return Err(AuthError::new(
-                                        AuthErrorKind::AcquireFailed,
-                                        source.to_string(),
-                                    ));
-                                }
-                                attempt = next_auth_transport_attempt(attempt)?;
-                                continue;
-                            }
-                        };
-                        let body = match read_body_all_limited(
-                            resp.body.as_mut(),
-                            resp.content_length,
-                            Some(policy.max_body_bytes),
-                        )
-                        .await {
-                            Ok(body) => body,
-                            Err(BodyReadError::Transport(source)) => {
-                                if attempt >= policy.max_transport_retries {
-                                    return Err(AuthError::new(
-                                        AuthErrorKind::AcquireFailed,
-                                        source.to_string(),
-                                    ));
-                                }
-                                attempt = next_auth_transport_attempt(attempt)?;
-                                continue;
-                            }
-                            Err(source @ BodyReadError::ContentLengthTooLarge { .. })
-                            | Err(source @ BodyReadError::LimitExceeded { .. }) => {
-                                return Err(auth_body_too_large_error(source));
-                            }
-                        };
-                        return Ok(AuthHttpResponse {
-                            status: resp.status,
-                            headers: resp.headers,
-                            body,
-                        });
                     }
 
-                    let transport_req = crate::transport::materialize_transport_request(&built, &auth_materials)
-                        .map_err(|source| {
-                            AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
-                        })?;
+                    let transport_req =
+                        crate::transport::materialize_transport_request(built, &auth_materials)
+                            .map_err(|source| {
+                                AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
+                            })?;
                     let resp = self.client.transport.send(transport_req).await;
                     let mut resp = match resp {
                         Ok(resp) => resp,
@@ -271,7 +174,8 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         resp.content_length,
                         Some(policy.max_body_bytes),
                     )
-                    .await {
+                    .await
+                    {
                         Ok(body) => body,
                         Err(BodyReadError::Transport(source)) => {
                             if attempt >= policy.max_transport_retries {
