@@ -16,7 +16,7 @@ Clients with required variables or secrets take those values as constructor argu
 let api = session_api::SessionApi::new("upstream-key".to_string());
 ```
 
-For example, a client declaring `var tenant`, `var region`, then auth secrets `username` and `password` is constructed as `Example::new(tenant, region, username, password)`. For clients with several same-typed values, the builder API is often clearer. Adding optional endpoint auth does not reorder existing constructor arguments.
+For example, a client declaring `var tenant`, `var region`, then auth secrets `username` and `password` is constructed as `Example::new(tenant, region, username, password)`. For clients with several same-typed values, the builder API is often clearer.
 
 Tests and custom transports can use `new_with_transport(...)`.
 
@@ -84,7 +84,7 @@ let users = api
     .await?;
 ```
 
-Every optional/defaulted field has three setter forms:
+Every optional or defaulted field has three setter forms:
 
 ```rust
 request.field(value)
@@ -110,8 +110,6 @@ let user: User = api.users().get_user(42).await?;
 let user = api.users().get_user(42).execute().await?;
 ```
 
-Use it when a method chain reads better with an explicit terminal operation.
-
 ## Execute Decoded
 
 `.execute_decoded()` returns value plus response metadata.
@@ -125,8 +123,6 @@ let meta = response.meta();
 let user = response.into_value();
 ```
 
-Use this for status/header assertions, logging, or request metadata inspection.
-
 ## Raw Execution
 
 `.execute_raw()` returns the classified raw response before endpoint decoding.
@@ -139,8 +135,7 @@ This is an advanced escape hatch for diagnostics and protocol tests.
 
 ## Pagination
 
-Paginated endpoints require an explicit `.paginate(...)` call with a
-termination policy.
+Paginated endpoints require an explicit `.paginate(...)` call with a termination policy.
 
 ```rust
 use concord_core::prelude::PaginationTermination as PageUntil;
@@ -186,7 +181,7 @@ Protected calls that require that credential can then run normally.
 let me = api.protected().me().await?;
 ```
 
-Auth state accessors expose explicit credential checks and clearing.
+Auth-state accessors expose explicit credential checks and clearing.
 
 ```rust
 if api.auth_state().session().is_set().await? {
@@ -194,7 +189,7 @@ if api.auth_state().session().is_set().await? {
 }
 ```
 
-Generated auth state helpers are fallible when they observe shared auth state. Lock/state failures return `AuthError` instead of panicking.
+Generated auth-state helpers are fallible when they observe runtime auth state. Lock and state failures return `AuthError` instead of panicking.
 
 ## Advanced Endpoints
 
@@ -205,7 +200,7 @@ let endpoint = example_api::endpoints::GetUser::new(42);
 let user = api.request(endpoint).execute().await?;
 ```
 
-Use advanced endpoints for focused tests, reusable endpoint values, or explicit request planning. Keep normal application code on the facade where possible.
+Use advanced endpoints for focused tests, reusable endpoint values, or explicit request planning.
 
 ## Public Name Stability
 
@@ -223,7 +218,7 @@ Generated endpoint methods and endpoint structs include rustdoc with:
 - required parameters
 - query and header names
 - auth summary
-- cache, retry, and rate-limit summary
+- retry and rate-limit summary
 - pagination controller
 - body and response codecs
 

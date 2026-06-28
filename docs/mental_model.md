@@ -17,10 +17,10 @@ client root
 ```
 
 - `client` is the root and owns base URL, variables, credentials, profiles, and defaults.
-- `scope` is a branch and can add host/path/auth/policy context.
+- `scope` is a branch and can add host, path, auth, and policy context.
 - An endpoint stanza is a leaf and describes one HTTP operation.
 
-For larger clients, client configuration is usually grouped into `auth { ... }`, `policies { ... }`, `behaviors { ... }`, and `defaults { ... }`. Behavior profiles give semantic names to repeated auth/cache/retry/rate-limit combinations while lowering to ordinary policy data before code generation.
+For larger clients, client configuration is usually grouped into `auth { ... }`, `policies { ... }`, `behaviors { ... }`, and `defaults { ... }`. Behavior profiles give semantic names to repeated auth, retry, and rate-limit combinations while lowering to ordinary policy data before code generation.
 
 Behavior profiles may extend other behavior profiles; inheritance is resolved during semantic analysis before code generation.
 
@@ -29,12 +29,12 @@ Behavior profiles may extend other behavior profiles; inheritance is resolved du
 Generated endpoint code creates a request plan. The core runtime executes that plan with fixed ordering:
 
 ```text
-plan -> auth -> cache -> rate-limit -> transport -> classify -> retry/fallback -> decode
+plan -> auth -> rate-limit -> transport -> classify -> retry -> decode
 ```
 
 The runtime receives resolved semantic data. It does not need to know the DSL syntax that produced the plan.
 
-Concord does not coalesce ordinary endpoint requests in v1. Cache can avoid a later transport send only after a response has been stored.
+Concord does not coalesce ordinary endpoint requests in v1. Two identical requests remain two request executions unless the application chooses a higher-level reuse strategy outside Concord.
 
 ## Facade First
 

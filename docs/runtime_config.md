@@ -17,7 +17,6 @@ Use `configure_mut` when the client already exists.
 let mut api = PolicyApi::new();
 api.configure_mut(|cfg| {
     cfg.debug_level(DebugLevel::V);
-    cfg.cache_store(cache_store.clone());
     cfg.rate_limiter(rate_limiter.clone());
 });
 ```
@@ -26,7 +25,6 @@ Common configuration methods include:
 
 - `debug_level(...)`
 - `debug_sink(...)`
-- `cache_store(...)`
 - `rate_limiter(...)`
 - `retry_policy(...)`
 - `runtime_hooks(...)`
@@ -44,7 +42,6 @@ Common configuration methods include:
 | `debug_level` | `DebugLevel::None` |
 | `debug_sink` | stderr sink |
 | `runtime_hooks` | no-op hooks |
-| `cache_store` | no-op cache store |
 | `rate_limiter` | default rate limiter for the enabled feature set |
 | `retry_policy` | no retry |
 | `max_auth_retries` | `8` |
@@ -61,70 +58,29 @@ RuntimeConfig defaults
 -> pending-request overrides where that API exists
 ```
 
-Pending-request overrides exist for request options such as debug level,
-timeout, attempt, and cache mode. There is no per-request response-body-limit,
-cache-store, hook, rate-limiter, retry-policy, or auth-retry override in v1.
+Pending-request overrides exist for request options such as debug level, timeout, and attempt. There is no per-request response-body-limit, hook, rate-limiter, retry-policy, or auth-retry override in v1.
 
-Rust borrowing prevents mutating one client instance while a request borrowed
-from that same instance is executing. Cloned clients use clone-on-write runtime
-state: configuring one clone does not change an already-cloned client or an
-in-flight request running on that clone. Later requests on the reconfigured
-clone use the new configuration.
+Rust borrowing prevents mutating one client instance while a request borrowed from that same instance is executing. Cloned clients use clone-on-write runtime state: configuring one clone does not change an already-cloned client or an in-flight request running on that clone. Later requests on the reconfigured clone use the new configuration.
 
-Pagination page and item termination is chosen per request with
-`PaginationTermination`; there is no runtime-wide implicit page or item cap.
-`pagination_detect_loops(...)` changes the default controller loop-key
-detection setting for paginated calls. The runtime still enforces non-progress
-detection for repeated logical page identities regardless of this setting.
-For a pagination run, the client runtime configuration belongs to the client
-instance executing the run. Reconfiguring a separate clone while a run is in
-progress does not change later pages in that run.
+Pagination page and item termination is chosen per request with `PaginationTermination`; there is no runtime-wide implicit page or item cap. `pagination_detect_loops(...)` changes the default controller loop-key detection setting for paginated calls. The runtime still enforces non-progress detection for repeated logical page identities regardless of this setting.
 
-Debug sinks and runtime hooks are metadata-only. They may observe redacted URLs,
-redacted headers, statuses, retry/cache/rate-limit events, and safe endpoint
-metadata. They never receive request or response body bytes. Concord does not
-route body bytes through debug sinks, stderr logs, hooks, or callback APIs.
-Rate-limit observation follows the same metadata-only boundary and remains
-response-based rather than endpoint-success based. Rate-limit acquire and
-response contexts stay body-free and raw-auth-free; query-auth URLs are
-redacted structurally, and bearer/basic credentials do not appear in rate-limit
-context surfaces.
-Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run before stale fallback and endpoint decode/map. They do not see body bytes or raw auth material and cannot make a failed endpoint execution cache-admissible.
+Debug sinks and runtime hooks are metadata-only. They may observe redacted URLs, redacted headers, statuses, retry events, rate-limit events, and endpoint metadata. They never receive request or response body bytes.
 
-Custom cache stores receive the logical `BuiltRequest`. Protected requests are
-eligible for cache only when the logical request carries a safe auth identity;
-otherwise Concord bypasses cache lookup, stale fallback, and cache write. Cache
-keys must use safe auth identity, not materialized auth headers, query-auth
-values, tokens, secrets, or body bytes.
+Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run after response classification, hook observation, rate-limit observation, and auth rejection handling, and before endpoint decode and mapping. They do not see body bytes or raw auth material.
 
-Reserved auth names are structural, not best-effort. Query-auth names are
-rejected if a public query parameter already uses the same key, and
-header-auth names are rejected case-insensitively if a public header already
-uses the same name. Those collisions are rejected before cache lookup,
-rate-limit acquisition, and transport.
+Reserved auth names are structural, not best-effort. Query-auth names are rejected if a public query parameter already uses the same key, and header-auth names are rejected case-insensitively if a public header already uses the same name. Those collisions are rejected before rate-limit acquisition and transport.
 
-## Deprecated Dev Body Capture
+## Dev Body Capture
 
-Live request/response body debug is not supported. `DebugSink`, stderr debug
-output, and runtime hooks never receive body bytes.
+Live request and response body debug is not supported. `DebugSink`, stderr debug output, and runtime hooks never receive body bytes.
 
-For local generated-client debugging only, Concord exposes deprecated
-`DevBodyCaptureConfig` through `RuntimeConfig::dev_body_capture(...)`. It is
-disabled by default, may persist sensitive response bytes to local disk, and is
-separate from cache, debug sinks, runtime hooks, and errors. It writes selected
-ordinary response bodies to local files under the configured directory using
-generated safe filenames. It does not capture request bodies, and it skips
-responses for authenticated requests and auth/token acquisition paths by
-default. It may capture the received body before endpoint decode so it remains
-useful for local diagnosis of bad provider payloads and decode failures.
+For local generated-client debugging only, Concord exposes deprecated `DevBodyCaptureConfig` through `RuntimeConfig::dev_body_capture(...)`. It is disabled by default, may persist ordinary response bytes to local disk, and is separate from debug sinks, runtime hooks, and errors. It writes selected response bodies to local files under the configured directory using generated safe filenames. It does not capture request bodies, and it skips protected auth-bearing requests and auth endpoint traffic by default.
 
-Do not use dev body capture in production. Release checks treat deprecated use
-outside explicit tests as a failure.
+Do not use dev body capture in production. Release checks treat deprecated use outside explicit tests as a failure.
 
 ## Response Body Limits
 
-Endpoint response bodies use a finite runtime read limit before endpoint decode.
-The default is 16 MiB. Configure it with:
+Endpoint response bodies use a finite runtime read limit before endpoint decode. The default is 16 MiB. Configure it with:
 
 ```rust
 api.configure_mut(|cfg| {
@@ -132,8 +88,7 @@ api.configure_mut(|cfg| {
 });
 ```
 
-`no_response_body_limit()` is the explicit advanced opt-out for unbounded
-endpoint response reads:
+`no_response_body_limit()` is the explicit advanced opt-out for unbounded endpoint response reads:
 
 ```rust
 api.configure_mut(|cfg| {
@@ -141,18 +96,7 @@ api.configure_mut(|cfg| {
 });
 ```
 
-Auth-internal HTTP/token response limits are separate from endpoint response
-limits. Cache `max_body` controls only whether a response is eligible for cache
-storage; it does not raise or lower the runtime body read limit used before
-decode.
-
-When a response includes `Content-Length`, Concord rejects bodies above the
-configured limit before reading any body chunks. Chunked or unknown-length
-responses are still bounded: Concord reads them cumulatively and fails as soon
-as the buffered body would exceed the limit. Body-limit failures are typed and
-remain body-free in debug sinks, hooks, rate-limit metadata, and retry
-metadata. `execute_raw()` follows the same response-body limit; it only bypasses
-endpoint decode/map and cache lookup/store.
+Auth-internal HTTP and token responses use their own read limit. When a response includes `Content-Length`, Concord rejects bodies above the configured limit before reading any body chunks. Chunked or unknown-length responses are still bounded: Concord reads them cumulatively and fails as soon as the buffered body would exceed the limit. Body-limit failures are typed and remain body-free in debug sinks, hooks, rate-limit metadata, and retry metadata. `execute_raw()` follows the same response-body limit; it only bypasses endpoint decode and mapping.
 
 Per-request overrides stay on the pending request.
 
@@ -161,10 +105,8 @@ let value = api
     .text()
     .debug_level(DebugLevel::VV)
     .timeout(std::time::Duration::from_secs(2))
-    .cache_refresh()
     .execute()
     .await?;
 ```
 
-These pending-request overrides do not mutate the client default and do not
-leak into later requests.
+These pending-request overrides do not mutate the client default and do not leak into later requests.

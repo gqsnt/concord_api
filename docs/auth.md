@@ -13,37 +13,16 @@ client SessionApi {
     auth {
         secret upstream_key: String
         secret bearer_token: String
-        secret username: String
-        secret password: String
-        secret client_id: String
-        secret client_secret: String
 
         credential upstream = api_key(secret.upstream_key)
         credential session = bearer(secret.bearer_token)
-        credential login = basic(secret.username, secret.password)
-        credential oauth = oauth2_client {
-            token_url: "https://auth.example.com/oauth/token",
-            client_id: secret.client_id,
-            client_secret: secret.client_secret,
-            scope: "read",
-        }
     }
 }
 ```
 
 For compact examples, `secret` and `credential` may still be written directly in the client block. For larger clients, prefer grouping them under `auth { ... }`.
 
-See `docs/dsl.md` for the complete public DSL reference.
-
-`secret.*` references are only part of the auth declaration surface. Use them
-inside credential declarations such as `api_key(secret.token)`,
-`bearer(secret.token)`, `basic(secret.username, secret.password)`, and
-`oauth2_client { ... }`. Ordinary public request expressions for headers,
-query parameters, routes, timeouts, cache/rate-limit keys, and pagination
-assignments cannot read secrets, auth material, generated implementation
-locals, or `.expose()` / `.expose_secret()` methods. Use an `auth` clause when
-a value is credential material; do not put raw auth material in public policy
-expressions.
+Secret references belong only in credential declarations. Public request-shaping expressions for headers, query parameters, routes, timeouts, rate-limit keys, and pagination assignments cannot read secrets, auth material, generated implementation locals, or secret exposure methods. Basic and OAuth2 credential declarations follow the same boundary: their secret inputs are declared as client secrets and consumed only by the credential declaration.
 
 ## Auth Clauses
 
@@ -59,31 +38,15 @@ auth certificate client_cert
 
 Inherited auth applies to every endpoint below the layer where it is declared.
 
-`auth certificate` is an advanced attachment form for client-certificate credential material. The DSL does not provide a `certificate(secret...)` credential constructor in v1; use endpoint-backed or runtime-provided credential material when certificate auth is needed.
+`auth certificate` is an advanced attachment form for client-certificate material. The DSL does not provide a public certificate credential constructor in v1; use endpoint-backed or runtime-provided credential material when certificate auth is needed.
 
 OAuth2 client-credentials auth uses the `oauth2_client { ... }` credential declaration and is normally attached as bearer auth.
 
-```rust
-auth {
-    secret client_id: String
-    secret client_secret: String
+Declare an OAuth2 client-credentials provider as a named credential, then attach that credential with `auth bearer oauth` at the default, scope, or endpoint layer. The credential declaration owns the token URL, client id, client secret, and optional scope; those inputs stay inside the credential declaration and are not available to public request-shaping expressions.
 
-    credential oauth = oauth2_client {
-        token_url: "https://auth.example.com/oauth/token",
-        client_id: secret.client_id,
-        client_secret: secret.client_secret,
-        scope: "read:users",
-    }
-}
+Before the first protected request, Concord sends a token request to `token_url` using `POST`, `Authorization: Basic base64(client_id:client_secret)`, `Content-Type: application/x-www-form-urlencoded`, and a body containing `grant_type=client_credentials` plus `scope` when configured. A successful token response becomes `AccessToken` material. Protected requests then materialize `Authorization: Bearer <access_token>` only at the transport boundary.
 
-defaults {
-    auth bearer oauth
-}
-```
-
-Generated OAuth2 client-credentials support is a normal runtime credential flow. Before the first protected request, Concord sends a token request to `token_url` using `POST`, `Authorization: Basic base64(client_id:client_secret)`, `Content-Type: application/x-www-form-urlencoded`, and a body containing `grant_type=client_credentials` plus `scope` when configured. A successful token response becomes `AccessToken` material. Protected requests then materialize `Authorization: Bearer <access_token>` only at the transport boundary.
-
-Valid OAuth tokens are reused through the credential slot. A protected `401` invalidates the applied token generation and reacquires a token within the runtime auth retry budget before retrying the protected request. Token endpoint failures stop the protected request before it is sent. `client_secret`, access tokens, and refresh tokens are redacted from debug output and errors.
+Valid OAuth tokens are reused through the credential slot. A protected `401` invalidates the applied token generation and reacquires a token within the runtime auth retry budget before retrying the protected request. Token endpoint failures stop the protected request before it is sent. OAuth client secrets, access tokens, and refresh tokens are redacted from debug output and errors.
 
 ## Endpoint-Backed Credentials
 
@@ -99,7 +62,6 @@ client SessionApi {
         credential upstream = api_key(secret.upstream_key)
         credential session = endpoint auth_api::LoginForSession
     }
-
 }
 
 scope auth_api {
@@ -140,13 +102,11 @@ let me = api.protected().me().await?;
 
 Protected calls fail before transport if a required endpoint-backed credential has not been acquired.
 
-Rejected credential refresh only applies after a credential exists and has been applied to the protected request. If the slot is empty, Concord reports the missing credential before sending the request.
-
-Endpoint-backed material can be `AccessToken`, API-key-like secret material, `BasicCredential`, or `ClientCertificate` when attached to the matching auth placement. Endpoint-backed Basic credentials materialize as a Basic `Authorization` header at transport send time. Endpoint-backed client certificates materialize as certificate transport metadata.
+Endpoint-backed material can be `AccessToken`, API-key-like material, `BasicCredential`, or `ClientCertificate` when attached to the matching auth placement.
 
 ## Auth State
 
-Generated auth state accessors expose explicit checks and clearing.
+Generated auth-state accessors expose explicit checks and clearing.
 
 ```rust
 if api.auth_state().session().is_set().await? {
@@ -154,42 +114,37 @@ if api.auth_state().session().is_set().await? {
 }
 ```
 
-Auth state helpers that observe shared auth state are fallible. A poisoned auth-state lock returns `AuthError` instead of panicking.
+Auth-state helpers that observe runtime state are fallible. A poisoned auth-state lock returns `AuthError` instead of panicking.
 
-Credential slots track monotonic generations, including when a slot is empty.
-If a stale response tries to invalidate an older generation after a newer
-credential was acquired, the newer credential is not cleared by that stale
-invalidation. Stale credential acquisition completions are ignored, and a
-cancelled credential acquisition wakes waiters instead of leaving the slot
-permanently in flight.
+Credential slots track monotonic generations, including when a slot is empty. If an older response tries to invalidate an earlier generation after newer material was acquired, the newer material is kept. An older credential acquisition completion is ignored, and a cancelled acquisition wakes waiters instead of leaving the slot permanently in flight.
 
 ## Rejection And Refresh
 
 By default, protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized` or `403 Forbidden`.
 
-Credential refresh is bounded by the client runtime `max_auth_retries` setting. Concord will not refresh indefinitely.
+Credential refresh is bounded by the client runtime `max_auth_retries` setting.
 
 Default rejection behavior:
 
 | Status | Invalidate credential | Retry after refresh |
 | --- | --- | --- |
-| `401 Unauthorized` | yes | yes, for refreshable/reacquirable runtime credentials |
-| `403 Forbidden` | yes | yes, for refreshable/reacquirable runtime credentials |
+| `401 Unauthorized` | yes | yes, for refreshable or runtime-reacquirable credentials |
+| `403 Forbidden` | yes | yes, for refreshable or runtime-reacquirable credentials |
 
 `AuthStepPolicy` remains a bool matrix in v1. The supported combinations are:
 
 | retry | invalidate | Observed behavior |
 | --- | --- | --- |
 | `true` | `true` | Default refresh path. Concord invalidates the applied generation and retries the protected request when the credential can be reacquired. |
-| `true` | `false` | Concord retries the protected request without first clearing the applied generation. The slot is left intact unless the credential provider itself refreshes. |
-| `false` | `true` | Concord invalidates the applied generation and returns a terminal auth rejection for the current request. No ordinary retry or stale fallback runs. |
+| `true` | `false` | Concord retries the protected request without first clearing the applied generation. |
+| `false` | `true` | Concord invalidates the applied generation and returns a terminal auth rejection for the current request. |
 | `false` | `false` | Concord returns a terminal auth rejection and leaves the applied generation untouched. |
 
-Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` or `403` can invalidate the applied endpoint-backed generation, but it does not automatically call the auth endpoint again or retry the protected request into `MissingCredential`. Reacquire through the auth endpoint explicitly before sending another protected call.
+Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` or `403` can invalidate the applied endpoint-backed generation, but it does not automatically call the auth endpoint again. Reacquire through the auth endpoint explicitly before sending another protected call.
 
-Normal retry policy still runs separately. Auth rejection handling happens after response classification but before the normal retry decision, so a protected `401` or `403` refresh path is tried before any ordinary retry decision. Protected auth rejections do not fall back to stale cached responses by default, and rejected auth responses are not cached as successful endpoint responses.
+Normal retry policy still runs separately. Auth rejection handling happens after response classification but before the normal retry decision, so a protected `401` or `403` refresh path is tried before any ordinary retry decision.
 
-`AuthChallengePolicy::NeverRefresh` is available in the advanced core API for runtime integrations that must never refresh on a protected response. It is not a public DSL clause in v1. With `NeverRefresh`, protected `401` and `403` responses do not invalidate, refresh, retry, or stale-fallback.
+`AuthChallengePolicy::NeverRefresh` is available in the advanced core API for runtime integrations that must never refresh on a protected response. It is not a public DSL clause in v1. With `NeverRefresh`, protected `401` and `403` responses do not invalidate, refresh, or retry.
 
 ## Redaction
 
@@ -197,29 +152,8 @@ Secret values are wrapped before storage. User-facing errors and diagnostics sho
 
 Concord redacts secret values from debug and diagnostic output. Header values, bearer tokens, Basic auth usernames and passwords declared through `secret`, OAuth client secrets, and query-auth values are not rendered directly.
 
-Basic auth cache/debug identities use opaque fingerprints by default. For Basic auth, the default fingerprint includes both the secret username and the secret password, without exposing either raw value. If an integration needs a readable non-secret partition label, provide an explicit identity hint from advanced credential material rather than relying on secret text.
+If a public query parameter already uses the same key as a query-auth credential, Concord rejects the request before transport with a typed auth configuration error. It does not append a duplicate credential query key or materialize the raw query-auth secret before reporting the collision.
 
-Protected cache entries are partitioned by safe auth identity. The logical
-request carries typed pending auth slots before cache lookup, so bearer,
-header, Basic, certificate, OAuth, endpoint-backed, and query-auth credentials
-can affect cache identity without materializing raw credentials into the cache
-key. Query-auth credentials do not collapse into the public URL cache key; the
-query key and safe auth identity are represented, but the raw query-auth value
-is not. If Concord cannot identify a protected request safely, it skips cache
-lookup and cache store for that request by default. Query/header auth collisions
-are rejected before cache lookup, rate-limit acquisition, and transport.
+Header-auth placements reserve their header name as well. A public header that collides with a bearer, Basic, or custom header-auth header is rejected before transport, and header-name matching is case-insensitive.
 
-Custom pagination and other page-request mutation runs before that auth-collision
-boundary, so public query/header edits are part of the logical request before
-cache identity, rate limiting, and transport materialization are decided.
-
-If a public query parameter already uses the same key as a query-auth
-credential, Concord rejects the request before transport with a typed auth
-configuration error. It does not append a duplicate credential query key or
-materialize the raw query-auth secret before reporting the collision.
-
-Header-auth placements reserve their header name as well. A public header that
-collides with a bearer, Basic, or custom header-auth header is rejected before
-transport, and header-name matching is case-insensitive.
-
-The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug/display output, diagnostics, cache/debug keys, and generated documentation, not to the request sent over transport.
+The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug output, diagnostics, and generated documentation, not to the request sent over transport.

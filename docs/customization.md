@@ -1,6 +1,6 @@
 # Customization
 
-Concord keeps the common path small, but the advanced API exposes two stable extension points for projects that need formats or pagination styles outside the built-ins.
+Concord keeps the common path small, but the advanced API exposes stable extension points for projects that need formats or pagination styles outside the built-ins.
 
 Use these extension points when the protocol is part of your API contract. Do not use them to change runtime pipeline order or to bypass redaction.
 
@@ -121,7 +121,7 @@ impl<T: Send + 'static> HasNextCursor for Page<T> {
 
 A custom controller implements `PaginationController<Page>`. The controller owns pagination state, mutates the next page request through `PageRequest`, and decides whether to continue after each page when the runtime has not already stopped.
 
-`paginate TypePath` constructs the controller through `Default`, so custom controller marker types must implement `Default + PaginationController<Page>`. This keeps the DSL closed: the DSL names a Rust type, not a runtime object or request-plan hook.
+`paginate TypePath` constructs the controller through `Default`, so custom controller marker types must implement `Default + PaginationController<Page>`.
 
 ```rust
 use concord_core::advanced::{
@@ -194,12 +194,12 @@ Controller rules:
 - Built-in pagination keeps using configuration blocks.
 - Custom pagination uses `paginate TypePath` without a block.
 - Custom pagination controller types must implement `Default`.
-- `PageRequest` can set or remove query parameters and headers. Query keys may be owned/dynamic strings. Header mutation is fallible and returns `ApiClientError` for invalid header names instead of panicking.
+- `PageRequest` can set or remove query parameters and headers. Query keys may be owned or dynamic strings. Header mutation is fallible and returns `ApiClientError` for invalid header names instead of panicking.
 - `PageRequest::set_expected_items_per_page(NonZeroUsize)` tells the runtime how many items the current page requested. Set it during every `apply()` call that asks for a known page size; the value is per-page and does not persist.
 - `PageItems::item_count_hint()` must be exact when present. Implement it whenever possible so runtime empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion can be decided before `advance()`.
 - With both an exact hint and an expected page size, the runtime also owns generic short-page stop and will not call `advance()` for terminal hinted pages.
 - Without an exact hint, `collect()` remains exact after consuming the page, but custom `advance()` may already have run. Without an expected page size, Concord cannot generically detect a short page before `advance()`.
 - `progress_key` is used for loop detection when enabled.
-- Runtime retry, cache, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
+- Runtime retry, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
 
 Complete examples live in `concord_examples/src/custom_codec.rs` and `concord_examples/src/custom_pagination.rs`.

@@ -10,11 +10,11 @@ Concord represents an HTTP API as a typed tree:
 
 ```text
 client root
-  scope/layer branches
+  scope or layer branches
     endpoint leaves
 ```
 
-The client owns base identity, shared variables, credentials, defaults, named profiles, and runtime configuration.
+The client owns base identity, client-wide variables, credentials, defaults, named profiles, and runtime configuration.
 
 Scopes refine route, host, auth, and policy context.
 
@@ -26,15 +26,15 @@ The inverse shapes are not the Concord model. Endpoints do not own clients. Laye
 
 Endpoint leaves should primarily describe endpoint contracts:
 
-* HTTP method
-* endpoint name
-* typed parameters
-* path projection
-* query projection
-* request body codec
-* pagination declaration
-* response codec
-* optional response mapping
+- HTTP method
+- endpoint name
+- typed parameters
+- path projection
+- query projection
+- request body codec
+- pagination declaration
+- response codec
+- optional response mapping
 
 Cross-cutting behavior should be inherited from scopes or named profiles whenever possible.
 
@@ -54,47 +54,27 @@ Core runtime code must not depend on raw DSL syntax.
 
 Raw parser syntax may represent rejected forms so diagnostics can point at the right token. Resolved macro IR should be context-specific: ordinary policy, route, and pagination values must not carry auth-secret references after sema. Public expression contexts also must not depend on generated implementation locals such as `auth`, `secret`, `cx`, `ep`, `vars`, `self`, or `request`; sema closes those references before codegen. Codegen should render resolved data and return typed errors for impossible construction failures instead of relying on validation-dependent panics.
 
-Runtime diagnostics are metadata-only for bodies. Debug sinks, stderr debug
-logs, runtime hooks, and callback-style diagnostics must not receive live
-request or response body bytes, even truncated or formatted previews.
-The only body-oriented developer aid is the deprecated, explicit, disabled by
-default local response-file capture path; it is not connected to debug sinks,
-hooks, or logging.
+Runtime diagnostics are metadata-only for bodies. Debug sinks, stderr debug logs, runtime hooks, and callback-style diagnostics must not receive live request or response body bytes, even truncated or formatted previews.
 
-Cache identity is computed from the logical request and safe auth partition,
-not from the materialized transport request. Protected requests include typed
-pending auth slot metadata and safe credential identity in the cache identity,
-including query-auth credentials that are inserted later at transport
-materialization. Raw tokens, auth headers, query-auth values, request bodies,
-and response bodies must never be cache-key material. If a protected request
-does not have a safe auth identity, it bypasses cache lookup and store instead
-of falling back to an unauthenticated public key.
+Protected auth material is applied only when the runtime materializes `TransportRequest`. Logical request state, debug surfaces, hooks, retry contexts, rate-limit contexts, and error contexts must remain free of raw auth material.
 
-Protected auth rejection must not be masked by stale cache fallback by
-default. Recognized `401` and `403` auth rejections are handled as protected
-auth failures, and rejected auth responses must not be cached as successful
-endpoint responses.
+Pagination is a typed runtime state machine. Page loops must either make deterministic progress, stop explicitly, or return a typed pagination error. Repeated logical page identities are treated as non-progress and fail instead of silently looping.
 
-Pagination is a typed runtime state machine. Page loops must either make
-deterministic progress, stop explicitly, or return a typed pagination error.
-Repeated logical page identities are treated as non-progress and fail instead
-of silently looping. Pagination caps remain enforced, but they are not the only
-loop protection.
+Pagination caps remain enforced, but they are not the only loop protection.
 
-Credential slots use monotonic generations across all states, including empty
-states. Auth rejection invalidates only the generation that was applied to the
-rejected request, stale credential completions cannot overwrite newer material,
-and cancellation of an in-flight credential acquisition must wake waiters
-without leaving the slot permanently in flight. Auth locks are not held across
-credential endpoint or token endpoint I/O.
+Credential slots use monotonic generations across all states, including empty states. Auth rejection invalidates only the generation that was applied to the rejected request, older credential completions cannot overwrite newer material, and cancellation of an in-flight credential acquisition must wake waiters without leaving the slot permanently in flight.
+
+Auth locks are not held across credential endpoint or token endpoint I/O.
 
 ## Runtime Pipeline
 
 The runtime pipeline order is fixed.
 
-DSL improvements should compile to existing semantic concepts such as auth requirements, cache settings, retry settings, rate-limit plans, codecs, pagination plans, and request plans.
+DSL improvements should compile to existing semantic concepts such as auth requirements, retry settings, rate-limit plans, codecs, pagination plans, and request plans.
 
 Changing runtime order requires dedicated tests and a dedicated PR.
+
+The only body-oriented developer aid is the deprecated, explicit, disabled-by-default local response-file capture path; it is not connected to debug sinks, hooks, or logging.
 
 ## Simple Path Preservation
 

@@ -1,4 +1,4 @@
-# Developer documentation
+# Developer Documentation
 
 These documents describe how Concord is built internally. Public DSL usage lives in `docs/`.
 
@@ -13,8 +13,8 @@ These documents describe how Concord is built internally. Public DSL usage lives
 - [codegen.md](codegen.md): generated Rust shape, endpoint wrappers, policy emission, pagination, auth acquisition, and rustdoc.
 - [core_runtime.md](core_runtime.md): runtime execution order and invariants in `concord_core`.
 - [policies_and_behaviors.md](policies_and_behaviors.md): policy declarations, attachments, behaviors, and why behavior is not a runtime concept.
-- [auth_runtime.md](auth_runtime.md): secrets, credentials, auth state, endpoint-backed auth, refresh, and identity isolation.
+- [auth_runtime.md](auth_runtime.md): secrets, credentials, auth state, endpoint-backed auth, refresh, and redaction boundaries.
 - [pagination_and_codecs.md](pagination_and_codecs.md): codec and pagination extension points.
 - [testing.md](testing.md): test strategy and the checklist for adding DSL features.
-- [release_gate.md](release_gate.md): local v1 release gate and PR63-PR80 invariant checklist.
+- [release_gate.md](release_gate.md): local v1 release gate and invariant checklist.
 - [release_checklist.md](release_checklist.md): local v1 gate, release verification commands, and manual audit list.

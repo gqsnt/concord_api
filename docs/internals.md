@@ -18,7 +18,7 @@ tokens
 
 Code generation consumes resolved semantic data. Parser structures stay on the parsing and normalization side of the boundary.
 
-Behavior use names are preserved as endpoint documentation metadata even though behavior semantics are lowered into ordinary auth/cache/retry/rate-limit policy data.
+Behavior use names are preserved as endpoint documentation metadata even though behavior semantics are lowered into ordinary auth, retry, and rate-limit policy data.
 
 ## Runtime Pipeline
 
@@ -26,7 +26,7 @@ Behavior use names are preserved as endpoint documentation metadata even though 
 Endpoint::plan -> RequestPlan -> execute_plan
 ```
 
-The core runtime is syntax-neutral. It executes request plans with fixed ordering for auth, cache lookup, rate limiting, transport, response classification, retry, cache fallback, and decoding.
+The core runtime is syntax-neutral. It executes request plans with fixed ordering for auth preparation, rate limiting, transport, response classification, retry, and decoding.
 
 ## Test Artifacts
 

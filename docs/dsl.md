@@ -27,18 +27,17 @@ The tree is the mental model to keep in mind:
 - `scope` groups route fragments, host fragments, auth, behaviors, and policy attachments.
 - An endpoint leaf defines one HTTP operation and its typed response.
 
-## Client configuration
+## Client Configuration
 
 Client-level configuration is where reusable declarations live. Attachments happen later, at defaults, scope, or endpoint sites.
 
-### Declarations and attachments
+### Declarations And Attachments
 
 Use declarations to define reusable profiles:
 
 - `secret token: String`
 - `credential session = bearer(secret.token)`
 - `retry read { ... }`
-- `cache standard { ... }`
 - `rate_limit app { ... }`
 - `behavior read { ... }`
 
@@ -46,13 +45,12 @@ Use attachments to apply those profiles:
 
 - `auth bearer session`
 - `retry read`
-- `cache standard`
 - `rate_limit app`
 - `behavior read`
 
 Declarations belong in client-level config, usually grouped under `auth { ... }`, `policies { ... }`, or `behaviors { ... }`. Attachments belong in `default { ... }` / `defaults { ... }`, scopes, or endpoints. `policies { ... }` is for declarations and observers, not default attachments.
 
-### Canonical client example
+### Canonical Client Example
 
 ```rust
 api! {
@@ -129,9 +127,11 @@ client ExampleApi {
 
 This is equivalent to writing `secret` and `credential` directly in the client block. Auth use clauses such as `auth bearer session` do not belong in `auth { ... }`; they belong in defaults, scopes, endpoints, or behavior profiles.
 
+`auth certificate` is an attachment form for client-certificate credential material. The DSL does not provide a certificate constructor in v1. Use endpoint-backed or runtime-provided credential material when certificate auth is needed.
+
 ### Policies
 
-Retry, cache, rate-limit profile declarations, and policy observers can be grouped under `policies { ... }`.
+Retry and rate-limit profile declarations, plus policy observers, can be grouped under `policies { ... }`.
 
 ```rust
 client PolicyApi {
@@ -143,12 +143,6 @@ client PolicyApi {
             methods [GET]
             on [429, 500, 502, 503, 504]
             retry_after
-        }
-
-        cache standard {
-            ttl 60s
-            revalidate
-            on_error serve_stale
         }
 
         rate_limit app {
@@ -166,7 +160,7 @@ Flat declarations still work when they are clearer. `policies { ... }` is the pr
 
 ### Behaviors
 
-Behavior profiles are semantic bundles over auth, cache, retry, and rate-limit policy.
+Behavior profiles are semantic bundles over auth, retry, and rate-limit policy.
 
 ```rust
 client ExampleApi {
@@ -191,8 +185,8 @@ Merge rules:
 - endpoint policies apply last
 - behavior clauses at one site apply in source order
 - the same behavior name may be reused across different layers, but not more than once at the same defaults, scope, or endpoint site
-- explicit `retry` and `cache` override behavior-provided `retry` and `cache` at the same attachment site
-- `retry off` and `cache off` clear inherited policy
+- explicit `retry` overrides behavior-provided `retry` at the same attachment site
+- `retry off` clears inherited policy
 - behavior-provided `rate_limit` combines with explicit local `rate_limit`
 - `rate_limit off` clears inherited rate-limit policy
 - behavior rate-limit key bindings are resolved where the behavior is attached
@@ -210,9 +204,9 @@ behaviors {
 }
 ```
 
-This is equivalent to writing the behavior profiles directly in the client block. Flat behavior declarations still work.
+This is equivalent to writing behavior profiles directly in the client block. Flat behavior declarations still work.
 
-A behavior can extend another behavior. Parent auth uses are inherited, parent rate-limit profiles are combined, and child `retry` / `cache` override parent `retry` / `cache`.
+A behavior can extend another behavior. Parent auth uses are inherited, parent rate-limit profiles are combined, and child `retry` overrides parent `retry`.
 
 ```rust
 behavior read {
@@ -245,7 +239,7 @@ behavior match_read
 -> Json<MatchDto>
 ```
 
-Attaching the same behavior as a client default would fail because endpoint variables are not available at the client level.
+Attaching `match_read` as a client default would fail because `match_id` is an endpoint variable and is not available at the client level.
 
 ### Defaults
 
@@ -255,15 +249,14 @@ Default attachments can be written with either `default { ... }` or `defaults { 
 defaults {
     behavior read
     retry read
-    cache standard
     rate_limit app
     auth bearer session
 }
 ```
 
-`default` / `defaults` applies client-wide defaults before scope and endpoint attachments. A default behavior applies before explicit default `cache`, `retry`, and `rate_limit` clauses.
+`default` / `defaults` applies client-wide defaults before scope and endpoint attachments. A default behavior applies before explicit default `retry` and `rate_limit` clauses.
 
-Use `rate_limit off`, `retry off`, or `cache off` on a narrower layer to clear inherited policy.
+Use `rate_limit off` or `retry off` on a narrower layer to clear inherited policy.
 
 Only one default/defaults block is allowed per client.
 
@@ -284,9 +277,9 @@ scope users {
 
 Scope-level attachments apply to all nested endpoints. Nested scopes inherit outer scopes, so scope policies flow from outer to inner before endpoint attachments are applied.
 
-### Host and path
+### Host And Path
 
-`host [...]` appends host labels before the base domain. `path [...]` appends route atoms.
+`host` is scope-level v1 syntax. `host` and `path` atoms may be string literals, variables, or `fmt[...]` atoms.
 
 ```rust
 scope tenant(tenant_id: String) {
@@ -295,14 +288,14 @@ scope tenant(tenant_id: String) {
 }
 ```
 
-`host [...]` is a scope-level route fragment. Use a scope when a group of endpoints needs dynamic or additional host labels. Dynamic host pieces are label-safe only: they are validated as host labels and cannot inject scheme, userinfo, port, query, fragment, slash, backslash, whitespace, or empty/dashed labels.
+Dynamic host pieces are label-safe only: they are validated as host labels and cannot inject scheme, userinfo, port, query, fragment, slash, backslash, whitespace, or empty/dashed labels.
 
 Path atoms follow two rules:
 
 - string atoms are trusted route literals and are joined raw, so a literal like `"a/b"` intentionally contributes a slash-separated route fragment;
 - dynamic atoms, including `fmt[...]` in a path position, are treated as one segment of data, reject `/`, `\`, `.` and `..`, and percent-encode other bytes segment-by-segment.
 
-### Formatting with `fmt`
+### Formatting With `fmt`
 
 `fmt[...]` builds one wire atom from literals and variables.
 
@@ -312,15 +305,7 @@ headers { "X-Trace" = fmt["trace-", vars.trace_id] }
 query { "range" = fmt[start, "-", count] }
 ```
 
-Ordinary route, query, header, timeout, and pagination expressions are public
-request-shaping expressions. They may use endpoint arguments, declared client
-variables in supported DSL reference positions, literals, and pure Rust
-expressions that do not reference Concord generated internals. Outside those
-resolved value forms, they cannot access `secret.*`, `auth.*`, generated locals
-such as `cx`, `ep`, `vars`, `self`, or `request`, raw-identifier variants such
-as `r#secret`, or secret exposure methods. Secrets belong in credential
-declarations and explicit `auth` attachments, so raw auth material is inserted
-only by auth materialization at transport send.
+Ordinary route, query, header, timeout, and pagination expressions are public request-shaping expressions. They may use endpoint arguments, declared client variables in supported reference positions, literals, and pure Rust expressions that do not reference Concord generated internals. They cannot access credential secrets, auth material, generated locals such as `cx`, `ep`, `vars`, `self`, or `request`, raw-identifier variants for restricted namespaces, or secret exposure methods.
 
 ### Query
 
@@ -391,15 +376,13 @@ query { ... }
 headers { ... }
 paginate ...
 behavior ...
-cache/retry/rate_limit/auth ...
+retry/rate_limit/auth ...
 -> Json<Response>
 ```
 
 Request bodies are endpoint signature arguments named `body`, for example `POST Create(body: Json<CreateUser>)`.
 
 The response line should normally be the final line of the endpoint contract. Policy and behavior attachments come before the response line so the endpoint leaf stays visually closed by its return type.
-
-Low-level policy details should be lifted into profiles or behaviors when they repeat.
 
 ### Arguments
 
@@ -429,7 +412,7 @@ query { start, count }
 -> Json<Vec<Item>>
 ```
 
-Optional arguments may also have defaults. They initialize as `Some(default)` and can still be cleared.
+Optional arguments may also have defaults.
 
 ```rust
 GET Search(region?: String = "euw1".to_string())
@@ -437,6 +420,8 @@ path ["search"]
 query { region }
 -> Json<SearchResult>
 ```
+
+They initialize as `Some(default)` and can still be cleared.
 
 ### Bodies
 
@@ -448,7 +433,7 @@ path ["items"]
 -> Json<Item>
 ```
 
-### Response mapping
+### Response Mapping
 
 Response mapping is the exception when used:
 
@@ -459,7 +444,17 @@ path ["login"]
 map AccessToken { AccessToken::new(r.access_token) }
 ```
 
-Behavior names also appear on endpoint docs. Generated endpoint documentation includes attached behavior names from client defaults, scopes, and endpoints. For example, a generated line can read: Behavior: `read`, `match_read`.
+Behavior names also appear on endpoint docs. Generated endpoint documentation includes attached behavior names from client defaults, scopes, and endpoints.
+
+### Auth Keyword Reference
+
+`auth certificate` is an attachment form for client-certificate credential material. The DSL does not provide a certificate constructor in v1. Use endpoint-backed or runtime-provided credential material when certificate auth is needed.
+
+Protected-request refresh behavior treats `401 Unauthorized` and `403 Forbidden` as refreshable rejection statuses when the credential can be reacquired. Refresh tries are bounded by `max_auth_retries`.
+
+Secret-bearing auth values are redacted from debug and display output, diagnostics, and generated documentation.
+
+The actual outbound request still carries the credential material required by the remote API.
 
 ## Pagination
 
@@ -491,15 +486,15 @@ paginate CursorPagination {
 
 Pagination remains an endpoint concern. It is not part of grouped policy or behavior declarations.
 
-## Generated documentation
+## Generated Documentation
 
-Generated endpoint documentation is derived from the resolved semantic model, not from raw syntax. That is why behavior names remain visible in rustdoc even though behavior semantics are lowered into ordinary auth, cache, retry, and rate-limit data.
+Generated endpoint documentation is derived from the resolved semantic model, not from raw syntax. That is why behavior names remain visible in rustdoc even though behavior semantics are lowered into ordinary auth, retry, and rate-limit data.
 
-## Keyword reference
+## Keyword Reference
 
-This section is the compact v1 reference for public DSL syntax. Focused guides such as `docs/auth.md`, `docs/cache_retry_rate_limit.md`, `docs/pagination.md`, and `docs/customization.md` expand on these forms.
+This section is the compact v1 reference for public DSL syntax. Focused guides such as `docs/auth.md`, `docs/retry_and_rate_limit.md`, `docs/pagination.md`, and `docs/customization.md` expand on these forms.
 
-### Tree and routing
+### Tree And Routing
 
 - `api! { ... }` wraps one API tree.
 - `client Name { ... }` declares the generated client root.
@@ -509,31 +504,28 @@ This section is the compact v1 reference for public DSL syntax. Focused guides s
 - `path [...]` appends encoded path segments.
 - Endpoint methods use HTTP method identifiers such as `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, and `OPTIONS`.
 
-`host` is scope-level v1 syntax. `host` and `path` atoms may be string literals, variables, or `fmt[...]` atoms.
-
-### Client configuration
+### Client Configuration
 
 Preferred large-client grouping:
 
 - `auth { ... }` contains `secret` and `credential` declarations.
-- `policies { ... }` contains `retry`, `cache`, and `rate_limit` profile declarations plus `observe rate_limit`.
+- `policies { ... }` contains `retry` and `rate_limit` profile declarations plus `observe rate_limit`.
 - `behaviors { ... }` contains `behavior` declarations.
 - `defaults { ... }` contains client-wide attachments.
 
 Compatibility forms remain valid:
 
-- `secret`, `credential`, `retry`, `cache`, `rate_limit`, and `behavior` declarations may be written directly in `client`.
+- `secret`, `credential`, `retry`, `rate_limit`, and `behavior` declarations may be written directly in `client`.
 - `default { ... }` is accepted as an alias for `defaults { ... }`.
 
-### Variables and arguments
+### Variables And Arguments
 
 - `var name: Type` declares a client variable available as `vars.name`.
-- `secret name: Type` declares a redacted client input available to credential declarations as `secret.name`.
-- Scope and endpoint arguments are written in the signature: `scope users(region: String)` or `GET User(id: u64)`.
-- Optional arguments use `?`, for example `cursor?: String`.
-- Defaulted arguments use `=`, for example `count: u64 = 20`.
-- Optional defaulted arguments are supported, for example `region?: String = "euw1".to_string()`.
-- Request bodies are endpoint arguments named `body`, for example `POST Create(body: Json<CreateItem>)`.
+- `secret name: Type` declares a redacted client input available only to credential declarations.
+- Scope and endpoint arguments are written in the signature.
+- Optional arguments use `?`.
+- Defaulted arguments use `=`.
+- Request bodies are endpoint arguments named `body`.
 
 ### Auth
 
@@ -542,23 +534,14 @@ Credential declarations:
 ```rust
 auth {
     secret token: String
-    secret username: String
-    secret password: String
-    secret client_id: String
-    secret client_secret: String
 
     credential api = api_key(secret.token)
     credential session = bearer(secret.token)
-    credential login = basic(secret.username, secret.password)
-    credential oauth = oauth2_client {
-        token_url: "https://auth.example.com/oauth/token",
-        client_id: secret.client_id,
-        client_secret: secret.client_secret,
-        scope: "read",
-    }
     credential acquired = endpoint auth_api::Login
 }
 ```
+
+Basic, OAuth2 client-credentials, endpoint-backed, and certificate credential material follow the same boundary: secret inputs are consumed inside credential declarations, while public request-shaping expressions cannot read them directly.
 
 Auth attachments:
 
@@ -569,12 +552,6 @@ auth query "api_key" = api
 auth basic login
 auth certificate client_cert
 ```
-
-`auth certificate` is an attachment form for client-certificate credential material. The DSL does not provide a `certificate(secret...)` constructor in v1; use endpoint-backed or runtime-provided credential material when certificate auth is needed.
-
-Default protected-request refresh behavior is intentionally conservative: `401 Unauthorized` and `403 Forbidden` both invalidate and retry after refresh by default. Refresh attempts are bounded. See `docs/auth.md` for the full auth runtime behavior.
-
-Secret-bearing auth values are redacted from debug/display output and diagnostics. The actual outbound request still carries the required credential material.
 
 ### Retry
 
@@ -612,69 +589,7 @@ retry {
 
 Retry profiles may use `extends parent`.
 
-### Cache
-
-Cache profiles may be declared flat or inside `policies { ... }`.
-
-```rust
-cache standard {
-    http
-    ttl 60s
-    revalidate
-    on_error serve_stale
-    capacity 10_000 entries
-    max_body 2 mib
-    shared
-}
-```
-
-Supported cache profile fields:
-
-- `http`
-- `ttl 60s`, `ttl 1m`, or spelled duration units such as `ttl 1 minute`
-- `revalidate`
-- `on_error ignore`
-- `on_error serve_stale`
-- `capacity N entries`
-- `max_body N bytes|kb|kib|mb|mib|gb|gib`
-- `shared`
-
-Attachments and shorthand forms:
-
-```rust
-cache standard
-cache only standard
-cache off
-cache http
-cache 5m
-cache revalidate
-cache stale_on_error
-cache {
-    max_body 128 kib
-}
-```
-
-`cache stale_on_error` is shorthand for a local patch whose `on_error` behavior serves stale data. Cache profiles may use `extends parent`.
-
-Cache sizing fields are runtime-backed:
-
-- `capacity N entries` limits the maximum number of cache entries.
-- `max_body N unit` limits the cached response body size.
-- `shared` enables shared cache mode.
-
-Size units are decimal for `kb`, `mb`, and `gb`, and binary for `kib`, `mib`, and `gib`:
-
-- `bytes = 1`
-- `kb = 1_000`
-- `kib = 1_024`
-- `mb = 1_000_000`
-- `mib = 1_048_576`
-- `gb = 1_000_000_000`
-- `gib = 1_073_741_824`
-
-Child cache profiles override sizing fields they set and inherit fields they omit. Local cache patches change only the provided fields.
-
-### Rate limit
+### Rate Limit
 
 Rate-limit profiles may be declared flat or inside `policies { ... }`.
 
@@ -737,14 +652,13 @@ Behavior declarations may be flat or grouped:
 behaviors {
     behavior protected_read extends read {
         auth bearer session
-        cache standard
         retry read
         rate_limit [app, method]
     }
 }
 ```
 
-Behavior bodies support only `auth`, `cache`, `retry`, and `rate_limit`. Behavior use syntax:
+Behavior bodies support only `auth`, `retry`, and `rate_limit`. Behavior use syntax:
 
 ```rust
 behavior protected_read
@@ -753,7 +667,7 @@ behavior [read, protected_read]
 
 Behavior lists must contain at least one behavior and cannot contain a duplicate name within the same list. The same behavior also cannot be attached more than once at the same defaults, scope, or endpoint site, even across separate `behavior` clauses. Reusing a behavior across separate layers remains valid.
 
-### Request policy clauses
+### Request Policy Clauses
 
 `query` and `headers` blocks can appear in clients, scopes, and endpoints.
 
@@ -784,9 +698,9 @@ header "X-Debug" -
 
 Query shorthand uses the Rust argument name as both key and value. Optional query values remove the key when absent. `+=` is query-only; headers support set and remove, not append.
 
-Query and header clauses preserve source order at a given layer. Removing a query key removes every matching entry at that layer, and a later `query` assignment for the same key appends a new entry at the end of the logical query list.
+Query and header clauses preserve source order at a given layer. Removing a query key removes every matching value at that layer, and a later `query` assignment for the same key appends a new value at the end of the logical query list.
 
-At the same declaration layer, distinct auth header/query declarations from inline forms and `auth { ... }` blocks merge in declaration order. Duplicate auth headers at the same layer are rejected case-insensitively. Duplicate auth query parameter names at the same layer are rejected by exact key match. These checks do not change normal cross-layer inheritance.
+At the same declaration layer, distinct auth header/query declarations from inline forms and grouped blocks merge in declaration order. Duplicate auth headers at the same layer are rejected case-insensitively. Duplicate auth query parameter names at the same layer are rejected by exact key match. These checks do not change normal cross-layer inheritance.
 
 `fmt[...]` builds one wire atom from literals and variables. Optional pieces inside `fmt[...]` require all referenced optional values to be present.
 
@@ -796,10 +710,7 @@ query { "range" = fmt[start, "-", count] }
 headers { "X-Trace" = fmt["trace-", trace_id] }
 ```
 
-Public `fmt[...]` pieces follow the same secret boundary as other public
-request-shaping expressions: use endpoint arguments or supported safe client
-variable references, not auth secrets or arbitrary generated implementation
-locals.
+Public `fmt[...]` pieces follow the same secret boundary as other public request-shaping expressions: use endpoint arguments or supported client variable references, not credential secrets or arbitrary generated implementation locals.
 
 `timeout` can be attached at a scope or endpoint.
 
@@ -807,7 +718,7 @@ locals.
 timeout: std::time::Duration::from_secs(5)
 ```
 
-### Endpoint clauses
+### Endpoint Clauses
 
 Endpoint leaves support:
 
@@ -821,7 +732,6 @@ Endpoint leaves support:
 - `behavior ...`
 - `auth ...`
 - `retry ...`
-- `cache ...`
 - `rate_limit ...`
 - `-> Codec<T>`
 - `map Type { expr }` after the response line
@@ -842,48 +752,38 @@ Custom controllers are Rust type paths implementing the pagination traits.
 paginate custom::HeaderCursorPagination
 ```
 
-Built-in pagination controllers use assignment blocks for their configured fields.
-Custom pagination controllers use `paginate TypePath` without a block; their
-state and request mutation live in the Rust controller implementation.
+Built-in pagination controllers use assignment blocks for their configured fields. Custom pagination controllers use `paginate TypePath` without a block; their state and request mutation live in the Rust controller implementation.
 
-Built-in pagination controller fields are sema-validated against the actual
-semantic model. Removed short-page stop fields such as `stop` and
-`stop_on_short_page` are rejected rather than reintroduced as controller-owned
-syntax.
+Built-in pagination controller fields are sema-validated against the actual semantic model. Removed short-page stop fields such as `stop` and `stop_on_short_page` are rejected rather than reintroduced as controller-owned syntax.
 
-Response page types can implement `PageItems`; cursor page types also implement `HasNextCursor`.
-Implementing `PageItems` alone does not make every endpoint paginated. The
-endpoint must declare `paginate ...` before generated request builders expose
-`.paginate(PaginationTermination::...)`.
+Response page types can implement `PageItems`; cursor page types also implement `HasNextCursor`. Implementing `PageItems` alone does not make every endpoint paginated. The endpoint must declare `paginate ...` before generated request builders expose `.paginate(PaginationTermination::...)`.
 
-Paginated endpoints cannot have request bodies in v1. The macro rejects
-`body: Codec<T>` together with a `paginate` declaration because Concord does
-not replay endpoint request bodies across page requests.
+Paginated endpoints cannot have request bodies in v1. The macro rejects `body: Codec<T>` together with a `paginate` declaration because Concord does not replay endpoint request bodies across page requests.
 
-## Compatibility syntax
+## Compatibility Syntax
 
 The grouped form is preferred for larger clients, but the flat form remains valid:
 
 - `secret` and `credential` may be written directly in `client`
-- `retry`, `cache`, and `rate_limit` profile declarations may be written directly in `client`
+- `retry` and `rate_limit` profile declarations may be written directly in `client`
 - `behavior` profiles may be written directly in `client`
 - `default { ... }` remains valid beside the preferred `defaults { ... }`
 
-Use grouped config when the client has enough policy/auth/behavior declarations that structure improves readability.
+Use grouped config when the client has enough policy, auth, or behavior declarations that structure improves readability.
 
-## Unsupported or reserved syntax
+## Unsupported Or Reserved Syntax
 
 - There is no `body ...` endpoint clause. Request bodies are endpoint signature arguments named `body`.
 - `params { ... }` blocks are not supported; scope parameters are declared in `scope name(...)`.
 - `prefix` is not public v1 syntax.
-- `part[...]` is not public syntax; use `fmt[...]`.
-- `auth none`, `auth any`, and `auth all` are reserved and rejected.
+- The older bracketed interpolation form is not public syntax; use `fmt[...]`.
+- The unsupported auth-combinator spellings are reserved and rejected.
 - `behaviors { ... }` accepts only `behavior` declarations.
 - `auth { ... }` accepts only `secret` and `credential` declarations.
-- `policies { ... }` accepts policy/profile declarations and `observe`; default attachments belong in `defaults { ... }` or `default { ... }`.
-- `profile` and `access_token` are reserved/internal keywords, not standalone public DSL clauses.
+- `policies { ... }` accepts policy declarations and `observe`; default attachments belong in `defaults { ... }` or `default { ... }`.
+- `profile` and `access_token` are reserved or internal keywords, not standalone public DSL clauses.
 
-## Design rules
+## Design Rules
 
 - Keep endpoint leaves readable.
 - Keep the response line last in normal endpoints.

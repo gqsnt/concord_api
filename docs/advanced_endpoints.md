@@ -7,8 +7,7 @@ let endpoint = example_api::endpoints::GetUser::new(42);
 let user = api.request(endpoint).execute().await?;
 ```
 
-Root endpoints live directly under `endpoints::*`. Scoped endpoints are nested
-under their scope module path:
+Root endpoints live directly under `endpoints::*`. Scoped endpoints are nested under their scope module path:
 
 ```rust
 let endpoint = minimal_api::endpoints::users::GetUser::new(42);
@@ -32,13 +31,11 @@ let items = api
     .await?;
 ```
 
-The `.paginate(...)` builder is available only for endpoint structs generated
-from DSL endpoints that declare `paginate ...`, and it requires an explicit
-`PaginationTermination`.
+The `.paginate(...)` builder is available only for endpoint structs generated from DSL endpoints that declare `paginate ...`, and it requires an explicit `PaginationTermination`.
 
-Use `.execute_raw()` when a test or diagnostic needs the classified raw response before endpoint decoding. `execute_raw()` bypasses endpoint cache entirely: it does not read from cache, does not serve stale cache, and does not populate cache because raw execution skips endpoint decode/map and cannot prove endpoint success. It still enforces the same bounded response-body limit as decoded execution, so oversized responses fail before raw body material is returned.
+Use `.execute_raw()` when a test or diagnostic needs the classified raw response before endpoint decoding. It still enforces the same bounded response-body limit as decoded execution, so oversized responses fail before raw body material is returned.
 
-Raw execution still applies logical request construction and the auth collision boundary before cache bypass, rate-limit acquisition, transport materialization, and transport send.
+Raw execution still applies logical request construction, auth collision validation, rate-limit acquisition, transport materialization, transport send, response classification, hook observation, auth rejection handling, and retry.
 
 ```rust
 let raw = api

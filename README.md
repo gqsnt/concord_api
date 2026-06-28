@@ -41,7 +41,7 @@ let user = api.users().get_user(42).await?;
 
 - Typed facade navigation through `client`, `scope`, and endpoint methods.
 - Required params as direct method arguments.
-- Optional/defaulted request setters with `field`, `field_opt`, and `clear_field`.
+- Optional and defaulted request setters with `field`, `field_opt`, and `clear_field`.
 - Direct `.await`, `.execute()`, `.execute_decoded()`, and explicit `.execute_raw()`.
 - Explicit `.paginate().collect()` and `.for_each_page(...)`.
 - Endpoint-backed credential acquisition with `.acquire_as_<credential>()`.
@@ -56,7 +56,7 @@ let user = api.users().get_user(42).await?;
 - [Generated Client](docs/generated_client.md)
 - [Auth](docs/auth.md)
 - [Pagination](docs/pagination.md)
-- [Cache, Retry, And Rate Limit](docs/cache_retry_rate_limit.md)
+- [Retry And Rate Limit](docs/retry_and_rate_limit.md)
 - [Runtime Config](docs/runtime_config.md)
 - [Advanced Endpoints](docs/advanced_endpoints.md)
 - [Internals](docs/internals.md)
@@ -73,7 +73,7 @@ The `concord_examples` crate contains current examples for:
 - offset and cursor pagination
 - custom pagination
 - custom codecs
-- cache, retry, and rate-limit policy profiles
+- retry and rate-limit policy profiles
 - explicit endpoint requests
 - a compiled public DSL guide example in `concord_examples/src/docs_dsl.rs`
 - compiled advanced DSL syntax examples in `concord_examples/src/docs_advanced_dsl.rs`

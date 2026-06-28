@@ -1,6 +1,6 @@
-# Release checklist
+# Release Checklist
 
-## Local v1 gate
+## Local V1 Gate
 
 Run:
 
@@ -8,8 +8,7 @@ Run:
 bash ./scripts/check_v1.sh
 ```
 
-This runs the required local v1 verification commands without publishing or packaging.
-The default gate does not require external credentials or network access.
+This runs the required local v1 verification commands without publishing or packaging. The default gate does not require external credentials or network access.
 
 The script runs:
 
@@ -22,10 +21,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 It explicitly requires `cargo-nextest`.
 
-The default gate does not require external credentials, network access,
-publishing, packaging, tagging, or `TRYBUILD=overwrite`.
-
-## Individual commands
+## Individual Commands
 
 Run:
 
@@ -36,10 +32,9 @@ cargo nextest run --workspace --all-targets
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
-## Trybuild snapshot refresh
+## Trybuild Snapshot Refresh
 
-Trybuild fixtures are split by public UI-contract category under
-`concord_macros/tests/trybuild/`.
+Trybuild fixtures are split by public UI-contract category under `concord_macros/tests/trybuild/`.
 
 The current trybuild test functions are:
 
@@ -72,19 +67,11 @@ TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild
 TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_codegen_contract_diagnostics -- --test-threads=1
 ```
 
-Only use `TRYBUILD=overwrite` when diagnostics intentionally change. Inspect
-the git diff of `.stderr` files before accepting updates. Path-only changes
-from fixture moves are acceptable; changed wording/spans must be reviewed.
+Only use `TRYBUILD=overwrite` when diagnostics intentionally change. Inspect the git diff of `.stderr` files before accepting updates. Path-only changes from fixture moves are acceptable; changed wording and spans must be reviewed.
 
-Trybuild remains part of the full gate through
-`cargo nextest run --workspace --all-targets`. It is serialized in
-`.config/nextest.toml` with the `trybuild` test group because it drives many
-rustc fixture compilations.
+Trybuild remains part of the full gate through `cargo nextest run --workspace --all-targets`. It is serialized in `.config/nextest.toml` with the `trybuild` test group because it drives many rustc fixture compilations.
 
-After refreshing snapshots, run the local v1 gate again. This command is not
-part of the default release gate.
-
-## Final stale syntax audit
+## Final Syntax Audit
 
 Before a v1 tag, run:
 
@@ -92,35 +79,35 @@ Before a v1 tag, run:
 bash ./scripts/check_v1.sh
 ```
 
-and verify that public docs/examples do not describe rejected or removed DSL forms as valid syntax.
+and verify that public docs and examples do not describe rejected DSL forms as valid syntax.
 
-## Manual v1 audit
+## Manual V1 Audit
 
 - Public DSL docs are complete and current.
 - Developer docs are complete and current.
-- Review docs for stale runtime order, stale syntax, and removed implementation concepts.
+- Review docs for outdated runtime order, outdated syntax, and removed implementation concepts.
 - Review examples for dangerous live calls; live smoke code must remain environment-gated.
-- Live-smoke examples skip by default without `CONCORD_RUN_RIOT_TEST`,
-  `CONCORD_RUN_DDRAGON_TEST`, and any required API key environment variables.
+- Live-smoke examples skip by default without `CONCORD_RUN_RIOT_TEST`, `CONCORD_RUN_DDRAGON_TEST`, and any required API key environment variables.
 - Review generated-code changes for validation-dependent panics when changing codegen.
 - `concord_examples/src/docs_dsl.rs` compiles.
 - `concord_examples/src/docs_advanced_dsl.rs` compiles.
 - Riot fixture passes.
 - Public DSL reference covers every public keyword.
-- Unsupported/reserved syntax is explicitly documented.
-- Cache sizing syntax is documented and compile-checked.
+- Unsupported and reserved syntax is explicitly documented.
 - Same-site duplicate behavior rejection is documented and tested.
-- Live smoke examples are environment-gated.
 - The release gate does not require external credentials or network access by default.
 - Query auth secrets are redacted from debug URLs.
 - Query auth redaction tests pass.
 - No auth secret appears in debug output tests.
-- `401`/`403` auth rejection behavior matches `AuthStepPolicy` defaults.
+- `401` and `403` auth rejection behavior matches `AuthStepPolicy` defaults.
 - Redaction tests cover debug output, errors, wrappers, and OAuth client secrets.
+- Feature-surface drift has been checked through `scripts/check_features.sh`.
+- Macro trybuild diagnostics have been refreshed only when wording or spans intentionally changed.
+- Runtime characterization tests cover request order, auth collision ordering, rate-limit observation, retry exhaustion, pagination progress, and cancellation boundaries.
 - Runtime order tests still pass.
-- No stale DSL syntax in docs/examples.
+- No outdated DSL syntax remains in docs or examples.
 - No broad clippy allows.
 - No runtime behavior changed without characterization tests.
-- No macro behavior changed without parser/sema/codegen tests.
+- No macro behavior changed without parser, sema, or codegen tests.
 - No public API change was made without explicit compatibility review.
 - No crates.io publishing or packaging step is included in this PR.
