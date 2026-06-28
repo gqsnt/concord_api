@@ -22,5 +22,7 @@ mod release_gate;
 mod runtime_config;
 #[path = "current_core/runtime_order.rs"]
 mod runtime_order;
+#[path = "current_core/stream_response.rs"]
+mod stream_response;
 #[path = "current_core/stream_runtime.rs"]
 mod stream_runtime;

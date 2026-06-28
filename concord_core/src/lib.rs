@@ -17,6 +17,7 @@ mod runtime_hooks;
 mod runtime_state;
 mod secret;
 mod stream_body;
+mod stream_response;
 mod timeout;
 pub mod transport;
 mod types;
@@ -108,6 +109,7 @@ pub mod advanced {
     };
     pub use crate::runtime_state::ClientRuntimeState;
     pub use crate::stream_body::{BodySizeHint, StreamBody, StreamBodyError};
+    pub use crate::stream_response::StreamResponse;
     pub use crate::transport::{
         BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta, ReqwestTransport, Transport,
         TransportAuth, TransportBody, TransportByteStream, TransportError, TransportErrorKind,

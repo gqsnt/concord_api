@@ -125,15 +125,6 @@ enum RecordedBody {
     Stream,
 }
 
-impl RecordedBody {
-    fn as_bytes(&self) -> Option<&Bytes> {
-        match self {
-            Self::Bytes(bytes) => Some(bytes),
-            Self::Empty | Self::Stream => None,
-        }
-    }
-}
-
 struct EmptyDebugStream;
 
 impl futures_core::Stream for EmptyDebugStream {

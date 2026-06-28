@@ -677,7 +677,7 @@ async fn stream_request_is_not_retried_on_transport_error() {
         MockResponse::text(StatusCode::OK, "ok"),
         TransportErrorKind::Other,
     );
-    let mut client =
+    let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
     let err = client

@@ -198,6 +198,74 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
+    async fn send_and_classify_stream_once<M>(
+        &self,
+        built: BuiltRequest,
+        send_ctx: SendClassifyCtx<'_>,
+    ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
+    where
+        M: crate::media::MediaType,
+    {
+        let transport_resp = self.acquire_rate_limit_and_send(built, send_ctx).await?;
+        self.classify_transport_stream_response::<M>(
+            transport_resp,
+            send_ctx.dbg,
+            send_ctx.dbg_verbose,
+            send_ctx.dbg_vv,
+            send_ctx.url_str,
+            send_ctx.error_ctx,
+        )
+        .await
+    }
+
+    async fn classify_transport_stream_response<M>(
+        &self,
+        resp: TransportResponse,
+        dbg: DebugLevel,
+        dbg_verbose: bool,
+        _dbg_vv: bool,
+        url_str: &str,
+        ctx: &ErrorContext,
+    ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
+    where
+        M: crate::media::MediaType,
+    {
+        let observe_ctx = Self::response_observation_ctx(&resp, url_str);
+        self.run_post_response_hook(observe_ctx).await;
+        let rate_limit_action = self.observe_rate_limit_response(observe_ctx).await?;
+        match classify_status(resp.status) {
+            ResponseClass::HttpStatusError => {
+                if dbg_verbose {
+                    self.debug_sink
+                        .response_status(dbg, resp.status, url_str, false);
+                    self.debug_sink.response_headers(dbg, &resp.headers);
+                }
+                Err(ApiClientError::HttpStatus {
+                    ctx: ctx.clone(),
+                    status: resp.status,
+                    headers: Box::new(resp.headers),
+                    rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
+                        .then_some(Box::new(rate_limit_action)),
+                })
+            }
+            ResponseClass::Success => {
+                if dbg_verbose {
+                    self.debug_sink
+                        .response_status(dbg, resp.status, url_str, true);
+                    self.debug_sink.response_headers(dbg, &resp.headers);
+                }
+                if !Self::header_matches_media_type(resp.headers.get(CONTENT_TYPE), M::CONTENT_TYPE)
+                {
+                    return Err(ApiClientError::PolicyViolation {
+                        ctx: ctx.clone(),
+                        msg: "stream response content type did not match expected media type",
+                    });
+                }
+                Ok(crate::stream_response::StreamResponse::new(resp))
+            }
+        }
+    }
+
     async fn send_and_classify_once(
         &self,
         built: BuiltRequest,
@@ -231,6 +299,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             status: resp.status,
             headers: &resp.headers,
         }
+    }
+
+    fn header_matches_media_type(
+        value: Option<&http::HeaderValue>,
+        expected: &'static str,
+    ) -> bool {
+        value
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(';').next())
+            .map(|base| base.trim().eq_ignore_ascii_case(expected))
+            .unwrap_or(false)
     }
 
 }

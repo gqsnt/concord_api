@@ -11,6 +11,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize)]
@@ -778,6 +779,16 @@ impl std::fmt::Debug for RecordedRequest {
             extensions: self.extensions.clone(),
         };
         write!(f, "{temp:?}")
+    }
+}
+
+struct EmptyDebugStream;
+
+impl futures_core::Stream for EmptyDebugStream {
+    type Item = Result<Bytes, TransportError>;
+
+    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Poll::Ready(None)
     }
 }
 
