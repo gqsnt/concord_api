@@ -39,11 +39,14 @@ pub struct VarDeclNoWire {
 
 /// `Json<T>` (encoding type = `Json`, decoded/body type = `T`)
 #[derive(Debug, Clone)]
-pub struct CodecSpec {
+pub struct RawIoSpec {
     pub marker: Type,
     pub enc: Path,
     pub ty: Type,
 }
+
+pub type RawRequestIo = Option<RawIoSpec>;
+pub type RawResponseIo = RawIoSpec;
 
 #[derive(Debug)]
 pub enum PolicyValue {

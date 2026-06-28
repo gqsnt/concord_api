@@ -281,7 +281,7 @@ impl Parse for VarDeclNoWire {
     }
 }
 
-impl Parse for CodecSpec {
+impl Parse for RawIoSpec {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         // Parse as a Rust type path so we can accept `Enc<T>` directly.
         // Example: `JsonEncoding<MyType>` or `crate::codec::JsonEncoding<MyType>`.

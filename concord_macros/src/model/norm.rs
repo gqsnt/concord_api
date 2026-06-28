@@ -1,9 +1,9 @@
 //! Canonical macro model produced by raw syntax normalization.
 
 use crate::ast::{
-    AuthCredentials, AuthUseKind, BehaviorProfilesBlock, BehaviorUseSpec, CodecSpec, MapSpec,
-    PaginateSpec, PolicyBlocks, RateLimitKeyBindingSpec, RateLimitProfilesBlock, RateLimitSpec,
-    RetryProfilesBlock, RetrySpec, RouteExpr, VarDeclNoWire,
+    AuthCredentials, AuthUseKind, BehaviorProfilesBlock, BehaviorUseSpec, MapSpec, PaginateSpec,
+    PolicyBlocks, RateLimitKeyBindingSpec, RateLimitProfilesBlock, RateLimitSpec, RawRequestIo,
+    RawResponseIo, RetryProfilesBlock, RetrySpec, RouteExpr, VarDeclNoWire,
 };
 use crate::model::Scheme;
 use proc_macro2::Span;
@@ -101,8 +101,8 @@ pub(crate) struct NormEndpoint {
     pub rate_limit: Option<RateLimitSpec>,
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
     pub paginate: Option<PaginateSpec>,
-    pub body: Option<CodecSpec>,
-    pub response: CodecSpec,
+    pub body: RawRequestIo,
+    pub response: RawResponseIo,
     pub map: Option<MapSpec>,
 }
 

@@ -57,8 +57,8 @@ pub struct ResolvedEndpoint {
     pub route_pieces: Vec<PathPiece>,
 
     pub vars: Vec<VarInfo>, // endpoint vars (union, stable)
-    pub body: Option<CodecSpec>,
-    pub response: CodecSpec,
+    pub body: RawRequestIo,
+    pub response: RawResponseIo,
 
     pub policy: ResolvedPolicySpec,
     pub behavior_doc: BehaviorDocMeta,

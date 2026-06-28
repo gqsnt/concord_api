@@ -7,10 +7,11 @@
 
 use crate::ast::{
     AuthCredentialKind, AuthCredentials, AuthUseKind, BehaviorProfileDef, BehaviorProfilesBlock,
-    BehaviorUseSpec, CodecSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec, PolicyBlock,
-    PolicyBlocks, PolicyStmt, PolicyValue, RateLimitDurationUnit, RateLimitKeyBindingSpec,
-    RateLimitKeySpec, RateLimitPlanSpec, RateLimitProfilesBlock, RateLimitSpec, RefScope,
-    RetryIdempotencySpec, RetryPatch, RetryProfilesBlock, RetrySpec, RouteAtom, SecretRef,
+    BehaviorUseSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec, PolicyBlock, PolicyBlocks,
+    PolicyStmt, PolicyValue, RateLimitDurationUnit, RateLimitKeyBindingSpec, RateLimitKeySpec,
+    RateLimitPlanSpec, RateLimitProfilesBlock, RateLimitSpec, RawRequestIo, RawResponseIo,
+    RefScope, RetryIdempotencySpec, RetryPatch, RetryProfilesBlock, RetrySpec, RouteAtom,
+    SecretRef,
 };
 use crate::emit_helpers;
 use crate::model::facade::{

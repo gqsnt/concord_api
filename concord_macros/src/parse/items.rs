@@ -339,8 +339,8 @@ fn raw_endpoint(
     rate_limit: Option<RateLimitSpec>,
     rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
     paginate: Option<PaginateSpec>,
-    body: Option<CodecSpec>,
-    response: CodecSpec,
+    body: RawRequestIo,
+    response: RawResponseIo,
     map: Option<MapSpec>,
 ) -> RawEndpoint {
     RawEndpoint {

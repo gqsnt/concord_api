@@ -88,9 +88,9 @@ impl EndpointBlockParts {
     }
 }
 
-fn parse_endpoint_response_spec(input: ParseStream<'_>) -> Result<(CodecSpec, Option<MapSpec>)> {
+fn parse_endpoint_response_spec(input: ParseStream<'_>) -> Result<(RawResponseIo, Option<MapSpec>)> {
     input.parse::<Token![->]>()?;
-    let response: CodecSpec = input.parse()?;
+    let response: RawIoSpec = input.parse()?;
 
     let map = if input.peek(Token![|]) {
         return Err(syn::Error::new(input.span(), "unexpected token in endpoint stanza"));
@@ -116,7 +116,7 @@ fn parse_endpoint_response_spec(input: ParseStream<'_>) -> Result<(CodecSpec, Op
 
 fn parse_endpoint_signature_args(
     input: ParseStream<'_>,
-) -> Result<(Vec<VarDeclNoWire>, Option<CodecSpec>)> {
+) -> Result<(Vec<VarDeclNoWire>, RawRequestIo)> {
     let content;
     parenthesized!(content in input);
 
@@ -133,7 +133,7 @@ fn parse_endpoint_signature_args(
             }
             content.parse::<kw::body>()?;
             content.parse::<Token![:]>()?;
-            body = Some(content.parse::<CodecSpec>()?);
+            body = Some(content.parse::<RawIoSpec>()?);
         } else {
             params.push(content.parse::<VarDeclNoWire>()?);
         }

@@ -83,9 +83,9 @@ pub struct RawEndpoint {
     pub rate_limit_keys: Vec<RateLimitKeyBindingSpec>,
 
     pub paginate: Option<PaginateSpec>,
-    pub body: Option<CodecSpec>,
+    pub body: RawRequestIo,
 
-    pub response: CodecSpec,
+    pub response: RawResponseIo,
     pub map: Option<MapSpec>,
 }
 
