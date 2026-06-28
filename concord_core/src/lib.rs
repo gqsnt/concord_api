@@ -38,7 +38,7 @@ pub mod internal {
         BodyPlan, ClientPlanContext, Decoded, EndpointMeta, EndpointPlan, Mapped, MappedResp,
         MultipartResponseEndpoint, PaginatedEndpoint, PaginationPlan, RecordResponseEndpoint,
         RequestArgs, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute, ResponsePlan,
-        ResponseSpec, StreamResponseEndpoint, Transform, TransformResp,
+        ResponseSpec, SseResponseEndpoint, StreamResponseEndpoint, Transform, TransformResp,
     };
     pub use crate::multipart::{
         FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
@@ -67,7 +67,7 @@ pub mod prelude {
     pub use crate::debug::DebugLevel;
     pub use crate::endpoint::{
         Endpoint, MultipartResponseEndpoint, PaginatedEndpoint, RecordResponseEndpoint,
-        StreamResponseEndpoint,
+        SseResponseEndpoint, StreamResponseEndpoint,
     };
     pub use crate::error::{ApiClientError, ErrorCategory};
     pub use crate::pagination::{
@@ -102,7 +102,8 @@ pub mod advanced {
     };
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::endpoint::{
-        MultipartResponseEndpoint, RecordResponseEndpoint, StreamResponseEndpoint,
+        MultipartResponseEndpoint, RecordResponseEndpoint, SseResponseEndpoint,
+        StreamResponseEndpoint,
     };
     pub use crate::error::{ErrorContext, FxError};
     pub use crate::media::{Jpeg, MediaType, Mp3, Mp4, OctetStream, Pdf, Png, Zip};

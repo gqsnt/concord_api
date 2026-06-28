@@ -1,0 +1,20 @@
+error[E0599]: the method `execute_sse` exists for struct `PendingRequest<'_, StreamEndpointExecuteSseApiCx, EpDownloadHd3386a2ef42e80b9, ReqwestTransport>`, but its trait bounds were not satisfied
+  --> tests/trybuild/fail/codegen/stream_endpoint_execute_sse.rs:16:28
+   |
+ 5 | / api! {
+ 6 | |     client StreamEndpointExecuteSseApi {
+ 7 | |         base "https://example.com"
+...  |
+10 | |     GET Download
+   | |________________- doesn't satisfy `_: SseResponseEndpoint<StreamEndpointExecuteSseApiCx>`
+...
+16 |       let _ = api.download().execute_sse().await.unwrap();
+   |                              ^^^^^^^^^^^
+   |
+   = note: the following trait bounds were not satisfied:
+           `EpDownloadHd3386a2ef42e80b9: SseResponseEndpoint<StreamEndpointExecuteSseApiCx>`
+note: the trait `SseResponseEndpoint` must be implemented
+  --> $WORKSPACE/concord_core/src/endpoint.rs
+   |
+   | pub trait SseResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

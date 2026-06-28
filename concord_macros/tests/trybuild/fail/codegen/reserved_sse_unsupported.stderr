@@ -1,5 +1,0 @@
-error: `Sse` endpoint I/O is reserved but not supported yet
- --> tests/trybuild/fail/codegen/reserved_sse_unsupported.rs:8:12
-  |
-8 |         -> Sse<String>
-  |            ^^^^^^^^^^^

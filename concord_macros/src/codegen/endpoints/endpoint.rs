@@ -594,6 +594,9 @@ fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
         ResolvedResponseBodyIo::Multipart { part_ty, .. } => quote! {
             ::concord_core::advanced::MultipartStream<#part_ty>
         },
+        ResolvedResponseBodyIo::Sse { event_ty, .. } => quote! {
+            ::concord_core::advanced::SseStream<#event_ty>
+        },
         ResolvedResponseBodyIo::Records { item_ty, .. } => quote! {
             ::concord_core::advanced::RecordStream<#item_ty>
         },
@@ -618,6 +621,9 @@ fn endpoint_response_accept_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Ty
                 <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
             ))
         },
+        ResolvedResponseBodyIo::Sse { .. } => quote! {
+            ::core::option::Option::Some(::http::HeaderValue::from_static("text/event-stream"))
+        },
         ResolvedResponseBodyIo::Records { format_ty, .. } => quote! {
             ::core::option::Option::Some(::http::HeaderValue::from_static(
                 <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
@@ -641,7 +647,8 @@ fn endpoint_response_no_content_tokens(
     match &ep.response_io {
         ResolvedResponseBodyIo::RawStream { .. }
         | ResolvedResponseBodyIo::Records { .. }
-        | ResolvedResponseBodyIo::Multipart { .. } => {
+        | ResolvedResponseBodyIo::Multipart { .. }
+        | ResolvedResponseBodyIo::Sse { .. } => {
             quote! { false }
         }
         _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::is_no_content() },
@@ -656,6 +663,7 @@ fn endpoint_response_format_tokens(
         ResolvedResponseBodyIo::Multipart { .. } => quote! { ::concord_core::internal::Format::Text },
         ResolvedResponseBodyIo::RawStream { .. } => quote! { ::concord_core::internal::Format::Binary },
         ResolvedResponseBodyIo::Records { .. } => quote! { ::concord_core::internal::Format::Text },
+        ResolvedResponseBodyIo::Sse { .. } => quote! { ::concord_core::internal::Format::Text },
         _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::format() },
     }
 }
@@ -698,6 +706,17 @@ fn endpoint_response_decode_fn(
                 Err(::concord_core::prelude::ApiClientError::PolicyViolation {
                     ctx,
                     msg: "record responses must use record execution".into(),
+                })
+            }
+        },
+        ResolvedResponseBodyIo::Sse { .. } => quote! {
+            fn #decode_fn(
+                _resp: ::concord_core::transport::BuiltResponse,
+                ctx: ::concord_core::error::ErrorContext,
+            ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
+                Err(::concord_core::prelude::ApiClientError::PolicyViolation {
+                    ctx,
+                    msg: "sse responses must use sse execution".into(),
                 })
             }
         },
@@ -776,6 +795,28 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStrea
                 })
             }
         },
+        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => quote! {
+            fn execute<'a, T>(
+                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+                plan: ::concord_core::internal::RequestPlan,
+            ) -> ::core::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::core::future::Future<
+                            Output = ::core::result::Result<
+                                Self::Response,
+                                ::concord_core::prelude::ApiClientError,
+                            >,
+                        > + Send + 'a,
+                >,
+            >
+            where
+                T: ::concord_core::advanced::Transport + 'a,
+            {
+                ::std::boxed::Box::pin(async move {
+                    client.execute_plan_sse::<#event_ty, #codec_ty>(plan).await
+                })
+            }
+        },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
             fn execute<'a, T>(
                 client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
@@ -834,6 +875,12 @@ fn endpoint_response_marker_impl(
             impl ::concord_core::prelude::MultipartResponseEndpoint<super::#cx_ty> for #ty_name {
                 type Part = #part_ty;
                 type Format = #format_ty;
+            }
+        },
+        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => quote! {
+            impl ::concord_core::prelude::SseResponseEndpoint<super::#cx_ty> for #ty_name {
+                type Event = #event_ty;
+                type Codec = #codec_ty;
             }
         },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {

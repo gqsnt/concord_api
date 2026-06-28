@@ -4,6 +4,7 @@ use crate::media::MediaType;
 use crate::multipart::MultipartFormat;
 use crate::multipart_response::{MultipartDecodePart, MultipartStream};
 use crate::record::{RecordFormat, RecordStream};
+use crate::sse::{SseCodec, SseStream};
 use crate::stream_response::StreamResponse;
 use crate::transport::DecodedResponse;
 use crate::transport::Transport;
@@ -194,6 +195,27 @@ pub trait MultipartResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
         Box::pin(async move {
             client
                 .execute_plan_multipart::<Self::Part, Self::Format>(plan)
+                .await
+        })
+    }
+}
+
+/// Marker implemented only for endpoints whose primary response is SSE.
+pub trait SseResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
+    type Event: Send + 'static;
+    type Codec: SseCodec<Self::Event>;
+
+    fn execute_sse<'a, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<SseStream<Self::Event>, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+        Self::Event: Send + 'static,
+    {
+        Box::pin(async move {
+            client
+                .execute_plan_sse::<Self::Event, Self::Codec>(plan)
                 .await
         })
     }

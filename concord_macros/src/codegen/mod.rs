@@ -397,6 +397,58 @@ mod tests {
     }
 
     #[test]
+    fn emit_uses_sse_response_codegen() {
+        let expanded = expanded(quote! {
+            api! {
+                client SseCodegen {
+                    base "https://example.com"
+                }
+
+                GET Events
+                    path ["events"]
+                    -> Sse<MyEvent>
+            }
+        });
+
+        assert_contains_all(
+            &expanded,
+            &[
+                "SseStream < MyEvent >",
+                "execute_plan_sse::< MyEvent , JsonSse >",
+                "SseResponseEndpoint",
+                "text/event-stream",
+                "Format::Text",
+            ],
+        );
+    }
+
+    #[test]
+    fn emit_uses_explicit_sse_codec_codegen() {
+        let expanded = expanded(quote! {
+            api! {
+                client ExplicitSseCodegen {
+                    base "https://example.com"
+                }
+
+                GET Events
+                    path ["events"]
+                    -> Sse<MyEvent, MyCodec>
+            }
+        });
+
+        assert_contains_all(
+            &expanded,
+            &[
+                "SseStream < MyEvent >",
+                "execute_plan_sse::< MyEvent , MyCodec >",
+                "SseResponseEndpoint",
+                "text/event-stream",
+                "Format::Text",
+            ],
+        );
+    }
+
+    #[test]
     fn facade_ir_contains_scope_method_metadata() {
         let resolved = crate::sema::analyze_tokens_for_test(quote! {
             client ScopeMeta {

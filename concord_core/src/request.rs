@@ -2,7 +2,7 @@ use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{
     CustomPaginationPlan, Endpoint, MultipartResponseEndpoint, PaginatedEndpoint, PaginationPlan,
-    RecordResponseEndpoint, StreamResponseEndpoint,
+    RecordResponseEndpoint, SseResponseEndpoint, StreamResponseEndpoint,
 };
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
@@ -217,6 +217,20 @@ where
         let client = self.client;
         let plan = self.request_plan()?;
         E::execute_multipart(client, plan).await
+    }
+}
+
+impl<'a, Cx, E, T> PendingRequest<'a, Cx, E, T>
+where
+    Cx: ClientContext + 'a,
+    E: SseResponseEndpoint<Cx> + 'a,
+    T: crate::transport::Transport + 'a,
+{
+    #[inline]
+    pub async fn execute_sse(self) -> Result<crate::sse::SseStream<E::Event>, ApiClientError> {
+        let client = self.client;
+        let plan = self.request_plan()?;
+        E::execute_sse(client, plan).await
     }
 }
 

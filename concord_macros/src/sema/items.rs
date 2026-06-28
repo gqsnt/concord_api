@@ -543,6 +543,7 @@ fn analyze_endpoint(
         ResolvedResponseBodyIo::RawStream { .. }
             | ResolvedResponseBodyIo::Records { .. }
             | ResolvedResponseBodyIo::Multipart { .. }
+            | ResolvedResponseBodyIo::Sse { .. }
     ) {
         if ed.map.is_some() {
             return Err(syn::Error::new(
@@ -639,7 +640,8 @@ fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo
     let Some(spec) = spec else {
         return Ok(ResolvedRequestBodyIo::None);
     };
-    classify_endpoint_io(spec, EndpointIoPosition::Request).map(|io| match io {
+    let io = classify_endpoint_io(spec, EndpointIoPosition::Request)?;
+    Ok(match io {
         EndpointIoClassification::BufferedCodec(io) => ResolvedRequestBodyIo::BufferedCodec(io),
         EndpointIoClassification::BufferedBytes => ResolvedRequestBodyIo::BufferedBytes,
         EndpointIoClassification::NoContent => ResolvedRequestBodyIo::None,
@@ -652,12 +654,18 @@ fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo
         EndpointIoClassification::Multipart { value_ty, format_ty } => {
             ResolvedRequestBodyIo::Multipart { value_ty, format_ty }
         }
-        EndpointIoClassification::Sse { .. } => ResolvedRequestBodyIo::None,
+        EndpointIoClassification::Sse { .. } => {
+            return Err(syn::Error::new_spanned(
+                spec.marker.clone(),
+                "`Sse` is only valid as an endpoint response",
+            ));
+        }
     })
 }
 
 fn classify_response_io(spec: &RawResponseIo) -> Result<ResolvedResponseBodyIo> {
-    classify_endpoint_io(spec, EndpointIoPosition::Response).map(|io| match io {
+    let io = classify_endpoint_io(spec, EndpointIoPosition::Response)?;
+    Ok(match io {
         EndpointIoClassification::BufferedCodec(io) => ResolvedResponseBodyIo::BufferedCodec(io),
         EndpointIoClassification::BufferedBytes => ResolvedResponseBodyIo::BufferedBytes,
         EndpointIoClassification::NoContent => ResolvedResponseBodyIo::NoContent,
@@ -856,7 +864,8 @@ fn ensure_codegen_supported_response_io(
         ResolvedResponseBodyIo::BufferedCodec(_)
         | ResolvedResponseBodyIo::RawStream { .. }
         | ResolvedResponseBodyIo::Records { .. }
-        | ResolvedResponseBodyIo::Multipart { .. } => Ok(()),
+        | ResolvedResponseBodyIo::Multipart { .. }
+        | ResolvedResponseBodyIo::Sse { .. } => Ok(()),
         ResolvedResponseBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`Bytes` endpoint I/O is reserved but not supported yet",
@@ -864,10 +873,6 @@ fn ensure_codegen_supported_response_io(
         ResolvedResponseBodyIo::NoContent => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`NoContent` endpoint I/O is reserved but not supported yet",
-        )),
-        ResolvedResponseBodyIo::Sse { .. } => Err(syn::Error::new_spanned(
-            spec.marker.clone(),
-            "`Sse` endpoint I/O is reserved but not supported yet",
         )),
     }
 }

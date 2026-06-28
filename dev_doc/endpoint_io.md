@@ -24,7 +24,7 @@ It does not implement any of those behaviors.
 
 ## Current Baseline
 
-The current implementation distinguishes buffered codecs from the reserved endpoint I/O families that now have dedicated runtime support.
+The current implementation distinguishes buffered codecs from the reserved endpoint I/O families that now have dedicated runtime support and, where noted below, generated endpoint support.
 
 - Macro raw AST and semantic IR carry explicit endpoint I/O shapes.
 - `CodecSpec` remains the buffered-codec shape for non-reserved families.
@@ -132,7 +132,9 @@ For large or unbounded byte transfer, future PRs should use `Stream<OctetStream>
 
 - `Sse<T>` defaults to `Sse<T, JsonSse>`.
 - Core runtime support now exists for SSE responses.
-- Macro/codegen support for `Sse<T>` and `Sse<T, C>` remains future work.
+- Macro/codegen support exists for `Sse<T>` and `Sse<T, C>`.
+- Generated response endpoints return `SseStream<T>`.
+- Generated endpoints expose `.execute_sse()`, and `.execute()` also routes through SSE execution.
 - Runtime response value: `SseStream<T>`.
 - Runtime codec trait: `SseCodec<T>`.
 - Built-in codec: `JsonSse`.
