@@ -208,6 +208,6 @@ Add checks to the narrowest owner first. Use compile-only public surface tests f
 
 Repository search checks are part of the contract for removed or reserved features:
 
-- `MediaType` should have zero active hits.
+- The legacy media-type trait name should have zero repository hits; `ContentType` is the only supported wire-content marker trait.
 - `WebSocket` and `execute_websocket` should only appear in deliberate removal-proof negative fixtures, if any remain.
 - `Cache` should only appear in the intentional removed-feature maintainer note.
