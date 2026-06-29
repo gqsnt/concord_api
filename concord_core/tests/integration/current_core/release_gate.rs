@@ -78,6 +78,7 @@ fn examples_cover_v1_usage_surface() {
         "execute_records",
         "execute_multipart",
         "execute_sse",
+        "next_batch",
         "StreamBody",
         "RecordBody",
         "MultipartBody",
@@ -87,6 +88,7 @@ fn examples_cover_v1_usage_surface() {
         "CsvTabDelim",
         "Mixed",
         "JsonSse",
+        "next_batch(",
     ] {
         assert!(
             endpoint_io.contains(anchor),
@@ -106,6 +108,7 @@ fn examples_cover_v1_usage_surface() {
         "execute_records",
         "execute_multipart",
         "execute_sse",
+        "next_batch",
     ] {
         assert!(
             endpoint_docs.contains(anchor),

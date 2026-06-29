@@ -91,6 +91,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - Custom formats implement `ContentType + RecordFormat<T>`.
 - Built-in formats include `NdJson` and `Csv<Cfg>`.
 - CSV runtime support is implemented as `Records<T, Csv<Cfg>>`. The runtime contract lives in [csv_records.md](csv_records.md).
+- Batched record consumption is a `RecordStream<T>` consumer API. It is not a DSL feature, not runtime config, not a new endpoint family, and it does not introduce a new batch-specific runtime stream value. The caller must pass the batch size explicitly. Partial batch plus decode error returns the partial batch first and reports the pending sanitized error on the next call.
 - Request bodies are stream-like and non-replayable.
 - Response bodies are incremental and do not support map or pagination.
 - It must not be implemented through `BodyCodec` or `ResponseCodec`.

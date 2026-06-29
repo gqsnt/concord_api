@@ -1019,6 +1019,63 @@ async fn ndjson_record_response_yields_records_incrementally() -> Result<(), Api
 }
 
 #[tokio::test]
+async fn ndjson_record_response_next_batch_consumes_in_explicit_batches()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(
+                b"{\"id\":1}\n{\"id\":2}\n{\"id\":3}\n{\"id\":4}\n",
+            )],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordResponseBatch",
+            Method::GET,
+            "/records-response-batch",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let first_batch = response
+        .next_batch(2)
+        .await?
+        .expect("first batch should exist");
+    assert_eq!(
+        first_batch,
+        vec![RecordItem { id: 1 }, RecordItem { id: 2 }]
+    );
+    assert!(
+        transport
+            .events()
+            .iter()
+            .any(|event| event.as_str() == "record_chunk_poll")
+    );
+
+    let second = response
+        .next_record()
+        .await?
+        .expect("third record should exist");
+    assert_eq!(second, RecordItem { id: 3 });
+
+    let tail_batch = response
+        .next_batch(2)
+        .await?
+        .expect("tail batch should exist");
+    assert_eq!(tail_batch, vec![RecordItem { id: 4 }]);
+    assert!(response.next_batch(2).await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
 async fn record_response_final_line_without_newline_is_accepted() -> Result<(), ApiClientError> {
     let events = Arc::new(StdMutex::new(Vec::new()));
     let transport = RecordTransport::new(
@@ -1045,6 +1102,119 @@ async fn record_response_final_line_without_newline_is_accepted() -> Result<(), 
     assert_eq!(response.next_record().await?.unwrap(), RecordItem { id: 1 });
     assert_eq!(response.next_record().await?.unwrap(), RecordItem { id: 2 });
     assert!(response.next_record().await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_response_next_batch_respects_eof_and_zero_size() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(StatusCode::OK, vec![])],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordEmptyBatch",
+            Method::GET,
+            "/record-empty-batch",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let err = response
+        .next_batch(0)
+        .await
+        .expect_err("zero batch size should fail");
+    assert!(matches!(err, ApiClientError::InvalidParam { .. }));
+    assert!(!format!("{err:?}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
+    assert!(response.next_batch(2).await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_response_next_batch_zero_size_does_not_consume_pending_error()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n{\"id\":2}\n{\"id\":")],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordBatchZeroPending",
+            Method::GET,
+            "/record-batch-zero-pending",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let batch = response
+        .next_batch(500)
+        .await?
+        .expect("partial batch should be returned");
+    assert_eq!(batch, vec![RecordItem { id: 1 }, RecordItem { id: 2 }]);
+
+    let zero_err = response
+        .next_batch(0)
+        .await
+        .expect_err("zero batch size should fail before pending error");
+    assert!(matches!(zero_err, ApiClientError::InvalidParam { .. }));
+
+    let pending_err = response
+        .next_batch(500)
+        .await
+        .expect_err("pending decode error should remain queued");
+    assert!(matches!(
+        pending_err,
+        ApiClientError::Decode { .. } | ApiClientError::Codec { .. }
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_response_next_batch_large_requested_size_is_capped_but_logically_bounded()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n")],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordBatchHugeRequest",
+            Method::GET,
+            "/record-batch-huge-request",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let batch = response
+        .next_batch(usize::MAX)
+        .await?
+        .expect("single record batch should exist");
+    assert_eq!(batch, vec![RecordItem { id: 1 }]);
+    assert!(response.next_batch(usize::MAX).await?.is_none());
     Ok(())
 }
 
@@ -1082,6 +1252,159 @@ async fn record_response_middle_blank_line_is_rejected() -> Result<(), ApiClient
         .expect_err("blank line should be rejected");
     assert!(!format!("{err:?}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
     assert!(!format!("{err}").contains("SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_response_next_batch_before_first_error_is_sanitized() -> Result<(), ApiClientError>
+{
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let sentinel = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR";
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":")],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordBatchDecodeError",
+            Method::GET,
+            "/record-batch-decode-error",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let err = response
+        .next_batch(4)
+        .await
+        .expect_err("malformed first record should fail");
+    assert!(matches!(
+        err,
+        ApiClientError::Decode { .. } | ApiClientError::Codec { .. }
+    ));
+    assert!(!format!("{err:?}").contains(sentinel));
+    assert!(!format!("{err}").contains(sentinel));
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_response_next_batch_retains_partial_batch_then_pending_error()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let sentinel = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR";
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n{\"id\":2}\n{\"id\":")],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordBatchPartialDecodeError",
+            Method::GET,
+            "/record-batch-partial-decode-error",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let batch = response
+        .next_batch(4)
+        .await?
+        .expect("partial batch should be returned");
+    assert_eq!(batch, vec![RecordItem { id: 1 }, RecordItem { id: 2 }]);
+
+    let err = response
+        .next_batch(4)
+        .await
+        .expect_err("pending decode error should surface on next call");
+    assert!(matches!(
+        err,
+        ApiClientError::Decode { .. } | ApiClientError::Codec { .. }
+    ));
+    assert!(!format!("{err:?}").contains(sentinel));
+    assert!(!format!("{err}").contains(sentinel));
+    Ok(())
+}
+
+#[tokio::test]
+async fn record_response_next_batch_composes_with_next_record() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(
+                b"{\"id\":1}\n{\"id\":2}\n{\"id\":3}\n{\"id\":4}\n",
+            )],
+        )],
+    );
+    let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
+
+    let mut response = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordBatchCompose",
+            Method::GET,
+            "/record-batch-compose",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    assert_eq!(response.next_record().await?, Some(RecordItem { id: 1 }));
+    let batch = response.next_batch(2).await?.expect("batch should exist");
+    assert_eq!(batch, vec![RecordItem { id: 2 }, RecordItem { id: 3 }]);
+    assert_eq!(response.next_record().await?, Some(RecordItem { id: 4 }));
+    assert!(response.next_record().await?.is_none());
+    Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct NonCloneRecord {
+    id: u32,
+}
+
+#[tokio::test]
+async fn record_response_next_batch_works_without_clone_bound() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events,
+        vec![ResponseFixture::ndjson(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"{\"id\":1}\n{\"id\":2}\n")],
+        )],
+    );
+    let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
+
+    let mut response = client
+        .execute_plan_records::<NonCloneRecord, NdJson>(record_response_plan(
+            "RecordNoCloneBatch",
+            Method::GET,
+            "/record-no-clone-batch",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let batch = response.next_batch(4).await?.expect("batch should exist");
+    assert_eq!(batch.len(), 2);
+    assert_eq!(batch[0].id, 1);
+    assert_eq!(batch[1].id, 2);
+    assert!(response.next_batch(4).await?.is_none());
     Ok(())
 }
 
@@ -1577,6 +1900,67 @@ async fn csv_record_response_streams_incrementally_across_chunks() -> Result<(),
 }
 
 #[tokio::test]
+async fn csv_record_response_next_batch_consumes_in_explicit_batches() -> Result<(), ApiClientError>
+{
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::streamed_with_content_type(
+            StatusCode::OK,
+            Csv::<CsvCommaDelim>::CONTENT_TYPE,
+            vec![Bytes::from_static(
+                b"id,message\n1,one\n2,two\n3,three\n4,four\n",
+            )],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut stream = client
+        .execute_plan_records::<PipeRecord, Csv<CsvCommaDelim>>(record_response_plan_with_accept(
+            "CsvRecordResponseBatch",
+            Method::GET,
+            "/csv-record-response-batch",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+            Csv::<CsvCommaDelim>::CONTENT_TYPE,
+        ))
+        .await?;
+
+    let batch = stream.next_batch(2).await?.expect("csv batch should exist");
+    assert_eq!(
+        batch,
+        vec![
+            PipeRecord {
+                id: 1,
+                message: "one".to_string(),
+            },
+            PipeRecord {
+                id: 2,
+                message: "two".to_string(),
+            },
+        ]
+    );
+    assert_eq!(
+        stream.next_record().await?,
+        Some(PipeRecord {
+            id: 3,
+            message: "three".to_string(),
+        })
+    );
+    assert_eq!(
+        stream.next_batch(2).await?,
+        Some(vec![PipeRecord {
+            id: 4,
+            message: "four".to_string(),
+        }])
+    );
+    assert!(stream.next_batch(2).await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
 async fn csv_record_response_streams_many_records_across_chunks() -> Result<(), ApiClientError> {
     let mut body = String::from("id,message\n");
     for idx in 0..256u32 {
@@ -1629,6 +2013,48 @@ async fn csv_record_response_streams_many_records_across_chunks() -> Result<(), 
             .count()
             > 1
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn ndjson_record_response_next_batch_stops_at_requested_batch_size()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let mut chunks = Vec::new();
+    for idx in 0..16u32 {
+        chunks.push(Bytes::from(format!("{{\"id\":{idx}}}\n")));
+    }
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::ndjson(StatusCode::OK, chunks)],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut stream = client
+        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+            "RecordBatchBounded",
+            Method::GET,
+            "/record-batch-bounded",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+        ))
+        .await?;
+
+    let batch = stream.next_batch(5).await?.expect("batch should exist");
+    assert_eq!(batch.len(), 5);
+    assert_eq!(batch[0], RecordItem { id: 0 });
+    assert_eq!(batch[4], RecordItem { id: 4 });
+    assert_eq!(
+        transport
+            .events()
+            .iter()
+            .filter(|event| event.as_str() == "record_chunk_poll")
+            .count(),
+        5
+    );
+    assert_eq!(stream.next_record().await?, Some(RecordItem { id: 5 }));
     Ok(())
 }
 

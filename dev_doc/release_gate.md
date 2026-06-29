@@ -195,6 +195,8 @@ Proof owners: `docs/advanced_endpoints.md`, `docs/customization.md`, `docs/retry
 
 The current endpoint I/O contract is documented as current behavior, not future work. `ContentType` is the shared wire-content marker, `Json<T>`, `Text<String>`, `Stream`, `Records<T, NdJson>`, `Records<T, Csv<Cfg>>`, `Multipart`, `Sse`, response-only `NoContent`, and response-only `Bytes` have generated support, explicit `Multipart<T, F>` and `Sse<T, C>` forms remain supported, stream-like request bodies are not automatically replayed, `map` and pagination remain buffered-response-only with `Bytes` as the raw buffered map-allowed exception, the core `NoContent` codec is distinguished from the DSL `-> NoContent` spelling, `-> NoContent` returns `()`, `-> Bytes` returns `bytes::Bytes` through the ordinary bounded buffered response path, and request-side `NoContent` and `Bytes` remain unsupported.
 
+Batched record consumption is a `RecordStream<T>` consumer API, not a DSL feature, not runtime config, and not a new endpoint family. The caller must pass the batch size explicitly. Partial batch plus decode error returns the partial batch first and reports the pending sanitized error on the next call.
+
 ## Known V1 Limitations
 
 - `concord_examples --no-default-features` is intentionally unsupported.

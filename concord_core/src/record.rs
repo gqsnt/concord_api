@@ -169,8 +169,11 @@ pub struct RecordStream<T> {
     resp: TransportResponse,
     decoder: Box<dyn RecordDecoder<T>>,
     pending: VecDeque<T>,
+    pending_error: Option<ApiClientError>,
     finished: bool,
 }
+
+const RECORD_BATCH_PREALLOC_LIMIT: usize = 1024;
 
 impl<T> RecordStream<T> {
     pub(crate) fn new(resp: TransportResponse, decoder: Box<dyn RecordDecoder<T>>) -> Self {
@@ -178,6 +181,7 @@ impl<T> RecordStream<T> {
             resp,
             decoder,
             pending: VecDeque::new(),
+            pending_error: None,
             finished: false,
         }
     }
@@ -208,7 +212,11 @@ impl<T> RecordStream<T> {
 }
 
 impl<T: 'static> RecordStream<T> {
-    pub async fn next_record(&mut self) -> Result<Option<T>, ApiClientError> {
+    async fn next_decoded_record(&mut self) -> Result<Option<T>, ApiClientError> {
+        if let Some(err) = self.pending_error.take() {
+            return Err(err);
+        }
+
         loop {
             if let Some(item) = self.pending.pop_front() {
                 return Ok(Some(item));
@@ -237,6 +245,54 @@ impl<T: 'static> RecordStream<T> {
                     return Err(self.body_error(source));
                 }
             }
+        }
+    }
+
+    pub async fn next_record(&mut self) -> Result<Option<T>, ApiClientError> {
+        self.next_decoded_record().await
+    }
+
+    pub async fn next_batch(
+        &mut self,
+        max_records: usize,
+    ) -> Result<Option<Vec<T>>, ApiClientError> {
+        if max_records == 0 {
+            return Err(ApiClientError::invalid_param(
+                self.error_context(),
+                "record batch size must be greater than zero",
+            ));
+        }
+        if let Some(err) = self.pending_error.take() {
+            return Err(err);
+        }
+
+        let mut batch = Vec::with_capacity(max_records.min(RECORD_BATCH_PREALLOC_LIMIT));
+        while batch.len() < max_records {
+            if let Some(item) = self.pending.pop_front() {
+                batch.push(item);
+                continue;
+            }
+            if self.finished {
+                break;
+            }
+
+            match self.next_decoded_record().await {
+                Ok(Some(item)) => batch.push(item),
+                Ok(None) => break,
+                Err(source) => {
+                    if batch.is_empty() {
+                        return Err(source);
+                    }
+                    self.pending_error = Some(source);
+                    return Ok(Some(batch));
+                }
+            }
+        }
+
+        if batch.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(batch))
         }
     }
 

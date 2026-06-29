@@ -167,6 +167,17 @@ pub async fn records_examples(
     _request.execute().await
 }
 
+pub async fn records_batch_examples(
+    api: EndpointIoApi,
+) -> Result<Vec<usize>, concord_core::prelude::ApiClientError> {
+    let mut stream: RecordStream<LogEntry> = api.tail_records().execute_records().await?;
+    let mut batch_lengths = Vec::new();
+    while let Some(batch) = stream.next_batch(500).await? {
+        batch_lengths.push(batch.len());
+    }
+    Ok(batch_lengths)
+}
+
 pub async fn csv_records_examples(
     api: EndpointIoApi,
 ) -> Result<UploadResult, concord_core::prelude::ApiClientError> {
