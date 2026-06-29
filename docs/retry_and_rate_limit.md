@@ -36,7 +36,7 @@ Flat `retry` and `rate_limit` profile declarations remain valid. `policies { ...
 
 `max_attempts` is the total number of send tries, including the first send. `retry_after` honors `Retry-After` response headers for retryable statuses.
 
-`WS` endpoints reject retry policies in v1. WebSocket handshake and socket operations do not re-enter the HTTP retry or auth-refresh loops. Stream-like request bodies are not automatically replayed by retry unless a future replayable-body contract is introduced.
+`WS` endpoints reject retry policies in v1. WebSocket handshake and socket operations do not re-enter the HTTP retry or auth-refresh loops. Retry remains an HTTP transport/status decision layer; supported stream/records/multipart/SSE response endpoints can still participate in ordinary HTTP retry, but stream-like request bodies are not automatically replayed unless a future replayable-body contract is introduced.
 
 Retry is a bounded transport/status decision layer. Retry decisions happen after transport-response metadata observation and auth rejection handling, and before endpoint decode and mapping. Retry does not handle decode failures or map failures.
 

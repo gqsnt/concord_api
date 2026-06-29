@@ -31,6 +31,7 @@ fn release_gate_documents_all_required_invariants() {
         "pagination-loop-snapshot-behavior",
         "semantic-ir-codegen-diagnostics",
         "behavior-profile-semantic-only-sugar",
+        "endpoint-io-contract-current",
     ] {
         assert!(
             doc.contains(heading),
@@ -60,6 +61,11 @@ fn examples_cover_v1_usage_surface() {
 
     let endpoint_io = read_repo_file("concord_examples/src/endpoint_io.rs");
     for anchor in [
+        "Stream<OctetStream>",
+        "Records<",
+        "Multipart<",
+        "Sse<",
+        "WebSocket<",
         "execute_stream",
         "execute_records",
         "execute_multipart",
@@ -74,6 +80,35 @@ fn examples_cover_v1_usage_surface() {
         assert!(
             endpoint_io.contains(anchor),
             "endpoint I/O example should contain `{anchor}`"
+        );
+    }
+
+    let endpoint_docs = read_repo_file("docs/advanced_endpoints.md");
+    for anchor in [
+        "ContentType",
+        "Stream<",
+        "Records<",
+        "Multipart<",
+        "Sse<",
+        "WebSocket<",
+        "execute_stream",
+        "execute_records",
+        "execute_multipart",
+        "execute_sse",
+        "execute_websocket",
+        "WS` endpoints reject retry policies",
+    ] {
+        assert!(
+            endpoint_docs.contains(anchor),
+            "advanced endpoint docs should contain `{anchor}`"
+        );
+    }
+
+    let customization = read_repo_file("docs/customization.md");
+    for anchor in ["try_content_type", "try_accept", "NoContent"] {
+        assert!(
+            customization.contains(anchor),
+            "customization docs should contain `{anchor}`"
         );
     }
 

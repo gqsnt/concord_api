@@ -189,6 +189,12 @@ Proof owners: `concord_macros/src/sema/`, `concord_macros/src/codegen/`, and beh
 
 Behavior and profile names are semantic-only policy sugar. Generated runtime code uses resolved policy and does not depend on behavior or profile names.
 
+### endpoint-io-contract-current
+
+Proof owners: `docs/advanced_endpoints.md`, `docs/customization.md`, `docs/retry_and_rate_limit.md`, `dev_doc/endpoint_io.md`, `dev_doc/architecture.md`, `concord_examples/src/endpoint_io.rs`, and `concord_examples/src/custom_codec.rs`.
+
+The current endpoint I/O contract is documented as current behavior, not future work. `ContentType` is the shared wire-content marker, `Stream`, `Records`, `Multipart`, `Sse`, and `WebSocket` have generated support, `WS` rejects retry, stream-like request bodies are not automatically replayed, `map` and pagination remain buffered-response-only, and the core `NoContent` codec is distinguished from the unsupported reserved DSL `NoContent` and `Bytes` spellings.
+
 ## Known V1 Limitations
 
 - `concord_examples --no-default-features` is intentionally unsupported.

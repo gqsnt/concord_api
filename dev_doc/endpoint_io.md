@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is a design contract for future endpoint I/O implementation PRs. It defines the intended model and the constraints later work must preserve, but it does not itself introduce runtime behavior, DSL support, code generation, or public API changes.
+This document records the endpoint I/O contract and the current implementation surface. It defines the model and the constraints later work must preserve, but it does not itself introduce new runtime behavior, DSL support, code generation, or public API changes.
 
 The target is an endpoint I/O model expansion, not a single-feature "streaming" change.
 
@@ -79,6 +79,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - It is not a stream.
 - It may reuse existing no-content codec behavior internally if appropriate.
 - It should allow better sema diagnostics than treating it as a custom codec.
+- The core `NoContent` codec exists for ordinary buffered endpoints. The reserved endpoint I/O spelling `NoContent` remains unsupported in the DSL unless and until it is explicitly implemented.
 
 ### RawStream
 
@@ -219,9 +220,9 @@ All of these must continue to work as ordinary buffered codec markers.
 
 Custom buffered codec extensibility is part of the public contract and must not regress.
 
-## Target Semantic Model
+## Resolved Semantic Model
 
-This is the intended future semantic direction for later PRs, not a required PR87 implementation.
+The current resolved semantic model uses explicit endpoint mode separation.
 
 ```rust
 enum EndpointModeIr {
