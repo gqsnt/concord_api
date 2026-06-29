@@ -549,8 +549,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let dbg_verbose = dbg.is_verbose();
         let _dbg_vv = dbg.is_very_verbose();
-        if let RetrySetting::Config(config) = &plan.endpoint.policy.retry {
-            config.validate(ctx.clone())?;
+        if matches!(plan.endpoint.policy.retry, RetrySetting::Config(_)) {
+            return Err(ApiClientError::PolicyViolation {
+                ctx,
+                msg: "websocket endpoints do not support retry policies",
+            });
         }
         let auth_state_snapshot =
             self.try_auth_state()

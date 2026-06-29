@@ -1,8 +1,7 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    Mixed, MultipartBody, MultipartStream, RawResponsePart, StreamBody, Transport,
-    TransportBody, TransportError, TransportErrorKind, TransportRequest, TransportRequestBody,
-    TransportResponse,
+    Mixed, MultipartBody, MultipartStream, RawResponsePart, StreamBody, Transport, TransportBody,
+    TransportError, TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
 };
 use concord_core::prelude::{ApiClientError, Json};
 use concord_macros::api;

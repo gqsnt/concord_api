@@ -57,5 +57,6 @@ The generated advanced surfaces are family-specific and keep runtime values free
 - `WebSocket<Out, In>` defaults to `WebSocket<Out, In, JsonWebSocket>` and uses `WebSocketClient<Out, In>`; WebSocket is modeled as `WS` endpoint mode, not a buffered response body.
 - Each family has a dedicated helper on pending requests: `.execute_stream()`, `.execute_records()`, `.execute_multipart()`, `.execute_sse()`, or `.execute_websocket()`.
 - `.execute()` also routes through the family-specific execution path for these endpoint I/O shapes.
+- Retry policies remain available for ordinary HTTP endpoints, including buffered responses and supported stream/records/multipart/SSE response endpoints. Stream-like request bodies are not automatically replayed by retry unless a future replayable-body contract is introduced. `WS` endpoints reject retry policies in v1.
 - Map and pagination remain limited to buffered decoded responses and are rejected for the reserved stream-like families.
 - Request-side SSE and WebSocket remain unsupported.

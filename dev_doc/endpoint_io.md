@@ -159,6 +159,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - Runtime codec trait: `WebSocketCodec<Out, In>`.
 - Built-in codec: `JsonWebSocket`.
 - Handshake URL schemes map `https -> wss` and `http -> ws`.
+- `WS` endpoints reject retry policies in v1; rate-limit and auth preparation still apply before connect.
 - Rate-limit applies before the connect/upgrade attempt.
 - Auth, header, query, and path construction apply before upgrade.
 - Reconnect, replay, pooling, multiplexing, and server-side WebSocket are out of scope initially.

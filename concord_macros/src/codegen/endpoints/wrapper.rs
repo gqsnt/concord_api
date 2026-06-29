@@ -1190,11 +1190,23 @@ fn endpoint_has_rate_limit(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksRe
 
 #[allow(dead_code)]
 fn endpoint_has_retry(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolved) -> bool {
-    client_policy.retry.is_some()
-        || ep
-            .policy
-            .scopes
-            .iter()
-            .any(|policy| policy.retry.is_some())
-        || ep.policy.endpoint.retry.is_some()
+    let mut enabled = retry_block_enabled(&client_policy.retry);
+    for policy in &ep.policy.scopes {
+        match policy.retry {
+            Some(RetryResolved::Clear) => enabled = false,
+            Some(RetryResolved::Set(_) | RetryResolved::Patch(_)) => enabled = true,
+            None => {}
+        }
+    }
+    match ep.policy.endpoint.retry {
+        Some(RetryResolved::Clear) => enabled = false,
+        Some(RetryResolved::Set(_) | RetryResolved::Patch(_)) => enabled = true,
+        None => {}
+    }
+    enabled
+}
+
+#[allow(dead_code)]
+fn retry_block_enabled(block: &Option<RetryResolved>) -> bool {
+    matches!(block, Some(RetryResolved::Set(_) | RetryResolved::Patch(_)))
 }

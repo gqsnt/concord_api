@@ -4,6 +4,7 @@ struct WalkItemsCtx<'a> {
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
     client_default_behavior_names: &'a [String],
+    client_policy: &'a PolicyBlocksResolved,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
     behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
@@ -17,6 +18,7 @@ struct EndpointAnalysisCtx<'a> {
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
     client_default_behavior_names: &'a [String],
+    client_policy: &'a PolicyBlocksResolved,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
     behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
@@ -98,6 +100,7 @@ fn walk_items(
                     auth_credentials: ctx.auth_credentials,
                     client_auth: ctx.client_auth,
                     client_default_behavior_names: ctx.client_default_behavior_names,
+                    client_policy: ctx.client_policy,
                     retry_profiles: ctx.retry_profiles,
                     rate_limit_profiles: ctx.rate_limit_profiles,
                     behavior_profiles: ctx.behavior_profiles,
@@ -615,6 +618,12 @@ fn analyze_endpoint(
                 "`WS` endpoints must return `WebSocket<Out, In>`",
             ));
         }
+        if endpoint_retry_enabled(ctx.client_policy, &scope_policies, &policy) {
+            return Err(syn::Error::new(
+                ed.method.span(),
+                "`WS` endpoints do not support retry policies",
+            ));
+        }
     } else if matches!(response_io, ResolvedResponseBodyIo::WebSocket { .. }) {
         return Err(syn::Error::new(
             ed.response.marker.span(),
@@ -945,6 +954,31 @@ fn classify_endpoint_io(
             Ok(EndpointIoClassification::BufferedCodec(buffered_codec_io(spec)))
         }
     }
+}
+
+fn endpoint_retry_enabled(
+    client_policy: &PolicyBlocksResolved,
+    scope_policies: &[PolicyBlocksResolved],
+    endpoint_policy: &PolicyBlocksResolved,
+) -> bool {
+    let mut enabled = retry_block_enabled(&client_policy.retry);
+    for policy in scope_policies {
+        match policy.retry {
+            Some(RetryResolved::Clear) => enabled = false,
+            Some(RetryResolved::Set(_) | RetryResolved::Patch(_)) => enabled = true,
+            None => {}
+        }
+    }
+    match endpoint_policy.retry {
+        Some(RetryResolved::Clear) => enabled = false,
+        Some(RetryResolved::Set(_) | RetryResolved::Patch(_)) => enabled = true,
+        None => {}
+    }
+    enabled
+}
+
+fn retry_block_enabled(block: &Option<RetryResolved>) -> bool {
+    matches!(block, Some(RetryResolved::Set(_) | RetryResolved::Patch(_)))
 }
 
 fn ensure_codegen_supported_request_io(

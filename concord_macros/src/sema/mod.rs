@@ -170,6 +170,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         auth_credentials: &auth_credential_map,
         client_auth: &client_auth,
         client_default_behavior_names: &client_default_behavior_names,
+        client_policy: &client_policy,
         retry_profiles: &retry_profiles,
         rate_limit_profiles: &rate_limit_profiles,
         behavior_profiles: &behavior_profiles,

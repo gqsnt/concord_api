@@ -631,6 +631,32 @@ async fn websocket_rejects_http_bodies_and_policy_violations_before_connect()
 }
 
 #[tokio::test]
+async fn websocket_rejects_retry_policy_before_connect() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = WsTransport::success(events.clone(), Vec::new());
+    let api = websocket_client(transport.clone(), events.clone());
+
+    let mut plan = websocket_plan(BodyPlan::None, None, false);
+    plan.endpoint.policy.retry =
+        concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
+            max_attempts: 2,
+            ..Default::default()
+        });
+
+    let err = api
+        .execute_plan_websocket::<WsOut, WsIn, JsonWebSocket>(plan)
+        .await
+        .expect_err("retry-enabled websocket plan must be rejected");
+
+    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    let rendered = format!("{err:?}\n{err}");
+    assert!(!rendered.contains("SECRET_WS_SENTINEL"));
+    assert_eq!(transport.connect_count().await, 0);
+    assert_events_do_not_contain(&events, &["rate_acquire", "connect"]).await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn websocket_connect_failure_is_not_retried() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = WsTransport::failing(events.clone(), TransportErrorKind::Connect);
