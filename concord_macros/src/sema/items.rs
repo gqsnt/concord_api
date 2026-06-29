@@ -615,6 +615,12 @@ fn analyze_endpoint(
             ));
         }
     }
+    if matches!(response_io, ResolvedResponseBodyIo::BufferedBytes) && ed.paginate.is_some() {
+        return Err(syn::Error::new(
+            ed.name.span(),
+            "`Bytes` responses do not support pagination",
+        ));
+    }
     ensure_codegen_supported_request_io(&request_io, ed.body.as_ref())?;
     ensure_codegen_supported_response_io(&response_io, &ed.response)?;
     let io = ResolvedHttpEndpointIo {
@@ -900,19 +906,16 @@ fn ensure_codegen_supported_request_io(
 
 fn ensure_codegen_supported_response_io(
     io: &ResolvedResponseBodyIo,
-    spec: &RawResponseIo,
+    _spec: &RawResponseIo,
 ) -> Result<()> {
     match io {
         ResolvedResponseBodyIo::BufferedCodec(_)
+        | ResolvedResponseBodyIo::BufferedBytes
         | ResolvedResponseBodyIo::RawStream { .. }
         | ResolvedResponseBodyIo::Records { .. }
         | ResolvedResponseBodyIo::Multipart { .. }
         | ResolvedResponseBodyIo::Sse { .. }
         | ResolvedResponseBodyIo::NoContent => Ok(()),
-        ResolvedResponseBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
-            spec.marker.clone(),
-            "`Bytes` endpoint I/O is reserved but not supported yet",
-        )),
     }
 }
 

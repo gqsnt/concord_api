@@ -424,6 +424,7 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
         });
     }
     let response_summary = match ep.response_io() {
+        ResolvedResponseBodyIo::BufferedBytes => "Response: bytes::Bytes".to_string(),
         ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => format!(
             "Response: Multipart<{}, {}>",
             quote::quote!(#part_ty),

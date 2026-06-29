@@ -57,10 +57,11 @@ The generated advanced surfaces are family-specific and keep runtime values free
 - `Records<T, F>` uses `RecordBody<T>` for requests and `RecordStream<T>` for responses. Supported formats include `NdJson` and `Csv<Cfg>`; the built-in CSV configs are `CsvCommaDelim`, `CsvSemicolonDelim`, and `CsvTabDelim`.
 - `Multipart<T>` defaults to `Multipart<T, FormData>` and uses `MultipartBody` for requests and `MultipartStream<T>` for responses. Explicit `Multipart<T, F>` remains supported, including `Mixed`.
 - `Sse<T>` defaults to `Sse<T, JsonSse>` and uses `SseStream<T>` for responses; SSE is response-only and `JsonSse` decodes event data, not the HTTP wire content type. Explicit `Sse<T, C>` remains supported.
+- `Bytes` is a response-only reserved endpoint I/O spelling that returns `bytes::Bytes`, uses the ordinary bounded buffered response path, and omits `Accept`; request-side `Bytes` remains invalid. Use `Stream<OctetStream>` for unbounded byte transfer.
 - Each family has a dedicated helper on pending requests: `.execute_stream()`, `.execute_records()`, `.execute_multipart()`, or `.execute_sse()`.
 - `.execute()` also routes through the family-specific execution path for these endpoint I/O shapes.
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` are the codec-level override points for buffered codecs. `content_type()` and `accept()` are the convenience forms.
-- The core `NoContent` buffered codec intentionally omits request and response content headers. The reserved DSL spelling `-> NoContent` is response-only, returns `()`, and omits `Accept`; request-side `NoContent` remains invalid. `Bytes` remains an unsupported endpoint I/O spelling.
+- The core `NoContent` buffered codec intentionally omits request and response content headers. The reserved DSL spelling `-> NoContent` is response-only, returns `()`, and omits `Accept`; request-side `NoContent` remains invalid. The reserved DSL spelling `-> Bytes` is response-only, returns `bytes::Bytes`, and uses the ordinary bounded buffered response path.
 - Retry policies remain available for ordinary HTTP endpoints, including buffered responses and supported stream/records/multipart/SSE response endpoints. Stream-like request bodies are not automatically replayed by retry unless a future replayable-body contract is introduced.
-- Map and pagination remain buffered-response-only and are rejected for `Stream`, `Records`, `Multipart`, `Sse`, and `NoContent` endpoint responses.
+- Map and pagination remain buffered-response-only and are rejected for `Stream`, `Records`, `Multipart`, `Sse`, and `NoContent` endpoint responses. `Bytes` allows `map` but rejects pagination.
 - Request-side SSE remains unsupported.

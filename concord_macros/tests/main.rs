@@ -1,5 +1,6 @@
 mod integration {
     mod auth_helpers;
+    mod bytes_helpers;
     mod current;
     mod custom_codec_helpers;
     mod multipart_helpers;

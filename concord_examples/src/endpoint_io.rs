@@ -40,6 +40,11 @@ api! {
         path ["no-content"]
         -> NoContent
 
+    GET BytesResponse
+        as bytes_response
+        path ["bytes"]
+        -> Bytes
+
     POST UploadStream(body: Stream<OctetStream>)
         as upload_stream
         path ["stream", "upload"]
@@ -121,6 +126,12 @@ pub async fn no_content_example(
     api: EndpointIoApi,
 ) -> Result<(), concord_core::prelude::ApiClientError> {
     api.no_content_response().execute().await
+}
+
+pub async fn bytes_example(
+    api: EndpointIoApi,
+) -> Result<::bytes::Bytes, concord_core::prelude::ApiClientError> {
+    api.bytes_response().execute().await
 }
 
 pub async fn stream_examples(

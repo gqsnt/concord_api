@@ -1,5 +1,0 @@
-error: `Bytes` endpoint I/O is reserved but not supported yet
- --> tests/trybuild/fail/codegen/reserved_bytes_unsupported.rs:8:12
-  |
-8 |         -> Bytes
-  |            ^^^^^

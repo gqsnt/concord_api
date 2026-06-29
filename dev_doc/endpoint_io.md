@@ -16,6 +16,7 @@ The current implementation distinguishes buffered codecs from the reserved endpo
 - Dedicated runtime paths exist for `Stream`, `Records`, `Multipart`, and `Sse` families so they do not have to buffer the whole body.
 - Macro/codegen support exists for `Stream<M>`, `Records<T, NdJson>`, `Records<T, Csv<Cfg>>`, `Multipart<T, F>`, and `Sse<T, C>`.
 - Response-only `NoContent` is implemented and returns `()`.
+- Response-only `Bytes` is implemented and returns `bytes::Bytes` through the ordinary bounded buffered response path.
 - `.execute_raw()` remains bounded-buffered.
 - Custom buffered codecs are already open-ended and must stay that way.
 
@@ -45,12 +46,14 @@ BufferedCodec is the default family. Everything non-reserved is a buffered codec
 
 ### BufferedBytes
 
-`Bytes` is a reserved endpoint I/O spelling for full buffered bytes.
+`Bytes` is a reserved response-only spelling for full buffered bytes.
 
-- It is subject to buffered request and response body limits.
+- It returns `bytes::Bytes` in generated facades.
+- It uses the ordinary bounded buffered response path.
+- It omits `Accept`.
 - It is not a stream.
+- Request-side `Bytes` remains invalid.
 - It may reuse buffered internals.
-- It is reserved for diagnostics and semantic clarity.
 
 For large or unbounded byte transfer, use `Stream<OctetStream>` rather than trying to stretch `Bytes`.
 
@@ -145,7 +148,7 @@ Only these families are sema-special.
 
 | Family | Valid forms | Defaulting |
 | --- | --- | --- |
-| `Bytes` | `Bytes` | none |
+| `Bytes` | `Bytes` | response-only |
 | `NoContent` | `NoContent` | response-only |
 | `Stream` | `Stream<M>` | none |
 | `Records` | `Records<T, F>` | none initially |
@@ -282,7 +285,7 @@ Avoid broad endpoint parameters such as `upload<B: Into<StreamBody>>(body: B)` u
 
 - `map` is allowed only when the response is buffered and decoded.
 - A streaming request with a buffered response may still allow `map`.
-- `map` is rejected for `Stream` responses, `Records` responses, `Multipart` responses, `Sse` responses, and `NoContent` responses.
+- `map` is rejected for `Stream` responses, `Records` responses, `Multipart` responses, `Sse` responses, and `NoContent` responses. `Bytes` allows `map`.
 
 ### Pagination
 
@@ -290,7 +293,7 @@ Avoid broad endpoint parameters such as `upload<B: Into<StreamBody>>(body: B)` u
 - Pagination controllers operate on decoded page values.
 - Pagination may mutate subsequent logical requests.
 - `Records<T, F>` and `Sse<T, C>` are not pages.
-- Pagination is rejected for `Stream` responses, `Records` responses, `Multipart` responses, `Sse` responses, and `NoContent` responses.
+- Pagination is rejected for `Stream` responses, `Records` responses, `Multipart` responses, `Sse` responses, `NoContent` responses, and `Bytes` responses.
 
 ### Retry And Replay
 
@@ -335,6 +338,7 @@ pub enum TransportRequestBody {
 - Existing response transport is already chunk-capable and should be preserved or reused.
 - Do not create unnecessary special transport paths for `Bytes` unless current code requires it.
 - The response-only `NoContent` spelling may reuse the existing no-content path internally.
+- The response-only `Bytes` spelling may reuse the existing bounded buffered response path internally.
 
 ## Advanced Execution Surfaces
 
