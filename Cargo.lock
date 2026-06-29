@@ -191,6 +191,7 @@ dependencies = [
  "governor",
  "http",
  "httpdate",
+ "memchr",
  "reqwest",
  "serde",
  "serde_json",

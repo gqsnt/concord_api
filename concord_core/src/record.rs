@@ -5,7 +5,7 @@ use crate::transport::{
     StreamBodyLimitError, StreamLimitDirection, TransportByteStream, TransportError,
     TransportResponse,
 };
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures_core::Stream;
 use serde::{Serialize, de::DeserializeOwned};
 use std::collections::VecDeque;
@@ -387,29 +387,30 @@ where
 }
 
 struct NdJsonDecoder<T> {
-    buffer: Vec<u8>,
+    buffer: BytesMut,
     _marker: PhantomData<fn() -> T>,
 }
 
 impl<T> NdJsonDecoder<T> {
     fn new() -> Self {
         Self {
-            buffer: Vec::new(),
+            buffer: BytesMut::new(),
             _marker: PhantomData,
         }
     }
 
-    fn decode_line(&self, mut line: Vec<u8>) -> Result<T, CodecError>
+    fn decode_line(&self, mut line: BytesMut) -> Result<T, CodecError>
     where
         T: DeserializeOwned,
     {
         if line.last() == Some(&b'\r') {
-            line.pop();
+            line.truncate(line.len() - 1);
         }
         if line.is_empty() {
             return Err(CodecError::new("record response decode failed"));
         }
-        serde_json::from_slice(&line).map_err(|_| CodecError::new("record response decode failed"))
+        serde_json::from_slice(line.as_ref())
+            .map_err(|_| CodecError::new("record response decode failed"))
     }
 
     fn parse_available(&mut self, finalizing: bool) -> Result<Vec<T>, CodecError>
@@ -417,13 +418,13 @@ impl<T> NdJsonDecoder<T> {
         T: DeserializeOwned,
     {
         let mut out = Vec::new();
-        while let Some(pos) = self.buffer.iter().position(|byte| *byte == b'\n') {
-            let mut line: Vec<u8> = self.buffer.drain(..=pos).collect();
-            line.pop();
+        while let Some(pos) = memchr::memchr(b'\n', &self.buffer) {
+            let mut line = self.buffer.split_to(pos + 1);
+            line.truncate(pos);
             out.push(self.decode_line(line)?);
         }
         if finalizing && !self.buffer.is_empty() {
-            let line = std::mem::take(&mut self.buffer);
+            let line = self.buffer.split_to(self.buffer.len());
             out.push(self.decode_line(line)?);
         }
         Ok(out)
@@ -510,6 +511,18 @@ mod tests {
 
         let mut decoder: Box<dyn RecordDecoder<Item>> = NdJson::decoder();
         let err = decoder
+            .push_chunk(Bytes::from_static(b"\n"))
+            .expect_err("empty line should fail");
+        assert_eq!(err.to_string(), "record response decode failed");
+
+        let mut decoder: Box<dyn RecordDecoder<Item>> = NdJson::decoder();
+        let err = decoder
+            .push_chunk(Bytes::from_static(b"\r\n"))
+            .expect_err("empty crlf line should fail");
+        assert_eq!(err.to_string(), "record response decode failed");
+
+        let mut decoder: Box<dyn RecordDecoder<Item>> = NdJson::decoder();
+        let err = decoder
             .push_chunk(Bytes::from_static(b"\xff\n"))
             .expect_err("invalid utf-8 should fail");
         assert_eq!(err.to_string(), "record response decode failed");
@@ -519,6 +532,96 @@ mod tests {
             .push_chunk(Bytes::from_static(b"{\"id\":1,}\n"))
             .expect_err("invalid json should fail");
         assert_eq!(err.to_string(), "record response decode failed");
+    }
+
+    #[test]
+    fn ndjson_decoder_emits_multiple_records_from_one_chunk() {
+        let mut decoder: Box<dyn RecordDecoder<Item>> = NdJson::decoder();
+        let records = decoder
+            .push_chunk(Bytes::from_static(b"{\"id\":1}\n{\"id\":2}\n"))
+            .expect("chunk should decode");
+        assert_eq!(records, vec![Item { id: 1 }, Item { id: 2 }]);
+        assert!(decoder.finish().expect("finish").is_empty());
+    }
+
+    #[test]
+    fn ndjson_decoder_waits_for_complete_record_across_chunks() {
+        let mut decoder: Box<dyn RecordDecoder<Item>> = NdJson::decoder();
+        assert!(
+            decoder
+                .push_chunk(Bytes::from_static(b"{\"id\":"))
+                .expect("first chunk")
+                .is_empty()
+        );
+        let records = decoder
+            .push_chunk(Bytes::from_static(b"1}\n"))
+            .expect("second chunk");
+        assert_eq!(records, vec![Item { id: 1 }]);
+        assert!(decoder.finish().expect("finish").is_empty());
+    }
+
+    #[test]
+    fn ndjson_decoder_accepts_crlf_and_final_line_without_newline() {
+        let mut decoder: Box<dyn RecordDecoder<Item>> = NdJson::decoder();
+        let records = decoder
+            .push_chunk(Bytes::from_static(b"{\"id\":1}\r\n"))
+            .expect("crlf chunk");
+        assert_eq!(records, vec![Item { id: 1 }]);
+        let final_records = decoder
+            .push_chunk(Bytes::from_static(b"{\"id\":2}"))
+            .expect("final partial");
+        assert!(final_records.is_empty());
+        assert_eq!(decoder.finish().expect("finish"), vec![Item { id: 2 }]);
+    }
+
+    #[test]
+    fn ndjson_decoder_invalid_json_errors_are_sanitized() {
+        let mut decoder: Box<dyn RecordDecoder<Item>> = NdJson::decoder();
+        let err = decoder
+            .push_chunk(Bytes::from_static(
+                b"{\"token\":\"SECRET_RECORD_SENTINEL\"\n",
+            ))
+            .expect_err("invalid json should fail");
+        let debug = format!("{err:?}");
+        let display = err.to_string();
+        assert!(!debug.contains("SECRET_RECORD_SENTINEL"));
+        assert!(!display.contains("SECRET_RECORD_SENTINEL"));
+        assert_eq!(display, "record response decode failed");
+    }
+
+    #[test]
+    fn ndjson_decoder_handles_large_batches() {
+        let mut decoder: Box<dyn RecordDecoder<Item>> = NdJson::decoder();
+        let mut input = String::new();
+        for id in 0..1000u32 {
+            input.push_str(&format!("{{\"id\":{id}}}\n"));
+        }
+        let records = decoder
+            .push_chunk(Bytes::from(input))
+            .expect("large batch should decode");
+        assert_eq!(records.len(), 1000);
+        assert_eq!(records[0], Item { id: 0 });
+        assert_eq!(records[999], Item { id: 999 });
+        assert!(decoder.finish().expect("finish").is_empty());
+    }
+
+    #[test]
+    fn ndjson_decoder_handles_bytewise_chunks() {
+        let mut decoder: Box<dyn RecordDecoder<Item>> = NdJson::decoder();
+        let input = b"{\"id\":1}\n";
+        for byte in &input[..input.len() - 1] {
+            assert!(
+                decoder
+                    .push_chunk(Bytes::copy_from_slice(&[*byte]))
+                    .expect("partial byte")
+                    .is_empty()
+            );
+        }
+        let records = decoder
+            .push_chunk(Bytes::copy_from_slice(&input[input.len() - 1..]))
+            .expect("newline byte");
+        assert_eq!(records, vec![Item { id: 1 }]);
+        assert!(decoder.finish().expect("finish").is_empty());
     }
 
     #[test]
