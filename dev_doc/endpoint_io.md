@@ -18,7 +18,7 @@ This contract covers:
 - auth refresh behavior
 - policy compatibility
 - body-free observability
-- future public API direction
+- public API direction
 
 It does not implement any of those behaviors.
 
@@ -89,7 +89,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - Request value direction: `StreamBody`.
 - Response value direction: `StreamResponse<M>`.
 - The DSL owns media type; runtime values own only source, sink, and consumption state.
-- It handles file upload, download, and proxying in future PRs.
+- It handles file upload and download, and can be reused for proxying paths when needed.
 - It must not be implemented through `BodyCodec` or `ResponseCodec`.
 - It does not imply replayable request bodies.
 
@@ -385,7 +385,7 @@ Avoid broad endpoint parameters such as `upload<B: Into<StreamBody>>(body: B)` u
 
 ## Transport Direction
 
-Future endpoint I/O work will need a request body enum instead of a single buffered payload.
+TransportRequestBody already models request body kind explicitly.
 
 ```rust
 pub enum TransportRequestBody {
@@ -395,8 +395,7 @@ pub enum TransportRequestBody {
 }
 ```
 
-- The current `Option<Bytes>` request body representation is not sufficient for endpoint I/O expansion.
-- Future PRs should introduce a request body enum.
+- The current transport request body enum is the request/transport boundary and should be preserved.
 - Existing response transport is already chunk-capable and should be preserved or reused.
 - Do not create unnecessary special transport paths for `Bytes` or `NoContent` unless current code requires it.
 - `Bytes` and `NoContent` may reuse buffered internals.
@@ -421,13 +420,13 @@ pub enum TransportRequestBody {
 - HTTP `ResponseBodyShape` must not contain WebSocket.
 - `WS` endpoints must return `WebSocket<...>`.
 - HTTP endpoints must not return `WebSocket<...>`.
-- WebSocket implementation can be later and optional behind a backend feature if required.
+- WebSocket is already part of the current runtime surface and should not be modeled as a buffered response body.
 
 ## Runtime Configuration Direction
 
 - Do not add DSL knobs for chunk size, reconnect behavior, record byte limits, idle timeout, multipart limits, or WebSocket subprotocols unless there is no clean Rust-trait, request-builder, or runtime-config alternative.
 - Detailed behavior belongs in runtime config, request builders, and explicit Rust traits.
-- Buffered body limits and stream-specific limits should remain separate in future PRs.
+- Buffered body limits and stream-specific limits remain separate.
 
 ## Explicit Non-Goals
 

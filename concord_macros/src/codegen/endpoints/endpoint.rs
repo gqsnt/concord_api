@@ -599,7 +599,9 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
                         .take()
                         .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
                     let __body_plan = ::concord_core::internal::BodyPlan::Multipart {
-                        content_type: __body_value.content_type::<#format_ty>(),
+                        content_type: __body_value
+                            .try_content_type::<#format_ty>()
+                            .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
                         format: ::concord_core::internal::Format::Text,
                     };
                     let __request_args = ::concord_core::internal::RequestArgs::with_multipart_body::<#format_ty>(__body_value)

@@ -22,9 +22,15 @@ pub struct FormData;
 pub struct Mixed;
 
 pub trait MultipartFormat: ContentType + Send + Sync + 'static {
-    fn render_content_type(boundary: &str) -> HeaderValue {
+    fn try_render_content_type(
+        boundary: &str,
+    ) -> Result<HeaderValue, http::header::InvalidHeaderValue> {
         HeaderValue::from_str(&format!("{}; boundary={boundary}", Self::CONTENT_TYPE))
-            .expect("generated multipart boundary must be a valid header value")
+    }
+
+    fn render_content_type(boundary: &str) -> HeaderValue {
+        Self::try_render_content_type(boundary)
+            .expect("built-in multipart content type and generated boundary must be valid")
     }
 }
 
@@ -45,6 +51,7 @@ pub enum MultipartBodyErrorKind {
     InvalidPartName,
     InvalidPartFileName,
     InvalidPartContentType,
+    InvalidMultipartContentType,
 }
 
 pub struct MultipartBodyError {
@@ -52,7 +59,7 @@ pub struct MultipartBodyError {
 }
 
 impl MultipartBodyError {
-    fn new(kind: MultipartBodyErrorKind) -> Self {
+    pub(crate) fn new(kind: MultipartBodyErrorKind) -> Self {
         Self { kind }
     }
 
@@ -76,6 +83,9 @@ impl fmt::Display for MultipartBodyError {
             MultipartBodyErrorKind::InvalidPartFileName => "multipart part file name is invalid",
             MultipartBodyErrorKind::InvalidPartContentType => {
                 "multipart part content type is invalid"
+            }
+            MultipartBodyErrorKind::InvalidMultipartContentType => {
+                "multipart request content type is invalid"
             }
         })
     }
@@ -245,6 +255,12 @@ impl MultipartBody {
 
     pub fn content_type<F: MultipartFormat>(&self) -> HeaderValue {
         F::render_content_type(&self.boundary)
+    }
+
+    pub fn try_content_type<F: MultipartFormat>(
+        &self,
+    ) -> Result<HeaderValue, http::header::InvalidHeaderValue> {
+        F::try_render_content_type(&self.boundary)
     }
 
     pub fn into_transport_body<F: MultipartFormat>(
@@ -580,6 +596,21 @@ mod tests {
                 .expect("multipart content type")
                 .starts_with("multipart/mixed; boundary=")
         );
+    }
+
+    #[test]
+    fn multipart_try_content_type_rejects_invalid_custom_content_type() {
+        #[derive(Clone, Copy, Debug, Default)]
+        struct BadMultipart;
+
+        impl ContentType for BadMultipart {
+            const CONTENT_TYPE: &'static str = "bad\nvalue";
+        }
+
+        impl MultipartFormat for BadMultipart {}
+
+        let body = MultipartBody::new().bytes("payload", Bytes::from_static(b"xyz"));
+        assert!(body.try_content_type::<BadMultipart>().is_err());
     }
 
     #[test]

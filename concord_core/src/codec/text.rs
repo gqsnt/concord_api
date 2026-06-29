@@ -1,17 +1,13 @@
 use crate::codec::{
     BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
-use crate::codec::{ContentType, Decodes, Encodes, Format, FormatType};
+use crate::codec::{Decodes, Encodes, Format, FormatType};
 use crate::media::TextContentType;
 use bytes::Bytes;
 use std::marker::PhantomData;
 use std::str::Utf8Error;
 
 pub struct Text<T = String>(PhantomData<T>);
-
-impl ContentType for Text {
-    const CONTENT_TYPE: &'static str = "text/plain";
-}
 
 impl FormatType for Text {
     const FORMAT_TYPE: Format = Format::Text;

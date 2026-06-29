@@ -1,7 +1,7 @@
 use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy, decode_string};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, DebugSink, FormData, Mixed, MultipartBody, MultipartBodyErrorKind,
+    AuthPlacement, ContentType, DebugSink, FormData, Mixed, MultipartBody, MultipartBodyErrorKind,
     MultipartFormat, PostResponseHookContext, PreSendHookContext, RateLimitContext,
     RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
     RateLimiter, RuntimeHooks, StreamBody, Transport, TransportBody, TransportError,
@@ -741,6 +741,43 @@ async fn multipart_invalid_part_metadata_is_rejected_body_safely() {
     assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartName);
     assert!(!err.to_string().contains("bad\r\nname"));
     assert!(!polled.load(Ordering::SeqCst));
+    let _ = client;
+}
+
+#[tokio::test]
+async fn multipart_request_content_type_validation_is_body_free() {
+    #[derive(Debug, Default, Clone, Copy)]
+    struct BadMultipartFormat;
+
+    impl ContentType for BadMultipartFormat {
+        const CONTENT_TYPE: &'static str = "bad\nvalue";
+    }
+
+    impl MultipartFormat for BadMultipartFormat {}
+
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport =
+        MultipartTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    let polled = Arc::new(AtomicBool::new(false));
+    let body = MultipartBody::new().stream(
+        "upload",
+        StreamBody::from_byte_stream(PollFlagStream::new(
+            polled.clone(),
+            Bytes::from_static(b"chunk"),
+        )),
+    );
+
+    let err = RequestArgs::with_multipart_body::<BadMultipartFormat>(body)
+        .expect_err("invalid multipart content type should fail before body encoding");
+    assert_eq!(
+        err.kind(),
+        MultipartBodyErrorKind::InvalidMultipartContentType
+    );
+    assert_eq!(err.to_string(), "multipart request content type is invalid");
+    assert!(!polled.load(Ordering::SeqCst));
+    assert_eq!(transport.send_count(), 0);
     let _ = client;
 }
 

@@ -2,6 +2,7 @@
 
 use crate::advanced::{MultipartBody, MultipartBodyError, MultipartFormat};
 use crate::error::{ApiClientError, ErrorContext};
+use crate::multipart::MultipartBodyErrorKind;
 use crate::pagination::{
     HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
     PaginationController, ProgressKey,
@@ -93,7 +94,9 @@ impl RequestArgs {
     where
         F: MultipartFormat,
     {
-        let multipart_content_type = body.content_type::<F>();
+        let multipart_content_type = body.try_content_type::<F>().map_err(|_| {
+            MultipartBodyError::new(MultipartBodyErrorKind::InvalidMultipartContentType)
+        })?;
         Ok(Self {
             body: body.into_transport_body::<F>()?,
             stream_size_hint: None,

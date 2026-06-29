@@ -79,7 +79,7 @@ Codec rules:
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` default from the associated `Content` marker. Override them when a codec intentionally omits the header or needs to surface a typed validation error.
 - `EncodeContext` and `DecodeContext` provide endpoint metadata for contextual errors.
 - `CodecError` messages must be safe to display. Never include secrets or raw credentials.
-- Built-in `Json<T>` and `Text<String>` use the same trait path. The core `NoContent` codec intentionally omits request and response content headers.
+- Built-in `Json<T>` and `Text<String>` use `JsonContentType` and `TextContentType`. The core `NoContent` codec intentionally omits request and response content headers.
 
 ## Page-Shape Traits
 

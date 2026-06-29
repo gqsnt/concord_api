@@ -1,6 +1,6 @@
 use super::common::{MockResponse, MockTransport, TestAuthVars, TestCx, decode_string};
 use bytes::{Bytes, BytesMut};
-use concord_core::advanced::{FormData, Mixed, MultipartFormat, RawResponsePart};
+use concord_core::advanced::{ContentType, FormData, Mixed, MultipartFormat, RawResponsePart};
 use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs, RequestOverrides,
     RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
@@ -37,6 +37,15 @@ fn multipart_response_plan<F: MultipartFormat>(
         overrides: RequestOverrides::default(),
     }
 }
+
+#[derive(Debug)]
+struct BadMultipartAccept;
+
+impl ContentType for BadMultipartAccept {
+    const CONTENT_TYPE: &'static str = "bad\nvalue";
+}
+
+impl MultipartFormat for BadMultipartAccept {}
 
 fn multipart_headers(content_type: &'static str) -> HeaderMap {
     let mut headers = HeaderMap::new();
@@ -95,7 +104,8 @@ async fn multipart_mixed_response_yields_raw_parts_incrementally() -> Result<(),
             Some(read_count.clone()),
         )],
     );
-    let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
     let mut stream = client
         .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
@@ -146,7 +156,8 @@ async fn multipart_response_missing_closing_boundary_is_rejected_body_safely()
             None,
         )],
     );
-    let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
     let mut stream = client
         .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
@@ -162,6 +173,36 @@ async fn multipart_response_missing_closing_boundary_is_rejected_body_safely()
     assert!(!format!("{err:?}").contains(sentinel));
     assert!(!format!("{err}").contains(sentinel));
     Ok(())
+}
+
+#[tokio::test]
+async fn multipart_response_invalid_implicit_accept_is_rejected_before_transport() {
+    let transport = MockTransport::new(
+        Default::default(),
+        vec![multipart_fixture_response(
+            "multipart/mixed; boundary=BOUNDARY",
+            vec![Bytes::from_static(b"--BOUNDARY--\r\n")],
+            None,
+            None,
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut plan = multipart_response_plan::<Mixed>(
+        "MultipartInvalidImplicitAccept",
+        "/multipart-invalid-implicit-accept",
+    );
+    plan.endpoint.response.accept = None;
+
+    let err = client
+        .execute_plan_multipart::<RawResponsePart, BadMultipartAccept>(plan)
+        .await
+        .expect_err("invalid accept should fail");
+
+    assert!(matches!(err, ApiClientError::InvalidParam { .. }));
+    assert!(format!("{err:?}").contains("content_type"));
+    assert_eq!(transport.sent_count().await, 0);
 }
 
 #[tokio::test]

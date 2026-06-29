@@ -706,14 +706,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             mut args,
             overrides,
         } = plan;
+        let ctx = ErrorContext {
+            endpoint: endpoint.meta.name,
+            method: endpoint.meta.method.clone(),
+        };
         if endpoint.response.accept.is_none() {
-            endpoint.response.accept = Some(http::HeaderValue::from_static(M::CONTENT_TYPE));
+            endpoint.response.accept = Some(
+                <M as crate::codec::ContentType>::try_header_value()
+                    .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
+            );
         }
         let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
-        let ctx = ErrorContext {
-            endpoint: plan.endpoint.meta.name,
-            method: plan.endpoint.meta.method.clone(),
-        };
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
@@ -1160,14 +1163,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             mut args,
             overrides,
         } = plan;
+        let ctx = ErrorContext {
+            endpoint: endpoint.meta.name,
+            method: endpoint.meta.method.clone(),
+        };
         if endpoint.response.accept.is_none() {
-            endpoint.response.accept = Some(http::HeaderValue::from_static(Fmt::CONTENT_TYPE));
+            endpoint.response.accept = Some(
+                <Fmt as crate::codec::ContentType>::try_header_value()
+                    .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
+            );
         }
         let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
-        let ctx = ErrorContext {
-            endpoint: plan.endpoint.meta.name,
-            method: plan.endpoint.meta.method.clone(),
-        };
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),

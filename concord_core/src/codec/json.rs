@@ -7,10 +7,6 @@ use std::marker::PhantomData;
 
 pub struct Json<T = ()>(PhantomData<T>);
 
-impl ContentType for Json {
-    const CONTENT_TYPE: &'static str = "application/json";
-}
-
 impl FormatType for Json {
     const FORMAT_TYPE: Format = Format::Text;
 }

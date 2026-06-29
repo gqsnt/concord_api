@@ -4,13 +4,23 @@ Pagination and codecs are extension points in `concord_core` that generated code
 
 ## Codecs
 
-`BodyCodec` encodes request bodies. `ResponseCodec` decodes raw responses.
+`BodyCodec` encodes request bodies. `ResponseCodec` decodes raw responses. `ContentType` is the shared wire-content marker trait used by codec marker types and reserved endpoint I/O formats.
 
 Built-ins:
 
 - `Json<T>`
 - `Text<String>`
 - `NoContent`
+
+Current marker types:
+
+- `JsonContentType`
+- `TextContentType`
+- `EventStream`
+- `OctetStream`
+- `NdJson`
+- `FormData`
+- `Mixed`
 
 Custom codecs implement the public codec traits and can be used in endpoint signatures or response lines.
 
@@ -22,6 +32,13 @@ POST Create(body: Json<Create>)
 ```
 
 is lowered by codegen into request body encoding and response decode calls.
+
+Codec helpers use the fallible header conversion path:
+
+- `BodyCodec::try_content_type()`
+- `ResponseCodec::try_accept()`
+
+The convenience `content_type()` and `accept()` methods remain available for trusted built-in markers and compatibility call sites. Generated planning uses the fallible helpers so invalid user-defined markers return typed errors instead of panicking.
 
 ## Pagination traits
 

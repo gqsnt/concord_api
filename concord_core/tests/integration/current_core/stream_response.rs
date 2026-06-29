@@ -1,10 +1,10 @@
 use super::common::{TestAuthVars, TestCx, auth_policy, decode_string, retry_policy_for_statuses};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, DebugSink, OctetStream, PostResponseHookContext, PreSendHookContext,
-    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, RuntimeHooks, Transport, TransportBody, TransportError,
-    TransportErrorKind, TransportRequest, TransportResponse,
+    AuthPlacement, ContentType, DebugSink, OctetStream, PostResponseHookContext,
+    PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
+    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks, Transport,
+    TransportBody, TransportError, TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
@@ -354,6 +354,13 @@ fn empty_response_plan(name: &'static str, path: &'static str) -> RequestPlan {
     )
 }
 
+#[derive(Debug)]
+struct BadStreamContent;
+
+impl ContentType for BadStreamContent {
+    const CONTENT_TYPE: &'static str = "bad\nvalue";
+}
+
 #[tokio::test]
 async fn raw_stream_response_returns_metadata_and_chunks() -> Result<(), ApiClientError> {
     let events = Arc::new(StdMutex::new(Vec::new()));
@@ -526,6 +533,31 @@ async fn stream_response_missing_content_type_is_rejected_before_body_polling() 
     );
     assert!(!polled.load(Ordering::SeqCst));
     assert_eq!(transport.send_count(), 1);
+}
+
+#[tokio::test]
+async fn stream_response_invalid_implicit_accept_is_rejected_before_transport() {
+    let transport = StreamTransport::new(
+        Arc::new(StdMutex::new(Vec::new())),
+        vec![ResponseFixture::octet_stream(
+            StatusCode::OK,
+            vec![Bytes::from_static(b"ignored")],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut plan = empty_response_plan("RawStreamInvalidAccept", "/raw-stream-invalid-accept");
+    plan.endpoint.response.accept = None;
+
+    let err = client
+        .execute_plan_stream::<BadStreamContent>(plan)
+        .await
+        .expect_err("invalid accept should fail");
+
+    assert!(matches!(err, ApiClientError::InvalidParam { .. }));
+    assert!(format!("{err:?}").contains("content_type"));
+    assert_eq!(transport.send_count(), 0);
 }
 
 #[tokio::test]

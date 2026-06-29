@@ -1,7 +1,8 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    Mixed, MultipartBody, MultipartStream, RawResponsePart, StreamBody, Transport, TransportBody,
-    TransportError, TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
+    ContentType, Mixed, MultipartBody, MultipartFormat, MultipartStream, RawResponsePart,
+    StreamBody, Transport, TransportBody, TransportError, TransportErrorKind, TransportRequest,
+    TransportRequestBody, TransportResponse,
 };
 use concord_core::prelude::{ApiClientError, Json};
 use concord_macros::api;
@@ -71,6 +72,34 @@ mod multipart_helper_contract {
 }
 
 use multipart_helper_contract::MultipartHelperApi;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct BadMultipartFormat;
+
+impl ContentType for BadMultipartFormat {
+    const CONTENT_TYPE: &'static str = "bad\nvalue";
+}
+
+impl MultipartFormat for BadMultipartFormat {}
+
+mod multipart_invalid_content_type_contract {
+    #![allow(unused_imports)]
+    use super::*;
+
+    api! {
+        client MultipartInvalidContentTypeApi {
+            base "https://example.com"
+        }
+
+        POST UploadInvalidContentType(body: Multipart<RawResponsePart, BadMultipartFormat>)
+            path ["upload-invalid-content-type"]
+            -> Json<UploadResult>
+    }
+
+    pub(super) use multipart_invalid_content_type_api::MultipartInvalidContentTypeApi;
+}
+
+use multipart_invalid_content_type_contract::MultipartInvalidContentTypeApi;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum CapturedBody {
@@ -421,6 +450,22 @@ async fn generated_multipart_request_reaches_transport() {
             .contains("SECRET_MULTIPART_SENTINEL_MUST_NOT_APPEAR")
     );
     assert!(!format!("{:?}", requests[0]).contains("SECRET_MULTIPART_SENTINEL_MUST_NOT_APPEAR"));
+}
+
+#[tokio::test]
+async fn generated_multipart_request_invalid_content_type_is_rejected_before_transport() {
+    let transport = MultipartTransport::new(ResponseFixture::buffered_json(r#"{"ok":true}"#));
+    let api = MultipartInvalidContentTypeApi::new_with_transport(transport.clone());
+
+    let err = api
+        .upload_invalid_content_type(multipart_request_body())
+        .execute()
+        .await
+        .expect_err("invalid multipart content type should fail");
+
+    assert!(matches!(err, ApiClientError::InvalidParam { .. }));
+    assert!(format!("{err:?}").contains("content_type"));
+    assert_eq!(transport.send_count(), 0);
 }
 
 #[tokio::test]

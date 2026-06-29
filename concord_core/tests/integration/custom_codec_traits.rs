@@ -235,6 +235,8 @@ fn codec_error_converts_into_api_client_error() {
 }
 
 #[cfg(feature = "json")]
+use concord_core::advanced::{JsonContentType, TextContentType};
+#[cfg(feature = "json")]
 use concord_core::prelude::Json;
 #[cfg(feature = "json")]
 use concord_core::prelude::{NoContent, Text};
@@ -259,7 +261,15 @@ fn built_in_json_text_and_no_content_use_codec_traits() {
     NoContent::decode(Bytes::new(), decode_ctx()).expect("no content");
 
     assert_eq!(json.content_len(), Some(8));
+    assert_eq!(
+        Json::<JsonValue>::try_content_type().expect("json content type"),
+        Some(JsonContentType::try_header_value().expect("json marker"))
+    );
     assert_eq!(decoded, JsonValue { id: 7 });
     assert_eq!(text.content_len(), Some(5));
+    assert_eq!(
+        Text::<String>::try_accept().expect("text accept"),
+        Some(TextContentType::try_header_value().expect("text marker"))
+    );
     assert_eq!(decoded_text, "hello");
 }
