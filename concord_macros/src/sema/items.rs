@@ -885,7 +885,7 @@ fn classify_endpoint_io(
                 .args
                 .get(1)
                 .cloned()
-                .unwrap_or_else(|| syn::parse_quote!(FormData));
+                .unwrap_or_else(|| syn::parse_quote!(::concord_core::advanced::FormData));
             Ok(EndpointIoClassification::Multipart { value_ty, format_ty })
         }
         "Sse" => {
@@ -907,7 +907,7 @@ fn classify_endpoint_io(
                     .args
                     .get(1)
                     .cloned()
-                    .unwrap_or_else(|| syn::parse_quote!(JsonSse)),
+                    .unwrap_or_else(|| syn::parse_quote!(::concord_core::advanced::JsonSse)),
             })
         }
         "WebSocket" => {

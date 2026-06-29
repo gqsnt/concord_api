@@ -49,11 +49,31 @@ fn examples_cover_v1_usage_surface() {
         "pagination",
         "custom_codec",
         "custom_pagination",
+        "endpoint_io",
         "riot_large",
     ] {
         assert!(
             examples_main.contains(module),
             "examples test module `{module}` should be registered"
+        );
+    }
+
+    let endpoint_io = read_repo_file("concord_examples/src/endpoint_io.rs");
+    for anchor in [
+        "execute_stream",
+        "execute_records",
+        "execute_multipart",
+        "execute_sse",
+        "execute_websocket",
+        "StreamBody",
+        "RecordBody",
+        "MultipartBody",
+        "SseStream",
+        "WebSocketClient",
+    ] {
+        assert!(
+            endpoint_io.contains(anchor),
+            "endpoint I/O example should contain `{anchor}`"
         );
     }
 

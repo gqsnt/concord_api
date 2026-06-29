@@ -1,4 +1,4 @@
-use concord_core::advanced::{FormData, MultipartBody, MultipartStream, RawResponsePart};
+use concord_core::advanced::{MultipartBody, MultipartStream, RawResponsePart};
 use concord_core::prelude::Json;
 use concord_macros::api;
 use self::multipart_default_api::MultipartDefaultApi;

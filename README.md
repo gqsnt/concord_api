@@ -75,8 +75,10 @@ The `concord_examples` crate contains current examples for:
 - custom codecs
 - retry and rate-limit policy profiles
 - explicit endpoint requests
+- compile-checked endpoint I/O examples covering stream, records, multipart, SSE, and WebSocket families
 - a compiled public DSL guide example in `concord_examples/src/docs_dsl.rs`
 - compiled advanced DSL syntax examples in `concord_examples/src/docs_advanced_dsl.rs`
+- a consolidated endpoint I/O example suite in `concord_examples/src/endpoint_io.rs`
 - a Riot Web API large fixture in `concord_examples/src/riot.rs`
 - a Data Dragon fixture in `concord_examples/src/ddragon.rs`
 

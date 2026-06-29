@@ -27,10 +27,10 @@ It does not implement any of those behaviors.
 The current implementation distinguishes buffered codecs from the reserved endpoint I/O families that now have dedicated runtime support and, where noted below, generated endpoint support.
 
 - Macro raw AST and semantic IR carry explicit endpoint I/O shapes.
-- `CodecSpec` remains the buffered-codec shape for non-reserved families.
-- Current codegen still emits buffered codec calls through the existing `BodyCodec` and `ResponseCodec` paths for non-reserved families.
-- Current core request bodies are buffered for non-reserved families.
-- Current response transport is chunk-capable, and dedicated stream/record/multipart/SSE runtime paths avoid buffering where appropriate.
+- Non-reserved families keep the buffered-codec shape used by `BodyCodec` and `ResponseCodec`.
+- Non-reserved families still use the existing `BodyCodec` and `ResponseCodec` paths.
+- Buffered codecs continue to use buffered request bodies and buffered response decode.
+- Dedicated runtime paths now exist for `Stream`, `Records`, `Multipart`, `Sse`, and `WebSocket` families so they do not have to buffer the whole body.
 - Macro/codegen support now exists for `Stream<M>`, `Records<T, F>`, `Multipart<T, F>`, `Sse<T, C>`, and `WebSocket<Out, In, C>`.
 - `.execute_raw()` remains bounded-buffered.
 - Custom buffered codecs are already open-ended and must stay that way.
@@ -68,7 +68,7 @@ BufferedCodec is the default family. Everything non-reserved is a buffered codec
 - It may reuse buffered internals.
 - It is reserved for diagnostics and semantic clarity.
 
-For large or unbounded byte transfer, future PRs should use `Stream<OctetStream>` rather than trying to stretch `Bytes`.
+For large or unbounded byte transfer, use `Stream<OctetStream>` rather than trying to stretch `Bytes`.
 
 ### NoContent
 
@@ -316,7 +316,13 @@ Incorrect examples:
 Do not make `StreamBody` generic over `Mp3` or any other media marker.
 
 ```rust
-RecordBody::<LogEntry, NdJson>::from_iter(...)
+RecordBody::<LogEntry>::from_iter(...)
+
+MultipartBody
+
+SseStream<Event>
+
+WebSocketClient<ClientMsg, ServerMsg>
 ```
 
 Generated facade methods should stay concrete and usage-first:
@@ -395,7 +401,13 @@ pub enum TransportRequestBody {
 
 - `.execute_raw()` remains bounded-buffered.
 - Do not silently change `.execute_raw()` into a streaming API.
-- Future advanced streaming execution should use a separate method, such as `execute_stream()` or `execute_raw_stream()`.
+- Advanced execution is already split across family-specific helpers:
+  - `.execute_stream()` for `Stream<M>`
+  - `.execute_records()` for `Records<T, F>`
+  - `.execute_multipart()` for `Multipart<T, F>`
+  - `.execute_sse()` for `Sse<T, C>`
+  - `.execute_websocket()` for `WebSocket<Out, In, C>`
+- `.execute_raw()` remains bounded-buffered and intentionally separate.
 - Normal facade methods remain the preferred surface.
 
 ## WebSocket Mode Separation

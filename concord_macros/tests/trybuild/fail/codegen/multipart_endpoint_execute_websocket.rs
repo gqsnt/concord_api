@@ -1,4 +1,4 @@
-use concord_core::advanced::{FormData, RawResponsePart};
+use concord_core::advanced::RawResponsePart;
 use concord_macros::api;
 use crate::multipart_endpoint_execute_web_socket_api::MultipartEndpointExecuteWebSocketApi;
 

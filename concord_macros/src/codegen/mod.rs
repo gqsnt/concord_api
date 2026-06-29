@@ -388,7 +388,7 @@ mod tests {
             &[
                 "MultipartBody",
                 "BodyPlan::Multipart",
-                "RequestArgs::with_multipart_body::< FormData >",
+                "RequestArgs::with_multipart_body::< ::concord_core::advanced::FormData >",
                 "MultipartStream < RawResponsePart >",
                 "execute_plan_multipart::< RawResponsePart , Mixed >",
                 "MultipartResponseEndpoint",
@@ -414,7 +414,7 @@ mod tests {
             &expanded,
             &[
                 "SseStream < MyEvent >",
-                "execute_plan_sse::< MyEvent , JsonSse >",
+                "execute_plan_sse::< MyEvent , ::concord_core::advanced::JsonSse >",
                 "SseResponseEndpoint",
                 "text/event-stream",
                 "Format::Text",

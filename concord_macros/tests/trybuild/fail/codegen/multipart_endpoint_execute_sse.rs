@@ -1,4 +1,4 @@
-use concord_core::advanced::{FormData, RawResponsePart};
+use concord_core::advanced::RawResponsePart;
 use concord_macros::api;
 use self::multipart_endpoint_execute_sse_api::MultipartEndpointExecuteSseApi;
 

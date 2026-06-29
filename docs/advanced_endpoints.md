@@ -45,3 +45,17 @@ let raw = api
 ```
 
 Normal application code should prefer facade methods because they preserve the intended high-level API shape.
+
+## Advanced Endpoint I/O
+
+The generated advanced surfaces are family-specific and keep runtime values free of codec or format parameters.
+
+- `Stream<M>` uses `StreamBody` for request bodies and `StreamResponse<M>` for responses.
+- `Records<T, F>` uses `RecordBody<T>` for requests and `RecordStream<T>` for responses.
+- `Multipart<T>` defaults to `Multipart<T, FormData>` and uses `MultipartBody` for requests and `MultipartStream<T>` for responses.
+- `Sse<T>` defaults to `Sse<T, JsonSse>` and uses `SseStream<T>` for responses; SSE is response-only.
+- `WebSocket<Out, In>` defaults to `WebSocket<Out, In, JsonWebSocket>` and uses `WebSocketClient<Out, In>`; WebSocket is modeled as `WS` endpoint mode, not a buffered response body.
+- Each family has a dedicated helper on pending requests: `.execute_stream()`, `.execute_records()`, `.execute_multipart()`, `.execute_sse()`, or `.execute_websocket()`.
+- `.execute()` also routes through the family-specific execution path for these endpoint I/O shapes.
+- Map and pagination remain limited to buffered decoded responses and are rejected for the reserved stream-like families.
+- Request-side SSE and WebSocket remain unsupported.

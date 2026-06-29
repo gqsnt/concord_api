@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    FormData, Mixed, MultipartBody, MultipartStream, RawResponsePart, StreamBody, Transport,
+    Mixed, MultipartBody, MultipartStream, RawResponsePart, StreamBody, Transport,
     TransportBody, TransportError, TransportErrorKind, TransportRequest, TransportRequestBody,
     TransportResponse,
 };

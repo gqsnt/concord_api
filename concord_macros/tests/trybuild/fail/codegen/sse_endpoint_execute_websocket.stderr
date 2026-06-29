@@ -1,14 +1,14 @@
 error[E0599]: the method `execute_websocket` exists for struct `PendingRequest<'_, SseEndpointExecuteWebSocketApiCx, EpEventsHc265a3e29e1206e4, ReqwestTransport>`, but its trait bounds were not satisfied
-  --> tests/trybuild/fail/codegen/sse_endpoint_execute_websocket.rs:21:26
+  --> tests/trybuild/fail/codegen/sse_endpoint_execute_websocket.rs:20:26
    |
-10 | / api! {
-11 | |     client SseEndpointExecuteWebSocketApi {
-12 | |         base "https://example.com"
+ 9 | / api! {
+10 | |     client SseEndpointExecuteWebSocketApi {
+11 | |         base "https://example.com"
 ...  |
-15 | |     GET Events
+14 | |     GET Events
    | |______________- doesn't satisfy `_: WebSocketEndpoint<SseEndpointExecuteWebSocketApiCx>`
 ...
-21 |       let _ = api.events().execute_websocket().await.unwrap();
+20 |       let _ = api.events().execute_websocket().await.unwrap();
    |                            ^^^^^^^^^^^^^^^^^
    |
    = note: the following trait bounds were not satisfied:

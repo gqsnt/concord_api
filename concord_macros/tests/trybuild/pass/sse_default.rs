@@ -1,4 +1,4 @@
-use concord_core::advanced::{JsonSse, SseStream};
+use concord_core::advanced::SseStream;
 use concord_macros::api;
 use self::sse_default_api::SseDefaultApi;
 use serde::Deserialize;
