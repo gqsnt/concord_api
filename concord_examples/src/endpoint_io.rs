@@ -1,7 +1,8 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    JsonSse, Mixed, MultipartBody, MultipartStream, NdJson, OctetStream, RawResponsePart,
-    RecordBody, RecordStream, SseStream, StreamBody, StreamResponse,
+    Csv, CsvCommaDelim, CsvSemicolonDelim, CsvTabDelim, JsonSse, Mixed, MultipartBody,
+    MultipartStream, NdJson, OctetStream, RawResponsePart, RecordBody, RecordStream, SseStream,
+    StreamBody, StreamResponse,
 };
 use concord_core::prelude::Json;
 use concord_macros::api;
@@ -53,6 +54,26 @@ api! {
         as tail_records
         path ["records", "tail"]
         -> Records<LogEntry, NdJson>
+
+    POST IngestCsv(body: Records<LogEntry, Csv<CsvCommaDelim>>)
+        as ingest_csv
+        path ["records", "csv", "ingest"]
+        -> Json<UploadResult>
+
+    GET TailCsv
+        as tail_csv
+        path ["records", "csv", "tail"]
+        -> Records<LogEntry, Csv<CsvCommaDelim>>
+
+    GET TailCsvSemicolon
+        as tail_csv_semicolon
+        path ["records", "csv", "tail-semicolon"]
+        -> Records<LogEntry, Csv<CsvSemicolonDelim>>
+
+    GET TailCsvTab
+        as tail_csv_tab
+        path ["records", "csv", "tail-tab"]
+        -> Records<LogEntry, Csv<CsvTabDelim>>
 
     POST UploadMultipart(body: Multipart<RawResponsePart>)
         as upload_multipart
@@ -110,6 +131,21 @@ pub async fn records_examples(
     let _request = api.ingest_records(body);
     let _response: RecordStream<LogEntry> = api.tail_records().execute_records().await?;
     let _also: RecordStream<LogEntry> = api.tail_records().execute().await?;
+    _request.execute().await
+}
+
+pub async fn csv_records_examples(
+    api: EndpointIoApi,
+) -> Result<UploadResult, concord_core::prelude::ApiClientError> {
+    let body = RecordBody::from_iter(vec![LogEntry {
+        id: 2,
+        message: "csv".to_string(),
+    }]);
+    let _request = api.ingest_csv(body);
+    let _response: RecordStream<LogEntry> = api.tail_csv().execute_records().await?;
+    let _also: RecordStream<LogEntry> = api.tail_csv().execute().await?;
+    let _semicolon: RecordStream<LogEntry> = api.tail_csv_semicolon().execute_records().await?;
+    let _tab: RecordStream<LogEntry> = api.tail_csv_tab().execute_records().await?;
     _request.execute().await
 }
 

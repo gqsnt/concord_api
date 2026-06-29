@@ -53,7 +53,8 @@ pub mod internal {
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
     pub use crate::record::{
-        NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
+        Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim, NdJson, RecordBody,
+        RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
     };
     pub use crate::retry::RetrySetting;
     pub use crate::sse::{JsonSse, SseCodec, SseEvent, SseRawEvent, SseStream};
@@ -127,7 +128,8 @@ pub mod advanced {
         RateLimitScopeHint, RateLimitSetting, RateLimitWindow, RateLimiter, parse_retry_after,
     };
     pub use crate::record::{
-        NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
+        Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim, NdJson, RecordBody,
+        RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
     };
     pub use crate::retry::{
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,

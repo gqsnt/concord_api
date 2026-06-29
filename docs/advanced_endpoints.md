@@ -54,7 +54,7 @@ The generated advanced surfaces are family-specific and keep runtime values free
 - Built-in markers include `JsonContentType`, `TextContentType`, `OctetStream`, `NdJson`, `FormData`, `Mixed`, and `EventStream`.
 - `Json<T>` is the ordinary buffered JSON codec. `Text<String>` is the ordinary buffered text codec.
 - `Stream<M>` uses `StreamBody` for request bodies and `StreamResponse<M>` for responses.
-- `Records<T, F>` uses `RecordBody<T>` for requests and `RecordStream<T>` for responses.
+- `Records<T, F>` uses `RecordBody<T>` for requests and `RecordStream<T>` for responses. Supported formats include `NdJson` and `Csv<Cfg>`; the built-in CSV configs are `CsvCommaDelim`, `CsvSemicolonDelim`, and `CsvTabDelim`.
 - `Multipart<T>` defaults to `Multipart<T, FormData>` and uses `MultipartBody` for requests and `MultipartStream<T>` for responses. Explicit `Multipart<T, F>` remains supported, including `Mixed`.
 - `Sse<T>` defaults to `Sse<T, JsonSse>` and uses `SseStream<T>` for responses; SSE is response-only and `JsonSse` decodes event data, not the HTTP wire content type. Explicit `Sse<T, C>` remains supported.
 - Each family has a dedicated helper on pending requests: `.execute_stream()`, `.execute_records()`, `.execute_multipart()`, or `.execute_sse()`.

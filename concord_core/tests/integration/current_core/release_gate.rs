@@ -63,6 +63,7 @@ fn examples_cover_v1_usage_surface() {
     for anchor in [
         "Stream<OctetStream>",
         "Records<",
+        "Records<LogEntry, Csv<CsvCommaDelim>>",
         "Multipart<",
         "Multipart<RawResponsePart, Mixed>",
         "Sse<",
@@ -75,6 +76,9 @@ fn examples_cover_v1_usage_surface() {
         "RecordBody",
         "MultipartBody",
         "SseStream",
+        "CsvCommaDelim",
+        "CsvSemicolonDelim",
+        "CsvTabDelim",
         "Mixed",
         "JsonSse",
     ] {
@@ -89,6 +93,7 @@ fn examples_cover_v1_usage_surface() {
         "ContentType",
         "Stream<",
         "Records<",
+        "Csv<Cfg>",
         "Multipart<",
         "Sse<",
         "execute_stream",
@@ -103,7 +108,7 @@ fn examples_cover_v1_usage_surface() {
     }
 
     let customization = read_repo_file("docs/customization.md");
-    for anchor in ["try_content_type", "try_accept", "NoContent"] {
+    for anchor in ["try_content_type", "try_accept", "NoContent", "text/csv"] {
         assert!(
             customization.contains(anchor),
             "customization docs should contain `{anchor}`"

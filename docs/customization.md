@@ -81,6 +81,16 @@ Codec rules:
 - `CodecError` messages must be safe to display. Never include secrets or raw credentials.
 - Built-in `Json<T>` and `Text<String>` use `JsonContentType` and `TextContentType`. The core `NoContent` codec intentionally omits request and response content headers.
 
+## CSV Record Formats
+
+CSV is a `Records<T, Csv<Cfg>>` record format, not a new endpoint family. It reuses `RecordBody<T>` and `RecordStream<T>` as the runtime values.
+
+Custom CSV behavior implements `CsvConfig`.
+
+Use `CsvCommaDelim`, `CsvSemicolonDelim`, or `CsvTabDelim` as the built-in configs. The config type selects the delimiter and whether headers are enabled; delimiter and header state are not encoded as `Content-Type` parameters.
+
+CSV support uses the same `ContentType` marker path as the rest of the advanced API and uses `text/csv`.
+
 ## Page-Shape Traits
 
 Paginated responses expose their items by implementing `PageItems`.

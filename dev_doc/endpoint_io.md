@@ -14,7 +14,7 @@ The current implementation distinguishes buffered codecs from the reserved endpo
 - `ContentType` is the shared wire-content marker trait for buffered codecs and reserved family markers.
 - Buffered codecs continue to use buffered request bodies and buffered response decode.
 - Dedicated runtime paths exist for `Stream`, `Records`, `Multipart`, and `Sse` families so they do not have to buffer the whole body.
-- Macro/codegen support exists for `Stream<M>`, `Records<T, F>`, `Multipart<T, F>`, and `Sse<T, C>`.
+- Macro/codegen support exists for `Stream<M>`, `Records<T, NdJson>`, `Records<T, Csv<Cfg>>`, `Multipart<T, F>`, and `Sse<T, C>`.
 - `.execute_raw()` remains bounded-buffered.
 - Custom buffered codecs are already open-ended and must stay that way.
 
@@ -83,8 +83,8 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - `Records<T>` has no default format in the initial contract; callers must spell the format explicitly, such as `Records<LogEntry, NdJson>`.
 - Runtime values are `RecordBody<T>` and `RecordStream<T>`; they are not format-generic.
 - Custom formats implement `ContentType + RecordFormat<T>`.
-- The first intended built-in format is `NdJson`.
-- CSV is planned as a future `Records<T, Csv<Cfg>>` format but is not implemented yet. The design contract lives in [csv_records.md](csv_records.md).
+- Built-in formats include `NdJson` and `Csv<Cfg>`.
+- CSV runtime support is implemented as `Records<T, Csv<Cfg>>`. The runtime contract lives in [csv_records.md](csv_records.md).
 - Request bodies are stream-like and non-replayable.
 - Response bodies are incremental and do not support map or pagination.
 - It must not be implemented through `BodyCodec` or `ResponseCodec`.
@@ -361,7 +361,7 @@ pub enum TransportRequestBody {
 - No public docs expansion in PR87 unless a docs index requires a link.
 - No stream retry or replay design in PR87.
 - No automatic SSE reconnect.
-- No CSV implementation.
+- No CSV implementation in PR87. CSV runtime support was added later in PR116.
 - No nested multipart.
 - No multipart derive macros.
 - No cache reintroduction.

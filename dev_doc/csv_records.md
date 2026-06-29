@@ -1,10 +1,10 @@
-# CSV Records Design Contract
+# CSV Records Runtime Contract
 
 ## Purpose
 
-CSV is a planned `Records<T, F>` format. It is not a new endpoint I/O family and it does not change the current `RecordBody<T>` / `RecordStream<T>` runtime model.
+CSV is implemented as a `Records<T, F>` format. It is not a new endpoint I/O family and it does not change the current `RecordBody<T>` / `RecordStream<T>` runtime model.
 
-This document defines the contract Concord should preserve when CSV runtime support lands in a later PR.
+This document records the contract Concord must preserve for CSV runtime support.
 
 ## Family Model
 
@@ -40,11 +40,11 @@ CsvSemicolonDelim
 CsvTabDelim
 ```
 
-CSV must not introduce format-specific runtime value types such as `CsvStream<Cfg>` or `CsvBody<T, Cfg>`.
+CSV must not introduce format-specific runtime value types.
 
 ## Config Model
 
-Future CSV support should use a config trait like this:
+CSV uses a config trait like this:
 
 ```rust
 pub trait CsvConfig {
@@ -53,7 +53,7 @@ pub trait CsvConfig {
 }
 ```
 
-Future CSV support should initially provide these built-in configs:
+CSV provides these built-in configs:
 
 ```rust
 CsvCommaDelim
@@ -61,13 +61,13 @@ CsvSemicolonDelim
 CsvTabDelim
 ```
 
-Built-in configs should use `HAS_HEADERS = true`. Headerless CSV should remain possible through custom `CsvConfig` implementations.
+Built-in configs use `HAS_HEADERS = true`. Headerless CSV remains possible through custom `CsvConfig` implementations.
 
 The delimiter must be selected by the config type, not by runtime value.
 
 ## Header Behavior
 
-Planned encode and decode behavior:
+Current encode and decode behavior:
 
 - If `HAS_HEADERS = true`, request encoding writes one header row before the first record.
 - If `HAS_HEADERS = true`, response decoding consumes the first row as headers.
@@ -75,11 +75,11 @@ Planned encode and decode behavior:
 - If `HAS_HEADERS = false`, response decoding treats the first row as data.
 - Header mismatches must become sanitized codec or record-format errors, not panics.
 
-CSV header semantics should be implemented through serde-compatible CSV behavior in the runtime PR, not through hand-rolled header parsing.
+CSV header semantics are implemented through serde-compatible CSV behavior in the runtime, not through hand-rolled header parsing.
 
 ## Empty Rows
 
-Planned behavior:
+Current behavior:
 
 - Empty rows are ignored when the parser classifies them as empty records.
 - Rows with the wrong number of fields are errors.
@@ -108,7 +108,7 @@ Planned behavior:
 
 ## Content Type
 
-CSV should use the ordinary record-format content marker path:
+CSV uses the ordinary record-format content marker path:
 
 ```rust
 impl ContentType for Csv<Cfg> {
@@ -159,4 +159,4 @@ CSV request bodies must not be automatically replayed after auth refresh or ordi
 
 This is a design contract only.
 
-CSV is not implemented yet, and Concord should not expose public CSV runtime values, CSV endpoint helpers, or CSV macro/codegen support until the runtime contract is ready.
+CSV runtime support is implemented through the existing record runtime and the `Csv<Cfg>` marker/config types. Concord should continue to avoid a separate CSV endpoint family or CSV-specific runtime values.

@@ -16,7 +16,7 @@ These documents describe how Concord is built internally. Public DSL usage lives
 - [auth_runtime.md](auth_runtime.md): secrets, credentials, auth state, endpoint-backed auth, refresh, and redaction boundaries.
 - [pagination_and_codecs.md](pagination_and_codecs.md): codec and pagination extension points.
 - [endpoint_io.md](endpoint_io.md): endpoint I/O expansion contract, reserved families, and runtime compatibility rules.
-- [csv_records.md](csv_records.md): CSV as a planned `Records<T, F>` format contract.
+- [csv_records.md](csv_records.md): CSV as a `Records<T, F>` runtime contract.
 - [testing.md](testing.md): test strategy and the checklist for adding DSL features.
 - [release_gate.md](release_gate.md): local v1 release gate and invariant checklist.
 - [release_checklist.md](release_checklist.md): local v1 gate, release verification commands, and manual audit list.

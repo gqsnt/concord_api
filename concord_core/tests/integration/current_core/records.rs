@@ -1,11 +1,11 @@
 use super::common::{TestAuthVars, TestCx, auth_policy, decode_string};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, CodecError, ContentType, DebugSink, NdJson, PostResponseHookContext,
-    PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
-    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RecordBody, RecordDecoder,
-    RecordEncoder, RecordFormat, RuntimeHooks, Transport, TransportBody, TransportError,
-    TransportErrorKind, TransportRequest, TransportResponse,
+    AuthPlacement, CodecError, ContentType, Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim,
+    CsvTabDelim, DebugSink, NdJson, PostResponseHookContext, PreSendHookContext, RateLimitContext,
+    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+    RateLimiter, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RuntimeHooks, Transport,
+    TransportBody, TransportError, TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
@@ -467,7 +467,7 @@ fn pipe_record_bytes(entries: &[PipeRecord]) -> Bytes {
     Bytes::from(out)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 struct PipeRecord {
     id: u64,
     message: String,
@@ -1395,6 +1395,363 @@ async fn custom_record_response_decoder_error_is_sanitized() -> Result<(), ApiCl
     assert!(matches!(err, ApiClientError::Decode { .. }));
     assert!(!format!("{err:?}").contains(sentinel));
     assert!(!format!("{err}").contains(sentinel));
+    Ok(())
+}
+
+#[tokio::test]
+async fn csv_record_request_sets_text_csv_and_remains_streamed() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::buffered_json(r#"{"ok":true}"#)],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let _decoded = client
+        .execute_plan::<String>(record_request_plan(
+            "CsvRecordRequest",
+            Method::POST,
+            "/csv-record-request",
+            ResolvedPolicy::default(),
+            BodyPlan::Records {
+                content_type: HeaderValue::from_static(Csv::<CsvCommaDelim>::CONTENT_TYPE),
+                format: concord_core::internal::Format::Text,
+            },
+            RequestArgs::with_record_body::<PipeRecord, Csv<CsvCommaDelim>>(RecordBody::from_iter(
+                vec![
+                    PipeRecord {
+                        id: 1,
+                        message: "alpha".to_string(),
+                    },
+                    PipeRecord {
+                        id: 2,
+                        message: "beta".to_string(),
+                    },
+                ],
+            )),
+            Csv::<CsvCommaDelim>::CONTENT_TYPE,
+        ))
+        .await
+        .expect("csv record request should succeed");
+    let captured = transport.captured();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(
+        captured[0].content_type.as_deref(),
+        Some(Csv::<CsvCommaDelim>::CONTENT_TYPE)
+    );
+    match &captured[0].body {
+        CapturedBody::Stream(bytes) => {
+            let rendered = String::from_utf8(bytes.to_vec()).expect("csv utf8");
+            assert!(rendered.contains("id"));
+            assert!(rendered.contains("message"));
+            assert!(rendered.contains("alpha"));
+            assert!(rendered.contains("beta"));
+        }
+        other => panic!("expected streamed csv body, got {other:?}"),
+    }
+    assert!(
+        transport
+            .events()
+            .iter()
+            .any(|event| event == "record_request_poll")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn csv_record_request_large_batch_does_not_accumulate_bytes() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::buffered_json(r#"{"ok":true}"#)],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let records = (0..128).map(|_| PipeRecord {
+        id: 7,
+        message: "repeat".to_string(),
+    });
+    let _decoded = client
+        .execute_plan::<String>(record_request_plan(
+            "CsvRecordRequestLargeBatch",
+            Method::POST,
+            "/csv-record-request-large-batch",
+            ResolvedPolicy::default(),
+            BodyPlan::Records {
+                content_type: HeaderValue::from_static(Csv::<CsvCommaDelim>::CONTENT_TYPE),
+                format: concord_core::internal::Format::Text,
+            },
+            RequestArgs::with_record_body::<PipeRecord, Csv<CsvCommaDelim>>(RecordBody::from_iter(
+                records,
+            )),
+            Csv::<CsvCommaDelim>::CONTENT_TYPE,
+        ))
+        .await
+        .expect("csv record request should succeed");
+
+    let captured = transport.captured();
+    assert_eq!(captured.len(), 1);
+    assert_eq!(
+        captured[0].content_type.as_deref(),
+        Some(Csv::<CsvCommaDelim>::CONTENT_TYPE)
+    );
+    let rendered = match &captured[0].body {
+        CapturedBody::Stream(bytes) => String::from_utf8(bytes.to_vec()).expect("csv utf8"),
+        other => panic!("expected streamed csv body, got {other:?}"),
+    };
+    let mut lines = rendered.lines();
+    assert_eq!(lines.next(), Some("id,message"));
+    assert!(lines.all(|line| line == "7,repeat"));
+    assert_eq!(rendered.lines().count(), 129);
+    Ok(())
+}
+
+#[tokio::test]
+async fn csv_record_response_streams_incrementally_across_chunks() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::streamed_with_content_type(
+            StatusCode::OK,
+            Csv::<CsvCommaDelim>::CONTENT_TYPE,
+            vec![
+                Bytes::from_static(b"id,message\n1,hel"),
+                Bytes::from_static(b"lo\n2,world\n"),
+            ],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut stream = client
+        .execute_plan_records::<PipeRecord, Csv<CsvCommaDelim>>(record_response_plan_with_accept(
+            "CsvRecordResponse",
+            Method::GET,
+            "/csv-record-response",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+            Csv::<CsvCommaDelim>::CONTENT_TYPE,
+        ))
+        .await?;
+
+    let events_before = transport.events();
+    assert!(
+        !events_before
+            .iter()
+            .any(|event| event == "record_chunk_poll")
+    );
+
+    let first = stream
+        .next_record()
+        .await?
+        .expect("first csv record should exist");
+    assert_eq!(
+        first,
+        PipeRecord {
+            id: 1,
+            message: "hello".to_string(),
+        }
+    );
+    assert!(
+        transport
+            .events()
+            .iter()
+            .any(|event| event == "record_chunk_poll")
+    );
+    let second = stream
+        .next_record()
+        .await?
+        .expect("second csv record should exist");
+    assert_eq!(
+        second,
+        PipeRecord {
+            id: 2,
+            message: "world".to_string(),
+        }
+    );
+    assert!(stream.next_record().await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn csv_record_response_streams_many_records_across_chunks() -> Result<(), ApiClientError> {
+    let mut body = String::from("id,message\n");
+    for idx in 0..256u32 {
+        body.push_str(&format!("{idx},row{idx}\n"));
+    }
+    let bytes = Bytes::from(body);
+    let chunk_size = bytes.len() / 5;
+    let chunks = vec![
+        Bytes::copy_from_slice(&bytes[..chunk_size]),
+        Bytes::copy_from_slice(&bytes[chunk_size..chunk_size * 2]),
+        Bytes::copy_from_slice(&bytes[chunk_size * 2..chunk_size * 3]),
+        Bytes::copy_from_slice(&bytes[chunk_size * 3..chunk_size * 4]),
+        Bytes::copy_from_slice(&bytes[chunk_size * 4..]),
+    ];
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = RecordTransport::new(
+        events.clone(),
+        vec![ResponseFixture::streamed_with_content_type(
+            StatusCode::OK,
+            Csv::<CsvCommaDelim>::CONTENT_TYPE,
+            chunks,
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut stream = client
+        .execute_plan_records::<PipeRecord, Csv<CsvCommaDelim>>(record_response_plan_with_accept(
+            "CsvRecordResponseMany",
+            Method::GET,
+            "/csv-record-response-many",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+            Csv::<CsvCommaDelim>::CONTENT_TYPE,
+        ))
+        .await?;
+
+    let mut count = 0usize;
+    while let Some(record) = stream.next_record().await? {
+        assert_eq!(record.message, format!("row{}", count));
+        count += 1;
+    }
+    assert_eq!(count, 256);
+    assert!(
+        transport
+            .events()
+            .iter()
+            .filter(|event| event.as_str() == "record_chunk_poll")
+            .count()
+            > 1
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn csv_record_response_headerless_semicolon_and_tab_configs_work()
+-> Result<(), ApiClientError> {
+    #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+    struct CsvHeaderless {
+        id: u64,
+        message: String,
+    }
+
+    #[derive(Debug, Default, Clone, Copy)]
+    struct CsvHeaderlessPipe;
+
+    impl CsvConfig for CsvHeaderlessPipe {
+        const DELIMITER: u8 = b'|';
+        const HAS_HEADERS: bool = false;
+    }
+
+    let headerless_transport = RecordTransport::new(
+        Arc::new(StdMutex::new(Vec::new())),
+        vec![ResponseFixture::streamed_with_content_type(
+            StatusCode::OK,
+            Csv::<CsvHeaderlessPipe>::CONTENT_TYPE,
+            vec![Bytes::from_static(b"1|hello\n2|world\n")],
+        )],
+    );
+    let client = ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        headerless_transport.clone(),
+    );
+    let mut stream = client
+        .execute_plan_records::<CsvHeaderless, Csv<CsvHeaderlessPipe>>(
+            record_response_plan_with_accept(
+                "CsvHeaderlessResponse",
+                Method::GET,
+                "/csv-headerless-response",
+                ResolvedPolicy::default(),
+                BodyPlan::None,
+                RequestArgs::default(),
+                Csv::<CsvHeaderlessPipe>::CONTENT_TYPE,
+            ),
+        )
+        .await?;
+    assert_eq!(
+        stream.next_record().await?,
+        Some(CsvHeaderless {
+            id: 1,
+            message: "hello".to_string(),
+        })
+    );
+    assert_eq!(
+        stream.next_record().await?,
+        Some(CsvHeaderless {
+            id: 2,
+            message: "world".to_string(),
+        })
+    );
+    assert!(stream.next_record().await?.is_none());
+
+    let semicolon_transport = RecordTransport::new(
+        Arc::new(StdMutex::new(Vec::new())),
+        vec![ResponseFixture::streamed_with_content_type(
+            StatusCode::OK,
+            Csv::<CsvSemicolonDelim>::CONTENT_TYPE,
+            vec![Bytes::from_static(b"id;message\n3;semi\n")],
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), semicolon_transport);
+    let mut stream = client
+        .execute_plan_records::<PipeRecord, Csv<CsvSemicolonDelim>>(
+            record_response_plan_with_accept(
+                "CsvSemicolonResponse",
+                Method::GET,
+                "/csv-semicolon-response",
+                ResolvedPolicy::default(),
+                BodyPlan::None,
+                RequestArgs::default(),
+                Csv::<CsvSemicolonDelim>::CONTENT_TYPE,
+            ),
+        )
+        .await?;
+    assert_eq!(
+        stream.next_record().await?,
+        Some(PipeRecord {
+            id: 3,
+            message: "semi".to_string(),
+        })
+    );
+    assert!(stream.next_record().await?.is_none());
+
+    let tab_transport = RecordTransport::new(
+        Arc::new(StdMutex::new(Vec::new())),
+        vec![ResponseFixture::streamed_with_content_type(
+            StatusCode::OK,
+            Csv::<CsvTabDelim>::CONTENT_TYPE,
+            vec![Bytes::from_static(b"id\tmessage\n4\ttab\n")],
+        )],
+    );
+    let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), tab_transport);
+    let mut stream = client
+        .execute_plan_records::<PipeRecord, Csv<CsvTabDelim>>(record_response_plan_with_accept(
+            "CsvTabResponse",
+            Method::GET,
+            "/csv-tab-response",
+            ResolvedPolicy::default(),
+            BodyPlan::None,
+            RequestArgs::default(),
+            Csv::<CsvTabDelim>::CONTENT_TYPE,
+        ))
+        .await?;
+    assert_eq!(
+        stream.next_record().await?,
+        Some(PipeRecord {
+            id: 4,
+            message: "tab".to_string(),
+        })
+    );
+    assert!(stream.next_record().await?.is_none());
+
     Ok(())
 }
 
