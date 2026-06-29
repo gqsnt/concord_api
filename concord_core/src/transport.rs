@@ -29,83 +29,6 @@ pub enum TransportRequestBody {
     Stream(TransportByteStream),
 }
 
-pub struct TransportWebSocketConnection {
-    pub meta: RequestMeta,
-    pub url: Url,
-    pub status: Option<StatusCode>,
-    pub headers: HeaderMap,
-    pub rate_limit: RateLimitPlan,
-    pub socket: Box<dyn TransportWebSocket>,
-}
-
-impl fmt::Debug for TransportWebSocketConnection {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TransportWebSocketConnection")
-            .field("meta", &self.meta)
-            .field(
-                "url",
-                &crate::redaction::sanitize_url_for_debug(&self.url, [] as [&str; 0]),
-            )
-            .field("status", &self.status)
-            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
-            .field("rate_limit", &self.rate_limit)
-            .field("socket", &"<ws>")
-            .finish()
-    }
-}
-
-pub trait TransportWebSocket: Send {
-    fn send<'a>(
-        &'a mut self,
-        msg: TransportWsMessage,
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 'a>>;
-
-    fn next<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<TransportWsMessage>, TransportError>> + Send + 'a>>;
-
-    fn close<'a>(
-        &'a mut self,
-        close: Option<TransportWsClose>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 'a>>;
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub enum TransportWsMessage {
-    Text(String),
-    Binary(Bytes),
-    Ping(Bytes),
-    Pong(Bytes),
-    Close(Option<TransportWsClose>),
-}
-
-impl fmt::Debug for TransportWsMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Text(value) => write!(f, "Text(<{} chars>)", value.len()),
-            Self::Binary(bytes) => write!(f, "Binary(<{} bytes>)", bytes.len()),
-            Self::Ping(bytes) => write!(f, "Ping(<{} bytes>)", bytes.len()),
-            Self::Pong(bytes) => write!(f, "Pong(<{} bytes>)", bytes.len()),
-            Self::Close(value) => f.debug_tuple("Close").field(value).finish(),
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct TransportWsClose {
-    pub code: u16,
-    pub reason: String,
-}
-
-impl fmt::Debug for TransportWsClose {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TransportWsClose")
-            .field("code", &self.code)
-            .field("reason", &format_args!("<{} chars>", self.reason.len()))
-            .finish()
-    }
-}
-
 impl TransportRequestBody {
     #[inline]
     pub fn empty() -> Self {
@@ -839,19 +762,6 @@ pub trait Transport: Send + Clone + Sync + 'static {
         &self,
         req: TransportRequest,
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>;
-
-    fn connect_websocket(
-        &self,
-        _req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportWebSocketConnection, TransportError>> + Send>>
-    {
-        Box::pin(async {
-            Err(TransportError::with_kind(
-                TransportErrorKind::Other,
-                std::io::Error::other("websocket transport is not supported"),
-            ))
-        })
-    }
 }
 
 #[derive(Clone)]

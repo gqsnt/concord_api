@@ -7,5 +7,4 @@ mod integration {
     mod record_helpers;
     mod sse_helpers;
     mod stream_helpers;
-    mod websocket_helpers;
 }

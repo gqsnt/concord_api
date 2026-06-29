@@ -19,7 +19,7 @@ pub struct Event {
 }
 
 api! {
-    client RetryNonWebSocketEndpointIoApi {
+    client RetryNonHttpEndpointIoApi {
         base "https://example.com"
 
         policies {

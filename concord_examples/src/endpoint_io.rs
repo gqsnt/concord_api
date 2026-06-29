@@ -1,9 +1,9 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    MultipartBody, MultipartStream, NdJson, OctetStream, RawResponsePart, RecordBody, RecordStream,
-    SseStream, StreamBody, StreamResponse, WebSocketClient,
+    JsonSse, Mixed, MultipartBody, MultipartStream, NdJson, OctetStream, RawResponsePart,
+    RecordBody, RecordStream, SseStream, StreamBody, StreamResponse,
 };
-use concord_core::prelude::*;
+use concord_core::prelude::Json;
 use concord_macros::api;
 use serde::{Deserialize, Serialize};
 
@@ -24,20 +24,15 @@ pub struct Event {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ClientMsg {
-    pub id: u64,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ServerMsg {
-    pub id: u64,
-}
-
 api! {
     client EndpointIoApi {
         base "https://api.example.com"
     }
+
+    GET JsonResponse
+        as json_response
+        path ["json"]
+        -> Json<UploadResult>
 
     POST UploadStream(body: Stream<OctetStream>)
         as upload_stream
@@ -69,7 +64,7 @@ api! {
         path ["multipart", "download"]
         -> Multipart<RawResponsePart>
 
-    POST UploadMultipartMixed(body: Multipart<RawResponsePart, ::concord_core::advanced::Mixed>)
+    POST UploadMultipartMixed(body: Multipart<RawResponsePart, Mixed>)
         as upload_multipart_mixed
         path ["multipart", "upload-mixed"]
         -> Json<UploadResult>
@@ -77,37 +72,37 @@ api! {
     GET DownloadMultipartMixed
         as download_multipart_mixed
         path ["multipart", "download-mixed"]
-        -> Multipart<RawResponsePart, ::concord_core::advanced::Mixed>
+        -> Multipart<RawResponsePart, Mixed>
 
     GET Events
         path ["events"]
         -> Sse<Event>
 
     GET EventsExplicit
-        path ["events-explicit"]
-        -> Sse<Event, ::concord_core::advanced::JsonSse>
-
-    WS Connect
-        as connect
-        path ["ws"]
-        -> WebSocket<ClientMsg, ServerMsg>
-
-    WS ConnectExplicit
-        as connect_explicit
-        path ["ws-explicit"]
-        -> WebSocket<ClientMsg, ServerMsg, ::concord_core::advanced::JsonWebSocket>
+        path ["events", "explicit"]
+        -> Sse<Event, JsonSse>
 }
 
 pub use self::endpoint_io_api::{EndpointIoApi, endpoints};
 
-pub async fn stream_examples(api: EndpointIoApi) -> Result<UploadResult, ApiClientError> {
+pub async fn json_example(
+    api: EndpointIoApi,
+) -> Result<UploadResult, concord_core::prelude::ApiClientError> {
+    api.json_response().execute().await
+}
+
+pub async fn stream_examples(
+    api: EndpointIoApi,
+) -> Result<UploadResult, concord_core::prelude::ApiClientError> {
     let _request = api.upload_stream(StreamBody::from_bytes(Bytes::from_static(b"stream")));
     let _response: StreamResponse<OctetStream> = api.download_stream().execute_stream().await?;
     let _also: StreamResponse<OctetStream> = api.download_stream().execute().await?;
     _request.execute().await
 }
 
-pub async fn records_examples(api: EndpointIoApi) -> Result<UploadResult, ApiClientError> {
+pub async fn records_examples(
+    api: EndpointIoApi,
+) -> Result<UploadResult, concord_core::prelude::ApiClientError> {
     let body = RecordBody::from_iter(vec![LogEntry {
         id: 1,
         message: "hello".to_string(),
@@ -118,7 +113,9 @@ pub async fn records_examples(api: EndpointIoApi) -> Result<UploadResult, ApiCli
     _request.execute().await
 }
 
-pub async fn multipart_examples(api: EndpointIoApi) -> Result<UploadResult, ApiClientError> {
+pub async fn multipart_examples(
+    api: EndpointIoApi,
+) -> Result<UploadResult, concord_core::prelude::ApiClientError> {
     let body = MultipartBody::new()
         .text("title", "hello")
         .bytes("file", Bytes::from_static(b"abc"));
@@ -126,24 +123,32 @@ pub async fn multipart_examples(api: EndpointIoApi) -> Result<UploadResult, ApiC
     let _response: MultipartStream<RawResponsePart> =
         api.download_multipart().execute_multipart().await?;
     let _also: MultipartStream<RawResponsePart> = api.download_multipart().execute().await?;
-    let _mixed = api.upload_multipart_mixed(MultipartBody::new().text("kind", "mixed"));
-    let _mixed_response: MultipartStream<RawResponsePart> =
-        api.download_multipart_mixed().execute_multipart().await?;
     _request.execute().await
 }
 
-pub async fn sse_examples(api: EndpointIoApi) -> Result<(), ApiClientError> {
+pub async fn sse_examples(api: EndpointIoApi) -> Result<(), concord_core::prelude::ApiClientError> {
     let _response: SseStream<Event> = api.events().execute_sse().await?;
     let _also: SseStream<Event> = api.events().execute().await?;
-    let _explicit: SseStream<Event> = api.events_explicit().execute().await?;
     Ok(())
 }
 
-pub async fn websocket_examples(api: EndpointIoApi) -> Result<(), ApiClientError> {
-    let _response: WebSocketClient<ClientMsg, ServerMsg> =
-        api.connect().execute_websocket().await?;
-    let _also: WebSocketClient<ClientMsg, ServerMsg> = api.connect().execute().await?;
-    let _explicit: WebSocketClient<ClientMsg, ServerMsg> =
-        api.connect_explicit().execute_websocket().await?;
+pub async fn multipart_mixed_examples(
+    api: EndpointIoApi,
+) -> Result<UploadResult, concord_core::prelude::ApiClientError> {
+    let body = MultipartBody::new()
+        .text("title", "hello")
+        .bytes("file", Bytes::from_static(b"abc"));
+    let _request = api.upload_multipart_mixed(body);
+    let _response: MultipartStream<RawResponsePart> =
+        api.download_multipart_mixed().execute_multipart().await?;
+    let _also: MultipartStream<RawResponsePart> = api.download_multipart_mixed().execute().await?;
+    _request.execute().await
+}
+
+pub async fn sse_explicit_examples(
+    api: EndpointIoApi,
+) -> Result<(), concord_core::prelude::ApiClientError> {
+    let _response: SseStream<Event> = api.events_explicit().execute_sse().await?;
+    let _also: SseStream<Event> = api.events_explicit().execute().await?;
     Ok(())
 }

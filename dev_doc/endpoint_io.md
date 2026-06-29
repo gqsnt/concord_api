@@ -4,36 +4,17 @@
 
 This document records the endpoint I/O contract and the current implementation surface. It defines the model and the constraints later work must preserve, but it does not itself introduce new runtime behavior, DSL support, code generation, or public API changes.
 
-The target is an endpoint I/O model expansion, not a single-feature "streaming" change.
-
-## Scope Of This Contract
-
-This contract covers:
-
-- endpoint I/O families
-- reserved endpoint I/O names
-- semantic classification rules
-- runtime ordering constraints
-- retry and replay safety
-- auth refresh behavior
-- policy compatibility
-- body-free observability
-- public API direction
-
-It does not implement any of those behaviors.
-
 ## Current Baseline
 
-The current implementation distinguishes buffered codecs from the reserved endpoint I/O families that now have dedicated runtime support and, where noted below, generated endpoint support.
+The current implementation distinguishes buffered codecs from the reserved endpoint I/O families that have dedicated runtime support and generated endpoint support.
 
 - Macro raw AST and semantic IR carry explicit endpoint I/O shapes.
-- Semantic IR now splits endpoint mode so HTTP request/response I/O and WS connect I/O are represented separately.
+- Resolved semantic IR carries HTTP request and response body I/O only.
 - Non-reserved families keep the buffered-codec shape used by `BodyCodec` and `ResponseCodec`.
-- Non-reserved families still use the existing `BodyCodec` and `ResponseCodec` paths.
 - `ContentType` is the shared wire-content marker trait for buffered codecs and reserved family markers.
 - Buffered codecs continue to use buffered request bodies and buffered response decode.
-- Dedicated runtime paths now exist for `Stream`, `Records`, `Multipart`, `Sse`, and `WebSocket` families so they do not have to buffer the whole body.
-- Macro/codegen support now exists for `Stream<M>`, `Records<T, F>`, `Multipart<T, F>`, `Sse<T, C>`, and `WebSocket<Out, In, C>`.
+- Dedicated runtime paths exist for `Stream`, `Records`, `Multipart`, and `Sse` families so they do not have to buffer the whole body.
+- Macro/codegen support exists for `Stream<M>`, `Records<T, F>`, `Multipart<T, F>`, and `Sse<T, C>`.
 - `.execute_raw()` remains bounded-buffered.
 - Custom buffered codecs are already open-ended and must stay that way.
 
@@ -119,7 +100,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - `MultipartBody` lowers to stream-backed transport bodies with generated boundaries and CRLF framing.
 - Multipart request bodies are stream-like and non-replayable.
 - Multipart request bodies use the existing stream byte limits.
-- Macro/codegen support now exists for `Multipart<T>` and `Multipart<T, F>`:
+- Macro/codegen support exists for `Multipart<T>` and `Multipart<T, F>`:
   - generated request endpoints accept `MultipartBody`;
   - generated response endpoints return `MultipartStream<T>`;
   - `Multipart<T>` defaults to `Multipart<T, FormData>`;
@@ -135,7 +116,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 `Sse<T>` and `Sse<T, C>` are reserved server-sent event families.
 
 - `Sse<T>` defaults to `Sse<T, JsonSse>`.
-- Core runtime support now exists for SSE responses.
+- Core runtime support exists for SSE responses.
 - Macro/codegen support exists for `Sse<T>` and `Sse<T, C>`.
 - Generated response endpoints return `SseStream<T>`.
 - Generated endpoints expose `.execute_sse()`, and `.execute()` also routes through SSE execution.
@@ -147,29 +128,6 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - SSE reconnect, `Last-Event-ID` resume, and browser/EventSource compatibility remain future work.
 - It must not be implemented through `ResponseCodec`.
 
-### WebSocketEndpoint
-
-`WebSocket<Out, In>` and `WebSocket<Out, In, C>` are reserved WebSocket endpoint families.
-
-- Endpoint method mode: `WS`.
-- `WebSocket<Out, In>` defaults to `WebSocket<Out, In, JsonWebSocket>`.
-- Core runtime support exists for WebSocket connections.
-- Macro/codegen support now exists for `WS ... -> WebSocket<Out, In>` and `WS ... -> WebSocket<Out, In, C>`.
-- Generated response endpoints return `WebSocketClient<Out, In>`.
-- Generated endpoints expose `.execute_websocket()`, and `.execute()` also routes through WebSocket execution.
-- WebSocket is endpoint mode, not an HTTP response body shape.
-- Runtime value: `WebSocketClient<Out, In>`.
-- Runtime codec trait: `WebSocketCodec<Out, In>`.
-- Built-in codec: `JsonWebSocket`.
-- Handshake URL schemes map `https -> wss` and `http -> ws`.
-- `WS` endpoints reject retry policies in v1; rate-limit and auth preparation still apply before connect.
-- Rate-limit applies before the connect/upgrade attempt.
-- Auth, header, query, and path construction apply before upgrade.
-- Reconnect, replay, pooling, multiplexing, and server-side WebSocket are out of scope initially.
-- WebSocket request bodies remain unsupported.
-- WebSocket map and pagination remain unsupported.
-- HTTP response body planning must not be contaminated with WebSocket semantics.
-
 ## Reserved Endpoint I/O Names
 
 The reserved top-level endpoint I/O names are:
@@ -180,7 +138,6 @@ The reserved top-level endpoint I/O names are:
 - `Records`
 - `Multipart`
 - `Sse`
-- `WebSocket`
 
 Only these families are sema-special.
 
@@ -192,12 +149,11 @@ Only these families are sema-special.
 | `Records` | `Records<T, F>` | none initially |
 | `Multipart` | `Multipart<T>`, `Multipart<T, F>` | `Multipart<T>` defaults to `FormData` |
 | `Sse` | `Sse<T>`, `Sse<T, C>` | `Sse<T>` defaults to `JsonSse` |
-| `WebSocket` | `WebSocket<Out, In>`, `WebSocket<Out, In, C>` | two-arg form defaults to `JsonWebSocket` |
 
 - Reserved-name detection is a macro and sema concern only.
 - Core must not know these names as DSL syntax.
 - Reserved names are special only in endpoint I/O position.
-- Reserved names should produce good diagnostics for invalid arity or invalid endpoint mode.
+- Reserved names should produce good diagnostics for invalid arity or unsupported endpoint methods.
 
 ## Non-Reserved Types Are Buffered Codecs
 
@@ -222,39 +178,32 @@ Custom buffered codec extensibility is part of the public contract and must not 
 
 ## Resolved Semantic Model
 
-The current resolved semantic model uses explicit endpoint mode separation.
+The current resolved semantic model stores resolved HTTP endpoint I/O directly on each endpoint.
 
 ```rust
-enum EndpointModeIr {
-    Http(HttpEndpointIr),
-    WebSocket(WebSocketEndpointIr),
+struct ResolvedEndpoint {
+    io: ResolvedHttpEndpointIo,
 }
 
-struct HttpEndpointIr {
-    request_body: RequestBodyShape,
-    response_body: ResponseBodyShape,
-    // existing route, params, auth, retry, rate-limit, paginate, map, etc.
+struct ResolvedHttpEndpointIo {
+    request: RequestBodyShape,
+    response: ResponseBodyShape,
 }
 
 enum RequestBodyShape {
     None,
-
     BufferedCodec {
         codec_ty: TypeRef,
         value_ty: TypeRef,
     },
-
     BufferedBytes,
-
     RawStream {
         media_ty: TypeRef,
     },
-
     Records {
         item_ty: TypeRef,
         format_ty: TypeRef,
     },
-
     Multipart {
         value_ty: TypeRef,
         format_ty: TypeRef,
@@ -263,39 +212,26 @@ enum RequestBodyShape {
 
 enum ResponseBodyShape {
     NoContent,
-
     BufferedCodec {
         codec_ty: TypeRef,
         value_ty: TypeRef,
     },
-
     BufferedBytes,
-
     RawStream {
         media_ty: TypeRef,
     },
-
     Records {
         item_ty: TypeRef,
         format_ty: TypeRef,
     },
-
     Multipart {
         part_ty: TypeRef,
         format_ty: TypeRef,
     },
-
     Sse {
         event_ty: TypeRef,
         codec_ty: TypeRef,
     },
-}
-
-struct WebSocketEndpointIr {
-    outbound_ty: TypeRef,
-    inbound_ty: TypeRef,
-    codec_ty: TypeRef,
-    // route, params, auth, rate-limit, retry/handshake policy if allowed
 }
 ```
 
@@ -325,8 +261,6 @@ RecordBody::<LogEntry>::from_iter(...)
 MultipartBody
 
 SseStream<Event>
-
-WebSocketClient<ClientMsg, ServerMsg>
 ```
 
 Generated facade methods should stay concrete and usage-first:
@@ -346,7 +280,7 @@ Avoid broad endpoint parameters such as `upload<B: Into<StreamBody>>(body: B)` u
 
 - `map` is allowed only when the response is buffered and decoded.
 - A streaming request with a buffered response may still allow `map`.
-- `map` is rejected for `Stream` responses, `Records` responses, `Multipart` responses, `Sse` responses, and `WebSocket` endpoints.
+- `map` is rejected for `Stream` responses, `Records` responses, `Multipart` responses, and `Sse` responses.
 
 ### Pagination
 
@@ -354,7 +288,7 @@ Avoid broad endpoint parameters such as `upload<B: Into<StreamBody>>(body: B)` u
 - Pagination controllers operate on decoded page values.
 - Pagination may mutate subsequent logical requests.
 - `Records<T, F>` and `Sse<T, C>` are not pages.
-- Pagination is rejected for `Stream` responses, `Records` responses, `Multipart` responses, `Sse` responses, and `WebSocket` endpoints.
+- Pagination is rejected for `Stream` responses, `Records` responses, `Multipart` responses, and `Sse` responses.
 
 ### Retry And Replay
 
@@ -380,7 +314,7 @@ Avoid broad endpoint parameters such as `upload<B: Into<StreamBody>>(body: B)` u
 ### Observability And Redaction
 
 - Hooks, debug sinks, retry metadata, rate-limit metadata, errors, and diagnostics must remain body-free and auth-safe.
-- They must not see live request body bytes, response body bytes, multipart part bytes, record values, SSE payloads, WebSocket messages, or raw auth material.
+- They must not see live request body bytes, response body bytes, multipart part bytes, record values, SSE payloads, or raw auth material.
 - Raw auth material remains confined to the transport send boundary.
 
 ## Transport Direction
@@ -409,22 +343,12 @@ pub enum TransportRequestBody {
   - `.execute_records()` for `Records<T, F>`
   - `.execute_multipart()` for `Multipart<T, F>`
   - `.execute_sse()` for `Sse<T, C>`
-  - `.execute_websocket()` for `WebSocket<Out, In, C>`
 - `.execute_raw()` remains bounded-buffered and intentionally separate.
 - Normal facade methods remain the preferred surface.
 
-## WebSocket Mode Separation
-
-- WebSocket is an endpoint mode.
-- WebSocket is not a response body shape.
-- HTTP `ResponseBodyShape` must not contain WebSocket.
-- `WS` endpoints must return `WebSocket<...>`.
-- HTTP endpoints must not return `WebSocket<...>`.
-- WebSocket is already part of the current runtime surface and should not be modeled as a buffered response body.
-
 ## Runtime Configuration Direction
 
-- Do not add DSL knobs for chunk size, reconnect behavior, record byte limits, idle timeout, multipart limits, or WebSocket subprotocols unless there is no clean Rust-trait, request-builder, or runtime-config alternative.
+- Do not add DSL knobs for chunk size, record byte limits, idle timeout, or multipart limits unless there is no clean Rust-trait, request-builder, or runtime-config alternative.
 - Detailed behavior belongs in runtime config, request builders, and explicit Rust traits.
 - Buffered body limits and stream-specific limits remain separate.
 
@@ -440,9 +364,6 @@ pub enum TransportRequestBody {
 - No CSV implementation.
 - No nested multipart.
 - No multipart derive macros.
-- No WebSocket reconnect.
-- No WebSocket pooling.
-- No WebSocket multiplexing.
 - No cache reintroduction.
 
 ## Cache Is Removed
@@ -463,7 +384,6 @@ Cache has been removed from Concord.
 - Do custom buffered codecs still work?
 - Are streaming families kept out of `BodyCodec` and `ResponseCodec`?
 - Are runtime values format-free?
-- Is WebSocket modeled as endpoint mode, not response body?
 - Is `.execute_raw()` still bounded-buffered?
 - Is body and auth redaction preserved?
 - Is body-free observability preserved?

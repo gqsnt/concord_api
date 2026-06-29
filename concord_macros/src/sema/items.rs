@@ -4,7 +4,6 @@ struct WalkItemsCtx<'a> {
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
     client_default_behavior_names: &'a [String],
-    client_policy: &'a PolicyBlocksResolved,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
     behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
@@ -18,7 +17,6 @@ struct EndpointAnalysisCtx<'a> {
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
     client_auth: &'a [AuthUsePlanIr],
     client_default_behavior_names: &'a [String],
-    client_policy: &'a PolicyBlocksResolved,
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
     behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
@@ -100,7 +98,6 @@ fn walk_items(
                     auth_credentials: ctx.auth_credentials,
                     client_auth: ctx.client_auth,
                     client_default_behavior_names: ctx.client_default_behavior_names,
-                    client_policy: ctx.client_policy,
                     retry_profiles: ctx.retry_profiles,
                     rate_limit_profiles: ctx.rate_limit_profiles,
                     behavior_profiles: ctx.behavior_profiles,
@@ -214,21 +211,6 @@ fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Type {
                 .cloned()
                 .unwrap_or_else(|| endpoint.response.ty.clone());
             syn::parse_quote!(::concord_core::advanced::SseStream<#event_ty>)
-        }
-        "WebSocket" => {
-            let out_ty = endpoint
-                .response
-                .args
-                .first()
-                .cloned()
-                .unwrap_or_else(|| endpoint.response.ty.clone());
-            let in_ty = endpoint
-                .response
-                .args
-                .get(1)
-                .cloned()
-                .unwrap_or_else(|| endpoint.response.ty.clone());
-            syn::parse_quote!(::concord_core::advanced::WebSocketClient<#out_ty, #in_ty>)
         }
         _ => endpoint.response.ty.clone(),
     }
@@ -594,30 +576,31 @@ fn analyze_endpoint(
                 format!(
                     "credential `{}` cannot acquire via endpoint `{}` because the endpoint uses that credential",
                     credential.name, ed.name
-                ),
-            ));
+            ),
+        ));
         }
     }
 
+    let method_name = ed.method.to_string();
+    if !matches!(
+        method_name.as_str(),
+        "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH"
+    ) {
+        return Err(syn::Error::new(
+            ed.method.span(),
+            "unsupported endpoint method",
+        ));
+    }
+
     let request_io = classify_request_io(ed.body.as_ref())?;
-    let is_websocket_endpoint = ed.method == "WS";
-    let mode = if is_websocket_endpoint {
-        if !request_io.is_none() {
-            return Err(syn::Error::new(
-                ed.body
-                    .as_ref()
-                    .map(|body| body.marker.span())
-                    .unwrap_or_else(|| ed.method.span()),
-                "`WS` endpoints do not support request bodies",
-            ));
-        }
-        if endpoint_retry_enabled(ctx.client_policy, &scope_policies, &policy) {
-            return Err(syn::Error::new(
-                ed.method.span(),
-                "`WS` endpoints do not support retry policies",
-            ));
-        }
-        let ws_io = classify_websocket_io(&ed.response)?;
+    let response_io = classify_http_response_io(&ed.response)?;
+    if matches!(
+        response_io,
+        ResolvedResponseBodyIo::RawStream { .. }
+            | ResolvedResponseBodyIo::Records { .. }
+            | ResolvedResponseBodyIo::Multipart { .. }
+            | ResolvedResponseBodyIo::Sse { .. }
+    ) {
         if ed.map.is_some() {
             return Err(syn::Error::new(
                 ed.name.span(),
@@ -630,35 +613,12 @@ fn analyze_endpoint(
                 "pagination is only supported for buffered responses",
             ));
         }
-        ResolvedEndpointMode::WebSocket(ws_io.clone())
-    } else {
-        let response_io = classify_http_response_io(&ed.response)?;
-        if matches!(
-            response_io,
-            ResolvedResponseBodyIo::RawStream { .. }
-                | ResolvedResponseBodyIo::Records { .. }
-                | ResolvedResponseBodyIo::Multipart { .. }
-                | ResolvedResponseBodyIo::Sse { .. }
-        ) {
-            if ed.map.is_some() {
-                return Err(syn::Error::new(
-                    ed.name.span(),
-                    "`map` is only supported for buffered responses",
-                ));
-            }
-            if ed.paginate.is_some() {
-                return Err(syn::Error::new(
-                    ed.name.span(),
-                    "pagination is only supported for buffered responses",
-                ));
-            }
-        }
-        ensure_codegen_supported_request_io(&request_io, ed.body.as_ref())?;
-        ensure_codegen_supported_response_io(&response_io, &ed.response)?;
-        ResolvedEndpointMode::Http(ResolvedHttpEndpointIo {
-            request: request_io.clone(),
-            response: response_io.clone(),
-        })
+    }
+    ensure_codegen_supported_request_io(&request_io, ed.body.as_ref())?;
+    ensure_codegen_supported_response_io(&response_io, &ed.response)?;
+    let io = ResolvedHttpEndpointIo {
+        request: request_io.clone(),
+        response: response_io.clone(),
     };
 
     // 4) Resolve paginate, if any.
@@ -693,7 +653,7 @@ fn analyze_endpoint(
         // Stable declaration order.
         vars: endpoint_decls,
 
-        mode,
+        io,
         body: ed.body.clone(),
         response: ed.response.clone(),
 
@@ -714,7 +674,6 @@ fn analyze_endpoint(
 enum EndpointIoPosition {
     Request,
     Response,
-    WebSocket,
 }
 
 fn endpoint_io_family_name(spec: &RawIoSpec) -> Option<&syn::Ident> {
@@ -760,12 +719,6 @@ fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo
                 "`Sse` is only valid as an endpoint response",
             ));
         }
-        EndpointIoClassification::WebSocket { .. } => {
-            return Err(syn::Error::new_spanned(
-                spec.marker.clone(),
-                "`WebSocket` is only valid as an endpoint response",
-            ));
-        }
     })
 }
 
@@ -794,32 +747,7 @@ fn classify_http_response_io(spec: &RawResponseIo) -> Result<ResolvedResponseBod
             event_ty,
             codec_ty,
         },
-        EndpointIoClassification::WebSocket { .. } => {
-            return Err(syn::Error::new_spanned(
-                spec.marker.clone(),
-                "`WebSocket` endpoint I/O is only valid for `WS` endpoints",
-            ));
-        }
     })
-}
-
-fn classify_websocket_io(spec: &RawResponseIo) -> Result<ResolvedWebSocketEndpointIo> {
-    let io = classify_endpoint_io(spec, EndpointIoPosition::WebSocket)?;
-    match io {
-        EndpointIoClassification::WebSocket {
-            out_ty,
-            in_ty,
-            codec_ty,
-        } => Ok(ResolvedWebSocketEndpointIo {
-            out_ty,
-            in_ty,
-            codec_ty,
-        }),
-        _ => Err(syn::Error::new_spanned(
-            spec.marker.clone(),
-            "`WS` endpoints must return `WebSocket<Out, In>`",
-        )),
-    }
 }
 
 enum EndpointIoClassification {
@@ -839,11 +767,6 @@ enum EndpointIoClassification {
     },
     Sse {
         event_ty: Type,
-        codec_ty: Type,
-    },
-    WebSocket {
-        out_ty: Type,
-        in_ty: Type,
         codec_ty: Type,
     },
 }
@@ -942,37 +865,6 @@ fn classify_endpoint_io(
                     .unwrap_or_else(|| syn::parse_quote!(::concord_core::advanced::JsonSse)),
             })
         }
-        "WebSocket" => {
-            if !(arg_count == 2 || arg_count == 3) {
-                return Err(syn::Error::new_spanned(
-                    spec.marker.clone(),
-                    "reserved endpoint I/O family `WebSocket` expects two or three type arguments",
-                ));
-            }
-            if matches!(position, EndpointIoPosition::Request) {
-                return Err(syn::Error::new_spanned(
-                    spec.marker.clone(),
-                    "`WebSocket` is only valid as an endpoint response",
-                ));
-            }
-            if matches!(position, EndpointIoPosition::Response) {
-                return Err(syn::Error::new_spanned(
-                    spec.marker.clone(),
-                    "`WebSocket` endpoint I/O is only valid for `WS` endpoints",
-                ));
-            }
-            Ok(EndpointIoClassification::WebSocket {
-                out_ty: spec.args[0].clone(),
-                in_ty: spec.args[1].clone(),
-                codec_ty: spec
-                    .args
-                    .get(2)
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        syn::parse_quote!(::concord_core::advanced::JsonWebSocket)
-                    }),
-            })
-        }
         _ => {
             if arg_count > 1 {
                 return Err(syn::Error::new_spanned(
@@ -983,31 +875,6 @@ fn classify_endpoint_io(
             Ok(EndpointIoClassification::BufferedCodec(buffered_codec_io(spec)))
         }
     }
-}
-
-fn endpoint_retry_enabled(
-    client_policy: &PolicyBlocksResolved,
-    scope_policies: &[PolicyBlocksResolved],
-    endpoint_policy: &PolicyBlocksResolved,
-) -> bool {
-    let mut enabled = retry_block_enabled(&client_policy.retry);
-    for policy in scope_policies {
-        match policy.retry {
-            Some(RetryResolved::Clear) => enabled = false,
-            Some(RetryResolved::Set(_) | RetryResolved::Patch(_)) => enabled = true,
-            None => {}
-        }
-    }
-    match endpoint_policy.retry {
-        Some(RetryResolved::Clear) => enabled = false,
-        Some(RetryResolved::Set(_) | RetryResolved::Patch(_)) => enabled = true,
-        None => {}
-    }
-    enabled
-}
-
-fn retry_block_enabled(block: &Option<RetryResolved>) -> bool {
-    matches!(block, Some(RetryResolved::Set(_) | RetryResolved::Patch(_)))
 }
 
 fn ensure_codegen_supported_request_io(

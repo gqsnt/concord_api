@@ -9,7 +9,6 @@ use crate::sse::{SseCodec, SseStream};
 use crate::stream_response::StreamResponse;
 use crate::transport::DecodedResponse;
 use crate::transport::Transport;
-use crate::websocket::{WebSocketClient, WebSocketCodec};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -218,33 +217,6 @@ pub trait SseResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
         Box::pin(async move {
             client
                 .execute_plan_sse::<Self::Event, Self::Codec>(plan)
-                .await
-        })
-    }
-}
-
-/// Marker implemented only for endpoints whose primary response is a websocket connection.
-pub trait WebSocketEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-    type Out: Send + 'static;
-    type In: Send + 'static;
-    type Codec: WebSocketCodec<Self::Out, Self::In>;
-
-    fn execute_websocket<'a, T>(
-        client: &'a ApiClient<Cx, T>,
-        plan: RequestPlan,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<WebSocketClient<Self::Out, Self::In>, ApiClientError>>
-                + Send
-                + 'a,
-        >,
-    >
-    where
-        T: Transport + 'a,
-    {
-        Box::pin(async move {
-            client
-                .execute_plan_websocket::<Self::Out, Self::In, Self::Codec>(plan)
                 .await
         })
     }

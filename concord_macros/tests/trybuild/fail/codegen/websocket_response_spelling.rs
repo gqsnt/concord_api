@@ -1,7 +1,9 @@
 use concord_macros::api;
 
+pub struct WebSocket<Out, In>(std::marker::PhantomData<(Out, In)>);
+
 api! {
-    client WebSocketHttpGetResponseApi {
+    client WebSocketRemovedApi {
         base "https://example.com"
     }
 

@@ -193,7 +193,7 @@ Behavior and profile names are semantic-only policy sugar. Generated runtime cod
 
 Proof owners: `docs/advanced_endpoints.md`, `docs/customization.md`, `docs/retry_and_rate_limit.md`, `dev_doc/endpoint_io.md`, `dev_doc/architecture.md`, `concord_examples/src/endpoint_io.rs`, and `concord_examples/src/custom_codec.rs`.
 
-The current endpoint I/O contract is documented as current behavior, not future work. `ContentType` is the shared wire-content marker, `Stream`, `Records`, `Multipart`, `Sse`, and `WebSocket` have generated support, `WS` rejects retry, stream-like request bodies are not automatically replayed, `map` and pagination remain buffered-response-only, and the core `NoContent` codec is distinguished from the unsupported reserved DSL `NoContent` and `Bytes` spellings.
+The current endpoint I/O contract is documented as current behavior, not future work. `ContentType` is the shared wire-content marker, `Stream`, `Records`, `Multipart`, and `Sse` have generated support, explicit `Multipart<T, F>` and `Sse<T, C>` forms remain supported, stream-like request bodies are not automatically replayed, `map` and pagination remain buffered-response-only, and the core `NoContent` codec is distinguished from the unsupported reserved DSL `NoContent` and `Bytes` spellings.
 
 ## Known V1 Limitations
 

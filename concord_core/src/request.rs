@@ -2,7 +2,7 @@ use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{
     CustomPaginationPlan, Endpoint, MultipartResponseEndpoint, PaginatedEndpoint, PaginationPlan,
-    RecordResponseEndpoint, SseResponseEndpoint, StreamResponseEndpoint, WebSocketEndpoint,
+    RecordResponseEndpoint, SseResponseEndpoint, StreamResponseEndpoint,
 };
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
@@ -231,22 +231,6 @@ where
         let client = self.client;
         let plan = self.request_plan()?;
         E::execute_sse(client, plan).await
-    }
-}
-
-impl<'a, Cx, E, T> PendingRequest<'a, Cx, E, T>
-where
-    Cx: ClientContext + 'a,
-    E: WebSocketEndpoint<Cx> + 'a,
-    T: crate::transport::Transport + 'a,
-{
-    #[inline]
-    pub async fn execute_websocket(
-        self,
-    ) -> Result<crate::websocket::WebSocketClient<E::Out, E::In>, ApiClientError> {
-        let client = self.client;
-        let plan = self.request_plan()?;
-        E::execute_websocket(client, plan).await
     }
 }
 

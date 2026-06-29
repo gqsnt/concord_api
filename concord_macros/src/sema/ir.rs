@@ -58,7 +58,7 @@ pub struct ResolvedEndpoint {
     pub route_pieces: Vec<PathPiece>,
 
     pub vars: Vec<VarInfo>, // endpoint vars (union, stable)
-    pub mode: ResolvedEndpointMode,
+    pub io: ResolvedHttpEndpointIo,
     pub body: RawRequestIo,
     pub response: RawResponseIo,
 
@@ -71,24 +71,9 @@ pub struct ResolvedEndpoint {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-pub enum ResolvedEndpointMode {
-    Http(ResolvedHttpEndpointIo),
-    WebSocket(ResolvedWebSocketEndpointIo),
-}
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ResolvedHttpEndpointIo {
     pub request: ResolvedRequestBodyIo,
     pub response: ResolvedResponseBodyIo,
-}
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct ResolvedWebSocketEndpointIo {
-    pub out_ty: Type,
-    pub in_ty: Type,
-    pub codec_ty: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -147,34 +132,17 @@ impl ResolvedResponseBodyIo {
 }
 
 #[allow(dead_code)]
-impl ResolvedEndpointMode {
-    pub fn http(&self) -> Option<&ResolvedHttpEndpointIo> {
-        match self {
-            ResolvedEndpointMode::Http(io) => Some(io),
-            _ => None,
-        }
-    }
-
-    pub fn websocket(&self) -> Option<&ResolvedWebSocketEndpointIo> {
-        match self {
-            ResolvedEndpointMode::WebSocket(io) => Some(io),
-            _ => None,
-        }
-    }
-}
-
-#[allow(dead_code)]
 impl ResolvedEndpoint {
-    pub fn http_io(&self) -> Option<&ResolvedHttpEndpointIo> {
-        self.mode.http()
+    pub fn http_io(&self) -> &ResolvedHttpEndpointIo {
+        &self.io
     }
 
-    pub fn request_io(&self) -> Option<&ResolvedRequestBodyIo> {
-        self.http_io().map(|io| &io.request)
+    pub fn request_io(&self) -> &ResolvedRequestBodyIo {
+        &self.io.request
     }
 
-    pub fn response_io(&self) -> Option<&ResolvedResponseBodyIo> {
-        self.http_io().map(|io| &io.response)
+    pub fn response_io(&self) -> &ResolvedResponseBodyIo {
+        &self.io.response
     }
 }
 

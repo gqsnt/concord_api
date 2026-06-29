@@ -1,5 +1,0 @@
-error: `WS` endpoints do not support retry policies
-  --> tests/trybuild/fail/codegen/websocket_retry_default.rs:31:5
-   |
-31 |     WS Connect
-   |     ^^

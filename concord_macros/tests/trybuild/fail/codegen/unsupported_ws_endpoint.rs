@@ -1,12 +1,12 @@
 use concord_macros::api;
 
 api! {
-    client WsNonWebSocketResponseApi {
+    client WsRemovedApi {
         base "https://example.com"
     }
 
     WS Connect
-        path ["connect"]
+        path ["ws"]
         -> Json<String>
 }
 

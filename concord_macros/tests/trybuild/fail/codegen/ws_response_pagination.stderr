@@ -1,5 +1,0 @@
-error: pagination is only supported for buffered responses
- --> tests/trybuild/fail/codegen/ws_response_pagination.rs:8:8
-  |
-8 |     WS Connect
-  |        ^^^^^^^
