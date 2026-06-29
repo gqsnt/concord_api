@@ -184,6 +184,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn classify_transport_response(
         &self,
         mut resp: TransportResponse,
+        skip_body: bool,
         dbg: DebugLevel,
         dbg_verbose: bool,
         _dbg_vv: bool,
@@ -209,31 +210,35 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 })
             }
             ResponseClass::Success => {
-                let bytes = read_body_all_limited(
-                    resp.body.as_mut(),
-                    resp.content_length,
-                    self.runtime_state.max_response_body_bytes(),
-                )
-                .await
-                .map_err(|e| match e {
-                    BodyReadError::Transport(source) => ApiClientError::Transport {
-                        ctx: ctx.clone(),
-                        source,
-                    },
-                    BodyReadError::ContentLengthTooLarge { limit, actual } => {
-                        ApiClientError::ResponseTooLarge {
+                let bytes = if skip_body {
+                    Bytes::new()
+                } else {
+                    read_body_all_limited(
+                        resp.body.as_mut(),
+                        resp.content_length,
+                        self.runtime_state.max_response_body_bytes(),
+                    )
+                    .await
+                    .map_err(|e| match e {
+                        BodyReadError::Transport(source) => ApiClientError::Transport {
                             ctx: ctx.clone(),
-                            limit,
-                            actual,
+                            source,
+                        },
+                        BodyReadError::ContentLengthTooLarge { limit, actual } => {
+                            ApiClientError::ResponseTooLarge {
+                                ctx: ctx.clone(),
+                                limit,
+                                actual,
+                            }
                         }
-                    }
-                    BodyReadError::LimitExceeded { limit } => {
-                        ApiClientError::ResponseBodyLimitExceeded {
-                            ctx: ctx.clone(),
-                            limit,
+                        BodyReadError::LimitExceeded { limit } => {
+                            ApiClientError::ResponseBodyLimitExceeded {
+                                ctx: ctx.clone(),
+                                limit,
+                            }
                         }
-                    }
-                })?;
+                    })?
+                };
                 Ok(BuiltResponse {
                     meta: resp.meta,
                     url: resp.url,
@@ -507,6 +512,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn send_and_classify_once(
         &self,
         built: BuiltRequest,
+        skip_body: bool,
         send_ctx: SendClassifyCtx<'_>,
     ) -> Result<BuiltResponse, ApiClientError> {
         let transport_resp = self
@@ -518,6 +524,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .await?;
         self.classify_transport_response(
             transport_resp,
+            skip_body,
             send_ctx.dbg,
             send_ctx.dbg_verbose,
             send_ctx.dbg_vv,

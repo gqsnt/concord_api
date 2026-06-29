@@ -44,6 +44,7 @@ pub struct RawIoSpec {
     pub enc: Path,
     pub ty: Type,
     pub args: Vec<Type>,
+    pub had_angle_args: bool,
 }
 
 pub type RawRequestIo = Option<RawIoSpec>;

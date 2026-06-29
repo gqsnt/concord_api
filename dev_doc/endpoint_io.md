@@ -15,6 +15,7 @@ The current implementation distinguishes buffered codecs from the reserved endpo
 - Buffered codecs continue to use buffered request bodies and buffered response decode.
 - Dedicated runtime paths exist for `Stream`, `Records`, `Multipart`, and `Sse` families so they do not have to buffer the whole body.
 - Macro/codegen support exists for `Stream<M>`, `Records<T, NdJson>`, `Records<T, Csv<Cfg>>`, `Multipart<T, F>`, and `Sse<T, C>`.
+- Response-only `NoContent` is implemented and returns `()`.
 - `.execute_raw()` remains bounded-buffered.
 - Custom buffered codecs are already open-ended and must stay that way.
 
@@ -55,12 +56,13 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 
 ### NoContent
 
-`NoContent` is a reserved no-response-body spelling.
+`NoContent` is a reserved response-only no-content spelling.
 
+- It returns `()` in generated facades.
 - It is not a stream.
 - It may reuse existing no-content codec behavior internally if appropriate.
-- It should allow better sema diagnostics than treating it as a custom codec.
-- The core `NoContent` codec exists for ordinary buffered endpoints. The reserved endpoint I/O spelling `NoContent` remains unsupported in the DSL unless and until it is explicitly implemented.
+- Request-side `NoContent` remains invalid.
+- The core `NoContent` codec exists for ordinary buffered endpoints. The DSL spelling `-> NoContent` is now implemented as response-only reserved endpoint I/O.
 
 ### RawStream
 
@@ -144,7 +146,7 @@ Only these families are sema-special.
 | Family | Valid forms | Defaulting |
 | --- | --- | --- |
 | `Bytes` | `Bytes` | none |
-| `NoContent` | `NoContent` | none |
+| `NoContent` | `NoContent` | response-only |
 | `Stream` | `Stream<M>` | none |
 | `Records` | `Records<T, F>` | none initially |
 | `Multipart` | `Multipart<T>`, `Multipart<T, F>` | `Multipart<T>` defaults to `FormData` |
@@ -280,7 +282,7 @@ Avoid broad endpoint parameters such as `upload<B: Into<StreamBody>>(body: B)` u
 
 - `map` is allowed only when the response is buffered and decoded.
 - A streaming request with a buffered response may still allow `map`.
-- `map` is rejected for `Stream` responses, `Records` responses, `Multipart` responses, and `Sse` responses.
+- `map` is rejected for `Stream` responses, `Records` responses, `Multipart` responses, `Sse` responses, and `NoContent` responses.
 
 ### Pagination
 
@@ -288,7 +290,7 @@ Avoid broad endpoint parameters such as `upload<B: Into<StreamBody>>(body: B)` u
 - Pagination controllers operate on decoded page values.
 - Pagination may mutate subsequent logical requests.
 - `Records<T, F>` and `Sse<T, C>` are not pages.
-- Pagination is rejected for `Stream` responses, `Records` responses, `Multipart` responses, and `Sse` responses.
+- Pagination is rejected for `Stream` responses, `Records` responses, `Multipart` responses, `Sse` responses, and `NoContent` responses.
 
 ### Retry And Replay
 
@@ -331,8 +333,8 @@ pub enum TransportRequestBody {
 
 - The current transport request body enum is the request/transport boundary and should be preserved.
 - Existing response transport is already chunk-capable and should be preserved or reused.
-- Do not create unnecessary special transport paths for `Bytes` or `NoContent` unless current code requires it.
-- `Bytes` and `NoContent` may reuse buffered internals.
+- Do not create unnecessary special transport paths for `Bytes` unless current code requires it.
+- The response-only `NoContent` spelling may reuse the existing no-content path internally.
 
 ## Advanced Execution Surfaces
 

@@ -125,6 +125,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let send_result = self
                 .send_and_classify_once(
                     built,
+                    plan.endpoint.response.no_content,
                     SendClassifyCtx {
                         dbg,
                         dbg_verbose,
@@ -345,6 +346,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let send_result = self
                 .send_and_classify_once(
                     built,
+                    false,
                     SendClassifyCtx {
                         dbg,
                         dbg_verbose,

@@ -35,6 +35,11 @@ api! {
         path ["json"]
         -> Json<UploadResult>
 
+    GET NoContentResponse
+        as no_content_response
+        path ["no-content"]
+        -> NoContent
+
     POST UploadStream(body: Stream<OctetStream>)
         as upload_stream
         path ["stream", "upload"]
@@ -110,6 +115,12 @@ pub async fn json_example(
     api: EndpointIoApi,
 ) -> Result<UploadResult, concord_core::prelude::ApiClientError> {
     api.json_response().execute().await
+}
+
+pub async fn no_content_example(
+    api: EndpointIoApi,
+) -> Result<(), concord_core::prelude::ApiClientError> {
+    api.no_content_response().execute().await
 }
 
 pub async fn stream_examples(

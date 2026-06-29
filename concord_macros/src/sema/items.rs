@@ -596,7 +596,8 @@ fn analyze_endpoint(
     let response_io = classify_http_response_io(&ed.response)?;
     if matches!(
         response_io,
-        ResolvedResponseBodyIo::RawStream { .. }
+        ResolvedResponseBodyIo::NoContent
+            | ResolvedResponseBodyIo::RawStream { .. }
             | ResolvedResponseBodyIo::Records { .. }
             | ResolvedResponseBodyIo::Multipart { .. }
             | ResolvedResponseBodyIo::Sse { .. }
@@ -782,7 +783,7 @@ fn classify_endpoint_io(
 
     match family.as_str() {
         "Bytes" => {
-            if arg_count != 0 {
+            if spec.had_angle_args || arg_count != 0 {
                 return Err(syn::Error::new_spanned(
                     spec.marker.clone(),
                     "reserved endpoint I/O family `Bytes` does not take type arguments",
@@ -791,7 +792,7 @@ fn classify_endpoint_io(
             Ok(EndpointIoClassification::BufferedBytes)
         }
         "NoContent" => {
-            if arg_count != 0 {
+            if spec.had_angle_args || arg_count != 0 {
                 return Err(syn::Error::new_spanned(
                     spec.marker.clone(),
                     "reserved endpoint I/O family `NoContent` does not take type arguments",
@@ -906,14 +907,11 @@ fn ensure_codegen_supported_response_io(
         | ResolvedResponseBodyIo::RawStream { .. }
         | ResolvedResponseBodyIo::Records { .. }
         | ResolvedResponseBodyIo::Multipart { .. }
-        | ResolvedResponseBodyIo::Sse { .. } => Ok(()),
+        | ResolvedResponseBodyIo::Sse { .. }
+        | ResolvedResponseBodyIo::NoContent => Ok(()),
         ResolvedResponseBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`Bytes` endpoint I/O is reserved but not supported yet",
-        )),
-        ResolvedResponseBodyIo::NoContent => Err(syn::Error::new_spanned(
-            spec.marker.clone(),
-            "`NoContent` endpoint I/O is reserved but not supported yet",
         )),
     }
 }

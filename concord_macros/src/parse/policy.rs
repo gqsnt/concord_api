@@ -323,6 +323,7 @@ impl Parse for RawIoSpec {
             ));
         };
 
+        let had_angle_args = matches!(last.arguments, syn::PathArguments::AngleBracketed(_));
         let args: Vec<Type> = match &last.arguments {
             syn::PathArguments::AngleBracketed(ab) => {
                 let mut out = Vec::new();
@@ -363,6 +364,7 @@ impl Parse for RawIoSpec {
             enc: path,
             ty,
             args,
+            had_angle_args,
         })
     }
 }

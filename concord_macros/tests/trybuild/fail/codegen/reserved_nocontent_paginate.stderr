@@ -1,0 +1,5 @@
+error: pagination is only supported for buffered responses
+ --> tests/trybuild/fail/codegen/reserved_nocontent_paginate.rs:8:9
+  |
+8 |     GET Ping
+  |         ^^^^

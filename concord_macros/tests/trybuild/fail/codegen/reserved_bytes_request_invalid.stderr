@@ -1,0 +1,5 @@
+error: `Bytes` endpoint I/O is reserved but not supported yet
+ --> tests/trybuild/fail/codegen/reserved_bytes_request_invalid.rs:8:23
+  |
+8 |     POST Create(body: Bytes)
+  |                       ^^^^^

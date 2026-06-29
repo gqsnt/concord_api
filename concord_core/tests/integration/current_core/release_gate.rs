@@ -68,6 +68,7 @@ fn examples_cover_v1_usage_surface() {
         "Multipart<RawResponsePart, Mixed>",
         "Sse<",
         "Sse<Event, JsonSse>",
+        "NoContent",
         "execute_stream",
         "execute_records",
         "execute_multipart",

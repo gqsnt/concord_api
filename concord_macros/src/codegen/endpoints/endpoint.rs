@@ -596,6 +596,7 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
 
 fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
     match ep.response_io() {
+        ResolvedResponseBodyIo::NoContent => quote! { () },
         ResolvedResponseBodyIo::Multipart { part_ty, .. } => quote! {
             ::concord_core::advanced::MultipartStream<#part_ty>
         },
@@ -621,6 +622,7 @@ fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
 
 fn endpoint_response_accept_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
     match ep.response_io() {
+        ResolvedResponseBodyIo::NoContent => quote! { ::core::option::Option::None },
         ResolvedResponseBodyIo::Multipart { format_ty, .. } => quote! {
             ::core::option::Option::Some(
                 <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
@@ -657,6 +659,7 @@ fn endpoint_response_no_content_tokens(
     response_dec: &syn::Type,
 ) -> TokenStream2 {
     match ep.response_io() {
+        ResolvedResponseBodyIo::NoContent => quote! { true },
         ResolvedResponseBodyIo::RawStream { .. }
         | ResolvedResponseBodyIo::Records { .. }
         | ResolvedResponseBodyIo::Multipart { .. }
@@ -672,6 +675,7 @@ fn endpoint_response_format_tokens(
     response_dec: &syn::Type,
 ) -> TokenStream2 {
     match ep.response_io() {
+        ResolvedResponseBodyIo::NoContent => quote! { ::concord_core::internal::Format::Text },
         ResolvedResponseBodyIo::Multipart { .. } => quote! { ::concord_core::internal::Format::Text },
         ResolvedResponseBodyIo::RawStream { .. } => quote! { ::concord_core::internal::Format::Binary },
         ResolvedResponseBodyIo::Records { .. } => quote! { ::concord_core::internal::Format::Text },
@@ -688,6 +692,21 @@ fn endpoint_response_decode_fn(
 ) -> TokenStream2 {
     let decode_fn = emit_helpers::ident(&format!("__decode_{ty_name}"), Span::call_site());
     match ep.response_io() {
+        ResolvedResponseBodyIo::NoContent => quote! {
+                fn #decode_fn(
+                    resp: ::concord_core::transport::BuiltResponse,
+                    _ctx: ::concord_core::error::ErrorContext,
+                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
+                    let out = ::concord_core::transport::DecodedResponse {
+                        meta: resp.meta,
+                        url: resp.url,
+                        status: resp.status,
+                        headers: resp.headers,
+                        value: (),
+                    };
+                    ::core::result::Result::Ok(::std::boxed::Box::new(out))
+                }
+            },
         ResolvedResponseBodyIo::Multipart { .. } => quote! {
                 fn #decode_fn(
                     _resp: ::concord_core::transport::BuiltResponse,
