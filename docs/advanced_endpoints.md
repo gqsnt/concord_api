@@ -50,6 +50,18 @@ Normal application code should prefer facade methods because they preserve the i
 
 The generated advanced surfaces are family-specific and keep runtime values free of codec or format parameters.
 
+| Shape | Request | Response | Runtime value / output | Buffered | Map | Pagination |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| `Json<T>` | yes | yes | `T` | yes | yes | yes, if page-shaped |
+| `Text<String>` | yes | yes | `String` | yes | yes | no unless explicitly page-shaped |
+| custom buffered codec | yes | yes | decoded codec value | yes | yes | yes, if page-shaped |
+| `Stream<M>` | yes | yes | `StreamBody` / `StreamResponse<M>` | no | no | no |
+| `Records<T, F>` | yes | yes | `RecordBody<T>` / `RecordStream<T>` | no | no | no |
+| `Multipart<T, F>` | yes | yes | `MultipartBody` / `MultipartStream<T>` | no | no | no |
+| `Sse<T, C>` | no | yes | `SseStream<T>` | no | no | no |
+| `NoContent` | no | yes | `()` | no body | no | no |
+| `Bytes` | no | yes | `bytes::Bytes` | yes | yes | no |
+
 - `ContentType` is the shared wire-content marker trait for buffered codec associated content markers and reserved endpoint I/O media markers.
 - Built-in markers include `JsonContentType`, `TextContentType`, `OctetStream`, `NdJson`, `FormData`, `Mixed`, and `EventStream`.
 - `Json<T>` is the ordinary buffered JSON codec. `Text<String>` is the ordinary buffered text codec.
@@ -57,11 +69,11 @@ The generated advanced surfaces are family-specific and keep runtime values free
 - `Records<T, F>` uses `RecordBody<T>` for requests and `RecordStream<T>` for responses. Supported formats include `NdJson` and `Csv<Cfg>`; the built-in CSV configs are `CsvCommaDelim`, `CsvSemicolonDelim`, and `CsvTabDelim`.
 - `Multipart<T>` defaults to `Multipart<T, FormData>` and uses `MultipartBody` for requests and `MultipartStream<T>` for responses. Explicit `Multipart<T, F>` remains supported, including `Mixed`.
 - `Sse<T>` defaults to `Sse<T, JsonSse>` and uses `SseStream<T>` for responses; SSE is response-only and `JsonSse` decodes event data, not the HTTP wire content type. Explicit `Sse<T, C>` remains supported.
-- `Bytes` is a response-only reserved endpoint I/O spelling that returns `bytes::Bytes`, uses the ordinary bounded buffered response path, and omits `Accept`; request-side `Bytes` remains invalid. Use `Stream<OctetStream>` for unbounded byte transfer.
+- `Bytes` is response-only, returns `bytes::Bytes`, uses the ordinary bounded buffered response path, and omits `Accept`; request-side `Bytes` remains invalid. Use `Stream<OctetStream>` for unbounded byte transfer.
+- `NoContent` is response-only, returns `()`, and omits `Accept`; request-side `NoContent` remains invalid. The core `NoContent` buffered codec intentionally omits request and response content headers.
 - Each family has a dedicated helper on pending requests: `.execute_stream()`, `.execute_records()`, `.execute_multipart()`, or `.execute_sse()`.
 - `.execute()` also routes through the family-specific execution path for these endpoint I/O shapes.
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` are the codec-level override points for buffered codecs. `content_type()` and `accept()` are the convenience forms.
-- The core `NoContent` buffered codec intentionally omits request and response content headers. The reserved DSL spelling `-> NoContent` is response-only, returns `()`, and omits `Accept`; request-side `NoContent` remains invalid. The reserved DSL spelling `-> Bytes` is response-only, returns `bytes::Bytes`, and uses the ordinary bounded buffered response path.
 - Retry policies remain available for ordinary HTTP endpoints, including buffered responses and supported stream/records/multipart/SSE response endpoints. Stream-like request bodies are not automatically replayed by retry unless a future replayable-body contract is introduced.
 - Map and pagination remain buffered-response-only and are rejected for `Stream`, `Records`, `Multipart`, `Sse`, and `NoContent` endpoint responses. `Bytes` allows `map` but rejects pagination.
 - Request-side SSE remains unsupported.

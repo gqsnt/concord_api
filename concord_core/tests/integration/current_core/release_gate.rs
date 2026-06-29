@@ -61,6 +61,8 @@ fn examples_cover_v1_usage_surface() {
 
     let endpoint_io = read_repo_file("concord_examples/src/endpoint_io.rs");
     for anchor in [
+        "Text<",
+        "Text<String>",
         "Stream<OctetStream>",
         "Records<",
         "Records<LogEntry, Csv<CsvCommaDelim>>",

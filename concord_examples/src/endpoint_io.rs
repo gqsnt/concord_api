@@ -4,7 +4,7 @@ use concord_core::advanced::{
     MultipartStream, NdJson, OctetStream, RawResponsePart, RecordBody, RecordStream, SseStream,
     StreamBody, StreamResponse,
 };
-use concord_core::prelude::Json;
+use concord_core::prelude::{Json, Text};
 use concord_macros::api;
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +34,11 @@ api! {
         as json_response
         path ["json"]
         -> Json<UploadResult>
+
+    GET TextResponse
+        as text_response
+        path ["text"]
+        -> Text<String>
 
     GET NoContentResponse
         as no_content_response
@@ -120,6 +125,12 @@ pub async fn json_example(
     api: EndpointIoApi,
 ) -> Result<UploadResult, concord_core::prelude::ApiClientError> {
     api.json_response().execute().await
+}
+
+pub async fn text_example(
+    api: EndpointIoApi,
+) -> Result<String, concord_core::prelude::ApiClientError> {
+    api.text_response().execute().await
 }
 
 pub async fn no_content_example(

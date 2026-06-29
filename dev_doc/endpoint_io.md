@@ -14,6 +14,7 @@ The current implementation distinguishes buffered codecs from the reserved endpo
 - `ContentType` is the shared wire-content marker trait for buffered codecs and reserved family markers.
 - Buffered codecs continue to use buffered request bodies and buffered response decode.
 - Dedicated runtime paths exist for `Stream`, `Records`, `Multipart`, and `Sse` families so they do not have to buffer the whole body.
+- Buffered codec support exists for `Json<T>` and `Text<String>`, with custom buffered codecs remaining open-ended.
 - Macro/codegen support exists for `Stream<M>`, `Records<T, NdJson>`, `Records<T, Csv<Cfg>>`, `Multipart<T, F>`, and `Sse<T, C>`.
 - Response-only `NoContent` is implemented and returns `()`.
 - Response-only `Bytes` is implemented and returns `bytes::Bytes` through the ordinary bounded buffered response path.
