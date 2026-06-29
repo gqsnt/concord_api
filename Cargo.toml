@@ -16,7 +16,7 @@ license = "MIT OR Apache-2.0"
 reqwest = { version = "0.13", default-features = false }
 http = "1.4"
 bytes = "1.12"
-memchr = "2.7"
+memchr = "2.8"
 csv = "1.4"
 csv-core = "0.1.13"
 serde = "1.0"
