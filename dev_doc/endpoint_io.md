@@ -84,7 +84,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - Runtime values are `RecordBody<T>` and `RecordStream<T>`; they are not format-generic.
 - Custom formats implement `ContentType + RecordFormat<T>`.
 - The first intended built-in format is `NdJson`.
-- CSV is not part of the initial design.
+- CSV is planned as a future `Records<T, Csv<Cfg>>` format but is not implemented yet. The design contract lives in [csv_records.md](csv_records.md).
 - Request bodies are stream-like and non-replayable.
 - Response bodies are incremental and do not support map or pagination.
 - It must not be implemented through `BodyCodec` or `ResponseCodec`.
