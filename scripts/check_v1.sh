@@ -29,6 +29,7 @@ run_step() {
   "$@"
 }
 
+run_step "architecture boundary" bash ./scripts/check_architecture.sh
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
 run_step "clippy workspace all targets" "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings

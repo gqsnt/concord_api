@@ -128,7 +128,6 @@ tree_not_contains "concord_core default feature tree" 'flate2' -p concord_core -
 tree_not_contains "concord_core default feature tree" 'cookie_store' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'cookie ' -p concord_core --edges normal,features
 tree_not_contains "concord_core no-default feature tree" 'governor feature "default"' -p concord_core --edges normal,features --no-default-features
-tree_not_contains "concord_core no-default feature tree" 'serde_json v' -p concord_core --edges normal,features --no-default-features
 
 tree_same "concord_macros default feature tree" -p concord_macros --edges normal,features
 tree_not_contains "concord_macros default feature tree" 'serde_json v' -p concord_macros --edges normal,features

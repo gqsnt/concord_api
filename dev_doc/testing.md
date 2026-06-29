@@ -51,6 +51,24 @@ Macro strictness belongs primarily in semantic unit tests and trybuild pass/fail
 
 Feature-surface drift is gated separately by `scripts/check_features.sh`. That script uses normal dependency trees for the crate-surface proof so dev-dependencies do not widen the default feature story. `scripts/check_v1.sh` calls it before the rest of the local gate.
 
+## Architecture Boundary Checks
+
+Run:
+
+```bash
+bash ./scripts/check_architecture.sh
+```
+
+This protects the crate and compiler/runtime split:
+
+- `concord_core` must not depend on `concord_macros`.
+- `concord_core` must not reference DSL, parser, or raw AST concepts.
+- codegen must consume resolved semantic data instead of raw syntax trees.
+- codegen must not rely on validation-dependent panics for semantic invalid states.
+- direct `.unwrap()` is intentionally banned in codegen by this gate so panic-prone semantic rendering does not creep back in under a different shape.
+
+If the check fails, fix the layer boundary instead of weakening the pattern. Only add a narrow allowlist if a future PR has documented a real exception.
+
 ## Core Tests
 
 `concord_core` has runtime characterization tests for concurrency, rate-limit, auth rejection, retry, decode, pagination, codecs, and runtime configuration.

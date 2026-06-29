@@ -31,6 +31,7 @@ The workspace command intentionally duplicates some package-level coverage. The 
 ## Feature Compatibility
 
 `scripts/check_features.sh` owns the feature and dependency matrix.
+`scripts/check_architecture.sh` owns the crate and compiler/runtime boundary checks and is invoked from `scripts/check_v1.sh`.
 
 | Crate | v1 default features | Optional features | No-default support |
 | --- | --- | --- | --- |
