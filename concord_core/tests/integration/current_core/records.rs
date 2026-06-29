@@ -1,7 +1,7 @@
 use super::common::{TestAuthVars, TestCx, auth_policy, decode_string};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, CodecError, DebugSink, MediaType, NdJson, PostResponseHookContext,
+    AuthPlacement, CodecError, ContentType, DebugSink, NdJson, PostResponseHookContext,
     PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
     RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RecordBody, RecordDecoder,
     RecordEncoder, RecordFormat, RuntimeHooks, Transport, TransportBody, TransportError,
@@ -478,7 +478,7 @@ const PIPE_RECORD_SENTINEL: &str = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR";
 #[derive(Clone, Copy, Debug, Default)]
 struct PipeText;
 
-impl MediaType for PipeText {
+impl ContentType for PipeText {
     const CONTENT_TYPE: &'static str = "text/x-pipe-records";
 }
 

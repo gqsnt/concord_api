@@ -1,9 +1,8 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
+    BodyCodec, CodecError, ContentType, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
 use concord_macros::api;
-use http::HeaderValue;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -19,12 +18,15 @@ pub struct User {
 
 pub struct Compact<T>(PhantomData<T>);
 
+pub struct CompactContentType;
+
+impl ContentType for CompactContentType {
+    const CONTENT_TYPE: &'static str = "application/x-concord-compact";
+}
+
 impl BodyCodec for Compact<CreateUser> {
     type Value = CreateUser;
-
-    fn content_type() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-concord-compact"))
-    }
+    type Content = CompactContentType;
 
     fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
         Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(
@@ -35,10 +37,7 @@ impl BodyCodec for Compact<CreateUser> {
 
 impl ResponseCodec for Compact<User> {
     type Value = User;
-
-    fn accept() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-concord-compact"))
-    }
+    type Content = CompactContentType;
 
     fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         let text = std::str::from_utf8(&bytes)

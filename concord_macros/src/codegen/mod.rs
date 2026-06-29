@@ -416,7 +416,8 @@ mod tests {
                 "SseStream < MyEvent >",
                 "execute_plan_sse::< MyEvent , ::concord_core::advanced::JsonSse >",
                 "SseResponseEndpoint",
-                "text/event-stream",
+                "EventStream",
+                "try_header_value",
                 "Format::Text",
             ],
         );
@@ -442,7 +443,8 @@ mod tests {
                 "SseStream < MyEvent >",
                 "execute_plan_sse::< MyEvent , MyCodec >",
                 "SseResponseEndpoint",
-                "text/event-stream",
+                "EventStream",
+                "try_header_value",
                 "Format::Text",
             ],
         );
@@ -1070,7 +1072,7 @@ mod tests {
                 "< Json < LoginRequest > as :: concord_core :: advanced :: BodyCodec > :: encode (__body_value",
                 "BodyPlan :: Encoded",
                 "let (__body_bytes , __body_format) = __encoded_body . into_parts ()",
-                "content_type : < Json < LoginRequest > as :: concord_core :: advanced :: BodyCodec > :: content_type ()",
+                "content_type : < Json < LoginRequest > as :: concord_core :: advanced :: BodyCodec > :: try_content_type ()",
                 "format : __body_format",
                 "ResponsePlan",
                 "decode : __decode_",

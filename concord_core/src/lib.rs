@@ -68,7 +68,7 @@ pub mod prelude {
     pub use crate::client::{ApiClient, ClientContext};
     #[cfg(feature = "json")]
     pub use crate::codec::json::Json;
-    pub use crate::codec::{NoContent, text::Text};
+    pub use crate::codec::{ContentType, NoContent, text::Text};
     pub use crate::debug::DebugLevel;
     pub use crate::endpoint::{
         Endpoint, MultipartResponseEndpoint, PaginatedEndpoint, RecordResponseEndpoint,
@@ -103,7 +103,8 @@ pub mod advanced {
         auth_decision_for_status, invalidate_rejected_credential, read_auth_lock, write_auth_lock,
     };
     pub use crate::codec::{
-        BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
+        BodyCodec, CodecError, ContentType, DecodeContext, EncodeContext, EncodedBody,
+        ResponseCodec,
     };
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::endpoint::{
@@ -111,7 +112,9 @@ pub mod advanced {
         StreamResponseEndpoint, WebSocketEndpoint,
     };
     pub use crate::error::{ErrorContext, FxError};
-    pub use crate::media::{Jpeg, MediaType, Mp3, Mp4, OctetStream, Pdf, Png, Zip};
+    pub use crate::media::{
+        EventStream, Jpeg, JsonContentType, Mp3, Mp4, OctetStream, Pdf, Png, TextContentType, Zip,
+    };
     pub use crate::multipart::{
         FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
         MultipartFormat, RawPart,

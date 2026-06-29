@@ -25,18 +25,24 @@ pub trait FormatType {
     }
 }
 
-pub trait ContentType {
-    /// "" => pas de Content-Type/Accept pertinent.
+pub trait ContentType: Send + Sync + 'static {
     const CONTENT_TYPE: &'static str;
-    const IS_NO_CONTENT: bool = false;
+
+    fn header_value() -> Result<HeaderValue, http::header::InvalidHeaderValue> {
+        HeaderValue::from_str(Self::CONTENT_TYPE)
+    }
+
+    fn try_header_value() -> Result<HeaderValue, http::header::InvalidHeaderValue> {
+        Self::header_value()
+    }
 }
 
-pub trait Decodes<T>: ContentType + FormatType {
+pub trait Decodes<T>: FormatType {
     type Error: std::error::Error + Send + Sync + 'static;
     fn decode_owned(bytes: Bytes) -> Result<T, Self::Error>;
 }
 
-pub trait Encodes<T>: ContentType + FormatType {
+pub trait Encodes<T>: FormatType {
     type Error: std::error::Error + Send + Sync + 'static;
     fn encode(output: &T) -> Result<Bytes, Self::Error>;
 }
@@ -205,9 +211,17 @@ impl std::error::Error for CodecError {
 /// `Value` is the value users pass to generated endpoint methods.
 pub trait BodyCodec: Send + Sync + 'static {
     type Value: Send + 'static;
+    type Content: ContentType;
+
+    /// Fallible content type applied to requests encoded by this codec.
+    fn try_content_type() -> Result<Option<HeaderValue>, http::header::InvalidHeaderValue> {
+        Ok(Some(<Self::Content as ContentType>::try_header_value()?))
+    }
 
     /// Content type applied to requests encoded by this codec.
-    fn content_type() -> Option<HeaderValue>;
+    fn content_type() -> Option<HeaderValue> {
+        Self::try_content_type().ok().flatten()
+    }
 
     /// Debug formatting mode for encoded request bytes.
     fn format() -> Format {
@@ -224,9 +238,17 @@ pub trait BodyCodec: Send + Sync + 'static {
 /// `Value` is the value returned by generated endpoint methods.
 pub trait ResponseCodec: Send + Sync + 'static {
     type Value: Send + 'static;
+    type Content: ContentType;
+
+    /// Fallible accept header value for responses decoded by this codec.
+    fn try_accept() -> Result<Option<HeaderValue>, http::header::InvalidHeaderValue> {
+        Ok(Some(<Self::Content as ContentType>::try_header_value()?))
+    }
 
     /// Accept header value for responses decoded by this codec.
-    fn accept() -> Option<HeaderValue>;
+    fn accept() -> Option<HeaderValue> {
+        Self::try_accept().ok().flatten()
+    }
 
     /// Whether this codec expects no response body.
     fn is_no_content() -> bool {
@@ -244,9 +266,12 @@ pub trait ResponseCodec: Send + Sync + 'static {
 
 pub struct NoContent;
 
-impl ContentType for NoContent {
-    const CONTENT_TYPE: &'static str = "";
-    const IS_NO_CONTENT: bool = true;
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NoDeclaredContentType;
+
+impl ContentType for NoDeclaredContentType {
+    const CONTENT_TYPE: &'static str = "application/octet-stream";
 }
 
 impl FormatType for NoContent {
@@ -269,6 +294,11 @@ impl Decodes<()> for NoContent {
 
 impl BodyCodec for NoContent {
     type Value = ();
+    type Content = NoDeclaredContentType;
+
+    fn try_content_type() -> Result<Option<HeaderValue>, http::header::InvalidHeaderValue> {
+        Ok(None)
+    }
 
     fn content_type() -> Option<HeaderValue> {
         None
@@ -285,6 +315,11 @@ impl BodyCodec for NoContent {
 
 impl ResponseCodec for NoContent {
     type Value = ();
+    type Content = NoDeclaredContentType;
+
+    fn try_accept() -> Result<Option<HeaderValue>, http::header::InvalidHeaderValue> {
+        Ok(None)
+    }
 
     fn accept() -> Option<HeaderValue> {
         None

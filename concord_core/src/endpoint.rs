@@ -1,6 +1,7 @@
 use crate::client::{ApiClient, ClientContext};
+use crate::codec::ContentType;
+use crate::codec::ResponseCodec;
 use crate::error::ApiClientError;
-use crate::media::MediaType;
 use crate::multipart::MultipartFormat;
 use crate::multipart_response::{MultipartDecodePart, MultipartStream};
 use crate::record::{RecordFormat, RecordStream};
@@ -29,13 +30,13 @@ pub struct ClientPlanContext<'a, Cx: ClientContext> {
 pub trait ResponseSpec: Send + Sync + 'static {
     type Decoded: Send + 'static; // interne
     type Output: Send + 'static; // public
-    type Dec: crate::codec::Decodes<Self::Decoded>;
+    type Dec: ResponseCodec<Value = Self::Decoded>;
 
-    fn accept_content_type() -> &'static str {
-        <Self::Dec as crate::codec::ContentType>::CONTENT_TYPE
+    fn accept_content_type() -> Option<::http::HeaderValue> {
+        <Self::Dec as ResponseCodec>::accept()
     }
     fn is_no_content() -> bool {
-        <Self::Dec as crate::codec::ContentType>::IS_NO_CONTENT
+        <Self::Dec as ResponseCodec>::is_no_content()
     }
 
     fn map_response(
@@ -48,7 +49,7 @@ pub struct Decoded<Dec, T>(PhantomData<(Dec, T)>);
 
 impl<Dec, T> ResponseSpec for Decoded<Dec, T>
 where
-    Dec: crate::codec::Decodes<T> + Send + Sync + 'static,
+    Dec: ResponseCodec<Value = T> + Send + Sync + 'static,
     T: Send + Sync + 'static,
 {
     type Decoded = T;
@@ -144,7 +145,7 @@ pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx> {}
 
 /// Marker implemented only for endpoints whose primary response is a stream.
 pub trait StreamResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-    type Media: MediaType;
+    type Media: ContentType;
 
     fn execute_stream<'a, T>(
         client: &'a ApiClient<Cx, T>,

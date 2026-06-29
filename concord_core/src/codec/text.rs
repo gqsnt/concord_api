@@ -2,8 +2,8 @@ use crate::codec::{
     BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
 use crate::codec::{ContentType, Decodes, Encodes, Format, FormatType};
+use crate::media::TextContentType;
 use bytes::Bytes;
-use http::HeaderValue;
 use std::marker::PhantomData;
 use std::str::Utf8Error;
 
@@ -39,12 +39,7 @@ where
     T: AsRef<str> + Send + Sync + 'static,
 {
     type Value = T;
-
-    fn content_type() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static(
-            <Text as ContentType>::CONTENT_TYPE,
-        ))
-    }
+    type Content = TextContentType;
 
     fn format() -> Format {
         <Text as FormatType>::FORMAT_TYPE
@@ -59,12 +54,7 @@ where
 
 impl ResponseCodec for Text<String> {
     type Value = String;
-
-    fn accept() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static(
-            <Text as ContentType>::CONTENT_TYPE,
-        ))
-    }
+    type Content = TextContentType;
 
     fn format() -> Format {
         <Text as FormatType>::FORMAT_TYPE

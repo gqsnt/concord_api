@@ -1,19 +1,46 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
+    BodyCodec, CodecError, ContentType, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
 use concord_core::prelude::ApiClientError;
 use http::HeaderValue;
 use std::marker::PhantomData;
 
 #[derive(Debug)]
+struct RequestOnlyContent;
+
+impl ContentType for RequestOnlyContent {
+    const CONTENT_TYPE: &'static str = "application/x-request-only";
+}
+
+#[derive(Debug)]
 struct RequestOnly;
 
 impl BodyCodec for RequestOnly {
     type Value = String;
+    type Content = RequestOnlyContent;
 
-    fn content_type() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-request-only"))
+    fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
+        Ok(EncodedBody::from_bytes(value))
+    }
+}
+
+#[derive(Debug)]
+struct RequestOmitContent;
+
+impl ContentType for RequestOmitContent {
+    const CONTENT_TYPE: &'static str = "application/x-request-omit";
+}
+
+#[derive(Debug)]
+struct RequestOmit;
+
+impl BodyCodec for RequestOmit {
+    type Value = String;
+    type Content = RequestOmitContent;
+
+    fn try_content_type() -> Result<Option<HeaderValue>, http::header::InvalidHeaderValue> {
+        Ok(None)
     }
 
     fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
@@ -22,19 +49,54 @@ impl BodyCodec for RequestOnly {
 }
 
 #[derive(Debug)]
+struct ResponseOnlyContent;
+
+impl ContentType for ResponseOnlyContent {
+    const CONTENT_TYPE: &'static str = "application/x-response-only";
+}
+
+#[derive(Debug)]
 struct ResponseOnly;
 
 impl ResponseCodec for ResponseOnly {
     type Value = String;
-
-    fn accept() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-response-only"))
-    }
+    type Content = ResponseOnlyContent;
 
     fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         String::from_utf8(bytes.to_vec())
             .map_err(|err| CodecError::with_source("response-only decode failed", err))
     }
+}
+
+#[derive(Debug)]
+struct ResponseOmitContent;
+
+impl ContentType for ResponseOmitContent {
+    const CONTENT_TYPE: &'static str = "application/x-response-omit";
+}
+
+#[derive(Debug)]
+struct ResponseOmit;
+
+impl ResponseCodec for ResponseOmit {
+    type Value = String;
+    type Content = ResponseOmitContent;
+
+    fn try_accept() -> Result<Option<HeaderValue>, http::header::InvalidHeaderValue> {
+        Ok(None)
+    }
+
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        String::from_utf8(bytes.to_vec())
+            .map_err(|err| CodecError::with_source("response-omit decode failed", err))
+    }
+}
+
+#[derive(Debug)]
+struct BothContent;
+
+impl ContentType for BothContent {
+    const CONTENT_TYPE: &'static str = "application/x-both";
 }
 
 #[derive(Debug)]
@@ -45,10 +107,7 @@ where
     T: AsRef<[u8]> + Send + Sync + 'static,
 {
     type Value = T;
-
-    fn content_type() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-both"))
-    }
+    type Content = BothContent;
 
     fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
         Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(
@@ -59,14 +118,43 @@ where
 
 impl ResponseCodec for Both<String> {
     type Value = String;
-
-    fn accept() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-both"))
-    }
+    type Content = BothContent;
 
     fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         String::from_utf8(bytes.to_vec())
             .map_err(|err| CodecError::with_source("both decode failed", err))
+    }
+}
+
+#[derive(Debug)]
+struct InvalidContentType;
+
+impl ContentType for InvalidContentType {
+    const CONTENT_TYPE: &'static str = "bad\nvalue";
+}
+
+#[derive(Debug)]
+struct InvalidRequestContent;
+
+impl BodyCodec for InvalidRequestContent {
+    type Value = String;
+    type Content = InvalidContentType;
+
+    fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
+        Ok(EncodedBody::from_bytes(value))
+    }
+}
+
+#[derive(Debug)]
+struct InvalidResponseContent;
+
+impl ResponseCodec for InvalidResponseContent {
+    type Value = String;
+    type Content = InvalidContentType;
+
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        String::from_utf8(bytes.to_vec())
+            .map_err(|err| CodecError::with_source("invalid-content decode failed", err))
     }
 }
 
@@ -109,6 +197,27 @@ fn custom_bidirectional_codec_can_use_generic_marker_type() {
 
     assert_eq!(body.content_len(), Some(3));
     assert_eq!(value, "abc");
+}
+
+#[test]
+fn custom_request_codec_can_omit_content_type() {
+    assert_eq!(
+        RequestOmit::try_content_type().expect("try content type"),
+        None
+    );
+    assert_eq!(RequestOmit::content_type(), None);
+}
+
+#[test]
+fn custom_response_codec_can_omit_accept() {
+    assert_eq!(ResponseOmit::try_accept().expect("try accept"), None);
+    assert_eq!(ResponseOmit::accept(), None);
+}
+
+#[test]
+fn invalid_custom_content_type_returns_typed_error() {
+    assert!(InvalidRequestContent::try_content_type().is_err());
+    assert!(InvalidResponseContent::try_accept().is_err());
 }
 
 #[test]

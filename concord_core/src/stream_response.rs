@@ -1,5 +1,5 @@
+use crate::codec::ContentType;
 use crate::error::{ApiClientError, ErrorContext};
-use crate::media::MediaType;
 use crate::transport::{
     StreamBodyLimitError, StreamLimitDirection, TransportBody, TransportError, TransportErrorKind,
     TransportResponse,
@@ -75,7 +75,7 @@ impl<M> StreamResponse<M> {
     }
 }
 
-impl<M: MediaType> StreamResponse<M> {
+impl<M: ContentType> StreamResponse<M> {
     pub fn media_type(&self) -> &'static str {
         M::CONTENT_TYPE
     }
@@ -160,7 +160,7 @@ impl<M> StreamResponse<M> {
     }
 }
 
-impl<M: MediaType> fmt::Debug for StreamResponse<M> {
+impl<M: ContentType> fmt::Debug for StreamResponse<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamResponse")
             .field("meta", &self.resp.meta)

@@ -6,17 +6,21 @@ Use these extension points when the protocol is part of your API contract. Do no
 
 ## Custom Codecs
 
-A request body codec implements `BodyCodec`. A response codec implements `ResponseCodec`.
+A request body codec implements `BodyCodec`. A response codec implements `ResponseCodec`. The shared marker trait is `ContentType`; codec markers carry their wire content identity through an associated `Content` type.
 
 ```rust
 use bytes::Bytes;
 use concord_core::advanced::{
-    BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
+    BodyCodec, CodecError, ContentType, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
 };
-use http::HeaderValue;
 use std::marker::PhantomData;
 
 pub struct Compact<T>(PhantomData<T>);
+pub struct CompactContentType;
+
+impl ContentType for CompactContentType {
+    const CONTENT_TYPE: &'static str = "application/x-compact";
+}
 
 pub struct CreateUser {
     pub name: String,
@@ -29,10 +33,7 @@ pub struct User {
 
 impl BodyCodec for Compact<CreateUser> {
     type Value = CreateUser;
-
-    fn content_type() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-compact"))
-    }
+    type Content = CompactContentType;
 
     fn encode(value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
         Ok(EncodedBody::from_bytes(Bytes::copy_from_slice(value.name.as_bytes())))
@@ -41,10 +42,7 @@ impl BodyCodec for Compact<CreateUser> {
 
 impl ResponseCodec for Compact<User> {
     type Value = User;
-
-    fn accept() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static("application/x-compact"))
-    }
+    type Content = CompactContentType;
 
     fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         let text = std::str::from_utf8(&bytes)
@@ -77,11 +75,11 @@ api! {
 
 Codec rules:
 
-- `content_type()` controls the request `Content-Type` header for encoded bodies. Return `None` to omit it.
-- `accept()` controls the response `Accept` header unless endpoint policy explicitly sets or removes it. Return `None` to omit it.
+- `ContentType` provides the wire content identity for buffered codecs and format markers.
+- `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` default from the associated `Content` marker. Override them when a codec intentionally omits the header or needs to surface a typed validation error.
 - `EncodeContext` and `DecodeContext` provide endpoint metadata for contextual errors.
 - `CodecError` messages must be safe to display. Never include secrets or raw credentials.
-- Built-in `Json<T>`, `Text<String>`, and `NoContent` use the same trait path.
+- Built-in `Json<T>` and `Text<String>` use the same trait path. `NoContent` intentionally omits request and response content headers.
 
 ## Page-Shape Traits
 

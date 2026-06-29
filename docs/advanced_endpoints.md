@@ -50,6 +50,8 @@ Normal application code should prefer facade methods because they preserve the i
 
 The generated advanced surfaces are family-specific and keep runtime values free of codec or format parameters.
 
+- `ContentType` is the shared wire-content marker trait. Built-in markers include `JsonContentType`, `TextContentType`, `OctetStream`, `NdJson`, `FormData`, `Mixed`, and `EventStream`.
+
 - `Stream<M>` uses `StreamBody` for request bodies and `StreamResponse<M>` for responses.
 - `Records<T, F>` uses `RecordBody<T>` for requests and `RecordStream<T>` for responses.
 - `Multipart<T>` defaults to `Multipart<T, FormData>` and uses `MultipartBody` for requests and `MultipartStream<T>` for responses.

@@ -1,5 +1,5 @@
 use crate::codec::CodecError;
-use crate::media::MediaType;
+use crate::codec::ContentType;
 use crate::stream_body::StreamBody;
 use crate::transport::{TransportByteStream, TransportError, TransportRequestBody};
 use bytes::Bytes;
@@ -21,20 +21,20 @@ pub struct FormData;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Mixed;
 
-pub trait MultipartFormat: MediaType + Send + Sync + 'static {
+pub trait MultipartFormat: ContentType + Send + Sync + 'static {
     fn render_content_type(boundary: &str) -> HeaderValue {
         HeaderValue::from_str(&format!("{}; boundary={boundary}", Self::CONTENT_TYPE))
             .expect("generated multipart boundary must be a valid header value")
     }
 }
 
-impl MediaType for FormData {
+impl ContentType for FormData {
     const CONTENT_TYPE: &'static str = "multipart/form-data";
 }
 
 impl MultipartFormat for FormData {}
 
-impl MediaType for Mixed {
+impl ContentType for Mixed {
     const CONTENT_TYPE: &'static str = "multipart/mixed";
 }
 

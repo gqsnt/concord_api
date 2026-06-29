@@ -1,6 +1,6 @@
 use crate::codec::*;
+use crate::media::JsonContentType;
 use bytes::Bytes;
-use http::HeaderValue;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::marker::PhantomData;
@@ -40,12 +40,7 @@ where
     T: Serialize + Send + Sync + 'static,
 {
     type Value = T;
-
-    fn content_type() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static(
-            <Json as ContentType>::CONTENT_TYPE,
-        ))
-    }
+    type Content = JsonContentType;
 
     fn format() -> Format {
         <Json as FormatType>::FORMAT_TYPE
@@ -63,12 +58,7 @@ where
     T: DeserializeOwned + Send + Sync + 'static,
 {
     type Value = T;
-
-    fn accept() -> Option<HeaderValue> {
-        Some(HeaderValue::from_static(
-            <Json as ContentType>::CONTENT_TYPE,
-        ))
-    }
+    type Content = JsonContentType;
 
     fn format() -> Format {
         <Json as FormatType>::FORMAT_TYPE

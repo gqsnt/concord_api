@@ -253,7 +253,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         response_limit: Option<usize>,
     ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
     where
-        M: crate::media::MediaType,
+        M: crate::codec::ContentType,
     {
         let transport_resp = self
             .acquire_rate_limit_and_send(
@@ -343,7 +343,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         response_limit: Option<usize>,
     ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
     where
-        M: crate::media::MediaType,
+        M: crate::codec::ContentType,
     {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;

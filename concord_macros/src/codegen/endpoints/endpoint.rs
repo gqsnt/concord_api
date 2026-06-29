@@ -526,7 +526,8 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
                     .map_err(|e| ::concord_core::prelude::ApiClientError::codec_error(ctx_err.clone(), e))?;
                 let (__body_bytes, __body_format) = __encoded_body.into_parts();
                 let __body_plan = ::concord_core::internal::BodyPlan::Encoded {
-                    content_type: <#enc as ::concord_core::advanced::BodyCodec>::content_type(),
+                    content_type: <#enc as ::concord_core::advanced::BodyCodec>::try_content_type()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
                     format: __body_format,
                 };
                 let __request_args = ::concord_core::internal::RequestArgs::with_body_bytes(__body_bytes);
@@ -547,9 +548,8 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
                 .take()
                 .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
             let __body_plan = ::concord_core::internal::BodyPlan::RawStream {
-                content_type: ::http::HeaderValue::from_static(
-                    <#media_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
-                ),
+                content_type: <#media_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
             };
             let __request_args = ::concord_core::internal::RequestArgs::with_stream_body(__body_value);
         })
@@ -569,9 +569,8 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
                 .take()
                 .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
             let __body_plan = ::concord_core::internal::BodyPlan::Records {
-                content_type: ::http::HeaderValue::from_static(
-                    <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
-                ),
+                content_type: <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
                 format: ::concord_core::internal::Format::Text,
             };
             let __request_args = ::concord_core::internal::RequestArgs::with_record_body::<#item_ty, #format_ty>(__body_value);
@@ -640,28 +639,35 @@ fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
 fn endpoint_response_accept_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
     match &ep.response_io {
         ResolvedResponseBodyIo::Multipart { format_ty, .. } => quote! {
-            ::core::option::Option::Some(::http::HeaderValue::from_static(
-                <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
-            ))
+            ::core::option::Option::Some(
+                <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
+            )
         },
         ResolvedResponseBodyIo::Sse { .. } => quote! {
-            ::core::option::Option::Some(::http::HeaderValue::from_static("text/event-stream"))
+            ::core::option::Option::Some(
+                <::concord_core::advanced::EventStream as ::concord_core::advanced::ContentType>::try_header_value()
+                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
+            )
         },
         ResolvedResponseBodyIo::Records { format_ty, .. } => quote! {
-            ::core::option::Option::Some(::http::HeaderValue::from_static(
-                <#format_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
-            ))
+            ::core::option::Option::Some(
+                <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
+            )
         },
         ResolvedResponseBodyIo::WebSocket { .. } => quote! {
             ::core::option::Option::None
         },
         ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
-            ::core::option::Option::Some(::http::HeaderValue::from_static(
-                <#media_ty as ::concord_core::advanced::MediaType>::CONTENT_TYPE
-            ))
+            ::core::option::Option::Some(
+                <#media_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
+            )
         },
         _ => quote! {
-            <#response_dec as ::concord_core::advanced::ResponseCodec>::accept()
+            <#response_dec as ::concord_core::advanced::ResponseCodec>::try_accept()
+                .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
         },
     }
 }

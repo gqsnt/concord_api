@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    CodecError, MediaType, NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat,
+    CodecError, ContentType, NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat,
     RecordStream, Transport, TransportBody, TransportError, TransportRequest, TransportRequestBody,
     TransportResponse,
 };
@@ -36,7 +36,7 @@ const PIPE_RECORD_SENTINEL: &str = "SECRET_RECORD_SENTINEL_MUST_NOT_APPEAR";
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PipeText;
 
-impl MediaType for PipeText {
+impl ContentType for PipeText {
     const CONTENT_TYPE: &'static str = "text/x-pipe-records";
 }
 

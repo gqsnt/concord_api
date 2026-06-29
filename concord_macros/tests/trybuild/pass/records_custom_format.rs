@@ -1,5 +1,5 @@
 use concord_core::advanced::{
-    CodecError, MediaType, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
+    CodecError, ContentType, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
 };
 use concord_core::prelude::Json;
 use concord_macros::api;
@@ -14,7 +14,7 @@ pub struct PipeEntry {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PipeText;
 
-impl MediaType for PipeText {
+impl ContentType for PipeText {
     const CONTENT_TYPE: &'static str = "text/x-pipe-records";
 }
 

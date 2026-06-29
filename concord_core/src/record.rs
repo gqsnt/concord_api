@@ -1,6 +1,6 @@
 use crate::codec::CodecError;
+use crate::codec::ContentType;
 use crate::error::{ApiClientError, ErrorContext};
-use crate::media::MediaType;
 use crate::transport::{
     StreamBodyLimitError, StreamLimitDirection, TransportByteStream, TransportError,
     TransportResponse,
@@ -27,7 +27,7 @@ pub trait RecordDecoder<T>: Send + 'static {
     fn finish(&mut self) -> Result<Vec<T>, CodecError>;
 }
 
-pub trait RecordFormat<T>: MediaType + Send + Sync + 'static {
+pub trait RecordFormat<T>: ContentType + Send + Sync + 'static {
     fn encoder() -> Box<dyn RecordEncoder<T>>;
     fn decoder() -> Box<dyn RecordDecoder<T>>;
 }
@@ -35,7 +35,7 @@ pub trait RecordFormat<T>: MediaType + Send + Sync + 'static {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NdJson;
 
-impl MediaType for NdJson {
+impl ContentType for NdJson {
     const CONTENT_TYPE: &'static str = "application/x-ndjson";
 }
 

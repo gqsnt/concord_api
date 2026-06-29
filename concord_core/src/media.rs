@@ -1,10 +1,7 @@
+use crate::codec::ContentType;
 use std::fmt;
 
-pub trait MediaType: Send + Sync + 'static {
-    const CONTENT_TYPE: &'static str;
-}
-
-macro_rules! media_marker {
+macro_rules! content_marker {
     ($name:ident, $content_type:literal) => {
         #[derive(Clone, Copy, Default, Eq, PartialEq)]
         pub struct $name;
@@ -15,26 +12,59 @@ macro_rules! media_marker {
             }
         }
 
-        impl MediaType for $name {
+        impl ContentType for $name {
             const CONTENT_TYPE: &'static str = $content_type;
         }
     };
 }
 
-media_marker!(OctetStream, "application/octet-stream");
-media_marker!(Mp3, "audio/mpeg");
-media_marker!(Mp4, "video/mp4");
-media_marker!(Pdf, "application/pdf");
-media_marker!(Zip, "application/zip");
-media_marker!(Png, "image/png");
-media_marker!(Jpeg, "image/jpeg");
+content_marker!(JsonContentType, "application/json");
+content_marker!(TextContentType, "text/plain; charset=utf-8");
+content_marker!(OctetStream, "application/octet-stream");
+content_marker!(Mp3, "audio/mpeg");
+content_marker!(Mp4, "video/mp4");
+content_marker!(Pdf, "application/pdf");
+content_marker!(Zip, "application/zip");
+content_marker!(Png, "image/png");
+content_marker!(Jpeg, "image/jpeg");
+content_marker!(EventStream, "text/event-stream");
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn built_in_media_types_have_expected_content_types() {
+    fn built_in_content_types_have_expected_content_types() {
+        assert_eq!(
+            JsonContentType::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("application/json")
+        );
+        assert_eq!(
+            TextContentType::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("text/plain; charset=utf-8")
+        );
+        assert_eq!(
+            OctetStream::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("application/octet-stream")
+        );
+        assert_eq!(
+            crate::record::NdJson::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("application/x-ndjson")
+        );
+        assert_eq!(
+            crate::multipart::FormData::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("multipart/form-data")
+        );
+        assert_eq!(
+            crate::multipart::Mixed::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("multipart/mixed")
+        );
+        assert_eq!(
+            EventStream::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("text/event-stream")
+        );
+        assert_eq!(JsonContentType::CONTENT_TYPE, "application/json");
+        assert_eq!(TextContentType::CONTENT_TYPE, "text/plain; charset=utf-8");
         assert_eq!(OctetStream::CONTENT_TYPE, "application/octet-stream");
         assert_eq!(Mp3::CONTENT_TYPE, "audio/mpeg");
         assert_eq!(Mp4::CONTENT_TYPE, "video/mp4");
@@ -42,6 +72,39 @@ mod tests {
         assert_eq!(Zip::CONTENT_TYPE, "application/zip");
         assert_eq!(Png::CONTENT_TYPE, "image/png");
         assert_eq!(Jpeg::CONTENT_TYPE, "image/jpeg");
+        assert_eq!(EventStream::CONTENT_TYPE, "text/event-stream");
         assert_eq!(format!("{:?}", OctetStream), "OctetStream");
+    }
+
+    #[test]
+    fn content_type_header_value_matches_static_constant() {
+        assert_eq!(
+            JsonContentType::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("application/json")
+        );
+        assert_eq!(
+            TextContentType::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("text/plain; charset=utf-8")
+        );
+        assert_eq!(
+            OctetStream::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("application/octet-stream")
+        );
+        assert_eq!(
+            crate::record::NdJson::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("application/x-ndjson")
+        );
+        assert_eq!(
+            crate::multipart::FormData::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("multipart/form-data")
+        );
+        assert_eq!(
+            crate::multipart::Mixed::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("multipart/mixed")
+        );
+        assert_eq!(
+            EventStream::try_header_value().expect("valid content type"),
+            http::HeaderValue::from_static("text/event-stream")
+        );
     }
 }

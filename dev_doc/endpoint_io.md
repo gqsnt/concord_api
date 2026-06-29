@@ -29,6 +29,7 @@ The current implementation distinguishes buffered codecs from the reserved endpo
 - Macro raw AST and semantic IR carry explicit endpoint I/O shapes.
 - Non-reserved families keep the buffered-codec shape used by `BodyCodec` and `ResponseCodec`.
 - Non-reserved families still use the existing `BodyCodec` and `ResponseCodec` paths.
+- `ContentType` is the shared wire-content marker trait for buffered codecs and reserved family markers.
 - Buffered codecs continue to use buffered request bodies and buffered response decode.
 - Dedicated runtime paths now exist for `Stream`, `Records`, `Multipart`, `Sse`, and `WebSocket` families so they do not have to buffer the whole body.
 - Macro/codegen support now exists for `Stream<M>`, `Records<T, F>`, `Multipart<T, F>`, `Sse<T, C>`, and `WebSocket<Out, In, C>`.
@@ -82,7 +83,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 
 `Stream<M>` is the reserved raw HTTP byte stream family.
 
-- `M` is a media marker implementing a future `MediaType` trait.
+- `M` is a marker type implementing `ContentType`.
 - Request value direction: `StreamBody`.
 - Response value direction: `StreamResponse<M>`.
 - The DSL owns media type; runtime values own only source, sink, and consumption state.
@@ -98,7 +99,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - `F` is the record format.
 - `Records<T>` has no default format in the initial contract; callers must spell the format explicitly, such as `Records<LogEntry, NdJson>`.
 - Runtime values are `RecordBody<T>` and `RecordStream<T>`; they are not format-generic.
-- Custom formats implement `MediaType + RecordFormat<T>`.
+- Custom formats implement `ContentType + RecordFormat<T>`.
 - The first intended built-in format is `NdJson`.
 - CSV is not part of the initial design.
 - Request bodies are stream-like and non-replayable.

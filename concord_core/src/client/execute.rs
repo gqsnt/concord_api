@@ -699,7 +699,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         plan: RequestPlan,
     ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
     where
-        M: crate::media::MediaType,
+        M: crate::codec::ContentType,
     {
         let RequestPlan {
             mut endpoint,
@@ -899,14 +899,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             mut args,
             overrides,
         } = plan;
+        let ctx = ErrorContext {
+            endpoint: endpoint.meta.name,
+            method: endpoint.meta.method.clone(),
+        };
         if endpoint.response.accept.is_none() {
-            endpoint.response.accept = Some(http::HeaderValue::from_static("text/event-stream"));
+            endpoint.response.accept = Some(
+                <crate::media::EventStream as crate::codec::ContentType>::try_header_value()
+                    .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
+            );
         }
         let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
-        let ctx = ErrorContext {
-            endpoint: plan.endpoint.meta.name,
-            method: plan.endpoint.meta.method.clone(),
-        };
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),

@@ -1,10 +1,10 @@
-use concord_core::advanced::{MediaType, StreamResponse};
+use concord_core::advanced::{ContentType, StreamResponse};
 use concord_macros::api;
 use self::stream_custom_media_api::StreamCustomMediaApi;
 
 pub struct AudioWave;
 
-impl MediaType for AudioWave {
+impl ContentType for AudioWave {
     const CONTENT_TYPE: &'static str = "audio/wav";
 }
 
