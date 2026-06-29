@@ -600,22 +600,15 @@ fn analyze_endpoint(
     }
 
     let request_io = classify_request_io(ed.body.as_ref())?;
-    let response_io = classify_response_io(&ed.response)?;
     let is_websocket_endpoint = ed.method == "WS";
-    if is_websocket_endpoint && !request_io.is_none() {
-        return Err(syn::Error::new(
-            ed.body
-                .as_ref()
-                .map(|body| body.marker.span())
-                .unwrap_or_else(|| ed.method.span()),
-            "`WS` endpoints do not support request bodies",
-        ));
-    }
-    if is_websocket_endpoint {
-        if !matches!(response_io, ResolvedResponseBodyIo::WebSocket { .. }) {
+    let mode = if is_websocket_endpoint {
+        if !request_io.is_none() {
             return Err(syn::Error::new(
-                ed.response.marker.span(),
-                "`WS` endpoints must return `WebSocket<Out, In>`",
+                ed.body
+                    .as_ref()
+                    .map(|body| body.marker.span())
+                    .unwrap_or_else(|| ed.method.span()),
+                "`WS` endpoints do not support request bodies",
             ));
         }
         if endpoint_retry_enabled(ctx.client_policy, &scope_policies, &policy) {
@@ -624,20 +617,7 @@ fn analyze_endpoint(
                 "`WS` endpoints do not support retry policies",
             ));
         }
-    } else if matches!(response_io, ResolvedResponseBodyIo::WebSocket { .. }) {
-        return Err(syn::Error::new(
-            ed.response.marker.span(),
-            "`WebSocket` endpoint I/O is only valid for `WS` endpoints",
-        ));
-    }
-    if matches!(
-        response_io,
-        ResolvedResponseBodyIo::RawStream { .. }
-            | ResolvedResponseBodyIo::Records { .. }
-            | ResolvedResponseBodyIo::Multipart { .. }
-            | ResolvedResponseBodyIo::Sse { .. }
-            | ResolvedResponseBodyIo::WebSocket { .. }
-    ) {
+        let ws_io = classify_websocket_io(&ed.response)?;
         if ed.map.is_some() {
             return Err(syn::Error::new(
                 ed.name.span(),
@@ -650,9 +630,36 @@ fn analyze_endpoint(
                 "pagination is only supported for buffered responses",
             ));
         }
-    }
-    ensure_codegen_supported_request_io(&request_io, ed.body.as_ref())?;
-    ensure_codegen_supported_response_io(&response_io, &ed.response)?;
+        ResolvedEndpointMode::WebSocket(ws_io.clone())
+    } else {
+        let response_io = classify_http_response_io(&ed.response)?;
+        if matches!(
+            response_io,
+            ResolvedResponseBodyIo::RawStream { .. }
+                | ResolvedResponseBodyIo::Records { .. }
+                | ResolvedResponseBodyIo::Multipart { .. }
+                | ResolvedResponseBodyIo::Sse { .. }
+        ) {
+            if ed.map.is_some() {
+                return Err(syn::Error::new(
+                    ed.name.span(),
+                    "`map` is only supported for buffered responses",
+                ));
+            }
+            if ed.paginate.is_some() {
+                return Err(syn::Error::new(
+                    ed.name.span(),
+                    "pagination is only supported for buffered responses",
+                ));
+            }
+        }
+        ensure_codegen_supported_request_io(&request_io, ed.body.as_ref())?;
+        ensure_codegen_supported_response_io(&response_io, &ed.response)?;
+        ResolvedEndpointMode::Http(ResolvedHttpEndpointIo {
+            request: request_io.clone(),
+            response: response_io.clone(),
+        })
+    };
 
     // 4) Resolve paginate, if any.
     if ed.body.is_some() && ed.paginate.is_some() {
@@ -686,8 +693,7 @@ fn analyze_endpoint(
         // Stable declaration order.
         vars: endpoint_decls,
 
-        request_io,
-        response_io,
+        mode,
         body: ed.body.clone(),
         response: ed.response.clone(),
 
@@ -708,6 +714,7 @@ fn analyze_endpoint(
 enum EndpointIoPosition {
     Request,
     Response,
+    WebSocket,
 }
 
 fn endpoint_io_family_name(spec: &RawIoSpec) -> Option<&syn::Ident> {
@@ -762,7 +769,7 @@ fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo
     })
 }
 
-fn classify_response_io(spec: &RawResponseIo) -> Result<ResolvedResponseBodyIo> {
+fn classify_http_response_io(spec: &RawResponseIo) -> Result<ResolvedResponseBodyIo> {
     let io = classify_endpoint_io(spec, EndpointIoPosition::Response)?;
     Ok(match io {
         EndpointIoClassification::BufferedCodec(io) => ResolvedResponseBodyIo::BufferedCodec(io),
@@ -787,16 +794,32 @@ fn classify_response_io(spec: &RawResponseIo) -> Result<ResolvedResponseBodyIo> 
             event_ty,
             codec_ty,
         },
+        EndpointIoClassification::WebSocket { .. } => {
+            return Err(syn::Error::new_spanned(
+                spec.marker.clone(),
+                "`WebSocket` endpoint I/O is only valid for `WS` endpoints",
+            ));
+        }
+    })
+}
+
+fn classify_websocket_io(spec: &RawResponseIo) -> Result<ResolvedWebSocketEndpointIo> {
+    let io = classify_endpoint_io(spec, EndpointIoPosition::WebSocket)?;
+    match io {
         EndpointIoClassification::WebSocket {
             out_ty,
             in_ty,
             codec_ty,
-        } => ResolvedResponseBodyIo::WebSocket {
+        } => Ok(ResolvedWebSocketEndpointIo {
             out_ty,
             in_ty,
             codec_ty,
-        },
-    })
+        }),
+        _ => Err(syn::Error::new_spanned(
+            spec.marker.clone(),
+            "`WS` endpoints must return `WebSocket<Out, In>`",
+        )),
+    }
 }
 
 enum EndpointIoClassification {
@@ -932,6 +955,12 @@ fn classify_endpoint_io(
                     "`WebSocket` is only valid as an endpoint response",
                 ));
             }
+            if matches!(position, EndpointIoPosition::Response) {
+                return Err(syn::Error::new_spanned(
+                    spec.marker.clone(),
+                    "`WebSocket` endpoint I/O is only valid for `WS` endpoints",
+                ));
+            }
             Ok(EndpointIoClassification::WebSocket {
                 out_ty: spec.args[0].clone(),
                 in_ty: spec.args[1].clone(),
@@ -1010,8 +1039,7 @@ fn ensure_codegen_supported_response_io(
         | ResolvedResponseBodyIo::RawStream { .. }
         | ResolvedResponseBodyIo::Records { .. }
         | ResolvedResponseBodyIo::Multipart { .. }
-        | ResolvedResponseBodyIo::Sse { .. }
-        | ResolvedResponseBodyIo::WebSocket { .. } => Ok(()),
+        | ResolvedResponseBodyIo::Sse { .. } => Ok(()),
         ResolvedResponseBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
             spec.marker.clone(),
             "`Bytes` endpoint I/O is reserved but not supported yet",

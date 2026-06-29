@@ -873,6 +873,7 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use quote::quote;
 
     #[test]
     fn normalized_tree_snapshot_contains_current_shape_without_raw_auth_groups() {
@@ -988,6 +989,32 @@ mod tests {
                 op: SetOp::Set,
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn websocket_endpoints_use_explicit_mode_and_http_endpoints_remain_http_mode() {
+        let resolved = analyze_tokens_for_test(quote! {
+            client ModeSplitApi {
+                base "https://example.com"
+            }
+
+            GET Ping
+                path ["ping"]
+                -> Json<String>
+
+            WS Connect
+                path ["ws"]
+                -> WebSocket<ClientMsg, ServerMsg>
+        });
+
+        assert!(matches!(
+            &resolved.endpoints[0].mode,
+            ResolvedEndpointMode::Http(_)
+        ));
+        assert!(matches!(
+            &resolved.endpoints[1].mode,
+            ResolvedEndpointMode::WebSocket(_)
         ));
     }
 

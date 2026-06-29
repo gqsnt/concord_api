@@ -474,6 +474,23 @@ mod tests {
                 "GET",
             ],
         );
+        let code = without_doc_attrs(&expanded);
+        assert!(
+            !code.contains("ResponseCodec::decode"),
+            "websocket codegen must not use buffered response decode\n\n{code}"
+        );
+        assert!(
+            !code.contains("BodyCodec::encode"),
+            "websocket codegen must not use buffered request encode\n\n{code}"
+        );
+        assert!(
+            !code.contains("read_body_all_limited"),
+            "websocket codegen must not use buffered response reads\n\n{code}"
+        );
+        assert!(
+            !code.contains("ContentType"),
+            "websocket codegen must not reference ContentType in execution\n\n{code}"
+        );
     }
 
     #[test]

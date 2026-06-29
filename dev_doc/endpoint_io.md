@@ -27,6 +27,7 @@ It does not implement any of those behaviors.
 The current implementation distinguishes buffered codecs from the reserved endpoint I/O families that now have dedicated runtime support and, where noted below, generated endpoint support.
 
 - Macro raw AST and semantic IR carry explicit endpoint I/O shapes.
+- Semantic IR now splits endpoint mode so HTTP request/response I/O and WS connect I/O are represented separately.
 - Non-reserved families keep the buffered-codec shape used by `BodyCodec` and `ResponseCodec`.
 - Non-reserved families still use the existing `BodyCodec` and `ResponseCodec` paths.
 - `ContentType` is the shared wire-content marker trait for buffered codecs and reserved family markers.

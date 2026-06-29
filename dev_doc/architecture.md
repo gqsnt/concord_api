@@ -28,6 +28,8 @@ Pagination and page-request mutation belong in the logical-request phase before 
 
 Code generation consumes resolved semantic data, not raw syntax. If codegen needs to know whether something came from `defaults { ... }` versus `default { ... }`, that is usually a design smell. Sema should resolve aliases, inheritance, profile names, and merge rules before codegen.
 
+Endpoint I/O follows the same principle: the resolved semantic model now splits HTTP endpoint I/O from WebSocket endpoint mode. HTTP endpoints carry HTTP request/response body shapes, while WS endpoints carry connect-time out/in/codec types. Codegen should dispatch on endpoint mode directly instead of inferring WebSocket behavior from an HTTP response-body variant.
+
 Raw parser AST may contain invalid forms long enough to produce good diagnostics. Resolved semantic IR should not. Sema lowers public policy, route, and pagination values into context-specific IR that cannot contain auth-secret references or other values rejected for that context. Codegen renders already-valid IR and must not rely on `expect("validated ...")`, `expect("valid ...")`, or `unreachable!()` for semantic invalid states.
 
 Behavior profiles are semantic sugar. They are lowered before runtime into ordinary auth, retry, and rate-limit data. `concord_core` must not know behavior profiles exist.

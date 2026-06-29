@@ -58,8 +58,7 @@ pub struct ResolvedEndpoint {
     pub route_pieces: Vec<PathPiece>,
 
     pub vars: Vec<VarInfo>, // endpoint vars (union, stable)
-    pub request_io: ResolvedRequestBodyIo,
-    pub response_io: ResolvedResponseBodyIo,
+    pub mode: ResolvedEndpointMode,
     pub body: RawRequestIo,
     pub response: RawResponseIo,
 
@@ -68,6 +67,28 @@ pub struct ResolvedEndpoint {
 
     pub paginate: Option<PaginateResolved>,
     pub map: Option<MapResolved>,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum ResolvedEndpointMode {
+    Http(ResolvedHttpEndpointIo),
+    WebSocket(ResolvedWebSocketEndpointIo),
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ResolvedHttpEndpointIo {
+    pub request: ResolvedRequestBodyIo,
+    pub response: ResolvedResponseBodyIo,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ResolvedWebSocketEndpointIo {
+    pub out_ty: Type,
+    pub in_ty: Type,
+    pub codec_ty: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -99,11 +120,6 @@ pub enum ResolvedResponseBodyIo {
     Records { item_ty: Type, format_ty: Type },
     Multipart { part_ty: Type, format_ty: Type },
     Sse { event_ty: Type, codec_ty: Type },
-    WebSocket {
-        out_ty: Type,
-        in_ty: Type,
-        codec_ty: Type,
-    },
 }
 
 #[allow(dead_code)]
@@ -127,6 +143,38 @@ impl ResolvedResponseBodyIo {
             ResolvedResponseBodyIo::BufferedCodec(io) => Some(io),
             _ => None,
         }
+    }
+}
+
+#[allow(dead_code)]
+impl ResolvedEndpointMode {
+    pub fn http(&self) -> Option<&ResolvedHttpEndpointIo> {
+        match self {
+            ResolvedEndpointMode::Http(io) => Some(io),
+            _ => None,
+        }
+    }
+
+    pub fn websocket(&self) -> Option<&ResolvedWebSocketEndpointIo> {
+        match self {
+            ResolvedEndpointMode::WebSocket(io) => Some(io),
+            _ => None,
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl ResolvedEndpoint {
+    pub fn http_io(&self) -> Option<&ResolvedHttpEndpointIo> {
+        self.mode.http()
+    }
+
+    pub fn request_io(&self) -> Option<&ResolvedRequestBodyIo> {
+        self.http_io().map(|io| &io.request)
+    }
+
+    pub fn response_io(&self) -> Option<&ResolvedResponseBodyIo> {
+        self.http_io().map(|io| &io.response)
     }
 }
 

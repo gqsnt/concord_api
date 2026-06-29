@@ -1,9 +1,5 @@
-fn endpoint_is_websocket(ep: &ResolvedEndpoint) -> bool {
-    ep.method == "WS"
-}
-
 fn endpoint_http_method_ident(ep: &ResolvedEndpoint) -> Ident {
-    if endpoint_is_websocket(ep) {
+    if matches!(ep.mode, ResolvedEndpointMode::WebSocket(_)) {
         emit_helpers::ident("GET", ep.method.span())
     } else {
         ep.method.clone()
@@ -18,7 +14,7 @@ fn emit_endpoint_def(
     cx_ty: &Ident,
 ) -> TokenStream2 {
     let method = endpoint_http_method_ident(ep);
-    let is_websocket = endpoint_is_websocket(ep);
+    let is_websocket = matches!(ep.mode, ResolvedEndpointMode::WebSocket(_));
     let endpoint_name_str = endpoint_qualified_name(ep);
     let endpoint_name = LitStr::new(&endpoint_name_str, ep.name.span());
     let endpoint_docs = facade_endpoint_docs(ep, &resolved_api.client_policy);
@@ -451,8 +447,45 @@ fn endpoint_var_for_setter<'a>(
 }
 
 fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenStream2>, TokenStream2> {
-    match &ep.request_io {
-        ResolvedRequestBodyIo::None => {
+    match ep.http_io() {
+        Some(http) => match &http.request {
+            ResolvedRequestBodyIo::None => {
+                if ep.body.as_ref().is_some() {
+                    return Err(emit_helpers::compile_error_tokens(
+                        "endpoint request body unexpectedly present in resolved IR",
+                        ep.name.span(),
+                    ));
+                }
+                Ok(None)
+            }
+            ResolvedRequestBodyIo::BufferedCodec(_)
+            | ResolvedRequestBodyIo::RawStream { .. }
+            | ResolvedRequestBodyIo::Records { .. }
+            | ResolvedRequestBodyIo::Multipart { .. } => {
+                let Some(body) = ep.body.as_ref() else {
+                    return Err(emit_helpers::compile_error_tokens(
+                        "endpoint request body unexpectedly missing from resolved IR",
+                        ep.name.span(),
+                    ));
+                };
+                if matches!(http.request, ResolvedRequestBodyIo::RawStream { .. }) {
+                    Ok(Some(quote! { ::concord_core::advanced::StreamBody }))
+                } else if matches!(http.request, ResolvedRequestBodyIo::Records { .. }) {
+                    let ty = &body.ty;
+                    Ok(Some(quote! { ::concord_core::advanced::RecordBody<#ty> }))
+                } else if matches!(http.request, ResolvedRequestBodyIo::Multipart { .. }) {
+                    Ok(Some(quote! { ::concord_core::advanced::MultipartBody }))
+                } else {
+                    let ty = &body.ty;
+                    Ok(Some(quote! { #ty }))
+                }
+            }
+            ResolvedRequestBodyIo::BufferedBytes => Err(emit_helpers::compile_error_tokens(
+                "`Bytes` endpoint I/O is reserved but not supported yet",
+                ep.name.span(),
+            )),
+        },
+        None => {
             if ep.body.as_ref().is_some() {
                 return Err(emit_helpers::compile_error_tokens(
                     "endpoint request body unexpectedly present in resolved IR",
@@ -461,38 +494,127 @@ fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenS
             }
             Ok(None)
         }
-        ResolvedRequestBodyIo::BufferedCodec(_)
-        | ResolvedRequestBodyIo::RawStream { .. }
-        | ResolvedRequestBodyIo::Records { .. }
-        | ResolvedRequestBodyIo::Multipart { .. } => {
-            let Some(body) = ep.body.as_ref() else {
-                return Err(emit_helpers::compile_error_tokens(
-                    "endpoint request body unexpectedly missing from resolved IR",
-                    ep.name.span(),
-                ));
-            };
-            if matches!(ep.request_io, ResolvedRequestBodyIo::RawStream { .. }) {
-                Ok(Some(quote! { ::concord_core::advanced::StreamBody }))
-            } else if matches!(ep.request_io, ResolvedRequestBodyIo::Records { .. }) {
-                let ty = &body.ty;
-                Ok(Some(quote! { ::concord_core::advanced::RecordBody<#ty> }))
-            } else if matches!(ep.request_io, ResolvedRequestBodyIo::Multipart { .. }) {
-                Ok(Some(quote! { ::concord_core::advanced::MultipartBody }))
-            } else {
-                let ty = &body.ty;
-                Ok(Some(quote! { #ty }))
-            }
-        }
-        ResolvedRequestBodyIo::BufferedBytes => Err(emit_helpers::compile_error_tokens(
-            "`Bytes` endpoint I/O is reserved but not supported yet",
-            ep.name.span(),
-        )),
     }
 }
 
 fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, TokenStream2> {
-    match &ep.request_io {
-        ResolvedRequestBodyIo::None => {
+    match ep.http_io() {
+        Some(http) => match &http.request {
+            ResolvedRequestBodyIo::None => {
+                if ep.body.as_ref().is_some() {
+                    return Err(emit_helpers::compile_error_tokens(
+                        "endpoint request body unexpectedly present in resolved IR",
+                        ep.name.span(),
+                    ));
+                }
+                Ok(quote! {
+                    let __body_plan = ::concord_core::internal::BodyPlan::None;
+                    let __request_args = ::concord_core::internal::RequestArgs::default();
+                })
+            }
+            ResolvedRequestBodyIo::BufferedCodec(_) => {
+                let Some(body) = ep.body.as_ref() else {
+                    return Err(emit_helpers::compile_error_tokens(
+                        "endpoint request body unexpectedly missing from resolved IR",
+                        ep.name.span(),
+                    ));
+                };
+                let enc = &body.marker;
+                Ok(quote! {
+                    let __body_value = self
+                        .body
+                        .lock()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                        .take()
+                        .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+                    let __encoded_body = <#enc as ::concord_core::advanced::BodyCodec>::encode(
+                        __body_value,
+                        ::concord_core::advanced::EncodeContext::new(ctx_err.endpoint, &ctx_err.method),
+                    )
+                        .map_err(|e| ::concord_core::prelude::ApiClientError::codec_error(ctx_err.clone(), e))?;
+                    let (__body_bytes, __body_format) = __encoded_body.into_parts();
+                    let __body_plan = ::concord_core::internal::BodyPlan::Encoded {
+                        content_type: <#enc as ::concord_core::advanced::BodyCodec>::try_content_type()
+                            .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
+                        format: __body_format,
+                    };
+                    let __request_args = ::concord_core::internal::RequestArgs::with_body_bytes(__body_bytes);
+                })
+            }
+            ResolvedRequestBodyIo::RawStream { media_ty } => {
+                if ep.body.as_ref().is_none() {
+                    return Err(emit_helpers::compile_error_tokens(
+                        "endpoint request body unexpectedly missing from resolved IR",
+                        ep.name.span(),
+                    ));
+                }
+                Ok(quote! {
+                    let __body_value = self
+                        .body
+                        .lock()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                        .take()
+                        .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+                    let __body_plan = ::concord_core::internal::BodyPlan::RawStream {
+                        content_type: <#media_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                            .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
+                    };
+                    let __request_args = ::concord_core::internal::RequestArgs::with_stream_body(__body_value);
+                })
+            }
+            ResolvedRequestBodyIo::Records { item_ty, format_ty } => {
+                if ep.body.as_ref().is_none() {
+                    return Err(emit_helpers::compile_error_tokens(
+                        "endpoint request body unexpectedly missing from resolved IR",
+                        ep.name.span(),
+                    ));
+                }
+                Ok(quote! {
+                    let __body_value = self
+                        .body
+                        .lock()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                        .take()
+                        .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+                    let __body_plan = ::concord_core::internal::BodyPlan::Records {
+                        content_type: <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                            .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
+                        format: ::concord_core::internal::Format::Text,
+                    };
+                    let __request_args = ::concord_core::internal::RequestArgs::with_record_body::<#item_ty, #format_ty>(__body_value);
+                })
+            }
+            ResolvedRequestBodyIo::Multipart { format_ty, .. } => {
+                if ep.body.as_ref().is_none() {
+                    return Err(emit_helpers::compile_error_tokens(
+                        "endpoint request body unexpectedly missing from resolved IR",
+                        ep.name.span(),
+                    ));
+                }
+                Ok(quote! {
+                    let __body_value = self
+                        .body
+                        .lock()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                        .take()
+                        .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+                    let __body_plan = ::concord_core::internal::BodyPlan::Multipart {
+                        content_type: __body_value.content_type::<#format_ty>(),
+                        format: ::concord_core::internal::Format::Text,
+                    };
+                    let __request_args = ::concord_core::internal::RequestArgs::with_multipart_body::<#format_ty>(__body_value)
+                        .map_err(|source| ::concord_core::prelude::ApiClientError::codec_error(
+                            ctx_err.clone(),
+                            ::concord_core::advanced::CodecError::new(source.to_string()),
+                        ))?;
+                })
+            }
+            ResolvedRequestBodyIo::BufferedBytes => Err(emit_helpers::compile_error_tokens(
+                "`Bytes` endpoint I/O is reserved but not supported yet",
+                ep.name.span(),
+            )),
+        },
+        None => {
             if ep.body.as_ref().is_some() {
                 return Err(emit_helpers::compile_error_tokens(
                     "endpoint request body unexpectedly present in resolved IR",
@@ -500,174 +622,79 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
                 ));
             }
             Ok(quote! {
-            let __body_plan = ::concord_core::internal::BodyPlan::None;
-            let __request_args = ::concord_core::internal::RequestArgs::default();
-        })
-        }
-        ResolvedRequestBodyIo::BufferedCodec(_) => {
-            let Some(body) = ep.body.as_ref() else {
-                return Err(emit_helpers::compile_error_tokens(
-                    "endpoint request body unexpectedly missing from resolved IR",
-                    ep.name.span(),
-                ));
-            };
-            let enc = &body.marker;
-            Ok(quote! {
-                let __body_value = self
-                    .body
-                    .lock()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
-                    .take()
-                    .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
-                let __encoded_body = <#enc as ::concord_core::advanced::BodyCodec>::encode(
-                    __body_value,
-                    ::concord_core::advanced::EncodeContext::new(ctx_err.endpoint, &ctx_err.method),
-                )
-                    .map_err(|e| ::concord_core::prelude::ApiClientError::codec_error(ctx_err.clone(), e))?;
-                let (__body_bytes, __body_format) = __encoded_body.into_parts();
-                let __body_plan = ::concord_core::internal::BodyPlan::Encoded {
-                    content_type: <#enc as ::concord_core::advanced::BodyCodec>::try_content_type()
-                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
-                    format: __body_format,
-                };
-                let __request_args = ::concord_core::internal::RequestArgs::with_body_bytes(__body_bytes);
+                let __body_plan = ::concord_core::internal::BodyPlan::None;
+                let __request_args = ::concord_core::internal::RequestArgs::default();
             })
         }
-        ResolvedRequestBodyIo::RawStream { media_ty } => {
-            if ep.body.as_ref().is_none() {
-                return Err(emit_helpers::compile_error_tokens(
-                    "endpoint request body unexpectedly missing from resolved IR",
-                    ep.name.span(),
-                ));
-            }
-            Ok(quote! {
-            let __body_value = self
-                .body
-                .lock()
-                .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
-                .take()
-                .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
-            let __body_plan = ::concord_core::internal::BodyPlan::RawStream {
-                content_type: <#media_ty as ::concord_core::advanced::ContentType>::try_header_value()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
-            };
-            let __request_args = ::concord_core::internal::RequestArgs::with_stream_body(__body_value);
-        })
-        }
-        ResolvedRequestBodyIo::Records { item_ty, format_ty } => {
-            if ep.body.as_ref().is_none() {
-                return Err(emit_helpers::compile_error_tokens(
-                    "endpoint request body unexpectedly missing from resolved IR",
-                    ep.name.span(),
-                ));
-            }
-            Ok(quote! {
-            let __body_value = self
-                .body
-                .lock()
-                .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
-                .take()
-                .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
-            let __body_plan = ::concord_core::internal::BodyPlan::Records {
-                content_type: <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
-                format: ::concord_core::internal::Format::Text,
-            };
-            let __request_args = ::concord_core::internal::RequestArgs::with_record_body::<#item_ty, #format_ty>(__body_value);
-        })
-        }
-        ResolvedRequestBodyIo::Multipart { format_ty, .. } => {
-            if ep.body.as_ref().is_none() {
-                return Err(emit_helpers::compile_error_tokens(
-                    "endpoint request body unexpectedly missing from resolved IR",
-                    ep.name.span(),
-                ));
-            }
-            Ok(quote! {
-            let __body_value = self
-                .body
-                .lock()
-                .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
-                .take()
-                .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
-            let __body_plan = ::concord_core::internal::BodyPlan::Multipart {
-                content_type: __body_value.content_type::<#format_ty>(),
-                format: ::concord_core::internal::Format::Text,
-            };
-            let __request_args = ::concord_core::internal::RequestArgs::with_multipart_body::<#format_ty>(__body_value)
-                .map_err(|source| ::concord_core::prelude::ApiClientError::codec_error(
-                    ctx_err.clone(),
-                    ::concord_core::advanced::CodecError::new(source.to_string()),
-                ))?;
-        })
-        }
-        ResolvedRequestBodyIo::BufferedBytes => Err(emit_helpers::compile_error_tokens(
-            "`Bytes` endpoint I/O is reserved but not supported yet",
-            ep.name.span(),
-        )),
     }
 }
 
 fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
-    match &ep.response_io {
-        ResolvedResponseBodyIo::Multipart { part_ty, .. } => quote! {
-            ::concord_core::advanced::MultipartStream<#part_ty>
-        },
-        ResolvedResponseBodyIo::Sse { event_ty, .. } => quote! {
-            ::concord_core::advanced::SseStream<#event_ty>
-        },
-        ResolvedResponseBodyIo::Records { item_ty, .. } => quote! {
-            ::concord_core::advanced::RecordStream<#item_ty>
-        },
-        ResolvedResponseBodyIo::WebSocket { out_ty, in_ty, .. } => quote! {
-            ::concord_core::advanced::WebSocketClient<#out_ty, #in_ty>
-        },
-        ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
-            ::concord_core::advanced::StreamResponse<#media_ty>
-        },
-        _ => {
-            let final_response_ty = ep
-                .map
-                .as_ref()
-                .map(|m| m.out_ty.clone())
-                .unwrap_or_else(|| ep.response.ty.clone());
-            quote! { #final_response_ty }
+    match &ep.mode {
+        ResolvedEndpointMode::WebSocket(ws) => {
+            let out_ty = &ws.out_ty;
+            let in_ty = &ws.in_ty;
+            quote! {
+                ::concord_core::advanced::WebSocketClient<#out_ty, #in_ty>
+            }
+        }
+        ResolvedEndpointMode::Http(http) => match &http.response {
+            ResolvedResponseBodyIo::Multipart { part_ty, .. } => quote! {
+                ::concord_core::advanced::MultipartStream<#part_ty>
+            },
+            ResolvedResponseBodyIo::Sse { event_ty, .. } => quote! {
+                ::concord_core::advanced::SseStream<#event_ty>
+            },
+            ResolvedResponseBodyIo::Records { item_ty, .. } => quote! {
+                ::concord_core::advanced::RecordStream<#item_ty>
+            },
+            ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
+                ::concord_core::advanced::StreamResponse<#media_ty>
+            },
+            _ => {
+                let final_response_ty = ep
+                    .map
+                    .as_ref()
+                    .map(|m| m.out_ty.clone())
+                    .unwrap_or_else(|| ep.response.ty.clone());
+                quote! { #final_response_ty }
+            }
         }
     }
 }
 
 fn endpoint_response_accept_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
-    match &ep.response_io {
-        ResolvedResponseBodyIo::Multipart { format_ty, .. } => quote! {
-            ::core::option::Option::Some(
-                <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
+    match &ep.mode {
+        ResolvedEndpointMode::WebSocket(_) => quote! { ::core::option::Option::None },
+        ResolvedEndpointMode::Http(http) => match &http.response {
+            ResolvedResponseBodyIo::Multipart { format_ty, .. } => quote! {
+                ::core::option::Option::Some(
+                    <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
+                )
+            },
+            ResolvedResponseBodyIo::Sse { .. } => quote! {
+                ::core::option::Option::Some(
+                    <::concord_core::advanced::EventStream as ::concord_core::advanced::ContentType>::try_header_value()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
+                )
+            },
+            ResolvedResponseBodyIo::Records { format_ty, .. } => quote! {
+                ::core::option::Option::Some(
+                    <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
+                )
+            },
+            ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
+                ::core::option::Option::Some(
+                    <#media_ty as ::concord_core::advanced::ContentType>::try_header_value()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
+                )
+            },
+            _ => quote! {
+                <#response_dec as ::concord_core::advanced::ResponseCodec>::try_accept()
                     .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
-            )
-        },
-        ResolvedResponseBodyIo::Sse { .. } => quote! {
-            ::core::option::Option::Some(
-                <::concord_core::advanced::EventStream as ::concord_core::advanced::ContentType>::try_header_value()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
-            )
-        },
-        ResolvedResponseBodyIo::Records { format_ty, .. } => quote! {
-            ::core::option::Option::Some(
-                <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
-            )
-        },
-        ResolvedResponseBodyIo::WebSocket { .. } => quote! {
-            ::core::option::Option::None
-        },
-        ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
-            ::core::option::Option::Some(
-                <#media_ty as ::concord_core::advanced::ContentType>::try_header_value()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
-            )
-        },
-        _ => quote! {
-            <#response_dec as ::concord_core::advanced::ResponseCodec>::try_accept()
-                .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
+            },
         },
     }
 }
@@ -676,15 +703,17 @@ fn endpoint_response_no_content_tokens(
     ep: &ResolvedEndpoint,
     response_dec: &syn::Type,
 ) -> TokenStream2 {
-    match &ep.response_io {
-        ResolvedResponseBodyIo::RawStream { .. }
-        | ResolvedResponseBodyIo::Records { .. }
-        | ResolvedResponseBodyIo::Multipart { .. }
-        | ResolvedResponseBodyIo::Sse { .. } => {
-            quote! { false }
-        }
-        ResolvedResponseBodyIo::WebSocket { .. } => quote! { false },
-        _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::is_no_content() },
+    match &ep.mode {
+        ResolvedEndpointMode::WebSocket(_) => quote! { false },
+        ResolvedEndpointMode::Http(http) => match &http.response {
+            ResolvedResponseBodyIo::RawStream { .. }
+            | ResolvedResponseBodyIo::Records { .. }
+            | ResolvedResponseBodyIo::Multipart { .. }
+            | ResolvedResponseBodyIo::Sse { .. } => {
+                quote! { false }
+            }
+            _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::is_no_content() },
+        },
     }
 }
 
@@ -692,13 +721,15 @@ fn endpoint_response_format_tokens(
     ep: &ResolvedEndpoint,
     response_dec: &syn::Type,
 ) -> TokenStream2 {
-    match &ep.response_io {
-        ResolvedResponseBodyIo::Multipart { .. } => quote! { ::concord_core::internal::Format::Text },
-        ResolvedResponseBodyIo::RawStream { .. } => quote! { ::concord_core::internal::Format::Binary },
-        ResolvedResponseBodyIo::Records { .. } => quote! { ::concord_core::internal::Format::Text },
-        ResolvedResponseBodyIo::Sse { .. } => quote! { ::concord_core::internal::Format::Text },
-        ResolvedResponseBodyIo::WebSocket { .. } => quote! { ::concord_core::internal::Format::Text },
-        _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::format() },
+    match &ep.mode {
+        ResolvedEndpointMode::WebSocket(_) => quote! { ::concord_core::internal::Format::Text },
+        ResolvedEndpointMode::Http(http) => match &http.response {
+            ResolvedResponseBodyIo::Multipart { .. } => quote! { ::concord_core::internal::Format::Text },
+            ResolvedResponseBodyIo::RawStream { .. } => quote! { ::concord_core::internal::Format::Binary },
+            ResolvedResponseBodyIo::Records { .. } => quote! { ::concord_core::internal::Format::Text },
+            ResolvedResponseBodyIo::Sse { .. } => quote! { ::concord_core::internal::Format::Text },
+            _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::format() },
+        },
     }
 }
 
@@ -709,52 +740,8 @@ fn endpoint_response_decode_fn(
     decoded_ty: &syn::Type,
 ) -> TokenStream2 {
     let decode_fn = emit_helpers::ident(&format!("__decode_{ty_name}"), Span::call_site());
-    match &ep.response_io {
-        ResolvedResponseBodyIo::Multipart { .. } => quote! {
-            fn #decode_fn(
-                _resp: ::concord_core::transport::BuiltResponse,
-                ctx: ::concord_core::error::ErrorContext,
-            ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                Err(::concord_core::prelude::ApiClientError::PolicyViolation {
-                    ctx,
-                    msg: "multipart responses must use multipart execution".into(),
-                })
-            }
-        },
-        ResolvedResponseBodyIo::RawStream { .. } => quote! {
-            fn #decode_fn(
-                _resp: ::concord_core::transport::BuiltResponse,
-                ctx: ::concord_core::error::ErrorContext,
-            ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                Err(::concord_core::prelude::ApiClientError::PolicyViolation {
-                    ctx,
-                    msg: "stream responses must use stream execution".into(),
-                })
-            }
-        },
-        ResolvedResponseBodyIo::Records { .. } => quote! {
-            fn #decode_fn(
-                _resp: ::concord_core::transport::BuiltResponse,
-                ctx: ::concord_core::error::ErrorContext,
-            ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                Err(::concord_core::prelude::ApiClientError::PolicyViolation {
-                    ctx,
-                    msg: "record responses must use record execution".into(),
-                })
-            }
-        },
-        ResolvedResponseBodyIo::Sse { .. } => quote! {
-            fn #decode_fn(
-                _resp: ::concord_core::transport::BuiltResponse,
-                ctx: ::concord_core::error::ErrorContext,
-            ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                Err(::concord_core::prelude::ApiClientError::PolicyViolation {
-                    ctx,
-                    msg: "sse responses must use sse execution".into(),
-                })
-            }
-        },
-        ResolvedResponseBodyIo::WebSocket { .. } => quote! {
+    match &ep.mode {
+        ResolvedEndpointMode::WebSocket(_) => quote! {
             fn #decode_fn(
                 _resp: ::concord_core::transport::BuiltResponse,
                 ctx: ::concord_core::error::ErrorContext,
@@ -765,59 +752,134 @@ fn endpoint_response_decode_fn(
                 })
             }
         },
-        _ => {
-            let decode_body = if let Some(map) = &ep.map {
-                let out_ty = &map.out_ty;
-                let body = &map.body;
-                quote! {
-                    let r: #decoded_ty = decoded;
-                    let value: #out_ty = (#body);
-                }
-            } else {
-                quote! { let value: #decoded_ty = decoded; }
-            };
-            quote! {
+        ResolvedEndpointMode::Http(http) => match &http.response {
+            ResolvedResponseBodyIo::Multipart { .. } => quote! {
                 fn #decode_fn(
-                    resp: ::concord_core::transport::BuiltResponse,
+                    _resp: ::concord_core::transport::BuiltResponse,
                     ctx: ::concord_core::error::ErrorContext,
                 ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                    let __content_type = resp
-                        .headers
-                        .get(::http::header::CONTENT_TYPE)
-                        .and_then(|value| value.to_str().ok());
-                    let decoded: #decoded_ty = <#response_dec as ::concord_core::advanced::ResponseCodec>::decode(
-                        resp.body.clone(),
-                        ::concord_core::advanced::DecodeContext::new(
-                            ctx.endpoint,
-                            &ctx.method,
-                            resp.status,
-                            __content_type,
-                        ),
-                    )
-                        .map_err(|e| {
-                            let content_type = resp
-                                .headers
-                                .get(::http::header::CONTENT_TYPE)
-                                .and_then(|value| value.to_str().ok());
-                            ::concord_core::prelude::ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e)
-                        })?;
-                    #decode_body
-                    let out = ::concord_core::transport::DecodedResponse {
-                        meta: resp.meta,
-                        url: resp.url,
-                        status: resp.status,
-                        headers: resp.headers,
-                        value,
-                    };
-                    ::core::result::Result::Ok(::std::boxed::Box::new(out))
+                    Err(::concord_core::prelude::ApiClientError::PolicyViolation {
+                        ctx,
+                        msg: "multipart responses must use multipart execution".into(),
+                    })
+                }
+            },
+            ResolvedResponseBodyIo::RawStream { .. } => quote! {
+                fn #decode_fn(
+                    _resp: ::concord_core::transport::BuiltResponse,
+                    ctx: ::concord_core::error::ErrorContext,
+                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
+                    Err(::concord_core::prelude::ApiClientError::PolicyViolation {
+                        ctx,
+                        msg: "stream responses must use stream execution".into(),
+                    })
+                }
+            },
+            ResolvedResponseBodyIo::Records { .. } => quote! {
+                fn #decode_fn(
+                    _resp: ::concord_core::transport::BuiltResponse,
+                    ctx: ::concord_core::error::ErrorContext,
+                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
+                    Err(::concord_core::prelude::ApiClientError::PolicyViolation {
+                        ctx,
+                        msg: "record responses must use record execution".into(),
+                    })
+                }
+            },
+            ResolvedResponseBodyIo::Sse { .. } => quote! {
+                fn #decode_fn(
+                    _resp: ::concord_core::transport::BuiltResponse,
+                    ctx: ::concord_core::error::ErrorContext,
+                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
+                    Err(::concord_core::prelude::ApiClientError::PolicyViolation {
+                        ctx,
+                        msg: "sse responses must use sse execution".into(),
+                    })
+                }
+            },
+            _ => {
+                let decode_body = if let Some(map) = &ep.map {
+                    let out_ty = &map.out_ty;
+                    let body = &map.body;
+                    quote! {
+                        let r: #decoded_ty = decoded;
+                        let value: #out_ty = (#body);
+                    }
+                } else {
+                    quote! { let value: #decoded_ty = decoded; }
+                };
+
+                quote! {
+                    fn #decode_fn(
+                        resp: ::concord_core::transport::BuiltResponse,
+                        ctx: ::concord_core::error::ErrorContext,
+                    ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
+                        let __content_type = resp
+                            .headers
+                            .get(::http::header::CONTENT_TYPE)
+                            .and_then(|value| value.to_str().ok());
+                        let decoded: #decoded_ty = <#response_dec as ::concord_core::advanced::ResponseCodec>::decode(
+                            resp.body.clone(),
+                            ::concord_core::advanced::DecodeContext::new(
+                                ctx.endpoint,
+                                &ctx.method,
+                                resp.status,
+                                __content_type,
+                            ),
+                        )
+                            .map_err(|e| {
+                                let content_type = resp
+                                    .headers
+                                    .get(::http::header::CONTENT_TYPE)
+                                    .and_then(|value| value.to_str().ok());
+                                ::concord_core::prelude::ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e)
+                            })?;
+                        #decode_body
+                        let out = ::concord_core::transport::DecodedResponse {
+                            meta: resp.meta,
+                            url: resp.url,
+                            status: resp.status,
+                            headers: resp.headers,
+                            value,
+                        };
+                        ::core::result::Result::Ok(::std::boxed::Box::new(out))
+                    }
                 }
             }
-        }
+        },
     }
 }
 
 fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStream2 {
-    match &ep.response_io {
+    match &ep.mode {
+        ResolvedEndpointMode::WebSocket(ws) => {
+            let out_ty = &ws.out_ty;
+            let in_ty = &ws.in_ty;
+            let codec_ty = &ws.codec_ty;
+            quote! {
+            fn execute<'a, T>(
+                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+                plan: ::concord_core::internal::RequestPlan,
+            ) -> ::core::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::core::future::Future<
+                            Output = ::core::result::Result<
+                                Self::Response,
+                                ::concord_core::prelude::ApiClientError,
+                            >,
+                        > + Send + 'a,
+                >,
+            >
+            where
+                T: ::concord_core::advanced::Transport + 'a,
+            {
+                ::std::boxed::Box::pin(async move {
+                    client.execute_plan_websocket::<#out_ty, #in_ty, #codec_ty>(plan).await
+                })
+            }
+        }
+        },
+        ResolvedEndpointMode::Http(http) => match &http.response {
         ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => quote! {
             fn execute<'a, T>(
                 client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
@@ -859,32 +921,6 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStrea
             {
                 ::std::boxed::Box::pin(async move {
                     client.execute_plan_sse::<#event_ty, #codec_ty>(plan).await
-                })
-            }
-        },
-        ResolvedResponseBodyIo::WebSocket {
-            out_ty,
-            in_ty,
-            codec_ty,
-        } => quote! {
-            fn execute<'a, T>(
-                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
-                plan: ::concord_core::internal::RequestPlan,
-            ) -> ::core::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::core::future::Future<
-                            Output = ::core::result::Result<
-                                Self::Response,
-                                ::concord_core::prelude::ApiClientError,
-                            >,
-                        > + Send + 'a,
-                >,
-            >
-            where
-                T: ::concord_core::advanced::Transport + 'a,
-            {
-                ::std::boxed::Box::pin(async move {
-                    client.execute_plan_websocket::<#out_ty, #in_ty, #codec_ty>(plan).await
                 })
             }
         },
@@ -933,6 +969,7 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStrea
             }
         },
         _ => quote! {},
+        },
     }
 }
 
@@ -941,7 +978,20 @@ fn endpoint_response_marker_impl(
     ty_name: &Ident,
     cx_ty: &Ident,
 ) -> TokenStream2 {
-    match &ep.response_io {
+    match &ep.mode {
+        ResolvedEndpointMode::WebSocket(ws) => {
+            let out_ty = &ws.out_ty;
+            let in_ty = &ws.in_ty;
+            let codec_ty = &ws.codec_ty;
+            quote! {
+            impl ::concord_core::prelude::WebSocketEndpoint<super::#cx_ty> for #ty_name {
+                type Out = #out_ty;
+                type In = #in_ty;
+                type Codec = #codec_ty;
+            }
+        }
+        },
+        ResolvedEndpointMode::Http(http) => match &http.response {
         ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => quote! {
             impl ::concord_core::prelude::MultipartResponseEndpoint<super::#cx_ty> for #ty_name {
                 type Part = #part_ty;
@@ -951,17 +1001,6 @@ fn endpoint_response_marker_impl(
         ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => quote! {
             impl ::concord_core::prelude::SseResponseEndpoint<super::#cx_ty> for #ty_name {
                 type Event = #event_ty;
-                type Codec = #codec_ty;
-            }
-        },
-        ResolvedResponseBodyIo::WebSocket {
-            out_ty,
-            in_ty,
-            codec_ty,
-        } => quote! {
-            impl ::concord_core::prelude::WebSocketEndpoint<super::#cx_ty> for #ty_name {
-                type Out = #out_ty;
-                type In = #in_ty;
                 type Codec = #codec_ty;
             }
         },
@@ -978,6 +1017,7 @@ fn endpoint_response_marker_impl(
             }
         },
         _ => quote! {},
+        },
     }
 }
 

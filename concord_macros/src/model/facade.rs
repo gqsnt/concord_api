@@ -399,55 +399,58 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
         });
     }
     if let Some(body) = &ep.body {
-        let body_summary = match &ep.request_io {
-            ResolvedRequestBodyIo::Multipart {
+        let body_summary = match ep.request_io() {
+            Some(ResolvedRequestBodyIo::Multipart {
                 value_ty,
                 format_ty,
-            } => format!(
+            }) => format!(
                 "Body: Multipart<{}, {}>",
                 quote::quote!(#value_ty),
                 quote::quote!(#format_ty)
             ),
-            ResolvedRequestBodyIo::Records { item_ty, format_ty } => format!(
+            Some(ResolvedRequestBodyIo::Records { item_ty, format_ty }) => format!(
                 "Body: Records<{}, {}>",
                 quote::quote!(#item_ty),
                 quote::quote!(#format_ty)
             ),
-            ResolvedRequestBodyIo::RawStream { media_ty } => {
+            Some(ResolvedRequestBodyIo::RawStream { media_ty }) => {
                 format!("Body: Stream<{}>", quote::quote!(#media_ty))
             }
-            _ => format!("Body: {}", doc_codec(&body.enc, &body.ty)),
+            Some(_) | None => format!("Body: {}", doc_codec(&body.enc, &body.ty)),
         };
         docs.push(FacadeDoc {
             summary: body_summary,
             details: Vec::new(),
         });
     }
-    let response_summary = match &ep.response_io {
-        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => format!(
-            "Response: Multipart<{}, {}>",
-            quote::quote!(#part_ty),
-            quote::quote!(#format_ty)
-        ),
-        ResolvedResponseBodyIo::Records { item_ty, format_ty } => format!(
-            "Response: Records<{}, {}>",
-            quote::quote!(#item_ty),
-            quote::quote!(#format_ty)
-        ),
-        ResolvedResponseBodyIo::WebSocket {
-            out_ty,
-            in_ty,
-            codec_ty,
-        } => format!(
-            "Response: WebSocket<{}, {}, {}>",
-            quote::quote!(#out_ty),
-            quote::quote!(#in_ty),
-            quote::quote!(#codec_ty)
-        ),
-        ResolvedResponseBodyIo::RawStream { media_ty } => {
-            format!("Response: Stream<{}>", quote::quote!(#media_ty))
+    let response_summary = match &ep.mode {
+        ResolvedEndpointMode::WebSocket(ws) => {
+            let out_ty = &ws.out_ty;
+            let in_ty = &ws.in_ty;
+            let codec_ty = &ws.codec_ty;
+            format!(
+                "Response: WebSocket<{}, {}, {}>",
+                quote::quote!(#out_ty),
+                quote::quote!(#in_ty),
+                quote::quote!(#codec_ty)
+            )
         }
-        _ => format!("Response: {}", doc_codec(&ep.response.enc, &ep.response.ty)),
+        ResolvedEndpointMode::Http(http) => match &http.response {
+            ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => format!(
+                "Response: Multipart<{}, {}>",
+                quote::quote!(#part_ty),
+                quote::quote!(#format_ty)
+            ),
+            ResolvedResponseBodyIo::Records { item_ty, format_ty } => format!(
+                "Response: Records<{}, {}>",
+                quote::quote!(#item_ty),
+                quote::quote!(#format_ty)
+            ),
+            ResolvedResponseBodyIo::RawStream { media_ty } => {
+                format!("Response: Stream<{}>", quote::quote!(#media_ty))
+            }
+            _ => format!("Response: {}", doc_codec(&ep.response.enc, &ep.response.ty)),
+        },
     };
     docs.push(FacadeDoc {
         summary: response_summary,
@@ -499,22 +502,22 @@ fn facade_setter_docs(ep: &ResolvedEndpoint, var: &VarInfo) -> (String, String, 
 }
 
 fn facade_request_body_ty(ep: &ResolvedEndpoint) -> Option<String> {
-    match &ep.request_io {
-        ResolvedRequestBodyIo::None => None,
-        ResolvedRequestBodyIo::BufferedCodec(_) | ResolvedRequestBodyIo::BufferedBytes => {
-            ep.body.as_ref().map(|body| {
-                let ty = &body.ty;
-                quote::quote!(#ty).to_string()
-            })
-        }
-        ResolvedRequestBodyIo::Multipart { .. } => {
+    match ep.request_io() {
+        Some(ResolvedRequestBodyIo::None) => None,
+        Some(ResolvedRequestBodyIo::BufferedCodec(_))
+        | Some(ResolvedRequestBodyIo::BufferedBytes) => ep.body.as_ref().map(|body| {
+            let ty = &body.ty;
+            quote::quote!(#ty).to_string()
+        }),
+        Some(ResolvedRequestBodyIo::Multipart { .. }) => {
             Some("::concord_core::advanced::MultipartBody".to_string())
         }
-        ResolvedRequestBodyIo::Records { item_ty, .. } => Some(format!(
+        Some(ResolvedRequestBodyIo::Records { item_ty, .. }) => Some(format!(
             "::concord_core::advanced::RecordBody<{}>",
             quote::quote!(#item_ty)
         )),
-        ResolvedRequestBodyIo::RawStream { .. } => Some("StreamBody".to_string()),
+        Some(ResolvedRequestBodyIo::RawStream { .. }) => Some("StreamBody".to_string()),
+        None => None,
     }
 }
 
