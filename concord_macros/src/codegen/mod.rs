@@ -1919,6 +1919,36 @@ mod tests {
     }
 
     #[test]
+    fn generated_custom_pagination_remains_on_old_fallback_path() {
+        let out = expanded(quote! {
+            client SnapshotCustomPagination {
+                base "https://example.com"
+            }
+
+            GET List
+                as list
+                path ["items"]
+                paginate HeaderCursorPagination
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                ":: concord_core :: internal :: PaginationPlan :: custom :: < HeaderCursorPagination , Vec < String > > ()",
+            ],
+        );
+        assert!(
+            !out.contains("endpoint_state_pagination"),
+            "custom pagination must remain on the old fallback path"
+        );
+        assert!(
+            !out.contains("EndpointPaginationRuntimeAdapter"),
+            "custom pagination must not require endpoint-state runtime"
+        );
+    }
+
+    #[test]
     fn generated_cursor_uses_endpoint_state_pagination_runtime() {
         let out = expanded(quote! {
             client SnapshotCursorRuntime {

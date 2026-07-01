@@ -1,8 +1,9 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, CursorBindings, EndpointField, EndpointPaginationRuntimeAdapter,
-    OffsetLimitBindings, PageAdvance, PageDecision, PageInit, PageRequest, PagedBindings,
+    AuthPlacement, CursorBindings, EndpointField, EndpointPaginationController,
+    EndpointPaginationRuntime, EndpointPaginationRuntimeAdapter, OffsetLimitBindings, PageAdvance,
+    PageApply, PageApplyResult, PageDecision, PageInit, PageRequest, PagedBindings,
     PaginationController, ProgressKey, RateLimitContext, RateLimitFuture, RateLimitPermit,
     RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
 };
@@ -186,6 +187,137 @@ impl PaginationController<Vec<String>> for DynamicRequestMutationPagination {
 
     fn progress_key(&self, _state: &Self::State) -> Option<ProgressKey> {
         None
+    }
+}
+
+#[derive(Clone)]
+struct HeaderBoundCustomEndpoint {
+    page: u64,
+    count: u64,
+    pagination: PaginationPlan,
+}
+
+impl Endpoint<TestCx> for HeaderBoundCustomEndpoint {
+    type Response = Vec<String>;
+
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        let mut plan = request_plan(
+            "HeaderBoundCustom",
+            Method::GET,
+            "/header-custom",
+            Default::default(),
+            Some(self.pagination.clone()),
+            decode_items,
+        );
+        plan.endpoint.policy.headers.insert(
+            http::header::HeaderName::from_static("x-page"),
+            HeaderValue::from_str(&self.page.to_string()).expect("valid header value"),
+        );
+        plan.endpoint.policy.headers.insert(
+            http::header::HeaderName::from_static("x-count"),
+            HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
+        );
+        Ok(plan)
+    }
+}
+
+#[derive(Default)]
+struct HeaderBoundCustomPagination;
+
+#[derive(Clone)]
+struct HeaderBoundCustomBindings<E> {
+    page: EndpointField<E, u64>,
+    count: EndpointField<E, u64>,
+}
+
+#[derive(Clone, Debug)]
+struct HeaderBoundCustomState {
+    page: u64,
+    count: u64,
+}
+
+impl<E> EndpointPaginationController<E, Vec<String>> for HeaderBoundCustomPagination
+where
+    E: 'static,
+{
+    type Bindings = HeaderBoundCustomBindings<E>;
+    type State = HeaderBoundCustomState;
+
+    fn init(
+        &self,
+        bindings: &Self::Bindings,
+        endpoint: &E,
+        ctx: PageApply<'_>,
+    ) -> Result<Self::State, ApiClientError> {
+        let count = bindings.count.get(endpoint);
+        if count == 0 {
+            return Err(ApiClientError::Pagination {
+                ctx: ctx.ctx.clone(),
+                msg: "custom pagination page size must be non-zero".into(),
+            });
+        }
+        Ok(HeaderBoundCustomState {
+            page: bindings.page.get(endpoint),
+            count,
+        })
+    }
+
+    fn apply(
+        &self,
+        bindings: &Self::Bindings,
+        state: &mut Self::State,
+        endpoint: &mut E,
+        ctx: PageApply<'_>,
+    ) -> Result<PageApplyResult, ApiClientError> {
+        if state.count == 0 {
+            return Err(ApiClientError::Pagination {
+                ctx: ctx.ctx.clone(),
+                msg: "custom pagination page size must be non-zero".into(),
+            });
+        }
+        bindings.page.set(endpoint, state.page);
+        bindings.count.set(endpoint, state.count);
+        Ok(PageApplyResult {
+            expected_items_per_page: NonZeroUsize::new(state.count as usize),
+        })
+    }
+
+    fn advance(
+        &self,
+        _bindings: &Self::Bindings,
+        state: &mut Self::State,
+        _page: &Vec<String>,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        state.page += 1;
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(state.page))
+    }
+}
+
+impl PaginatedEndpoint<TestCx> for HeaderBoundCustomEndpoint {
+    fn endpoint_state_pagination(
+        &self,
+    ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
+        Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+            HeaderBoundCustomPagination,
+            HeaderBoundCustomBindings {
+                page: EndpointField::new(
+                    |ep: &Self| ep.page,
+                    |ep: &mut Self, value| ep.page = value,
+                ),
+                count: EndpointField::new(
+                    |ep: &Self| ep.count,
+                    |ep: &mut Self, value| ep.count = value,
+                ),
+            },
+        )))
     }
 }
 
@@ -1038,6 +1170,163 @@ async fn pending_request_pages_surface_remains_available() -> Result<(), ApiClie
 
     assert_eq!(items, vec!["a".to_string(), "b".to_string()]);
     Ok(())
+}
+
+#[tokio::test]
+async fn custom_endpoint_state_pagination_renders_endpoint_fields() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::OK, "c"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = HeaderBoundCustomEndpoint {
+        page: 1,
+        count: 2,
+        pagination: PaginationPlan::custom::<HeaderTokenPagination, Vec<String>>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("x-page")
+            .and_then(|v| v.to_str().ok()),
+        Some("1")
+    );
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("x-count")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("x-page")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("x-count")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    Ok(())
+}
+
+#[test]
+fn custom_endpoint_state_pagination_reports_progress_and_typed_errors() {
+    let controller = HeaderBoundCustomPagination;
+    let bindings = HeaderBoundCustomBindings {
+        page: EndpointField::new(
+            |ep: &HeaderBoundCustomEndpoint| ep.page,
+            |ep: &mut HeaderBoundCustomEndpoint, value| ep.page = value,
+        ),
+        count: EndpointField::new(
+            |ep: &HeaderBoundCustomEndpoint| ep.count,
+            |ep: &mut HeaderBoundCustomEndpoint, value| ep.count = value,
+        ),
+    };
+    let mut adapter = EndpointPaginationRuntimeAdapter::new(controller, bindings);
+    let ctx = concord_core::error::ErrorContext {
+        endpoint: "HeaderBoundCustom",
+        method: Method::GET,
+    };
+    let mut endpoint = HeaderBoundCustomEndpoint {
+        page: 1,
+        count: 2,
+        pagination: PaginationPlan::custom::<HeaderTokenPagination, Vec<String>>(),
+    };
+
+    assert_eq!(adapter.progress_key(), None);
+    adapter
+        .init(
+            &endpoint,
+            PageApply {
+                endpoint: "HeaderBoundCustom",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )
+        .unwrap();
+    assert_eq!(adapter.progress_key(), Some(ProgressKey::U64(1)));
+
+    let applied = adapter
+        .apply(
+            &mut endpoint,
+            PageApply {
+                endpoint: "HeaderBoundCustom",
+                page_index: 1,
+                ctx: &ctx,
+            },
+        )
+        .unwrap();
+    assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
+    assert_eq!(endpoint.page, 1);
+    assert_eq!(endpoint.count, 2);
+
+    let decision = adapter
+        .advance(
+            &ctx,
+            &vec!["a".to_string(), "b".to_string()],
+            PageAdvance {
+                endpoint: "HeaderBoundCustom",
+                page_index: 1,
+                received_items: 2,
+            },
+        )
+        .unwrap();
+    assert_eq!(decision, PageDecision::Continue);
+    assert_eq!(adapter.progress_key(), Some(ProgressKey::U64(2)));
+
+    let bad_bindings = HeaderBoundCustomBindings {
+        page: EndpointField::new(
+            |ep: &HeaderBoundCustomEndpoint| ep.page,
+            |ep: &mut HeaderBoundCustomEndpoint, value| ep.page = value,
+        ),
+        count: EndpointField::new(
+            |ep: &HeaderBoundCustomEndpoint| ep.count,
+            |ep: &mut HeaderBoundCustomEndpoint, value| ep.count = value,
+        ),
+    };
+    let mut bad_adapter =
+        EndpointPaginationRuntimeAdapter::new(HeaderBoundCustomPagination, bad_bindings);
+    let bad_endpoint = HeaderBoundCustomEndpoint {
+        page: 1,
+        count: 0,
+        pagination: PaginationPlan::custom::<HeaderTokenPagination, Vec<String>>(),
+    };
+    let err = bad_adapter
+        .init(
+            &bad_endpoint,
+            PageApply {
+                endpoint: "HeaderBoundCustom",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )
+        .expect_err("zero page size must be rejected by the controller");
+    assert!(matches!(err, ApiClientError::Pagination { .. }));
 }
 
 #[tokio::test]
