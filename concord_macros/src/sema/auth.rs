@@ -249,11 +249,9 @@ fn auth_use_credential_ident_ir(u: &AuthUseIr) -> &Ident {
     }
 }
 
-fn auth_plan_references_credential(plans: &[AuthUsePlanIr], target: &Ident) -> bool {
+fn auth_plan_references_credential(plans: &[AuthRequirementIr], target: &Ident) -> bool {
     plans.iter().any(|plan| match plan {
-        AuthUsePlanIr::Use(auth_use) => {
-            auth_use_credential_ident_ir(auth_use) == target
-        }
+        plan => &plan.credential == target,
     })
 }
 
@@ -320,6 +318,73 @@ fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<(
                 cred.name
             ),
         )),
+    }
+}
+
+pub(crate) fn materialize_auth_requirement(
+    auth_use: &AuthUseIr,
+    endpoint_step_prefix: &str,
+    idx: usize,
+) -> AuthRequirementIr {
+    let (placement, credential) = match &auth_use.kind {
+        AuthUseKindIr::Bearer { credential } => (AuthPlacementIr::Bearer, credential),
+        AuthUseKindIr::Header { header, credential } => (
+            AuthPlacementIr::Header {
+                name: header.clone(),
+            },
+            credential,
+        ),
+        AuthUseKindIr::Query { key, credential } => (
+            AuthPlacementIr::Query { key: key.clone() },
+            credential,
+        ),
+        AuthUseKindIr::Basic { credential } => (AuthPlacementIr::Basic, credential),
+        AuthUseKindIr::Certificate { credential } => {
+            (AuthPlacementIr::Certificate, credential)
+        }
+    };
+    AuthRequirementIr {
+        credential: credential.clone(),
+        placement,
+        usage_id: auth_usage_id(&auth_use.kind).to_string(),
+        step_id: format!("{endpoint_step_prefix}:{idx}:{credential}"),
+        provenance: AuthProvenanceIr {
+            label: provenance_label(auth_use.provenance),
+        },
+    }
+}
+
+pub(crate) fn materialize_auth_requirements(
+    plans: &[AuthUsePlanIr],
+    endpoint_step_prefix: &str,
+    start_idx: usize,
+) -> Vec<AuthRequirementIr> {
+    plans
+        .iter()
+        .enumerate()
+        .map(|(idx, plan)| match plan {
+            AuthUsePlanIr::Use(auth_use) => {
+                materialize_auth_requirement(auth_use.as_ref(), endpoint_step_prefix, start_idx + idx)
+            }
+        })
+        .collect()
+}
+
+fn auth_usage_id(kind: &AuthUseKindIr) -> &'static str {
+    match kind {
+        AuthUseKindIr::Bearer { .. } => "bearer",
+        AuthUseKindIr::Header { .. } => "header",
+        AuthUseKindIr::Query { .. } => "query",
+        AuthUseKindIr::Basic { .. } => "basic",
+        AuthUseKindIr::Certificate { .. } => "certificate",
+    }
+}
+
+fn provenance_label(provenance: AuthUseProvenanceIr) -> String {
+    match provenance {
+        AuthUseProvenanceIr::Client => "client".to_string(),
+        AuthUseProvenanceIr::Scope(scope_id) => format!("scope:{scope_id}"),
+        AuthUseProvenanceIr::Endpoint => "endpoint".to_string(),
     }
 }
 

@@ -546,17 +546,18 @@ fn analyze_endpoint(
         scope_modules: scope_modules.clone(),
         endpoint: ed.name.clone(),
     };
-    let mut auth = ctx.client_auth.to_vec();
+    let mut auth_plans = ctx.client_auth.to_vec();
     for &lid in ancestry {
-        auth.extend(ctx.layers[lid].auth.iter().cloned());
+        auth_plans.extend(ctx.layers[lid].auth.iter().cloned());
     }
     let mut auth_uses = behavior.auth_uses;
     auth_uses.extend(ed.auth_uses.iter().cloned());
-    auth.extend(resolve_auth_requirements(
+    auth_plans.extend(resolve_auth_requirements(
         &auth_uses,
         ctx.auth_credentials,
         AuthUseProvenanceIr::Endpoint,
     )?);
+    let auth = materialize_auth_requirements(&auth_plans, &current_endpoint_target.display_string(), 0);
     for credential in ctx.auth_credentials.values() {
         let AuthCredentialKindIr::Endpoint { target, .. } = &credential.kind else {
             continue;

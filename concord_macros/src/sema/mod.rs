@@ -742,6 +742,34 @@ fn auth_use_names(auth: &[AuthUsePlanIr]) -> Vec<String> {
 }
 
 #[cfg(test)]
+fn auth_requirement_names(auth: &[AuthRequirementIr]) -> Vec<String> {
+    auth.iter().map(|req| req.credential.to_string()).collect()
+}
+
+#[cfg(test)]
+fn auth_requirement_provenances(auth: &[AuthRequirementIr]) -> Vec<AuthUseProvenanceIr> {
+    auth.iter()
+        .map(|req| match req.provenance.label.as_str() {
+            "client" => AuthUseProvenanceIr::Client,
+            "endpoint" => AuthUseProvenanceIr::Endpoint,
+            label if label.starts_with("scope:") => {
+                let scope_id = label
+                    .trim_start_matches("scope:")
+                    .parse::<usize>()
+                    .expect("scope provenance parses");
+                AuthUseProvenanceIr::Scope(scope_id)
+            }
+            other => panic!("unexpected auth provenance label: {other}"),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn auth_requirement_step_ids(auth: &[AuthRequirementIr]) -> Vec<String> {
+    auth.iter().map(|req| req.step_id.clone()).collect()
+}
+
+#[cfg(test)]
 fn debug_norm_tree(norm: &NormApiTree) -> String {
     fn walk(items: &[NormNode], depth: usize, out: &mut String) {
         for item in items {
@@ -1497,24 +1525,29 @@ mod tests {
         let auth = &resolved_api.endpoints[0].policy.auth;
 
         assert_eq!(auth.len(), 3);
-        let names = auth
-            .iter()
-            .map(|plan| {
-                let AuthUsePlanIr::Use(auth_use) = plan;
-                auth_use_credential_ident_ir(auth_use).to_string()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(names, ["client_key", "scope_key", "token"]);
-        let provenances = auth
-            .iter()
-            .map(|plan| {
-                let AuthUsePlanIr::Use(auth_use) = plan;
-                auth_use.provenance
-            })
-            .collect::<Vec<_>>();
-        assert!(matches!(provenances[0], AuthUseProvenanceIr::Client));
-        assert!(matches!(provenances[1], AuthUseProvenanceIr::Scope(_)));
-        assert!(matches!(provenances[2], AuthUseProvenanceIr::Endpoint));
+        assert_eq!(
+            auth_requirement_names(auth),
+            ["client_key", "scope_key", "token"]
+        );
+        assert_eq!(
+            auth_requirement_step_ids(auth),
+            [
+                "protected::Me:0:client_key",
+                "protected::Me:1:scope_key",
+                "protected::Me:2:token"
+            ]
+        );
+        assert_eq!(
+            auth_requirement_provenances(auth),
+            [
+                AuthUseProvenanceIr::Client,
+                AuthUseProvenanceIr::Scope(0),
+                AuthUseProvenanceIr::Endpoint,
+            ]
+        );
+        assert!(matches!(auth[0].placement, AuthPlacementIr::Header { .. }));
+        assert!(matches!(auth[1].placement, AuthPlacementIr::Query { .. }));
+        assert!(matches!(auth[2].placement, AuthPlacementIr::Bearer));
     }
 
     #[test]
@@ -2220,12 +2253,12 @@ mod tests {
         let endpoint = endpoint_by_name(&resolved_api, "Me");
 
         assert_eq!(endpoint.policy.auth.len(), 1);
-        let AuthUsePlanIr::Use(auth_use) = &endpoint.policy.auth[0];
-        assert_eq!(
-            auth_use_credential_ident_ir(auth_use).to_string(),
-            "session"
-        );
-        assert!(matches!(auth_use.provenance, AuthUseProvenanceIr::Client));
+        let auth = &endpoint.policy.auth[0];
+        assert_eq!(auth.credential.to_string(), "session");
+        assert_eq!(auth.placement, AuthPlacementIr::Bearer);
+        assert_eq!(auth.usage_id, "bearer");
+        assert_eq!(auth.step_id, "Me:0:session");
+        assert_eq!(auth.provenance.label, "client");
         assert!(matches!(
             endpoint.policy.endpoint.retry,
             Some(RetryResolved::Set(_))
@@ -2475,12 +2508,12 @@ mod tests {
         let endpoint = &resolved_api.endpoints[0];
 
         assert_eq!(endpoint.policy.auth.len(), 1);
-        let AuthUsePlanIr::Use(auth_use) = &endpoint.policy.auth[0];
-        assert_eq!(
-            auth_use_credential_ident_ir(auth_use).to_string(),
-            "session"
-        );
-        assert!(matches!(auth_use.provenance, AuthUseProvenanceIr::Client));
+        let auth = &endpoint.policy.auth[0];
+        assert_eq!(auth.credential.to_string(), "session");
+        assert_eq!(auth.placement, AuthPlacementIr::Bearer);
+        assert_eq!(auth.usage_id, "bearer");
+        assert_eq!(auth.step_id, "Me:0:session");
+        assert_eq!(auth.provenance.label, "client");
     }
 
     #[test]
@@ -2733,7 +2766,7 @@ mod tests {
         );
 
         let endpoint = endpoint_by_name(&resolved_api, "Show");
-        let auth_names = auth_use_names(&endpoint.policy.auth);
+        let auth_names = auth_requirement_names(&endpoint.policy.auth);
         assert_eq!(
             auth_names,
             vec![
@@ -2888,7 +2921,7 @@ mod tests {
         let endpoint = endpoint_by_name(&resolved_api, "Show");
 
         assert_eq!(
-            auth_use_names(&endpoint.policy.auth),
+            auth_requirement_names(&endpoint.policy.auth),
             vec![
                 "client_auth".to_string(),
                 "scope_auth".to_string(),
@@ -2899,15 +2932,11 @@ mod tests {
         assert_eq!(endpoint.policy.auth.len(), 4);
         assert!(matches!(
             endpoint.policy.auth.as_slice(),
-            [
-                AuthUsePlanIr::Use(client),
-                AuthUsePlanIr::Use(scope),
-                AuthUsePlanIr::Use(endpoint_behavior),
-                AuthUsePlanIr::Use(direct),
-            ] if matches!(client.provenance, AuthUseProvenanceIr::Client)
-                && matches!(scope.provenance, AuthUseProvenanceIr::Scope(0))
-                && matches!(endpoint_behavior.provenance, AuthUseProvenanceIr::Endpoint)
-                && matches!(direct.provenance, AuthUseProvenanceIr::Endpoint)
+            [client, scope, endpoint_behavior, direct] if
+                matches!(client.provenance.label.as_str(), "client")
+                && matches!(scope.provenance.label.as_str(), "scope:0")
+                && matches!(endpoint_behavior.provenance.label.as_str(), "endpoint")
+                && matches!(direct.provenance.label.as_str(), "endpoint")
         ));
 
         let emitted = crate::codegen::emit(analyze_source(source));

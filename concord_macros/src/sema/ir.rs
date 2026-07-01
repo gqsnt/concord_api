@@ -149,7 +149,7 @@ pub struct ResolvedPolicySpec {
     // policy. These are normalized sema results, not raw policy AST nodes.
     pub scopes: Vec<PolicyBlocksResolved>,
     pub endpoint: PolicyBlocksResolved,
-    pub auth: Vec<AuthUsePlanIr>,
+    pub auth: Vec<AuthRequirementIr>,
 }
 
 #[derive(Debug, Clone)]
@@ -241,6 +241,29 @@ pub struct AuthUseIr {
 }
 
 #[derive(Debug, Clone)]
+pub struct AuthRequirementIr {
+    pub credential: Ident,
+    pub placement: AuthPlacementIr,
+    pub usage_id: String,
+    pub step_id: String,
+    pub provenance: AuthProvenanceIr,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AuthPlacementIr {
+    Bearer,
+    Header { name: LitStr },
+    Query { key: LitStr },
+    Basic,
+    Certificate,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthProvenanceIr {
+    pub label: String,
+}
+
+#[derive(Debug, Clone)]
 pub enum AuthUsePlanIr {
     Use(Box<AuthUseIr>),
 }
@@ -266,7 +289,7 @@ pub enum AuthUseKindIr {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthUseProvenanceIr {
     Client,
     Scope(usize),

@@ -1072,6 +1072,45 @@ mod tests {
     }
 
     #[test]
+    fn generated_auth_plan_uses_resolved_requirements() {
+        let out = expanded(quote! {
+            client AuthPlanApi {
+                base "https://example.com"
+                secret token: String
+                credential key = api_key(secret.token)
+            }
+
+            GET Search
+                path ["search"]
+                auth header "X-Api-Key" = key
+                -> Json<String>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "::concord_core::advanced::AuthRequirement",
+                "::concord_core::advanced::AuthPlacement::Header",
+                "::concord_core::advanced::AuthUsageId::new(\"header\")",
+                "AuthProvenance::new(\"endpoint\")",
+                "step_id: ::core::option::Option::Some(\"Search:0:key\")",
+            ],
+        );
+        assert!(
+            !out.contains("auth_use_credential_ident_ir"),
+            "generated code should not call old auth-use helpers"
+        );
+        assert!(
+            !out.contains("emit_auth_usage_id"),
+            "generated code should not call old auth-use helpers"
+        );
+        assert!(
+            !out.contains("endpoint_qualified_name(ep)"),
+            "generated code should not reconstruct endpoint names"
+        );
+    }
+
+    #[test]
     fn generated_response_snapshot_contains_decode_and_body_plan() {
         let out = expanded(quote! {
             client ResponsePlanApi {

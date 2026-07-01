@@ -1055,9 +1055,8 @@ fn facade_endpoint_docs(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResol
         docs.push(LitStr::new("", ep.name.span()));
         docs.push(LitStr::new("Auth:", ep.name.span()));
         for auth in &ep.policy.auth {
-            let AuthUsePlanIr::Use(auth) = auth;
             docs.push(LitStr::new(
-                &format!("- {}", doc_auth_use(auth.as_ref())),
+                &format!("- {}", doc_auth_requirement(auth)),
                 ep.name.span(),
             ));
         }
@@ -1195,17 +1194,17 @@ fn doc_path(ep: &ResolvedEndpoint) -> String {
 }
 
 #[allow(dead_code)]
-fn doc_auth_use(auth: &AuthUseIr) -> String {
-    match &auth.kind {
-        AuthUseKindIr::Bearer { credential } => format!("bearer `{credential}`"),
-        AuthUseKindIr::Header { header, credential } => {
-            format!("header `{}` = `{credential}`", header.value())
+fn doc_auth_requirement(auth: &AuthRequirementIr) -> String {
+    match &auth.placement {
+        AuthPlacementIr::Bearer => format!("bearer `{}`", auth.credential),
+        AuthPlacementIr::Header { name } => {
+            format!("header `{}` = `{}`", name.value(), auth.credential)
         }
-        AuthUseKindIr::Query { key, credential } => {
-            format!("query `{}` = `{credential}`", key.value())
+        AuthPlacementIr::Query { key } => {
+            format!("query `{}` = `{}`", key.value(), auth.credential)
         }
-        AuthUseKindIr::Basic { credential } => format!("basic `{credential}`"),
-        AuthUseKindIr::Certificate { credential } => format!("certificate `{credential}`"),
+        AuthPlacementIr::Basic => format!("basic `{}`", auth.credential),
+        AuthPlacementIr::Certificate => format!("certificate `{}`", auth.credential),
     }
 }
 

@@ -2,14 +2,11 @@ fn emit_endpoint_auth_plan(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) ->
     if ep.policy.auth.is_empty() {
         return quote! { ::concord_core::advanced::AuthPlan::default() };
     }
-    let mut requirements = Vec::new();
-    for (idx, plan) in ep.policy.auth.iter().enumerate() {
-        match plan {
-            AuthUsePlanIr::Use(auth_use) => {
-                requirements.push(emit_auth_requirement(resolved_api, ep, idx, None, auth_use));
-            }
-        }
-    }
+    let requirements = ep
+        .policy
+        .auth
+        .iter()
+        .map(|req| emit_auth_requirement(resolved_api, req));
     quote! {
         ::concord_core::advanced::AuthPlan {
             requirements: ::std::vec![ #( #requirements ),* ],
@@ -19,33 +16,14 @@ fn emit_endpoint_auth_plan(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) ->
 
 fn emit_auth_requirement(
     resolved_api: &ResolvedApi,
-    ep: &ResolvedEndpoint,
-    idx: usize,
-    alt_idx: Option<usize>,
-    auth_use: &AuthUseIr,
+    requirement: &AuthRequirementIr,
 ) -> TokenStream2 {
-    let endpoint_key = endpoint_qualified_name(ep);
-    let credential = auth_use_credential_ident_ir(auth_use);
     let client_ns = LitStr::new(&resolved_api.client_name.to_string(), resolved_api.client_name.span());
-    let credential_name = LitStr::new(&credential.to_string(), credential.span());
-    let step_id = if let Some(alt) = alt_idx {
-        LitStr::new(
-            &format!("{}:{}:alt{}:{}", endpoint_key, idx, alt, credential),
-            Span::call_site(),
-        )
-    } else {
-        LitStr::new(
-            &format!("{}:{}:{}", endpoint_key, idx, credential),
-            Span::call_site(),
-        )
-    };
-    let provenance_layer = match auth_use.provenance {
-        AuthUseProvenanceIr::Client => LitStr::new("client", Span::call_site()),
-        AuthUseProvenanceIr::Scope(scope_id) => LitStr::new(&format!("scope:{scope_id}"), Span::call_site()),
-        AuthUseProvenanceIr::Endpoint => LitStr::new("endpoint", Span::call_site()),
-    };
-    let placement = emit_auth_placement(auth_use);
-    let usage_id = emit_auth_usage_id(auth_use);
+    let credential_name = LitStr::new(&requirement.credential.to_string(), requirement.credential.span());
+    let usage_id = LitStr::new(&requirement.usage_id, Span::call_site());
+    let step_id = LitStr::new(&requirement.step_id, Span::call_site());
+    let provenance = LitStr::new(&requirement.provenance.label, Span::call_site());
+    let placement = emit_auth_placement(&requirement.placement);
     quote! {
         ::concord_core::advanced::AuthRequirement {
             credential: ::concord_core::advanced::CredentialRef {
@@ -54,41 +32,24 @@ fn emit_auth_requirement(
             placement: #placement,
             usage_id: ::concord_core::advanced::AuthUsageId::new(#usage_id),
             step_id: ::core::option::Option::Some(#step_id),
-            provenance: ::concord_core::advanced::AuthProvenance::new(#provenance_layer),
+            provenance: ::concord_core::advanced::AuthProvenance::new(#provenance),
             challenge: ::concord_core::advanced::AuthChallengePolicy::Default,
         }
     }
 }
 
-fn emit_auth_placement(auth_use: &AuthUseIr) -> TokenStream2 {
-    match &auth_use.kind {
-        AuthUseKindIr::Bearer { .. } => quote! { ::concord_core::advanced::AuthPlacement::Bearer },
-        AuthUseKindIr::Header { header, .. } => quote! { ::concord_core::advanced::AuthPlacement::Header(#header) },
-        AuthUseKindIr::Query { key, .. } => quote! { ::concord_core::advanced::AuthPlacement::Query(#key) },
-        AuthUseKindIr::Basic { .. } => quote! { ::concord_core::advanced::AuthPlacement::Basic },
-        AuthUseKindIr::Certificate { .. } => quote! { ::concord_core::advanced::AuthPlacement::Certificate },
+fn emit_auth_placement(placement: &AuthPlacementIr) -> TokenStream2 {
+    match placement {
+        AuthPlacementIr::Bearer => quote! { ::concord_core::advanced::AuthPlacement::Bearer },
+        AuthPlacementIr::Header { name } => {
+            quote! { ::concord_core::advanced::AuthPlacement::Header(#name) }
+        }
+        AuthPlacementIr::Query { key } => {
+            quote! { ::concord_core::advanced::AuthPlacement::Query(#key) }
+        }
+        AuthPlacementIr::Basic => quote! { ::concord_core::advanced::AuthPlacement::Basic },
+        AuthPlacementIr::Certificate => {
+            quote! { ::concord_core::advanced::AuthPlacement::Certificate }
+        }
     }
 }
-
-fn emit_auth_usage_id(auth_use: &AuthUseIr) -> LitStr {
-    let value = match &auth_use.kind {
-        AuthUseKindIr::Bearer { .. } => "bearer",
-        AuthUseKindIr::Header { .. } => "header",
-        AuthUseKindIr::Query { .. } => "query",
-        AuthUseKindIr::Basic { .. } => "basic",
-        AuthUseKindIr::Certificate { .. } => "certificate",
-    };
-    LitStr::new(value, Span::call_site())
-}
-
-fn auth_use_credential_ident_ir(auth_use: &AuthUseIr) -> &Ident {
-    match &auth_use.kind {
-        AuthUseKindIr::Bearer { credential }
-        | AuthUseKindIr::Header { credential, .. }
-        | AuthUseKindIr::Query { credential, .. }
-        | AuthUseKindIr::Basic { credential }
-        | AuthUseKindIr::Certificate { credential } => credential,
-    }
-}
-
-
