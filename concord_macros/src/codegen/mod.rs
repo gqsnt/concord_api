@@ -1788,6 +1788,70 @@ mod tests {
     }
 
     #[test]
+    fn generated_pagination_endpoint_state_bindings_for_offset_limit() {
+        let out = expanded(quote! {
+            client SnapshotPaginationBindings {
+                base "https://example.com"
+            }
+
+            GET List(start: u64 = 0, count: u64 = 20)
+                query {
+                    "from" = start
+                    "pageSize" = count
+                }
+                paginate OffsetLimitPagination {
+                    offset = start,
+                    limit = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "EndpointField :: new",
+                "pub(crate) offset : :: concord_core :: advanced :: EndpointField",
+                "pub(crate) limit : :: concord_core :: advanced :: EndpointField",
+                "ep . start . clone ()",
+                "ep . count . clone ()",
+                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
+                "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"from\")",
+                "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"pageSize\")",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_pagination_endpoint_state_bindings_clone_non_copy_cursor() {
+        let out = expanded(quote! {
+            client SnapshotPaginationCursorBindings {
+                base "https://example.com"
+            }
+
+            GET List(cursor?: String, count: u64 = 20)
+                query {
+                    cursor
+                    count
+                }
+                paginate CursorPagination {
+                    cursor = cursor,
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "EndpointField :: new",
+                "ep . cursor . clone ()",
+                "ep . cursor = value",
+                "pub(crate) per_page : :: concord_core :: advanced :: EndpointField",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_pagination_public_surface_exposes_collect_not_for_each_page() {
         let out = expanded(quote! {
             client SnapshotPaginationSurface {

@@ -148,11 +148,17 @@ fn resolve_paginate(
                     unknown_scoped_name_message("endpoint var", "ep", endpoint_field, ep_vars),
                 )
             })?;
+            let endpoint_field_ty = if endpoint_info.optional {
+                let ty = &endpoint_info.ty;
+                syn::parse_quote!(::core::option::Option<#ty>)
+            } else {
+                endpoint_info.ty.clone()
+            };
             bindings.push(PaginationBindingIr {
                 controller_field: a.key.clone(),
                 endpoint_field: endpoint_field.clone(),
                 endpoint_rust_field: endpoint_info.rust.clone(),
-                endpoint_field_ty: endpoint_info.ty.clone(),
+                endpoint_field_ty,
                 assignment_span: lowered.span(),
             });
         }

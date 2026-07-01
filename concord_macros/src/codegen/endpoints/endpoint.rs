@@ -181,6 +181,7 @@ fn emit_endpoint_def(
     let execute_override = endpoint_execute_override(ep, cx_ty);
     let response_marker_impl = endpoint_response_marker_impl(ep, ty_name, cx_ty);
 
+    let pagination_endpoint_state_bindings = emit_pagination_endpoint_state_bindings(ep, ty_name);
     let pagination_plan = emit_endpoint_pagination_plan(ep);
     let pagination_marker_impl = if ep.paginate.is_some() {
         quote! {
@@ -322,9 +323,63 @@ fn emit_endpoint_def(
 
         #response_marker_impl
 
+        #pagination_endpoint_state_bindings
+
         #pagination_marker_impl
 
         #pending_request_ext
+    }
+}
+
+fn emit_pagination_endpoint_state_bindings(
+    ep: &ResolvedEndpoint,
+    ty_name: &Ident,
+) -> TokenStream2 {
+    let Some(p) = &ep.paginate else {
+        return quote! {};
+    };
+    if p.bindings.is_empty() {
+        return quote! {};
+    }
+
+    let helper_name = emit_helpers::ident(
+        &format!("__{}_pagination_bindings", ty_name),
+        Span::call_site(),
+    );
+    let struct_name = emit_helpers::ident(
+        &format!("__{}_PaginationBindings", ty_name),
+        Span::call_site(),
+    );
+    let fields = p.bindings.iter().map(|binding| {
+        let field = &binding.controller_field;
+        let field_ty = &binding.endpoint_field_ty;
+        quote! {
+            pub(crate) #field: ::concord_core::advanced::EndpointField<#ty_name, #field_ty>
+        }
+    });
+    let inits = p.bindings.iter().map(|binding| {
+        let field = &binding.controller_field;
+        let endpoint_field = &binding.endpoint_rust_field;
+        quote! {
+            #field: ::concord_core::advanced::EndpointField::new(
+                |ep: &#ty_name| ep.#endpoint_field.clone(),
+                |ep: &mut #ty_name, value| ep.#endpoint_field = value,
+            )
+        }
+    });
+
+    quote! {
+        #[allow(dead_code)]
+        struct #struct_name {
+            #( #fields, )*
+        }
+
+        #[allow(dead_code)]
+        fn #helper_name() -> #struct_name {
+            #struct_name {
+                #( #inits, )*
+            }
+        }
     }
 }
 
