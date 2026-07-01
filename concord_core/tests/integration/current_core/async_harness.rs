@@ -446,7 +446,11 @@ async fn counting_rate_limiter_records_lifecycle_completion() {
         .execute_decoded()
         .await
         .expect_err("acquire failure should stop before transport");
-    assert!(matches!(err, ApiClientError::RuntimeState { .. }));
+    assert!(matches!(err, ApiClientError::RateLimit { .. }));
+    assert_eq!(
+        err.rate_limit_error().map(|err| err.kind()),
+        Some(concord_core::advanced::RateLimitErrorKind::AcquireFailed)
+    );
     assert_eq!(sent.sent_count().await, 0);
     assert_eq!(
         failing_limiter

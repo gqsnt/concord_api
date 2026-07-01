@@ -76,7 +76,8 @@ pub mod prelude {
         PaginationTermination,
     };
     pub use crate::rate_limit::{
-        RateLimitObservation, RateLimitObserver, RateLimitResponseContext,
+        RateLimitError, RateLimitErrorKind, RateLimitObservation, RateLimitObserver,
+        RateLimitResponseContext,
     };
     pub use crate::request::{PaginatedRequest, PendingRequest};
     pub use crate::secret::SecretString;
@@ -122,10 +123,11 @@ pub mod advanced {
     };
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
-        RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
-        RateLimitKeyPart, RateLimitKeyValue, RateLimitPermit, RateLimitPlan,
-        RateLimitResponseAction, RateLimitResponseContext, RateLimitResponsePolicy,
-        RateLimitScopeHint, RateLimitSetting, RateLimitWindow, RateLimiter, parse_retry_after,
+        RateLimitBucketId, RateLimitBucketUse, RateLimitContext, RateLimitError,
+        RateLimitErrorKind, RateLimitFuture, RateLimitKey, RateLimitKeyPart, RateLimitKeyValue,
+        RateLimitPermit, RateLimitPlan, RateLimitResponseAction, RateLimitResponseContext,
+        RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting, RateLimitWindow,
+        RateLimiter, parse_retry_after,
     };
     pub use crate::record::{
         Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim, NdJson, RecordBody,

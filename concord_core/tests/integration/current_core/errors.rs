@@ -166,6 +166,36 @@ impl RateLimiter for FailingRateLimiter {
     }
 }
 
+struct ResponseActionFailingRateLimiter {
+    events: Arc<Mutex<Vec<String>>>,
+}
+
+impl ResponseActionFailingRateLimiter {
+    fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl RateLimiter for ResponseActionFailingRateLimiter {
+    fn on_response<'a>(
+        &'a self,
+        _ctx: concord_core::advanced::RateLimitResponseContext<'a>,
+    ) -> RateLimitFuture<'a, Result<concord_core::advanced::RateLimitResponseAction, ApiClientError>>
+    {
+        Box::pin(async move {
+            self.events.lock().await.push("rate_response".to_string());
+            Err(ApiClientError::RuntimeState {
+                ctx: concord_core::advanced::ErrorContext {
+                    endpoint: "Text",
+                    method: Method::GET,
+                },
+                subsystem: "rate-limit",
+                msg: "synthetic response-action failure",
+            })
+        })
+    }
+}
+
 fn diagnostics(err: &ApiClientError) -> String {
     let mut rendered = format!("{err}\n{err:?}\n{err:#?}\n");
     let mut source = err.source();
@@ -597,18 +627,52 @@ async fn rate_limit_acquire_error_is_typed_and_pre_transport() {
         .await
         .expect_err("rate limiter acquire should fail before transport");
 
-    assert!(matches!(
-        err,
-        ApiClientError::RuntimeState {
-            subsystem: "rate-limit",
-            ..
-        }
-    ));
-    assert_eq!(err.category(), ErrorCategory::InternalInvariant);
+    assert!(matches!(err, ApiClientError::RateLimit { .. }));
+    assert_eq!(err.category(), ErrorCategory::RateLimit);
+    assert_eq!(
+        err.rate_limit_error().map(|err| err.kind()),
+        Some(concord_core::advanced::RateLimitErrorKind::AcquireFailed)
+    );
     assert_eq!(transport.sent_count().await, 0);
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event == "transport"));
+    assert_error_safe(&err);
+    assert_observers_safe(&Arc::new(Mutex::new(events))).await;
+}
+
+#[tokio::test]
+async fn rate_limit_response_action_error_is_typed_and_post_transport() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let mut client = client(TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(ResponseActionFailingRateLimiter::new(
+            events.clone(),
+        )))
+        .runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())))
+        .debug_level(DebugLevel::VV)
+        .debug_sink(Arc::new(CapturingDebugSink::new(events.clone())));
+    });
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded()
+        .await
+        .expect_err("rate limiter response action should fail after transport");
+
+    assert!(matches!(err, ApiClientError::RateLimit { .. }));
+    assert_eq!(err.category(), ErrorCategory::RateLimit);
+    assert_eq!(
+        err.rate_limit_error().map(|err| err.kind()),
+        Some(concord_core::advanced::RateLimitErrorKind::ResponseActionFailed)
+    );
+    assert_eq!(transport.sent_count().await, 1);
+    let events = events.lock().await.clone();
+    assert!(events.iter().any(|event| event == "rate_response"));
     assert_error_safe(&err);
     assert_observers_safe(&Arc::new(Mutex::new(events))).await;
 }
@@ -847,14 +911,12 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
         .await
         .expect_err("raw rate-limit acquire failure should surface");
 
-    assert!(matches!(
-        rate_err,
-        ApiClientError::RuntimeState {
-            subsystem: "rate-limit",
-            ..
-        }
-    ));
-    assert_eq!(rate_err.category(), ErrorCategory::InternalInvariant);
+    assert!(matches!(rate_err, ApiClientError::RateLimit { .. }));
+    assert_eq!(rate_err.category(), ErrorCategory::RateLimit);
+    assert_eq!(
+        rate_err.rate_limit_error().map(|err| err.kind()),
+        Some(concord_core::advanced::RateLimitErrorKind::AcquireFailed)
+    );
     assert_eq!(rate_transport.sent_count().await, 0);
     let rate_events = rate_events.lock().await.clone();
     assert!(rate_events.iter().any(|event| event == "rate_acquire"));

@@ -82,6 +82,12 @@ pub enum ApiClientError {
     #[error("{ctx}: codec: {source}")]
     Codec { ctx: ErrorContext, source: FxError },
 
+    #[error("{ctx}: rate limit: {source}")]
+    RateLimit {
+        ctx: ErrorContext,
+        source: crate::rate_limit::RateLimitError,
+    },
+
     #[error("{ctx}: pagination: {msg}")]
     Pagination {
         ctx: ErrorContext,
@@ -196,6 +202,11 @@ impl Debug for ApiClientError {
                 .field("ctx", ctx)
                 .field("source", source)
                 .finish(),
+            Self::RateLimit { ctx, source } => f
+                .debug_struct("RateLimit")
+                .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
             Self::Pagination { ctx, msg } => f
                 .debug_struct("Pagination")
                 .field("ctx", ctx)
@@ -300,6 +311,31 @@ impl ApiClientError {
     }
 
     #[inline]
+    pub fn rate_limit(
+        ctx: ErrorContext,
+        kind: crate::rate_limit::RateLimitErrorKind,
+        message: impl Into<Cow<'static, str>>,
+    ) -> ApiClientError {
+        ApiClientError::RateLimit {
+            ctx,
+            source: crate::rate_limit::RateLimitError::new(kind, message),
+        }
+    }
+
+    #[inline]
+    pub fn rate_limit_with_source(
+        ctx: ErrorContext,
+        kind: crate::rate_limit::RateLimitErrorKind,
+        message: impl Into<Cow<'static, str>>,
+        source: impl Into<FxError>,
+    ) -> ApiClientError {
+        ApiClientError::RateLimit {
+            ctx,
+            source: crate::rate_limit::RateLimitError::new(kind, message).with_source(source),
+        }
+    }
+
+    #[inline]
     pub fn invalid_param(ctx: ErrorContext, param: impl Into<Cow<'static, str>>) -> ApiClientError {
         ApiClientError::InvalidParam {
             ctx,
@@ -322,6 +358,7 @@ impl ApiClientError {
             | ApiClientError::Transform { ctx, .. }
             | ApiClientError::NoContentStatusRequiresNoContent { ctx, .. }
             | ApiClientError::Codec { ctx, .. }
+            | ApiClientError::RateLimit { ctx, .. }
             | ApiClientError::Pagination { ctx, .. }
             | ApiClientError::PaginationLimit { ctx, .. }
             | ApiClientError::Auth { ctx, .. }
@@ -355,6 +392,7 @@ impl ApiClientError {
             | ApiClientError::Transform { .. }
             | ApiClientError::NoContentStatusRequiresNoContent { .. }
             | ApiClientError::Codec { .. } => ErrorCategory::Decode,
+            ApiClientError::RateLimit { .. } => ErrorCategory::RateLimit,
             ApiClientError::Pagination { .. } | ApiClientError::PaginationLimit { .. } => {
                 ErrorCategory::Pagination
             }
@@ -452,6 +490,14 @@ impl ApiClientError {
     ) -> Option<&crate::rate_limit::RateLimitResponseAction> {
         match self {
             ApiClientError::HttpStatus { rate_limit, .. } => rate_limit.as_deref(),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn rate_limit_error(&self) -> Option<&crate::rate_limit::RateLimitError> {
+        match self {
+            ApiClientError::RateLimit { source, .. } => Some(source),
             _ => None,
         }
     }

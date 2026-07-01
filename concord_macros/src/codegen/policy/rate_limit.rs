@@ -29,27 +29,29 @@ fn emit_rate_limit_plan(plan: &RateLimitPlanResolved, ctx: PolicyEmitCtx) -> Tok
         let key = emit_rate_limit_key(&bucket.key, ctx);
         let cost = bucket.cost;
         let windows = bucket.windows.iter().map(|window| {
-            let max = window.max;
-            let per_secs = window.per_secs;
-            quote! {
-                ::concord_core::advanced::RateLimitWindow::new(
-                    ::std::num::NonZeroU32::new(#max).ok_or_else(|| {
-                        ::concord_core::prelude::ApiClientError::PolicyViolation {
-                            ctx: ctx.clone(),
-                            msg: "validated rate-limit max was zero",
-                        }
-                    })?,
-                    ::std::time::Duration::from_secs(#per_secs),
-                )
-            }
-        });
+                let max = window.max;
+                let per_secs = window.per_secs;
+                quote! {
+                    ::concord_core::advanced::RateLimitWindow::new(
+                        ::std::num::NonZeroU32::new(#max).ok_or_else(|| {
+                            ::concord_core::prelude::ApiClientError::rate_limit(
+                                ctx.clone(),
+                                ::concord_core::prelude::RateLimitErrorKind::InvalidConfiguration,
+                                "validated rate-limit max was zero",
+                            )
+                        })?,
+                        ::std::time::Duration::from_secs(#per_secs),
+                    )
+                }
+            });
         quote! {
             ::concord_core::advanced::RateLimitBucketUse::new(#kind, #name, #key)
                 .with_cost(::std::num::NonZeroU32::new(#cost).ok_or_else(|| {
-                    ::concord_core::prelude::ApiClientError::PolicyViolation {
-                        ctx: ctx.clone(),
-                        msg: "validated rate-limit cost was zero",
-                    }
+                    ::concord_core::prelude::ApiClientError::rate_limit(
+                        ctx.clone(),
+                        ::concord_core::prelude::RateLimitErrorKind::InvalidConfiguration,
+                        "validated rate-limit cost was zero",
+                    )
                 })?)
                 .with_windows(::std::vec![ #( #windows ),* ])
         }

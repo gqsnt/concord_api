@@ -41,7 +41,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .runtime_state
             .rate_limiter()
             .acquire(rate_limit_meta)
-            .await?;
+            .await
+            .map_err(|err| {
+                wrap_rate_limit_error(
+                    send_ctx.error_ctx.clone(),
+                    crate::rate_limit::RateLimitErrorKind::AcquireFailed,
+                    "rate-limit acquire failed",
+                    err,
+                )
+            })?;
         if let (Some(limit), Some(hint)) = (stream_request_limit, built.stream_size_hint) {
             if let Some(actual) = hint.upper() {
                 if actual > limit as u64 {
@@ -80,6 +88,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn observe_rate_limit_response(
         &self,
         ctx: ResponseObservationCtx<'_>,
+        error_ctx: &ErrorContext,
     ) -> Result<RateLimitResponseAction, ApiClientError> {
         let rate_limit_meta = RateLimitContext {
             endpoint: ctx.endpoint,
@@ -99,6 +108,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 headers: ctx.headers,
             })
             .await
+            .map_err(|err| {
+                wrap_rate_limit_error(
+                    error_ctx.clone(),
+                    crate::rate_limit::RateLimitErrorKind::ResponseActionFailed,
+                    "rate-limit response action failed",
+                    err,
+                )
+            })
     }
 
     async fn send_built_request(
@@ -193,7 +210,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     ) -> Result<BuiltResponse, ApiClientError> {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self.observe_rate_limit_response(observe_ctx).await?;
+        let rate_limit_action = self
+            .observe_rate_limit_response(observe_ctx, ctx)
+            .await?;
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
@@ -352,7 +371,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self.observe_rate_limit_response(observe_ctx).await?;
+        let rate_limit_action = self
+            .observe_rate_limit_response(observe_ctx, ctx)
+            .await?;
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
@@ -411,7 +432,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self.observe_rate_limit_response(observe_ctx).await?;
+        let rate_limit_action = self
+            .observe_rate_limit_response(observe_ctx, ctx)
+            .await?;
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
@@ -464,7 +487,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self.observe_rate_limit_response(observe_ctx).await?;
+        let rate_limit_action = self
+            .observe_rate_limit_response(observe_ctx, ctx)
+            .await?;
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
@@ -563,4 +588,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .unwrap_or(false)
     }
 
+}
+
+fn wrap_rate_limit_error(
+    ctx: crate::error::ErrorContext,
+    kind: crate::rate_limit::RateLimitErrorKind,
+    message: &'static str,
+    err: crate::error::ApiClientError,
+) -> crate::error::ApiClientError {
+    match err {
+        crate::error::ApiClientError::RateLimit { .. } => err,
+        other => crate::error::ApiClientError::rate_limit_with_source(ctx, kind, message, other),
+    }
 }

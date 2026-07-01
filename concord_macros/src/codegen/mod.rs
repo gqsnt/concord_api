@@ -1884,6 +1884,8 @@ mod tests {
                 "policy . add_rate_limit (:: concord_core :: advanced :: RateLimitPlan :: from_buckets",
                 "RateLimitBucketUse :: new (\"application\" , \"app_0\"",
                 "RateLimitBucketUse :: new",
+                "ApiClientError :: rate_limit",
+                "RateLimitErrorKind :: InvalidConfiguration",
             ],
         );
         assert!(!out.contains("compile_error!(concat!(\"unresolvedrate_limitkey"));
@@ -1930,6 +1932,7 @@ mod tests {
                 "RateLimitBucketUse::new(\"application\",\"app_0\"",
                 "policy.set_retry(::concord_core::advanced::RetryConfig",
                 "policy.add_rate_limit(::concord_core::advanced::RateLimitPlan::from_buckets",
+                "ApiClientError :: rate_limit",
             ],
         );
     }

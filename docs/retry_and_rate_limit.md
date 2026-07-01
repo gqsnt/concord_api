@@ -78,6 +78,8 @@ GET Search
 A response observer can translate provider headers into rate-limit observations.
 
 Rate-limit acquisition happens after request planning, auth preparation, and auth collision validation, and before transport send. It is transport-metadata only. Rate-limit response observation is also metadata only and does not expose request body bytes, response body bytes, or raw auth material.
+
+Rate-limit configuration, acquire, and response-action failures now surface as structured `ApiClientError::RateLimit` values with an inspectable `RateLimitErrorKind`. The execution order and retry behavior are unchanged.
 Pure transport errors do not produce response observation.
 
 `rate_limit [...]` lists must not be empty and must not contain duplicate profile names within the same list. Reusing a profile across separate defaults, scopes, endpoints, or behaviors remains valid. Empty inline `rate_limit {}` blocks are rejected because they have no effect. Use `rate_limit off` to clear inherited rate-limit policy.

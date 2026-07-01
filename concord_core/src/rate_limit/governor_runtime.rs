@@ -84,7 +84,7 @@ impl GovernorRateLimiter {
         let mut guard = self
             .windows
             .lock()
-            .map_err(|_| rate_limit_runtime_state_error(ctx, "rate limit window lock poisoned"))?;
+            .map_err(|_| rate_limit_internal_error(ctx, "rate limit window lock poisoned"))?;
         let now = Instant::now();
         self.prune_windows(&mut guard, now);
         if let Some(existing) = guard.get_mut(&spec) {
@@ -150,7 +150,7 @@ impl GovernorRateLimiter {
             let delay = {
                 let keys = cooldown_keys_for_acquire(ctx)?;
                 let mut guard = self.cooldowns.lock().map_err(|_| {
-                    rate_limit_runtime_state_error(ctx, "rate limit cooldown lock poisoned")
+                    rate_limit_internal_error(ctx, "rate limit cooldown lock poisoned")
                 })?;
                 guard.retain(|_, until| *until > now);
                 keys.into_iter()
@@ -204,11 +204,12 @@ impl GovernorRateLimiter {
         }
 
         let until = Instant::now().checked_add(delay).ok_or_else(|| {
-            rate_limit_policy_error(ctx, "rate-limit cooldown duration overflowed")
+            rate_limit_configuration_error(ctx, "rate-limit cooldown duration overflowed")
         })?;
-        let mut guard = self.cooldowns.lock().map_err(|_| {
-            rate_limit_runtime_state_error(ctx, "rate limit cooldown lock poisoned")
-        })?;
+        let mut guard = self
+            .cooldowns
+            .lock()
+            .map_err(|_| rate_limit_internal_error(ctx, "rate limit cooldown lock poisoned"))?;
         for key in keys {
             let entry = guard.entry(key).or_insert(until);
             if *entry < until {
@@ -237,7 +238,7 @@ impl RateLimiter for GovernorRateLimiter {
                     };
                     let limiter = self.limiter_for(&ctx, spec)?;
                     limiter.until_n_ready(bucket.cost).await.map_err(|_| {
-                        rate_limit_policy_error(&ctx, "rate-limit cost exceeds bucket capacity")
+                        rate_limit_acquire_error(&ctx, "rate-limit cost exceeds bucket capacity")
                     })?;
                 }
             }
@@ -262,33 +263,62 @@ fn quota_for_window(
     window: &RateLimitWindow,
 ) -> Result<Quota, ApiClientError> {
     if window.per.is_zero() {
-        return Err(rate_limit_policy_error(
+        return Err(rate_limit_configuration_error(
             ctx,
             "rate-limit window duration must not be zero",
         ));
     }
     let per_cell = window.per.checked_div(window.max.get()).ok_or_else(|| {
-        rate_limit_policy_error(ctx, "rate-limit window duration is too small for max")
+        rate_limit_configuration_error(ctx, "rate-limit window duration is too small for max")
     })?;
     if per_cell.is_zero() {
-        return Err(rate_limit_policy_error(
+        return Err(rate_limit_configuration_error(
             ctx,
             "rate-limit window duration is too small for max",
         ));
     }
     Quota::with_period(per_cell)
         .map(|quota| quota.allow_burst(window.max))
-        .ok_or_else(|| rate_limit_policy_error(ctx, "invalid rate-limit quota"))
+        .ok_or_else(|| rate_limit_configuration_error(ctx, "invalid rate-limit quota"))
 }
 
-fn rate_limit_policy_error(ctx: &RateLimitContext<'_>, msg: &'static str) -> ApiClientError {
-    ApiClientError::PolicyViolation {
-        ctx: ErrorContext {
+fn rate_limit_error(
+    ctx: &RateLimitContext<'_>,
+    kind: crate::rate_limit::RateLimitErrorKind,
+    msg: &'static str,
+) -> ApiClientError {
+    ApiClientError::rate_limit(
+        ErrorContext {
             endpoint: ctx.endpoint,
             method: ctx.method.clone(),
         },
+        kind,
         msg,
-    }
+    )
+}
+
+fn rate_limit_configuration_error(ctx: &RateLimitContext<'_>, msg: &'static str) -> ApiClientError {
+    rate_limit_error(
+        ctx,
+        crate::rate_limit::RateLimitErrorKind::InvalidConfiguration,
+        msg,
+    )
+}
+
+fn rate_limit_invalid_key_error(ctx: &RateLimitContext<'_>, msg: &'static str) -> ApiClientError {
+    rate_limit_error(ctx, crate::rate_limit::RateLimitErrorKind::InvalidKey, msg)
+}
+
+fn rate_limit_acquire_error(ctx: &RateLimitContext<'_>, msg: &'static str) -> ApiClientError {
+    rate_limit_error(
+        ctx,
+        crate::rate_limit::RateLimitErrorKind::AcquireFailed,
+        msg,
+    )
+}
+
+fn rate_limit_internal_error(ctx: &RateLimitContext<'_>, msg: &'static str) -> ApiClientError {
+    rate_limit_error(ctx, crate::rate_limit::RateLimitErrorKind::Internal, msg)
 }
 
 fn resolve_key(
@@ -441,21 +471,10 @@ fn cooldown_keys_for_target(
 }
 
 fn missing_host_key_error(ctx: &RateLimitContext<'_>) -> ApiClientError {
-    rate_limit_policy_error(
+    rate_limit_invalid_key_error(
         ctx,
         "rate_limit key `[host]` requires request URL to have a host",
     )
-}
-
-fn rate_limit_runtime_state_error(ctx: &RateLimitContext<'_>, msg: &'static str) -> ApiClientError {
-    ApiClientError::RuntimeState {
-        ctx: ErrorContext {
-            endpoint: ctx.endpoint,
-            method: ctx.method.clone(),
-        },
-        subsystem: "rate-limit",
-        msg,
-    }
 }
 
 #[cfg(test)]
@@ -562,7 +581,11 @@ mod tests {
             .store_cooldown(&ctx, &RateLimitTarget::Endpoint, Duration::MAX)
             .expect_err("overflowing cooldown should fail");
 
-        assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+        assert!(matches!(err, ApiClientError::RateLimit { .. }));
+        assert!(matches!(
+            err.rate_limit_error().map(|err| err.kind()),
+            Some(crate::rate_limit::RateLimitErrorKind::InvalidConfiguration)
+        ));
         assert!(err.to_string().contains("cooldown duration overflowed"));
     }
 
@@ -620,12 +643,10 @@ mod tests {
             .acquire(test_context())
             .await
             .expect_err("poisoned rate-limit window lock should fail");
+        assert!(matches!(err, ApiClientError::RateLimit { .. }));
         assert!(matches!(
-            err,
-            ApiClientError::RuntimeState {
-                subsystem: "rate-limit",
-                ..
-            }
+            err.rate_limit_error().map(|err| err.kind()),
+            Some(crate::rate_limit::RateLimitErrorKind::Internal)
         ));
         assert!(err.to_string().contains("rate limit window lock poisoned"));
     }
@@ -639,12 +660,10 @@ mod tests {
             .acquire(test_context())
             .await
             .expect_err("poisoned rate-limit cooldown lock should fail");
+        assert!(matches!(err, ApiClientError::RateLimit { .. }));
         assert!(matches!(
-            err,
-            ApiClientError::RuntimeState {
-                subsystem: "rate-limit",
-                ..
-            }
+            err.rate_limit_error().map(|err| err.kind()),
+            Some(crate::rate_limit::RateLimitErrorKind::Internal)
         ));
         assert!(
             err.to_string()

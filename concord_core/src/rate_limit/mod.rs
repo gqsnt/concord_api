@@ -1,4 +1,5 @@
 mod context;
+mod error;
 mod limiter;
 mod plan;
 mod response;
@@ -7,6 +8,7 @@ mod response;
 mod governor_runtime;
 
 pub use context::{RateLimitContext, RateLimitPermit, RateLimitResponseContext};
+pub use error::{RateLimitError, RateLimitErrorKind};
 #[cfg(feature = "rate-limit-governor")]
 pub use governor_runtime::{DefaultRateLimiter, GovernorRateLimiter};
 pub use limiter::{NoopRateLimiter, RateLimitFuture, RateLimiter};

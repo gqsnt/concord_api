@@ -758,7 +758,11 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
 
     assert_eq!(
         err.category(),
-        concord_core::error::ErrorCategory::InternalInvariant
+        concord_core::error::ErrorCategory::RateLimit
+    );
+    assert_eq!(
+        err.rate_limit_error().map(|err| err.kind()),
+        Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
     );
     assert!(err.to_string().contains("cooldown duration overflowed"));
     assert_eq!(sent_transport.sent_count().await, 1);
