@@ -77,18 +77,8 @@ pub(crate) enum RouteLayerKind {
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub(crate) struct NormEndpointLine {
-    pub span: Span,
-    pub method: Ident,
-    pub name: Ident,
-    pub alias: Option<Ident>,
-}
-
-#[derive(Debug)]
-#[allow(dead_code)]
 pub(crate) struct NormEndpoint {
     pub span: Span,
-    pub line: NormEndpointLine,
     pub method: Ident,
     pub name: Ident,
     pub alias: Option<Ident>,
@@ -140,5 +130,40 @@ mod tests {
             items: Vec::new(),
         };
         assert!(tree.items.is_empty());
+    }
+
+    #[test]
+    fn normalized_endpoint_identity_is_stored_once() {
+        let endpoint = NormEndpoint {
+            span: Span::call_site(),
+            method: Ident::new("GET", Span::call_site()),
+            name: Ident::new("Ping", Span::call_site()),
+            alias: Some(Ident::new("ping", Span::call_site())),
+            route: RouteExpr { atoms: Vec::new() },
+            params: Vec::new(),
+            policy: PolicyBlocks::default(),
+            behavior_uses: Vec::new(),
+            auth_uses: Vec::new(),
+            retry: None,
+            rate_limit: None,
+            rate_limit_keys: Vec::new(),
+            paginate: None,
+            body: None,
+            response: crate::ast::RawIoSpec {
+                marker: syn::parse_quote!(Json<String>),
+                enc: syn::parse_quote!(Json),
+                ty: syn::parse_quote!(String),
+                args: vec![syn::parse_quote!(String)],
+                had_angle_args: true,
+            },
+            map: None,
+        };
+
+        assert_eq!(endpoint.method, "GET");
+        assert_eq!(endpoint.name, "Ping");
+        assert_eq!(
+            endpoint.alias.as_ref().map(ToString::to_string).as_deref(),
+            Some("ping")
+        );
     }
 }

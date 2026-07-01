@@ -127,12 +127,6 @@ fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEndpoint> {
     let auth_uses = normalize_auth_uses(raw.auth_uses)?;
     Ok(NormEndpoint {
         span: raw.span,
-        line: NormEndpointLine {
-            span: raw.line.span,
-            method: raw.line.method,
-            name: raw.line.name,
-            alias: raw.line.alias,
-        },
         method: raw.method,
         name: raw.name,
         alias: raw.alias,
