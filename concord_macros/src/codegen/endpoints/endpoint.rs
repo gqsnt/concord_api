@@ -22,9 +22,9 @@ fn emit_endpoint_def(
         if v.optional {
             fields_ts.push(quote! { pub(crate) #f: ::core::option::Option<#ty> });
             if let Some(setter) = facade_setter_for_var(facade, f) {
-                let set = emit_helpers::ident(&setter.set_name, f.span());
-                let opt = emit_helpers::ident(&setter.set_optional_name, f.span());
-                let clear = emit_helpers::ident(&setter.clear_name, f.span());
+                let set = setter.set_name.clone();
+                let opt = setter.set_optional_name.clone();
+                let clear = setter.clear_name.clone();
                 let set_doc = LitStr::new(&setter.set_doc, f.span());
                 let opt_doc = LitStr::new(&setter.set_optional_doc, f.span());
                 let clear_doc = LitStr::new(&setter.clear_doc, f.span());
@@ -44,9 +44,9 @@ fn emit_endpoint_def(
             fields_ts.push(quote! { pub(crate) #f: #ty });
             if let Some(default) = &v.default {
                 if let Some(setter) = facade_setter_for_var(facade, f) {
-                    let set = emit_helpers::ident(&setter.set_name, f.span());
-                    let opt = emit_helpers::ident(&setter.set_optional_name, f.span());
-                    let clear = emit_helpers::ident(&setter.clear_name, f.span());
+                    let set = setter.set_name.clone();
+                    let opt = setter.set_optional_name.clone();
+                    let clear = setter.clear_name.clone();
                     let set_doc = LitStr::new(&setter.set_doc, f.span());
                     let opt_doc = LitStr::new(&setter.set_optional_doc, f.span());
                     let clear_doc = LitStr::new(&setter.clear_doc, f.span());
@@ -194,9 +194,9 @@ fn emit_endpoint_def(
         let v = endpoint_var_for_setter(ep, setter)?;
         let f = &v.rust;
         let ty = &v.ty;
-        let set = emit_helpers::ident(&setter.set_name, f.span());
-        let opt = emit_helpers::ident(&setter.set_optional_name, f.span());
-        let clear = emit_helpers::ident(&setter.clear_name, f.span());
+        let set = setter.set_name.clone();
+        let opt = setter.set_optional_name.clone();
+        let clear = setter.clear_name.clone();
         let set_doc = LitStr::new(&setter.set_doc, f.span());
         let opt_doc = LitStr::new(&setter.set_optional_doc, f.span());
         let clear_doc = LitStr::new(&setter.clear_doc, f.span());
@@ -211,11 +211,10 @@ fn emit_endpoint_def(
     });
     let pending_setter_impls = facade.setters.iter().filter_map(|setter| {
         let v = endpoint_var_for_setter(ep, setter)?;
-        let f = &v.rust;
         let ty = &v.ty;
-        let set = emit_helpers::ident(&setter.set_name, f.span());
-        let opt = emit_helpers::ident(&setter.set_optional_name, f.span());
-        let clear = emit_helpers::ident(&setter.clear_name, f.span());
+        let set = setter.set_name.clone();
+        let opt = setter.set_optional_name.clone();
+        let clear = setter.clear_name.clone();
         Some(
             quote! {
                 #[inline]
@@ -490,7 +489,7 @@ fn facade_setter_for_var<'a>(facade: &'a FacadeEndpoint, field: &Ident) -> Optio
     facade
         .setters
         .iter()
-        .find(|setter| field == setter.field.as_str())
+        .find(|setter| field == &setter.field)
 }
 
 fn endpoint_var_for_setter<'a>(

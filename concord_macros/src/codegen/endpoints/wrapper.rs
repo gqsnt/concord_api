@@ -132,7 +132,7 @@ fn emit_client_wrapper(
         let Some(v) = resolved_api
             .client_vars
             .iter()
-            .find(|var| var.rust == setter.field.as_str())
+            .find(|var| var.rust == setter.field)
         else {
             return emit_helpers::compile_error_tokens(
                 "FacadeIr client setter must target a resolved client var",
@@ -141,9 +141,9 @@ fn emit_client_wrapper(
         };
         let f = &v.rust;
         let ty = &v.ty;
-        let set_name = emit_helpers::ident(&setter.set_name, f.span());
+        let set_name = setter.set_name.clone();
         if v.optional {
-            let clear_name = emit_helpers::ident(&setter.clear_name, f.span());
+            let clear_name = setter.clear_name.clone();
             quote! {
                 #[inline]
                 pub fn #set_name(&mut self, v: #ty) -> &mut Self {
@@ -211,7 +211,7 @@ fn emit_client_wrapper(
         let Some(v) = resolved_api
             .client_auth_vars
             .iter()
-            .find(|var| var.rust == setter.field.as_str())
+            .find(|var| var.rust == setter.field)
         else {
             return emit_helpers::compile_error_tokens(
                 "FacadeIr auth setter must target a resolved auth var",
@@ -219,11 +219,11 @@ fn emit_client_wrapper(
             );
         };
         let f = &v.rust;
-        let set_name = emit_helpers::ident(&setter.set_name, f.span());
+        let set_name = setter.set_name.clone();
         let rebuild_auth_state =
             has_custom_credentials || credential_secret_names.contains(&f.to_string());
         if v.optional {
-            let clear_name = emit_helpers::ident(&setter.clear_name, f.span());
+            let clear_name = setter.clear_name.clone();
             if rebuild_auth_state {
                 quote! {
                     #[inline]
@@ -320,10 +320,10 @@ fn emit_client_wrapper(
                 name.span(),
             ));
         };
-        let acquire_name = emit_helpers::ident(&methods.acquire_name, name.span());
-        let set_name = emit_helpers::ident(&methods.set_name, name.span());
-        let clear_name = emit_helpers::ident(&methods.clear_name, name.span());
-        let has_name = emit_helpers::ident(&methods.has_name, name.span());
+        let acquire_name = methods.acquire_name.clone();
+        let set_name = methods.set_name.clone();
+        let clear_name = methods.clear_name.clone();
+        let has_name = methods.has_name.clone();
         Some(quote! {
             #[inline]
             pub async fn #acquire_name(
@@ -368,7 +368,7 @@ fn emit_client_wrapper(
                 name.span(),
             ));
         };
-        let method = emit_helpers::ident(&methods.pending_method, name.span());
+        let method = methods.pending_method.clone();
         let trait_name = acquire_as_trait_ident(client_ty, name);
         Some(quote! {
             pub trait #trait_name<'a> {
@@ -688,7 +688,7 @@ fn emit_tree_facade(
                     ep.name.span(),
                 );
             };
-            emit_facade_endpoint_method(ep, facade, client_ty, cx_ty, &[], true)
+            emit_facade_endpoint_method(facade, client_ty, cx_ty, true)
         });
     let scope_structs = facade_ir
         .scopes
@@ -713,9 +713,9 @@ fn emit_scope_ctor_method(
     method_ir: Option<&FacadeMethod>,
 ) -> TokenStream2 {
     let method_name = method_ir.map_or(&scope_ir.public_method, |method| &method.public_name);
-    let span = Span::call_site();
-    let method = emit_helpers::ident(method_name, span);
-    let struct_name = emit_helpers::ident(&scope_ir.rust_type_name, span);
+    let span = method_name.span();
+    let method = method_name.clone();
+    let struct_name = scope_ir.rust_type_name.clone();
     let docs = method_ir.map_or(&scope_ir.constructor_docs, |method| &method.docs);
     let docs = facade_docs_to_lit(docs, span);
     let parent_decl_count = parent_scope.map_or(0, |s| s.decls.len());
@@ -790,8 +790,8 @@ fn emit_facade_scope_struct(
     cx_ty: &Ident,
     scope_ir: &FacadeScope,
 ) -> TokenStream2 {
-    let span = Span::call_site();
-    let struct_name = emit_helpers::ident(&scope_ir.rust_type_name, span);
+    let span = scope_ir.rust_type_name.span();
+    let struct_name = scope_ir.rust_type_name.clone();
     let docs = facade_docs_to_lit(&scope_ir.docs, span);
     let fields = scope_ir.decls.iter().map(|v| {
         let name = &v.rust;
@@ -806,7 +806,7 @@ fn emit_facade_scope_struct(
         let var = scope_ir
             .decls
             .iter()
-            .find(|var| var.rust == setter.field.as_str())?;
+            .find(|var| var.rust == setter.field)?;
         Some(emit_scope_setter(setter, var))
     });
     let child_methods = scope_ir.methods.iter().map(|method| {
@@ -831,18 +831,9 @@ fn emit_facade_scope_struct(
             if facade.scope_path != scope_ir.path {
                 return None;
             }
-            Some(
-            emit_facade_endpoint_method(
-                ep,
-                facade,
-                client_ty,
-                cx_ty,
-                &scope_ir.decls,
-                false,
-            )
-            )
+            Some(emit_facade_endpoint_method(facade, client_ty, cx_ty, false))
         });
-    let auth_accessor_methods = if scope_ir.path.len() == 1 && scope_ir.path[0] == "auth" {
+    let auth_accessor_methods = if scope_ir.path.len() == 1 && scope_ir.path[0].to_string() == "auth" {
         emit_auth_accessor_methods(resolved_api, client_ty)
     } else {
         quote! {}
@@ -865,69 +856,43 @@ fn emit_facade_scope_struct(
 }
 
 fn emit_facade_endpoint_method(
-    ep: &ResolvedEndpoint,
     facade: &FacadeEndpoint,
     _client_ty: &Ident,
     cx_ty: &Ident,
-    captured: &[VarInfo],
     root: bool,
 ) -> TokenStream2 {
-    let endpoint_ty = ep.scope_modules.iter().fold(quote! { endpoints }, |acc, scope| {
-        quote! { #acc::#scope }
+    let endpoint_path = facade_endpoint_path(&facade.target);
+    let method = facade.public_method.clone();
+    let signature_args = facade.required_args.iter().map(|arg| {
+        let name = &arg.name;
+        let ty = &arg.ty;
+        quote! { #name: #ty }
     });
-    let endpoint_name = &ep.name;
-    let endpoint_path = quote! { #endpoint_ty::#endpoint_name };
-    let method = emit_helpers::ident(&facade.public_method, ep.name.span());
-    let captured_names = captured
+    let new_args: Vec<TokenStream2> = facade
+        .constructor
+        .args
         .iter()
-        .map(|v| v.rust.to_string())
-        .collect::<std::collections::BTreeSet<_>>();
-    let body_arg = match endpoint_request_body_inner_ty(ep) {
-        Ok(Some(ty)) => Some(quote! { body: #ty }),
-        Ok(None) => None,
-        Err(err) => return err,
-    };
-    let call_args: Vec<TokenStream2> = ep
-        .vars
-        .iter()
-        .filter(|v| facade.required_args.iter().any(|arg| v.rust == arg.name))
-        .map(|v| {
-            let name = &v.rust;
-            let ty = &v.ty;
-            if captured_names.contains(&name.to_string()) {
-                quote! {}
-            } else {
-                quote! { #name: #ty }
-            }
+        .map(|arg| match arg {
+            FacadeConstructorArg::PublicArg { name } => quote! { #name },
+            FacadeConstructorArg::CapturedScopeField { name } => quote! { self.#name },
         })
-        .filter(|tokens| !tokens.is_empty())
         .collect();
-    let new_args: Vec<TokenStream2> = ep
-        .vars
+    let captured_setters: Vec<TokenStream2> = facade
+        .captured_setters
         .iter()
-        .filter(|v| !v.optional && v.default.is_none())
-        .map(|v| {
-            let name = &v.rust;
-            if captured_names.contains(&name.to_string()) {
-                quote! { self.#name }
-            } else {
-                quote! { #name }
-            }
-        })
-        .chain(body_arg.as_ref().map(|_| quote! { body }))
-        .collect();
-    let captured_setters: Vec<TokenStream2> = captured.iter().filter(|v| v.optional || v.default.is_some()).map(|v| {
-        let name = &v.rust;
-        if v.optional {
-            quote! {
-                if let ::core::option::Option::Some(value) = self.#name {
-                    __ep.#name = ::core::option::Option::Some(value);
+        .map(|captured| {
+            let name = &captured.field;
+            if captured.optional {
+                quote! {
+                    if let ::core::option::Option::Some(value) = self.#name {
+                        __ep.#name = ::core::option::Option::Some(value);
+                    }
                 }
+            } else {
+                quote! { __ep.#name = self.#name; }
             }
-        } else {
-            quote! { __ep.#name = self.#name; }
-        }
-    }).collect();
+        })
+        .collect();
     let self_arg = if root {
         quote! { &self }
     } else {
@@ -936,8 +901,8 @@ fn emit_facade_endpoint_method(
     let client_expr = if root { quote! { self } } else { quote! { __client } };
     let lifetime = if root { quote! { '_ } } else { quote! { 'a } };
     let bind_client = if root { quote! {} } else { quote! { let __client = self.client; } };
-    let args: Vec<TokenStream2> = call_args.into_iter().chain(body_arg).collect();
-    let docs = facade_ir_endpoint_docs(facade, ep.name.span());
+    let args: Vec<TokenStream2> = signature_args.collect();
+    let docs = facade_ir_endpoint_docs(facade, facade.public_method.span());
 
     quote! {
         #( #[doc = #docs] )*
@@ -951,12 +916,19 @@ fn emit_facade_endpoint_method(
     }
 }
 
+fn facade_endpoint_path(target: &FacadeEndpointTarget) -> TokenStream2 {
+    let endpoint = &target.endpoint;
+    let path = target.scope_path.iter().fold(quote! { endpoints }, |acc, scope| {
+        quote! { #acc::#scope }
+    });
+    quote! { #path::#endpoint }
+}
+
 fn emit_scope_setter(setter: &FacadeSetter, var: &VarInfo) -> TokenStream2 {
-    let span = var.rust.span();
-    let name = emit_helpers::ident(&setter.set_name, span);
+    let name = setter.set_name.clone();
     let ty = &var.ty;
     if var.optional {
-        let clear = emit_helpers::ident(&setter.clear_name, span);
+        let clear = setter.clear_name.clone();
         quote! {
             #[inline]
             pub fn #name(mut self, value: #ty) -> Self {
@@ -981,11 +953,10 @@ fn emit_scope_setter(setter: &FacadeSetter, var: &VarInfo) -> TokenStream2 {
 }
 
 fn facade_ir_for_endpoint<'a>(facade_ir: &'a FacadeIr, ep: &ResolvedEndpoint) -> Option<&'a FacadeEndpoint> {
-    let target = endpoint_qualified_name(ep);
     facade_ir
         .endpoints
         .iter()
-        .find(|candidate| candidate.target_endpoint == target)
+        .find(|candidate| candidate.target.scope_path == ep.scope_modules && candidate.target.endpoint == ep.name)
 }
 
 fn facade_credential_methods_for<'a>(
@@ -995,7 +966,7 @@ fn facade_credential_methods_for<'a>(
     facade_ir
         .credential_methods
         .iter()
-        .find(|methods| name == methods.credential.as_str())
+        .find(|methods| name == &methods.credential)
 }
 
 fn facade_ir_endpoint_docs(facade: &FacadeEndpoint, span: Span) -> Vec<LitStr> {
@@ -1014,12 +985,12 @@ fn facade_docs_to_lit(docs: &[FacadeDoc], span: Span) -> Vec<LitStr> {
 
 fn facade_scope_ir_for_path<'a>(
     facade_ir: &'a FacadeIr,
-    path: &[String],
+    path: &[Ident],
 ) -> Option<&'a FacadeScope> {
     facade_ir
         .scopes
         .iter()
-        .find(|scope| scope.path == path)
+        .find(|scope| scope.path.as_slice() == path)
 }
 
 fn behavior_doc_line(names: &[String]) -> Option<String> {

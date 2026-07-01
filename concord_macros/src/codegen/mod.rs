@@ -7,8 +7,9 @@
 use crate::emit_helpers;
 use crate::model::SetOp;
 use crate::model::facade::{
-    FacadeCredentialMethods, FacadeDoc, FacadeEndpoint, FacadeIr, FacadeMethod, FacadeScope,
-    FacadeSetter, build_facade_ir, client_prefixed_type_name, generated_acquire_as_trait_type_name,
+    FacadeConstructorArg, FacadeCredentialMethods, FacadeDoc, FacadeEndpoint, FacadeEndpointTarget,
+    FacadeIr, FacadeMethod, FacadeScope, FacadeSetter, build_facade_ir, client_prefixed_type_name,
+    generated_acquire_as_trait_type_name,
 };
 use crate::sema::*;
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -121,7 +122,7 @@ include!("policy/mod.rs");
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::facade::SetterForm;
+    use crate::model::facade::{FacadeArgKind, FacadeConstructorArg, SetterForm};
     use quote::quote;
 
     fn expanded(input: TokenStream2) -> String {
@@ -131,6 +132,18 @@ mod tests {
             .chars()
             .filter(|ch| !ch.is_whitespace())
             .collect()
+    }
+
+    fn ident_text(ident: &syn::Ident) -> String {
+        ident.to_string()
+    }
+
+    fn ident_vec_text(idents: &[syn::Ident]) -> Vec<String> {
+        idents.iter().map(ToString::to_string).collect()
+    }
+
+    fn type_text(ty: &syn::Type) -> String {
+        quote::quote!(#ty).to_string()
     }
 
     fn assert_contains_all(expanded: &str, snippets: &[&str]) {
@@ -194,7 +207,7 @@ mod tests {
                 base "https://example.com"
             }
 
-            scope teams(team_id: u64) {
+            scope teams(team_id: u64, locale?: String) {
                 path ["teams", team_id]
 
                 POST Create(name: String, tag?: String, body: Json<CreateBody>)
@@ -208,35 +221,82 @@ mod tests {
         });
         let ir = build_facade_ir(&resolved);
 
-        assert_eq!(ir.client_name, "FacadeMeta");
+        assert_eq!(ident_text(&ir.client_name), "FacadeMeta");
         assert_eq!(ir.endpoints.len(), 1);
 
         let endpoint = &ir.endpoints[0];
-        assert_eq!(endpoint.target_endpoint, "teams::Create");
-        assert_eq!(endpoint.public_method, "create_team");
-        assert_eq!(endpoint.scope_path, vec!["teams"]);
+        assert_eq!(ident_text(&endpoint.target.endpoint), "Create");
+        assert_eq!(
+            ident_vec_text(&endpoint.target.scope_path),
+            vec!["teams".to_string()]
+        );
+        assert_eq!(ident_text(&endpoint.public_method), "create_team");
+        assert_eq!(
+            ident_vec_text(&endpoint.scope_path),
+            vec!["teams".to_string()]
+        );
         assert_eq!(
             endpoint
                 .required_args
                 .iter()
-                .map(|arg| (arg.name.as_str(), arg.ty.as_str()))
+                .map(|arg| {
+                    let ty = &arg.ty;
+                    (arg.name.to_string(), type_text(ty), arg.kind)
+                })
                 .collect::<Vec<_>>(),
-            vec![("name", "String"), ("body", "CreateBody")]
+            vec![
+                (
+                    "name".to_string(),
+                    "String".to_string(),
+                    FacadeArgKind::Value
+                ),
+                (
+                    "body".to_string(),
+                    "CreateBody".to_string(),
+                    FacadeArgKind::Body
+                ),
+            ]
+        );
+        assert_eq!(
+            endpoint
+                .constructor
+                .args
+                .iter()
+                .map(|arg| match arg {
+                    FacadeConstructorArg::PublicArg { name } => name.to_string(),
+                    FacadeConstructorArg::CapturedScopeField { name } => {
+                        format!("captured:{name}")
+                    }
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                "captured:team_id".to_string(),
+                "name".to_string(),
+                "body".to_string(),
+            ]
+        );
+        assert_eq!(
+            endpoint
+                .captured_setters
+                .iter()
+                .map(|setter| (setter.field.to_string(), setter.optional))
+                .collect::<Vec<_>>(),
+            vec![("locale".to_string(), true)]
         );
         assert!(
             !endpoint
                 .required_args
                 .iter()
-                .any(|arg| arg.name == "team_id"),
+                .any(|arg| arg.name == quote::format_ident!("team_id")),
             "captured scope params must not appear in endpoint facade args"
         );
 
         let tag = endpoint
             .setters
             .iter()
-            .find(|setter| setter.field == "tag")
+            .find(|setter| setter.field == quote::format_ident!("tag"))
             .expect("tag setter metadata");
-        assert_eq!(tag.ty, "String");
+        assert_eq!(type_text(&tag.ty), "String");
         assert_eq!(
             tag.forms,
             vec![SetterForm::Set, SetterForm::SetOptional, SetterForm::Clear]
@@ -261,9 +321,12 @@ mod tests {
             endpoint
                 .required_args
                 .iter()
-                .map(|arg| (arg.name.as_str(), arg.ty.as_str()))
+                .map(|arg| {
+                    let ty = &arg.ty;
+                    (arg.name.to_string(), type_text(ty))
+                })
                 .collect::<Vec<_>>(),
-            vec![("body", "StreamBody")]
+            vec![("body".to_string(), "StreamBody".to_string())]
         );
     }
 
@@ -285,9 +348,15 @@ mod tests {
             endpoint
                 .required_args
                 .iter()
-                .map(|arg| (arg.name.as_str(), arg.ty.as_str()))
+                .map(|arg| {
+                    let ty = &arg.ty;
+                    (arg.name.to_string(), type_text(ty))
+                })
                 .collect::<Vec<_>>(),
-            vec![("body", "::concord_core::advanced::RecordBody<LogEntry>")]
+            vec![(
+                "body".to_string(),
+                ":: concord_core :: advanced :: RecordBody < LogEntry >".to_string()
+            )]
         );
     }
 
@@ -309,9 +378,15 @@ mod tests {
             endpoint
                 .required_args
                 .iter()
-                .map(|arg| (arg.name.as_str(), arg.ty.as_str()))
+                .map(|arg| {
+                    let ty = &arg.ty;
+                    (arg.name.to_string(), type_text(ty))
+                })
                 .collect::<Vec<_>>(),
-            vec![("body", "::concord_core::advanced::MultipartBody")]
+            vec![(
+                "body".to_string(),
+                ":: concord_core :: advanced :: MultipartBody".to_string()
+            )]
         );
     }
 
@@ -474,11 +549,14 @@ mod tests {
         let regional = ir
             .scopes
             .iter()
-            .find(|scope| scope.path == ["regional"])
+            .find(|scope| ident_vec_text(&scope.path) == vec!["regional".to_string()])
             .expect("regional scope metadata");
-        assert_eq!(regional.public_method, "regional");
-        assert_eq!(regional.rust_type_name, "ScopeMetaRegionalScope");
-        assert_eq!(regional.parent_path, Vec::<String>::new());
+        assert_eq!(ident_text(&regional.public_method), "regional");
+        assert_eq!(
+            ident_text(&regional.rust_type_name),
+            "ScopeMetaRegionalScope"
+        );
+        assert_eq!(ident_vec_text(&regional.parent_path), Vec::<String>::new());
         assert_eq!(
             regional
                 .decls
@@ -490,19 +568,19 @@ mod tests {
         let locale = regional
             .setters
             .iter()
-            .find(|setter| setter.field == "locale")
+            .find(|setter| setter.field == quote::format_ident!("locale"))
             .expect("scope setter metadata");
-        assert_eq!(locale.set_name, "locale");
-        assert_eq!(locale.clear_name, "clear_locale");
+        assert_eq!(ident_text(&locale.set_name), "locale");
+        assert_eq!(ident_text(&locale.clear_name), "clear_locale");
         assert!(locale.set_doc.contains("scope parameter"));
         assert_eq!(regional.methods.len(), 1);
-        assert_eq!(regional.methods[0].public_name, "teams");
+        assert_eq!(ident_text(&regional.methods[0].public_name), "teams");
         assert_eq!(
-            regional.methods[0].target_scope_path,
+            ident_vec_text(&regional.methods[0].target_scope_path),
             vec!["regional".to_string(), "teams".to_string()]
         );
         assert_eq!(
-            regional.methods[0].target_scope_type_name,
+            ident_text(&regional.methods[0].target_scope_type_name),
             "ScopeMetaRegionalTeamsScope"
         );
         assert!(
@@ -529,25 +607,25 @@ mod tests {
         let endpoint = ir
             .endpoints
             .iter()
-            .find(|endpoint| endpoint.target_endpoint == "Search")
+            .find(|endpoint| ident_text(&endpoint.target.endpoint) == "Search")
             .expect("search endpoint metadata");
         let filter = endpoint
             .setters
             .iter()
-            .find(|setter| setter.field == "filter")
+            .find(|setter| setter.field == quote::format_ident!("filter"))
             .expect("filter setter metadata");
-        assert_eq!(filter.set_name, "filter");
-        assert_eq!(filter.set_optional_name, "filter_opt");
-        assert_eq!(filter.clear_name, "clear_filter");
+        assert_eq!(ident_text(&filter.set_name), "filter");
+        assert_eq!(ident_text(&filter.set_optional_name), "filter_opt");
+        assert_eq!(ident_text(&filter.clear_name), "clear_filter");
         assert!(filter.set_doc.contains("optional query parameter"));
 
         let count = endpoint
             .setters
             .iter()
-            .find(|setter| setter.field == "count")
+            .find(|setter| setter.field == quote::format_ident!("count"))
             .expect("count setter metadata");
-        assert_eq!(count.set_optional_name, "count_opt");
-        assert_eq!(count.clear_name, "clear_count");
+        assert_eq!(ident_text(&count.set_optional_name), "count_opt");
+        assert_eq!(ident_text(&count.clear_name), "clear_count");
         assert!(count.clear_doc.contains("default `20`"));
     }
 
@@ -568,11 +646,11 @@ mod tests {
         let setter = ir.endpoints[0]
             .setters
             .iter_mut()
-            .find(|setter| setter.field == "filter")
+            .find(|setter| setter.field == quote::format_ident!("filter"))
             .expect("filter setter metadata");
-        setter.set_name = "with_filter_from_ir".to_string();
-        setter.set_optional_name = "with_filter_opt_from_ir".to_string();
-        setter.clear_name = "without_filter_from_ir".to_string();
+        setter.set_name = quote::format_ident!("with_filter_from_ir");
+        setter.set_optional_name = quote::format_ident!("with_filter_opt_from_ir");
+        setter.clear_name = quote::format_ident!("without_filter_from_ir");
         setter.set_doc = "IR supplied set doc.".to_string();
 
         let out = emit_resolved(resolved, &ir)
