@@ -1111,6 +1111,38 @@ mod tests {
     }
 
     #[test]
+    fn generated_oauth2_client_credentials_provider_is_typed() {
+        let out = expanded(quote! {
+            client OAuthProviderApi {
+                base "https://example.com"
+                secret client_id: String
+                secret client_secret: String
+
+                credential oauth = oauth2_client {
+                    token_url: "https://auth.example.com/oauth/token",
+                    client_id: secret.client_id,
+                    client_secret: secret.client_secret,
+                    scope: "read:me",
+                }
+            }
+
+            GET OAuthMe
+                path ["oauth-me"]
+                auth bearer oauth
+                -> Json<String>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "::concord_core::advanced::OAuth2ClientCredentialsProvider::from_validated_token_url",
+                ".scope(\"read:me\")",
+                "CredentialId::new(\"OAuthProviderApi\",\"oauth\")",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_response_snapshot_contains_decode_and_body_plan() {
         let out = expanded(quote! {
             client ResponsePlanApi {
@@ -1141,6 +1173,28 @@ mod tests {
                 "format : __body_format",
                 "ResponsePlan",
                 "decode : __decode_",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_invalid_codec_headers_return_typed_errors() {
+        let out = expanded(quote! {
+            client CodecErrorApi {
+                base "https://example.com"
+            }
+
+            POST Upload(body: Json<UploadBody>)
+                path ["upload"]
+                -> Json<UploadResponse>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "BodyCodec>::try_content_type()",
+                "ResponseCodec>::try_accept()",
+                "::concord_core::prelude::ApiClientError::invalid_param",
             ],
         );
     }
@@ -1834,6 +1888,50 @@ mod tests {
         );
         assert!(!out.contains("compile_error!(concat!(\"unresolvedrate_limitkey"));
         assert!(!out.contains("endpoint/scoperate_limitkeycannotbeusedinclientbasepolicy"));
+    }
+
+    #[test]
+    fn generated_retry_and_rate_limit_snapshot_contains_resolved_policy() {
+        let out = expanded(quote! {
+            client SnapshotPolicy {
+                base "https://example.com"
+
+                retry read {
+                    max_attempts 2
+                    methods [GET]
+                    on [401, 403]
+                    retry_after
+                }
+
+                rate_limit app {
+                    bucket application by [host] {
+                        10 / 1s
+                    }
+                }
+
+                default {
+                    retry read
+                    rate_limit app
+                }
+            }
+
+            GET Ping
+                as ping
+                path ["ping"]
+                -> Json<String>;
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "::http::StatusCode::from_u16(401u16)",
+                "::http::StatusCode::from_u16(403u16)",
+                "RateLimitWindow::new(::std::num::NonZeroU32::new(10u32).ok_or_else",
+                "RateLimitBucketUse::new(\"application\",\"app_0\"",
+                "policy.set_retry(::concord_core::advanced::RetryConfig",
+                "policy.add_rate_limit(::concord_core::advanced::RateLimitPlan::from_buckets",
+            ],
+        );
     }
 
     #[test]

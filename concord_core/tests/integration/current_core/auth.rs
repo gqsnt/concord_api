@@ -1135,6 +1135,33 @@ async fn oauth_client_credentials_expires_in_overflow_returns_typed_error() {
     assert_eq!(sent.sent_count().await, 1);
 }
 
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn oauth_client_credentials_invalid_token_url_returns_typed_error() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+    );
+    let sent = transport.clone();
+    let client = auth_http_client(transport, AuthHttpLimitVars::oauth_invalid_token_url());
+
+    let err = client
+        .request(AuthHttpLimitEndpoint)
+        .execute_decoded()
+        .await
+        .expect_err("invalid OAuth token URL should fail before transport");
+
+    match err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
+            assert!(source.to_string().contains("invalid oauth2 token URL"));
+        }
+        other => panic!("expected auth configuration error, got {other:?}"),
+    }
+    assert_eq!(sent.sent_count().await, 0);
+}
+
 fn assert_auth_response_too_large(err: ApiClientError, limit: usize) {
     match err {
         ApiClientError::Auth { source, .. } => {
@@ -1149,6 +1176,8 @@ fn assert_auth_response_too_large(err: ApiClientError, limit: usize) {
 struct AuthHttpLimitVars {
     max_body_bytes: usize,
     use_oauth: bool,
+    #[cfg(feature = "json")]
+    invalid_oauth_token_url: bool,
 }
 
 impl AuthHttpLimitVars {
@@ -1156,6 +1185,8 @@ impl AuthHttpLimitVars {
         Self {
             max_body_bytes,
             use_oauth: false,
+            #[cfg(feature = "json")]
+            invalid_oauth_token_url: false,
         }
     }
 
@@ -1164,6 +1195,17 @@ impl AuthHttpLimitVars {
         Self {
             max_body_bytes: AuthInternalPolicy::DEFAULT_MAX_BODY_BYTES,
             use_oauth: true,
+            #[cfg(feature = "json")]
+            invalid_oauth_token_url: false,
+        }
+    }
+
+    #[cfg(feature = "json")]
+    fn oauth_invalid_token_url() -> Self {
+        Self {
+            max_body_bytes: AuthInternalPolicy::DEFAULT_MAX_BODY_BYTES,
+            use_oauth: true,
+            invalid_oauth_token_url: true,
         }
     }
 }
@@ -1193,9 +1235,14 @@ impl ClientContext for AuthHttpLimitCx {
             let material = if auth.use_oauth {
                 #[cfg(feature = "json")]
                 {
-                    let provider = OAuth2ClientCredentialsProvider::new(
+                    let token_url = if auth.invalid_oauth_token_url {
+                        "https://[invalid"
+                    } else {
+                        "https://auth.example.com/token"
+                    };
+                    let provider = OAuth2ClientCredentialsProvider::from_validated_token_url(
                         CredentialId::new("test", "oauth"),
-                        "https://auth.example.com/token".parse().expect("token url"),
+                        token_url,
                         "client-id",
                         "client-secret",
                     );
