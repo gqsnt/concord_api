@@ -1,0 +1,6 @@
+error: unknown endpoint var `ep.does_not_exist`
+       available endpoint vars: `ep.page`
+  --> tests/trybuild/fail/pagination/custom_endpoint_state_unknown_field.rs:10:20
+   |
+10 |             page = does_not_exist
+   |                    ^^^^^^^^^^^^^^

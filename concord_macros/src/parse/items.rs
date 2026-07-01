@@ -321,11 +321,31 @@ fn unsupported_endpoint_clause_error(tt: TokenTree) -> syn::Error {
 impl Parse for PaginateSpec {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         input.parse::<kw::paginate>()?;
+        let endpoint_state = if input.peek(kw::endpoint_state) {
+            input.parse::<kw::endpoint_state>()?;
+            true
+        } else {
+            false
+        };
         let ctrl_ty: Path = input.parse()?;
+        let bindings_ty = if endpoint_state {
+            input.parse::<kw::bindings>()?;
+            Some(input.parse::<Type>()?)
+        } else {
+            None
+        };
 
         if !input.peek(token::Brace) {
+            if endpoint_state {
+                return Err(syn::Error::new(
+                    input.span(),
+                    "endpoint_state pagination requires `bindings Type { ... }`",
+                ));
+            }
             return Ok(Self {
+                endpoint_state,
                 ctrl_ty,
+                bindings_ty,
                 assigns: Vec::new(),
             });
         }
@@ -359,7 +379,12 @@ impl Parse for PaginateSpec {
             first = false;
         }
 
-        Ok(Self { ctrl_ty, assigns })
+        Ok(Self {
+            endpoint_state,
+            ctrl_ty,
+            bindings_ty,
+            assigns,
+        })
     }
 }
 

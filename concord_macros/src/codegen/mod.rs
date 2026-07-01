@@ -1949,6 +1949,50 @@ mod tests {
     }
 
     #[test]
+    fn generated_custom_uses_endpoint_state_pagination_runtime() {
+        let out = expanded(quote! {
+            client SnapshotCustomEndpointState {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 2)
+                headers {
+                    "X-Page" = page,
+                    "X-Count" = count,
+                }
+                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                    page = page,
+                    count = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "endpoint_state_pagination",
+                "EndpointPaginationRuntimeAdapter",
+                "EndpointPaginationController",
+                "HeaderPagePagination",
+                "HeaderPageBindings",
+                "EndpointField :: new",
+            ],
+        );
+        assert!(
+            !out.contains("page_key"),
+            "endpoint-state custom pagination must not be keyed by query strings"
+        );
+        assert!(
+            !out.contains("count_key"),
+            "endpoint-state custom pagination must not be keyed by query strings"
+        );
+        assert!(
+            !out.contains("PaginationPlan :: custom"),
+            "endpoint-state custom pagination should not require the old custom plan bound"
+        );
+    }
+
+    #[test]
     fn generated_cursor_uses_endpoint_state_pagination_runtime() {
         let out = expanded(quote! {
             client SnapshotCursorRuntime {

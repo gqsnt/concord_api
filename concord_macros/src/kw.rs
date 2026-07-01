@@ -48,6 +48,8 @@ syn::custom_keyword!(params);
 syn::custom_keyword!(credential);
 
 syn::custom_keyword!(paginate);
+syn::custom_keyword!(endpoint_state);
+syn::custom_keyword!(bindings);
 syn::custom_keyword!(body);
 syn::custom_keyword!(map);
 syn::custom_keyword!(fmt);

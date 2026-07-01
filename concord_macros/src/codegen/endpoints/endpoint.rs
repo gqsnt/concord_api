@@ -205,7 +205,7 @@ fn emit_endpoint_def(
                         ::core::option::Option::Some(::std::boxed::Box::new(
                             ::concord_core::internal::EndpointPaginationRuntimeAdapter::new(
                                 ::concord_core::advanced::OffsetLimitPagination::default(),
-                                #helper_name(),
+                                Self::#helper_name(),
                             ),
                         ))
                     }
@@ -244,7 +244,7 @@ fn emit_endpoint_def(
                         ::core::option::Option::Some(::std::boxed::Box::new(
                             ::concord_core::internal::EndpointPaginationRuntimeAdapter::new(
                                 ctrl,
-                                #helper_name(),
+                                Self::#helper_name(),
                             ),
                         ))
                     }
@@ -270,7 +270,39 @@ fn emit_endpoint_def(
                         ::core::option::Option::Some(::std::boxed::Box::new(
                             ::concord_core::internal::EndpointPaginationRuntimeAdapter::new(
                                 ::concord_core::advanced::PagedPagination::default(),
-                                #helper_name(),
+                                Self::#helper_name(),
+                            ),
+                        ))
+                    }
+                }
+            }
+        } else if let PaginationControllerResolved::CustomEndpointState { ctrl_ty, bindings_ty } = &p.controller {
+            let helper_name = emit_helpers::ident(
+                &format!("__{}_pagination_bindings", ty_name),
+                Span::call_site(),
+            );
+            quote! {
+                impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name
+                where
+                    #ctrl_ty: ::core::default::Default
+                        + ::concord_core::advanced::EndpointPaginationController<
+                            #ty_name,
+                            <#ty_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::Response,
+                            Bindings = #bindings_ty::<#ty_name>,
+                        >,
+                {
+                    #[inline]
+                    fn endpoint_state_pagination(
+                        &self,
+                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::EndpointPaginationRuntime<Self, Self::Response>>>
+                    where
+                        Self: Sized,
+                        Self::Response: ::concord_core::advanced::PageItems,
+                    {
+                        ::core::option::Option::Some(::std::boxed::Box::new(
+                            ::concord_core::internal::EndpointPaginationRuntimeAdapter::new(
+                                <#ctrl_ty as ::core::default::Default>::default(),
+                                Self::#helper_name(),
                             ),
                         ))
                     }
@@ -369,6 +401,7 @@ fn emit_endpoint_def(
                 Self { #( #init_parts, )* }
             }
             #( #setters_ts )*
+            #pagination_endpoint_state_bindings
         }
 
         #response_decode_fn
@@ -417,8 +450,6 @@ fn emit_endpoint_def(
 
         #response_marker_impl
 
-        #pagination_endpoint_state_bindings
-
         #pagination_marker_impl
 
         #pending_request_ext
@@ -455,17 +486,17 @@ fn emit_pagination_endpoint_state_bindings(
         return quote! {
             #[allow(dead_code)]
             fn #helper_name() -> ::concord_core::advanced::CursorBindings<
-                #ty_name,
-                <<#ty_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::Response as ::concord_core::advanced::HasNextCursor>::Cursor
+                Self,
+                <<Self as ::concord_core::prelude::Endpoint<super::#cx_ty>>::Response as ::concord_core::advanced::HasNextCursor>::Cursor
             > {
                 ::concord_core::advanced::CursorBindings {
                     cursor: ::concord_core::advanced::EndpointField::new(
-                        |ep: &#ty_name| ep.#cursor_field.clone(),
-                        |ep: &mut #ty_name, value| ep.#cursor_field = value,
+                        |ep: &Self| ep.#cursor_field.clone(),
+                        |ep: &mut Self, value| ep.#cursor_field = value,
                     ),
                     per_page: ::concord_core::advanced::EndpointField::new(
-                        |ep: &#ty_name| ep.#per_page_field.clone(),
-                        |ep: &mut #ty_name, value| ep.#per_page_field = value,
+                        |ep: &Self| ep.#per_page_field.clone(),
+                        |ep: &mut Self, value| ep.#per_page_field = value,
                     ),
                 }
             }
@@ -484,15 +515,15 @@ fn emit_pagination_endpoint_state_bindings(
         let limit_field = &limit.endpoint_rust_field;
         return quote! {
             #[allow(dead_code)]
-            fn #helper_name() -> ::concord_core::advanced::OffsetLimitBindings<#ty_name> {
+            fn #helper_name() -> ::concord_core::advanced::OffsetLimitBindings<Self> {
                 ::concord_core::advanced::OffsetLimitBindings {
                     offset: ::concord_core::advanced::EndpointField::new(
-                        |ep: &#ty_name| ep.#offset_field.clone(),
-                        |ep: &mut #ty_name, value| ep.#offset_field = value,
+                        |ep: &Self| ep.#offset_field.clone(),
+                        |ep: &mut Self, value| ep.#offset_field = value,
                     ),
                     limit: ::concord_core::advanced::EndpointField::new(
-                        |ep: &#ty_name| ep.#limit_field.clone(),
-                        |ep: &mut #ty_name, value| ep.#limit_field = value,
+                        |ep: &Self| ep.#limit_field.clone(),
+                        |ep: &mut Self, value| ep.#limit_field = value,
                     ),
                 }
             }
@@ -511,16 +542,36 @@ fn emit_pagination_endpoint_state_bindings(
         let per_page_field = &per_page.endpoint_rust_field;
         return quote! {
             #[allow(dead_code)]
-            fn #helper_name() -> ::concord_core::advanced::PagedBindings<#ty_name> {
+            fn #helper_name() -> ::concord_core::advanced::PagedBindings<Self> {
                 ::concord_core::advanced::PagedBindings {
                     page: ::concord_core::advanced::EndpointField::new(
-                        |ep: &#ty_name| ep.#page_field.clone(),
-                        |ep: &mut #ty_name, value| ep.#page_field = value,
+                        |ep: &Self| ep.#page_field.clone(),
+                        |ep: &mut Self, value| ep.#page_field = value,
                     ),
                     per_page: ::concord_core::advanced::EndpointField::new(
-                        |ep: &#ty_name| ep.#per_page_field.clone(),
-                        |ep: &mut #ty_name, value| ep.#per_page_field = value,
+                        |ep: &Self| ep.#per_page_field.clone(),
+                        |ep: &mut Self, value| ep.#per_page_field = value,
                     ),
+                }
+            }
+        };
+    }
+    if let PaginationControllerResolved::CustomEndpointState { bindings_ty, .. } = &p.controller {
+        let inits = p.bindings.iter().map(|binding| {
+            let field = &binding.controller_field;
+            let endpoint_field = &binding.endpoint_rust_field;
+            quote! {
+                #field: ::concord_core::advanced::EndpointField::new(
+                    |ep: &Self| ep.#endpoint_field.clone(),
+                    |ep: &mut Self, value| ep.#endpoint_field = value,
+                )
+            }
+        });
+        return quote! {
+            #[allow(dead_code)]
+            fn #helper_name() -> #bindings_ty::<Self> {
+                #bindings_ty::<Self> {
+                    #( #inits, )*
                 }
             }
         };
@@ -668,6 +719,9 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
             let __pagination_plan = ::core::option::Option::Some(
                 ::concord_core::internal::PaginationPlan::custom::<#ctrl_ty, #page_ty>()
             );
+        },
+        PaginationControllerResolved::CustomEndpointState { .. } => quote! {
+            let __pagination_plan = ::core::option::Option::None;
         },
         PaginationControllerResolved::OffsetLimit(ctrl) => {
             let auto_key_assigns = [

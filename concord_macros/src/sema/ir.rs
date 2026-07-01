@@ -530,6 +530,10 @@ pub enum PaginationControllerResolved {
     Cursor(CursorPaginationResolved),
     Paged(PagedPaginationResolved),
     Custom { ctrl_ty: syn::Path },
+    CustomEndpointState {
+        ctrl_ty: syn::Path,
+        bindings_ty: Type,
+    },
 }
 
 impl PaginationControllerResolved {
@@ -539,6 +543,9 @@ impl PaginationControllerResolved {
             PaginationControllerResolved::Cursor(_) => "CursorPagination".to_string(),
             PaginationControllerResolved::Paged(_) => "PagedPagination".to_string(),
             PaginationControllerResolved::Custom { ctrl_ty } => quote::quote!(#ctrl_ty).to_string(),
+            PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => {
+                quote::quote!(#ctrl_ty).to_string()
+            }
         }
     }
 }

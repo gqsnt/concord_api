@@ -627,6 +627,69 @@ mod tests {
     }
 
     #[test]
+    fn parses_old_custom_paginate_syntax_as_fallback_controller() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            client Api {
+                base "https://example.com"
+            }
+
+            GET List
+                path ["items"]
+                paginate HeaderPagePagination
+                -> Json<Vec<String>>
+            "#,
+        )
+        .expect("old custom paginate syntax parses");
+
+        let RawItem::Endpoint(endpoint) = &ast.items[0] else {
+            panic!("expected endpoint");
+        };
+        let paginate = endpoint.paginate.as_ref().expect("paginate");
+        assert!(!paginate.endpoint_state);
+        assert!(paginate.bindings_ty.is_none());
+        let ctrl_ty = &paginate.ctrl_ty;
+        assert_eq!(quote::quote!(#ctrl_ty).to_string(), "HeaderPagePagination");
+        assert!(paginate.assigns.is_empty());
+    }
+
+    #[test]
+    fn parses_endpoint_state_custom_paginate_syntax_with_bindings_type() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            client Api {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 2)
+                path ["items"]
+                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                    page = page,
+                    count = count
+                }
+                -> Json<Vec<String>>
+            "#,
+        )
+        .expect("endpoint-state custom paginate syntax parses");
+
+        let RawItem::Endpoint(endpoint) = &ast.items[0] else {
+            panic!("expected endpoint");
+        };
+        let paginate = endpoint.paginate.as_ref().expect("paginate");
+        assert!(paginate.endpoint_state);
+        let ctrl_ty = &paginate.ctrl_ty;
+        assert_eq!(quote::quote!(#ctrl_ty).to_string(), "HeaderPagePagination");
+        let bindings_ty = paginate.bindings_ty.as_ref().expect("bindings ty");
+        assert_eq!(
+            quote::quote!(#bindings_ty).to_string(),
+            "HeaderPageBindings"
+        );
+        assert_eq!(paginate.assigns.len(), 2);
+        assert_eq!(paginate.assigns[0].key.to_string(), "page");
+        assert_eq!(paginate.assigns[1].key.to_string(), "count");
+    }
+
+    #[test]
     fn parses_scope_with_host_and_path_preserves_raw_shape() {
         let ast: RawApi = syn::parse_str(
             r#"

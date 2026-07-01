@@ -3678,6 +3678,109 @@ mod tests {
     }
 
     #[test]
+    fn custom_endpoint_state_pagination_bindings_resolve() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            client PageApi {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 2)
+                path ["items"]
+                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                    page = page,
+                    count = count
+                }
+                -> Json<Vec<String>>
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let pagination = resolved_api.endpoints[0]
+            .paginate
+            .as_ref()
+            .expect("pagination resolved");
+        match &pagination.controller {
+            PaginationControllerResolved::CustomEndpointState {
+                ctrl_ty,
+                bindings_ty,
+            } => {
+                assert_eq!(quote::quote!(#ctrl_ty).to_string(), "HeaderPagePagination");
+                assert_eq!(
+                    quote::quote!(#bindings_ty).to_string(),
+                    "HeaderPageBindings"
+                );
+            }
+            other => panic!("expected custom endpoint-state pagination, got {other:?}"),
+        }
+        assert_eq!(pagination.bindings.len(), 2);
+        assert_eq!(pagination.bindings[0].controller_field.to_string(), "page");
+        assert_eq!(pagination.bindings[1].controller_field.to_string(), "count");
+        assert_eq!(
+            pagination.bindings[0].endpoint_rust_field.to_string(),
+            "page"
+        );
+        assert_eq!(
+            pagination.bindings[1].endpoint_rust_field.to_string(),
+            "count"
+        );
+    }
+
+    #[test]
+    fn custom_endpoint_state_pagination_rejects_unknown_endpoint_field() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            client PageApi {
+                base "https://example.com"
+            }
+
+            GET List(count: u64 = 2)
+                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                    page = does_not_exist
+                }
+                -> Json<Vec<String>>
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("unknown endpoint field should fail");
+
+        assert!(
+            err.to_string()
+                .contains("unknown endpoint var `ep.does_not_exist`")
+                || err.to_string().contains("available endpoint vars"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn old_custom_pagination_remains_fallback() {
+        let resolved_api = analyze_source(
+            r#"
+            client PageApi {
+                base "https://example.com"
+            }
+
+            GET List
+                paginate HeaderPagePagination
+                -> Json<Vec<String>>
+            "#,
+        );
+
+        let pagination = resolved_api.endpoints[0]
+            .paginate
+            .as_ref()
+            .expect("pagination resolved");
+        match &pagination.controller {
+            PaginationControllerResolved::Custom { ctrl_ty } => {
+                assert_eq!(quote::quote!(#ctrl_ty).to_string(), "HeaderPagePagination");
+            }
+            other => panic!("expected old custom fallback controller, got {other:?}"),
+        }
+        assert!(pagination.bindings.is_empty());
+    }
+
+    #[test]
     fn pagination_auto_key_bindings_are_resolved_in_sema() {
         let resolved_api = analyze_source(
             r#"

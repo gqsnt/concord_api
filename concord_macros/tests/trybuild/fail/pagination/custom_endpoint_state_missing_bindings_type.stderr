@@ -1,0 +1,5 @@
+error: expected `bindings`
+ --> tests/trybuild/fail/pagination/custom_endpoint_state_missing_bindings_type.rs:9:54
+  |
+9 |         paginate endpoint_state HeaderPagePagination {
+  |                                                      ^

@@ -1,0 +1,5 @@
+error: endpoint_state pagination bindings must reference endpoint variables
+  --> tests/trybuild/fail/pagination/custom_endpoint_state_literal_rhs.rs:10:20
+   |
+10 |             page = 1
+   |                    ^

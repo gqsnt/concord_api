@@ -121,11 +121,28 @@ fn resolve_paginate(
     endpoint_policy: &PolicyBlocksResolved,
     scope_policies: &[PolicyBlocksResolved],
 ) -> Result<PaginateResolved> {
-    let controller_kind = paginate_controller_kind(&p.ctrl_ty);
+    let mut controller_kind = paginate_controller_kind(&p.ctrl_ty);
+    if p.endpoint_state {
+        if !matches!(controller_kind, PaginationControllerKind::Custom) {
+            return Err(syn::Error::new_spanned(
+                &p.ctrl_ty,
+                "endpoint_state pagination is only supported for custom controllers",
+            ));
+        }
+        controller_kind = PaginationControllerKind::CustomEndpointState;
+    }
     if matches!(controller_kind, PaginationControllerKind::Custom) && !p.assigns.is_empty() {
         return Err(syn::Error::new_spanned(
             &p.ctrl_ty,
             "custom pagination controllers use `paginate TypePath` without a configuration block",
+        ));
+    }
+    if matches!(controller_kind, PaginationControllerKind::CustomEndpointState)
+        && p.bindings_ty.is_none()
+    {
+        return Err(syn::Error::new_spanned(
+            &p.ctrl_ty,
+            "endpoint_state custom pagination requires an explicit bindings type",
         ));
     }
     let mut assigns = Vec::new();
@@ -135,6 +152,47 @@ fn resolve_paginate(
     for a in &p.assigns {
         validate_paginate_assignment_key(controller_kind, &a.key)?;
         let lowered = lower_public_policy_expr_checked(&a.value)?;
+        if matches!(controller_kind, PaginationControllerKind::CustomEndpointState) {
+            let vk = resolve_value_kind(
+                &lowered,
+                client_vars,
+                auth_vars,
+                Some(ep_vars),
+                lowered.span(),
+            )?;
+            let PaginationValueKind::EpField(endpoint_field) =
+                pagination_value_from_value_kind(vk, lowered.span())?
+            else {
+                return Err(syn::Error::new(
+                    lowered.span(),
+                    "endpoint_state pagination bindings must reference endpoint variables",
+                ));
+            };
+            let endpoint_info = ep_vars.get(&endpoint_field.to_string()).ok_or_else(|| {
+                syn::Error::new(
+                    endpoint_field.span(),
+                    unknown_scoped_name_message("endpoint var", "ep", &endpoint_field, ep_vars),
+                )
+            })?;
+            let endpoint_field_ty = if endpoint_info.optional {
+                let ty = &endpoint_info.ty;
+                syn::parse_quote!(::core::option::Option<#ty>)
+            } else {
+                endpoint_info.ty.clone()
+            };
+            bindings.push(PaginationBindingIr {
+                controller_field: a.key.clone(),
+                endpoint_field: endpoint_field.clone(),
+                endpoint_rust_field: endpoint_info.rust.clone(),
+                endpoint_field_ty,
+                assignment_span: lowered.span(),
+            });
+            assigns.push(PaginationAssignmentResolved {
+                field: a.key.clone(),
+                value: PaginationValueKind::EpField(endpoint_field),
+            });
+            continue;
+        }
         if matches!(controller_kind, PaginationControllerKind::Cursor) {
             match a.key.to_string().as_str() {
                 "send_cursor_on_first" => {
@@ -242,6 +300,13 @@ fn resolve_paginate(
                 per_page_key_from_query,
             })
         }
+        PaginationControllerKind::CustomEndpointState => PaginationControllerResolved::CustomEndpointState {
+            ctrl_ty: p.ctrl_ty.clone(),
+            bindings_ty: p
+                .bindings_ty
+                .clone()
+                .expect("endpoint_state bindings type was validated above"),
+        },
         PaginationControllerKind::Custom => PaginationControllerResolved::Custom {
             ctrl_ty: p.ctrl_ty.clone(),
         },
@@ -258,6 +323,7 @@ enum PaginationControllerKind {
     Cursor,
     Paged,
     Custom,
+    CustomEndpointState,
 }
 
 fn paginate_controller_kind(ctrl_ty: &Path) -> PaginationControllerKind {
@@ -279,6 +345,9 @@ fn validate_paginate_assignment_key(kind: PaginationControllerKind, key: &Ident)
             "unknown pagination controller; expected OffsetLimitPagination, CursorPagination, or PagedPagination",
         ));
     }
+    if matches!(kind, PaginationControllerKind::CustomEndpointState) {
+        return Ok(());
+    }
     let key_name = key.to_string();
     let allowed: &[&str] = match kind {
         PaginationControllerKind::OffsetLimit => &["offset_key", "limit_key", "offset", "limit"],
@@ -291,7 +360,7 @@ fn validate_paginate_assignment_key(kind: PaginationControllerKind, key: &Ident)
             "stop_when_cursor_missing",
         ],
         PaginationControllerKind::Paged => &["page_key", "per_page_key", "page", "per_page"],
-        PaginationControllerKind::Custom => &[],
+        PaginationControllerKind::Custom | PaginationControllerKind::CustomEndpointState => &[],
     };
     if allowed.contains(&key_name.as_str()) {
         return Ok(());
@@ -300,7 +369,7 @@ fn validate_paginate_assignment_key(kind: PaginationControllerKind, key: &Ident)
         PaginationControllerKind::OffsetLimit => "OffsetLimitPagination",
         PaginationControllerKind::Cursor => "CursorPagination",
         PaginationControllerKind::Paged => "PagedPagination",
-        PaginationControllerKind::Custom => unreachable!(),
+        PaginationControllerKind::Custom | PaginationControllerKind::CustomEndpointState => unreachable!(),
     };
     Err(syn::Error::new(
         key.span(),
