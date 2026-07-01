@@ -139,6 +139,8 @@ pub struct PageAdvance<'a> {
     pub received_items: usize,
 }
 
+// Legacy custom pagination request surface.
+// Built-ins and explicit endpoint-state custom pagination do not use this API.
 pub struct PageRequest<'a> {
     query: &'a mut Vec<(String, String)>,
     headers: &'a mut HeaderMap,
@@ -238,6 +240,9 @@ impl<'a> PageRequest<'a> {
     }
 }
 
+// Legacy custom pagination controller API.
+// Built-ins and explicit endpoint-state custom pagination use
+// `EndpointPaginationController` instead.
 pub trait PaginationController<Page>: Send + Sync + 'static
 where
     Page: PageItems,

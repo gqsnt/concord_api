@@ -63,6 +63,12 @@ if "${RG[@]}" 'concord_macros|crate::ast|Raw(Api|Ast|Client|Scope|Endpoint|Item)
   fail_with_matches "concord_core must not reference compiler-only concepts." "$core_refs"
 fi
 
+section "legacy pagination runner fence"
+legacy_pagination_refs="$tmpdir/legacy_pagination.refs"
+if "${RG[@]}" 'PaginationRunner::(OffsetLimit|Paged|Cursor)|Self::(OffsetLimit|Paged|Cursor)|apply_query' concord_core/src/request.rs >"$legacy_pagination_refs" 2>/dev/null; then
+  fail_with_matches "concord_core/src/request.rs must not contain built-in PaginationRunner branches or apply_query." "$legacy_pagination_refs"
+fi
+
 section "codegen semantic boundary"
 codegen_refs="$tmpdir/codegen.refs"
 if "${RG[@]}" 'crate::ast|Raw(Api|Ast|Client|Scope|Endpoint|Item)|NormApiTree' concord_macros/src/codegen >"$codegen_refs" 2>/dev/null; then

@@ -305,6 +305,9 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         }
         match first_plan.endpoint.pagination.clone() {
             Some(PaginationPlan::Custom(custom)) => {
+                // Legacy custom fallback only.
+                // Built-ins and explicit endpoint-state custom pagination use the
+                // endpoint-state runtime hook instead of this request mutation path.
                 let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
                 let mut runner = PaginationRunner::new_custom(custom, &first_plan)?;
                 let mut first_plan = Some(first_plan);
@@ -342,7 +345,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
                     plan.overrides.debug_level = pending.opts.debug_level;
                     plan.overrides.attempt = pending.opts.attempt;
                     plan.overrides.page_index = page_index;
-                    let expected_items = runner.apply_query(&mut plan)?;
+                    let expected_items = runner.apply_custom_request(&mut plan)?;
                     let request_identity = pagination_request_identity(&plan);
                     state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
 
@@ -812,6 +815,9 @@ fn push_identity_component(out: &mut String, label: &str, value: &str) {
     out.push('|');
 }
 
+// Legacy custom-only fallback machinery.
+// Built-ins and explicit endpoint-state custom pagination should never reach
+// this runner.
 enum PaginationRunner {
     Custom {
         plan: CustomPaginationPlan,
@@ -833,7 +839,7 @@ impl PaginationRunner {
         })
     }
 
-    fn apply_query(
+    fn apply_custom_request(
         &mut self,
         plan: &mut crate::endpoint::RequestPlan,
     ) -> Result<Option<NonZeroUsize>, ApiClientError> {

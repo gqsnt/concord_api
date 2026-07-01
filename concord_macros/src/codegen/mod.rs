@@ -1875,6 +1875,14 @@ mod tests {
             !out.contains("paged_pagination_bindings"),
             "obsolete per-controller hook must not appear in generated output"
         );
+        assert!(
+            !out.contains("PaginationRunner"),
+            "built-in endpoint-state pagination must not use the legacy runner"
+        );
+        assert!(
+            !out.contains("PageRequest"),
+            "built-in endpoint-state pagination must not use the legacy request mutation API"
+        );
     }
 
     #[test]
@@ -1916,6 +1924,14 @@ mod tests {
             !out.contains("paged_pagination_bindings"),
             "obsolete per-controller hook must not appear in generated output"
         );
+        assert!(
+            !out.contains("PaginationRunner"),
+            "built-in endpoint-state pagination must not use the legacy runner"
+        );
+        assert!(
+            !out.contains("PageRequest"),
+            "built-in endpoint-state pagination must not use the legacy request mutation API"
+        );
     }
 
     #[test]
@@ -1945,6 +1961,14 @@ mod tests {
         assert!(
             !out.contains("EndpointPaginationRuntimeAdapter"),
             "custom pagination must not require endpoint-state runtime"
+        );
+        assert!(
+            !out.contains("PaginationRunner"),
+            "old custom pagination codegen must not mention the legacy runner"
+        );
+        assert!(
+            !out.contains("PageRequest"),
+            "old custom pagination codegen must not mention the legacy request mutation API"
         );
     }
 
@@ -1990,6 +2014,14 @@ mod tests {
             !out.contains("PaginationPlan :: custom"),
             "endpoint-state custom pagination should not require the old custom plan bound"
         );
+        assert!(
+            !out.contains("PageRequest"),
+            "endpoint-state custom pagination must not use the legacy request mutation API"
+        );
+        assert!(
+            !out.contains("PaginationRunner"),
+            "endpoint-state custom pagination must not use the legacy runner"
+        );
     }
 
     #[test]
@@ -2033,6 +2065,14 @@ mod tests {
             !out.contains("paged_pagination_bindings"),
             "obsolete per-controller hook must not appear in generated output"
         );
+        assert!(
+            !out.contains("PaginationRunner"),
+            "cursor endpoint-state pagination must not use the legacy runner"
+        );
+        assert!(
+            !out.contains("PageRequest"),
+            "cursor endpoint-state pagination must not use the legacy request mutation API"
+        );
     }
 
     #[test]
@@ -2067,6 +2107,14 @@ mod tests {
                 "stop_when_cursor_missing:false",
                 "CursorPagination{",
             ],
+        );
+        assert!(
+            !out.contains("PageRequest"),
+            "endpoint-state cursor custom pagination must not use the legacy request mutation API"
+        );
+        assert!(
+            !out.contains("PaginationRunner"),
+            "endpoint-state cursor custom pagination must not use the legacy runner"
         );
     }
 
