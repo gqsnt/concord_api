@@ -991,6 +991,65 @@ mod tests {
     }
 
     #[test]
+    fn normalized_tree_splits_raw_scope_host_and_path_into_canonical_layers() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client NormSplitApi {
+                    base "https://example.com"
+                    secret token: String
+                    credential key = api_key(secret.token)
+                }
+
+                scope tenant(tenant_id: String) {
+                    host [fmt["tenant-", tenant_id], "api"]
+                    path ["v1"]
+                    auth header "X-Token" = key
+
+                    GET Show
+                        path ["profile"]
+                        -> Json<String>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let norm = normalize_api(ast).expect("normalization succeeds");
+
+        assert_eq!(norm.items.len(), 1);
+        let NormNode::Layer(outer) = &norm.items[0] else {
+            panic!("expected outer scope layer");
+        };
+        assert_eq!(
+            outer
+                .scope_name
+                .as_ref()
+                .map(ToString::to_string)
+                .as_deref(),
+            Some("tenant")
+        );
+        assert!(matches!(outer.kind, RouteLayerKind::Prefix));
+        assert_eq!(outer.auth_uses.len(), 1);
+        assert_eq!(outer.items.len(), 1);
+        let NormNode::Layer(inner) = &outer.items[0] else {
+            panic!("expected inner path layer");
+        };
+        assert!(inner.scope_name.is_none());
+        assert!(matches!(inner.kind, RouteLayerKind::Path));
+        assert!(inner.auth_uses.is_empty());
+        assert!(inner.policy.headers.is_none());
+        assert!(inner.policy.query.is_none());
+        assert!(inner.retry.is_none());
+        assert!(inner.rate_limit.is_none());
+        assert!(inner.rate_limit_keys.is_empty());
+        assert_eq!(inner.items.len(), 1);
+        let NormNode::Endpoint(endpoint) = &inner.items[0] else {
+            panic!("expected endpoint under inner path layer");
+        };
+        assert_eq!(endpoint.name, "Show");
+    }
+
+    #[test]
     fn resolved_endpoint_debug_includes_inherited_tree_state() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
@@ -1001,6 +1060,7 @@ mod tests {
             }
 
             scope protected {
+                host ["tenant"]
                 path ["v1"]
                 auth header "X-Token" = key
 
@@ -1015,6 +1075,7 @@ mod tests {
         let snapshot = debug_resolved_endpoints(&resolved_api);
 
         assert!(snapshot.contains("Me method=GET"));
+        assert!(snapshot.contains("prefix=[Static(\"tenant\")]"));
         assert!(snapshot.contains("scope_path=[Static(\"v1\")]"));
         assert!(snapshot.contains("endpoint=[Static(\"me\")]"));
         assert!(snapshot.contains("auth=1"));

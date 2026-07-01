@@ -1,9 +1,3 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LayerKind {
-    Prefix,
-    Path,
-}
-
 #[derive(Debug, Clone)]
 pub struct RouteExpr {
     pub atoms: Vec<RouteAtom>,

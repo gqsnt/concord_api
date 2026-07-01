@@ -627,6 +627,41 @@ mod tests {
     }
 
     #[test]
+    fn parses_scope_with_host_and_path_preserves_raw_shape() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                scope tenant(tenant_id: String) {
+                    host [fmt["tenant-", tenant_id], "api"]
+                    path ["v1"]
+
+                    GET Ping
+                        path ["ping"]
+                        -> Json<String>
+                }
+            }
+            "#,
+        )
+        .expect("scope with host and path parses");
+
+        assert_eq!(ast.items.len(), 1);
+        let RawItem::Layer(scope) = &ast.items[0] else {
+            panic!("expected scope");
+        };
+        assert!(scope.host_route.is_some());
+        assert!(scope.path_route.is_some());
+        assert_eq!(scope.items.len(), 1);
+        let RawItem::Endpoint(endpoint) = &scope.items[0] else {
+            panic!("expected direct endpoint child");
+        };
+        assert_eq!(endpoint.line.name, "Ping");
+    }
+
+    #[test]
     fn parses_current_api_wrapper_and_base_url_literal() {
         let ast: RawApi = syn::parse_str(
             r#"

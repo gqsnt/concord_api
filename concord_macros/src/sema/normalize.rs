@@ -40,20 +40,87 @@ fn normalize_item(item: crate::ast::RawItem) -> Result<NormNode> {
 
 fn normalize_scope(raw: crate::ast::RawScope) -> Result<NormScope> {
     let auth_uses = normalize_auth_uses(raw.auth_uses)?;
-    Ok(NormScope {
-        span: raw.span,
-        scope_name: raw.scope_name,
-        kind: normalize_layer_kind(raw.kind),
-        route: raw.route,
-        params: raw.params,
-        policy: raw.policy,
-        behavior_uses: raw.behavior_uses,
-        auth_uses,
-        retry: raw.retry,
-        rate_limit: raw.rate_limit,
-        rate_limit_keys: raw.rate_limit_keys,
-        items: normalize_items(raw.items)?,
-    })
+    let items = normalize_items(raw.items)?;
+
+    let scope_name = raw.scope_name;
+    let params = raw.params;
+    let policy = raw.policy;
+    let behavior_uses = raw.behavior_uses;
+    let retry = raw.retry;
+    let rate_limit = raw.rate_limit;
+    let rate_limit_keys = raw.rate_limit_keys;
+
+    match (raw.host_route, raw.path_route) {
+        (Some(host), Some(path)) => Ok(NormScope {
+            span: raw.span,
+            scope_name,
+            kind: RouteLayerKind::Prefix,
+            route: host,
+            params,
+            policy,
+            behavior_uses,
+            auth_uses,
+            retry,
+            rate_limit,
+            rate_limit_keys,
+            items: vec![NormNode::Layer(Box::new(NormScope {
+                span: raw.scope_span,
+                scope_name: None,
+                kind: RouteLayerKind::Path,
+                route: path,
+                params: Vec::new(),
+                policy: PolicyBlocks::default(),
+                behavior_uses: Vec::new(),
+                auth_uses: Vec::new(),
+                retry: None,
+                rate_limit: None,
+                rate_limit_keys: Vec::new(),
+                items,
+            }))],
+        }),
+        (Some(host), None) => Ok(NormScope {
+            span: raw.span,
+            scope_name,
+            kind: RouteLayerKind::Prefix,
+            route: host,
+            params,
+            policy,
+            behavior_uses,
+            auth_uses,
+            retry,
+            rate_limit,
+            rate_limit_keys,
+            items,
+        }),
+        (None, Some(path)) => Ok(NormScope {
+            span: raw.span,
+            scope_name,
+            kind: RouteLayerKind::Path,
+            route: path,
+            params,
+            policy,
+            behavior_uses,
+            auth_uses,
+            retry,
+            rate_limit,
+            rate_limit_keys,
+            items,
+        }),
+        (None, None) => Ok(NormScope {
+            span: raw.span,
+            scope_name,
+            kind: RouteLayerKind::Path,
+            route: crate::ast::RouteExpr { atoms: Vec::new() },
+            params,
+            policy,
+            behavior_uses,
+            auth_uses,
+            retry,
+            rate_limit,
+            rate_limit_keys,
+            items,
+        }),
+    }
 }
 
 fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEndpoint> {
@@ -82,13 +149,6 @@ fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEndpoint> {
         response: raw.response,
         map: raw.map,
     })
-}
-
-fn normalize_layer_kind(kind: crate::ast::LayerKind) -> RouteLayerKind {
-    match kind {
-        crate::ast::LayerKind::Prefix => RouteLayerKind::Prefix,
-        crate::ast::LayerKind::Path => RouteLayerKind::Path,
-    }
 }
 
 fn normalize_auth_uses(uses: Vec<crate::ast::AuthUseDecl>) -> Result<Vec<NormAuthUse>> {
