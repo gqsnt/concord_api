@@ -96,7 +96,7 @@ impl Parse for RawScopeTaggedScope {
                 content.parse::<kw::timeout>()?;
                 content.parse::<Token![:]>()?;
                 let t = content.parse::<Expr>()?;
-                policy.timeout = Some(normalize_policy_expr(t));
+                policy.timeout = Some(t);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else if content.peek(kw::behavior) {
                 behavior_uses.push(parse_behavior_use_spec(&content)?);
@@ -354,7 +354,7 @@ impl Parse for PaginateSpec {
             }
             let key: Ident = content.parse()?;
             content.parse::<Token![=]>()?;
-            let value: Expr = normalize_policy_expr_checked(content.parse()?)?;
+            let value: Expr = content.parse()?;
             assigns.push(PaginateAssign { key, value });
             first = false;
         }

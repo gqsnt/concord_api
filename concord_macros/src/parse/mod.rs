@@ -237,7 +237,7 @@ impl Parse for RawClient {
             } else if content.peek(kw::timeout) {
                 content.parse::<kw::timeout>()?;
                 content.parse::<Token![:]>()?;
-                policy.timeout = Some(normalize_policy_expr_checked(content.parse::<Expr>()?)?);
+                policy.timeout = Some(content.parse::<Expr>()?);
                 let _ = content.parse::<Option<Token![,]>>()?;
             } else {
                 let tt: proc_macro2::TokenTree = content.parse()?;
@@ -503,7 +503,7 @@ fn parse_client_default_block(
             if input.peek(Token![:]) {
                 input.parse::<Token![:]>()?;
             }
-            policy.timeout = Some(normalize_policy_expr_checked(input.parse::<Expr>()?)?);
+            policy.timeout = Some(input.parse::<Expr>()?);
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
@@ -1124,6 +1124,59 @@ mod tests {
         };
         assert_eq!(endpoint.policy.query.as_ref().unwrap().stmts.len(), 4);
         assert_eq!(endpoint.policy.headers.as_ref().unwrap().stmts.len(), 2);
+
+        let query = endpoint.policy.query.as_ref().unwrap();
+        match &query.stmts[0] {
+            PolicyStmt::Set {
+                key: KeySpec::Ident(key),
+                value: PolicyValue::Expr(Expr::Path(path)),
+                op: SetOp::Set,
+            } => {
+                assert_eq!(key.to_string(), "q");
+                assert_eq!(path.path.segments.len(), 1);
+                assert_eq!(path.path.segments[0].ident, "q");
+            }
+            other => panic!("query shorthand should remain raw syntax: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn policy_values_parse_raw_secret_references() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret token: String
+                }
+
+                GET HeaderRef
+                    path ["header"]
+                    headers {
+                        "X-Token" = secret.token
+                    }
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect("secret references parse as raw syntax");
+
+        let RawItem::Endpoint(endpoint) = &ast.items[0] else {
+            panic!("expected endpoint");
+        };
+        let header = endpoint.policy.headers.as_ref().expect("headers parsed");
+        match &header.stmts[0] {
+            PolicyStmt::Set {
+                value: PolicyValue::Expr(Expr::Field(field)),
+                ..
+            } => match &*field.base {
+                Expr::Path(path) => {
+                    assert_eq!(path.path.segments[0].ident, "secret");
+                }
+                other => panic!("expected raw secret path, got {other:?}"),
+            },
+            other => panic!("expected raw secret expression, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1270,29 +1323,5 @@ mod tests {
                     .contains("auth none/any/all are not supported")
             );
         }
-    }
-
-    #[test]
-    fn direct_secret_policy_expression_fails() {
-        let err = syn::parse_str::<RawApi>(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-                    secret api_key: String
-                }
-
-                GET Ping
-                    path ["ping"]
-                    headers {
-                        "x-api-key" = secret.api_key
-                    }
-                    -> Json<String>
-            }
-            "#,
-        )
-        .expect_err("direct secret policy expression must fail");
-
-        assert!(err.to_string().contains("DSL-010"));
     }
 }

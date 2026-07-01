@@ -1,3 +1,118 @@
+fn lower_public_policy_expr_checked(expr: &Expr) -> Result<Expr> {
+    reject_direct_secret_expr(expr)?;
+    Ok(lower_public_policy_expr(expr.clone()))
+}
+
+fn lower_public_policy_expr(expr: Expr) -> Expr {
+    match expr {
+        Expr::Path(p) => lower_public_policy_expr_path(p),
+        Expr::Field(mut f) => {
+            if let Expr::Path(base_path) = &*f.base
+                && base_path.qself.is_none()
+                && base_path.path.segments.len() == 1
+                && emit_helpers::is_public_expr_reserved_root(&base_path.path.segments[0].ident)
+            {
+                return Expr::Field(f);
+            }
+            f.base = Box::new(lower_public_policy_expr(*f.base));
+            Expr::Field(f)
+        }
+        Expr::Cast(mut c) => {
+            c.expr = Box::new(lower_public_policy_expr(*c.expr));
+            Expr::Cast(c)
+        }
+        Expr::Paren(mut p) => {
+            p.expr = Box::new(lower_public_policy_expr(*p.expr));
+            Expr::Paren(p)
+        }
+        Expr::Reference(mut r) => {
+            r.expr = Box::new(lower_public_policy_expr(*r.expr));
+            Expr::Reference(r)
+        }
+        Expr::Unary(mut u) => {
+            u.expr = Box::new(lower_public_policy_expr(*u.expr));
+            Expr::Unary(u)
+        }
+        Expr::Binary(mut b) => {
+            b.left = Box::new(lower_public_policy_expr(*b.left));
+            b.right = Box::new(lower_public_policy_expr(*b.right));
+            Expr::Binary(b)
+        }
+        other => other,
+    }
+}
+
+fn lower_public_policy_expr_path(path: syn::ExprPath) -> Expr {
+    if path.qself.is_none() && path.path.segments.len() == 1 {
+        let seg = &path.path.segments[0];
+        let id = &seg.ident;
+        if !emit_helpers::is_public_expr_reserved_root(id)
+            && id
+                .to_string()
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_lowercase())
+        {
+            return syn::parse_quote!(ep.#id);
+        }
+    }
+    Expr::Path(path)
+}
+
+fn reject_direct_secret_expr(expr: &Expr) -> Result<()> {
+    match expr {
+        Expr::Field(field) => {
+            if let Expr::Path(base_path) = &*field.base
+                && base_path.qself.is_none()
+                && base_path.path.segments.len() == 1
+                && base_path.path.segments[0].ident == "secret"
+            {
+                return Err(syn::Error::new(
+                    field.member.span(),
+                    "DSL-010 direct `secret.*` is not allowed in policy expressions; declare an auth credential",
+                ));
+            }
+            reject_direct_secret_expr(&field.base)
+        }
+        Expr::Path(path)
+            if path.qself.is_none()
+                && path
+                    .path
+                    .segments
+                    .first()
+                    .is_some_and(|segment| segment.ident == "secret") =>
+        {
+            Err(syn::Error::new(
+                path.path.segments[0].ident.span(),
+                "DSL-010 direct `secret.*` is not allowed in policy expressions; declare an auth credential",
+            ))
+        }
+        Expr::Cast(cast) => reject_direct_secret_expr(&cast.expr),
+        Expr::Paren(paren) => reject_direct_secret_expr(&paren.expr),
+        Expr::Reference(reference) => reject_direct_secret_expr(&reference.expr),
+        Expr::Unary(unary) => reject_direct_secret_expr(&unary.expr),
+        Expr::Binary(binary) => {
+            reject_direct_secret_expr(&binary.left)?;
+            reject_direct_secret_expr(&binary.right)
+        }
+        Expr::MethodCall(call) => {
+            reject_direct_secret_expr(&call.receiver)?;
+            for arg in &call.args {
+                reject_direct_secret_expr(arg)?;
+            }
+            Ok(())
+        }
+        Expr::Call(call) => {
+            reject_direct_secret_expr(&call.func)?;
+            for arg in &call.args {
+                reject_direct_secret_expr(arg)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 fn resolve_paginate(
     p: &PaginateSpec,
     client_vars: &BTreeMap<String, VarInfo>,
@@ -17,14 +132,15 @@ fn resolve_paginate(
     let mut assigns = Vec::new();
     for a in &p.assigns {
         validate_paginate_assignment_key(&p.ctrl_ty, &a.key)?;
+        let lowered = lower_public_policy_expr_checked(&a.value)?;
         let vk = resolve_value_kind(
-            &a.value,
+            &lowered,
             client_vars,
             auth_vars,
             Some(ep_vars),
-            a.value.span(),
+            lowered.span(),
         )?;
-        let vk = pagination_value_from_value_kind(vk, a.value.span())?;
+        let vk = pagination_value_from_value_kind(vk, lowered.span())?;
         assigns.push((a.key.clone(), vk));
     }
     Ok(PaginateResolved {
@@ -135,14 +251,15 @@ fn resolve_policy_blocks(
         )?;
     }
     if let Some(t) = &policy.timeout {
+        let lowered = lower_public_policy_expr_checked(t)?;
         let timeout = resolve_value_kind(
-            t,
+            &lowered,
             client_vars,
             auth_vars,
             endpoint_vars,
-            t.span(),
+            lowered.span(),
         )?;
-        out.timeout = Some(public_value_from_value_kind(timeout, t.span())?);
+        out.timeout = Some(public_value_from_value_kind(timeout, lowered.span())?);
     }
 
     Ok(out)
@@ -172,13 +289,17 @@ fn resolve_policy_block(
                         "`+=` is not allowed in headers; only in query",
                     ));
                 }
+                let lowered_value = match value {
+                    PolicyValue::Expr(expr) => PolicyValue::Expr(lower_public_policy_expr_checked(expr)?),
+                    PolicyValue::Fmt(fmt) => PolicyValue::Fmt(fmt.clone()),
+                };
                 let vk = resolve_policy_value_kind(
-                    value,
+                    &lowered_value,
                     owner,
                     client_vars,
                     auth_vars,
                     endpoint_vars,
-                    value.span(),
+                    lowered_value.span(),
                 )?;
 
                 let set_value = match vk {
@@ -217,7 +338,10 @@ fn resolve_policy_block(
                         }
                     }
                     other => {
-                        PolicySetValue::Value(public_value_from_value_kind(other, value.span())?)
+                        PolicySetValue::Value(public_value_from_value_kind(
+                            other,
+                            lowered_value.span(),
+                        )?)
                     }
                 };
 

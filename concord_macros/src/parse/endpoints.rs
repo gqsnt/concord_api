@@ -194,7 +194,7 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
                 input.parse::<Token![:]>()?;
             }
             let t = parse_expr_until_comma_or_endpoint_arrow(input)?;
-            parts.policy.timeout = Some(normalize_policy_expr_checked(t)?);
+            parts.policy.timeout = Some(t);
         } else if input.peek(kw::behavior) {
             parts.behavior_uses.push(parse_behavior_use_spec(input)?);
         } else if input.peek(kw::auth) {

@@ -126,21 +126,21 @@ fn parse_query_policy_stmt(input: ParseStream<'_>) -> Result<PolicyStmt> {
     if input.peek(Ident) {
         let fork = input.fork();
         let ident: Ident = fork.parse()?;
-        if !fork.peek(Token![=])
-            && !fork.peek(Token![+=])
-            && !fork.peek(Token![:])
-            && !fork.peek(Token![?])
-            && !fork.peek(Token![as])
-        {
-            input.parse::<Ident>()?;
-            let value: Expr = syn::parse_quote!(#ident);
-            return Ok(PolicyStmt::Set {
-                key: KeySpec::Ident(ident),
-                value: PolicyValue::Expr(normalize_policy_expr(value)),
-                op: SetOp::Set,
-            });
+            if !fork.peek(Token![=])
+                && !fork.peek(Token![+=])
+                && !fork.peek(Token![:])
+                && !fork.peek(Token![?])
+                && !fork.peek(Token![as])
+            {
+                input.parse::<Ident>()?;
+                let value: Expr = syn::parse_quote!(#ident);
+                return Ok(PolicyStmt::Set {
+                    key: KeySpec::Ident(ident),
+                    value: PolicyValue::Expr(value),
+                    op: SetOp::Set,
+                });
+            }
         }
-    }
     let stmt: PolicyStmt = input.parse()?;
     validate_policy_stmt_for_block(PolicyBlockKind::Query, &stmt)?;
     Ok(stmt)
@@ -180,9 +180,7 @@ fn parse_inline_policy_stmt(
         input.parse::<Token![=]>()?;
         SetOp::Set
     };
-    let value = PolicyValue::Expr(normalize_policy_expr_checked(
-        parse_expr_until_comma_or_endpoint_arrow(input)?,
-    )?);
+    let value = PolicyValue::Expr(parse_expr_until_comma_or_endpoint_arrow(input)?);
     let stmt = PolicyStmt::Set { key, value, op };
     validate_policy_stmt_for_block(kind, &stmt)?;
     Ok(stmt)
@@ -460,8 +458,7 @@ fn parse_policy_value(input: syn::parse::ParseStream<'_>) -> Result<PolicyValue>
     if input.peek(kw::fmt) {
         return Ok(PolicyValue::Fmt(parse_fmt_spec(input)?));
     }
-    let expr: syn::Expr = input.parse()?;
-    Ok(PolicyValue::Expr(normalize_policy_expr_checked(expr)?))
+    Ok(PolicyValue::Expr(input.parse()?))
 }
 
 fn parse_route_atom(input: ParseStream<'_>) -> Result<RouteAtom> {
@@ -605,130 +602,6 @@ fn parse_scoped_ref_from_ident(input: ParseStream<'_>) -> Result<ScopedRef> {
             ident: first,
             explicit: false,
         })
-    }
-}
-
-fn normalize_policy_expr(expr: Expr) -> Expr {
-    match expr {
-        Expr::Path(p) => {
-            if p.qself.is_none() && p.path.segments.len() == 1 {
-                let seg = &p.path.segments[0];
-                let id = &seg.ident;
-                if !emit_helpers::is_public_expr_reserved_root(id)
-                    && id
-                        .to_string()
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_ascii_lowercase())
-                {
-                    return syn::parse_quote!(ep.#id);
-                }
-            }
-            Expr::Path(p)
-        }
-        Expr::Field(mut f) => {
-            if let Expr::Path(base_path) = &*f.base
-                && base_path.qself.is_none()
-                && base_path.path.segments.len() == 1
-            {
-                let b = &base_path.path.segments[0].ident;
-                let nb: Ident = if emit_helpers::is_public_expr_reserved_root(b) {
-                    b.clone()
-                } else {
-                    return Expr::Field(syn::ExprField {
-                        attrs: f.attrs,
-                        base: Box::new(normalize_policy_expr(*f.base)),
-                        dot_token: f.dot_token,
-                        member: f.member,
-                    });
-                };
-                f.base = Box::new(syn::parse_quote!(#nb));
-            } else {
-                f.base = Box::new(normalize_policy_expr(*f.base));
-            }
-            Expr::Field(f)
-        }
-        Expr::Cast(mut c) => {
-            c.expr = Box::new(normalize_policy_expr(*c.expr));
-            Expr::Cast(c)
-        }
-        Expr::Paren(mut p) => {
-            p.expr = Box::new(normalize_policy_expr(*p.expr));
-            Expr::Paren(p)
-        }
-        Expr::Reference(mut r) => {
-            r.expr = Box::new(normalize_policy_expr(*r.expr));
-            Expr::Reference(r)
-        }
-        Expr::Unary(mut u) => {
-            u.expr = Box::new(normalize_policy_expr(*u.expr));
-            Expr::Unary(u)
-        }
-        Expr::Binary(mut b) => {
-            b.left = Box::new(normalize_policy_expr(*b.left));
-            b.right = Box::new(normalize_policy_expr(*b.right));
-            Expr::Binary(b)
-        }
-        other => other,
-    }
-}
-
-fn normalize_policy_expr_checked(expr: Expr) -> Result<Expr> {
-    reject_direct_secret_expr(&expr)?;
-    Ok(normalize_policy_expr(expr))
-}
-
-fn reject_direct_secret_expr(expr: &Expr) -> Result<()> {
-    match expr {
-        Expr::Field(field) => {
-            if let Expr::Path(base_path) = &*field.base
-                && base_path.qself.is_none()
-                && base_path.path.segments.len() == 1
-                && base_path.path.segments[0].ident == "secret"
-            {
-                return Err(syn::Error::new(
-                    field.member.span(),
-                    "DSL-010 direct `secret.*` is not allowed in policy expressions; declare an auth credential",
-                ));
-            }
-            reject_direct_secret_expr(&field.base)
-        }
-        Expr::Path(path)
-            if path.qself.is_none()
-                && path
-                    .path
-                    .segments
-                    .first()
-                    .is_some_and(|segment| segment.ident == "secret") =>
-        {
-            Err(syn::Error::new(
-                path.path.segments[0].ident.span(),
-                "DSL-010 direct `secret.*` is not allowed in policy expressions; declare an auth credential",
-            ))
-        }
-        Expr::Cast(cast) => reject_direct_secret_expr(&cast.expr),
-        Expr::Paren(paren) => reject_direct_secret_expr(&paren.expr),
-        Expr::Reference(reference) => reject_direct_secret_expr(&reference.expr),
-        Expr::Unary(unary) => reject_direct_secret_expr(&unary.expr),
-        Expr::Binary(binary) => {
-            reject_direct_secret_expr(&binary.left)?;
-            reject_direct_secret_expr(&binary.right)
-        }
-        Expr::MethodCall(call) => {
-            reject_direct_secret_expr(&call.receiver)?;
-            for arg in &call.args {
-                reject_direct_secret_expr(arg)?;
-            }
-            Ok(())
-        }
-        Expr::Call(call) => {
-            reject_direct_secret_expr(&call.func)?;
-            for arg in &call.args {
-                reject_direct_secret_expr(arg)?;
-            }
-            Ok(())
-        }
-        _ => Ok(()),
     }
 }
 

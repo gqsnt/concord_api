@@ -959,16 +959,14 @@ mod tests {
         match &query.stmts[0] {
             PolicyStmt::Set {
                 key: KeySpec::Ident(key),
-                value: PolicyValue::Expr(Expr::Field(field)),
+                value: PolicyValue::Expr(Expr::Path(path)),
                 op: SetOp::Set,
             } => {
                 assert_eq!(key.to_string(), "q");
-                match &field.member {
-                    syn::Member::Named(member) => assert_eq!(member.to_string(), "q"),
-                    other => panic!("expected named query field, got {other:?}"),
-                }
+                assert_eq!(path.path.segments.len(), 1);
+                assert_eq!(path.path.segments[0].ident, "q");
             }
-            other => panic!("query shorthand was not canonicalized: {other:?}"),
+            other => panic!("query shorthand should remain raw in normalized tree: {other:?}"),
         }
         assert!(matches!(
             &query.stmts[1],
@@ -988,6 +986,134 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn resolved_query_shorthand_lowers_to_endpoint_field_semantics() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                GET Search(q: String)
+                    path ["search"]
+                    query {
+                        q
+                    }
+                    -> Json<String>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let endpoint = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Search")
+            .expect("Search endpoint");
+
+        let query = endpoint
+            .policy
+            .endpoint
+            .query
+            .first()
+            .expect("resolved query op");
+        match query {
+            PolicyOp::Set {
+                value: PolicySetValue::Value(PublicValueKind::EpField(field)),
+                ..
+            } => assert_eq!(field.to_string(), "q"),
+            other => panic!("query shorthand did not lower to endpoint field semantics: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn direct_secret_policy_expressions_are_rejected_during_analysis() {
+        for (label, source) in [
+            (
+                "headers",
+                r#"
+                api! {
+                    client Api {
+                        base "https://example.com"
+                        secret token: String
+                    }
+
+                    GET HeaderRef
+                        path ["header"]
+                        headers {
+                            "x-api-key" = secret.token
+                        }
+                        -> Json<String>
+                }
+                "#,
+            ),
+            (
+                "query",
+                r#"
+                api! {
+                    client Api {
+                        base "https://example.com"
+                        secret token: String
+                    }
+
+                    GET QueryRef
+                        path ["query"]
+                        query {
+                            token = secret.token
+                        }
+                        -> Json<String>
+                }
+                "#,
+            ),
+            (
+                "timeout",
+                r#"
+                api! {
+                    client Api {
+                        base "https://example.com"
+                        secret token: String
+                    }
+
+                    GET TimeoutRef
+                        path ["timeout"]
+                        timeout: secret.token
+                        -> Json<String>
+                }
+                "#,
+            ),
+            (
+                "pagination",
+                r#"
+                api! {
+                    client Api {
+                        base "https://example.com"
+                        secret token: String
+                    }
+
+                    GET PageRef(start: u64 = 0)
+                        path ["page"]
+                        query {
+                            start
+                        }
+                        paginate OffsetLimitPagination {
+                            offset = secret.token,
+                            limit = start
+                        }
+                        -> Json<Vec<String>>
+                }
+                "#,
+            ),
+        ] {
+            let ast: crate::ast::RawApi = syn::parse_str(source).expect("raw syntax parses");
+            let err = analyze(ast).expect_err(label);
+            assert!(
+                err.to_string().contains("DSL-010"),
+                "{label} should be rejected by sema: {err}"
+            );
+        }
     }
 
     #[test]
