@@ -93,8 +93,43 @@ impl From<PageDecision> for Control {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct EndpointField<E, T> {
+    get: fn(&E) -> T,
+    set: fn(&mut E, T),
+}
+
+impl<E, T> EndpointField<E, T> {
+    #[inline]
+    pub const fn new(get: fn(&E) -> T, set: fn(&mut E, T)) -> Self {
+        Self { get, set }
+    }
+
+    #[inline]
+    pub fn get(&self, endpoint: &E) -> T {
+        (self.get)(endpoint)
+    }
+
+    #[inline]
+    pub fn set(&self, endpoint: &mut E, value: T) {
+        (self.set)(endpoint, value)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PageApply<'a> {
+    pub endpoint: &'a str,
+    pub page_index: u64,
+    pub ctx: &'a ErrorContext,
+}
+
 pub struct PageInit<'a> {
     pub endpoint: &'a str,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PageApplyResult {
+    pub expected_items_per_page: Option<NonZeroUsize>,
 }
 
 pub struct PageAdvance<'a> {
@@ -226,6 +261,41 @@ where
     fn progress_key(&self, state: &Self::State) -> Option<ProgressKey>;
 }
 
+pub trait EndpointPaginationController<E, Page>: Send + Sync + 'static
+where
+    Page: PageItems,
+{
+    type Bindings: Send + Sync + 'static;
+    type State: Send + Sync + 'static;
+
+    fn init(
+        &self,
+        bindings: &Self::Bindings,
+        endpoint: &E,
+        ctx: PageApply<'_>,
+    ) -> Result<Self::State, ApiClientError>;
+
+    fn apply(
+        &self,
+        bindings: &Self::Bindings,
+        state: &mut Self::State,
+        endpoint: &mut E,
+        ctx: PageApply<'_>,
+    ) -> Result<PageApplyResult, ApiClientError>;
+
+    fn advance(
+        &self,
+        bindings: &Self::Bindings,
+        state: &mut Self::State,
+        page: &Page,
+        ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError>;
+
+    fn progress_key(&self, _state: &Self::State) -> Option<ProgressKey> {
+        None
+    }
+}
+
 /// Items container returned by a paginated endpoint.
 pub trait PageItems: Send + 'static {
     type Item: Send + 'static;
@@ -264,6 +334,78 @@ impl<T: Send + 'static> PageItems for Vec<T> {
 mod tests {
     use super::*;
     use http::Method;
+    use std::num::NonZeroUsize;
+
+    #[derive(Clone, Debug)]
+    struct TestEndpoint {
+        start: u64,
+        count: u64,
+        cursor: Option<String>,
+    }
+
+    #[derive(Clone, Debug)]
+    struct TestState {
+        offset: u64,
+        limit: u64,
+    }
+
+    struct TestBindings {
+        start: EndpointField<TestEndpoint, u64>,
+        count: EndpointField<TestEndpoint, u64>,
+    }
+
+    struct TestEndpointPaginationController;
+
+    impl EndpointPaginationController<TestEndpoint, Vec<String>> for TestEndpointPaginationController {
+        type Bindings = TestBindings;
+        type State = TestState;
+
+        fn init(
+            &self,
+            bindings: &Self::Bindings,
+            endpoint: &TestEndpoint,
+            ctx: PageApply<'_>,
+        ) -> Result<Self::State, ApiClientError> {
+            assert_eq!(ctx.endpoint, "TestEndpoint");
+            assert_eq!(ctx.page_index, 0);
+            assert_eq!(ctx.ctx.endpoint, "Items");
+            Ok(TestState {
+                offset: bindings.start.get(endpoint),
+                limit: bindings.count.get(endpoint),
+            })
+        }
+
+        fn apply(
+            &self,
+            bindings: &Self::Bindings,
+            state: &mut Self::State,
+            endpoint: &mut TestEndpoint,
+            ctx: PageApply<'_>,
+        ) -> Result<PageApplyResult, ApiClientError> {
+            assert_eq!(ctx.endpoint, "TestEndpoint");
+            assert_eq!(ctx.page_index, 1);
+            assert_eq!(ctx.ctx.method, &Method::GET);
+            bindings.start.set(endpoint, state.offset);
+            bindings.count.set(endpoint, state.limit);
+            Ok(PageApplyResult {
+                expected_items_per_page: NonZeroUsize::new(state.limit as usize),
+            })
+        }
+
+        fn advance(
+            &self,
+            _bindings: &Self::Bindings,
+            state: &mut Self::State,
+            page: &Vec<String>,
+            ctx: PageAdvance<'_>,
+        ) -> Result<PageDecision, ApiClientError> {
+            assert_eq!(ctx.endpoint, "TestEndpoint");
+            assert_eq!(ctx.page_index, 1);
+            assert_eq!(ctx.received_items, page.len());
+            state.offset = state.offset.checked_add(state.limit).unwrap();
+            Ok(PageDecision::Continue)
+        }
+    }
 
     #[test]
     fn page_request_query_order_and_remove_semantics_are_deterministic() {
@@ -311,6 +453,110 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("invalid pagination header name"));
         assert!(msg.contains("POST Items"));
+    }
+
+    #[test]
+    fn endpoint_field_can_read_and_write_endpoint_state() {
+        let start = EndpointField::new(
+            |ep: &TestEndpoint| ep.start,
+            |ep: &mut TestEndpoint, value| ep.start = value,
+        );
+        let mut ep = TestEndpoint {
+            start: 0,
+            count: 20,
+            cursor: None,
+        };
+
+        assert_eq!(start.get(&ep), 0);
+        start.set(&mut ep, 40);
+        assert_eq!(ep.start, 40);
+    }
+
+    #[test]
+    fn endpoint_field_generated_style_clone_getters_handle_non_copy_state() {
+        let cursor = EndpointField::new(
+            |ep: &TestEndpoint| ep.cursor.clone(),
+            |ep: &mut TestEndpoint, value| ep.cursor = value,
+        );
+        let mut ep = TestEndpoint {
+            start: 0,
+            count: 20,
+            cursor: Some("abc".to_string()),
+        };
+
+        assert_eq!(cursor.get(&ep), Some("abc".to_string()));
+        cursor.set(&mut ep, Some("xyz".to_string()));
+        assert_eq!(ep.cursor, Some("xyz".to_string()));
+    }
+
+    #[test]
+    fn endpoint_pagination_controller_mutates_endpoint_fields_without_request_state() {
+        let controller = TestEndpointPaginationController;
+        let bindings = TestBindings {
+            start: EndpointField::new(
+                |ep: &TestEndpoint| ep.start,
+                |ep: &mut TestEndpoint, value| ep.start = value,
+            ),
+            count: EndpointField::new(
+                |ep: &TestEndpoint| ep.count,
+                |ep: &mut TestEndpoint, value| ep.count = value,
+            ),
+        };
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::GET,
+        };
+        let page_ctx = PageApply {
+            endpoint: "TestEndpoint",
+            page_index: 0,
+            ctx: &ctx,
+        };
+        let mut endpoint = TestEndpoint {
+            start: 0,
+            count: 20,
+            cursor: Some("start".to_string()),
+        };
+
+        let mut state = controller
+            .init(&bindings, &endpoint, page_ctx.clone())
+            .unwrap();
+        assert_eq!(state.offset, 0);
+        assert_eq!(state.limit, 20);
+
+        state.offset = 40;
+        state.limit = 10;
+        let applied = controller
+            .apply(
+                &bindings,
+                &mut state,
+                &mut endpoint,
+                PageApply {
+                    endpoint: "TestEndpoint",
+                    page_index: 1,
+                    ctx: &ctx,
+                },
+            )
+            .unwrap();
+        assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(10));
+        assert_eq!(endpoint.start, 40);
+        assert_eq!(endpoint.count, 10);
+        assert_eq!(endpoint.cursor, Some("start".to_string()));
+
+        let decision = controller
+            .advance(
+                &bindings,
+                &mut state,
+                &vec!["a".to_string(), "b".to_string()],
+                PageAdvance {
+                    endpoint: "TestEndpoint",
+                    page_index: 1,
+                    received_items: 2,
+                },
+            )
+            .unwrap();
+        assert_eq!(decision, PageDecision::Continue);
+        assert_eq!(state.offset, 50);
+        assert_eq!(state.limit, 10);
     }
 
     #[test]
