@@ -1258,9 +1258,11 @@ mod tests {
             &[
                 "let mut ctrl : :: concord_core :: internal :: OffsetLimitPagination = :: core :: default :: Default :: default ()",
                 ":: concord_core :: advanced :: OffsetLimitBindings",
-                "offset_limit_pagination_bindings",
+                "endpoint_state_pagination",
+                "EndpointPaginationRuntimeAdapter",
                 ":: concord_core :: advanced :: PagedBindings",
-                "paged_pagination_bindings",
+                "endpoint_state_pagination",
+                "EndpointPaginationRuntimeAdapter",
                 "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"start\")",
                 "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"count\")",
                 "let mut ctrl : :: concord_core :: internal :: CursorPagination = :: core :: default :: Default :: default ()",
@@ -1815,7 +1817,8 @@ mod tests {
             &[
                 "EndpointField :: new",
                 ":: concord_core :: advanced :: OffsetLimitBindings",
-                "offset_limit_pagination_bindings",
+                "endpoint_state_pagination",
+                "EndpointPaginationRuntimeAdapter",
                 "ep . start . clone ()",
                 "ep . count . clone ()",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
@@ -1848,7 +1851,8 @@ mod tests {
             &out,
             &[
                 ":: concord_core :: advanced :: OffsetLimitBindings",
-                "offset_limit_pagination_bindings",
+                "endpoint_state_pagination",
+                "EndpointPaginationRuntimeAdapter",
                 "EndpointField :: new",
                 "ep . start . clone ()",
                 "ep . count . clone ()",
@@ -1888,7 +1892,8 @@ mod tests {
             &out,
             &[
                 ":: concord_core :: advanced :: PagedBindings",
-                "paged_pagination_bindings",
+                "endpoint_state_pagination",
+                "EndpointPaginationRuntimeAdapter",
                 "EndpointField :: new",
                 "ep . page . clone ()",
                 "ep . count . clone ()",

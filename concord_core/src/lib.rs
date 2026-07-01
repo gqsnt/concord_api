@@ -47,7 +47,8 @@ pub mod internal {
     pub use crate::multipart_response::{MultipartDecodePart, MultipartStream, RawResponsePart};
     #[doc(hidden)]
     pub use crate::pagination::{
-        Control, CursorPagination, EndpointField, EndpointPaginationController, HasNextCursor,
+        Control, CursorPagination, EndpointField, EndpointPaginationController,
+        EndpointPaginationRuntime, EndpointPaginationRuntimeAdapter, HasNextCursor,
         OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState, PageAdvance, PageApply,
         PageApplyResult, PageDecision, PageInit, PageRequest, PagedBindings, PagedPagination,
         PagedState, PaginationCaps, PaginationController, PaginationTermination, ProgressKey,
@@ -119,7 +120,8 @@ pub mod advanced {
     };
     pub use crate::multipart_response::{MultipartDecodePart, MultipartStream, RawResponsePart};
     pub use crate::pagination::{
-        Control, EndpointField, EndpointPaginationController, HasNextCursor, OffsetLimitBindings,
+        Control, EndpointField, EndpointPaginationController, EndpointPaginationRuntime,
+        EndpointPaginationRuntimeAdapter, HasNextCursor, OffsetLimitBindings,
         OffsetLimitPagination, OffsetLimitState, PageAdvance, PageApply, PageApplyResult,
         PageDecision, PageInit, PageItems, PageRequest, PagedBindings, PagedPagination, PagedState,
         PaginationCaps, PaginationController, PaginationTermination, ProgressKey,

@@ -88,7 +88,7 @@ where
         _bindings: &Self::Bindings,
         state: &mut Self::State,
         _page: &Page,
-        _ctx: PageAdvance<'_>,
+        _page_ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError> {
         state.page = state
             .page

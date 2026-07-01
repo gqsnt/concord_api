@@ -1,10 +1,10 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, EndpointField, OffsetLimitBindings, PageAdvance, PageDecision, PageInit,
-    PageRequest, PagedBindings, PaginationController, ProgressKey, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter,
+    AuthPlacement, EndpointField, EndpointPaginationRuntimeAdapter, OffsetLimitBindings,
+    PageAdvance, PageDecision, PageInit, PageRequest, PagedBindings, PaginationController,
+    ProgressKey, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter,
 };
 use concord_core::internal::PaginationPlan;
 use concord_core::prelude::{
@@ -224,17 +224,23 @@ impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
-    fn offset_limit_pagination_bindings(&self) -> Option<OffsetLimitBindings<Self>> {
-        Some(OffsetLimitBindings {
-            offset: EndpointField::new(
-                |ep: &Self| ep.start,
-                |ep: &mut Self, value| ep.start = value,
-            ),
-            limit: EndpointField::new(
-                |ep: &Self| ep.count,
-                |ep: &mut Self, value| ep.count = value,
-            ),
-        })
+    fn endpoint_state_pagination(
+        &self,
+    ) -> Option<Box<dyn concord_core::internal::EndpointPaginationRuntime<Self, Self::Response>>>
+    {
+        Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+            concord_core::advanced::OffsetLimitPagination::default(),
+            OffsetLimitBindings {
+                offset: EndpointField::new(
+                    |ep: &Self| ep.start,
+                    |ep: &mut Self, value| ep.start = value,
+                ),
+                limit: EndpointField::new(
+                    |ep: &Self| ep.count,
+                    |ep: &mut Self, value| ep.count = value,
+                ),
+            },
+        )))
     }
 }
 
@@ -273,14 +279,23 @@ impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for HeaderBoundPagedEndpoint {
-    fn paged_pagination_bindings(&self) -> Option<PagedBindings<Self>> {
-        Some(PagedBindings {
-            page: EndpointField::new(|ep: &Self| ep.page, |ep: &mut Self, value| ep.page = value),
-            per_page: EndpointField::new(
-                |ep: &Self| ep.count,
-                |ep: &mut Self, value| ep.count = value,
-            ),
-        })
+    fn endpoint_state_pagination(
+        &self,
+    ) -> Option<Box<dyn concord_core::internal::EndpointPaginationRuntime<Self, Self::Response>>>
+    {
+        Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+            concord_core::advanced::PagedPagination::default(),
+            PagedBindings {
+                page: EndpointField::new(
+                    |ep: &Self| ep.page,
+                    |ep: &mut Self, value| ep.page = value,
+                ),
+                per_page: EndpointField::new(
+                    |ep: &Self| ep.count,
+                    |ep: &mut Self, value| ep.count = value,
+                ),
+            },
+        )))
     }
 }
 

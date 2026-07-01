@@ -7,6 +7,7 @@ pub use cursor::{CursorPagination, HasNextCursor};
 use http::{HeaderMap, HeaderName, HeaderValue};
 pub use offset_limit::{OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState};
 pub use paged::{PagedBindings, PagedPagination, PagedState};
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,7 +256,7 @@ where
         &self,
         state: &mut Self::State,
         page: &Page,
-        ctx: PageAdvance<'_>,
+        page_ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError>;
 
     fn progress_key(&self, state: &Self::State) -> Option<ProgressKey>;
@@ -288,11 +289,116 @@ where
         bindings: &Self::Bindings,
         state: &mut Self::State,
         page: &Page,
-        ctx: PageAdvance<'_>,
+        page_ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError>;
 
     fn progress_key(&self, _state: &Self::State) -> Option<ProgressKey> {
         None
+    }
+}
+
+pub trait EndpointPaginationRuntime<E, Page>: Send
+where
+    Page: PageItems,
+{
+    fn init(&mut self, endpoint: &E, ctx: PageApply<'_>) -> Result<(), ApiClientError>;
+
+    fn apply(
+        &mut self,
+        endpoint: &mut E,
+        ctx: PageApply<'_>,
+    ) -> Result<PageApplyResult, ApiClientError>;
+
+    fn advance(
+        &mut self,
+        err_ctx: &ErrorContext,
+        page: &Page,
+        page_ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError>;
+
+    fn progress_key(&self) -> Option<ProgressKey>;
+}
+
+pub struct EndpointPaginationRuntimeAdapter<C, E, Page>
+where
+    C: EndpointPaginationController<E, Page>,
+    Page: PageItems,
+{
+    controller: C,
+    bindings: C::Bindings,
+    state: Option<C::State>,
+    _marker: PhantomData<fn(E, Page)>,
+}
+
+impl<C, E, Page> EndpointPaginationRuntimeAdapter<C, E, Page>
+where
+    C: EndpointPaginationController<E, Page>,
+    Page: PageItems,
+{
+    #[inline]
+    pub fn new(controller: C, bindings: C::Bindings) -> Self {
+        Self {
+            controller,
+            bindings,
+            state: None,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<C, E, Page> EndpointPaginationRuntime<E, Page> for EndpointPaginationRuntimeAdapter<C, E, Page>
+where
+    C: EndpointPaginationController<E, Page>,
+    Page: PageItems,
+{
+    fn init(&mut self, endpoint: &E, ctx: PageApply<'_>) -> Result<(), ApiClientError> {
+        if self.state.is_some() {
+            return Err(ApiClientError::Pagination {
+                ctx: ctx.ctx.clone(),
+                msg: "endpoint-state pagination runtime was initialized more than once".into(),
+            });
+        }
+        let state = self.controller.init(&self.bindings, endpoint, ctx)?;
+        self.state = Some(state);
+        Ok(())
+    }
+
+    fn apply(
+        &mut self,
+        endpoint: &mut E,
+        ctx: PageApply<'_>,
+    ) -> Result<PageApplyResult, ApiClientError> {
+        let state = self
+            .state
+            .as_mut()
+            .ok_or_else(|| ApiClientError::Pagination {
+                ctx: ctx.ctx.clone(),
+                msg: "endpoint-state pagination runtime was used before initialization".into(),
+            })?;
+        self.controller.apply(&self.bindings, state, endpoint, ctx)
+    }
+
+    fn advance(
+        &mut self,
+        err_ctx: &ErrorContext,
+        page: &Page,
+        page_ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        let state = self
+            .state
+            .as_mut()
+            .ok_or_else(|| ApiClientError::Pagination {
+                ctx: err_ctx.clone(),
+                msg: "endpoint-state pagination runtime was used before initialization".into(),
+            })?;
+        self.controller
+            .advance(&self.bindings, state, page, page_ctx)
+    }
+
+    fn progress_key(&self) -> Option<ProgressKey> {
+        self.state
+            .as_ref()
+            .and_then(|state| self.controller.progress_key(state))
     }
 }
 
@@ -335,6 +441,8 @@ mod tests {
     use super::*;
     use http::Method;
     use std::num::NonZeroUsize;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Clone, Debug)]
     struct TestEndpoint {
@@ -404,6 +512,72 @@ mod tests {
             assert_eq!(ctx.received_items, page.len());
             state.offset = state.offset.checked_add(state.limit).unwrap();
             Ok(PageDecision::Continue)
+        }
+    }
+
+    #[derive(Clone)]
+    struct AdapterTestController {
+        init_calls: Arc<AtomicUsize>,
+        apply_calls: Arc<AtomicUsize>,
+        advance_calls: Arc<AtomicUsize>,
+    }
+
+    impl AdapterTestController {
+        fn new() -> Self {
+            Self {
+                init_calls: Arc::new(AtomicUsize::new(0)),
+                apply_calls: Arc::new(AtomicUsize::new(0)),
+                advance_calls: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+    }
+
+    impl EndpointPaginationController<TestEndpoint, Vec<String>> for AdapterTestController {
+        type Bindings = OffsetLimitBindings<TestEndpoint>;
+        type State = TestState;
+
+        fn init(
+            &self,
+            bindings: &Self::Bindings,
+            endpoint: &TestEndpoint,
+            _ctx: PageApply<'_>,
+        ) -> Result<Self::State, ApiClientError> {
+            self.init_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(TestState {
+                offset: bindings.offset.get(endpoint),
+                limit: bindings.limit.get(endpoint),
+            })
+        }
+
+        fn apply(
+            &self,
+            bindings: &Self::Bindings,
+            state: &mut Self::State,
+            endpoint: &mut TestEndpoint,
+            _ctx: PageApply<'_>,
+        ) -> Result<PageApplyResult, ApiClientError> {
+            self.apply_calls.fetch_add(1, Ordering::SeqCst);
+            bindings.offset.set(endpoint, state.offset);
+            bindings.limit.set(endpoint, state.limit);
+            Ok(PageApplyResult {
+                expected_items_per_page: NonZeroUsize::new(state.limit as usize),
+            })
+        }
+
+        fn advance(
+            &self,
+            _bindings: &Self::Bindings,
+            state: &mut Self::State,
+            _page: &Vec<String>,
+            _ctx: PageAdvance<'_>,
+        ) -> Result<PageDecision, ApiClientError> {
+            self.advance_calls.fetch_add(1, Ordering::SeqCst);
+            state.offset = state.offset.checked_add(state.limit).unwrap();
+            Ok(PageDecision::Continue)
+        }
+
+        fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
+            Some(ProgressKey::U64(state.offset))
         }
     }
 
@@ -557,6 +731,99 @@ mod tests {
         assert_eq!(decision, PageDecision::Continue);
         assert_eq!(state.offset, 50);
         assert_eq!(state.limit, 10);
+    }
+
+    #[test]
+    fn endpoint_pagination_runtime_adapter_calls_controller_and_tracks_progress() {
+        let controller = AdapterTestController::new();
+        let bindings = OffsetLimitBindings {
+            offset: EndpointField::new(
+                |ep: &TestEndpoint| ep.start,
+                |ep: &mut TestEndpoint, value| ep.start = value,
+            ),
+            limit: EndpointField::new(
+                |ep: &TestEndpoint| ep.count,
+                |ep: &mut TestEndpoint, value| ep.count = value,
+            ),
+        };
+        let mut adapter = EndpointPaginationRuntimeAdapter::new(controller.clone(), bindings);
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::GET,
+        };
+        let mut endpoint = TestEndpoint {
+            start: 7,
+            count: 3,
+            cursor: Some("start".to_string()),
+        };
+
+        assert_eq!(adapter.progress_key(), None);
+        assert!(matches!(
+            adapter.apply(
+                &mut endpoint,
+                PageApply {
+                    endpoint: "List",
+                    page_index: 0,
+                    ctx: &ctx,
+                }
+            ),
+            Err(ApiClientError::Pagination { .. })
+        ));
+        assert!(matches!(
+            adapter.advance(
+                &ctx,
+                &vec!["a".to_string()],
+                PageAdvance {
+                    endpoint: "List",
+                    page_index: 0,
+                    received_items: 1,
+                },
+            ),
+            Err(ApiClientError::Pagination { .. })
+        ));
+
+        adapter
+            .init(
+                &endpoint,
+                PageApply {
+                    endpoint: "List",
+                    page_index: 0,
+                    ctx: &ctx,
+                },
+            )
+            .unwrap();
+        assert_eq!(controller.init_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(adapter.progress_key(), Some(ProgressKey::U64(7)));
+
+        let applied = adapter
+            .apply(
+                &mut endpoint,
+                PageApply {
+                    endpoint: "List",
+                    page_index: 1,
+                    ctx: &ctx,
+                },
+            )
+            .unwrap();
+        assert_eq!(controller.apply_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(3));
+        assert_eq!(endpoint.start, 7);
+        assert_eq!(endpoint.count, 3);
+
+        let decision = adapter
+            .advance(
+                &ctx,
+                &vec!["a".to_string(), "b".to_string()],
+                PageAdvance {
+                    endpoint: "List",
+                    page_index: 1,
+                    received_items: 2,
+                },
+            )
+            .unwrap();
+        assert_eq!(controller.advance_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(decision, PageDecision::Continue);
+        assert_eq!(adapter.progress_key(), Some(ProgressKey::U64(10)));
     }
 
     #[test]

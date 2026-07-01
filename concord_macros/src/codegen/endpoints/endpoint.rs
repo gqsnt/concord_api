@@ -194,13 +194,19 @@ fn emit_endpoint_def(
             quote! {
                 impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {
                     #[inline]
-                    fn offset_limit_pagination_bindings(
+                    fn endpoint_state_pagination(
                         &self,
-                    ) -> ::core::option::Option<::concord_core::advanced::OffsetLimitBindings<Self>>
+                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::EndpointPaginationRuntime<Self, Self::Response>>>
                     where
                         Self: Sized,
+                        Self::Response: ::concord_core::advanced::PageItems,
                     {
-                        ::core::option::Option::Some(#helper_name())
+                        ::core::option::Option::Some(::std::boxed::Box::new(
+                            ::concord_core::internal::EndpointPaginationRuntimeAdapter::new(
+                                ::concord_core::advanced::OffsetLimitPagination::default(),
+                                #helper_name(),
+                            ),
+                        ))
                     }
                 }
             }
@@ -214,13 +220,19 @@ fn emit_endpoint_def(
             quote! {
                 impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {
                     #[inline]
-                    fn paged_pagination_bindings(
+                    fn endpoint_state_pagination(
                         &self,
-                    ) -> ::core::option::Option<::concord_core::advanced::PagedBindings<Self>>
+                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::EndpointPaginationRuntime<Self, Self::Response>>>
                     where
                         Self: Sized,
+                        Self::Response: ::concord_core::advanced::PageItems,
                     {
-                        ::core::option::Option::Some(#helper_name())
+                        ::core::option::Option::Some(::std::boxed::Box::new(
+                            ::concord_core::internal::EndpointPaginationRuntimeAdapter::new(
+                                ::concord_core::advanced::PagedPagination::default(),
+                                #helper_name(),
+                            ),
+                        ))
                     }
                 }
             }

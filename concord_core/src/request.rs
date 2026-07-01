@@ -6,8 +6,8 @@ use crate::endpoint::{
 };
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    Control, EndpointPaginationController, OffsetLimitPagination, PageAdvance, PageApply, PageInit,
-    PageItems, PageRequest, PagedPagination, PaginationCaps, PaginationTermination, ProgressKey,
+    Control, EndpointPaginationRuntime, PageAdvance, PageApply, PageInit, PageItems, PageRequest,
+    PaginationCaps, PaginationTermination, ProgressKey,
 };
 use crate::timeout::TimeoutOverride;
 use crate::transport::{BuiltResponse, DecodedResponse};
@@ -300,32 +300,8 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         ) {
             return Ok(Vec::new());
         }
-        match &first_plan.endpoint.pagination {
-            Some(PaginationPlan::OffsetLimit { .. }) => {
-                if let Some(bindings) = pending.ep.offset_limit_pagination_bindings() {
-                    return collect_with_endpoint_state_pagination(
-                        pending,
-                        OffsetLimitPagination::default(),
-                        bindings,
-                        caps,
-                        ctx,
-                    )
-                    .await;
-                }
-            }
-            Some(PaginationPlan::Paged { .. }) => {
-                if let Some(bindings) = pending.ep.paged_pagination_bindings() {
-                    return collect_with_endpoint_state_pagination(
-                        pending,
-                        PagedPagination::default(),
-                        bindings,
-                        caps,
-                        ctx,
-                    )
-                    .await;
-                }
-            }
-            _ => {}
+        if let Some(runtime) = pending.ep.endpoint_state_pagination() {
+            return collect_with_endpoint_state_pagination(pending, runtime, caps, ctx).await;
         }
         let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
         let mut runner =
@@ -473,10 +449,9 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     }
 }
 
-async fn collect_with_endpoint_state_pagination<'a, Cx, E, T, C>(
+async fn collect_with_endpoint_state_pagination<'a, Cx, E, T>(
     mut pending: PendingRequest<'a, Cx, E, T>,
-    controller: C,
-    bindings: C::Bindings,
+    mut runtime: Box<dyn EndpointPaginationRuntime<E, E::Response>>,
     caps: PaginationCaps,
     ctx: ErrorContext,
 ) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
@@ -485,14 +460,12 @@ where
     E: PaginatedEndpoint<Cx> + 'a,
     T: crate::transport::Transport + 'a,
     E::Response: PageItems,
-    C: EndpointPaginationController<E, E::Response>,
 {
     let page_apply_ctx = PageApply {
         endpoint: ctx.endpoint,
         page_index: 0,
         ctx: &ctx,
     };
-    let mut state = controller.init(&bindings, &pending.ep, page_apply_ctx)?;
     let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
     let mut seen: Option<HashSet<ProgressKey>> = if caps.detect_loops {
         Some(HashSet::new())
@@ -503,9 +476,11 @@ where
     let mut items_count: usize = 0;
     let mut page_index: u32 = 0;
 
+    runtime.init(&pending.ep, page_apply_ctx)?;
+
     loop {
         if let Some(seen) = seen.as_mut()
-            && let Some(k) = controller.progress_key(&state)
+            && let Some(k) = runtime.progress_key()
             && !seen.insert(k.clone())
         {
             return Err(ApiClientError::Pagination {
@@ -514,9 +489,7 @@ where
             });
         }
 
-        let expected_items = controller.apply(
-            &bindings,
-            &mut state,
+        let expected_items = runtime.apply(
             &mut pending.ep,
             PageApply {
                 endpoint: ctx.endpoint,
@@ -553,10 +526,9 @@ where
         let control_ctrl = if pre_advance.common_stop || pre_advance.take_items_done {
             Control::Stop
         } else {
-            controller
+            runtime
                 .advance(
-                    &bindings,
-                    &mut state,
+                    &ctx,
                     &resp.value,
                     PageAdvance {
                         endpoint: ctx.endpoint,
