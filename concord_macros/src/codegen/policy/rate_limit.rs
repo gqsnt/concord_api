@@ -73,8 +73,9 @@ fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> Tok
         RateLimitKeyResolved::EpField { name, field } => {
             let name = LitStr::new(name, field.span());
             match ctx {
-                PolicyEmitCtx::ClientBase => unreachable!(
-                    "sema must reject endpoint/scope rate_limit keys in client base policy"
+                PolicyEmitCtx::ClientBase => crate::emit_helpers::compile_error_tokens(
+                    "internal Concord error: endpoint/scope rate_limit key reached client base codegen",
+                    field.span(),
                 ),
                 PolicyEmitCtx::Layer | PolicyEmitCtx::Endpoint => quote! {
                     ::concord_core::advanced::RateLimitKeyPart::static_value(
@@ -94,6 +95,30 @@ fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> Tok
     });
     quote! {
         ::concord_core::advanced::RateLimitKey::new(::std::vec![ #( #parts ),* ])
+    }
+}
+
+#[cfg(test)]
+mod rate_limit_codegen_tests {
+    use super::*;
+    use quote::quote;
+    use syn::parse_quote;
+
+    #[test]
+    fn client_base_ep_field_key_emits_compile_error_tokens() {
+        let tokens = emit_rate_limit_key(
+            &[RateLimitKeyResolved::EpField {
+                name: "endpoint_id".to_string(),
+                field: parse_quote!(endpoint_id),
+            }],
+            PolicyEmitCtx::ClientBase,
+        );
+
+        let rendered = tokens.to_string();
+        assert!(rendered.contains("compile_error"));
+        assert!(rendered.contains("internal Concord error"));
+        assert!(!rendered.contains("unreachable"));
+        let _ = quote!(#tokens);
     }
 }
 
