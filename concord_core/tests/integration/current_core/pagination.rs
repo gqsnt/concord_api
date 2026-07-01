@@ -812,6 +812,29 @@ impl PaginationController<Vec<String>> for AlwaysContinueNoExpectedPagination {
 }
 
 #[tokio::test]
+async fn pending_request_pages_surface_remains_available() -> Result<(), ApiClientError> {
+    let transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![MockResponse::text(StatusCode::OK, "a,b")],
+    );
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::custom::<HeaderTokenPagination, Vec<String>>(),
+    };
+
+    let items = client
+        .request(endpoint)
+        .pages(PaginationTermination::take_pages(1))
+        .collect()
+        .await?;
+
+    assert_eq!(items, vec!["a".to_string(), "b".to_string()]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn custom_pagination_controller_drives_query_headers_and_stop() -> Result<(), ApiClientError>
 {
     let events = Arc::new(Mutex::new(Vec::new()));

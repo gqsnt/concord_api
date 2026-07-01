@@ -190,33 +190,39 @@ fn emit_endpoint_def(
         quote! {}
     };
     let pending_ext_trait = endpoint_pending_ext_trait_ident(ep);
-    let pending_setter_decls = facade.setters.iter().filter_map(|setter| {
-        let v = endpoint_var_for_setter(ep, setter)?;
-        let f = &v.rust;
-        let ty = &v.ty;
-        let set = setter.set_name.clone();
-        let opt = setter.set_optional_name.clone();
-        let clear = setter.clear_name.clone();
-        let set_doc = LitStr::new(&setter.set_doc, f.span());
-        let opt_doc = LitStr::new(&setter.set_optional_doc, f.span());
-        let clear_doc = LitStr::new(&setter.clear_doc, f.span());
-        Some(quote! {
-            #[doc = #set_doc]
-            fn #set(self, value: #ty) -> Self;
-            #[doc = #opt_doc]
-            fn #opt(self, value: ::core::option::Option<#ty>) -> Self;
-            #[doc = #clear_doc]
-            fn #clear(self) -> Self;
+    let pending_setter_decls: Vec<TokenStream2> = facade
+        .setters
+        .iter()
+        .filter_map(|setter| {
+            let v = endpoint_var_for_setter(ep, setter)?;
+            let f = &v.rust;
+            let ty = &v.ty;
+            let set = setter.set_name.clone();
+            let opt = setter.set_optional_name.clone();
+            let clear = setter.clear_name.clone();
+            let set_doc = LitStr::new(&setter.set_doc, f.span());
+            let opt_doc = LitStr::new(&setter.set_optional_doc, f.span());
+            let clear_doc = LitStr::new(&setter.clear_doc, f.span());
+            Some(quote! {
+                #[doc = #set_doc]
+                fn #set(self, value: #ty) -> Self;
+                #[doc = #opt_doc]
+                fn #opt(self, value: ::core::option::Option<#ty>) -> Self;
+                #[doc = #clear_doc]
+                fn #clear(self) -> Self;
+            })
         })
-    });
-    let pending_setter_impls = facade.setters.iter().filter_map(|setter| {
-        let v = endpoint_var_for_setter(ep, setter)?;
-        let ty = &v.ty;
-        let set = setter.set_name.clone();
-        let opt = setter.set_optional_name.clone();
-        let clear = setter.clear_name.clone();
-        Some(
-            quote! {
+        .collect();
+    let pending_setter_impls: Vec<TokenStream2> = facade
+        .setters
+        .iter()
+        .filter_map(|setter| {
+            let v = endpoint_var_for_setter(ep, setter)?;
+            let ty = &v.ty;
+            let set = setter.set_name.clone();
+            let opt = setter.set_optional_name.clone();
+            let clear = setter.clear_name.clone();
+            Some(quote! {
                 #[inline]
                 fn #set(self, value: #ty) -> Self {
                     self.map_endpoint(|ep| ep.#set(value))
@@ -231,9 +237,28 @@ fn emit_endpoint_def(
                 fn #clear(self) -> Self {
                     self.map_endpoint(|ep| ep.#clear())
                 }
-            },
-        )
-    });
+            })
+        })
+        .collect();
+    let pending_request_ext = if pending_setter_decls.is_empty() {
+        quote! {}
+    } else {
+        let pending_ext_trait = pending_ext_trait.clone();
+        quote! {
+            #[doc = "Request-builder extension methods for this endpoint."]
+            pub trait #pending_ext_trait: Sized {
+                #( #pending_setter_decls )*
+            }
+
+            impl<'a, T> #pending_ext_trait
+                for ::concord_core::prelude::PendingRequest<'a, super::#cx_ty, #ty_name, T>
+            where
+                T: ::concord_core::advanced::Transport,
+            {
+                #( #pending_setter_impls )*
+            }
+        }
+    };
 
     quote! {
         #( #[doc = #endpoint_docs] )*
@@ -299,18 +324,7 @@ fn emit_endpoint_def(
 
         #pagination_marker_impl
 
-        #[doc = "Request-builder extension methods for this endpoint."]
-        pub trait #pending_ext_trait: Sized {
-            #( #pending_setter_decls )*
-        }
-
-        impl<'a, T> #pending_ext_trait
-            for ::concord_core::prelude::PendingRequest<'a, super::#cx_ty, #ty_name, T>
-        where
-            T: ::concord_core::advanced::Transport,
-        {
-            #( #pending_setter_impls )*
-        }
+        #pending_request_ext
     }
 }
 

@@ -76,10 +76,17 @@ fn emit_endpoints(resolved_api: &ResolvedApi, facade_ir: &FacadeIr, cx_ty: &Iden
         let internal = endpoint_internal_ident(ep);
         Some(quote! { pub use super::__endpoints::#internal as #public; })
     });
-    let pending_ext_reexports = resolved_api.endpoints.iter().map(|ep| {
-        let ext = endpoint_pending_ext_trait_ident(ep);
-        quote! { pub use __endpoints::#ext; }
-    });
+    let pending_ext_reexports = resolved_api
+        .endpoints
+        .iter()
+        .filter_map(|ep| {
+            let facade = facade_ir_for_endpoint(facade_ir, ep)?;
+            if facade.setters.is_empty() {
+                return None;
+            }
+            let ext = endpoint_pending_ext_trait_ident(ep);
+            Some(quote! { pub use __endpoints::#ext; })
+        });
     let scope_modules = emit_endpoint_scope_modules(resolved_api);
     quote! {
         mod __endpoints {

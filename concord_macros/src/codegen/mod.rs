@@ -87,12 +87,19 @@ fn emit_resolved(resolved_api: ResolvedApi, facade_ir: &FacadeIr) -> TokenStream
                     pub use #mod_name::#trait_name;
                 })
             });
-    let pending_request_trait_imports = resolved_api.endpoints.iter().map(|ep| {
-        let trait_name = endpoint_pending_ext_trait_ident(ep);
-        quote! {
-            pub use #mod_name::#trait_name;
-        }
-    });
+    let pending_request_trait_imports = resolved_api
+        .endpoints
+        .iter()
+        .zip(facade_ir.endpoints.iter())
+        .filter_map(|(ep, facade_ep)| {
+            if facade_ep.setters.is_empty() {
+                return None;
+            }
+            let trait_name = endpoint_pending_ext_trait_ident(ep);
+            Some(quote! {
+                pub use #mod_name::#trait_name;
+            })
+        });
 
     quote! {
         mod #mod_name {
@@ -900,9 +907,12 @@ mod tests {
                 "pub mod endpoints",
                 "as Ping",
                 "as List",
-                "pub use pending_api :: PingRequestExt",
                 "pub use pending_api :: ListRequestExt",
             ],
+        );
+        assert!(
+            !out.contains("pub use pending_api :: PingRequestExt"),
+            "empty request-extension traits should not be reexported"
         );
     }
 
@@ -1801,6 +1811,33 @@ mod tests {
         assert!(
             !out.contains("for_each_page"),
             "generated public pagination surface should not expose for_each_page"
+        );
+    }
+
+    #[test]
+    fn generated_request_surface_has_no_behaviorless_extension_traits() {
+        let out = expanded(quote! {
+            client RequestSurfaceApi {
+                base "https://example.com"
+            }
+
+            GET Ping
+                as ping
+                path ["ping"]
+                -> Json<String>
+        });
+
+        assert_contains_all(
+            &out,
+            &["pub fn ping (& self ,) -> :: concord_core :: prelude :: PendingRequest"],
+        );
+        assert!(
+            !out.contains("pub trait PingRequestExt"),
+            "endpoints without request setters must not generate empty request-extension traits"
+        );
+        assert!(
+            !out.contains("pub use pending_api :: PingRequestExt"),
+            "endpoints without request setters must not reexport empty request-extension traits"
         );
     }
 
