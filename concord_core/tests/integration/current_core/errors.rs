@@ -808,6 +808,7 @@ async fn pagination_error_is_distinct_and_safe() {
                 send_cursor_on_first: true,
                 stop_when_cursor_missing: true,
             }),
+            ..Default::default()
         })
         .paginate(concord_core::prelude::PaginationTermination::hard_page_cap(
             100,

@@ -643,12 +643,15 @@ async fn concurrent_pagination_runs_keep_independent_state() -> Result<(), ApiCl
             client
                 .request(PageOnlyItemsEndpoint {
                     policy: Default::default(),
+                    page: 1,
+                    count: 2,
                     pagination: PaginationPlan::Paged {
                         page_key: "page".to_string(),
                         per_page_key: "per_page".to_string(),
                         page: 1,
                         per_page: 2,
                     },
+                    ..Default::default()
                 })
                 .paginate(PaginationTermination::hard_page_cap(10))
                 .collect()
@@ -669,6 +672,7 @@ async fn concurrent_pagination_runs_keep_independent_state() -> Result<(), ApiCl
                         send_cursor_on_first: true,
                         stop_when_cursor_missing: true,
                     }),
+                    ..Default::default()
                 })
                 .paginate(PaginationTermination::hard_page_cap(10))
                 .collect()

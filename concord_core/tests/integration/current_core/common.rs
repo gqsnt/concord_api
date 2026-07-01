@@ -1,12 +1,15 @@
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
-    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltResponse, DecodedResponse,
-    PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
-    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestMeta,
-    RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, Transport, TransportBody,
-    TransportByteStream, TransportError, TransportErrorHookContext, TransportErrorKind,
-    TransportRequest, TransportRequestBody, TransportResponse, apply_basic_credential,
+    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltResponse, CursorBindings,
+    CursorPagination, DecodedResponse, EndpointField, EndpointPaginationRuntime,
+    EndpointPaginationRuntimeAdapter, OffsetLimitBindings, OffsetLimitPagination, PagedBindings,
+    PagedPagination, PostResponseHookContext, PreSendHookContext, RateLimitContext,
+    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+    RateLimiter, RequestMeta, RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, Transport,
+    TransportBody, TransportByteStream, TransportError, TransportErrorHookContext,
+    TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
+    apply_basic_credential,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
@@ -224,26 +227,126 @@ impl Endpoint<TestCx> for TextEndpoint {
 
 #[derive(Clone)]
 pub struct ItemsEndpoint {
+    pub start: u64,
+    pub count: u64,
     pub policy: ResolvedPolicy,
     pub pagination: PaginationPlan,
+}
+
+impl Default for ItemsEndpoint {
+    fn default() -> Self {
+        Self {
+            start: 0,
+            count: 2,
+            policy: Default::default(),
+            pagination: PaginationPlan::OffsetLimit {
+                offset_key: "offset".to_string(),
+                limit_key: "limit".to_string(),
+                offset: 0,
+                limit: 2,
+            },
+        }
+    }
 }
 
 impl Endpoint<TestCx> for ItemsEndpoint {
     type Response = Vec<String>;
 
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
-        Ok(request_plan(
+        let mut plan = request_plan(
             "Items",
             Method::GET,
             "/items",
             self.policy.clone(),
             Some(self.pagination.clone()),
             decode_items,
-        ))
+        );
+        match &self.pagination {
+            PaginationPlan::OffsetLimit {
+                offset_key,
+                limit_key,
+                ..
+            } => {
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((offset_key.clone(), self.start.to_string()));
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((limit_key.clone(), self.count.to_string()));
+            }
+            PaginationPlan::Paged {
+                page_key,
+                per_page_key,
+                ..
+            } => {
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((page_key.clone(), self.start.to_string()));
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((per_page_key.clone(), self.count.to_string()));
+            }
+            PaginationPlan::Cursor {
+                cursor_key,
+                per_page_key,
+                ..
+            } => {
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((cursor_key.clone(), self.start.to_string()));
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((per_page_key.clone(), self.count.to_string()));
+            }
+            PaginationPlan::Custom(_) => {}
+        }
+        Ok(plan)
     }
 }
 
-impl PaginatedEndpoint<TestCx> for ItemsEndpoint {}
+impl PaginatedEndpoint<TestCx> for ItemsEndpoint {
+    fn endpoint_state_pagination(
+        &self,
+    ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
+        match &self.pagination {
+            PaginationPlan::OffsetLimit { .. } => {
+                Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+                    OffsetLimitPagination::default(),
+                    OffsetLimitBindings {
+                        offset: EndpointField::new(
+                            |ep: &Self| ep.start,
+                            |ep: &mut Self, value| ep.start = value,
+                        ),
+                        limit: EndpointField::new(
+                            |ep: &Self| ep.count,
+                            |ep: &mut Self, value| ep.count = value,
+                        ),
+                    },
+                )))
+            }
+            PaginationPlan::Paged { .. } => Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+                PagedPagination::default(),
+                PagedBindings {
+                    page: EndpointField::new(
+                        |ep: &Self| ep.start,
+                        |ep: &mut Self, value| ep.start = value,
+                    ),
+                    per_page: EndpointField::new(
+                        |ep: &Self| ep.count,
+                        |ep: &mut Self, value| ep.count = value,
+                    ),
+                },
+            ))),
+            PaginationPlan::Custom(_) | PaginationPlan::Cursor { .. } => None,
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PageOnlyItems {
@@ -281,6 +384,20 @@ pub struct NoHintItemsEndpoint {
     pub pagination: PaginationPlan,
 }
 
+impl Default for NoHintItemsEndpoint {
+    fn default() -> Self {
+        Self {
+            policy: Default::default(),
+            pagination: PaginationPlan::OffsetLimit {
+                offset_key: "offset".to_string(),
+                limit_key: "limit".to_string(),
+                offset: 0,
+                limit: 2,
+            },
+        }
+    }
+}
+
 impl Endpoint<TestCx> for NoHintItemsEndpoint {
     type Response = NoHintItems;
 
@@ -300,26 +417,126 @@ impl PaginatedEndpoint<TestCx> for NoHintItemsEndpoint {}
 
 #[derive(Clone)]
 pub struct PageOnlyItemsEndpoint {
+    pub page: u64,
+    pub count: u64,
     pub policy: ResolvedPolicy,
     pub pagination: PaginationPlan,
+}
+
+impl Default for PageOnlyItemsEndpoint {
+    fn default() -> Self {
+        Self {
+            page: 0,
+            count: 2,
+            policy: Default::default(),
+            pagination: PaginationPlan::OffsetLimit {
+                offset_key: "offset".to_string(),
+                limit_key: "limit".to_string(),
+                offset: 0,
+                limit: 2,
+            },
+        }
+    }
 }
 
 impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
     type Response = PageOnlyItems;
 
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
-        Ok(request_plan(
+        let mut plan = request_plan(
             "PageOnlyItems",
             Method::GET,
             "/page-only-items",
             self.policy.clone(),
             Some(self.pagination.clone()),
             decode_page_only_items,
-        ))
+        );
+        match &self.pagination {
+            PaginationPlan::Paged {
+                page_key,
+                per_page_key,
+                ..
+            } => {
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((page_key.clone(), self.page.to_string()));
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((per_page_key.clone(), self.count.to_string()));
+            }
+            PaginationPlan::OffsetLimit {
+                offset_key,
+                limit_key,
+                ..
+            } => {
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((offset_key.clone(), self.page.to_string()));
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((limit_key.clone(), self.count.to_string()));
+            }
+            PaginationPlan::Cursor {
+                cursor_key,
+                per_page_key,
+                ..
+            } => {
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((cursor_key.clone(), self.page.to_string()));
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((per_page_key.clone(), self.count.to_string()));
+            }
+            PaginationPlan::Custom(_) => {}
+        }
+        Ok(plan)
     }
 }
 
-impl PaginatedEndpoint<TestCx> for PageOnlyItemsEndpoint {}
+impl PaginatedEndpoint<TestCx> for PageOnlyItemsEndpoint {
+    fn endpoint_state_pagination(
+        &self,
+    ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
+        match &self.pagination {
+            PaginationPlan::Paged { .. } => Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+                PagedPagination::default(),
+                PagedBindings {
+                    page: EndpointField::new(
+                        |ep: &Self| ep.page,
+                        |ep: &mut Self, value| ep.page = value,
+                    ),
+                    per_page: EndpointField::new(
+                        |ep: &Self| ep.count,
+                        |ep: &mut Self, value| ep.count = value,
+                    ),
+                },
+            ))),
+            PaginationPlan::OffsetLimit { .. } => {
+                Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+                    OffsetLimitPagination::default(),
+                    OffsetLimitBindings {
+                        offset: EndpointField::new(
+                            |ep: &Self| ep.page,
+                            |ep: &mut Self, value| ep.page = value,
+                        ),
+                        limit: EndpointField::new(
+                            |ep: &Self| ep.count,
+                            |ep: &mut Self, value| ep.count = value,
+                        ),
+                    },
+                )))
+            }
+            PaginationPlan::Custom(_) | PaginationPlan::Cursor { .. } => None,
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CursorItems {
@@ -349,26 +566,129 @@ impl HasNextCursor for CursorItems {
 
 #[derive(Clone)]
 pub struct CursorItemsEndpoint {
+    pub cursor: Option<String>,
+    pub count: u64,
     pub policy: ResolvedPolicy,
     pub pagination: PaginationPlan,
+}
+
+impl Default for CursorItemsEndpoint {
+    fn default() -> Self {
+        Self {
+            cursor: Some("start".to_string()),
+            count: 2,
+            policy: Default::default(),
+            pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+                cursor_key: "cursor".into(),
+                per_page_key: "limit".into(),
+                cursor: Some("start".to_string()),
+                per_page: 2,
+                send_cursor_on_first: false,
+                stop_when_cursor_missing: true,
+            }),
+        }
+    }
 }
 
 impl Endpoint<TestCx> for CursorItemsEndpoint {
     type Response = CursorItems;
 
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
-        Ok(request_plan(
+        let mut plan = request_plan(
             "CursorItems",
             Method::GET,
             "/cursor-items",
             self.policy.clone(),
             Some(self.pagination.clone()),
             decode_cursor_items,
-        ))
+        );
+        match &self.pagination {
+            PaginationPlan::Cursor {
+                cursor_key,
+                per_page_key,
+                ..
+            } => {
+                if let Some(cursor) = &self.cursor {
+                    plan.endpoint
+                        .policy
+                        .query
+                        .push((cursor_key.clone(), cursor.clone()));
+                }
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((per_page_key.clone(), self.count.to_string()));
+            }
+            PaginationPlan::OffsetLimit {
+                offset_key,
+                limit_key,
+                ..
+            } => {
+                if let Some(cursor) = &self.cursor {
+                    plan.endpoint
+                        .policy
+                        .query
+                        .push((offset_key.clone(), cursor.clone()));
+                }
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((limit_key.clone(), self.count.to_string()));
+            }
+            PaginationPlan::Paged {
+                page_key,
+                per_page_key,
+                ..
+            } => {
+                if let Some(cursor) = &self.cursor {
+                    plan.endpoint
+                        .policy
+                        .query
+                        .push((page_key.clone(), cursor.clone()));
+                }
+                plan.endpoint
+                    .policy
+                    .query
+                    .push((per_page_key.clone(), self.count.to_string()));
+            }
+            PaginationPlan::Custom(_) => {}
+        }
+        Ok(plan)
     }
 }
 
-impl PaginatedEndpoint<TestCx> for CursorItemsEndpoint {}
+impl PaginatedEndpoint<TestCx> for CursorItemsEndpoint {
+    fn endpoint_state_pagination(
+        &self,
+    ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
+        match &self.pagination {
+            PaginationPlan::Cursor {
+                send_cursor_on_first,
+                stop_when_cursor_missing,
+                ..
+            } => Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+                CursorPagination {
+                    send_cursor_on_first: *send_cursor_on_first,
+                    stop_when_cursor_missing: *stop_when_cursor_missing,
+                    ..Default::default()
+                },
+                CursorBindings {
+                    cursor: EndpointField::new(
+                        |ep: &Self| ep.cursor.clone(),
+                        |ep: &mut Self, value| ep.cursor = value,
+                    ),
+                    per_page: EndpointField::new(
+                        |ep: &Self| ep.count,
+                        |ep: &mut Self, value| ep.count = value,
+                    ),
+                },
+            ))),
+            PaginationPlan::OffsetLimit { .. }
+            | PaginationPlan::Paged { .. }
+            | PaginationPlan::Custom(_) => None,
+        }
+    }
+}
 
 pub fn request_plan(
     name: &'static str,

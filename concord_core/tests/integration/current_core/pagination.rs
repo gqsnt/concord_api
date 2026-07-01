@@ -224,6 +224,59 @@ impl Endpoint<TestCx> for HeaderBoundCustomEndpoint {
     }
 }
 
+#[derive(Clone)]
+struct GeneratedHeaderBoundCustomEndpoint {
+    page: u64,
+    count: u64,
+}
+
+impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
+    type Response = Vec<String>;
+
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        let mut plan = request_plan(
+            "GeneratedHeaderBoundCustom",
+            Method::GET,
+            "/generated-header-custom",
+            Default::default(),
+            None,
+            decode_items,
+        );
+        plan.endpoint.policy.headers.insert(
+            http::header::HeaderName::from_static("x-page"),
+            HeaderValue::from_str(&self.page.to_string()).expect("valid header value"),
+        );
+        plan.endpoint.policy.headers.insert(
+            http::header::HeaderName::from_static("x-count"),
+            HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
+        );
+        Ok(plan)
+    }
+}
+
+impl PaginatedEndpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
+    fn endpoint_state_pagination(
+        &self,
+    ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
+        Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+            HeaderBoundCustomPagination,
+            HeaderBoundCustomBindings {
+                page: EndpointField::new(
+                    |ep: &GeneratedHeaderBoundCustomEndpoint| ep.page,
+                    |ep: &mut GeneratedHeaderBoundCustomEndpoint, value| ep.page = value,
+                ),
+                count: EndpointField::new(
+                    |ep: &GeneratedHeaderBoundCustomEndpoint| ep.count,
+                    |ep: &mut GeneratedHeaderBoundCustomEndpoint, value| ep.count = value,
+                ),
+            },
+        )))
+    }
+}
+
 #[derive(Default)]
 struct HeaderBoundCustomPagination;
 
@@ -1160,6 +1213,7 @@ async fn pending_request_pages_surface_remains_available() -> Result<(), ApiClie
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<HeaderTokenPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let items = client
@@ -1190,6 +1244,65 @@ async fn custom_endpoint_state_pagination_renders_endpoint_fields() -> Result<()
         count: 2,
         pagination: PaginationPlan::custom::<HeaderTokenPagination, Vec<String>>(),
     };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("x-page")
+            .and_then(|v| v.to_str().ok()),
+        Some("1")
+    );
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("x-count")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("x-page")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("x-count")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn generated_custom_endpoint_state_collect_renders_endpoint_fields()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::OK, "c"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = GeneratedHeaderBoundCustomEndpoint { page: 1, count: 2 };
 
     let items = client
         .request(endpoint)
@@ -1330,8 +1443,7 @@ fn custom_endpoint_state_pagination_reports_progress_and_typed_errors() {
 }
 
 #[tokio::test]
-async fn custom_pagination_controller_drives_query_headers_and_stop() -> Result<(), ApiClientError>
-{
+async fn custom_pagination_query_request_fallback_still_works() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -1346,6 +1458,7 @@ async fn custom_pagination_controller_drives_query_headers_and_stop() -> Result<
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<HeaderTokenPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let items = client
@@ -1395,6 +1508,7 @@ async fn invalid_pagination_header_name_returns_typed_error_without_transport() 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<InvalidHeaderPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let err = client
@@ -1421,6 +1535,7 @@ async fn dynamic_pagination_query_and_header_names_work() -> Result<(), ApiClien
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<DynamicRequestMutationPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let items = client
@@ -1585,7 +1700,8 @@ async fn paged_endpoint_state_mutation_renders_endpoint_fields() -> Result<(), A
 }
 
 #[tokio::test]
-async fn paged_query_keys_remain_supported_on_fallback_path() -> Result<(), ApiClientError> {
+async fn built_in_pagination_without_endpoint_state_hook_is_rejected() -> Result<(), ApiClientError>
+{
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -1608,34 +1724,14 @@ async fn paged_query_keys_remain_supported_on_fallback_path() -> Result<(), ApiC
         },
     };
 
-    let items = client
+    let err = client
         .request(endpoint)
         .paginate(PaginationTermination::hard_page_cap(4))
         .collect()
-        .await?;
-
-    assert_eq!(
-        items,
-        vec!["a".to_string(), "b".to_string(), "c".to_string()]
-    );
-    let requests = sent.requests().await;
-    assert_eq!(requests.len(), 2);
-    assert_eq!(
-        query_value(&requests[0].url, "pageNo"),
-        Some("1".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[0].url, "pageSize"),
-        Some("2".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[1].url, "pageNo"),
-        Some("2".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[1].url, "pageSize"),
-        Some("2".to_string())
-    );
+        .await
+        .expect_err("built-in pagination without endpoint-state support must be rejected");
+    assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert!(sent.requests().await.is_empty());
     Ok(())
 }
 
@@ -1661,6 +1757,7 @@ async fn retry_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientEr
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -1714,6 +1811,7 @@ async fn offset_pagination_collects_page_items_without_has_next_cursor()
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -1744,6 +1842,8 @@ async fn cursor_pagination_collects_until_cursor_missing() -> Result<(), ApiClie
 
     let endpoint = CursorItemsEndpoint {
         policy: Default::default(),
+        cursor: Some("start".to_string()),
+        count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
             cursor_key: "cursor".into(),
             per_page_key: "limit".into(),
@@ -1752,6 +1852,7 @@ async fn cursor_pagination_collects_until_cursor_missing() -> Result<(), ApiClie
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
         }),
+        ..Default::default()
     };
 
     let items = client
@@ -1832,7 +1933,8 @@ async fn cursor_endpoint_state_mutation_renders_endpoint_fields() -> Result<(), 
 }
 
 #[tokio::test]
-async fn cursor_query_keys_remain_supported_on_fallback_path() -> Result<(), ApiClientError> {
+async fn cursor_built_in_pagination_without_endpoint_state_hook_is_rejected()
+-> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -1844,46 +1946,25 @@ async fn cursor_query_keys_remain_supported_on_fallback_path() -> Result<(), Api
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
-    let endpoint = CursorItemsEndpoint {
+    let endpoint = NoHintItemsEndpoint {
         policy: Default::default(),
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursorToken".into(),
+        pagination: PaginationPlan::Paged {
+            page_key: "cursorToken".into(),
             per_page_key: "pageSize".into(),
-            cursor: Some("start".to_string()),
+            page: 1,
             per_page: 2,
-            send_cursor_on_first: true,
-            stop_when_cursor_missing: true,
-        }),
+        },
+        ..Default::default()
     };
 
-    let items = client
+    let err = client
         .request(endpoint)
         .paginate(PaginationTermination::hard_page_cap(100))
         .collect()
-        .await?;
-
-    assert_eq!(
-        items,
-        vec!["a".to_string(), "b".to_string(), "c".to_string()]
-    );
-    let requests = sent.requests().await;
-    assert_eq!(requests.len(), 2);
-    assert_eq!(
-        query_value(&requests[0].url, "cursorToken"),
-        Some("start".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[1].url, "cursorToken"),
-        Some("next-1".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[0].url, "pageSize"),
-        Some("2".to_string())
-    );
-    assert_eq!(
-        query_value(&requests[1].url, "pageSize"),
-        Some("2".to_string())
-    );
+        .await
+        .expect_err("built-in pagination without endpoint-state support must be rejected");
+    assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert!(sent.requests().await.is_empty());
     Ok(())
 }
 
@@ -1902,6 +1983,8 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
 
     let endpoint = CursorItemsEndpoint {
         policy: Default::default(),
+        cursor: Some("start".to_string()),
+        count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
             cursor_key: "cursor".into(),
             per_page_key: "limit".into(),
@@ -1910,6 +1993,7 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
         }),
+        ..Default::default()
     };
 
     let err = client
@@ -1949,6 +2033,8 @@ async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
 
     let endpoint = CursorItemsEndpoint {
         policy: Default::default(),
+        cursor: Some("start-a".to_string()),
+        count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
             cursor_key: "cursor".into(),
             per_page_key: "limit".into(),
@@ -1957,6 +2043,7 @@ async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
         }),
+        ..Default::default()
     };
 
     let err = client
@@ -1993,6 +2080,8 @@ async fn cursor_pagination_missing_cursor_without_stop_is_non_progress_error() {
 
     let endpoint = CursorItemsEndpoint {
         policy: Default::default(),
+        cursor: None,
+        count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
             cursor_key: "cursor".into(),
             per_page_key: "limit".into(),
@@ -2001,6 +2090,7 @@ async fn cursor_pagination_missing_cursor_without_stop_is_non_progress_error() {
             send_cursor_on_first: false,
             stop_when_cursor_missing: false,
         }),
+        ..Default::default()
     };
 
     let err = client
@@ -2033,12 +2123,15 @@ async fn paged_pagination_collects_page_items_without_has_next_cursor() -> Resul
 
     let endpoint = PageOnlyItemsEndpoint {
         policy: Default::default(),
+        page: 1,
+        count: 2,
         pagination: PaginationPlan::Paged {
             page_key: "page".to_string(),
             per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 2,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2069,12 +2162,15 @@ async fn paged_pagination_uses_page_numbers() -> Result<(), ApiClientError> {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 1,
+        count: 2,
         pagination: PaginationPlan::Paged {
             page_key: "page".to_string(),
             per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 2,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2103,12 +2199,15 @@ async fn hard_page_cap_zero_errors_before_transport() {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 20,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let err = client
@@ -2132,12 +2231,15 @@ async fn hard_item_cap_zero_errors_before_transport() {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 20,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let err = client
@@ -2161,12 +2263,15 @@ async fn take_pages_zero_returns_empty_without_transport() -> Result<(), ApiClie
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 2,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2189,12 +2294,15 @@ async fn take_items_zero_returns_empty_without_transport() -> Result<(), ApiClie
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 2,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2225,12 +2333,15 @@ async fn take_items_truncates_final_page() -> Result<(), ApiClientError> {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 20,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2261,12 +2372,15 @@ async fn take_items_less_than_first_page_sends_one_page() -> Result<(), ApiClien
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 20,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2297,12 +2411,15 @@ async fn take_items_exact_boundary_stops_without_extra_page() -> Result<(), ApiC
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 2,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2333,12 +2450,15 @@ async fn take_pages_stops_without_error() -> Result<(), ApiClientError> {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 2,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2376,12 +2496,15 @@ async fn hard_page_cap_errors_without_fetching_extra_page() {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 2,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let err = client
@@ -2418,6 +2541,7 @@ async fn hard_item_cap_errors_without_truncating() {
             offset: 0,
             limit: 20,
         },
+        ..Default::default()
     };
 
     let err = client
@@ -2447,6 +2571,8 @@ async fn loop_detection_still_default_enabled() {
 
     let endpoint = CursorItemsEndpoint {
         policy: Default::default(),
+        cursor: Some("start".to_string()),
+        count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
             cursor_key: "cursor".into(),
             per_page_key: "limit".into(),
@@ -2455,6 +2581,7 @@ async fn loop_detection_still_default_enabled() {
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
         }),
+        ..Default::default()
     };
 
     let err = client
@@ -2488,6 +2615,7 @@ async fn detect_loops_false_allows_repeated_progress_until_termination()
         policy: Default::default(),
         pagination: PaginationPlan::custom::<ConstantProgressChangingQueryPagination, Vec<String>>(
         ),
+        ..Default::default()
     };
 
     let items = client
@@ -2516,6 +2644,7 @@ async fn max_items_error_includes_page_context() {
             offset: 0,
             limit: 3,
         },
+        ..Default::default()
     };
 
     let err = client
@@ -2586,12 +2715,15 @@ async fn collect_offset_short_first_page_stops_via_runtime() -> Result<(), ApiCl
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 100,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 100,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2614,12 +2746,15 @@ async fn collect_offset_empty_first_page_stops_via_runtime() -> Result<(), ApiCl
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 100,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 100,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2642,12 +2777,15 @@ async fn collect_paged_short_page_stops_via_runtime() -> Result<(), ApiClientErr
 
     let endpoint = PageOnlyItemsEndpoint {
         policy: Default::default(),
+        page: 1,
+        count: 100,
         pagination: PaginationPlan::Paged {
             page_key: "page".to_string(),
             per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 100,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2673,6 +2811,8 @@ async fn collect_cursor_short_page_stops_even_with_next_cursor() -> Result<(), A
 
     let endpoint = CursorItemsEndpoint {
         policy: Default::default(),
+        cursor: Some("start".to_string()),
+        count: 100,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
             cursor_key: "cursor".into(),
             per_page_key: "limit".into(),
@@ -2681,6 +2821,7 @@ async fn collect_cursor_short_page_stops_even_with_next_cursor() -> Result<(), A
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
         }),
+        ..Default::default()
     };
 
     let items = client
@@ -2706,6 +2847,8 @@ async fn collect_cursor_empty_page_stops_even_with_next_cursor() -> Result<(), A
 
     let endpoint = CursorItemsEndpoint {
         policy: Default::default(),
+        cursor: Some("start".to_string()),
+        count: 100,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
             cursor_key: "cursor".into(),
             per_page_key: "limit".into(),
@@ -2714,6 +2857,7 @@ async fn collect_cursor_empty_page_stops_even_with_next_cursor() -> Result<(), A
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
         }),
+        ..Default::default()
     };
 
     let items = client
@@ -2736,12 +2880,15 @@ async fn take_items_short_page_returns_short_page_under_limit() -> Result<(), Ap
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 100,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 100,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2764,12 +2911,15 @@ async fn hard_item_cap_short_page_success_under_cap() -> Result<(), ApiClientErr
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
+        start: 0,
+        count: 100,
         pagination: PaginationPlan::OffsetLimit {
             offset_key: "offset".to_string(),
             limit_key: "limit".to_string(),
             offset: 0,
             limit: 100,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2804,6 +2954,7 @@ async fn hard_item_cap_still_errors_before_short_stop_when_page_exceeds_cap() {
             offset: 0,
             limit: 90,
         },
+        ..Default::default()
     };
 
     let err = client
@@ -2832,6 +2983,7 @@ async fn take_items_exact_limit_still_wins_before_short_stop() -> Result<(), Api
             offset: 0,
             limit: 100,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -2856,6 +3008,7 @@ async fn custom_collect_empty_page_with_hint_does_not_call_advance() -> Result<(
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<EmptyHintCountingPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let items = client
@@ -2881,6 +3034,7 @@ async fn custom_collect_short_page_with_hint_does_not_call_advance() -> Result<(
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<ShortHintCountingPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let items = client
@@ -2904,6 +3058,7 @@ async fn hard_item_cap_hint_exceeded_does_not_call_advance() {
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<HardCapCountingPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let err = client
@@ -2926,6 +3081,7 @@ async fn take_items_hint_reached_does_not_call_advance() -> Result<(), ApiClient
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<TakeItemsCountingPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let items = client
@@ -2981,6 +3137,7 @@ async fn custom_collect_full_page_continues_when_expected_items_set() -> Result<
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<AlwaysContinueExpectedPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let items = client
@@ -3011,6 +3168,7 @@ async fn custom_collect_short_page_does_not_stop_when_expected_items_missing()
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<AlwaysContinueNeverExpectedPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let items = client
@@ -3041,6 +3199,7 @@ async fn custom_expected_items_is_per_page_not_sticky() -> Result<(), ApiClientE
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<AlwaysContinueNoExpectedPagination, Vec<String>>(),
+        ..Default::default()
     };
 
     let items = client
@@ -3074,6 +3233,7 @@ async fn max_pages_error_includes_seen_items() {
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let err = client
@@ -3117,6 +3277,7 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
             offset: 0,
             limit: 2,
         },
+        ..Default::default()
     };
 
     let items = client
@@ -3223,6 +3384,7 @@ async fn custom_pagination_example_short_page_stop_is_runtime_owned() -> Result<
     let endpoint = PageOnlyItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::custom::<Pr64RuntimeOwnedShortPagePagination, PageOnlyItems>(),
+        ..Default::default()
     };
 
     let items = PR64_CUSTOM_PAGINATION_EVENTS
