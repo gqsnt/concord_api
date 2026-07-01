@@ -9,9 +9,8 @@ use crate::ast::{
     AuthCredentialKind, AuthCredentials, AuthUseKind, BehaviorProfileDef, BehaviorProfilesBlock,
     BehaviorUseSpec, FmtPiece, FmtSpec, KeySpec, PaginateSpec, PolicyBlock, PolicyBlocks,
     PolicyStmt, PolicyValue, RateLimitDurationUnit, RateLimitKeyBindingSpec, RateLimitKeySpec,
-    RateLimitPlanSpec, RateLimitProfilesBlock, RateLimitSpec, RawIoSpec, RawRequestIo,
-    RawResponseIo, RefScope, RetryIdempotencySpec, RetryPatch, RetryProfilesBlock, RetrySpec,
-    RouteAtom, SecretRef,
+    RateLimitPlanSpec, RateLimitProfilesBlock, RateLimitSpec, RawIoSpec, RawResponseIo, RefScope,
+    RetryIdempotencySpec, RetryPatch, RetryProfilesBlock, RetrySpec, RouteAtom, SecretRef,
 };
 use crate::emit_helpers;
 use crate::model::facade::{
@@ -860,8 +859,8 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
             params,
             policy,
             facade,
-            ep.response,
-            ep.body.is_some(),
+            ep.response_io(),
+            !matches!(ep.request_io(), ResolvedRequestBodyIo::None),
             ep.paginate.is_some(),
             ep.map.is_some()
         ));
@@ -3181,15 +3180,111 @@ mod tests {
             .find(|ep| ep.name == "Create")
             .expect("Create endpoint");
 
-        let body = endpoint.body.as_ref().expect("body resolved");
-        let body_ty = &body.ty;
-        let response_ty = &endpoint.response.ty;
+        let body = match endpoint.request_io() {
+            ResolvedRequestBodyIo::BufferedCodec(io) => io,
+            other => panic!("expected buffered request body, got {other:?}"),
+        };
+        let response_ty = match endpoint.response_io() {
+            ResolvedResponseBodyIo::BufferedCodec(io) => &io.value_ty,
+            other => panic!("expected buffered response body, got {other:?}"),
+        };
         let map = endpoint.map.as_ref().expect("map resolved");
         let map_ty = &map.out_ty;
 
+        let body_ty = &body.value_ty;
         assert_eq!(quote::quote!(#body_ty).to_string(), "CreateBody");
         assert_eq!(quote::quote!(#response_ty).to_string(), "CreateResponse");
         assert_eq!(quote::quote!(#map_ty).to_string(), "Created");
+    }
+
+    #[test]
+    fn resolved_endpoint_exposes_closed_io_variants() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                }
+
+                POST Buffered(body: Json<Body>)
+                    path ["buffered"]
+                    -> Json<Resp>
+
+                GET Streamed
+                    path ["streamed"]
+                    -> Stream<Bytes>
+
+                GET Listed
+                    path ["listed"]
+                    -> Records<Item, NdJson>
+
+                GET Multiparted
+                    path ["multiparted"]
+                    -> Multipart<Part>
+
+                GET Ssed
+                    path ["ssed"]
+                    -> Sse<Event>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let buffered = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Buffered")
+            .expect("buffered endpoint");
+        assert!(matches!(
+            buffered.request_io(),
+            ResolvedRequestBodyIo::BufferedCodec(_)
+        ));
+        assert!(matches!(
+            buffered.response_io(),
+            ResolvedResponseBodyIo::BufferedCodec(_)
+        ));
+
+        let streamed = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Streamed")
+            .expect("streamed endpoint");
+        assert!(matches!(
+            streamed.response_io(),
+            ResolvedResponseBodyIo::RawStream { .. }
+        ));
+
+        let listed = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Listed")
+            .expect("listed endpoint");
+        assert!(matches!(
+            listed.response_io(),
+            ResolvedResponseBodyIo::Records { .. }
+        ));
+
+        let multiparted = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Multiparted")
+            .expect("multiparted endpoint");
+        assert!(matches!(
+            multiparted.response_io(),
+            ResolvedResponseBodyIo::Multipart { .. }
+        ));
+
+        let ssed = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Ssed")
+            .expect("ssed endpoint");
+        assert!(matches!(
+            ssed.response_io(),
+            ResolvedResponseBodyIo::Sse { .. }
+        ));
     }
 
     #[test]

@@ -59,8 +59,6 @@ pub struct ResolvedEndpoint {
 
     pub vars: Vec<VarInfo>, // endpoint vars (union, stable)
     pub io: ResolvedHttpEndpointIo,
-    pub body: RawRequestIo,
-    pub response: RawResponseIo,
 
     pub policy: ResolvedPolicySpec,
     pub behavior_doc: BehaviorDocMeta,
@@ -89,7 +87,6 @@ pub struct BufferedCodecIo {
 pub enum ResolvedRequestBodyIo {
     None,
     BufferedCodec(BufferedCodecIo),
-    BufferedBytes,
     RawStream { media_ty: Type },
     Records { item_ty: Type, format_ty: Type },
     Multipart { value_ty: Type, format_ty: Type },

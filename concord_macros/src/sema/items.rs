@@ -159,7 +159,7 @@ fn collect_endpoint_output_types_into(
                         format!("duplicate endpoint `{key}`"),
                     ));
                 }
-                let output_ty = endpoint_public_output_ty(endpoint);
+                let output_ty = endpoint_public_output_ty(endpoint)?;
                 out.insert(key, output_ty);
             }
         }
@@ -167,53 +167,29 @@ fn collect_endpoint_output_types_into(
     Ok(())
 }
 
-fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Type {
+fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Result<Type> {
     if let Some(map) = &endpoint.map {
-        return map.out_ty.clone();
+        return Ok(map.out_ty.clone());
     }
 
-    let family = endpoint_io_family_name(&endpoint.response)
-        .map(ToString::to_string)
-        .unwrap_or_default();
-    match family.as_str() {
-        "Stream" => {
-            let media_ty = endpoint
-                .response
-                .args
-                .first()
-                .cloned()
-                .unwrap_or_else(|| endpoint.response.ty.clone());
+    let response_io = classify_http_response_io(&endpoint.response)?;
+    Ok(match response_io {
+        ResolvedResponseBodyIo::BufferedCodec(io) => io.value_ty,
+        ResolvedResponseBodyIo::BufferedBytes => syn::parse_quote!(::bytes::Bytes),
+        ResolvedResponseBodyIo::NoContent => syn::parse_quote!(()),
+        ResolvedResponseBodyIo::RawStream { media_ty } => {
             syn::parse_quote!(::concord_core::advanced::StreamResponse<#media_ty>)
         }
-        "Records" => {
-            let item_ty = endpoint
-                .response
-                .args
-                .first()
-                .cloned()
-                .unwrap_or_else(|| endpoint.response.ty.clone());
+        ResolvedResponseBodyIo::Records { item_ty, .. } => {
             syn::parse_quote!(::concord_core::advanced::RecordStream<#item_ty>)
         }
-        "Multipart" => {
-            let part_ty = endpoint
-                .response
-                .args
-                .first()
-                .cloned()
-                .unwrap_or_else(|| endpoint.response.ty.clone());
+        ResolvedResponseBodyIo::Multipart { part_ty, .. } => {
             syn::parse_quote!(::concord_core::advanced::MultipartStream<#part_ty>)
         }
-        "Sse" => {
-            let event_ty = endpoint
-                .response
-                .args
-                .first()
-                .cloned()
-                .unwrap_or_else(|| endpoint.response.ty.clone());
+        ResolvedResponseBodyIo::Sse { event_ty, .. } => {
             syn::parse_quote!(::concord_core::advanced::SseStream<#event_ty>)
         }
-        _ => endpoint.response.ty.clone(),
-    }
+    })
 }
 
 fn endpoint_scope_key(scope_modules: &[Ident], endpoint: &Ident) -> String {
@@ -621,15 +597,9 @@ fn analyze_endpoint(
             "`Bytes` responses do not support pagination",
         ));
     }
-    ensure_codegen_supported_request_io(&request_io, ed.body.as_ref())?;
-    ensure_codegen_supported_response_io(&response_io, &ed.response)?;
-    let io = ResolvedHttpEndpointIo {
-        request: request_io.clone(),
-        response: response_io.clone(),
-    };
 
     // 4) Resolve paginate, if any.
-    if ed.body.is_some() && ed.paginate.is_some() {
+    if !request_io.is_none() && ed.paginate.is_some() {
         return Err(syn::Error::new(
             ed.name.span(),
             "paginated endpoints with request bodies are not supported in v1",
@@ -660,9 +630,10 @@ fn analyze_endpoint(
         // Stable declaration order.
         vars: endpoint_decls,
 
-        io,
-        body: ed.body.clone(),
-        response: ed.response.clone(),
+        io: ResolvedHttpEndpointIo {
+            request: request_io,
+            response: response_io,
+        },
 
         policy: ResolvedPolicySpec {
             scopes: scope_policies,
@@ -709,8 +680,18 @@ fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo
     let io = classify_endpoint_io(spec, EndpointIoPosition::Request)?;
     Ok(match io {
         EndpointIoClassification::BufferedCodec(io) => ResolvedRequestBodyIo::BufferedCodec(io),
-        EndpointIoClassification::BufferedBytes => ResolvedRequestBodyIo::BufferedBytes,
-        EndpointIoClassification::NoContent => ResolvedRequestBodyIo::None,
+        EndpointIoClassification::BufferedBytes => {
+            return Err(syn::Error::new_spanned(
+                spec.marker.clone(),
+                "`Bytes` endpoint I/O is reserved but not supported yet",
+            ));
+        }
+        EndpointIoClassification::NoContent => {
+            return Err(syn::Error::new_spanned(
+                spec.marker.clone(),
+                "`NoContent` is not valid as an endpoint request",
+            ));
+        }
         EndpointIoClassification::RawStream { media_ty } => ResolvedRequestBodyIo::RawStream {
             media_ty,
         },
@@ -881,41 +862,6 @@ fn classify_endpoint_io(
             }
             Ok(EndpointIoClassification::BufferedCodec(buffered_codec_io(spec)))
         }
-    }
-}
-
-fn ensure_codegen_supported_request_io(
-    io: &ResolvedRequestBodyIo,
-    spec: Option<&RawIoSpec>,
-) -> Result<()> {
-    let Some(spec) = spec else {
-        return Ok(());
-    };
-    match io {
-        ResolvedRequestBodyIo::None
-        | ResolvedRequestBodyIo::BufferedCodec(_)
-        | ResolvedRequestBodyIo::RawStream { .. }
-        | ResolvedRequestBodyIo::Records { .. }
-        | ResolvedRequestBodyIo::Multipart { .. } => Ok(()),
-        ResolvedRequestBodyIo::BufferedBytes => Err(syn::Error::new_spanned(
-            spec.marker.clone(),
-            "`Bytes` endpoint I/O is reserved but not supported yet",
-        )),
-    }
-}
-
-fn ensure_codegen_supported_response_io(
-    io: &ResolvedResponseBodyIo,
-    _spec: &RawResponseIo,
-) -> Result<()> {
-    match io {
-        ResolvedResponseBodyIo::BufferedCodec(_)
-        | ResolvedResponseBodyIo::BufferedBytes
-        | ResolvedResponseBodyIo::RawStream { .. }
-        | ResolvedResponseBodyIo::Records { .. }
-        | ResolvedResponseBodyIo::Multipart { .. }
-        | ResolvedResponseBodyIo::Sse { .. }
-        | ResolvedResponseBodyIo::NoContent => Ok(()),
     }
 }
 

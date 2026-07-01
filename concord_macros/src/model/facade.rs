@@ -398,32 +398,38 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
             details: Vec::new(),
         });
     }
-    if let Some(body) = &ep.body {
-        let body_summary = match ep.request_io() {
-            ResolvedRequestBodyIo::Multipart {
-                value_ty,
-                format_ty,
-            } => format!(
-                "Body: Multipart<{}, {}>",
-                quote::quote!(#value_ty),
-                quote::quote!(#format_ty)
-            ),
-            ResolvedRequestBodyIo::Records { item_ty, format_ty } => format!(
-                "Body: Records<{}, {}>",
-                quote::quote!(#item_ty),
-                quote::quote!(#format_ty)
-            ),
-            ResolvedRequestBodyIo::RawStream { media_ty } => {
-                format!("Body: Stream<{}>", quote::quote!(#media_ty))
-            }
-            _ => format!("Body: {}", doc_codec(&body.enc, &body.ty)),
-        };
+    let body_summary = match ep.request_io() {
+        ResolvedRequestBodyIo::BufferedCodec(io) => {
+            format!("Body: {}", doc_codec(&io.codec_path, &io.value_ty))
+        }
+        ResolvedRequestBodyIo::RawStream { media_ty } => {
+            format!("Body: Stream<{}>", quote::quote!(#media_ty))
+        }
+        ResolvedRequestBodyIo::Records { item_ty, format_ty } => format!(
+            "Body: Records<{}, {}>",
+            quote::quote!(#item_ty),
+            quote::quote!(#format_ty)
+        ),
+        ResolvedRequestBodyIo::Multipart {
+            value_ty,
+            format_ty,
+        } => format!(
+            "Body: Multipart<{}, {}>",
+            quote::quote!(#value_ty),
+            quote::quote!(#format_ty)
+        ),
+        ResolvedRequestBodyIo::None => String::new(),
+    };
+    if !body_summary.is_empty() {
         docs.push(FacadeDoc {
             summary: body_summary,
             details: Vec::new(),
         });
     }
     let response_summary = match ep.response_io() {
+        ResolvedResponseBodyIo::BufferedCodec(io) => {
+            format!("Response: {}", doc_codec(&io.codec_path, &io.value_ty))
+        }
         ResolvedResponseBodyIo::BufferedBytes => "Response: bytes::Bytes".to_string(),
         ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => format!(
             "Response: Multipart<{}, {}>",
@@ -438,7 +444,12 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
         ResolvedResponseBodyIo::RawStream { media_ty } => {
             format!("Response: Stream<{}>", quote::quote!(#media_ty))
         }
-        _ => format!("Response: {}", doc_codec(&ep.response.enc, &ep.response.ty)),
+        ResolvedResponseBodyIo::NoContent => "Response: ()".to_string(),
+        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => format!(
+            "Response: Sse<{}, {}>",
+            quote::quote!(#event_ty),
+            quote::quote!(#codec_ty)
+        ),
     };
     docs.push(FacadeDoc {
         summary: response_summary,
@@ -492,11 +503,9 @@ fn facade_setter_docs(ep: &ResolvedEndpoint, var: &VarInfo) -> (String, String, 
 fn facade_request_body_ty(ep: &ResolvedEndpoint) -> Option<String> {
     match ep.request_io() {
         ResolvedRequestBodyIo::None => None,
-        ResolvedRequestBodyIo::BufferedCodec(_) | ResolvedRequestBodyIo::BufferedBytes => {
-            ep.body.as_ref().map(|body| {
-                let ty = &body.ty;
-                quote::quote!(#ty).to_string()
-            })
+        ResolvedRequestBodyIo::BufferedCodec(io) => {
+            let ty = &io.value_ty;
+            Some(quote::quote!(#ty).to_string())
         }
         ResolvedRequestBodyIo::Multipart { .. } => {
             Some("::concord_core::advanced::MultipartBody".to_string())
