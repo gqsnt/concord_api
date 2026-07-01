@@ -6,7 +6,8 @@ use crate::endpoint::{
 };
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    Control, PageAdvance, PageInit, PageItems, PageRequest, PaginationCaps, PaginationTermination,
+    Control, EndpointPaginationController, OffsetLimitBindings, OffsetLimitPagination, PageAdvance,
+    PageApply, PageInit, PageItems, PageRequest, PaginationCaps, PaginationTermination,
     ProgressKey,
 };
 use crate::timeout::TimeoutOverride;
@@ -277,6 +278,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
 
     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
     where
+        E: PaginatedEndpoint<Cx>,
         E::Response: PageItems,
         T: crate::transport::Transport,
     {
@@ -285,24 +287,38 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         // from the actual `into_items()` length, while page-level processing
         // cannot. Keep pagination ordering changes in sync with other
         // pagination execution paths.
-        let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
-        let first_plan = self.pending.ep.plan(&self.pending.client.plan_context())?;
-        let mut runner =
-            PaginationRunner::new(first_plan.endpoint.pagination.clone(), &first_plan)?;
+        let caps = self.caps;
+        let pending = self.pending;
+        let first_plan = pending.ep.plan(&pending.client.plan_context())?;
         let ctx = crate::error::ErrorContext {
             endpoint: first_plan.endpoint.meta.name,
             method: first_plan.endpoint.meta.method.clone(),
         };
-        validate_collect_termination(self.caps.termination, &ctx)?;
+        validate_collect_termination(caps.termination, &ctx)?;
         if matches!(
-            self.caps.termination,
+            caps.termination,
             PaginationTermination::TakePages(0) | PaginationTermination::TakeItems(0)
         ) {
-            return Ok(out);
+            return Ok(Vec::new());
         }
+        let endpoint_state_bindings = match &first_plan.endpoint.pagination {
+            Some(PaginationPlan::OffsetLimit { .. }) => {
+                pending.ep.offset_limit_pagination_bindings()
+            }
+            _ => None,
+        };
+        if let Some(bindings) = endpoint_state_bindings {
+            return collect_offset_limit_with_endpoint_state(
+                pending, bindings, first_plan, caps, ctx,
+            )
+            .await;
+        }
+        let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
+        let mut runner =
+            PaginationRunner::new(first_plan.endpoint.pagination.clone(), &first_plan)?;
         let mut first_plan = Some(first_plan);
         let mut state = PaginationRunState::default();
-        let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
+        let mut seen: Option<HashSet<ProgressKey>> = if caps.detect_loops {
             Some(HashSet::new())
         } else {
             None
@@ -324,35 +340,32 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             let mut plan = if let Some(plan) = first_plan.take() {
                 plan
             } else {
-                self.pending.ep.plan(&self.pending.client.plan_context())?
+                pending.ep.plan(&pending.client.plan_context())?
             };
-            plan.overrides.timeout = match self.pending.opts.timeout_override {
+            plan.overrides.timeout = match pending.opts.timeout_override {
                 TimeoutOverride::Inherit => plan.overrides.timeout,
                 TimeoutOverride::Clear => None,
                 TimeoutOverride::Set(d) => Some(d),
             };
-            plan.overrides.debug_level = self.pending.opts.debug_level;
-            plan.overrides.attempt = self.pending.opts.attempt;
+            plan.overrides.debug_level = pending.opts.debug_level;
+            plan.overrides.attempt = pending.opts.attempt;
             plan.overrides.page_index = page_index;
             let expected_items = runner.apply_query(&mut plan)?;
             let request_identity = pagination_request_identity(&plan);
             state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
 
-            let resp: DecodedResponse<E::Response> = self
-                .pending
-                .client
-                .execute_plan::<E::Response>(plan)
-                .await?;
+            let resp: DecodedResponse<E::Response> =
+                pending.client.execute_plan::<E::Response>(plan).await?;
             let page_len_hint = resp.value.item_count_hint();
             let pre_advance = pre_advance_decision(
-                self.caps.termination,
+                caps.termination,
                 items_count,
                 page_len_hint,
                 expected_items,
                 &ctx,
             )?;
             if let (PaginationTermination::HardItemCap(max_items), Some(new_total)) =
-                (self.caps.termination, pre_advance.hard_item_cap_exceeded)
+                (caps.termination, pre_advance.hard_item_cap_exceeded)
             {
                 return Err(hard_item_cap_error(&ctx, max_items, new_total, page_index));
             }
@@ -369,7 +382,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             let items = <E::Response as PageItems>::into_items(resp.value);
             let page_len = items.len();
             let common_stop = common_content_stop(Some(page_len), expected_items);
-            match self.caps.termination {
+            match caps.termination {
                 PaginationTermination::HardItemCap(max_items) => {
                     let new_total = items_count.checked_add(page_len).ok_or_else(|| {
                         ApiClientError::Pagination {
@@ -417,7 +430,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             }
             let fetched_pages = page_index as usize + 1;
             match control_ctrl {
-                Control::Continue => match self.caps.termination {
+                Control::Continue => match caps.termination {
                     PaginationTermination::HardPageCap(max_pages) if fetched_pages >= max_pages => {
                         return Err(ApiClientError::PaginationLimit {
                             ctx,
@@ -442,6 +455,190 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
                 },
                 Control::Stop => return Ok(out),
             }
+        }
+    }
+}
+
+async fn collect_offset_limit_with_endpoint_state<'a, Cx, E, T>(
+    mut pending: PendingRequest<'a, Cx, E, T>,
+    bindings: OffsetLimitBindings<E>,
+    first_plan: crate::endpoint::RequestPlan,
+    caps: PaginationCaps,
+    ctx: ErrorContext,
+) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
+where
+    Cx: ClientContext + 'a,
+    E: PaginatedEndpoint<Cx> + 'a,
+    T: crate::transport::Transport + 'a,
+    E::Response: PageItems,
+{
+    let controller = OffsetLimitPagination::default();
+    let page_apply_ctx = PageApply {
+        endpoint: first_plan.endpoint.meta.name,
+        page_index: 0,
+        ctx: &ctx,
+    };
+    let mut state = <OffsetLimitPagination as EndpointPaginationController<E, E::Response>>::init(
+        &controller,
+        &bindings,
+        &pending.ep,
+        page_apply_ctx,
+    )?;
+    let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
+    let mut seen: Option<HashSet<ProgressKey>> = if caps.detect_loops {
+        Some(HashSet::new())
+    } else {
+        None
+    };
+    let mut progress_state = PaginationRunState::default();
+    let mut items_count: usize = 0;
+    let mut page_index: u32 = 0;
+
+    loop {
+        if let Some(seen) = seen.as_mut()
+            && let Some(k) = <OffsetLimitPagination as EndpointPaginationController<
+                E,
+                E::Response,
+            >>::progress_key(&controller, &state)
+            && !seen.insert(k.clone())
+        {
+            return Err(ApiClientError::Pagination {
+                ctx: ctx.clone(),
+                msg: format!("loop detected (page_index={} key={:?})", page_index, k).into(),
+            });
+        }
+
+        let expected_items =
+            <OffsetLimitPagination as EndpointPaginationController<E, E::Response>>::apply(
+                &controller,
+                &bindings,
+                &mut state,
+                &mut pending.ep,
+                PageApply {
+                    endpoint: ctx.endpoint,
+                    page_index: page_index as u64,
+                    ctx: &ctx,
+                },
+            )?;
+        let mut plan = pending.ep.plan(&pending.client.plan_context())?;
+        plan.overrides.timeout = match pending.opts.timeout_override {
+            TimeoutOverride::Inherit => plan.overrides.timeout,
+            TimeoutOverride::Clear => None,
+            TimeoutOverride::Set(d) => Some(d),
+        };
+        plan.overrides.debug_level = pending.opts.debug_level;
+        plan.overrides.attempt = pending.opts.attempt;
+        plan.overrides.page_index = page_index;
+        let request_identity = pagination_request_identity(&plan);
+        progress_state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
+        let resp: DecodedResponse<E::Response> =
+            pending.client.execute_plan::<E::Response>(plan).await?;
+        let page_len_hint = resp.value.item_count_hint();
+        let pre_advance = pre_advance_decision(
+            caps.termination,
+            items_count,
+            page_len_hint,
+            expected_items.expected_items_per_page,
+            &ctx,
+        )?;
+        if let (PaginationTermination::HardItemCap(max_items), Some(new_total)) =
+            (caps.termination, pre_advance.hard_item_cap_exceeded)
+        {
+            return Err(hard_item_cap_error(&ctx, max_items, new_total, page_index));
+        }
+        let control_ctrl = if pre_advance.common_stop || pre_advance.take_items_done {
+            Control::Stop
+        } else {
+            <OffsetLimitPagination as EndpointPaginationController<E, E::Response>>::advance(
+                &controller,
+                &bindings,
+                &mut state,
+                &resp.value,
+                PageAdvance {
+                    endpoint: ctx.endpoint,
+                    page_index: page_index as u64,
+                    received_items: page_len_hint.unwrap_or(0),
+                },
+            )?
+            .into()
+        };
+        let items = <E::Response as PageItems>::into_items(resp.value);
+        let page_len = items.len();
+        let common_stop =
+            common_content_stop(page_len_hint, expected_items.expected_items_per_page);
+        match caps.termination {
+            PaginationTermination::HardItemCap(max_items) => {
+                let new_total = items_count.checked_add(page_len).ok_or_else(|| {
+                    ApiClientError::Pagination {
+                        ctx: ctx.clone(),
+                        msg: "items overflow".into(),
+                    }
+                })?;
+                if new_total > max_items {
+                    return Err(hard_item_cap_error(&ctx, max_items, new_total, page_index));
+                }
+                items_count = new_total;
+                out.extend(items);
+            }
+            PaginationTermination::TakeItems(max_items) => {
+                let remaining = max_items.checked_sub(items_count).ok_or_else(|| {
+                    ApiClientError::Pagination {
+                        ctx: ctx.clone(),
+                        msg: "items overflow".into(),
+                    }
+                })?;
+                if page_len >= remaining {
+                    out.extend(items.into_iter().take(remaining));
+                    return Ok(out);
+                }
+                items_count = items_count.checked_add(page_len).ok_or_else(|| {
+                    ApiClientError::Pagination {
+                        ctx: ctx.clone(),
+                        msg: "items overflow".into(),
+                    }
+                })?;
+                out.extend(items);
+            }
+            _ => {
+                items_count = items_count.checked_add(page_len).ok_or_else(|| {
+                    ApiClientError::Pagination {
+                        ctx: ctx.clone(),
+                        msg: "items overflow".into(),
+                    }
+                })?;
+                out.extend(items);
+            }
+        }
+        if common_stop {
+            return Ok(out);
+        }
+        let fetched_pages = page_index as usize + 1;
+        match control_ctrl {
+            Control::Continue => match caps.termination {
+                PaginationTermination::HardPageCap(max_pages) if fetched_pages >= max_pages => {
+                    return Err(ApiClientError::PaginationLimit {
+                        ctx,
+                        msg: format!(
+                            "pagination hard page cap exceeded (max={} seen_items={} page_index={})",
+                            max_pages, items_count, fetched_pages
+                        )
+                        .into(),
+                    });
+                }
+                PaginationTermination::TakePages(max_pages) if fetched_pages >= max_pages => {
+                    return Ok(out);
+                }
+                _ => {
+                    page_index =
+                        page_index
+                            .checked_add(1)
+                            .ok_or_else(|| ApiClientError::Pagination {
+                                ctx: ctx.clone(),
+                                msg: "page index overflow".into(),
+                            })?;
+                }
+            },
+            Control::Stop => return Ok(out),
         }
     }
 }

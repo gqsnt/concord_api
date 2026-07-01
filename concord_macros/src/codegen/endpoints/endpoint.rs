@@ -183,9 +183,31 @@ fn emit_endpoint_def(
 
     let pagination_endpoint_state_bindings = emit_pagination_endpoint_state_bindings(ep, ty_name);
     let pagination_plan = emit_endpoint_pagination_plan(ep);
-    let pagination_marker_impl = if ep.paginate.is_some() {
-        quote! {
-            impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {}
+    let pagination_marker_impl = if let Some(p) = &ep.paginate {
+        if matches!(p.controller, PaginationControllerResolved::OffsetLimit(_))
+            && offset_limit_runtime_bindings_present(p)
+        {
+            let helper_name = emit_helpers::ident(
+                &format!("__{}_pagination_bindings", ty_name),
+                Span::call_site(),
+            );
+            quote! {
+                impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {
+                    #[inline]
+                    fn offset_limit_pagination_bindings(
+                        &self,
+                    ) -> ::core::option::Option<::concord_core::advanced::OffsetLimitBindings<Self>>
+                    where
+                        Self: Sized,
+                    {
+                        ::core::option::Option::Some(#helper_name())
+                    }
+                }
+            }
+        } else {
+            quote! {
+                impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {}
+            }
         }
     } else {
         quote! {}
@@ -346,6 +368,33 @@ fn emit_pagination_endpoint_state_bindings(
         &format!("__{}_pagination_bindings", ty_name),
         Span::call_site(),
     );
+    if matches!(p.controller, PaginationControllerResolved::OffsetLimit(_))
+        && offset_limit_runtime_bindings_present(p)
+    {
+        let Some(offset) = pagination_binding_for_controller_field(p, "offset") else {
+            return quote! {};
+        };
+        let Some(limit) = pagination_binding_for_controller_field(p, "limit") else {
+            return quote! {};
+        };
+        let offset_field = &offset.endpoint_rust_field;
+        let limit_field = &limit.endpoint_rust_field;
+        return quote! {
+            #[allow(dead_code)]
+            fn #helper_name() -> ::concord_core::advanced::OffsetLimitBindings<#ty_name> {
+                ::concord_core::advanced::OffsetLimitBindings {
+                    offset: ::concord_core::advanced::EndpointField::new(
+                        |ep: &#ty_name| ep.#offset_field.clone(),
+                        |ep: &mut #ty_name, value| ep.#offset_field = value,
+                    ),
+                    limit: ::concord_core::advanced::EndpointField::new(
+                        |ep: &#ty_name| ep.#limit_field.clone(),
+                        |ep: &mut #ty_name, value| ep.#limit_field = value,
+                    ),
+                }
+            }
+        };
+    }
     let struct_name = emit_helpers::ident(
         &format!("__{}_PaginationBindings", ty_name),
         Span::call_site(),
@@ -381,6 +430,21 @@ fn emit_pagination_endpoint_state_bindings(
             }
         }
     }
+}
+
+fn pagination_binding_for_controller_field<'a>(
+    p: &'a PaginateResolved,
+    field: &str,
+) -> Option<&'a PaginationBindingIr> {
+    p.bindings
+        .iter()
+        .rev()
+        .find(|binding| binding.controller_field.to_string() == field)
+}
+
+fn offset_limit_runtime_bindings_present(p: &PaginateResolved) -> bool {
+    pagination_binding_for_controller_field(p, "offset").is_some()
+        && pagination_binding_for_controller_field(p, "limit").is_some()
 }
 
 fn emit_endpoint_plan_route_policy(

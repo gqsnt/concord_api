@@ -1,12 +1,14 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, PageAdvance, PageDecision, PageInit, PageRequest, PaginationController,
-    ProgressKey, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter,
+    AuthPlacement, EndpointField, OffsetLimitBindings, PageAdvance, PageDecision, PageInit,
+    PageRequest, PaginationController, ProgressKey, RateLimitContext, RateLimitFuture,
+    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
 };
 use concord_core::internal::PaginationPlan;
-use concord_core::prelude::{ApiClientError, CursorPagination, PaginationTermination};
+use concord_core::prelude::{
+    ApiClientError, CursorPagination, Endpoint, PaginatedEndpoint, PaginationTermination,
+};
 use http::{HeaderValue, Method, StatusCode};
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
@@ -183,6 +185,55 @@ impl PaginationController<Vec<String>> for DynamicRequestMutationPagination {
 
     fn progress_key(&self, _state: &Self::State) -> Option<ProgressKey> {
         None
+    }
+}
+
+#[derive(Clone)]
+struct HeaderBoundOffsetLimitEndpoint {
+    start: u64,
+    count: u64,
+    pagination: PaginationPlan,
+}
+
+impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
+    type Response = Vec<String>;
+
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        let mut plan = request_plan(
+            "HeaderBoundOffsetLimit",
+            Method::GET,
+            "/header-offset-limit",
+            Default::default(),
+            Some(self.pagination.clone()),
+            decode_items,
+        );
+        plan.endpoint.policy.headers.insert(
+            http::header::HeaderName::from_static("x-start"),
+            HeaderValue::from_str(&self.start.to_string()).expect("valid header value"),
+        );
+        plan.endpoint.policy.headers.insert(
+            http::header::HeaderName::from_static("x-count"),
+            HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
+        );
+        Ok(plan)
+    }
+}
+
+impl PaginatedEndpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
+    fn offset_limit_pagination_bindings(&self) -> Option<OffsetLimitBindings<Self>> {
+        Some(OffsetLimitBindings {
+            offset: EndpointField::new(
+                |ep: &Self| ep.start,
+                |ep: &mut Self, value| ep.start = value,
+            ),
+            limit: EndpointField::new(
+                |ep: &Self| ep.count,
+                |ep: &mut Self, value| ep.count = value,
+            ),
+        })
     }
 }
 
@@ -947,6 +998,76 @@ async fn dynamic_pagination_query_and_header_names_work() -> Result<(), ApiClien
             .and_then(|v| v.to_str().ok()),
         Some("dynamic-header-value")
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn offset_limit_endpoint_state_mutation_renders_endpoint_fields() -> Result<(), ApiClientError>
+{
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::OK, "c"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = HeaderBoundOffsetLimitEndpoint {
+        start: 0,
+        count: 2,
+        pagination: PaginationPlan::OffsetLimit {
+            offset_key: "offset".to_string(),
+            limit_key: "limit".to_string(),
+            offset: 0,
+            limit: 2,
+        },
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(4))
+        .collect()
+        .await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("x-start")
+            .and_then(|v| v.to_str().ok()),
+        Some("0")
+    );
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("x-count")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("x-start")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("x-count")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(query_value(&requests[0].url, "offset"), None);
+    assert_eq!(query_value(&requests[1].url, "offset"), None);
     Ok(())
 }
 

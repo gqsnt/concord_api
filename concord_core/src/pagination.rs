@@ -5,7 +5,7 @@ pub mod paged;
 use crate::error::{ApiClientError, ErrorContext};
 pub use cursor::{CursorPagination, HasNextCursor};
 use http::{HeaderMap, HeaderName, HeaderValue};
-pub use offset_limit::OffsetLimitPagination;
+pub use offset_limit::{OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState};
 pub use paged::PagedPagination;
 use std::num::NonZeroUsize;
 
@@ -93,7 +93,7 @@ impl From<PageDecision> for Control {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct EndpointField<E, T> {
     get: fn(&E) -> T,
     set: fn(&mut E, T),

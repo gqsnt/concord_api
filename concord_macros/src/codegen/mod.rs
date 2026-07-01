@@ -1257,6 +1257,8 @@ mod tests {
             &out,
             &[
                 "let mut ctrl : :: concord_core :: internal :: OffsetLimitPagination = :: core :: default :: Default :: default ()",
+                ":: concord_core :: advanced :: OffsetLimitBindings",
+                "offset_limit_pagination_bindings",
                 "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"start\")",
                 "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"count\")",
                 "let mut ctrl : :: concord_core :: internal :: CursorPagination = :: core :: default :: Default :: default ()",
@@ -1810,14 +1812,54 @@ mod tests {
             &out,
             &[
                 "EndpointField :: new",
-                "pub(crate) offset : :: concord_core :: advanced :: EndpointField",
-                "pub(crate) limit : :: concord_core :: advanced :: EndpointField",
+                ":: concord_core :: advanced :: OffsetLimitBindings",
+                "offset_limit_pagination_bindings",
                 "ep . start . clone ()",
                 "ep . count . clone ()",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
                 "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"from\")",
                 "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"pageSize\")",
             ],
+        );
+    }
+
+    #[test]
+    fn generated_offset_limit_uses_endpoint_state_pagination_runtime() {
+        let out = expanded(quote! {
+            client SnapshotOffsetLimitRuntime {
+                base "https://example.com"
+            }
+
+            GET List(start: u64 = 0, count: u64 = 20)
+                headers {
+                    "X-Start" = start,
+                    "X-Count" = count,
+                }
+                paginate OffsetLimitPagination {
+                    offset = start,
+                    limit = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                ":: concord_core :: advanced :: OffsetLimitBindings",
+                "offset_limit_pagination_bindings",
+                "EndpointField :: new",
+                "ep . start . clone ()",
+                "ep . count . clone ()",
+                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
+            ],
+        );
+        assert!(
+            !out.contains("offset_key ="),
+            "endpoint-state binding helper must not use offset query keys"
+        );
+        assert!(
+            !out.contains("limit_key ="),
+            "endpoint-state binding helper must not use limit query keys"
         );
     }
 

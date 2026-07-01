@@ -140,7 +140,17 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
 /// A response type implementing [`crate::pagination::PageItems`] is not enough
 /// to make an endpoint paginated; the endpoint plan must also carry an
 /// explicit pagination controller.
-pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx> {}
+pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx> {
+    #[doc(hidden)]
+    fn offset_limit_pagination_bindings(
+        &self,
+    ) -> Option<crate::pagination::OffsetLimitBindings<Self>>
+    where
+        Self: Sized,
+    {
+        None
+    }
+}
 
 /// Marker implemented only for endpoints whose primary response is a stream.
 pub trait StreamResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
