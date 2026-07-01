@@ -1762,6 +1762,9 @@ mod tests {
                 "RateLimitBucketUse::new(\"application\",\"app_0\"",
             ],
         );
+        assert!(!out.contains("policy.retry().cloned().unwrap_or_default()"));
+        assert!(!out.contains("__retry.max_attempts"));
+        assert!(!out.contains("__retry.methods"));
     }
 
     #[test]

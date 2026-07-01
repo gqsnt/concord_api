@@ -145,10 +145,9 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
             .and_then(|block| block.default.as_ref()),
         &retry_profiles,
     )?;
-    client_policy.retry = match explicit_client_retry {
-        Some(_) => explicit_client_retry,
-        None => default_behavior.policy.retry.clone(),
-    };
+    let client_retry_directive = explicit_client_retry.or(default_behavior.retry.clone());
+    let (client_retry, inherited_retry) = materialize_retry_directive(None, client_retry_directive);
+    client_policy.retry = client_retry;
     let explicit_default_rate_limit = resolve_client_rate_limit(
         norm.client.rate_limit.as_ref(),
         &rate_limit_profiles,
@@ -175,7 +174,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         layers: &mut layers,
         endpoints: &mut endpoints,
     };
-    walk_items(&norm.items, &mut ancestry, &mut walk_ctx)?;
+    walk_items(&norm.items, &mut ancestry, &mut walk_ctx, inherited_retry)?;
 
     let resolved_api = ResolvedApi {
         mod_name,
@@ -2905,6 +2904,113 @@ mod tests {
                 ..
             }))
         ));
+    }
+
+    #[test]
+    fn retry_patches_materialize_inherited_and_after_clear() {
+        let resolved_api = analyze_source(
+            r#"
+            api! {
+                client RetryPatchApi {
+                    base "https://example.com"
+
+                    retry base {
+                        max_attempts 2
+                        methods [GET]
+                        on [429]
+                    }
+
+                    behaviors {
+                        behavior client_base {
+                            retry base
+                        }
+
+                        behavior patch_methods {
+                            retry {
+                                methods [POST]
+                            }
+                        }
+
+                        behavior clear_retry {
+                            retry off
+                        }
+
+                        behavior patch_after_clear {
+                            retry {
+                                max_attempts 7
+                            }
+                        }
+                    }
+
+                    defaults {
+                        behavior client_base
+                    }
+                }
+
+                scope inherited {
+                    path ["inherited"]
+                    behavior patch_methods
+
+                    GET Patched
+                        path ["patched"]
+                        -> Json<()>
+                }
+
+                scope cleared {
+                    path ["cleared"]
+                    behavior clear_retry
+
+                    GET Reenabled
+                        path ["reenabled"]
+                        behavior patch_after_clear
+                        -> Json<()>
+                }
+            }
+            "#,
+        );
+
+        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
+            panic!("expected client retry to materialize as set");
+        };
+        assert_eq!(client_retry.max_attempts, 2);
+        assert_eq!(
+            client_retry
+                .methods
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["GET".to_string()]
+        );
+        assert_eq!(client_retry.statuses, [429]);
+
+        let patched_endpoint = endpoint_by_name(&resolved_api, "Patched");
+        let Some(RetryResolved::Set(scope_retry)) = &patched_endpoint.policy.scopes[0].retry else {
+            panic!("expected inherited patch to materialize as set");
+        };
+        assert_eq!(scope_retry.max_attempts, 2);
+        assert_eq!(
+            scope_retry
+                .methods
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["POST".to_string()]
+        );
+        assert_eq!(scope_retry.statuses, [429]);
+        assert!(patched_endpoint.policy.endpoint.retry.is_none());
+
+        let reenabled_endpoint = endpoint_by_name(&resolved_api, "Reenabled");
+        assert!(matches!(
+            reenabled_endpoint.policy.scopes[0].retry,
+            Some(RetryResolved::Clear)
+        ));
+        let Some(RetryResolved::Set(endpoint_retry)) = &reenabled_endpoint.policy.endpoint.retry
+        else {
+            panic!("expected patch after clear to re-enable retry");
+        };
+        assert_eq!(endpoint_retry.max_attempts, 7);
+        assert!(endpoint_retry.methods.is_empty());
+        assert!(endpoint_retry.statuses.is_empty());
     }
 
     #[test]

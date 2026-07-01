@@ -36,7 +36,7 @@ fn resolve_client_retry(
     spec: Option<&RetrySpec>,
     default_profile: Option<&Ident>,
     profiles: &BTreeMap<String, RetryConfigResolved>,
-) -> Result<Option<RetryResolved>> {
+) -> Result<Option<RetryDirectiveResolved>> {
     if let Some(spec) = spec {
         return resolve_retry_spec(Some(spec), profiles);
     }
@@ -50,18 +50,18 @@ fn resolve_client_retry(
             unknown_name_message("default retry profile", default_profile, profiles),
         ));
     };
-    Ok(Some(RetryResolved::Set(config.clone())))
+    Ok(Some(RetryDirectiveResolved::Set(config.clone())))
 }
 
 fn resolve_retry_spec(
     spec: Option<&RetrySpec>,
     profiles: &BTreeMap<String, RetryConfigResolved>,
-) -> Result<Option<RetryResolved>> {
+) -> Result<Option<RetryDirectiveResolved>> {
     match spec {
         None => Ok(None),
-        Some(RetrySpec::Off) => Ok(Some(RetryResolved::Clear)),
+        Some(RetrySpec::Off) => Ok(Some(RetryDirectiveResolved::Clear)),
         Some(RetrySpec::Patch(patch)) => {
-            Ok(Some(RetryResolved::Patch(resolve_retry_patch(patch)?)))
+            Ok(Some(RetryDirectiveResolved::Patch(resolve_retry_patch(patch)?)))
         }
         Some(RetrySpec::Profile(name)) => {
             let Some(config) = profiles.get(&name.to_string()) else {
@@ -70,7 +70,25 @@ fn resolve_retry_spec(
                     unknown_name_message("retry profile", name, profiles),
                 ));
             };
-            Ok(Some(RetryResolved::Set(config.clone())))
+            Ok(Some(RetryDirectiveResolved::Set(config.clone())))
+        }
+    }
+}
+
+pub(crate) fn materialize_retry_directive(
+    inherited: Option<RetryConfigResolved>,
+    directive: Option<RetryDirectiveResolved>,
+) -> (Option<RetryResolved>, Option<RetryConfigResolved>) {
+    match directive {
+        None => (None, inherited),
+        Some(RetryDirectiveResolved::Set(config)) => {
+            (Some(RetryResolved::Set(config.clone())), Some(config))
+        }
+        Some(RetryDirectiveResolved::Clear) => (Some(RetryResolved::Clear), None),
+        Some(RetryDirectiveResolved::Patch(patch)) => {
+            let mut config = inherited.unwrap_or_default();
+            apply_retry_patch(&mut config, &patch);
+            (Some(RetryResolved::Set(config.clone())), Some(config))
         }
     }
 }

@@ -27,6 +27,7 @@ fn walk_items(
     items: &[NormNode],
     ancestry: &mut Vec<usize>,
     ctx: &mut WalkItemsCtx<'_>,
+    inherited_retry: Option<RetryConfigResolved>,
 ) -> Result<()> {
     for it in items {
         match it {
@@ -45,11 +46,14 @@ fn walk_items(
                     ctx.auth_vars,
                     None, // endpoint vars not known at layer-level alone (validated per endpoint)
                 )?;
-                policy.retry = if ld.retry.is_some() {
+                let retry_directive = if ld.retry.is_some() {
                     resolve_retry_spec(ld.retry.as_ref(), ctx.retry_profiles)?
                 } else {
-                    behavior.policy.retry.clone()
+                    behavior.retry.clone()
                 };
+                let (retry, next_retry) =
+                    materialize_retry_directive(inherited_retry.clone(), retry_directive);
+                policy.retry = retry;
                 let mut visible_keys = rate_limit_key_bindings_for_ancestry(ancestry, ctx.layers);
                 for binding in &key_bindings {
                     visible_keys.insert(binding.name.clone(), binding.clone());
@@ -88,7 +92,7 @@ fn walk_items(
                 });
 
                 ancestry.push(id);
-                walk_items(&ld.items, ancestry, ctx)?;
+                walk_items(&ld.items, ancestry, ctx, next_retry)?;
                 ancestry.pop();
             }
             NormNode::Endpoint(ed) => {
@@ -103,7 +107,8 @@ fn walk_items(
                     behavior_profiles: ctx.behavior_profiles,
                     layers: ctx.layers.as_slice(),
                 };
-                let endpoint_ir = analyze_endpoint(ed, ancestry, &analysis_ctx)?;
+                let endpoint_ir =
+                    analyze_endpoint(ed, ancestry, &analysis_ctx, inherited_retry.clone())?;
                 ctx.endpoints.push(endpoint_ir);
             }
         }
@@ -384,6 +389,7 @@ fn analyze_endpoint(
     ed: &NormEndpoint,
     ancestry: &[usize],
     ctx: &EndpointAnalysisCtx<'_>,
+    inherited_retry: Option<RetryConfigResolved>,
 ) -> syn::Result<ResolvedEndpoint> {
     use std::collections::BTreeMap;
 
@@ -473,11 +479,13 @@ fn analyze_endpoint(
     )?;
     validate_behavior_uses_unique_at_site(&ed.behavior_uses)?;
     let behavior = resolve_behavior_uses(&ed.behavior_uses, ctx.behavior_profiles)?;
-    policy.retry = if ed.retry.is_some() {
+    let retry_directive = if ed.retry.is_some() {
         resolve_retry_spec(ed.retry.as_ref(), ctx.retry_profiles)?
     } else {
-        behavior.policy.retry.clone()
+        behavior.retry.clone()
     };
+    let (retry, _next_retry) = materialize_retry_directive(inherited_retry, retry_directive);
+    policy.retry = retry;
     let endpoint_decls = ep_var_order
         .iter()
         .filter_map(|key| ep_vars.get(key))

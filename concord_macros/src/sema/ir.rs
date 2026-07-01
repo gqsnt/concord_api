@@ -261,6 +261,12 @@ pub struct PolicyBlocksResolved {
 #[derive(Debug, Clone)]
 pub enum RetryResolved {
     Set(RetryConfigResolved),
+    Clear,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RetryDirectiveResolved {
+    Set(RetryConfigResolved),
     Patch(RetryPatchResolved),
     Clear,
 }

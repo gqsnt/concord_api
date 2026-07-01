@@ -1250,13 +1250,13 @@ fn endpoint_has_retry(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolve
     for policy in &ep.policy.scopes {
         match policy.retry {
             Some(RetryResolved::Clear) => enabled = false,
-            Some(RetryResolved::Set(_) | RetryResolved::Patch(_)) => enabled = true,
+            Some(RetryResolved::Set(_)) => enabled = true,
             None => {}
         }
     }
     match ep.policy.endpoint.retry {
         Some(RetryResolved::Clear) => enabled = false,
-        Some(RetryResolved::Set(_) | RetryResolved::Patch(_)) => enabled = true,
+        Some(RetryResolved::Set(_)) => enabled = true,
         None => {}
     }
     enabled
@@ -1264,5 +1264,5 @@ fn endpoint_has_retry(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResolve
 
 #[allow(dead_code)]
 fn retry_block_enabled(block: &Option<RetryResolved>) -> bool {
-    matches!(block, Some(RetryResolved::Set(_) | RetryResolved::Patch(_)))
+    matches!(block, Some(RetryResolved::Set(_)))
 }

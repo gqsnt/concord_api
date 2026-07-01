@@ -10,14 +10,6 @@ fn emit_retry_op(retry: &Option<RetryResolved>) -> Option<TokenStream2> {
                 policy.set_retry(#config);
             }
         }
-        RetryResolved::Patch(patch) => {
-            let ops = emit_retry_patch_ops(patch);
-            quote! {
-                let mut __retry = policy.retry().cloned().unwrap_or_default();
-                #( #ops )*
-                policy.set_retry(__retry);
-            }
-        }
     })
 }
 
@@ -55,48 +47,6 @@ fn emit_retry_config(config: &RetryConfigResolved) -> TokenStream2 {
             idempotency: #idempotency,
         }
     }
-}
-
-fn emit_retry_patch_ops(patch: &RetryPatchResolved) -> Vec<TokenStream2> {
-    let mut ops = Vec::new();
-
-    if let Some(max_attempts) = patch.max_attempts {
-        ops.push(quote! { __retry.max_attempts = #max_attempts; });
-    }
-    if let Some(methods) = &patch.methods {
-        let methods = methods
-            .iter()
-            .map(|method| quote! { ::http::Method::#method });
-        ops.push(quote! { __retry.methods = ::std::vec![ #( #methods ),* ]; });
-    }
-    if let Some(statuses) = &patch.statuses {
-        let statuses = statuses.iter().map(|status| {
-            quote! {
-                ::http::StatusCode::from_u16(#status).map_err(|_| {
-                    ::concord_core::prelude::ApiClientError::PolicyViolation {
-                        ctx: ctx.clone(),
-                        msg: "validated retry status was invalid",
-                    }
-                })?
-            }
-        });
-        ops.push(quote! { __retry.statuses = ::std::vec![ #( #statuses ),* ]; });
-    }
-    if let Some(transport_errors) = &patch.transport_errors {
-        let transport_errors = transport_errors.iter().map(|kind| {
-            quote! { ::concord_core::transport::TransportErrorKind::#kind }
-        });
-        ops.push(quote! { __retry.transport_errors = ::std::vec![ #( #transport_errors ),* ]; });
-    }
-    if let Some(respect_retry_after) = patch.respect_retry_after {
-        ops.push(quote! { __retry.respect_retry_after = #respect_retry_after; });
-    }
-    if let Some(idempotency) = &patch.idempotency {
-        let idempotency = emit_retry_idempotency(idempotency);
-        ops.push(quote! { __retry.idempotency = #idempotency; });
-    }
-
-    ops
 }
 
 fn emit_retry_backoff(backoff: &RetryBackoffResolved) -> TokenStream2 {
