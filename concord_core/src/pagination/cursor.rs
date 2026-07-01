@@ -28,9 +28,9 @@ impl<T: Send + 'static> HasNextCursor for Vec<T> {
 /// - response: provides a "next cursor"
 #[derive(Clone, Debug)]
 pub struct CursorPagination {
-    /// Query key for cursor (ex: "cursor", "pageCursor", "starting_after").
+    /// Legacy compatibility metadata for old snapshots/codepaths.
     pub cursor_key: Cow<'static, str>,
-    /// Query key for per-page (ex: "per_page", "pageSize", "limit").
+    /// Legacy compatibility metadata for old snapshots/codepaths.
     pub per_page_key: Cow<'static, str>,
 
     /// Initial cursor (usually None).

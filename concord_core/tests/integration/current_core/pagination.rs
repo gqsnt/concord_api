@@ -1578,8 +1578,6 @@ async fn offset_limit_endpoint_state_mutation_renders_endpoint_fields() -> Resul
         start: 0,
         count: 2,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -1647,8 +1645,6 @@ async fn paged_endpoint_state_mutation_renders_endpoint_fields() -> Result<(), A
         page: 1,
         count: 2,
         pagination: PaginationPlan::Paged {
-            page_key: "page".to_string(),
-            per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 2,
         },
@@ -1717,8 +1713,6 @@ async fn built_in_pagination_without_endpoint_state_hook_is_rejected() -> Result
         page: 1,
         count: 2,
         pagination: PaginationPlan::Paged {
-            page_key: "pageNo".to_string(),
-            per_page_key: "pageSize".to_string(),
             page: 1,
             per_page: 2,
         },
@@ -1746,8 +1740,6 @@ async fn pagination_runner_rejects_builtin_plans() -> Result<(), ApiClientError>
         page: 1,
         count: 2,
         pagination: PaginationPlan::Paged {
-            page_key: "pageNo".to_string(),
-            per_page_key: "pageSize".to_string(),
             page: 1,
             per_page: 2,
         },
@@ -1781,8 +1773,6 @@ async fn retry_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientEr
     let endpoint = ItemsEndpoint {
         policy: retry_policy(2),
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -1835,8 +1825,6 @@ async fn offset_pagination_collects_page_items_without_has_next_cursor()
     let endpoint = PageOnlyItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -1978,8 +1966,6 @@ async fn cursor_built_in_pagination_without_endpoint_state_hook_is_rejected()
     let endpoint = NoHintItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::Paged {
-            page_key: "cursorToken".into(),
-            per_page_key: "pageSize".into(),
             page: 1,
             per_page: 2,
         },
@@ -2155,8 +2141,6 @@ async fn paged_pagination_collects_page_items_without_has_next_cursor() -> Resul
         page: 1,
         count: 2,
         pagination: PaginationPlan::Paged {
-            page_key: "page".to_string(),
-            per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 2,
         },
@@ -2194,8 +2178,6 @@ async fn paged_pagination_uses_page_numbers() -> Result<(), ApiClientError> {
         start: 1,
         count: 2,
         pagination: PaginationPlan::Paged {
-            page_key: "page".to_string(),
-            per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 2,
         },
@@ -2231,8 +2213,6 @@ async fn hard_page_cap_zero_errors_before_transport() {
         start: 0,
         count: 20,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -2263,8 +2243,6 @@ async fn hard_item_cap_zero_errors_before_transport() {
         start: 0,
         count: 20,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -2295,8 +2273,6 @@ async fn take_pages_zero_returns_empty_without_transport() -> Result<(), ApiClie
         start: 0,
         count: 2,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -2326,8 +2302,6 @@ async fn take_items_zero_returns_empty_without_transport() -> Result<(), ApiClie
         start: 0,
         count: 2,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -2365,8 +2339,6 @@ async fn take_items_truncates_final_page() -> Result<(), ApiClientError> {
         start: 0,
         count: 20,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
         },
@@ -2404,8 +2376,6 @@ async fn take_items_less_than_first_page_sends_one_page() -> Result<(), ApiClien
         start: 0,
         count: 20,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
         },
@@ -2443,8 +2413,6 @@ async fn take_items_exact_boundary_stops_without_extra_page() -> Result<(), ApiC
         start: 0,
         count: 2,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
         },
@@ -2482,8 +2450,6 @@ async fn take_pages_stops_without_error() -> Result<(), ApiClientError> {
         start: 0,
         count: 2,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -2528,8 +2494,6 @@ async fn hard_page_cap_errors_without_fetching_extra_page() {
         start: 0,
         count: 2,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -2565,8 +2529,6 @@ async fn hard_item_cap_errors_without_truncating() {
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 20,
         },
@@ -2668,8 +2630,6 @@ async fn max_items_error_includes_page_context() {
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 3,
         },
@@ -2747,8 +2707,6 @@ async fn collect_offset_short_first_page_stops_via_runtime() -> Result<(), ApiCl
         start: 0,
         count: 100,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 100,
         },
@@ -2778,8 +2736,6 @@ async fn collect_offset_empty_first_page_stops_via_runtime() -> Result<(), ApiCl
         start: 0,
         count: 100,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 100,
         },
@@ -2809,8 +2765,6 @@ async fn collect_paged_short_page_stops_via_runtime() -> Result<(), ApiClientErr
         page: 1,
         count: 100,
         pagination: PaginationPlan::Paged {
-            page_key: "page".to_string(),
-            per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 100,
         },
@@ -2912,8 +2866,6 @@ async fn take_items_short_page_returns_short_page_under_limit() -> Result<(), Ap
         start: 0,
         count: 100,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 100,
         },
@@ -2943,8 +2895,6 @@ async fn hard_item_cap_short_page_success_under_cap() -> Result<(), ApiClientErr
         start: 0,
         count: 100,
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 100,
         },
@@ -2978,8 +2928,6 @@ async fn hard_item_cap_still_errors_before_short_stop_when_page_exceeds_cap() {
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 90,
         },
@@ -3007,8 +2955,6 @@ async fn take_items_exact_limit_still_wins_before_short_stop() -> Result<(), Api
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 100,
         },
@@ -3257,8 +3203,6 @@ async fn max_pages_error_includes_seen_items() {
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },
@@ -3301,8 +3245,6 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
     let endpoint = ItemsEndpoint {
         policy: auth_policy(AuthPlacement::Bearer),
         pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
             offset: 0,
             limit: 2,
         },

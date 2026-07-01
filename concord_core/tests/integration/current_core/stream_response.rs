@@ -569,8 +569,6 @@ async fn stream_response_pagination_is_rejected_before_transport() {
 
     let mut plan = empty_response_plan("RawStreamPagination", "/raw-stream-pagination");
     plan.endpoint.pagination = Some(concord_core::internal::PaginationPlan::Paged {
-        page_key: "page".to_string(),
-        per_page_key: "per_page".to_string(),
         page: 1,
         per_page: 10,
     });

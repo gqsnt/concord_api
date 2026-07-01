@@ -211,14 +211,10 @@ impl fmt::Debug for ResponsePlan {
 #[derive(Clone, Debug)]
 pub enum PaginationPlan {
     OffsetLimit {
-        offset_key: String,
-        limit_key: String,
         offset: u64,
         limit: u64,
     },
     Cursor {
-        cursor_key: String,
-        per_page_key: String,
         cursor: Option<String>,
         per_page: u64,
         send_cursor_on_first: bool,
@@ -226,8 +222,6 @@ pub enum PaginationPlan {
         next_cursor: CursorNextFn,
     },
     Paged {
-        page_key: String,
-        per_page_key: String,
         page: u64,
         per_page: u64,
     },
@@ -263,8 +257,6 @@ impl PaginationPlan {
         Page: PageItems + HasNextCursor,
     {
         Self::Cursor {
-            cursor_key: value.cursor_key.into_owned(),
-            per_page_key: value.per_page_key.into_owned(),
             cursor: value.cursor,
             per_page: value.per_page,
             send_cursor_on_first: value.send_cursor_on_first,
@@ -373,5 +365,73 @@ fn custom_pagination_error(msg: &'static str) -> ApiClientError {
             method: Method::GET,
         },
         msg: msg.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pagination::{CursorPagination, OffsetLimitPagination, PagedPagination};
+
+    #[test]
+    fn built_in_pagination_plan_metadata_has_no_query_keys() {
+        let offset = PaginationPlan::from(OffsetLimitPagination {
+            offset_key: "offset".into(),
+            limit_key: "limit".into(),
+            offset: 3,
+            limit: 9,
+        });
+        let offset_debug = format!("{offset:?}");
+        assert!(offset_debug.contains("OffsetLimit"));
+        assert!(offset_debug.contains("offset: 3"));
+        assert!(offset_debug.contains("limit: 9"));
+        assert!(!offset_debug.contains("offset_key"));
+        assert!(!offset_debug.contains("limit_key"));
+
+        let paged = PaginationPlan::from(PagedPagination {
+            page_key: "page".into(),
+            per_page_key: "per_page".into(),
+            page: 2,
+            per_page: 7,
+        });
+        let paged_debug = format!("{paged:?}");
+        assert!(paged_debug.contains("Paged"));
+        assert!(paged_debug.contains("page: 2"));
+        assert!(paged_debug.contains("per_page: 7"));
+        assert!(!paged_debug.contains("page_key"));
+        assert!(!paged_debug.contains("per_page_key"));
+    }
+
+    #[test]
+    fn cursor_pagination_plan_preserves_endpoint_state_flags() {
+        let plan = PaginationPlan::cursor::<Vec<String>>(CursorPagination {
+            cursor_key: "cursor".into(),
+            per_page_key: "per_page".into(),
+            cursor: Some("start".to_string()),
+            per_page: 5,
+            send_cursor_on_first: true,
+            stop_when_cursor_missing: false,
+        });
+        let debug = format!("{plan:?}");
+
+        match &plan {
+            PaginationPlan::Cursor {
+                cursor,
+                per_page,
+                send_cursor_on_first,
+                stop_when_cursor_missing,
+                ..
+            } => {
+                assert_eq!(cursor, &Some("start".to_string()));
+                assert_eq!(*per_page, 5);
+                assert!(send_cursor_on_first);
+                assert!(!stop_when_cursor_missing);
+            }
+            other => panic!("expected cursor plan, got {other:?}"),
+        }
+
+        assert!(debug.contains("Cursor"));
+        assert!(!debug.contains("cursor_key"));
+        assert!(!debug.contains("per_page_key"));
     }
 }

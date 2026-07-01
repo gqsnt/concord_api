@@ -699,8 +699,6 @@ async fn sse_pagination_is_rejected_before_transport() {
         "/sse-pagination",
         ResolvedPolicy::default(),
         Some(PaginationPlan::Paged {
-            page_key: "page".to_string(),
-            per_page_key: "per_page".to_string(),
             page: 1,
             per_page: 10,
         }),

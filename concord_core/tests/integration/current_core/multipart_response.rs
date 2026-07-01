@@ -453,8 +453,6 @@ async fn multipart_no_content_and_pagination_plans_are_rejected_before_transport
     let mut paginated =
         multipart_response_plan::<Mixed>("MultipartPagination", "/multipart-pagination");
     paginated.endpoint.pagination = Some(PaginationPlan::Paged {
-        page_key: "page".to_string(),
-        per_page_key: "per_page".to_string(),
         page: 1,
         per_page: 10,
     });

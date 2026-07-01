@@ -240,8 +240,6 @@ impl Default for ItemsEndpoint {
             count: 2,
             policy: Default::default(),
             pagination: PaginationPlan::OffsetLimit {
-                offset_key: "offset".to_string(),
-                limit_key: "limit".to_string(),
                 offset: 0,
                 limit: 2,
             },
@@ -262,47 +260,35 @@ impl Endpoint<TestCx> for ItemsEndpoint {
             decode_items,
         );
         match &self.pagination {
-            PaginationPlan::OffsetLimit {
-                offset_key,
-                limit_key,
-                ..
-            } => {
+            PaginationPlan::OffsetLimit { .. } => {
                 plan.endpoint
                     .policy
                     .query
-                    .push((offset_key.clone(), self.start.to_string()));
+                    .push(("offset".to_string(), self.start.to_string()));
                 plan.endpoint
                     .policy
                     .query
-                    .push((limit_key.clone(), self.count.to_string()));
+                    .push(("limit".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Paged {
-                page_key,
-                per_page_key,
-                ..
-            } => {
+            PaginationPlan::Paged { .. } => {
                 plan.endpoint
                     .policy
                     .query
-                    .push((page_key.clone(), self.start.to_string()));
+                    .push(("page".to_string(), self.start.to_string()));
                 plan.endpoint
                     .policy
                     .query
-                    .push((per_page_key.clone(), self.count.to_string()));
+                    .push(("per_page".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Cursor {
-                cursor_key,
-                per_page_key,
-                ..
-            } => {
+            PaginationPlan::Cursor { .. } => {
                 plan.endpoint
                     .policy
                     .query
-                    .push((cursor_key.clone(), self.start.to_string()));
+                    .push(("cursor".to_string(), self.start.to_string()));
                 plan.endpoint
                     .policy
                     .query
-                    .push((per_page_key.clone(), self.count.to_string()));
+                    .push(("per_page".to_string(), self.count.to_string()));
             }
             PaginationPlan::Custom(_) => {}
         }
@@ -389,8 +375,6 @@ impl Default for NoHintItemsEndpoint {
         Self {
             policy: Default::default(),
             pagination: PaginationPlan::OffsetLimit {
-                offset_key: "offset".to_string(),
-                limit_key: "limit".to_string(),
                 offset: 0,
                 limit: 2,
             },
@@ -430,8 +414,6 @@ impl Default for PageOnlyItemsEndpoint {
             count: 2,
             policy: Default::default(),
             pagination: PaginationPlan::OffsetLimit {
-                offset_key: "offset".to_string(),
-                limit_key: "limit".to_string(),
                 offset: 0,
                 limit: 2,
             },
@@ -452,47 +434,35 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
             decode_page_only_items,
         );
         match &self.pagination {
-            PaginationPlan::Paged {
-                page_key,
-                per_page_key,
-                ..
-            } => {
+            PaginationPlan::Paged { .. } => {
                 plan.endpoint
                     .policy
                     .query
-                    .push((page_key.clone(), self.page.to_string()));
+                    .push(("page".to_string(), self.page.to_string()));
                 plan.endpoint
                     .policy
                     .query
-                    .push((per_page_key.clone(), self.count.to_string()));
+                    .push(("per_page".to_string(), self.count.to_string()));
             }
-            PaginationPlan::OffsetLimit {
-                offset_key,
-                limit_key,
-                ..
-            } => {
+            PaginationPlan::OffsetLimit { .. } => {
                 plan.endpoint
                     .policy
                     .query
-                    .push((offset_key.clone(), self.page.to_string()));
+                    .push(("offset".to_string(), self.page.to_string()));
                 plan.endpoint
                     .policy
                     .query
-                    .push((limit_key.clone(), self.count.to_string()));
+                    .push(("limit".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Cursor {
-                cursor_key,
-                per_page_key,
-                ..
-            } => {
+            PaginationPlan::Cursor { .. } => {
                 plan.endpoint
                     .policy
                     .query
-                    .push((cursor_key.clone(), self.page.to_string()));
+                    .push(("cursor".to_string(), self.page.to_string()));
                 plan.endpoint
                     .policy
                     .query
-                    .push((per_page_key.clone(), self.count.to_string()));
+                    .push(("per_page".to_string(), self.count.to_string()));
             }
             PaginationPlan::Custom(_) => {}
         }
@@ -603,53 +573,41 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
             decode_cursor_items,
         );
         match &self.pagination {
-            PaginationPlan::Cursor {
-                cursor_key,
-                per_page_key,
-                ..
-            } => {
+            PaginationPlan::Cursor { .. } => {
                 if let Some(cursor) = &self.cursor {
                     plan.endpoint
                         .policy
                         .query
-                        .push((cursor_key.clone(), cursor.clone()));
+                        .push(("cursor".to_string(), cursor.clone()));
                 }
                 plan.endpoint
                     .policy
                     .query
-                    .push((per_page_key.clone(), self.count.to_string()));
+                    .push(("per_page".to_string(), self.count.to_string()));
             }
-            PaginationPlan::OffsetLimit {
-                offset_key,
-                limit_key,
-                ..
-            } => {
+            PaginationPlan::OffsetLimit { .. } => {
                 if let Some(cursor) = &self.cursor {
                     plan.endpoint
                         .policy
                         .query
-                        .push((offset_key.clone(), cursor.clone()));
+                        .push(("offset".to_string(), cursor.clone()));
                 }
                 plan.endpoint
                     .policy
                     .query
-                    .push((limit_key.clone(), self.count.to_string()));
+                    .push(("limit".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Paged {
-                page_key,
-                per_page_key,
-                ..
-            } => {
+            PaginationPlan::Paged { .. } => {
                 if let Some(cursor) = &self.cursor {
                     plan.endpoint
                         .policy
                         .query
-                        .push((page_key.clone(), cursor.clone()));
+                        .push(("page".to_string(), cursor.clone()));
                 }
                 plan.endpoint
                     .policy
                     .query
-                    .push((per_page_key.clone(), self.count.to_string()));
+                    .push(("per_page".to_string(), self.count.to_string()));
             }
             PaginationPlan::Custom(_) => {}
         }

@@ -1268,6 +1268,26 @@ mod tests {
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
             ],
         );
+        assert!(
+            !out.contains("offset_key"),
+            "built-in pagination metadata must not retain offset query keys"
+        );
+        assert!(
+            !out.contains("limit_key"),
+            "built-in pagination metadata must not retain limit query keys"
+        );
+        assert!(
+            !out.contains("page_key"),
+            "built-in pagination metadata must not retain page query keys"
+        );
+        assert!(
+            !out.contains("per_page_key"),
+            "built-in pagination metadata must not retain per-page query keys"
+        );
+        assert!(
+            !out.contains("cursor_key"),
+            "built-in pagination metadata must not retain cursor query keys"
+        );
     }
 
     #[test]

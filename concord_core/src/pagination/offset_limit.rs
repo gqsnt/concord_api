@@ -10,12 +10,13 @@ use std::num::NonZeroUsize;
 ///
 /// This is the single "engine" for all offset-based APIs:
 /// - you bind `offset` and `limit` to endpoint params via `paginate { offset: start, limit: count }`
-/// - codegen can hint the effective query keys so this controller remains opaque to codegen.
+/// - the query-key fields below are legacy compatibility metadata only; built-in
+///   endpoint-state runtime ignores them.
 #[derive(Clone, Debug)]
 pub struct OffsetLimitPagination {
-    /// Query key used for the offset (ex: "offset", "start", "skip").
+    /// Legacy compatibility metadata for old snapshots/codepaths.
     pub offset_key: Cow<'static, str>,
-    /// Query key used for the limit (ex: "limit", "count", "top").
+    /// Legacy compatibility metadata for old snapshots/codepaths.
     pub limit_key: Cow<'static, str>,
     /// Initial offset value.
     pub offset: u64,
@@ -114,8 +115,6 @@ where
 impl From<OffsetLimitPagination> for crate::endpoint::PaginationPlan {
     fn from(value: OffsetLimitPagination) -> Self {
         Self::OffsetLimit {
-            offset_key: value.offset_key.into_owned(),
-            limit_key: value.limit_key.into_owned(),
             offset: value.offset,
             limit: value.limit,
         }

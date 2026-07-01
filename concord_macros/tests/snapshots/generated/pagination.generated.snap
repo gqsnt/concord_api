@@ -1,8 +1,8 @@
 pagination.generated
 controller-plans:
-- OffsetLimitPagination -> offset_key, limit_key, PaginationPlan::from(ctrl)
-- CursorPagination -> cursor_key, per_page_key, PaginationPlan::from(ctrl)
-- PagedPagination -> page_key, per_page_key, PaginationPlan::from(ctrl)
+- OffsetLimitPagination -> PaginationPlan::from(ctrl)
+- CursorPagination -> PaginationPlan::cursor(ctrl)
+- PagedPagination -> PaginationPlan::from(ctrl)
 helpers:
 - paginate
 - collect
