@@ -69,6 +69,12 @@ if "${RG[@]}" 'PaginationRunner::(OffsetLimit|Paged|Cursor)|Self::(OffsetLimit|P
   fail_with_matches "concord_core/src/request.rs must not contain built-in PaginationRunner branches or apply_query." "$legacy_pagination_refs"
 fi
 
+section "pagination query-key inference fence"
+pagination_inference_refs="$tmpdir/pagination_inference.refs"
+if "${RG[@]}" 'infer_pagination_query_key_from_assignment|find_query_key_for_ep_field_in_ops|offset_key_from_query|limit_key_from_query|page_key_from_query|per_page_key_from_query|cursor_key_from_query' concord_macros/src >"$pagination_inference_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros must not infer built-in pagination query keys from endpoint operations." "$pagination_inference_refs"
+fi
+
 section "codegen semantic boundary"
 codegen_refs="$tmpdir/codegen.refs"
 if "${RG[@]}" 'crate::ast|Raw(Api|Ast|Client|Scope|Endpoint|Item)|NormApiTree' concord_macros/src/codegen >"$codegen_refs" 2>/dev/null; then

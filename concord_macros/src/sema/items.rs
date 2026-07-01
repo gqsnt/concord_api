@@ -631,8 +631,6 @@ fn analyze_endpoint(
             ctx.client_vars,
             ctx.auth_vars,
             &ep_vars,
-            &policy,
-            &scope_policies,
         )?),
     };
     let mut behavior_doc_names = Vec::new();

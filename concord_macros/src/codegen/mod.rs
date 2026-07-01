@@ -1263,13 +1263,8 @@ mod tests {
                 ":: concord_core :: advanced :: PagedBindings",
                 "endpoint_state_pagination",
                 "EndpointPaginationRuntimeAdapter",
-                "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"start\")",
-                "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"count\")",
                 "let mut ctrl : :: concord_core :: internal :: CursorPagination = :: core :: default :: Default :: default ()",
-                "ctrl . cursor_key = :: std :: borrow :: Cow :: from (\"cursor\")",
-                "ctrl . per_page_key = :: std :: borrow :: Cow :: from (\"count\")",
                 "let mut ctrl : :: concord_core :: internal :: PagedPagination = :: core :: default :: Default :: default ()",
-                "ctrl . page_key = :: std :: borrow :: Cow :: from (\"page\")",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
             ],
         );
@@ -1787,8 +1782,6 @@ mod tests {
             &[
                 "let __pagination_plan = :: core :: option :: Option :: Some",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
-                "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"start\")",
-                "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"count\")",
             ],
         );
     }
@@ -1822,8 +1815,6 @@ mod tests {
                 "ep . start . clone ()",
                 "ep . count . clone ()",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
-                "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"from\")",
-                "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"pageSize\")",
             ],
         );
     }

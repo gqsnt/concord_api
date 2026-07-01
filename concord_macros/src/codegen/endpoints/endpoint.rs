@@ -727,73 +727,25 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
             let __pagination_plan = ::core::option::Option::None;
         },
         PaginationControllerResolved::OffsetLimit(ctrl) => {
-            let auto_key_assigns = [
-                ("offset_key", &ctrl.offset_key_from_query),
-                ("limit_key", &ctrl.limit_key_from_query),
-            ]
-            .into_iter()
-            .filter_map(|(field, key)| {
-                let key = key.as_ref()?;
-                let (_, _, key_ts) = emit_key_string(key, PolicyKeyKind::Query);
-                let field = syn::Ident::new(field, Span::call_site());
-                Some(quote! {
-                    ctrl.#field = ::std::borrow::Cow::from(#key_ts);
-                })
-            });
             let assigns = ctrl.assigns.iter().map(|assign| emit_pagination_assign(assign));
             quote! {
-                #[allow(unused_variables)]
-                let cx = vars;
                 let mut ctrl: ::concord_core::internal::OffsetLimitPagination = ::core::default::Default::default();
-                #( #auto_key_assigns )*
                 #( #assigns )*
                 let __pagination_plan = ::core::option::Option::Some(::concord_core::internal::PaginationPlan::from(ctrl));
             }
         }
         PaginationControllerResolved::Cursor(ctrl) => {
-            let auto_key_assigns = [
-                ("cursor_key", &ctrl.cursor_key_from_query),
-                ("per_page_key", &ctrl.per_page_key_from_query),
-            ]
-            .into_iter()
-            .filter_map(|(field, key)| {
-                let key = key.as_ref()?;
-                let (_, _, key_ts) = emit_key_string(key, PolicyKeyKind::Query);
-                let field = syn::Ident::new(field, Span::call_site());
-                Some(quote! {
-                    ctrl.#field = ::std::borrow::Cow::from(#key_ts);
-                })
-            });
             let assigns = ctrl.assigns.iter().map(|assign| emit_pagination_assign(assign));
             quote! {
-                #[allow(unused_variables)]
-                let cx = vars;
                 let mut ctrl: ::concord_core::internal::CursorPagination = ::core::default::Default::default();
-                #( #auto_key_assigns )*
                 #( #assigns )*
                 let __pagination_plan = ::core::option::Option::Some(::concord_core::internal::PaginationPlan::cursor::<#page_ty>(ctrl));
             }
         }
         PaginationControllerResolved::Paged(ctrl) => {
-            let auto_key_assigns = [
-                ("page_key", &ctrl.page_key_from_query),
-                ("per_page_key", &ctrl.per_page_key_from_query),
-            ]
-            .into_iter()
-            .filter_map(|(field, key)| {
-                let key = key.as_ref()?;
-                let (_, _, key_ts) = emit_key_string(key, PolicyKeyKind::Query);
-                let field = syn::Ident::new(field, Span::call_site());
-                Some(quote! {
-                    ctrl.#field = ::std::borrow::Cow::from(#key_ts);
-                })
-            });
             let assigns = ctrl.assigns.iter().map(|assign| emit_pagination_assign(assign));
             quote! {
-                #[allow(unused_variables)]
-                let cx = vars;
                 let mut ctrl: ::concord_core::internal::PagedPagination = ::core::default::Default::default();
-                #( #auto_key_assigns )*
                 #( #assigns )*
                 let __pagination_plan = ::core::option::Option::Some(::concord_core::internal::PaginationPlan::from(ctrl));
             }

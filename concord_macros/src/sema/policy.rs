@@ -118,8 +118,6 @@ fn resolve_paginate(
     client_vars: &BTreeMap<String, VarInfo>,
     auth_vars: &BTreeMap<String, VarInfo>,
     ep_vars: &BTreeMap<String, VarInfo>,
-    endpoint_policy: &PolicyBlocksResolved,
-    scope_policies: &[PolicyBlocksResolved],
 ) -> Result<PaginateResolved> {
     let mut controller_kind = paginate_controller_kind(&p.ctrl_ty);
     if p.endpoint_state {
@@ -242,63 +240,17 @@ fn resolve_paginate(
     }
     let controller = match controller_kind {
         PaginationControllerKind::OffsetLimit => {
-            let offset_key_from_query = infer_pagination_query_key_from_assignment(
-                &assigns,
-                "offset",
-                endpoint_policy,
-                scope_policies,
-            );
-            let limit_key_from_query = infer_pagination_query_key_from_assignment(
-                &assigns,
-                "limit",
-                endpoint_policy,
-                scope_policies,
-            );
-            PaginationControllerResolved::OffsetLimit(OffsetLimitPaginationResolved {
-                assigns,
-                offset_key_from_query,
-                limit_key_from_query,
-            })
+            PaginationControllerResolved::OffsetLimit(OffsetLimitPaginationResolved { assigns })
         }
-        PaginationControllerKind::Cursor => {
-            let cursor_key_from_query = infer_pagination_query_key_from_assignment(
-                &assigns,
-                "cursor",
-                endpoint_policy,
-                scope_policies,
-            );
-            let per_page_key_from_query = infer_pagination_query_key_from_assignment(
-                &assigns,
-                "per_page",
-                endpoint_policy,
-                scope_policies,
-            );
-            PaginationControllerResolved::Cursor(CursorPaginationResolved {
+        PaginationControllerKind::Cursor => PaginationControllerResolved::Cursor(
+            CursorPaginationResolved {
                 assigns,
-                cursor_key_from_query,
-                per_page_key_from_query,
                 send_cursor_on_first,
                 stop_when_cursor_missing,
-            })
-        }
+            },
+        ),
         PaginationControllerKind::Paged => {
-            let page_key_from_query = infer_pagination_query_key_from_assignment(
-                &assigns,
-                "page",
-                endpoint_policy,
-                scope_policies,
-            );
-            let per_page_key_from_query = infer_pagination_query_key_from_assignment(
-                &assigns,
-                "per_page",
-                endpoint_policy,
-                scope_policies,
-            );
-            PaginationControllerResolved::Paged(PagedPaginationResolved {
-                assigns,
-                page_key_from_query,
-                per_page_key_from_query,
-            })
+            PaginationControllerResolved::Paged(PagedPaginationResolved { assigns })
         }
         PaginationControllerKind::CustomEndpointState => PaginationControllerResolved::CustomEndpointState {
             ctrl_ty: p.ctrl_ty.clone(),
@@ -375,49 +327,6 @@ fn validate_paginate_assignment_key(kind: PaginationControllerKind, key: &Ident)
         key.span(),
         format!("unknown pagination field `{key_name}` for {controller}; allowed fields: {}", allowed.join(", ")),
     ))
-}
-
-fn infer_pagination_query_key(
-    field: &str,
-    endpoint_policy: &PolicyBlocksResolved,
-    scope_policies: &[PolicyBlocksResolved],
-) -> Option<KeyResolved> {
-    find_query_key_for_ep_field_in_ops(field, &endpoint_policy.query).or_else(|| {
-        scope_policies
-            .iter()
-            .rev()
-            .find_map(|scope| find_query_key_for_ep_field_in_ops(field, &scope.query))
-    })
-}
-
-fn infer_pagination_query_key_from_assignment(
-    assigns: &[PaginationAssignmentResolved],
-    controller_field: &str,
-    endpoint_policy: &PolicyBlocksResolved,
-    scope_policies: &[PolicyBlocksResolved],
-) -> Option<KeyResolved> {
-    let source_field = assigns.iter().rev().find_map(|assign| {
-        if assign.field.to_string() != controller_field {
-            return None;
-        }
-        match &assign.value {
-            PaginationValueKind::EpField(field) => Some(field.to_string()),
-            _ => None,
-        }
-    })?;
-    infer_pagination_query_key(&source_field, endpoint_policy, scope_policies)
-}
-
-fn find_query_key_for_ep_field_in_ops(field: &str, ops: &[PolicyOp]) -> Option<KeyResolved> {
-    ops.iter().rev().find_map(|op| match op {
-        PolicyOp::Set {
-            key,
-            value: PolicySetValue::Value(PublicValueKind::EpField(f))
-                | PolicySetValue::OptionalEpField(f),
-            ..
-        } if f.to_string() == field => Some(key.clone()),
-        _ => None,
-    })
 }
 
 fn resolve_policy_blocks(
