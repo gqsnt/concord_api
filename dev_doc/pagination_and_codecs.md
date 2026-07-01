@@ -95,10 +95,7 @@ Collection bounds are shape-specific: offset, page-number, and custom pagination
 typed pagination configuration errors before the first transport send.
 `TakePages(n)` and `TakeItems(n)` are soft limits and zero values return an
 empty/no-op result without transport. Item limits are enforced from the actual
-collected items in `collect()`; `for_each_page()` supports page-based
-termination exactly and rejects `TakeItems` because it cannot truncate whole
-page responses. `for_each_page()` can apply runtime empty/short-page stops only
-when `PageItems::item_count_hint()` is present. Cursor pagination with
+collected items in `collect()`. Cursor pagination with
 `stop_when_cursor_missing` stops on missing cursor; continuing without changing
 the request identity is a typed non-progress error instead of an infinite loop.
 Pagination progress is checked against every logical request identity seen so

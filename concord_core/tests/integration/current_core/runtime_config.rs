@@ -1,6 +1,6 @@
 use super::common::{
-    GateTransport, ItemsEndpoint, MockResponse, MockTransport, ObservationRateLimiter,
-    RecordingRateLimiter, TestAuthVars, TestCx, TextEndpoint, auth_policy, client,
+    GateTransport, MockResponse, MockTransport, ObservationRateLimiter, RecordingRateLimiter,
+    TestAuthVars, TestCx, TextEndpoint, auth_policy, client,
 };
 use bytes::Bytes;
 use concord_core::advanced::{
@@ -8,8 +8,8 @@ use concord_core::advanced::{
     RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
     RateLimitResponseContext, RateLimitWindow, RateLimiter, RuntimeHooks,
 };
-use concord_core::internal::{PaginationPlan, ResolvedPolicy};
-use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel, PaginationTermination};
+use concord_core::internal::ResolvedPolicy;
+use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use http::{HeaderMap, Method, StatusCode};
 use std::num::NonZeroU32;
 use std::pin::Pin;
@@ -212,53 +212,6 @@ async fn per_request_attempt_override_wins_and_does_not_leak() -> Result<(), Api
     assert_eq!(requests[0].meta.attempt, 7);
     assert_eq!(requests[1].meta.attempt, 0);
     Ok(())
-}
-
-#[tokio::test]
-async fn pagination_config_snapshot_stable_across_pages() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, Bytes::from_static(b"a,b"))
-                .with_content_length(Some(3)),
-            MockResponse::text(StatusCode::OK, Bytes::from_static(b"cc,dd"))
-                .with_content_length(Some(5)),
-        ],
-    );
-    let mut base_client = client(TestAuthVars::default(), transport);
-    base_client.configure(|cfg| {
-        cfg.max_response_body_bytes(4);
-    });
-    let request_client = base_client.clone();
-    let endpoint = ItemsEndpoint {
-        policy: ResolvedPolicy::default(),
-        pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
-            offset: 0,
-            limit: 2,
-        },
-    };
-
-    let err = request_client
-        .request(endpoint)
-        .paginate(PaginationTermination::hard_page_cap(2))
-        .for_each_page(|page| {
-            assert_eq!(page.value, vec!["a".to_string(), "b".to_string()]);
-            base_client.configure(|cfg| {
-                cfg.no_response_body_limit();
-            });
-            async { Ok(()) }
-        })
-        .await
-        .expect_err("second page should keep the pagination-run config snapshot");
-
-    assert_response_too_large(&err);
-    assert_eq!(
-        transport_events(&events).await,
-        vec!["transport", "transport"]
-    );
 }
 
 #[tokio::test]

@@ -6,7 +6,7 @@ use concord_core::prelude::*;
 use concord_macros::api;
 use http::{HeaderMap, StatusCode};
 use std::collections::VecDeque;
-use std::future::{Future, ready};
+use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -63,25 +63,18 @@ async fn generated_pagination_collect_preserves_query_setters_and_caps() {
 }
 
 #[tokio::test]
-async fn generated_pagination_for_each_page_and_max_items_work() {
+async fn generated_pagination_collect_and_max_items_work() {
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"["x"]"#)]);
     let api = PaginationHelperApi::new_with_transport(transport);
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let seen_for_callback = seen.clone();
 
-    api.list()
+    let items = api
+        .list()
         .count(2)
         .paginate(PaginationTermination::hard_page_cap(3))
-        .for_each_page(move |page| {
-            let seen = seen_for_callback.clone();
-            async move {
-                seen.lock().await.extend(page.value);
-                Ok(())
-            }
-        })
+        .collect()
         .await
-        .expect("for_each_page succeeds");
-    assert_eq!(*seen.lock().await, vec!["x".to_string()]);
+        .expect("collect succeeds");
+    assert_eq!(items, vec!["x".to_string()]);
 
     let transport = RecordingTransport::new(vec![ResponseFixture::json(r#"["a","b"]"#)]);
     let api = PaginationHelperApi::new_with_transport(transport);
@@ -89,7 +82,7 @@ async fn generated_pagination_for_each_page_and_max_items_work() {
         .list()
         .count(2)
         .paginate(PaginationTermination::hard_item_cap(1))
-        .for_each_page(|_| ready(Ok(())))
+        .collect()
         .await
         .expect_err("hard item cap should fail");
     assert!(err.to_string().contains("hard item cap"));

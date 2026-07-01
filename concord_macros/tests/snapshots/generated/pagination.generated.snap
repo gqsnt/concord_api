@@ -6,4 +6,3 @@ controller-plans:
 helpers:
 - paginate
 - collect
-- for_each_page

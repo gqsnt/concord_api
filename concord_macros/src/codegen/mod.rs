@@ -1724,6 +1724,33 @@ mod tests {
     }
 
     #[test]
+    fn generated_pagination_public_surface_exposes_collect_not_for_each_page() {
+        let out = expanded(quote! {
+            client SnapshotPaginationSurface {
+                base "https://example.com"
+            }
+
+            GET List(start: u64 = 0, count: u64 = 20)
+                path ["items"]
+                query {
+                    start
+                    count
+                }
+                paginate OffsetLimitPagination {
+                    offset = start,
+                    limit = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(&out, &["#[doc=\"Pagination: OffsetLimitPagination\"]"]);
+        assert!(
+            !out.contains("for_each_page"),
+            "generated public pagination surface should not expose for_each_page"
+        );
+    }
+
+    #[test]
     fn generated_route_snapshot_rejects_dynamic_slash_segments() {
         let out = expanded(quote! {
             client SnapshotRouteGuard {

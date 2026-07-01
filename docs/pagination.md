@@ -98,20 +98,6 @@ GET ListCursor(cursor?: String, count: u64 = 20)
     -> Json<CursorPage>
 ```
 
-## Processing Page By Page
-
-Use `for_each_page` when pages should be processed without collecting every item into one vector.
-
-```rust
-api.list_cursor()
-    .paginate(PageUntil::hard_page_cap(100))
-    .for_each_page(|page| async move {
-        println!("status={} items={}", page.status(), page.value().len());
-        Ok(())
-    })
-    .await?;
-```
-
 ## Termination
 
 Pagination requires an explicit termination policy.
@@ -134,11 +120,9 @@ Soft limits stop cleanly:
 - `PaginationTermination::TakePages(n)` fetches at most `n` pages and stops even if the controller would continue.
 - `PaginationTermination::TakeItems(n)` returns at most `n` items. `collect()` truncates the final page if necessary.
 
-Hard caps must be greater than zero. `HardPageCap(0)` and `HardItemCap(0)` return typed pagination errors before the first page request is sent. `TakePages(0)` and `TakeItems(0)` return an empty collection without transport for `collect()`. `TakePages(0)` is a no-op for `for_each_page()`.
+Hard caps must be greater than zero. `HardPageCap(0)` and `HardItemCap(0)` return typed pagination errors before the first page request is sent. `TakePages(0)` and `TakeItems(0)` return an empty collection without transport for `collect()`.
 
 `collect()` supports all four termination modes. Item collection, exact `TakeItems` truncation, and final hard-item-cap validation use the items returned by `PageItems::into_items()`. Pre-advance empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion require an exact `item_count_hint()`, because `into_items()` consumes the page while cursor and custom advance logic may need to borrow it. Generic pre-advance short-page stop also requires an expected page size from built-ins or `PageRequest::set_expected_items_per_page(NonZeroUsize)`. Without a hint, collection and limits remain exact and no extra page is fetched after the exact terminal result is known, but controller advance may already have run. `HardItemCap` never truncates.
-
-`for_each_page()` supports page-based termination exactly. Runtime empty-page and short-page stops use `PageItems::item_count_hint()` because the callback receives whole page responses. If the hint is missing, `for_each_page()` cannot detect empty or short pages generically. `TakeItems` is rejected for `for_each_page()` because the callback receives whole pages; use `collect()` when item-level truncation is required.
 
 Retry and auth refresh preserve the current page state. A retry for page `N` retries page `N`, not page `N + 1`.
 

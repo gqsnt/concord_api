@@ -275,144 +275,16 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         self
     }
 
-    pub async fn for_each_page<F, Fut>(self, mut f: F) -> Result<(), ApiClientError>
-    where
-        E::Response: PageItems,
-        T: crate::transport::Transport,
-        F: FnMut(DecodedResponse<E::Response>) -> Fut,
-        Fut: Future<Output = Result<(), ApiClientError>>,
-    {
-        let first_plan = self.pending.ep.plan(&self.pending.client.plan_context())?;
-        let mut runner =
-            PaginationRunner::new(first_plan.endpoint.pagination.clone(), &first_plan)?;
-        let ctx = crate::error::ErrorContext {
-            endpoint: first_plan.endpoint.meta.name,
-            method: first_plan.endpoint.meta.method.clone(),
-        };
-        validate_for_each_page_termination(self.caps.termination, &ctx)?;
-        if matches!(self.caps.termination, PaginationTermination::TakePages(0)) {
-            return Ok(());
-        }
-        let mut first_plan = Some(first_plan);
-        let mut state = PaginationRunState::default();
-        let mut seen: Option<HashSet<ProgressKey>> = if self.caps.detect_loops {
-            Some(HashSet::new())
-        } else {
-            None
-        };
-
-        let mut items_count: usize = 0;
-        let mut page_index: u32 = 0;
-        loop {
-            if let Some(seen) = seen.as_mut()
-                && let Some(k) = runner.progress_key()
-                && !seen.insert(k.clone())
-            {
-                return Err(ApiClientError::Pagination {
-                    ctx: ctx.clone(),
-                    msg: format!("loop detected (page_index={} key={:?})", page_index, k).into(),
-                });
-            }
-
-            let mut plan = if let Some(plan) = first_plan.take() {
-                plan
-            } else {
-                self.pending.ep.plan(&self.pending.client.plan_context())?
-            };
-            plan.overrides.timeout = match self.pending.opts.timeout_override {
-                TimeoutOverride::Inherit => plan.overrides.timeout,
-                TimeoutOverride::Clear => None,
-                TimeoutOverride::Set(d) => Some(d),
-            };
-            plan.overrides.debug_level = self.pending.opts.debug_level;
-            plan.overrides.attempt = self.pending.opts.attempt;
-            plan.overrides.page_index = page_index;
-            let expected_items = runner.apply_query(&mut plan)?;
-            let request_identity = pagination_request_identity(&plan);
-            state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
-            let resp: DecodedResponse<E::Response> = self
-                .pending
-                .client
-                .execute_plan::<E::Response>(plan)
-                .await?;
-
-            let page_len_hint = resp.value.item_count_hint();
-            let pre_advance = pre_advance_decision(
-                self.caps.termination,
-                items_count,
-                page_len_hint,
-                expected_items,
-                &ctx,
-            )?;
-            if let PaginationTermination::HardItemCap(max_items) = self.caps.termination {
-                let Some(page_len) = page_len_hint else {
-                    return Err(ApiClientError::Pagination {
-                        ctx: ctx.clone(),
-                        msg: "HardItemCap termination for for_each_page requires exact item_count_hint()".into(),
-                    });
-                };
-                if let Some(new_total) = pre_advance.hard_item_cap_exceeded {
-                    return Err(hard_item_cap_error(&ctx, max_items, new_total, page_index));
-                }
-                items_count = items_count.checked_add(page_len).ok_or_else(|| {
-                    ApiClientError::Pagination {
-                        ctx: ctx.clone(),
-                        msg: "items overflow".into(),
-                    }
-                })?;
-            }
-
-            if pre_advance.common_stop {
-                f(resp).await?;
-                return Ok(());
-            }
-            let control_ctrl = runner.advance_after_page(
-                &resp.value as &(dyn Any + Send),
-                resp.meta.page_index as u64,
-                page_len_hint.unwrap_or(0),
-                &ctx,
-            )?;
-            f(resp).await?;
-            let fetched_pages = page_index as usize + 1;
-            match control_ctrl {
-                Control::Continue => match self.caps.termination {
-                    PaginationTermination::HardPageCap(max_pages) if fetched_pages >= max_pages => {
-                        return Err(ApiClientError::PaginationLimit {
-                            ctx,
-                            msg: format!(
-                                "pagination hard page cap exceeded (max={} seen_items={} page_index={})",
-                                max_pages, items_count, fetched_pages
-                            )
-                            .into(),
-                        });
-                    }
-                    PaginationTermination::TakePages(max_pages) if fetched_pages >= max_pages => {
-                        return Ok(());
-                    }
-                    _ => {
-                        page_index = page_index.checked_add(1).ok_or_else(|| {
-                            ApiClientError::Pagination {
-                                ctx: ctx.clone(),
-                                msg: "page index overflow".into(),
-                            }
-                        })?;
-                    }
-                },
-                Control::Stop => return Ok(()),
-            }
-        }
-    }
-
     pub async fn collect(self) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
     where
         E::Response: PageItems,
         T: crate::transport::Transport,
     {
-        // This intentionally has a dedicated loop instead of delegating to
-        // `for_each_page`: collection can enforce hard item caps from the actual
-        // `into_items()` length, while page callbacks can only use
-        // `item_count_hint()` before yielding the decoded page to user code.
-        // Keep pagination ordering changes in sync across both paths.
+        // This intentionally has a dedicated loop instead of delegating to a
+        // higher-level callback surface: collection can enforce hard item caps
+        // from the actual `into_items()` length, while page-level processing
+        // cannot. Keep pagination ordering changes in sync with other
+        // pagination execution paths.
         let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
         let first_plan = self.pending.ep.plan(&self.pending.client.plan_context())?;
         let mut runner =
@@ -588,19 +460,6 @@ fn validate_collect_termination(
             msg: "hard pagination item cap must be greater than zero".into(),
         }),
         _ => Ok(()),
-    }
-}
-
-fn validate_for_each_page_termination(
-    termination: PaginationTermination,
-    ctx: &crate::error::ErrorContext,
-) -> Result<(), ApiClientError> {
-    match termination {
-        PaginationTermination::TakeItems(_) => Err(ApiClientError::Pagination {
-            ctx: ctx.clone(),
-            msg: "TakeItems termination is only supported by collect()".into(),
-        }),
-        _ => validate_collect_termination(termination, ctx),
     }
 }
 

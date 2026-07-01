@@ -148,18 +148,7 @@ let items = api
     .await?;
 ```
 
-Use `for_each_page` for bounded-memory processing.
-
-```rust
-api.items()
-    .list()
-    .paginate(PageUntil::hard_page_cap(100))
-    .for_each_page(|page| async move {
-        println!("status={} items={}", page.status(), page.value().len());
-        Ok(())
-    })
-    .await?;
-```
+`collect()` is the supported high-level pagination surface.
 
 ## Auth Acquisition
 

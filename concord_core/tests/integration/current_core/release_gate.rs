@@ -134,7 +134,7 @@ fn examples_cover_v1_usage_surface() {
 
     let pagination = read_repo_file("concord_examples/tests/integration/pagination.rs");
     assert!(pagination.contains(".paginate("));
-    assert!(pagination.contains("for_each_page"));
+    assert!(pagination.contains(".collect()"));
 
     let explicit = read_repo_file("concord_examples/src/explicit_endpoint.rs");
     assert!(explicit.contains("execute_raw"));

@@ -235,7 +235,7 @@ pub trait PageItems: Send + 'static {
     ///
     /// If this returns `Some(n)`, `n` must be exact. The runtime uses this
     /// value for pre-advance empty/short-page termination and for
-    /// `for_each_page()` item-cap checks. Return `None` only when the page type
+    /// `collect()` item-cap checks. Return `None` only when the page type
     /// cannot expose the count without consuming itself.
     fn item_count_hint(&self) -> Option<usize> {
         None

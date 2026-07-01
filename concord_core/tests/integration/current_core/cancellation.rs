@@ -5,8 +5,7 @@ use super::common::{
 };
 use concord_core::advanced::AuthPlacement;
 use concord_core::advanced::{Transport, TransportErrorKind};
-use concord_core::internal::PaginationPlan;
-use concord_core::prelude::{ApiClient, ApiClientError, PaginationTermination};
+use concord_core::prelude::{ApiClient, ApiClientError};
 use http::StatusCode;
 use std::error::Error;
 use std::sync::Arc;
@@ -189,67 +188,6 @@ async fn cancel_during_pre_send_hook_does_not_send_transport() {
         .expect("second request should complete");
     assert_eq!(second.value(), "ok-1");
     assert_eq!(transport.sent_count().await, 1);
-    assert_events_do_not_contain(&events, &body_sentinels()).await;
-}
-
-#[tokio::test]
-async fn cancel_pagination_between_pages_does_not_request_next_page() {
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let gate = PhaseGate::new();
-    let transport = GateableTransport::new(
-        PhaseGate::new(),
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::OK, "a,b|next=page-1"),
-            MockResponse::text(StatusCode::OK, "c,d|next=page-2"),
-            MockResponse::text(StatusCode::OK, "e,f|next=page-3"),
-            MockResponse::text(StatusCode::OK, "g,h"),
-        ],
-    );
-    let client = transport_client(transport.clone());
-    let endpoint = super::common::ItemsEndpoint {
-        policy: Default::default(),
-        pagination: PaginationPlan::OffsetLimit {
-            offset_key: "offset".to_string(),
-            limit_key: "limit".to_string(),
-            offset: 0,
-            limit: 2,
-        },
-    };
-
-    gate.block("page_callback").await;
-    let first_endpoint = endpoint.clone();
-    let task = tokio::spawn({
-        let client = client.clone();
-        let gate = gate.clone();
-        async move {
-            client
-                .request(first_endpoint)
-                .paginate(PaginationTermination::hard_page_cap(10))
-                .for_each_page(move |page| {
-                    let gate = gate.clone();
-                    async move {
-                        gate.enter("page_callback").await;
-                        assert_eq!(page.value, vec!["a".to_string(), "b".to_string()]);
-                        Ok(())
-                    }
-                })
-                .await
-        }
-    });
-
-    gate.wait_for("page_callback", 1).await;
-    task.abort();
-    let _ = task.await;
-    gate.release_one("page_callback").await;
-    assert_eq!(transport.sent_count().await, 1);
-
-    client
-        .request(endpoint)
-        .paginate(PaginationTermination::hard_page_cap(10))
-        .for_each_page(|_page| async { Ok(()) })
-        .await
-        .expect("later pagination run should succeed");
     assert_events_do_not_contain(&events, &body_sentinels()).await;
 }
 

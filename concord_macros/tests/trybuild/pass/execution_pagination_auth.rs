@@ -70,10 +70,11 @@ async fn execution_usage(api: UsageExecutionApi) -> Result<(), ApiClientError> {
         .paginate(PaginationTermination::hard_item_cap(10))
         .collect()
         .await?;
-    api.list()
+    let _pages = api
+        .list()
         .count(100)
         .paginate(PaginationTermination::hard_page_cap(2))
-        .for_each_page(|_page| async { Ok(()) })
+        .collect()
         .await?;
 
     api.auth_api()
