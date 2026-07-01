@@ -5,7 +5,7 @@ struct WalkItemsCtx<'a> {
     client_auth: &'a [AuthUsePlanIr],
     client_default_behavior_names: &'a [String],
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
-    rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
+    rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanTemplate>,
     behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
     layers: &'a mut Vec<LayerIr>,
     endpoints: &'a mut Vec<ResolvedEndpoint>,
@@ -18,9 +18,22 @@ struct EndpointAnalysisCtx<'a> {
     client_auth: &'a [AuthUsePlanIr],
     client_default_behavior_names: &'a [String],
     retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
-    rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanResolved>,
+    rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanTemplate>,
     behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
     layers: &'a [LayerIr],
+}
+
+fn rate_limit_key_bindings_for_ancestry(
+    ancestry: &[usize],
+    layers: &[LayerIr],
+) -> BTreeMap<String, RateLimitKeyBindingResolved> {
+    let mut out = BTreeMap::new();
+    for &layer_id in ancestry {
+        for binding in &layers[layer_id].rate_limit_key_bindings {
+            out.insert(binding.name.clone(), binding.clone());
+        }
+    }
+    out
 }
 
 fn walk_items(
@@ -63,12 +76,14 @@ fn walk_items(
                     ctx.rate_limit_profiles,
                     &visible_keys,
                     None,
+                    RateLimitAttachmentContext::Layer,
                 )?;
                 let explicit_rate_limit = resolve_rate_limit_spec(
                     ld.rate_limit.as_ref(),
                     ctx.rate_limit_profiles,
                     &visible_keys,
                     None,
+                    RateLimitAttachmentContext::Layer,
                 )?;
                 policy.rate_limit = merge_rate_limit_resolved(behavior_rate_limit, explicit_rate_limit);
                 let mut auth_uses = behavior.auth_uses;
@@ -502,12 +517,14 @@ fn analyze_endpoint(
         ctx.rate_limit_profiles,
         &visible_keys,
         Some(&ep_vars),
+        RateLimitAttachmentContext::Endpoint,
     )?;
     let explicit_rate_limit = resolve_rate_limit_spec(
         ed.rate_limit.as_ref(),
         ctx.rate_limit_profiles,
         &visible_keys,
         Some(&ep_vars),
+        RateLimitAttachmentContext::Endpoint,
     )?;
     policy.rate_limit = merge_rate_limit_resolved(behavior_rate_limit, explicit_rate_limit);
     let mut auth = ctx.client_auth.to_vec();

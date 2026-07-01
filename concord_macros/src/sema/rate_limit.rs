@@ -1,6 +1,6 @@
 fn resolve_rate_limit_profiles(
     block: Option<&RateLimitProfilesBlock>,
-) -> Result<BTreeMap<String, RateLimitPlanResolved>> {
+) -> Result<BTreeMap<String, RateLimitPlanTemplate>> {
     let Some(block) = block else {
         return Ok(BTreeMap::new());
     };
@@ -24,7 +24,7 @@ fn resolve_rate_limit_profiles(
 
 fn resolve_client_rate_limit(
     block: Option<&RateLimitProfilesBlock>,
-    profiles: &BTreeMap<String, RateLimitPlanResolved>,
+    profiles: &BTreeMap<String, RateLimitPlanTemplate>,
     visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
     endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
 ) -> Result<Option<RateLimitResolved>> {
@@ -39,14 +39,16 @@ fn resolve_client_rate_limit(
         plan,
         visible_keys,
         endpoint_vars,
+        RateLimitAttachmentContext::ClientBase,
     )?)))
 }
 
 fn resolve_rate_limit_spec(
     spec: Option<&RateLimitSpec>,
-    profiles: &BTreeMap<String, RateLimitPlanResolved>,
+    profiles: &BTreeMap<String, RateLimitPlanTemplate>,
     visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
     endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
+    ctx: RateLimitAttachmentContext,
 ) -> Result<Option<RateLimitResolved>> {
     let Some(spec) = spec else {
         return Ok(None);
@@ -58,7 +60,7 @@ fn resolve_rate_limit_spec(
             profiles: names,
         } => {
             let plan = combine_rate_limit_profiles(names, profiles)?;
-            let plan = materialize_rate_limit_plan(plan, visible_keys, endpoint_vars)?;
+            let plan = materialize_rate_limit_plan(plan, visible_keys, endpoint_vars, ctx)?;
             if *only {
                 Ok(Some(RateLimitResolved::Replace(plan)))
             } else {
@@ -67,7 +69,7 @@ fn resolve_rate_limit_spec(
         }
         RateLimitSpec::Inline { only, plan } => {
             let plan = resolve_rate_limit_plan_spec(plan, "inline")?;
-            let plan = materialize_rate_limit_plan(plan, visible_keys, endpoint_vars)?;
+            let plan = materialize_rate_limit_plan(plan, visible_keys, endpoint_vars, ctx)?;
             if *only {
                 Ok(Some(RateLimitResolved::Replace(plan)))
             } else {
@@ -79,9 +81,9 @@ fn resolve_rate_limit_spec(
 
 fn combine_rate_limit_profiles(
     names: &[Ident],
-    profiles: &BTreeMap<String, RateLimitPlanResolved>,
-) -> Result<RateLimitPlanResolved> {
-    let mut out = RateLimitPlanResolved::default();
+    profiles: &BTreeMap<String, RateLimitPlanTemplate>,
+) -> Result<RateLimitPlanTemplate> {
+    let mut out = RateLimitPlanTemplate::default();
     for name in names {
         let Some(plan) = profiles.get(&name.to_string()) else {
             return Err(syn::Error::new(
@@ -97,9 +99,9 @@ fn combine_rate_limit_profiles(
 fn resolve_rate_limit_plan_spec(
     plan: &RateLimitPlanSpec,
     default_bucket_name: &str,
-) -> Result<RateLimitPlanResolved> {
+) -> Result<RateLimitPlanTemplate> {
     const NANOS_PER_SECOND: u128 = 1_000_000_000;
-    let mut out = RateLimitPlanResolved::default();
+    let mut out = RateLimitPlanTemplate::default();
     for (idx, bucket) in plan.buckets.iter().enumerate() {
         if bucket.windows.is_empty() {
             return Err(syn::Error::new(
@@ -164,7 +166,7 @@ fn resolve_rate_limit_plan_spec(
             }
             windows.push(RateLimitWindowResolved { max, per_secs });
         }
-        out.buckets.push(RateLimitBucketResolved {
+        out.buckets.push(RateLimitBucketTemplate {
             kind: bucket.kind.to_string(),
             name: format!("{default_bucket_name}_{idx}"),
             key: bucket.key.iter().map(resolve_rate_limit_key_spec).collect(),
@@ -175,7 +177,7 @@ fn resolve_rate_limit_plan_spec(
     Ok(out)
 }
 
-impl ProfileValue for RateLimitPlanResolved {
+impl ProfileValue for RateLimitPlanTemplate {
     fn empty() -> Self {
         Self::default()
     }
@@ -190,16 +192,16 @@ impl ProfileValue for RateLimitPlanResolved {
     }
 }
 
-fn resolve_rate_limit_key_spec(spec: &RateLimitKeySpec) -> RateLimitKeyResolved {
+fn resolve_rate_limit_key_spec(spec: &RateLimitKeySpec) -> RateLimitKeyTemplate {
     match spec {
-        RateLimitKeySpec::RouteHost => RateLimitKeyResolved::RouteHost,
-        RateLimitKeySpec::Endpoint => RateLimitKeyResolved::Endpoint,
-        RateLimitKeySpec::Method => RateLimitKeyResolved::Method,
-        RateLimitKeySpec::Named(name) => RateLimitKeyResolved::Named {
+        RateLimitKeySpec::RouteHost => RateLimitKeyTemplate::RouteHost,
+        RateLimitKeySpec::Endpoint => RateLimitKeyTemplate::Endpoint,
+        RateLimitKeySpec::Method => RateLimitKeyTemplate::Method,
+        RateLimitKeySpec::Named(name) => RateLimitKeyTemplate::Named {
             name: name.to_string(),
             span: name.span(),
         },
-        RateLimitKeySpec::Static(value) => RateLimitKeyResolved::Static {
+        RateLimitKeySpec::Static(value) => RateLimitKeyTemplate::Static {
             name: "static".to_string(),
             value: value.value(),
         },
@@ -207,26 +209,70 @@ fn resolve_rate_limit_key_spec(spec: &RateLimitKeySpec) -> RateLimitKeyResolved 
 }
 
 fn materialize_rate_limit_plan(
-    mut plan: RateLimitPlanResolved,
+    mut plan: RateLimitPlanTemplate,
     visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
     endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
+    ctx: RateLimitAttachmentContext,
 ) -> Result<RateLimitPlanResolved> {
-    for bucket in &mut plan.buckets {
-        for key in &mut bucket.key {
-            let RateLimitKeyResolved::Named { name, span } = key else {
-                continue;
-            };
+    let mut out = RateLimitPlanResolved::default();
+    for bucket in plan.buckets.drain(..) {
+        out.buckets.push(RateLimitBucketResolved {
+            kind: bucket.kind,
+            name: bucket.name,
+            key: bucket
+                .key
+                .iter()
+                .map(|key| {
+                    materialize_rate_limit_key(
+                        key,
+                        visible_keys,
+                        endpoint_vars,
+                        ctx,
+                    )
+                })
+                .collect::<Result<Vec<_>>>()?,
+            cost: bucket.cost,
+            windows: bucket.windows,
+        });
+    }
+    Ok(out)
+}
+
+fn materialize_rate_limit_key(
+    key: &RateLimitKeyTemplate,
+    visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
+    endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
+    ctx: RateLimitAttachmentContext,
+) -> Result<RateLimitKeyResolved> {
+    match key {
+        RateLimitKeyTemplate::RouteHost => Ok(RateLimitKeyResolved::RouteHost),
+        RateLimitKeyTemplate::Endpoint => Ok(RateLimitKeyResolved::Endpoint),
+        RateLimitKeyTemplate::Method => Ok(RateLimitKeyResolved::Method),
+        RateLimitKeyTemplate::Static { name, value } => Ok(RateLimitKeyResolved::Static {
+            name: name.clone(),
+            value: value.clone(),
+        }),
+        RateLimitKeyTemplate::Named { name, span } => {
             if let Some(binding) = visible_keys.get(name) {
-                *key = RateLimitKeyResolved::EpField {
+                return Ok(RateLimitKeyResolved::EpField {
                     name: name.clone(),
                     field: binding.field.clone(),
-                };
-                continue;
+                });
+            }
+            if matches!(ctx, RateLimitAttachmentContext::ClientBase) {
+                return Err(syn::Error::new(
+                    *span,
+                    "endpoint/scope rate_limit key cannot be used in client base policy",
+                ));
             }
             let Some(vars) = endpoint_vars else {
                 return Err(syn::Error::new(
                     *span,
-                    format!("rate_limit key `{name}` requires endpoint/scope params"),
+                    unknown_name_message_from_keys(
+                        "rate_limit key",
+                        name,
+                        visible_keys.keys().cloned(),
+                    ),
                 ));
             };
             let Some(var) = vars.get(name) else {
@@ -245,66 +291,48 @@ fn materialize_rate_limit_plan(
                     format!("rate_limit key `{name}` cannot use optional param"),
                 ));
             }
-            *key = RateLimitKeyResolved::EpField {
+            Ok(RateLimitKeyResolved::EpField {
                 name: name.clone(),
                 field: var.rust.clone(),
-            };
+            })
         }
     }
-    Ok(plan)
 }
 
 fn resolve_rate_limit_key_bindings(
     bindings: &[RateLimitKeyBindingSpec],
     decls: &[VarInfo],
 ) -> Result<Vec<RateLimitKeyBindingResolved>> {
-    let decl_map: BTreeMap<String, &VarInfo> = decls
-        .iter()
-        .map(|decl| (decl.rust.to_string(), decl))
-        .collect();
-    let mut seen = BTreeMap::new();
     let mut out = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
     for binding in bindings {
         let name = binding.name.to_string();
-        if seen.insert(name.clone(), binding.name.span()).is_some() {
+        if !seen.insert(name.clone()) {
             return Err(syn::Error::new(
                 binding.name.span(),
                 format!("duplicate rate_limit key `{name}`"),
             ));
         }
-        let Some(target) = decl_map.get(&binding.value.to_string()) else {
+        let Some(decl) = decls.iter().find(|d| d.rust == binding.value) else {
+            return Err(syn::Error::new(
+                binding.value.span(),
+                format!("unknown rate_limit key binding `{}`", binding.value),
+            ));
+        };
+        if decl.optional {
             return Err(syn::Error::new(
                 binding.value.span(),
                 format!(
-                    "unknown scope param `{}` in rate_limit key binding",
+                    "rate_limit key binding `{name}` cannot reference optional parameter `{}`",
                     binding.value
                 ),
-            ));
-        };
-        if target.optional {
-            return Err(syn::Error::new(
-                binding.value.span(),
-                "rate_limit key binding cannot target an optional param",
             ));
         }
         out.push(RateLimitKeyBindingResolved {
             name,
-            field: binding.value.clone(),
+            field: decl.rust.clone(),
         });
     }
     Ok(out)
-}
-
-fn rate_limit_key_bindings_for_ancestry(
-    ancestry: &[usize],
-    layers: &[LayerIr],
-) -> BTreeMap<String, RateLimitKeyBindingResolved> {
-    let mut out = BTreeMap::new();
-    for &lid in ancestry {
-        for binding in &layers[lid].rate_limit_key_bindings {
-            out.insert(binding.name.clone(), binding.clone());
-        }
-    }
-    out
 }
 

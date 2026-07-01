@@ -8,6 +8,7 @@ pub(crate) struct BehaviorResolved {
 fn resolve_behavior_profiles(
     block: Option<&BehaviorProfilesBlock>,
     retry_profiles: &BTreeMap<String, RetryConfigResolved>,
+    rate_limit_profiles: &BTreeMap<String, RateLimitPlanTemplate>,
 ) -> Result<BTreeMap<String, BehaviorResolved>> {
     let Some(block) = block else {
         return Ok(BTreeMap::new());
@@ -33,6 +34,7 @@ fn resolve_behavior_profiles(
             &mut visiting,
             &mut resolved,
             retry_profiles,
+            rate_limit_profiles,
         )?;
     }
 
@@ -45,6 +47,7 @@ fn resolve_behavior_profile(
     visiting: &mut std::collections::BTreeSet<String>,
     resolved: &mut BTreeMap<String, BehaviorResolved>,
     retry_profiles: &BTreeMap<String, RetryConfigResolved>,
+    rate_limit_profiles: &BTreeMap<String, RateLimitPlanTemplate>,
 ) -> Result<BehaviorResolved> {
     if let Some(value) = resolved.get(name) {
         return Ok(value.clone());
@@ -83,6 +86,7 @@ fn resolve_behavior_profile(
             visiting,
             resolved,
             retry_profiles,
+            rate_limit_profiles,
         )?
     } else {
         BehaviorResolved::default()
@@ -150,9 +154,10 @@ pub(crate) fn behavior_use_names(uses: &[BehaviorUseSpec]) -> Vec<String> {
 
 fn resolve_behavior_rate_limit_specs(
     specs: &[RateLimitSpec],
-    rate_limit_profiles: &BTreeMap<String, RateLimitPlanResolved>,
+    rate_limit_profiles: &BTreeMap<String, RateLimitPlanTemplate>,
     visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
     endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
+    ctx: RateLimitAttachmentContext,
 ) -> Result<Option<RateLimitResolved>> {
     let mut out = None;
 
@@ -162,6 +167,7 @@ fn resolve_behavior_rate_limit_specs(
             rate_limit_profiles,
             visible_keys,
             endpoint_vars,
+            ctx,
         )?;
         out = merge_rate_limit_resolved(out, resolved);
     }

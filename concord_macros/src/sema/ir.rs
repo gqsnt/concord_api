@@ -292,12 +292,41 @@ pub struct RateLimitBucketResolved {
     pub windows: Vec<RateLimitWindowResolved>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RateLimitAttachmentContext {
+    ClientBase,
+    Layer,
+    Endpoint,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RateLimitPlanTemplate {
+    pub buckets: Vec<RateLimitBucketTemplate>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RateLimitBucketTemplate {
+    pub kind: String,
+    pub name: String,
+    pub key: Vec<RateLimitKeyTemplate>,
+    pub cost: u32,
+    pub windows: Vec<RateLimitWindowResolved>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RateLimitKeyTemplate {
+    RouteHost,
+    Endpoint,
+    Method,
+    Named { name: String, span: Span },
+    Static { name: String, value: String },
+}
+
 #[derive(Debug, Clone)]
 pub enum RateLimitKeyResolved {
     RouteHost,
     Endpoint,
     Method,
-    Named { name: String, span: Span },
     EpField { name: String, field: Ident },
     Static { name: String, value: String },
 }

@@ -109,8 +109,11 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
 
     let retry_profiles = resolve_retry_profiles(norm.client.retry_profiles.as_ref())?;
     let rate_limit_profiles = resolve_rate_limit_profiles(norm.client.rate_limit.as_ref())?;
-    let behavior_profiles =
-        resolve_behavior_profiles(norm.client.behavior_profiles.as_ref(), &retry_profiles)?;
+    let behavior_profiles = resolve_behavior_profiles(
+        norm.client.behavior_profiles.as_ref(),
+        &retry_profiles,
+        &rate_limit_profiles,
+    )?;
     validate_behavior_uses_unique_at_site(&norm.client.default_behavior_uses)?;
     let client_default_behavior_names = behavior_use_names(&norm.client.default_behavior_uses);
     let default_behavior =
@@ -120,6 +123,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         &rate_limit_profiles,
         &BTreeMap::new(),
         None,
+        RateLimitAttachmentContext::ClientBase,
     )?;
     let mut client_auth_uses = default_behavior.auth_uses;
     client_auth_uses.extend(norm.client.auth_uses.iter().cloned());
@@ -2200,8 +2204,44 @@ mod tests {
         let msg = err.to_string();
 
         assert!(msg.contains("rate_limit key"));
+        assert!(msg.contains("client base policy"));
+    }
+
+    #[test]
+    fn scope_rate_limit_key_without_binding_fails_before_codegen() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    rate_limit match_bucket {
+                        bucket method by [match_key] {
+                            5 / 1s
+                        }
+                    }
+
+                    behavior match_read {
+                        rate_limit match_bucket
+                    }
+                }
+
+                scope MatchScope {
+                    path ["match"]
+                    behavior match_read
+
+                    GET Match(match_id: String)
+                        path [match_id]
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("scope rate limit key without binding should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("rate_limit key"));
         assert!(msg.contains("match_key"));
-        assert!(msg.contains("requires endpoint/scope params"));
     }
 
     #[test]
@@ -3120,7 +3160,6 @@ mod tests {
                                 RateLimitKeyResolved::RouteHost => "host",
                                 RateLimitKeyResolved::Endpoint => "endpoint",
                                 RateLimitKeyResolved::Method => "method",
-                                RateLimitKeyResolved::Named { name, .. } => name.as_str(),
                                 RateLimitKeyResolved::EpField { name, .. } => name.as_str(),
                                 RateLimitKeyResolved::Static { value, .. } => value.as_str(),
                             })

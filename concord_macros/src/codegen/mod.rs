@@ -1654,6 +1654,8 @@ mod tests {
                 "RateLimitBucketUse :: new",
             ],
         );
+        assert!(!out.contains("compile_error!(concat!(\"unresolvedrate_limitkey"));
+        assert!(!out.contains("endpoint/scoperate_limitkeycannotbeusedinclientbasepolicy"));
     }
 
     #[test]

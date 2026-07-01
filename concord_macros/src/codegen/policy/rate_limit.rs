@@ -70,18 +70,12 @@ fn emit_rate_limit_key(keys: &[RateLimitKeyResolved], ctx: PolicyEmitCtx) -> Tok
         RateLimitKeyResolved::Method => {
             quote! { ::concord_core::advanced::RateLimitKeyPart::method() }
         }
-        RateLimitKeyResolved::Named { name, .. } => {
-            let name = LitStr::new(name, Span::call_site());
-            quote! {
-                compile_error!(concat!("unresolved rate_limit key `", #name, "`"))
-            }
-        }
         RateLimitKeyResolved::EpField { name, field } => {
             let name = LitStr::new(name, field.span());
             match ctx {
-                PolicyEmitCtx::ClientBase => quote! {
-                    compile_error!("endpoint/scope rate_limit key cannot be used in client base policy")
-                },
+                PolicyEmitCtx::ClientBase => unreachable!(
+                    "sema must reject endpoint/scope rate_limit keys in client base policy"
+                ),
                 PolicyEmitCtx::Layer | PolicyEmitCtx::Endpoint => quote! {
                     ::concord_core::advanced::RateLimitKeyPart::static_value(
                         #name,
