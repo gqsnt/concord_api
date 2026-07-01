@@ -130,9 +130,24 @@ fn resolve_paginate(
     }
     let mut assigns = Vec::new();
     let mut bindings = Vec::new();
+    let mut send_cursor_on_first = false;
+    let mut stop_when_cursor_missing = true;
     for a in &p.assigns {
         validate_paginate_assignment_key(controller_kind, &a.key)?;
         let lowered = lower_public_policy_expr_checked(&a.value)?;
+        if matches!(controller_kind, PaginationControllerKind::Cursor) {
+            match a.key.to_string().as_str() {
+                "send_cursor_on_first" => {
+                    send_cursor_on_first = parse_cursor_flag_value(&lowered, &a.key)?;
+                    continue;
+                }
+                "stop_when_cursor_missing" => {
+                    stop_when_cursor_missing = parse_cursor_flag_value(&lowered, &a.key)?;
+                    continue;
+                }
+                _ => {}
+            }
+        }
         let vk = resolve_value_kind(
             &lowered,
             client_vars,
@@ -204,8 +219,8 @@ fn resolve_paginate(
                 assigns,
                 cursor_key_from_query,
                 per_page_key_from_query,
-                send_cursor_on_first: false,
-                stop_when_cursor_missing: false,
+                send_cursor_on_first,
+                stop_when_cursor_missing,
             })
         }
         PaginationControllerKind::Paged => {
@@ -822,6 +837,18 @@ fn pagination_value_from_value_kind(value: ValueKind, span: Span) -> Result<Pagi
         }
         ValueKind::CxField(_) => Err(pagination_scoped_ref_error(span)),
     }
+}
+
+fn parse_cursor_flag_value(expr: &Expr, key: &Ident) -> Result<bool> {
+    if let Expr::Lit(lit) = expr
+        && let syn::Lit::Bool(value) = &lit.lit
+    {
+        return Ok(value.value);
+    }
+    Err(syn::Error::new_spanned(
+        expr,
+        format!("`{key}` must be a boolean literal"),
+    ))
 }
 
 fn validate_public_expr(expr: &Expr) -> Result<()> {

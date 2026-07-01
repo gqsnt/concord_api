@@ -3,7 +3,7 @@ pub mod offset_limit;
 pub mod paged;
 
 use crate::error::{ApiClientError, ErrorContext};
-pub use cursor::{CursorPagination, HasNextCursor};
+pub use cursor::{CursorBindings, CursorPagination, CursorState, HasNextCursor};
 use http::{HeaderMap, HeaderName, HeaderValue};
 pub use offset_limit::{OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState};
 pub use paged::{PagedBindings, PagedPagination, PagedState};
@@ -266,8 +266,8 @@ pub trait EndpointPaginationController<E, Page>: Send + Sync + 'static
 where
     Page: PageItems,
 {
-    type Bindings: Send + Sync + 'static;
-    type State: Send + Sync + 'static;
+    type Bindings: Send + 'static;
+    type State: Send + 'static;
 
     fn init(
         &self,

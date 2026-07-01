@@ -1903,6 +1903,76 @@ mod tests {
     }
 
     #[test]
+    fn generated_cursor_uses_endpoint_state_pagination_runtime() {
+        let out = expanded(quote! {
+            client SnapshotCursorRuntime {
+                base "https://example.com"
+            }
+
+            GET List(cursor?: String, count: u64 = 2)
+                headers {
+                    "X-Cursor" = cursor,
+                    "X-Count" = count,
+                }
+                paginate CursorPagination {
+                    cursor = cursor,
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                ":: concord_core :: advanced :: CursorBindings",
+                "endpoint_state_pagination",
+                "EndpointPaginationRuntimeAdapter",
+                "EndpointField :: new",
+                "HasNextCursor",
+                "ep . cursor . clone ()",
+                "ep . count . clone ()",
+                "ep . cursor = value",
+                ":: concord_core :: advanced :: CursorPagination {",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_cursor_endpoint_state_preserves_cursor_controller_flags() {
+        let out = expanded(quote! {
+            client SnapshotCursorFlags {
+                base "https://example.com"
+            }
+
+            GET List(cursor?: String, count: u64 = 2)
+                headers {
+                    "X-Cursor" = cursor,
+                    "X-Count" = count,
+                }
+                paginate CursorPagination {
+                    cursor = cursor,
+                    per_page = count,
+                    send_cursor_on_first = true,
+                    stop_when_cursor_missing = false
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "endpoint_state_pagination",
+                "EndpointPaginationRuntimeAdapter",
+                "CursorBindings",
+                "EndpointField :: new",
+                "send_cursor_on_first:true",
+                "stop_when_cursor_missing:false",
+                "CursorPagination{",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_pagination_endpoint_state_bindings_clone_non_copy_cursor() {
         let out = expanded(quote! {
             client SnapshotPaginationCursorBindings {
@@ -1924,10 +1994,12 @@ mod tests {
         assert_contains_all(
             &out,
             &[
+                ":: concord_core :: advanced :: CursorBindings",
                 "EndpointField :: new",
                 "ep . cursor . clone ()",
                 "ep . cursor = value",
-                "pub(crate) per_page : :: concord_core :: advanced :: EndpointField",
+                ":: concord_core :: advanced :: CursorPagination {",
+                "HasNextCursor",
             ],
         );
     }

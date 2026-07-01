@@ -3836,6 +3836,38 @@ mod tests {
     }
 
     #[test]
+    fn pagination_cursor_flags_resolve_from_paginate_block() {
+        let resolved_api = analyze_source(
+            r#"
+            client PageApi {
+                base "https://example.com"
+            }
+
+            GET List(cursor?: String, count: u64 = 20)
+                paginate CursorPagination {
+                    cursor = cursor,
+                    per_page = count,
+                    send_cursor_on_first = true,
+                    stop_when_cursor_missing = false
+                }
+                -> Json<Vec<String>>
+            "#,
+        );
+
+        let pagination = resolved_api.endpoints[0]
+            .paginate
+            .as_ref()
+            .expect("pagination resolved");
+        match &pagination.controller {
+            PaginationControllerResolved::Cursor(ctrl) => {
+                assert!(ctrl.send_cursor_on_first);
+                assert!(!ctrl.stop_when_cursor_missing);
+            }
+            other => panic!("expected cursor controller, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn unknown_pagination_field_fails_resolution() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"

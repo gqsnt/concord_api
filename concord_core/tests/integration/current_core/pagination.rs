@@ -1,10 +1,10 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, EndpointField, EndpointPaginationRuntimeAdapter, OffsetLimitBindings,
-    PageAdvance, PageDecision, PageInit, PageRequest, PagedBindings, PaginationController,
-    ProgressKey, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter,
+    AuthPlacement, CursorBindings, EndpointField, EndpointPaginationRuntimeAdapter,
+    OffsetLimitBindings, PageAdvance, PageDecision, PageInit, PageRequest, PagedBindings,
+    PaginationController, ProgressKey, RateLimitContext, RateLimitFuture, RateLimitPermit,
+    RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
 };
 use concord_core::internal::PaginationPlan;
 use concord_core::prelude::{
@@ -289,6 +289,63 @@ impl PaginatedEndpoint<TestCx> for HeaderBoundPagedEndpoint {
                 page: EndpointField::new(
                     |ep: &Self| ep.page,
                     |ep: &mut Self, value| ep.page = value,
+                ),
+                per_page: EndpointField::new(
+                    |ep: &Self| ep.count,
+                    |ep: &mut Self, value| ep.count = value,
+                ),
+            },
+        )))
+    }
+}
+
+#[derive(Clone)]
+struct HeaderBoundCursorEndpoint {
+    cursor: Option<String>,
+    count: u64,
+    pagination: PaginationPlan,
+}
+
+impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
+    type Response = CursorItems;
+
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        let mut plan = request_plan(
+            "HeaderBoundCursor",
+            Method::GET,
+            "/header-cursor",
+            Default::default(),
+            Some(self.pagination.clone()),
+            decode_cursor_items,
+        );
+        if let Some(cursor) = &self.cursor {
+            plan.endpoint.policy.headers.insert(
+                http::header::HeaderName::from_static("x-cursor"),
+                HeaderValue::from_str(cursor).expect("valid header value"),
+            );
+        }
+        plan.endpoint.policy.headers.insert(
+            http::header::HeaderName::from_static("x-count"),
+            HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
+        );
+        Ok(plan)
+    }
+}
+
+impl PaginatedEndpoint<TestCx> for HeaderBoundCursorEndpoint {
+    fn endpoint_state_pagination(
+        &self,
+    ) -> Option<Box<dyn concord_core::internal::EndpointPaginationRuntime<Self, Self::Response>>>
+    {
+        Some(Box::new(EndpointPaginationRuntimeAdapter::new(
+            concord_core::advanced::CursorPagination::default(),
+            CursorBindings {
+                cursor: EndpointField::new(
+                    |ep: &Self| ep.cursor.clone(),
+                    |ep: &mut Self, value| ep.cursor = value,
                 ),
                 per_page: EndpointField::new(
                     |ep: &Self| ep.count,
@@ -1427,6 +1484,116 @@ async fn cursor_pagination_collects_until_cursor_missing() -> Result<(), ApiClie
     assert_eq!(
         query_value(&requests[1].url, "cursor"),
         Some("next-1".to_string())
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn cursor_endpoint_state_mutation_renders_endpoint_fields() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
+            MockResponse::text(StatusCode::OK, "c|next="),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = HeaderBoundCursorEndpoint {
+        cursor: Some("start".to_string()),
+        count: 2,
+        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            cursor_key: "cursor".into(),
+            per_page_key: "limit".into(),
+            cursor: Some("start".to_string()),
+            per_page: 2,
+            send_cursor_on_first: false,
+            stop_when_cursor_missing: true,
+        }),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert!(query_value(&requests[0].url, "cursor").is_none());
+    assert_eq!(
+        header_value(&requests[0].headers, "x-count"),
+        Some("2".to_string())
+    );
+    assert_eq!(
+        header_value(&requests[1].headers, "x-cursor"),
+        Some("next-1".to_string())
+    );
+    assert_eq!(
+        header_value(&requests[1].headers, "x-count"),
+        Some("2".to_string())
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn cursor_query_keys_remain_supported_on_fallback_path() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
+            MockResponse::text(StatusCode::OK, "c|next="),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = CursorItemsEndpoint {
+        policy: Default::default(),
+        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            cursor_key: "cursorToken".into(),
+            per_page_key: "pageSize".into(),
+            cursor: Some("start".to_string()),
+            per_page: 2,
+            send_cursor_on_first: true,
+            stop_when_cursor_missing: true,
+        }),
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        query_value(&requests[0].url, "cursorToken"),
+        Some("start".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[1].url, "cursorToken"),
+        Some("next-1".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[0].url, "pageSize"),
+        Some("2".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[1].url, "pageSize"),
+        Some("2".to_string())
     );
     Ok(())
 }
@@ -3395,6 +3562,13 @@ fn query_value(url: &url::Url, name: &str) -> Option<String> {
     url.query_pairs()
         .find(|(key, _)| key == name)
         .map(|(_, value)| value.into_owned())
+}
+
+fn header_value(headers: &http::HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string())
 }
 
 fn numbered_items(start: usize, count: usize) -> String {
