@@ -527,25 +527,6 @@ fn analyze_endpoint(
         RateLimitAttachmentContext::Endpoint,
     )?;
     policy.rate_limit = merge_rate_limit_resolved(behavior_rate_limit, explicit_rate_limit);
-    let mut auth = ctx.client_auth.to_vec();
-    for &lid in ancestry {
-        auth.extend(ctx.layers[lid].auth.iter().cloned());
-    }
-    let mut auth_uses = behavior.auth_uses;
-    auth_uses.extend(ed.auth_uses.iter().cloned());
-    auth.extend(resolve_auth_requirements(
-        &auth_uses,
-        ctx.auth_credentials,
-        AuthUseProvenanceIr::Endpoint,
-    )?);
-    let mut behavior_doc_names = Vec::new();
-    behavior_doc_names.extend(ctx.client_default_behavior_names.iter().cloned());
-    for &lid in ancestry {
-        behavior_doc_names.extend(ctx.layers[lid].behavior_names.iter().cloned());
-    }
-    behavior_doc_names.extend(behavior_use_names(&ed.behavior_uses));
-    let mut seen_behavior_doc_names = std::collections::BTreeSet::new();
-    behavior_doc_names.retain(|name| seen_behavior_doc_names.insert(name.clone()));
     let mut scope_modules = Vec::new();
     let mut facade_param_groups = Vec::new();
     let mut prefix_pieces = Vec::new();
@@ -564,6 +545,17 @@ fn analyze_endpoint(
         scope_policies.push(layer.policy.clone());
     }
     let current_endpoint_key = endpoint_scope_key(&scope_modules, &ed.name);
+    let mut auth = ctx.client_auth.to_vec();
+    for &lid in ancestry {
+        auth.extend(ctx.layers[lid].auth.iter().cloned());
+    }
+    let mut auth_uses = behavior.auth_uses;
+    auth_uses.extend(ed.auth_uses.iter().cloned());
+    auth.extend(resolve_auth_requirements(
+        &auth_uses,
+        ctx.auth_credentials,
+        AuthUseProvenanceIr::Endpoint,
+    )?);
     for credential in ctx.auth_credentials.values() {
         let AuthCredentialKindIr::Endpoint { endpoint_key, .. } = &credential.kind else {
             continue;
@@ -632,8 +624,23 @@ fn analyze_endpoint(
     }
     let paginate = match &ed.paginate {
         None => None,
-        Some(p) => Some(resolve_paginate(p, ctx.client_vars, ctx.auth_vars, &ep_vars)?),
+        Some(p) => Some(resolve_paginate(
+            p,
+            ctx.client_vars,
+            ctx.auth_vars,
+            &ep_vars,
+            &policy,
+            &scope_policies,
+        )?),
     };
+    let mut behavior_doc_names = Vec::new();
+    behavior_doc_names.extend(ctx.client_default_behavior_names.iter().cloned());
+    for &lid in ancestry {
+        behavior_doc_names.extend(ctx.layers[lid].behavior_names.iter().cloned());
+    }
+    behavior_doc_names.extend(behavior_use_names(&ed.behavior_uses));
+    let mut seen_behavior_doc_names = std::collections::BTreeSet::new();
+    behavior_doc_names.retain(|name| seen_behavior_doc_names.insert(name.clone()));
 
     // 5) Resolve map block, if any.
     let map = ed.map.as_ref().map(|m| MapResolved {

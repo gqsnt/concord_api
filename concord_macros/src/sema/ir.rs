@@ -446,10 +446,57 @@ pub enum PolicyKeyKind {
     Query,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PaginateResolved {
-    pub ctrl_ty: syn::Path,
-    pub assigns: Vec<(Ident, PaginationValueKind)>,
+    pub controller: PaginationControllerResolved,
+}
+
+#[derive(Debug, Clone)]
+pub enum PaginationControllerResolved {
+    OffsetLimit(OffsetLimitPaginationResolved),
+    Cursor(CursorPaginationResolved),
+    Paged(PagedPaginationResolved),
+    Custom { ctrl_ty: syn::Path },
+}
+
+impl PaginationControllerResolved {
+    pub fn display_name(&self) -> String {
+        match self {
+            PaginationControllerResolved::OffsetLimit(_) => "OffsetLimitPagination".to_string(),
+            PaginationControllerResolved::Cursor(_) => "CursorPagination".to_string(),
+            PaginationControllerResolved::Paged(_) => "PagedPagination".to_string(),
+            PaginationControllerResolved::Custom { ctrl_ty } => quote::quote!(#ctrl_ty).to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OffsetLimitPaginationResolved {
+    pub assigns: Vec<PaginationAssignmentResolved>,
+    pub offset_key_from_query: Option<KeyResolved>,
+    pub limit_key_from_query: Option<KeyResolved>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CursorPaginationResolved {
+    pub assigns: Vec<PaginationAssignmentResolved>,
+    pub cursor_key_from_query: Option<KeyResolved>,
+    pub per_page_key_from_query: Option<KeyResolved>,
+    pub send_cursor_on_first: bool,
+    pub stop_when_cursor_missing: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PagedPaginationResolved {
+    pub assigns: Vec<PaginationAssignmentResolved>,
+    pub page_key_from_query: Option<KeyResolved>,
+    pub per_page_key_from_query: Option<KeyResolved>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PaginationAssignmentResolved {
+    pub field: Ident,
+    pub value: PaginationValueKind,
 }
 
 #[derive(Debug)]

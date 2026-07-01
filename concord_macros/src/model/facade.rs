@@ -387,14 +387,8 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
         });
     }
     if let Some(pagination) = &ep.paginate {
-        let controller = pagination
-            .ctrl_ty
-            .segments
-            .last()
-            .map(|segment| segment.ident.to_string())
-            .unwrap_or_else(|| "configured".to_string());
         docs.push(FacadeDoc {
-            summary: format!("Pagination: {controller}"),
+            summary: format!("Pagination: {}", pagination.controller.display_name()),
             details: Vec::new(),
         });
     }

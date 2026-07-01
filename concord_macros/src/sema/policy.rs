@@ -118,20 +118,19 @@ fn resolve_paginate(
     client_vars: &BTreeMap<String, VarInfo>,
     auth_vars: &BTreeMap<String, VarInfo>,
     ep_vars: &BTreeMap<String, VarInfo>,
+    endpoint_policy: &PolicyBlocksResolved,
+    scope_policies: &[PolicyBlocksResolved],
 ) -> Result<PaginateResolved> {
-    let built_in = is_builtin_paginate_controller(&p.ctrl_ty);
-    if !built_in && !p.assigns.is_empty() {
+    let controller_kind = paginate_controller_kind(&p.ctrl_ty);
+    if matches!(controller_kind, PaginationControllerKind::Custom) && !p.assigns.is_empty() {
         return Err(syn::Error::new_spanned(
             &p.ctrl_ty,
             "custom pagination controllers use `paginate TypePath` without a configuration block",
         ));
     }
-    if built_in {
-        validate_paginate_controller(&p.ctrl_ty)?;
-    }
     let mut assigns = Vec::new();
     for a in &p.assigns {
-        validate_paginate_assignment_key(&p.ctrl_ty, &a.key)?;
+        validate_paginate_assignment_key(controller_kind, &a.key)?;
         let lowered = lower_public_policy_expr_checked(&a.value)?;
         let vk = resolve_value_kind(
             &lowered,
@@ -141,84 +140,175 @@ fn resolve_paginate(
             lowered.span(),
         )?;
         let vk = pagination_value_from_value_kind(vk, lowered.span())?;
-        assigns.push((a.key.clone(), vk));
+        assigns.push(PaginationAssignmentResolved {
+            field: a.key.clone(),
+            value: vk,
+        });
     }
-    Ok(PaginateResolved {
-        ctrl_ty: p.ctrl_ty.clone(),
-        assigns,
-    })
-}
-
-fn validate_paginate_controller(ctrl_ty: &Path) -> Result<()> {
-    if is_builtin_paginate_controller(ctrl_ty) {
-        return Ok(());
-    }
-    Err(syn::Error::new_spanned(
-        ctrl_ty,
-        "unknown pagination controller; expected OffsetLimitPagination, CursorPagination, or PagedPagination",
-    ))
-}
-
-fn is_builtin_paginate_controller(ctrl_ty: &Path) -> bool {
-    ctrl_ty.leading_colon.is_none()
-        && ctrl_ty.segments.len() == 1
-        && matches!(
-            paginate_controller_name(ctrl_ty).as_deref(),
-            Some("OffsetLimitPagination" | "CursorPagination" | "PagedPagination")
-        )
-}
-
-fn validate_paginate_assignment_key(ctrl_ty: &Path, key: &Ident) -> Result<()> {
-    let Some(controller) = paginate_controller_name(ctrl_ty) else {
-        return validate_paginate_controller(ctrl_ty);
+    let controller = match controller_kind {
+        PaginationControllerKind::OffsetLimit => {
+            let offset_key_from_query = infer_pagination_query_key_from_assignment(
+                &assigns,
+                "offset",
+                endpoint_policy,
+                scope_policies,
+            );
+            let limit_key_from_query = infer_pagination_query_key_from_assignment(
+                &assigns,
+                "limit",
+                endpoint_policy,
+                scope_policies,
+            );
+            PaginationControllerResolved::OffsetLimit(OffsetLimitPaginationResolved {
+                assigns,
+                offset_key_from_query,
+                limit_key_from_query,
+            })
+        }
+        PaginationControllerKind::Cursor => {
+            let cursor_key_from_query = infer_pagination_query_key_from_assignment(
+                &assigns,
+                "cursor",
+                endpoint_policy,
+                scope_policies,
+            );
+            let per_page_key_from_query = infer_pagination_query_key_from_assignment(
+                &assigns,
+                "per_page",
+                endpoint_policy,
+                scope_policies,
+            );
+            PaginationControllerResolved::Cursor(CursorPaginationResolved {
+                assigns,
+                cursor_key_from_query,
+                per_page_key_from_query,
+                send_cursor_on_first: false,
+                stop_when_cursor_missing: false,
+            })
+        }
+        PaginationControllerKind::Paged => {
+            let page_key_from_query = infer_pagination_query_key_from_assignment(
+                &assigns,
+                "page",
+                endpoint_policy,
+                scope_policies,
+            );
+            let per_page_key_from_query = infer_pagination_query_key_from_assignment(
+                &assigns,
+                "per_page",
+                endpoint_policy,
+                scope_policies,
+            );
+            PaginationControllerResolved::Paged(PagedPaginationResolved {
+                assigns,
+                page_key_from_query,
+                per_page_key_from_query,
+            })
+        }
+        PaginationControllerKind::Custom => PaginationControllerResolved::Custom {
+            ctrl_ty: p.ctrl_ty.clone(),
+        },
     };
-    if !is_builtin_paginate_controller(ctrl_ty) {
-        return validate_paginate_controller(ctrl_ty);
+    Ok(PaginateResolved { controller })
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum PaginationControllerKind {
+    OffsetLimit,
+    Cursor,
+    Paged,
+    Custom,
+}
+
+fn paginate_controller_kind(ctrl_ty: &Path) -> PaginationControllerKind {
+    if ctrl_ty.leading_colon.is_some() || ctrl_ty.segments.len() != 1 {
+        return PaginationControllerKind::Custom;
+    }
+    match ctrl_ty.segments[0].ident.to_string().as_str() {
+        "OffsetLimitPagination" => PaginationControllerKind::OffsetLimit,
+        "CursorPagination" => PaginationControllerKind::Cursor,
+        "PagedPagination" => PaginationControllerKind::Paged,
+        _ => PaginationControllerKind::Custom,
+    }
+}
+
+fn validate_paginate_assignment_key(kind: PaginationControllerKind, key: &Ident) -> Result<()> {
+    if matches!(kind, PaginationControllerKind::Custom) {
+        return Err(syn::Error::new_spanned(
+            key,
+            "unknown pagination controller; expected OffsetLimitPagination, CursorPagination, or PagedPagination",
+        ));
     }
     let key_name = key.to_string();
-    let allowed = match controller.as_str() {
-        "OffsetLimitPagination" => [
-            "offset_key",
-            "limit_key",
-            "offset",
-            "limit",
-        ]
-        .as_slice(),
-        "CursorPagination" => [
+    let allowed: &[&str] = match kind {
+        PaginationControllerKind::OffsetLimit => &["offset_key", "limit_key", "offset", "limit"],
+        PaginationControllerKind::Cursor => &[
             "cursor_key",
             "per_page_key",
             "cursor",
             "per_page",
             "send_cursor_on_first",
             "stop_when_cursor_missing",
-        ]
-        .as_slice(),
-        "PagedPagination" => [
-            "page_key",
-            "per_page_key",
-            "page",
-            "per_page",
-        ]
-        .as_slice(),
-        _ => return validate_paginate_controller(ctrl_ty),
+        ],
+        PaginationControllerKind::Paged => &["page_key", "per_page_key", "page", "per_page"],
+        PaginationControllerKind::Custom => &[],
     };
     if allowed.contains(&key_name.as_str()) {
         return Ok(());
     }
+    let controller = match kind {
+        PaginationControllerKind::OffsetLimit => "OffsetLimitPagination",
+        PaginationControllerKind::Cursor => "CursorPagination",
+        PaginationControllerKind::Paged => "PagedPagination",
+        PaginationControllerKind::Custom => unreachable!(),
+    };
     Err(syn::Error::new(
         key.span(),
-        format!(
-            "unknown pagination field `{key_name}` for {controller}; allowed fields: {}",
-            allowed.join(", ")
-        ),
+        format!("unknown pagination field `{key_name}` for {controller}; allowed fields: {}", allowed.join(", ")),
     ))
 }
 
-fn paginate_controller_name(ctrl_ty: &Path) -> Option<String> {
-    ctrl_ty
-        .segments
-        .last()
-        .map(|segment| segment.ident.to_string())
+fn infer_pagination_query_key(
+    field: &str,
+    endpoint_policy: &PolicyBlocksResolved,
+    scope_policies: &[PolicyBlocksResolved],
+) -> Option<KeyResolved> {
+    find_query_key_for_ep_field_in_ops(field, &endpoint_policy.query).or_else(|| {
+        scope_policies
+            .iter()
+            .rev()
+            .find_map(|scope| find_query_key_for_ep_field_in_ops(field, &scope.query))
+    })
+}
+
+fn infer_pagination_query_key_from_assignment(
+    assigns: &[PaginationAssignmentResolved],
+    controller_field: &str,
+    endpoint_policy: &PolicyBlocksResolved,
+    scope_policies: &[PolicyBlocksResolved],
+) -> Option<KeyResolved> {
+    let source_field = assigns.iter().rev().find_map(|assign| {
+        if assign.field.to_string() != controller_field {
+            return None;
+        }
+        match &assign.value {
+            PaginationValueKind::EpField(field) => Some(field.to_string()),
+            _ => None,
+        }
+    })?;
+    infer_pagination_query_key(&source_field, endpoint_policy, scope_policies)
+}
+
+fn find_query_key_for_ep_field_in_ops(field: &str, ops: &[PolicyOp]) -> Option<KeyResolved> {
+    ops.iter().rev().find_map(|op| match op {
+        PolicyOp::Set {
+            key,
+            value: PolicySetValue::Value(PublicValueKind::EpField(f))
+                | PolicySetValue::OptionalEpField(f),
+            ..
+        } if f.to_string() == field => Some(key.clone()),
+        _ => None,
+    })
 }
 
 fn resolve_policy_blocks(

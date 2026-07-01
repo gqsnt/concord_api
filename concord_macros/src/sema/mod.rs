@@ -3475,38 +3475,112 @@ mod tests {
                     per_page = count
                 }
                 -> Json<Vec<String>>
+
+            GET Custom
+                path ["custom"]
+                paginate HeaderCursorPagination
+                -> Json<Vec<String>>
             "#,
         )
         .expect("valid api syntax");
         let resolved_api = analyze(ast).expect("analysis succeeds");
 
-        let controllers = resolved_api
+        let offset = resolved_api
             .endpoints
             .iter()
-            .map(|ep| {
-                let pagination = ep.paginate.as_ref().expect("pagination resolved");
-                (
-                    ep.name.to_string(),
-                    pagination
-                        .ctrl_ty
-                        .segments
-                        .last()
-                        .expect("controller type")
-                        .ident
-                        .to_string(),
-                    pagination.assigns.len(),
-                )
-            })
-            .collect::<Vec<_>>();
+            .find(|ep| ep.name == "Offset")
+            .and_then(|ep| ep.paginate.as_ref())
+            .expect("offset pagination");
+        match &offset.controller {
+            PaginationControllerResolved::OffsetLimit(ctrl) => {
+                assert_eq!(ctrl.assigns.len(), 2);
+            }
+            other => panic!("expected offset-limit controller, got {other:?}"),
+        }
 
-        assert_eq!(
-            controllers,
-            vec![
-                ("Offset".to_string(), "OffsetLimitPagination".to_string(), 2),
-                ("Cursor".to_string(), "CursorPagination".to_string(), 2),
-                ("Paged".to_string(), "PagedPagination".to_string(), 2),
-            ]
+        let cursor = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Cursor")
+            .and_then(|ep| ep.paginate.as_ref())
+            .expect("cursor pagination");
+        match &cursor.controller {
+            PaginationControllerResolved::Cursor(ctrl) => {
+                assert_eq!(ctrl.assigns.len(), 2);
+            }
+            other => panic!("expected cursor controller, got {other:?}"),
+        }
+
+        let paged = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Paged")
+            .and_then(|ep| ep.paginate.as_ref())
+            .expect("paged pagination");
+        match &paged.controller {
+            PaginationControllerResolved::Paged(ctrl) => {
+                assert_eq!(ctrl.assigns.len(), 2);
+            }
+            other => panic!("expected paged controller, got {other:?}"),
+        }
+
+        let custom = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Custom")
+            .and_then(|ep| ep.paginate.as_ref())
+            .expect("custom pagination");
+        match &custom.controller {
+            PaginationControllerResolved::Custom { ctrl_ty } => {
+                assert_eq!(
+                    quote::quote!(#ctrl_ty).to_string(),
+                    "HeaderCursorPagination"
+                );
+            }
+            other => panic!("expected custom controller, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pagination_auto_key_bindings_are_resolved_in_sema() {
+        let resolved_api = analyze_source(
+            r#"
+            client PageApi {
+                base "https://example.com"
+            }
+
+            GET Offset(start: u64 = 0, count: u64 = 20)
+                path ["offset"]
+                query {
+                    start
+                    count
+                }
+                paginate OffsetLimitPagination {
+                    offset = start,
+                    limit = count
+                }
+                -> Json<Vec<String>>
+            "#,
         );
+
+        let pagination = resolved_api.endpoints[0]
+            .paginate
+            .as_ref()
+            .expect("pagination resolved");
+        match &pagination.controller {
+            PaginationControllerResolved::OffsetLimit(ctrl) => {
+                assert_eq!(ctrl.assigns.len(), 2);
+                assert!(matches!(
+                    ctrl.offset_key_from_query,
+                    Some(KeyResolved::Ident(ref id)) if id == "start"
+                ));
+                assert!(matches!(
+                    ctrl.limit_key_from_query,
+                    Some(KeyResolved::Ident(ref id)) if id == "count"
+                ));
+            }
+            other => panic!("expected offset-limit pagination, got {other:?}"),
+        }
     }
 
     #[test]

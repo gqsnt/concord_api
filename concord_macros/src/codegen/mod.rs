@@ -1075,13 +1075,13 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "let mut ctrl : OffsetLimitPagination = :: core :: default :: Default :: default ()",
+                "let mut ctrl : :: concord_core :: internal :: OffsetLimitPagination = :: core :: default :: Default :: default ()",
                 "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"start\")",
                 "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"count\")",
-                "let mut ctrl : CursorPagination = :: core :: default :: Default :: default ()",
+                "let mut ctrl : :: concord_core :: internal :: CursorPagination = :: core :: default :: Default :: default ()",
                 "ctrl . cursor_key = :: std :: borrow :: Cow :: from (\"cursor\")",
                 "ctrl . per_page_key = :: std :: borrow :: Cow :: from (\"count\")",
-                "let mut ctrl : PagedPagination = :: core :: default :: Default :: default ()",
+                "let mut ctrl : :: concord_core :: internal :: PagedPagination = :: core :: default :: Default :: default ()",
                 "ctrl . page_key = :: std :: borrow :: Cow :: from (\"page\")",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
             ],
