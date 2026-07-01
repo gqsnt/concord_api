@@ -1736,6 +1736,35 @@ async fn built_in_pagination_without_endpoint_state_hook_is_rejected() -> Result
 }
 
 #[tokio::test]
+async fn pagination_runner_rejects_builtin_plans() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "a,b")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = QueryBoundPagedEndpoint {
+        page: 1,
+        count: 2,
+        pagination: PaginationPlan::Paged {
+            page_key: "pageNo".to_string(),
+            per_page_key: "pageSize".to_string(),
+            page: 1,
+            per_page: 2,
+        },
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(1))
+        .collect()
+        .await
+        .expect_err("built-in plans must not instantiate the custom fallback runner");
+    assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert!(sent.requests().await.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
 async fn retry_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(

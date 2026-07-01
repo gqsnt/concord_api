@@ -306,8 +306,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         match first_plan.endpoint.pagination.clone() {
             Some(PaginationPlan::Custom(custom)) => {
                 let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
-                let mut runner =
-                    PaginationRunner::new(Some(PaginationPlan::Custom(custom)), &first_plan)?;
+                let mut runner = PaginationRunner::new_custom(custom, &first_plan)?;
                 let mut first_plan = Some(first_plan);
                 let mut state = PaginationRunState::default();
                 let mut seen: Option<HashSet<ProgressKey>> = if caps.detect_loops {
@@ -727,21 +726,6 @@ fn common_content_stop(actual_items: Option<usize>, expected_items: Option<NonZe
         )
 }
 
-fn page_size_to_nonzero_usize(
-    value: u64,
-    controller: &'static str,
-    ctx: &crate::error::ErrorContext,
-) -> Result<NonZeroUsize, ApiClientError> {
-    let value = usize::try_from(value).map_err(|_| ApiClientError::Pagination {
-        ctx: ctx.clone(),
-        msg: format!("{controller}: page size does not fit in usize").into(),
-    })?;
-    NonZeroUsize::new(value).ok_or_else(|| ApiClientError::Pagination {
-        ctx: ctx.clone(),
-        msg: format!("{controller}: page size must be greater than zero").into(),
-    })
-}
-
 #[derive(Default)]
 struct PaginationRunState {
     seen_request_identities: HashSet<String>,
@@ -829,211 +813,31 @@ fn push_identity_component(out: &mut String, label: &str, value: &str) {
 }
 
 enum PaginationRunner {
-    OffsetLimit {
-        offset_key: String,
-        limit_key: String,
-        offset: u64,
-        limit: u64,
-    },
-    Cursor {
-        cursor_key: String,
-        per_page_key: String,
-        cursor: Option<String>,
-        per_page: u64,
-        send_cursor_on_first: bool,
-        stop_when_cursor_missing: bool,
-        started: bool,
-        next_cursor: crate::endpoint::CursorNextFn,
-    },
-    Paged {
-        page_key: String,
-        per_page_key: String,
-        page: u64,
-        per_page: u64,
-    },
     Custom {
         plan: CustomPaginationPlan,
         state: Box<dyn Any + Send + Sync>,
     },
 }
 
-fn set_query(query: &mut Vec<(String, String)>, key: &str, value: String) {
-    query.retain(|(existing, _)| existing != key);
-    query.push((key.to_string(), value));
-}
-
-fn remove_query(query: &mut Vec<(String, String)>, key: &str) {
-    query.retain(|(existing, _)| existing != key);
-}
-
 impl PaginationRunner {
-    fn new(
-        plan: Option<PaginationPlan>,
+    fn new_custom(
+        custom: CustomPaginationPlan,
         request: &crate::endpoint::RequestPlan,
     ) -> Result<Self, ApiClientError> {
-        let ctx = ErrorContext {
+        let state = (custom.init)(PageInit {
             endpoint: request.endpoint.meta.name,
-            method: request.endpoint.meta.method.clone(),
-        };
-        match plan {
-            Some(PaginationPlan::OffsetLimit {
-                offset_key,
-                limit_key,
-                offset,
-                limit,
-            }) => {
-                if limit == 0 {
-                    return Err(ApiClientError::Pagination {
-                        ctx,
-                        msg: "offset/limit: limit=0".into(),
-                    });
-                }
-                Ok(Self::OffsetLimit {
-                    offset_key,
-                    limit_key,
-                    offset,
-                    limit,
-                })
-            }
-            Some(PaginationPlan::Cursor {
-                cursor_key,
-                per_page_key,
-                cursor,
-                per_page,
-                send_cursor_on_first,
-                stop_when_cursor_missing,
-                next_cursor,
-            }) => {
-                if per_page == 0 {
-                    return Err(ApiClientError::Pagination {
-                        ctx,
-                        msg: "cursor: per_page=0".into(),
-                    });
-                }
-                Ok(Self::Cursor {
-                    cursor_key,
-                    per_page_key,
-                    cursor,
-                    per_page,
-                    send_cursor_on_first,
-                    stop_when_cursor_missing,
-                    started: false,
-                    next_cursor,
-                })
-            }
-            Some(PaginationPlan::Paged {
-                page_key,
-                per_page_key,
-                page,
-                per_page,
-            }) => {
-                if per_page == 0 {
-                    return Err(ApiClientError::Pagination {
-                        ctx,
-                        msg: "paged: per_page=0".into(),
-                    });
-                }
-                if page == 0 {
-                    return Err(ApiClientError::Pagination {
-                        ctx,
-                        msg: "paged: page=0".into(),
-                    });
-                }
-                Ok(Self::Paged {
-                    page_key,
-                    per_page_key,
-                    page,
-                    per_page,
-                })
-            }
-            Some(PaginationPlan::Custom(custom)) => {
-                let state = (custom.init)(PageInit {
-                    endpoint: request.endpoint.meta.name,
-                })?;
-                Ok(Self::Custom {
-                    plan: custom,
-                    state,
-                })
-            }
-            None => Err(ApiClientError::Pagination {
-                ctx,
-                msg: "endpoint is not paginated".into(),
-            }),
-        }
+        })?;
+        Ok(Self::Custom {
+            plan: custom,
+            state,
+        })
     }
 
     fn apply_query(
         &mut self,
         plan: &mut crate::endpoint::RequestPlan,
     ) -> Result<Option<NonZeroUsize>, ApiClientError> {
-        let ctx = ErrorContext {
-            endpoint: plan.endpoint.meta.name,
-            method: plan.endpoint.meta.method.clone(),
-        };
         match self {
-            Self::OffsetLimit {
-                offset_key,
-                limit_key,
-                offset,
-                limit,
-                ..
-            } => {
-                set_query(
-                    &mut plan.endpoint.policy.query,
-                    offset_key,
-                    offset.to_string(),
-                );
-                set_query(
-                    &mut plan.endpoint.policy.query,
-                    limit_key,
-                    limit.to_string(),
-                );
-                Ok(Some(page_size_to_nonzero_usize(
-                    *limit,
-                    "offset/limit",
-                    &ctx,
-                )?))
-            }
-            Self::Cursor {
-                cursor_key,
-                per_page_key,
-                cursor,
-                per_page,
-                send_cursor_on_first,
-                started,
-                ..
-            } => {
-                set_query(
-                    &mut plan.endpoint.policy.query,
-                    per_page_key,
-                    per_page.to_string(),
-                );
-                let should_send_cursor = *started || *send_cursor_on_first;
-                match (should_send_cursor, cursor) {
-                    (true, Some(c)) if !c.is_empty() => {
-                        set_query(&mut plan.endpoint.policy.query, cursor_key, c.clone());
-                    }
-                    _ => {
-                        remove_query(&mut plan.endpoint.policy.query, cursor_key);
-                    }
-                }
-                Ok(Some(page_size_to_nonzero_usize(*per_page, "cursor", &ctx)?))
-            }
-            Self::Paged {
-                page_key,
-                per_page_key,
-                page,
-                per_page,
-                ..
-            } => {
-                set_query(&mut plan.endpoint.policy.query, page_key, page.to_string());
-                set_query(
-                    &mut plan.endpoint.policy.query,
-                    per_page_key,
-                    per_page.to_string(),
-                );
-                Ok(Some(page_size_to_nonzero_usize(*per_page, "paged", &ctx)?))
-            }
             Self::Custom {
                 plan: custom,
                 state,
@@ -1060,38 +864,6 @@ impl PaginationRunner {
         ctx: &ErrorContext,
     ) -> Result<Control, ApiClientError> {
         match self {
-            Self::OffsetLimit { offset, limit, .. } => {
-                *offset = offset
-                    .checked_add(*limit)
-                    .ok_or_else(|| ApiClientError::Pagination {
-                        ctx: ctx.clone(),
-                        msg: "offset/limit: offset overflow".into(),
-                    })?;
-                Ok(Control::Continue)
-            }
-            Self::Cursor {
-                cursor,
-                stop_when_cursor_missing,
-                started,
-                next_cursor,
-                ..
-            } => {
-                *started = true;
-                *cursor = next_cursor(page, ctx.clone())?;
-                if cursor.is_none() && *stop_when_cursor_missing {
-                    return Ok(Control::Stop);
-                }
-                Ok(Control::Continue)
-            }
-            Self::Paged { page, .. } => {
-                *page = page
-                    .checked_add(1)
-                    .ok_or_else(|| ApiClientError::Pagination {
-                        ctx: ctx.clone(),
-                        msg: "paged: page overflow".into(),
-                    })?;
-                Ok(Control::Continue)
-            }
             Self::Custom { plan, state } => {
                 let decision = (plan.advance)(
                     state.as_mut(),
@@ -1109,9 +881,6 @@ impl PaginationRunner {
 
     fn progress_key(&self) -> Option<ProgressKey> {
         match self {
-            Self::OffsetLimit { offset, .. } => Some(ProgressKey::U64(*offset)),
-            Self::Cursor { cursor, .. } => cursor.clone().map(ProgressKey::Str),
-            Self::Paged { page, .. } => Some(ProgressKey::U64(*page)),
             Self::Custom { plan, state } => (plan.progress_key)(state.as_ref()),
         }
     }
