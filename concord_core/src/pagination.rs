@@ -6,7 +6,7 @@ use crate::error::{ApiClientError, ErrorContext};
 pub use cursor::{CursorPagination, HasNextCursor};
 use http::{HeaderMap, HeaderName, HeaderValue};
 pub use offset_limit::{OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState};
-pub use paged::PagedPagination;
+pub use paged::{PagedBindings, PagedPagination, PagedState};
 use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

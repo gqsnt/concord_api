@@ -2,8 +2,9 @@ use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthPlacement, EndpointField, OffsetLimitBindings, PageAdvance, PageDecision, PageInit,
-    PageRequest, PaginationController, ProgressKey, RateLimitContext, RateLimitFuture,
-    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
+    PageRequest, PagedBindings, PaginationController, ProgressKey, RateLimitContext,
+    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+    RateLimiter,
 };
 use concord_core::internal::PaginationPlan;
 use concord_core::prelude::{
@@ -236,6 +237,88 @@ impl PaginatedEndpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
         })
     }
 }
+
+#[derive(Clone)]
+struct HeaderBoundPagedEndpoint {
+    page: u64,
+    count: u64,
+    pagination: PaginationPlan,
+}
+
+impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
+    type Response = Vec<String>;
+
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        let mut plan = request_plan(
+            "HeaderBoundPaged",
+            Method::GET,
+            "/header-paged",
+            Default::default(),
+            Some(self.pagination.clone()),
+            decode_items,
+        );
+        plan.endpoint.policy.headers.insert(
+            http::header::HeaderName::from_static("x-page"),
+            HeaderValue::from_str(&self.page.to_string()).expect("valid header value"),
+        );
+        plan.endpoint.policy.headers.insert(
+            http::header::HeaderName::from_static("x-count"),
+            HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
+        );
+        Ok(plan)
+    }
+}
+
+impl PaginatedEndpoint<TestCx> for HeaderBoundPagedEndpoint {
+    fn paged_pagination_bindings(&self) -> Option<PagedBindings<Self>> {
+        Some(PagedBindings {
+            page: EndpointField::new(|ep: &Self| ep.page, |ep: &mut Self, value| ep.page = value),
+            per_page: EndpointField::new(
+                |ep: &Self| ep.count,
+                |ep: &mut Self, value| ep.count = value,
+            ),
+        })
+    }
+}
+
+#[derive(Clone)]
+struct QueryBoundPagedEndpoint {
+    page: u64,
+    count: u64,
+    pagination: PaginationPlan,
+}
+
+impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
+    type Response = Vec<String>;
+
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        let mut plan = request_plan(
+            "QueryBoundPaged",
+            Method::GET,
+            "/query-paged",
+            Default::default(),
+            Some(self.pagination.clone()),
+            decode_items,
+        );
+        plan.endpoint
+            .policy
+            .query
+            .push(("pageNo".into(), self.page.to_string()));
+        plan.endpoint
+            .policy
+            .query
+            .push(("pageSize".into(), self.count.to_string()));
+        Ok(plan)
+    }
+}
+
+impl PaginatedEndpoint<TestCx> for QueryBoundPagedEndpoint {}
 
 #[derive(Default)]
 struct AuthQueryCollisionPagination;
@@ -1068,6 +1151,130 @@ async fn offset_limit_endpoint_state_mutation_renders_endpoint_fields() -> Resul
     );
     assert_eq!(query_value(&requests[0].url, "offset"), None);
     assert_eq!(query_value(&requests[1].url, "offset"), None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn paged_endpoint_state_mutation_renders_endpoint_fields() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::OK, "c"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = HeaderBoundPagedEndpoint {
+        page: 1,
+        count: 2,
+        pagination: PaginationPlan::Paged {
+            page_key: "page".to_string(),
+            per_page_key: "per_page".to_string(),
+            page: 1,
+            per_page: 2,
+        },
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(4))
+        .collect()
+        .await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("x-page")
+            .and_then(|v| v.to_str().ok()),
+        Some("1")
+    );
+    assert_eq!(
+        requests[0]
+            .headers
+            .get("x-count")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("x-page")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get("x-count")
+            .and_then(|v| v.to_str().ok()),
+        Some("2")
+    );
+    assert_eq!(query_value(&requests[0].url, "pageNo"), None);
+    assert_eq!(query_value(&requests[1].url, "pageNo"), None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn paged_query_keys_remain_supported_on_fallback_path() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::OK, "c"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = QueryBoundPagedEndpoint {
+        page: 1,
+        count: 2,
+        pagination: PaginationPlan::Paged {
+            page_key: "pageNo".to_string(),
+            per_page_key: "pageSize".to_string(),
+            page: 1,
+            per_page: 2,
+        },
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(4))
+        .collect()
+        .await?;
+
+    assert_eq!(
+        items,
+        vec!["a".to_string(), "b".to_string(), "c".to_string()]
+    );
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        query_value(&requests[0].url, "pageNo"),
+        Some("1".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[0].url, "pageSize"),
+        Some("2".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[1].url, "pageNo"),
+        Some("2".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[1].url, "pageSize"),
+        Some("2".to_string())
+    );
     Ok(())
 }
 

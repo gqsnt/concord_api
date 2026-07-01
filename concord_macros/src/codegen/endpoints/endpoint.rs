@@ -204,6 +204,26 @@ fn emit_endpoint_def(
                     }
                 }
             }
+        } else if matches!(p.controller, PaginationControllerResolved::Paged(_))
+            && paged_runtime_bindings_present(p)
+        {
+            let helper_name = emit_helpers::ident(
+                &format!("__{}_pagination_bindings", ty_name),
+                Span::call_site(),
+            );
+            quote! {
+                impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {
+                    #[inline]
+                    fn paged_pagination_bindings(
+                        &self,
+                    ) -> ::core::option::Option<::concord_core::advanced::PagedBindings<Self>>
+                    where
+                        Self: Sized,
+                    {
+                        ::core::option::Option::Some(#helper_name())
+                    }
+                }
+            }
         } else {
             quote! {
                 impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {}
@@ -395,6 +415,33 @@ fn emit_pagination_endpoint_state_bindings(
             }
         };
     }
+    if matches!(p.controller, PaginationControllerResolved::Paged(_))
+        && paged_runtime_bindings_present(p)
+    {
+        let Some(page) = pagination_binding_for_controller_field(p, "page") else {
+            return quote! {};
+        };
+        let Some(per_page) = pagination_binding_for_controller_field(p, "per_page") else {
+            return quote! {};
+        };
+        let page_field = &page.endpoint_rust_field;
+        let per_page_field = &per_page.endpoint_rust_field;
+        return quote! {
+            #[allow(dead_code)]
+            fn #helper_name() -> ::concord_core::advanced::PagedBindings<#ty_name> {
+                ::concord_core::advanced::PagedBindings {
+                    page: ::concord_core::advanced::EndpointField::new(
+                        |ep: &#ty_name| ep.#page_field.clone(),
+                        |ep: &mut #ty_name, value| ep.#page_field = value,
+                    ),
+                    per_page: ::concord_core::advanced::EndpointField::new(
+                        |ep: &#ty_name| ep.#per_page_field.clone(),
+                        |ep: &mut #ty_name, value| ep.#per_page_field = value,
+                    ),
+                }
+            }
+        };
+    }
     let struct_name = emit_helpers::ident(
         &format!("__{}_PaginationBindings", ty_name),
         Span::call_site(),
@@ -445,6 +492,11 @@ fn pagination_binding_for_controller_field<'a>(
 fn offset_limit_runtime_bindings_present(p: &PaginateResolved) -> bool {
     pagination_binding_for_controller_field(p, "offset").is_some()
         && pagination_binding_for_controller_field(p, "limit").is_some()
+}
+
+fn paged_runtime_bindings_present(p: &PaginateResolved) -> bool {
+    pagination_binding_for_controller_field(p, "page").is_some()
+        && pagination_binding_for_controller_field(p, "per_page").is_some()
 }
 
 fn emit_endpoint_plan_route_policy(

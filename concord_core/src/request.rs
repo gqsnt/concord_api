@@ -6,9 +6,8 @@ use crate::endpoint::{
 };
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    Control, EndpointPaginationController, OffsetLimitBindings, OffsetLimitPagination, PageAdvance,
-    PageApply, PageInit, PageItems, PageRequest, PaginationCaps, PaginationTermination,
-    ProgressKey,
+    Control, EndpointPaginationController, OffsetLimitPagination, PageAdvance, PageApply, PageInit,
+    PageItems, PageRequest, PagedPagination, PaginationCaps, PaginationTermination, ProgressKey,
 };
 use crate::timeout::TimeoutOverride;
 use crate::transport::{BuiltResponse, DecodedResponse};
@@ -301,17 +300,32 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         ) {
             return Ok(Vec::new());
         }
-        let endpoint_state_bindings = match &first_plan.endpoint.pagination {
+        match &first_plan.endpoint.pagination {
             Some(PaginationPlan::OffsetLimit { .. }) => {
-                pending.ep.offset_limit_pagination_bindings()
+                if let Some(bindings) = pending.ep.offset_limit_pagination_bindings() {
+                    return collect_with_endpoint_state_pagination(
+                        pending,
+                        OffsetLimitPagination::default(),
+                        bindings,
+                        caps,
+                        ctx,
+                    )
+                    .await;
+                }
             }
-            _ => None,
-        };
-        if let Some(bindings) = endpoint_state_bindings {
-            return collect_offset_limit_with_endpoint_state(
-                pending, bindings, first_plan, caps, ctx,
-            )
-            .await;
+            Some(PaginationPlan::Paged { .. }) => {
+                if let Some(bindings) = pending.ep.paged_pagination_bindings() {
+                    return collect_with_endpoint_state_pagination(
+                        pending,
+                        PagedPagination::default(),
+                        bindings,
+                        caps,
+                        ctx,
+                    )
+                    .await;
+                }
+            }
+            _ => {}
         }
         let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
         let mut runner =
@@ -459,10 +473,10 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     }
 }
 
-async fn collect_offset_limit_with_endpoint_state<'a, Cx, E, T>(
+async fn collect_with_endpoint_state_pagination<'a, Cx, E, T, C>(
     mut pending: PendingRequest<'a, Cx, E, T>,
-    bindings: OffsetLimitBindings<E>,
-    first_plan: crate::endpoint::RequestPlan,
+    controller: C,
+    bindings: C::Bindings,
     caps: PaginationCaps,
     ctx: ErrorContext,
 ) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>
@@ -471,19 +485,14 @@ where
     E: PaginatedEndpoint<Cx> + 'a,
     T: crate::transport::Transport + 'a,
     E::Response: PageItems,
+    C: EndpointPaginationController<E, E::Response>,
 {
-    let controller = OffsetLimitPagination::default();
     let page_apply_ctx = PageApply {
-        endpoint: first_plan.endpoint.meta.name,
+        endpoint: ctx.endpoint,
         page_index: 0,
         ctx: &ctx,
     };
-    let mut state = <OffsetLimitPagination as EndpointPaginationController<E, E::Response>>::init(
-        &controller,
-        &bindings,
-        &pending.ep,
-        page_apply_ctx,
-    )?;
+    let mut state = controller.init(&bindings, &pending.ep, page_apply_ctx)?;
     let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
     let mut seen: Option<HashSet<ProgressKey>> = if caps.detect_loops {
         Some(HashSet::new())
@@ -496,10 +505,7 @@ where
 
     loop {
         if let Some(seen) = seen.as_mut()
-            && let Some(k) = <OffsetLimitPagination as EndpointPaginationController<
-                E,
-                E::Response,
-            >>::progress_key(&controller, &state)
+            && let Some(k) = controller.progress_key(&state)
             && !seen.insert(k.clone())
         {
             return Err(ApiClientError::Pagination {
@@ -508,18 +514,16 @@ where
             });
         }
 
-        let expected_items =
-            <OffsetLimitPagination as EndpointPaginationController<E, E::Response>>::apply(
-                &controller,
-                &bindings,
-                &mut state,
-                &mut pending.ep,
-                PageApply {
-                    endpoint: ctx.endpoint,
-                    page_index: page_index as u64,
-                    ctx: &ctx,
-                },
-            )?;
+        let expected_items = controller.apply(
+            &bindings,
+            &mut state,
+            &mut pending.ep,
+            PageApply {
+                endpoint: ctx.endpoint,
+                page_index: page_index as u64,
+                ctx: &ctx,
+            },
+        )?;
         let mut plan = pending.ep.plan(&pending.client.plan_context())?;
         plan.overrides.timeout = match pending.opts.timeout_override {
             TimeoutOverride::Inherit => plan.overrides.timeout,
@@ -549,18 +553,18 @@ where
         let control_ctrl = if pre_advance.common_stop || pre_advance.take_items_done {
             Control::Stop
         } else {
-            <OffsetLimitPagination as EndpointPaginationController<E, E::Response>>::advance(
-                &controller,
-                &bindings,
-                &mut state,
-                &resp.value,
-                PageAdvance {
-                    endpoint: ctx.endpoint,
-                    page_index: page_index as u64,
-                    received_items: page_len_hint.unwrap_or(0),
-                },
-            )?
-            .into()
+            controller
+                .advance(
+                    &bindings,
+                    &mut state,
+                    &resp.value,
+                    PageAdvance {
+                        endpoint: ctx.endpoint,
+                        page_index: page_index as u64,
+                        received_items: page_len_hint.unwrap_or(0),
+                    },
+                )?
+                .into()
         };
         let items = <E::Response as PageItems>::into_items(resp.value);
         let page_len = items.len();

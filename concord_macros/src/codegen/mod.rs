@@ -1259,6 +1259,8 @@ mod tests {
                 "let mut ctrl : :: concord_core :: internal :: OffsetLimitPagination = :: core :: default :: Default :: default ()",
                 ":: concord_core :: advanced :: OffsetLimitBindings",
                 "offset_limit_pagination_bindings",
+                ":: concord_core :: advanced :: PagedBindings",
+                "paged_pagination_bindings",
                 "ctrl . offset_key = :: std :: borrow :: Cow :: from (\"start\")",
                 "ctrl . limit_key = :: std :: borrow :: Cow :: from (\"count\")",
                 "let mut ctrl : :: concord_core :: internal :: CursorPagination = :: core :: default :: Default :: default ()",
@@ -1860,6 +1862,38 @@ mod tests {
         assert!(
             !out.contains("limit_key ="),
             "endpoint-state binding helper must not use limit query keys"
+        );
+    }
+
+    #[test]
+    fn generated_paged_uses_endpoint_state_pagination_runtime() {
+        let out = expanded(quote! {
+            client SnapshotPagedRuntime {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 2)
+                headers {
+                    "X-Page" = page,
+                    "X-Count" = count,
+                }
+                paginate PagedPagination {
+                    page = page,
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                ":: concord_core :: advanced :: PagedBindings",
+                "paged_pagination_bindings",
+                "EndpointField :: new",
+                "ep . page . clone ()",
+                "ep . count . clone ()",
+                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
+            ],
         );
     }
 
