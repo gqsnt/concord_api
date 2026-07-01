@@ -1867,6 +1867,14 @@ mod tests {
             !out.contains("limit_key ="),
             "endpoint-state binding helper must not use limit query keys"
         );
+        assert!(
+            !out.contains("offset_limit_pagination_bindings"),
+            "obsolete per-controller hook must not appear in generated output"
+        );
+        assert!(
+            !out.contains("paged_pagination_bindings"),
+            "obsolete per-controller hook must not appear in generated output"
+        );
     }
 
     #[test]
@@ -1899,6 +1907,14 @@ mod tests {
                 "ep . count . clone ()",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
             ],
+        );
+        assert!(
+            !out.contains("offset_limit_pagination_bindings"),
+            "obsolete per-controller hook must not appear in generated output"
+        );
+        assert!(
+            !out.contains("paged_pagination_bindings"),
+            "obsolete per-controller hook must not appear in generated output"
         );
     }
 
@@ -1934,6 +1950,14 @@ mod tests {
                 "ep . cursor = value",
                 ":: concord_core :: advanced :: CursorPagination {",
             ],
+        );
+        assert!(
+            !out.contains("offset_limit_pagination_bindings"),
+            "obsolete per-controller hook must not appear in generated output"
+        );
+        assert!(
+            !out.contains("paged_pagination_bindings"),
+            "obsolete per-controller hook must not appear in generated output"
         );
     }
 

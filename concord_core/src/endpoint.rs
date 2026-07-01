@@ -151,24 +151,6 @@ pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     {
         None
     }
-
-    #[doc(hidden)]
-    fn offset_limit_pagination_bindings(
-        &self,
-    ) -> Option<crate::pagination::OffsetLimitBindings<Self>>
-    where
-        Self: Sized,
-    {
-        None
-    }
-
-    #[doc(hidden)]
-    fn paged_pagination_bindings(&self) -> Option<crate::pagination::PagedBindings<Self>>
-    where
-        Self: Sized,
-    {
-        None
-    }
 }
 
 /// Marker implemented only for endpoints whose primary response is a stream.
