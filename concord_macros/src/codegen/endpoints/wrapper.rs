@@ -307,7 +307,7 @@ fn emit_client_wrapper(
     let credential_lifecycle_methods = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
         let name = &credential.name;
         let AuthCredentialKindIr::Endpoint {
-            endpoint,
+            target,
             output_ty,
             .. 
         } = &credential.kind
@@ -320,6 +320,7 @@ fn emit_client_wrapper(
                 name.span(),
             ));
         };
+        let endpoint_type_path = endpoint_type_path(target);
         let acquire_name = methods.acquire_name.clone();
         let set_name = methods.set_name.clone();
         let clear_name = methods.clear_name.clone();
@@ -328,7 +329,7 @@ fn emit_client_wrapper(
             #[inline]
             pub async fn #acquire_name(
                 &self,
-                ep: endpoints::#endpoint,
+                ep: #endpoint_type_path,
             ) -> ::core::result::Result<(), ::concord_core::prelude::ApiClientError> {
                 self.request(ep)
                     .execute_and_store_manual(|__auth_state| __auth_state.#name.as_ref())
@@ -359,7 +360,7 @@ fn emit_client_wrapper(
     });
     let credential_pending_methods = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
         let name = &credential.name;
-        let AuthCredentialKindIr::Endpoint { endpoint, .. } = &credential.kind else {
+        let AuthCredentialKindIr::Endpoint { target, .. } = &credential.kind else {
             return None;
         };
         let Some(methods) = facade_credential_methods_for(facade_ir, name) else {
@@ -370,6 +371,7 @@ fn emit_client_wrapper(
         };
         let method = methods.pending_method.clone();
         let trait_name = acquire_as_trait_ident(client_ty, name);
+        let endpoint_type_path = endpoint_type_path(target);
         Some(quote! {
             pub trait #trait_name<'a> {
                 #[doc = "Execute this request and store its response as the endpoint-backed credential."]
@@ -383,7 +385,7 @@ fn emit_client_wrapper(
             }
 
             impl<'a, T> #trait_name<'a>
-                for ::concord_core::prelude::PendingRequest<'a, #cx_ty, endpoints::#endpoint, T>
+                for ::concord_core::prelude::PendingRequest<'a, #cx_ty, #endpoint_type_path, T>
             where
                 T: ::concord_core::advanced::Transport + 'a,
             {
@@ -526,6 +528,14 @@ fn emit_client_wrapper(
     }
 }
 
+fn endpoint_type_path(target: &EndpointTargetIr) -> TokenStream2 {
+    let scope_modules = &target.scope_modules;
+    let endpoint = &target.endpoint;
+    quote! {
+        endpoints:: #( #scope_modules :: )* #endpoint
+    }
+}
+
 fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStream2, TokenStream2) {
     let root_auth_scope_exists = resolved_api
         .endpoints
@@ -534,14 +544,15 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
     let auth_ty = emit_helpers::ident(&format!("{}Auth", client_ty), client_ty.span());
     let handle_items = resolved_api.client_auth_credentials.iter().filter_map(|credential| {
         let AuthCredentialKindIr::Endpoint {
-            endpoint,
+            target,
             output_ty,
-            ..
+            .. 
         } = &credential.kind
         else {
             return None;
         };
         let name = &credential.name;
+        let endpoint_name_lit = LitStr::new(&target.display_string(), target.endpoint.span());
         let handle_ty = emit_helpers::ident(
             &crate::model::facade::generated_auth_handle_type_name(client_ty, name),
             name.span(),
@@ -564,7 +575,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
                     let __auth_state = self.client.inner.try_auth_state().map_err(|source| {
                         ::concord_core::prelude::ApiClientError::Auth {
                             ctx: ::concord_core::advanced::ErrorContext {
-                                endpoint: stringify!(#endpoint),
+                                endpoint: #endpoint_name_lit,
                                 method: ::http::Method::GET,
                             },
                             source,
@@ -573,7 +584,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
                     __auth_state.#name.set_manual(value).await.map_err(|source| {
                         ::concord_core::prelude::ApiClientError::Auth {
                             ctx: ::concord_core::advanced::ErrorContext {
-                                endpoint: stringify!(#endpoint),
+                                endpoint: #endpoint_name_lit,
                                 method: ::http::Method::GET,
                             },
                             source,

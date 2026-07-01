@@ -1561,19 +1561,119 @@ mod tests {
             .expect("session credential");
 
         let AuthCredentialKindIr::Endpoint {
-            endpoint_key,
-            output_ty,
-            ..
+            target, output_ty, ..
         } = &session.kind
         else {
             panic!("expected endpoint-backed credential");
         };
-        assert_eq!(endpoint_key, "auth_api::Login");
+        assert_eq!(
+            target
+                .scope_modules
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["auth_api".to_string()]
+        );
+        assert_eq!(target.endpoint.to_string(), "Login");
         assert!(
             quote::quote!(#output_ty)
                 .to_string()
                 .contains("AccessToken")
         );
+    }
+
+    #[test]
+    fn endpoint_backed_credential_resolves_scoped_target_unambiguously() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    credential session = endpoint auth_b::Login
+                }
+
+                scope auth_a {
+                    path ["auth-a"]
+
+                    POST Login
+                        path ["login"]
+                        -> Json<String>
+                }
+
+                scope auth_b {
+                    path ["auth-b"]
+
+                    POST Login
+                        path ["login"]
+                        -> Json<AccessToken>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+        let session = resolved_api
+            .client_auth_credentials
+            .iter()
+            .find(|credential| credential.name == "session")
+            .expect("session credential");
+
+        let AuthCredentialKindIr::Endpoint {
+            target, output_ty, ..
+        } = &session.kind
+        else {
+            panic!("expected endpoint-backed credential");
+        };
+        assert_eq!(
+            target
+                .scope_modules
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["auth_b".to_string()]
+        );
+        assert_eq!(target.endpoint.to_string(), "Login");
+        assert!(
+            quote::quote!(#output_ty)
+                .to_string()
+                .contains("AccessToken")
+        );
+    }
+
+    #[test]
+    fn endpoint_backed_credential_rejects_self_use() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret upstream_key: String
+                    credential upstream = api_key(secret.upstream_key)
+                    credential session = endpoint auth_api::Login
+                }
+
+                scope auth_api {
+                    path ["auth"]
+
+                    POST Login
+                        path ["login"]
+                        auth header "X-Upstream-Key" = upstream
+                        auth bearer session
+                        -> Json<LoginResponse>
+                        map AccessToken {
+                            AccessToken::new(r.access_token)
+                        }
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+
+        let err = analyze(ast).expect_err("self-use must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("cannot acquire via endpoint"));
+        assert!(msg.contains("uses that credential"));
     }
 
     #[test]

@@ -144,23 +144,23 @@ fn reject_formatted_lit(lit: &LitStr, ctx: &'static str) -> Result<()> {
     Ok(())
 }
 
-fn collect_endpoint_output_types(items: &[NormNode]) -> Result<BTreeMap<String, Type>> {
+fn collect_endpoint_output_types(items: &[NormNode]) -> Result<BTreeMap<EndpointTargetKey, Type>> {
     let mut out = BTreeMap::new();
-    let mut scope_stack: Vec<String> = Vec::new();
+    let mut scope_stack: Vec<Ident> = Vec::new();
     collect_endpoint_output_types_into(items, &mut out, &mut scope_stack)?;
     Ok(out)
 }
 
 fn collect_endpoint_output_types_into(
     items: &[NormNode],
-    out: &mut BTreeMap<String, Type>,
-    scope_stack: &mut Vec<String>,
+    out: &mut BTreeMap<EndpointTargetKey, Type>,
+    scope_stack: &mut Vec<Ident>,
 ) -> Result<()> {
     for item in items {
         match item {
             NormNode::Layer(layer) => {
                 if let Some(name) = &layer.scope_name {
-                    scope_stack.push(name.to_string());
+                    scope_stack.push(name.clone());
                     collect_endpoint_output_types_into(&layer.items, out, scope_stack)?;
                     let _ = scope_stack.pop();
                 } else {
@@ -168,15 +168,29 @@ fn collect_endpoint_output_types_into(
                 }
             }
             NormNode::Endpoint(endpoint) => {
-                let key = if scope_stack.is_empty() {
-                    endpoint.name.to_string()
-                } else {
-                    format!("{}::{}", scope_stack.join("::"), endpoint.name)
+                let key = EndpointTargetKey {
+                    scope_modules: scope_stack.iter().map(ToString::to_string).collect(),
+                    endpoint: endpoint.name.to_string(),
                 };
                 if out.contains_key(&key) {
                     return Err(syn::Error::new(
                         endpoint.name.span(),
-                        format!("duplicate endpoint `{key}`"),
+                        format!(
+                            "duplicate endpoint `{}`",
+                            if scope_stack.is_empty() {
+                                endpoint.name.to_string()
+                            } else {
+                                format!(
+                                    "{}::{}",
+                                    scope_stack
+                                        .iter()
+                                        .map(ToString::to_string)
+                                        .collect::<Vec<_>>()
+                                        .join("::"),
+                                    endpoint.name
+                                )
+                            }
+                        ),
                     ));
                 }
                 let output_ty = endpoint_public_output_ty(endpoint)?;
@@ -210,22 +224,6 @@ fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Result<Type> {
             syn::parse_quote!(::concord_core::advanced::SseStream<#event_ty>)
         }
     })
-}
-
-fn endpoint_scope_key(scope_modules: &[Ident], endpoint: &Ident) -> String {
-    if scope_modules.is_empty() {
-        endpoint.to_string()
-    } else {
-        format!(
-            "{}::{}",
-            scope_modules
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("::"),
-            endpoint
-        )
-    }
 }
 
 fn analyze_layer_route_and_decls(
@@ -544,7 +542,10 @@ fn analyze_endpoint(
         }
         scope_policies.push(layer.policy.clone());
     }
-    let current_endpoint_key = endpoint_scope_key(&scope_modules, &ed.name);
+    let current_endpoint_target = EndpointTargetIr {
+        scope_modules: scope_modules.clone(),
+        endpoint: ed.name.clone(),
+    };
     let mut auth = ctx.client_auth.to_vec();
     for &lid in ancestry {
         auth.extend(ctx.layers[lid].auth.iter().cloned());
@@ -557,10 +558,10 @@ fn analyze_endpoint(
         AuthUseProvenanceIr::Endpoint,
     )?);
     for credential in ctx.auth_credentials.values() {
-        let AuthCredentialKindIr::Endpoint { endpoint_key, .. } = &credential.kind else {
+        let AuthCredentialKindIr::Endpoint { target, .. } = &credential.kind else {
             continue;
         };
-        if endpoint_key != &current_endpoint_key {
+        if target != &current_endpoint_target {
             continue;
         }
         if auth_plan_references_credential(&auth, &credential.name) {

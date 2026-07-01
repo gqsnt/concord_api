@@ -167,6 +167,47 @@ pub enum AuthMaterialShapeIr {
     Unknown,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndpointTargetIr {
+    pub scope_modules: Vec<Ident>,
+    pub endpoint: Ident,
+}
+
+impl EndpointTargetIr {
+    pub(crate) fn key(&self) -> EndpointTargetKey {
+        EndpointTargetKey {
+            scope_modules: self
+                .scope_modules
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+            endpoint: self.endpoint.to_string(),
+        }
+    }
+
+    pub fn display_string(&self) -> String {
+        if self.scope_modules.is_empty() {
+            self.endpoint.to_string()
+        } else {
+            format!(
+                "{}::{}",
+                self.scope_modules
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("::"),
+                self.endpoint
+            )
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct EndpointTargetKey {
+    pub scope_modules: Vec<String>,
+    pub endpoint: String,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum AuthCredentialKindIr {
@@ -187,8 +228,7 @@ pub enum AuthCredentialKindIr {
         scope: Option<LitStr>,
     },
     Endpoint {
-        endpoint: syn::Path,
-        endpoint_key: String,
+        target: EndpointTargetIr,
         output_ty: Type,
         material_shape: AuthMaterialShapeIr,
     },

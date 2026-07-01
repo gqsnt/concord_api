@@ -1619,6 +1619,40 @@ mod tests {
     }
 
     #[test]
+    fn generated_endpoint_backed_auth_helpers_use_structured_endpoint_target() {
+        let out = expanded(quote! {
+            client EndpointAuthTarget {
+                base "https://example.com"
+                secret upstream_key: String
+                credential upstream = api_key(secret.upstream_key)
+
+                credential session = endpoint auth_api::LoginForSession
+            }
+
+            scope auth_api {
+                POST LoginForSession(body: Json<LoginRequest>)
+                    path ["login"]
+                    auth header "X-Upstream-Key" = upstream
+                    -> Json<LoginResponse>
+                    map AccessToken {
+                        AccessToken::new(r.access_token)
+                    }
+            }
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "pub async fn acquire_auth_session",
+                "pub trait EndpointAuthTargetAcquireAsSessionExt",
+                "fn acquire_as_session (self,) -> :: core :: pin :: Pin",
+                "endpoints :: auth_api :: LoginForSession",
+                ". with_missing_hint (\"client.acquire_auth_session(...)\")",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_pagination_snapshot_contains_pagination_plan() {
         let out = expanded(quote! {
             client SnapshotPagination {

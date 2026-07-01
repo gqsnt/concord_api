@@ -1,7 +1,7 @@
 fn analyze_auth_credentials(
     block: Option<&AuthCredentials>,
     auth_vars: &BTreeMap<String, VarInfo>,
-    endpoint_outputs: &BTreeMap<String, Type>,
+    endpoint_outputs: &BTreeMap<EndpointTargetKey, Type>,
 ) -> Result<Vec<AuthCredentialIr>> {
     let Some(block) = block else {
         return Ok(Vec::new());
@@ -59,16 +59,18 @@ fn analyze_auth_credentials(
                 }
             }
             AuthCredentialKind::Endpoint { endpoint } => {
-                let endpoint_key = endpoint_ref_key(endpoint)?;
-                let output_ty = endpoint_outputs.get(&endpoint_key).ok_or_else(|| {
+                let target = endpoint_target_from_path(endpoint)?;
+                let output_ty = endpoint_outputs.get(&target.key()).ok_or_else(|| {
                     syn::Error::new(
                         endpoint.span(),
-                        format!("unknown auth endpoint `{endpoint_key}` in credential source"),
+                        format!(
+                            "unknown auth endpoint `{}` in credential source",
+                            target.display_string()
+                        ),
                     )
                 })?;
                 AuthCredentialKindIr::Endpoint {
-                    endpoint: endpoint.clone(),
-                    endpoint_key,
+                    target,
                     output_ty: output_ty.clone(),
                     material_shape: shape_from_type(output_ty),
                 }
@@ -84,14 +86,14 @@ fn analyze_auth_credentials(
     Ok(out)
 }
 
-fn endpoint_ref_key(path: &syn::Path) -> Result<String> {
+fn endpoint_target_from_path(path: &syn::Path) -> Result<EndpointTargetIr> {
     if path.segments.is_empty() {
         return Err(syn::Error::new_spanned(
             path,
             "auth endpoint reference must be `Endpoint(Name)` or `Endpoint(scope::Name)`",
         ));
     }
-    let mut out = Vec::new();
+    let mut scope_modules = Vec::new();
     for segment in &path.segments {
         if !matches!(segment.arguments, syn::PathArguments::None) {
             return Err(syn::Error::new_spanned(
@@ -99,9 +101,20 @@ fn endpoint_ref_key(path: &syn::Path) -> Result<String> {
                 "auth endpoint reference segments must not contain generic arguments",
             ));
         }
-        out.push(segment.ident.to_string());
     }
-    Ok(out.join("::"))
+    for segment in path.segments.iter().take(path.segments.len().saturating_sub(1)) {
+        scope_modules.push(segment.ident.clone());
+    }
+    let endpoint = path
+        .segments
+        .last()
+        .expect("checked for non-empty path above")
+        .ident
+        .clone();
+    Ok(EndpointTargetIr {
+        scope_modules,
+        endpoint,
+    })
 }
 
 fn validate_required_secret(
