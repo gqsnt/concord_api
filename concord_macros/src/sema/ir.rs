@@ -512,6 +512,16 @@ pub enum PolicyKeyKind {
 #[derive(Debug, Clone)]
 pub struct PaginateResolved {
     pub controller: PaginationControllerResolved,
+    pub bindings: Vec<PaginationBindingIr>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PaginationBindingIr {
+    pub controller_field: Ident,
+    pub endpoint_field: Ident,
+    pub endpoint_rust_field: Ident,
+    pub endpoint_field_ty: Type,
+    pub assignment_span: Span,
 }
 
 #[derive(Debug, Clone)]

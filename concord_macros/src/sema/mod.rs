@@ -3720,6 +3720,122 @@ mod tests {
     }
 
     #[test]
+    fn pagination_bindings_resolve_offset_limit_endpoint_fields() {
+        let resolved_api = analyze_source(
+            r#"
+            client PageApi {
+                base "https://example.com"
+            }
+
+            GET List(start: u64 = 0, count: u64 = 20)
+                query {
+                    "from" = start
+                    "pageSize" = count
+                }
+                paginate OffsetLimitPagination {
+                    offset = start,
+                    limit = count
+                }
+                -> Json<Vec<String>>
+            "#,
+        );
+
+        let pagination = resolved_api.endpoints[0]
+            .paginate
+            .as_ref()
+            .expect("pagination resolved");
+        assert_eq!(pagination.bindings.len(), 2);
+
+        let offset = &pagination.bindings[0];
+        assert_eq!(offset.controller_field, "offset");
+        assert_eq!(offset.endpoint_field, "start");
+        let offset_ty = &offset.endpoint_field_ty;
+        assert_eq!(quote::quote!(#offset_ty).to_string(), "u64");
+
+        let limit = &pagination.bindings[1];
+        assert_eq!(limit.controller_field, "limit");
+        assert_eq!(limit.endpoint_field, "count");
+        let limit_ty = &limit.endpoint_field_ty;
+        assert_eq!(quote::quote!(#limit_ty).to_string(), "u64");
+        assert_ne!(offset.endpoint_field, "from");
+        assert_ne!(limit.endpoint_field, "pageSize");
+
+        match &pagination.controller {
+            PaginationControllerResolved::OffsetLimit(ctrl) => {
+                assert!(matches!(
+                    ctrl.offset_key_from_query,
+                    Some(KeyResolved::Static(ref lit)) if lit.value() == "from"
+                ));
+                assert!(matches!(
+                    ctrl.limit_key_from_query,
+                    Some(KeyResolved::Static(ref lit)) if lit.value() == "pageSize"
+                ));
+            }
+            other => panic!("expected offset-limit pagination, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pagination_bindings_resolve_paged_endpoint_fields() {
+        let resolved_api = analyze_source(
+            r#"
+            client PageApi {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 20)
+                paginate PagedPagination {
+                    page = page,
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+            "#,
+        );
+
+        let pagination = resolved_api.endpoints[0]
+            .paginate
+            .as_ref()
+            .expect("pagination resolved");
+        assert_eq!(pagination.bindings.len(), 2);
+        assert_eq!(pagination.bindings[0].controller_field, "page");
+        assert_eq!(pagination.bindings[0].endpoint_field, "page");
+        assert_eq!(pagination.bindings[1].controller_field, "per_page");
+        assert_eq!(pagination.bindings[1].endpoint_field, "count");
+        let page_ty = &pagination.bindings[0].endpoint_field_ty;
+        let count_ty = &pagination.bindings[1].endpoint_field_ty;
+        assert_eq!(quote::quote!(#page_ty).to_string(), "u64");
+        assert_eq!(quote::quote!(#count_ty).to_string(), "u64");
+    }
+
+    #[test]
+    fn pagination_bindings_resolve_cursor_endpoint_fields() {
+        let resolved_api = analyze_source(
+            r#"
+            client PageApi {
+                base "https://example.com"
+            }
+
+            GET List(cursor?: String, count: u64 = 20)
+                paginate CursorPagination {
+                    cursor = cursor,
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+            "#,
+        );
+
+        let pagination = resolved_api.endpoints[0]
+            .paginate
+            .as_ref()
+            .expect("pagination resolved");
+        assert_eq!(pagination.bindings.len(), 2);
+        assert_eq!(pagination.bindings[0].controller_field, "cursor");
+        assert_eq!(pagination.bindings[0].endpoint_field, "cursor");
+        assert_eq!(pagination.bindings[1].controller_field, "per_page");
+        assert_eq!(pagination.bindings[1].endpoint_field, "count");
+    }
+
+    #[test]
     fn unknown_pagination_field_fails_resolution() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
@@ -3744,6 +3860,33 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("unknown pagination field `per_page` for OffsetLimitPagination"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn pagination_binding_unknown_endpoint_field_is_rejected() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            client PageApi {
+                base "https://example.com"
+            }
+
+            GET List(count: u64 = 20)
+                paginate OffsetLimitPagination {
+                    offset = does_not_exist,
+                    limit = count
+                }
+                -> Json<Vec<String>>
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("unknown endpoint field should fail");
+
+        assert!(
+            err.to_string()
+                .contains("unknown endpoint var `ep.does_not_exist`")
+                || err.to_string().contains("available endpoint vars"),
             "{err}"
         );
     }

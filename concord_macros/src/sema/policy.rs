@@ -129,6 +129,7 @@ fn resolve_paginate(
         ));
     }
     let mut assigns = Vec::new();
+    let mut bindings = Vec::new();
     for a in &p.assigns {
         validate_paginate_assignment_key(controller_kind, &a.key)?;
         let lowered = lower_public_policy_expr_checked(&a.value)?;
@@ -140,6 +141,21 @@ fn resolve_paginate(
             lowered.span(),
         )?;
         let vk = pagination_value_from_value_kind(vk, lowered.span())?;
+        if let PaginationValueKind::EpField(endpoint_field) = &vk {
+            let endpoint_info = ep_vars.get(&endpoint_field.to_string()).ok_or_else(|| {
+                syn::Error::new(
+                    endpoint_field.span(),
+                    unknown_scoped_name_message("endpoint var", "ep", endpoint_field, ep_vars),
+                )
+            })?;
+            bindings.push(PaginationBindingIr {
+                controller_field: a.key.clone(),
+                endpoint_field: endpoint_field.clone(),
+                endpoint_rust_field: endpoint_info.rust.clone(),
+                endpoint_field_ty: endpoint_info.ty.clone(),
+                assignment_span: lowered.span(),
+            });
+        }
         assigns.push(PaginationAssignmentResolved {
             field: a.key.clone(),
             value: vk,
@@ -209,7 +225,10 @@ fn resolve_paginate(
             ctrl_ty: p.ctrl_ty.clone(),
         },
     };
-    Ok(PaginateResolved { controller })
+    Ok(PaginateResolved {
+        controller,
+        bindings,
+    })
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
