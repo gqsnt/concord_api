@@ -141,6 +141,17 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
 /// explicit pagination controller.
 pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     #[doc(hidden)]
+    fn single_object_pagination(
+        &self,
+    ) -> Option<Box<dyn crate::pagination::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    where
+        Self: Sized,
+        Self::Response: crate::pagination::PageItems,
+    {
+        None
+    }
+
+    #[doc(hidden)]
     fn endpoint_state_pagination(
         &self,
     ) -> Option<Box<dyn crate::pagination::EndpointPaginationRuntime<Self, Self::Response>>>

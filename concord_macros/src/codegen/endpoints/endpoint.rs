@@ -196,6 +196,21 @@ fn emit_endpoint_def(
             quote! {
                 impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {
                     #[inline]
+                    fn single_object_pagination(
+                        &self,
+                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::SingleObjectPaginationRuntime<Self, Self::Response>>>
+                    where
+                        Self: Sized,
+                        Self::Response: ::concord_core::advanced::PageItems,
+                    {
+                        ::core::option::Option::Some(::std::boxed::Box::new(
+                            ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<
+                                ::concord_core::advanced::OffsetLimitPagination
+                            >::new(),
+                        ))
+                    }
+
+                    #[inline]
                     fn endpoint_state_pagination(
                         &self,
                     ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::EndpointPaginationRuntime<Self, Self::Response>>>
@@ -230,6 +245,21 @@ fn emit_endpoint_def(
                     <#ty_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::Response: ::concord_core::advanced::PageItems + ::concord_core::advanced::HasNextCursor,
                 {
                     #[inline]
+                    fn single_object_pagination(
+                        &self,
+                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::SingleObjectPaginationRuntime<Self, Self::Response>>>
+                    where
+                        Self: Sized,
+                        Self::Response: ::concord_core::advanced::PageItems,
+                    {
+                        ::core::option::Option::Some(::std::boxed::Box::new(
+                            ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<
+                                ::concord_core::advanced::CursorPagination<::std::string::String>
+                            >::new(),
+                        ))
+                    }
+
+                    #[inline]
                     fn endpoint_state_pagination(
                         &self,
                     ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::EndpointPaginationRuntime<Self, Self::Response>>>
@@ -261,6 +291,21 @@ fn emit_endpoint_def(
             quote! {
                 impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {
                     #[inline]
+                    fn single_object_pagination(
+                        &self,
+                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::SingleObjectPaginationRuntime<Self, Self::Response>>>
+                    where
+                        Self: Sized,
+                        Self::Response: ::concord_core::advanced::PageItems,
+                    {
+                        ::core::option::Option::Some(::std::boxed::Box::new(
+                            ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<
+                                ::concord_core::advanced::PagedPagination
+                            >::new(),
+                        ))
+                    }
+
+                    #[inline]
                     fn endpoint_state_pagination(
                         &self,
                     ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::EndpointPaginationRuntime<Self, Self::Response>>>
@@ -290,8 +335,24 @@ fn emit_endpoint_def(
                             #ty_name,
                             <#ty_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::Response,
                             Bindings = #bindings_ty::<#ty_name>,
+                        >
+                        + ::concord_core::advanced::EndpointPagination<
+                            <#ty_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::Response,
                         >,
                 {
+                    #[inline]
+                    fn single_object_pagination(
+                        &self,
+                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::SingleObjectPaginationRuntime<Self, Self::Response>>>
+                    where
+                        Self: Sized,
+                        Self::Response: ::concord_core::advanced::PageItems,
+                    {
+                        ::core::option::Option::Some(::std::boxed::Box::new(
+                            ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<#ctrl_ty>::new(),
+                        ))
+                    }
+
                     #[inline]
                     fn endpoint_state_pagination(
                         &self,
@@ -464,18 +525,7 @@ fn emit_paginate_binding_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenSt
         return quote! {};
     };
 
-    let pagination_ty = match &p.controller {
-        PaginationControllerResolved::OffsetLimit(_) => {
-            quote! { ::concord_core::advanced::OffsetLimitPagination }
-        }
-        PaginationControllerResolved::Paged(_) => {
-            quote! { ::concord_core::advanced::PagedPagination }
-        }
-        PaginationControllerResolved::Cursor(_) => {
-            quote! { ::concord_core::advanced::CursorPagination<::std::string::String> }
-        }
-        PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => quote! { #ctrl_ty },
-    };
+    let pagination_ty = pagination_controller_ty(p);
 
     let load_assignments: Vec<TokenStream2> = match &p.controller {
         PaginationControllerResolved::OffsetLimit(ctrl) => ctrl
@@ -533,6 +583,21 @@ fn emit_paginate_binding_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenSt
                 #( #store_assignments )*
             }
         }
+    }
+}
+
+fn pagination_controller_ty(p: &PaginateResolved) -> TokenStream2 {
+    match &p.controller {
+        PaginationControllerResolved::OffsetLimit(_) => {
+            quote! { ::concord_core::advanced::OffsetLimitPagination }
+        }
+        PaginationControllerResolved::Paged(_) => {
+            quote! { ::concord_core::advanced::PagedPagination }
+        }
+        PaginationControllerResolved::Cursor(_) => {
+            quote! { ::concord_core::advanced::CursorPagination<::std::string::String> }
+        }
+        PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => quote! { #ctrl_ty },
     }
 }
 

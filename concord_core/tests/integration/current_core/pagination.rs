@@ -1,10 +1,10 @@
 use super::common::*;
 use concord_core::advanced::{
-    AuthPlacement, CursorBindings, EndpointField, EndpointPaginationController,
+    AuthPlacement, CursorBindings, EndpointField, EndpointPagination, EndpointPaginationController,
     EndpointPaginationRuntime, EndpointPaginationRuntimeAdapter, OffsetLimitBindings, PageAdvance,
-    PageApply, PageApplyResult, PageDecision, PagedBindings, ProgressKey, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter,
+    PageApply, PageApplyResult, PageDecision, PagedBindings, PaginateBinding, ProgressKey,
+    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter, SingleObjectPaginationRuntimeAdapter,
 };
 use concord_core::internal::PaginationPlan;
 use concord_core::prelude::{
@@ -84,6 +84,8 @@ impl Endpoint<TestCx> for HeaderBoundCustomEndpoint {
 struct GeneratedHeaderBoundCustomEndpoint {
     page: u64,
     count: u64,
+    load_calls: Arc<AtomicUsize>,
+    store_calls: Arc<AtomicUsize>,
 }
 
 impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
@@ -114,11 +116,20 @@ impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
+    fn single_object_pagination(
+        &self,
+    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    {
+        Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+            HeaderBoundCustomPagination,
+        >::new()))
+    }
+
     fn endpoint_state_pagination(
         &self,
     ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
         Some(Box::new(EndpointPaginationRuntimeAdapter::new(
-            HeaderBoundCustomPagination,
+            HeaderBoundCustomPagination::default(),
             HeaderBoundCustomBindings {
                 page: EndpointField::new(
                     |ep: &GeneratedHeaderBoundCustomEndpoint| ep.page,
@@ -134,7 +145,10 @@ impl PaginatedEndpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
 }
 
 #[derive(Default)]
-struct HeaderBoundCustomPagination;
+struct HeaderBoundCustomPagination {
+    page: u64,
+    count: u64,
+}
 
 #[derive(Clone)]
 struct HeaderBoundCustomBindings<E> {
@@ -210,12 +224,72 @@ where
     }
 }
 
+impl EndpointPagination<Vec<String>> for HeaderBoundCustomPagination {
+    fn apply(&mut self, _ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+        if self.count == 0 {
+            return Err(ApiClientError::Pagination {
+                ctx: concord_core::advanced::ErrorContext {
+                    endpoint: "GeneratedHeaderBoundCustom",
+                    method: Method::GET,
+                },
+                msg: "custom pagination page size must be non-zero".into(),
+            });
+        }
+        Ok(PageApplyResult {
+            expected_items_per_page: NonZeroUsize::new(self.count as usize),
+        })
+    }
+
+    fn advance(
+        &mut self,
+        page: &Vec<String>,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        if page.is_empty() {
+            return Ok(PageDecision::Stop);
+        }
+        self.page = self
+            .page
+            .checked_add(1)
+            .ok_or_else(|| ApiClientError::Pagination {
+                ctx: concord_core::advanced::ErrorContext {
+                    endpoint: "GeneratedHeaderBoundCustom",
+                    method: Method::GET,
+                },
+                msg: "custom pagination page overflow".into(),
+            })?;
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(self.page))
+    }
+}
+
+impl PaginateBinding<HeaderBoundCustomPagination> for GeneratedHeaderBoundCustomEndpoint {
+    fn load_pagination(&self) -> HeaderBoundCustomPagination {
+        self.load_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        HeaderBoundCustomPagination {
+            page: self.page,
+            count: self.count,
+        }
+    }
+
+    fn store_pagination(&mut self, pagination: &HeaderBoundCustomPagination) {
+        self.store_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.page = pagination.page;
+        self.count = pagination.count;
+    }
+}
+
 impl PaginatedEndpoint<TestCx> for HeaderBoundCustomEndpoint {
     fn endpoint_state_pagination(
         &self,
     ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
         Some(Box::new(EndpointPaginationRuntimeAdapter::new(
-            HeaderBoundCustomPagination,
+            HeaderBoundCustomPagination::default(),
             HeaderBoundCustomBindings {
                 page: EndpointField::new(
                     |ep: &Self| ep.page,
@@ -685,7 +759,7 @@ async fn endpoint_state_custom_pagination_reports_progress_and_typed_errors()
         endpoint: "HeaderBoundCustom",
         method: Method::GET,
     };
-    let controller = HeaderBoundCustomPagination;
+    let controller = HeaderBoundCustomPagination::default();
     let mut runtime = EndpointPaginationRuntimeAdapter::new(controller, bindings);
 
     runtime
@@ -744,8 +818,10 @@ async fn endpoint_state_custom_pagination_reports_progress_and_typed_errors()
             |ep: &mut HeaderBoundCustomEndpoint, value| ep.count = value,
         ),
     };
-    let mut zero_runtime =
-        EndpointPaginationRuntimeAdapter::new(HeaderBoundCustomPagination, zero_bindings);
+    let mut zero_runtime = EndpointPaginationRuntimeAdapter::new(
+        HeaderBoundCustomPagination::default(),
+        zero_bindings,
+    );
     assert!(matches!(
         zero_runtime.init(
             &zero_count,
@@ -775,7 +851,14 @@ async fn generated_custom_endpoint_state_collect_renders_endpoint_fields()
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
-    let endpoint = GeneratedHeaderBoundCustomEndpoint { page: 1, count: 2 };
+    let load_calls = Arc::new(AtomicUsize::new(0));
+    let store_calls = Arc::new(AtomicUsize::new(0));
+    let endpoint = GeneratedHeaderBoundCustomEndpoint {
+        page: 1,
+        count: 2,
+        load_calls: load_calls.clone(),
+        store_calls: store_calls.clone(),
+    };
 
     let items = client
         .request(endpoint)
@@ -817,6 +900,8 @@ async fn generated_custom_endpoint_state_collect_renders_endpoint_fields()
             .and_then(|v| v.to_str().ok()),
         Some("2")
     );
+    assert_eq!(load_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(store_calls.load(std::sync::atomic::Ordering::SeqCst), 3);
     Ok(())
 }
 

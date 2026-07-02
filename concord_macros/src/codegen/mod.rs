@@ -1889,6 +1889,35 @@ mod tests {
     }
 
     #[test]
+    fn generated_offset_limit_exposes_single_object_pagination_runtime() {
+        let out = expanded(quote! {
+            client SnapshotOffsetLimitSingleObjectRuntime {
+                base "https://example.com"
+            }
+
+            GET List(start: u64 = 0, count: u64 = 20)
+                headers {
+                    "X-Start" = start,
+                    "X-Count" = count,
+                }
+                paginate OffsetLimitPagination {
+                    offset = start,
+                    limit = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: OffsetLimitPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: OffsetLimitPagination >",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_offset_limit_emits_paginate_binding_impl() {
         let out = expanded(quote! {
             client SnapshotOffsetLimitBinding {
@@ -1996,6 +2025,35 @@ mod tests {
     }
 
     #[test]
+    fn generated_paged_exposes_single_object_pagination_runtime() {
+        let out = expanded(quote! {
+            client SnapshotPagedSingleObjectRuntime {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 20)
+                headers {
+                    "X-Page" = page,
+                    "X-Count" = count,
+                }
+                paginate PagedPagination {
+                    page = page,
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: PagedPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: PagedPagination >",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_custom_uses_endpoint_state_pagination_runtime() {
         let out = expanded(quote! {
             client SnapshotCustomEndpointState {
@@ -2070,6 +2128,36 @@ mod tests {
                 "self . count = pagination . count . clone ()",
                 "endpoint_state_pagination",
                 "EndpointPaginationRuntimeAdapter",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_custom_endpoint_state_exposes_single_object_pagination_runtime() {
+        let out = expanded(quote! {
+            client SnapshotCustomEndpointStateSingleObjectRuntime {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 2)
+                headers {
+                    "X-Page" = page,
+                    "X-Count" = count,
+                }
+                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                    page = page,
+                    count = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter :: < HeaderPagePagination >",
+                "endpoint_state_pagination",
+                ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
             ],
         );
     }
@@ -2164,6 +2252,37 @@ mod tests {
         assert!(
             !out.contains("self.stop_when_cursor_missing=pagination.stop_when_cursor_missing"),
             "cursor flags must not be stored back to endpoint state"
+        );
+    }
+
+    #[test]
+    fn generated_cursor_exposes_single_object_pagination_runtime() {
+        let out = expanded(quote! {
+            client SnapshotCursorSingleObjectRuntime {
+                base "https://example.com"
+            }
+
+            GET List(cursor?: String, count: u64 = 2)
+                headers {
+                    "X-Cursor" = cursor,
+                    "X-Count" = count,
+                }
+                paginate CursorPagination {
+                    cursor = cursor,
+                    per_page = count,
+                    send_cursor_on_first = true,
+                    stop_when_cursor_missing = false
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                "endpoint_state_pagination",
+            ],
         );
     }
 

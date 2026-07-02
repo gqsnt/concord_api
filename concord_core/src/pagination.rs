@@ -224,6 +224,102 @@ where
     fn progress_key(&self) -> Option<ProgressKey>;
 }
 
+/// Runtime adapter for pagination objects that own both pagination state and
+/// pagination decisions.
+pub trait SingleObjectPaginationRuntime<E, Page>: Send
+where
+    Page: PageItems,
+{
+    fn init(&mut self, endpoint: &E, ctx: PageApply<'_>) -> Result<(), ApiClientError>;
+
+    fn apply(
+        &mut self,
+        endpoint: &mut E,
+        ctx: PageApply<'_>,
+    ) -> Result<PageApplyResult, ApiClientError>;
+
+    fn advance(
+        &mut self,
+        endpoint: &mut E,
+        err_ctx: &ErrorContext,
+        page: &Page,
+        page_ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError>;
+
+    fn progress_key(&self) -> Option<ProgressKey>;
+}
+
+pub struct SingleObjectPaginationRuntimeAdapter<P> {
+    pagination: Option<P>,
+}
+
+impl<P> SingleObjectPaginationRuntimeAdapter<P> {
+    #[inline]
+    pub fn new() -> Self {
+        Self { pagination: None }
+    }
+}
+
+impl<E, Page, P> SingleObjectPaginationRuntime<E, Page> for SingleObjectPaginationRuntimeAdapter<P>
+where
+    E: PaginateBinding<P>,
+    P: EndpointPagination<Page>,
+    Page: PageItems,
+{
+    fn init(&mut self, endpoint: &E, ctx: PageApply<'_>) -> Result<(), ApiClientError> {
+        if self.pagination.is_some() {
+            return Err(ApiClientError::Pagination {
+                ctx: ctx.ctx.clone(),
+                msg: "pagination runtime was initialized more than once".into(),
+            });
+        }
+        self.pagination = Some(endpoint.load_pagination());
+        Ok(())
+    }
+
+    fn apply(
+        &mut self,
+        endpoint: &mut E,
+        ctx: PageApply<'_>,
+    ) -> Result<PageApplyResult, ApiClientError> {
+        let pagination = self
+            .pagination
+            .as_mut()
+            .ok_or_else(|| ApiClientError::Pagination {
+                ctx: ctx.ctx.clone(),
+                msg: "pagination runtime was used before initialization".into(),
+            })?;
+        let result = pagination.apply(ctx)?;
+        endpoint.store_pagination(pagination);
+        Ok(result)
+    }
+
+    fn advance(
+        &mut self,
+        endpoint: &mut E,
+        err_ctx: &ErrorContext,
+        page: &Page,
+        page_ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        let pagination = self
+            .pagination
+            .as_mut()
+            .ok_or_else(|| ApiClientError::Pagination {
+                ctx: err_ctx.clone(),
+                msg: "pagination runtime was used before initialization".into(),
+            })?;
+        let decision = pagination.advance(page, page_ctx)?;
+        endpoint.store_pagination(pagination);
+        Ok(decision)
+    }
+
+    fn progress_key(&self) -> Option<ProgressKey> {
+        self.pagination
+            .as_ref()
+            .and_then(EndpointPagination::progress_key)
+    }
+}
+
 pub struct EndpointPaginationRuntimeAdapter<C, E, Page>
 where
     C: EndpointPaginationController<E, Page>,

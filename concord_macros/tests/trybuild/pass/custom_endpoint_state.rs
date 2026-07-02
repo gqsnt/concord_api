@@ -1,6 +1,6 @@
 use concord_core::advanced::{
-    EndpointField, EndpointPaginationController, PageAdvance, PageApply, PageApplyResult,
-    PageDecision, PageItems, ProgressKey,
+    EndpointField, EndpointPagination, EndpointPaginationController, PageAdvance, PageApply,
+    PageApplyResult, PageDecision, PageItems, ProgressKey,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -97,6 +97,39 @@ where
 
     fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
         Some(ProgressKey::U64(state.page))
+    }
+}
+
+impl<Page> EndpointPagination<Page> for HeaderPagePagination
+where
+    Page: PageItems,
+{
+    fn apply(&mut self, _ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+        if self.count == 0 {
+            return Err(ApiClientError::Pagination {
+                ctx: concord_core::advanced::ErrorContext {
+                    endpoint: "List",
+                    method: ::http::Method::GET,
+                },
+                msg: "endpoint_state custom pagination requires a non-zero page size".into(),
+            });
+        }
+        Ok(PageApplyResult {
+            expected_items_per_page: NonZeroUsize::new(self.count as usize),
+        })
+    }
+
+    fn advance(
+        &mut self,
+        _page: &Page,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        self.page = self.page.saturating_add(1);
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(self.page))
     }
 }
 

@@ -52,6 +52,7 @@ pub mod internal {
         HasNextCursor, OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState, PageAdvance,
         PageApply, PageApplyResult, PageDecision, PageItems, PagedBindings, PagedPagination,
         PagedState, PaginateBinding, PaginationCaps, PaginationTermination, ProgressKey,
+        SingleObjectPaginationRuntime, SingleObjectPaginationRuntimeAdapter,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
     pub use crate::record::{
@@ -125,6 +126,7 @@ pub mod advanced {
         HasNextCursor, OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState, PageAdvance,
         PageApply, PageApplyResult, PageDecision, PageItems, PagedBindings, PagedPagination,
         PagedState, PaginateBinding, PaginationCaps, PaginationTermination, ProgressKey,
+        SingleObjectPaginationRuntime, SingleObjectPaginationRuntimeAdapter,
     };
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,
