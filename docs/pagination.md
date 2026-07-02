@@ -54,7 +54,7 @@ let items = api
 
 The runtime keeps endpoint fields stable while advancing controller state.
 
-Custom pagination binds controller state directly to endpoint fields. Endpoint field mutation happens before planning, and planning remains the only place that renders query, header, path, or body output. Custom controllers that request a specific page size should return `PageApplyResult { expected_items_per_page: Some(...) }` from `apply()`. The expected count is per page and does not persist.
+Custom pagination uses generated `PaginateBinding` to synchronize endpoint fields with controller state before planning. Endpoint-bound assignments load from endpoint fields and store back after the page advances. Literal or config assignments initialize pagination fields during load and are not stored back to endpoint fields. Planning remains the only place that renders query, header, path, or body output. Custom controllers that request a specific page size should return `PageApplyResult { expected_items_per_page: Some(...) }` from `apply()`. The expected count is per page and does not persist.
 
 Paginated endpoints with request bodies are rejected in v1. Concord does not replay endpoint request bodies across page requests.
 
@@ -89,10 +89,10 @@ GET ListCursor(cursor?: String, count: u64 = 20)
     as list_cursor
     path ["cursor-items"]
     query { cursor, count }
-paginate CursorPagination<String> {
-    cursor = cursor,
-    per_page = count
-}
+    paginate CursorPagination<String> {
+        cursor = cursor,
+        per_page = count
+    }
     -> Json<CursorPage>
 ```
 

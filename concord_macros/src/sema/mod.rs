@@ -3745,7 +3745,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_pagination_rejects_endpoint_state_bindings_syntax() {
+    fn custom_pagination_rejects_endpoint_state_syntax() {
         let src = format!(
             r#"
             client PageApi {{

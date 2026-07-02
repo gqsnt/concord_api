@@ -111,6 +111,13 @@ if "${RG[@]}" -ni 'paginate endpoint[-_]state|\bendpoint[-_]state\b' \
   fail_with_matches "removed endpoint-state pagination syntax must not reappear in active examples, pass fixtures, snapshots, or docs." "$endpoint_state_syntax_refs"
 fi
 
+section "bare built-in cursor syntax fence"
+bare_cursor_refs="$tmpdir/bare_cursor.refs"
+if "${RG[@]}" -n 'paginate CursorPagination[^<]' \
+  concord_examples/src concord_examples/tests concord_macros/tests/trybuild/pass concord_macros/tests/snapshots docs dev_doc >"$bare_cursor_refs" 2>/dev/null; then
+  fail_with_matches "bare built-in cursor pagination syntax must not appear in active examples, pass fixtures, snapshots, or docs." "$bare_cursor_refs"
+fi
+
 section "codegen semantic boundary"
 codegen_refs="$tmpdir/codegen.refs"
 if "${RG[@]}" 'crate::ast|Raw(Api|Ast|Client|Scope|Endpoint|Item)|NormApiTree' concord_macros/src/codegen >"$codegen_refs" 2>/dev/null; then

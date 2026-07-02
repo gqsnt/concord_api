@@ -1,5 +1,5 @@
 error: pagination no longer uses `endpoint_state ... bindings ...`; use `paginate Controller { ... }`
-  --> tests/trybuild/fail/pagination/custom_pagination_requires_endpoint_state.rs:15:18
+  --> tests/trybuild/fail/pagination/custom_pagination_rejects_endpoint_state_syntax.rs:15:18
    |
 15 |         paginate endpoint_state HeaderCursorPagination bindings HeaderCursorPaginationBindings {
    |                  ^^^^^^^^^^^^^^

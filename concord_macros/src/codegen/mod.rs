@@ -2192,6 +2192,45 @@ mod tests {
     }
 
     #[test]
+    fn generated_custom_literal_assignment_is_load_only() {
+        let out = expanded(quote! {
+            client SnapshotCustomPaginationLiteralBinding {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 2)
+                headers {
+                    "X-Page" = page,
+                    "X-Count" = count,
+                }
+                paginate HeaderPagePagination {
+                    page = page,
+                    count = count,
+                    max_pages = 3
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+                "fn load_pagination",
+                "fn store_pagination",
+                "pagination . page = self . page . clone ()",
+                "pagination . count = self . count . clone ()",
+                "pagination . max_pages =",
+                "self . page = pagination . page . clone ()",
+                "self . count = pagination . count . clone ()",
+            ],
+        );
+        assert!(
+            !out.contains("self . max_pages"),
+            "literal config fields must not be stored back to endpoint state"
+        );
+    }
+
+    #[test]
     fn generated_custom_exposes_single_object_pagination_runtime() {
         let out = expanded(quote! {
             client SnapshotCustomPaginationSingleObjectRuntime {

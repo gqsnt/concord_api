@@ -1,0 +1,89 @@
+use concord_core::advanced::{
+    EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
+    ProgressKey,
+};
+use concord_core::prelude::*;
+use concord_macros::api;
+use serde::Deserialize;
+use std::num::NonZeroUsize;
+
+#[derive(Debug, Deserialize)]
+pub struct PaginationPage {
+    pub items: Vec<String>,
+}
+
+impl PageItems for PaginationPage {
+    type Item = String;
+
+    fn item_count_hint(&self) -> Option<usize> {
+        Some(self.items.len())
+    }
+
+    fn into_items(self) -> Vec<Self::Item> {
+        self.items
+    }
+}
+
+#[derive(Default)]
+pub struct HeaderPagePagination {
+    pub page: u64,
+    pub count: u64,
+    pub max_pages: u64,
+}
+
+impl<Page> EndpointPagination<Page> for HeaderPagePagination
+where
+    Page: PageItems,
+{
+    fn apply(&mut self, _ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+        if self.count == 0 {
+            return Err(ApiClientError::Pagination {
+                ctx: concord_core::advanced::ErrorContext {
+                    endpoint: "List",
+                    method: ::http::Method::GET,
+                },
+                msg: "custom pagination requires a non-zero page size".into(),
+            });
+        }
+        Ok(PageApplyResult {
+            expected_items_per_page: NonZeroUsize::new(self.count as usize),
+        })
+    }
+
+    fn advance(
+        &mut self,
+        _page: &Page,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        self.page = self.page.saturating_add(1);
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(self.page))
+    }
+}
+
+api! {
+    client CustomPaginationLiteralAssignmentApi {
+        base "https://example.com"
+    }
+
+    GET List(page: u64 = 1, count: u64 = 2)
+        headers {
+            "X-Page" = page,
+            "X-Count" = count,
+        }
+        paginate HeaderPagePagination {
+            page = page,
+            count = count,
+            max_pages = 3
+        }
+        -> Json<PaginationPage>
+}
+
+fn usage(api: crate::custom_pagination_literal_assignment_api::CustomPaginationLiteralAssignmentApi) {
+    let _ = api.list().paginate(PaginationTermination::hard_page_cap(2));
+}
+
+fn main() {}

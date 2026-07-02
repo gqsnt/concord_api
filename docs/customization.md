@@ -131,6 +131,12 @@ A custom pagination controller implements `EndpointPagination<Page>`. The contro
 
 `paginate Controller { ... }` constructs the controller through `Default`, so custom controller marker types must implement `Default + EndpointPagination<Page>`.
 
+Assignment rules are shared with built-in pagination:
+
+- endpoint-field assignments are loaded from the endpoint into the pagination object and stored back after the page advances
+- literal and config assignments initialize pagination fields but are not stored back to endpoint fields
+- built-in cursor pagination uses `CursorPagination<String>`
+
 ```rust
 use concord_core::advanced::{
     EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
