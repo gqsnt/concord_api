@@ -50,9 +50,8 @@ pub mod internal {
         Control, CursorBindings, CursorPagination, CursorState, EndpointField,
         EndpointPaginationController, EndpointPaginationRuntime, EndpointPaginationRuntimeAdapter,
         HasNextCursor, OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState, PageAdvance,
-        PageApply, PageApplyResult, PageDecision, PageInit, PageRequest, PagedBindings,
-        PagedPagination, PagedState, PaginationCaps, PaginationController, PaginationTermination,
-        ProgressKey,
+        PageApply, PageApplyResult, PageDecision, PageItems, PagedBindings, PagedPagination,
+        PagedState, PaginationCaps, PaginationTermination, ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
     pub use crate::record::{
@@ -124,9 +123,8 @@ pub mod advanced {
         Control, CursorBindings, CursorPagination, CursorState, EndpointField,
         EndpointPaginationController, EndpointPaginationRuntime, EndpointPaginationRuntimeAdapter,
         HasNextCursor, OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState, PageAdvance,
-        PageApply, PageApplyResult, PageDecision, PageInit, PageItems, PageRequest, PagedBindings,
-        PagedPagination, PagedState, PaginationCaps, PaginationController, PaginationTermination,
-        ProgressKey,
+        PageApply, PageApplyResult, PageDecision, PageItems, PagedBindings, PagedPagination,
+        PagedState, PaginationCaps, PaginationTermination, ProgressKey,
     };
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,

@@ -1,18 +1,17 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{
-    CustomPaginationPlan, Endpoint, MultipartResponseEndpoint, PaginatedEndpoint, PaginationPlan,
-    RecordResponseEndpoint, SseResponseEndpoint, StreamResponseEndpoint,
+    Endpoint, MultipartResponseEndpoint, PaginatedEndpoint, RecordResponseEndpoint,
+    SseResponseEndpoint, StreamResponseEndpoint,
 };
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    Control, EndpointPaginationRuntime, PageAdvance, PageApply, PageInit, PageItems, PageRequest,
-    PaginationCaps, PaginationTermination, ProgressKey,
+    Control, EndpointPaginationRuntime, PageAdvance, PageApply, PageItems, PaginationCaps,
+    PaginationTermination, ProgressKey,
 };
 use crate::timeout::TimeoutOverride;
 use crate::transport::{BuiltResponse, DecodedResponse};
 use base64::Engine;
-use std::any::Any;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::future::{Future, IntoFuture};
@@ -303,180 +302,18 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         if let Some(runtime) = pending.ep.endpoint_state_pagination() {
             return collect_with_endpoint_state_pagination(pending, runtime, caps, ctx).await;
         }
-        match first_plan.endpoint.pagination.clone() {
-            Some(PaginationPlan::Custom(custom)) => {
-                // Legacy custom fallback only.
-                // Retained for compatibility with old `paginate Controller`
-                // syntax and `PaginationController` / `PageRequest`.
-                // Built-ins and explicit endpoint-state custom pagination use the
-                // endpoint-state runtime hook instead of this request mutation path.
-                let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
-                let mut runner = PaginationRunner::new_custom(custom, &first_plan)?;
-                let mut first_plan = Some(first_plan);
-                let mut state = PaginationRunState::default();
-                let mut seen: Option<HashSet<ProgressKey>> = if caps.detect_loops {
-                    Some(HashSet::new())
-                } else {
-                    None
-                };
-                let mut items_count: usize = 0;
-
-                let mut page_index: u32 = 0;
-                loop {
-                    if let Some(seen) = seen.as_mut()
-                        && let Some(k) = runner.progress_key()
-                        && !seen.insert(k.clone())
-                    {
-                        return Err(ApiClientError::Pagination {
-                            ctx: ctx.clone(),
-                            msg: format!("loop detected (page_index={} key={:?})", page_index, k)
-                                .into(),
-                        });
-                    }
-
-                    let mut plan = if let Some(plan) = first_plan.take() {
-                        plan
-                    } else {
-                        pending.ep.plan(&pending.client.plan_context())?
-                    };
-                    plan.overrides.timeout = match pending.opts.timeout_override {
-                        TimeoutOverride::Inherit => plan.overrides.timeout,
-                        TimeoutOverride::Clear => None,
-                        TimeoutOverride::Set(d) => Some(d),
-                    };
-                    plan.overrides.debug_level = pending.opts.debug_level;
-                    plan.overrides.attempt = pending.opts.attempt;
-                    plan.overrides.page_index = page_index;
-                    let expected_items = runner.apply_custom_request(&mut plan)?;
-                    let request_identity = pagination_request_identity(&plan);
-                    state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
-
-                    let resp: DecodedResponse<E::Response> =
-                        pending.client.execute_plan::<E::Response>(plan).await?;
-                    let page_len_hint = resp.value.item_count_hint();
-                    let pre_advance = pre_advance_decision(
-                        caps.termination,
-                        items_count,
-                        page_len_hint,
-                        expected_items,
-                        &ctx,
-                    )?;
-                    if let (PaginationTermination::HardItemCap(max_items), Some(new_total)) =
-                        (caps.termination, pre_advance.hard_item_cap_exceeded)
-                    {
-                        return Err(hard_item_cap_error(&ctx, max_items, new_total, page_index));
-                    }
-                    let control_ctrl = if pre_advance.common_stop || pre_advance.take_items_done {
-                        Control::Stop
-                    } else {
-                        runner.advance_after_page(
-                            &resp.value as &(dyn Any + Send),
-                            resp.meta.page_index as u64,
-                            page_len_hint.unwrap_or(0),
-                            &ctx,
-                        )?
-                    };
-                    let items = <E::Response as PageItems>::into_items(resp.value);
-                    let page_len = items.len();
-                    let common_stop = common_content_stop(Some(page_len), expected_items);
-                    match caps.termination {
-                        PaginationTermination::HardItemCap(max_items) => {
-                            let new_total = items_count.checked_add(page_len).ok_or_else(|| {
-                                ApiClientError::Pagination {
-                                    ctx: ctx.clone(),
-                                    msg: "items overflow".into(),
-                                }
-                            })?;
-                            if new_total > max_items {
-                                return Err(hard_item_cap_error(
-                                    &ctx, max_items, new_total, page_index,
-                                ));
-                            }
-                            items_count = new_total;
-                            out.extend(items);
-                        }
-                        PaginationTermination::TakeItems(max_items) => {
-                            let remaining =
-                                max_items.checked_sub(items_count).ok_or_else(|| {
-                                    ApiClientError::Pagination {
-                                        ctx: ctx.clone(),
-                                        msg: "items overflow".into(),
-                                    }
-                                })?;
-                            if page_len >= remaining {
-                                out.extend(items.into_iter().take(remaining));
-                                return Ok(out);
-                            }
-                            items_count = items_count.checked_add(page_len).ok_or_else(|| {
-                                ApiClientError::Pagination {
-                                    ctx: ctx.clone(),
-                                    msg: "items overflow".into(),
-                                }
-                            })?;
-                            out.extend(items);
-                        }
-                        _ => {
-                            items_count = items_count.checked_add(page_len).ok_or_else(|| {
-                                ApiClientError::Pagination {
-                                    ctx: ctx.clone(),
-                                    msg: "items overflow".into(),
-                                }
-                            })?;
-                            out.extend(items);
-                        }
-                    }
-                    if common_stop {
-                        return Ok(out);
-                    }
-                    let fetched_pages = page_index as usize + 1;
-                    match control_ctrl {
-                        Control::Continue => match caps.termination {
-                            PaginationTermination::HardPageCap(max_pages)
-                                if fetched_pages >= max_pages =>
-                            {
-                                return Err(ApiClientError::PaginationLimit {
-                                    ctx,
-                                    msg: format!(
-                                        "pagination hard page cap exceeded (max={} seen_items={} page_index={})",
-                                        max_pages, items_count, fetched_pages
-                                    )
-                                    .into(),
-                                });
-                            }
-                            PaginationTermination::TakePages(max_pages)
-                                if fetched_pages >= max_pages =>
-                            {
-                                return Ok(out);
-                            }
-                            _ => {
-                                page_index = page_index.checked_add(1).ok_or_else(|| {
-                                    ApiClientError::Pagination {
-                                        ctx: ctx.clone(),
-                                        msg: "page index overflow".into(),
-                                    }
-                                })?;
-                            }
-                        },
-                        Control::Stop => return Ok(out),
-                    }
-                }
-            }
-            Some(_) => {
-                return Err(ApiClientError::Pagination {
-                    ctx,
-                    msg: "built-in pagination requires endpoint-state runtime support".into(),
-                });
-            }
-            None => {
-                return Err(ApiClientError::Pagination {
-                    ctx,
-                    msg: "endpoint is not paginated".into(),
-                });
-            }
+        if first_plan.endpoint.pagination.is_some() {
+            return Err(ApiClientError::Pagination {
+                ctx,
+                msg: "pagination requires endpoint-state runtime support".into(),
+            });
         }
+        Err(ApiClientError::Pagination {
+            ctx,
+            msg: "endpoint is not paginated".into(),
+        })
     }
 }
-
 async fn collect_with_endpoint_state_pagination<'a, Cx, E, T>(
     mut pending: PendingRequest<'a, Cx, E, T>,
     mut runtime: Box<dyn EndpointPaginationRuntime<E, E::Response>>,
@@ -815,82 +652,4 @@ fn push_identity_component(out: &mut String, label: &str, value: &str) {
     out.push(':');
     out.push_str(value);
     out.push('|');
-}
-
-// Legacy custom-only fallback machinery.
-// Retained for compatibility with old `paginate Controller` syntax.
-// Built-ins and explicit endpoint-state custom pagination should never reach
-// this runner.
-enum PaginationRunner {
-    Custom {
-        plan: CustomPaginationPlan,
-        state: Box<dyn Any + Send + Sync>,
-    },
-}
-
-impl PaginationRunner {
-    fn new_custom(
-        custom: CustomPaginationPlan,
-        request: &crate::endpoint::RequestPlan,
-    ) -> Result<Self, ApiClientError> {
-        let state = (custom.init)(PageInit {
-            endpoint: request.endpoint.meta.name,
-        })?;
-        Ok(Self::Custom {
-            plan: custom,
-            state,
-        })
-    }
-
-    fn apply_custom_request(
-        &mut self,
-        plan: &mut crate::endpoint::RequestPlan,
-    ) -> Result<Option<NonZeroUsize>, ApiClientError> {
-        match self {
-            Self::Custom {
-                plan: custom,
-                state,
-            } => {
-                let mut request = PageRequest::new(
-                    &mut plan.endpoint.policy.query,
-                    &mut plan.endpoint.policy.headers,
-                    crate::error::ErrorContext {
-                        endpoint: plan.endpoint.meta.name,
-                        method: plan.endpoint.meta.method.clone(),
-                    },
-                );
-                (custom.apply)(state.as_ref(), &mut request)?;
-                Ok(request.expected_items_per_page())
-            }
-        }
-    }
-
-    fn advance_after_page(
-        &mut self,
-        page: &(dyn Any + Send),
-        page_index: u64,
-        received_items: usize,
-        ctx: &ErrorContext,
-    ) -> Result<Control, ApiClientError> {
-        match self {
-            Self::Custom { plan, state } => {
-                let decision = (plan.advance)(
-                    state.as_mut(),
-                    page,
-                    PageAdvance {
-                        endpoint: ctx.endpoint,
-                        page_index,
-                        received_items,
-                    },
-                )?;
-                Ok(decision.into())
-            }
-        }
-    }
-
-    fn progress_key(&self) -> Option<ProgressKey> {
-        match self {
-            Self::Custom { plan, state } => (plan.progress_key)(state.as_ref()),
-        }
-    }
 }

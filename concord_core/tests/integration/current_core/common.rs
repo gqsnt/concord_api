@@ -290,7 +290,6 @@ impl Endpoint<TestCx> for ItemsEndpoint {
                     .query
                     .push(("per_page".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Custom(_) => {}
         }
         Ok(plan)
     }
@@ -329,7 +328,7 @@ impl PaginatedEndpoint<TestCx> for ItemsEndpoint {
                     ),
                 },
             ))),
-            PaginationPlan::Custom(_) | PaginationPlan::Cursor { .. } => None,
+            PaginationPlan::Cursor { .. } => None,
         }
     }
 }
@@ -464,7 +463,6 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
                     .query
                     .push(("per_page".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Custom(_) => {}
         }
         Ok(plan)
     }
@@ -503,7 +501,7 @@ impl PaginatedEndpoint<TestCx> for PageOnlyItemsEndpoint {
                     },
                 )))
             }
-            PaginationPlan::Custom(_) | PaginationPlan::Cursor { .. } => None,
+            PaginationPlan::Cursor { .. } => None,
         }
     }
 }
@@ -609,7 +607,6 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
                     .query
                     .push(("per_page".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Custom(_) => {}
         }
         Ok(plan)
     }
@@ -641,9 +638,7 @@ impl PaginatedEndpoint<TestCx> for CursorItemsEndpoint {
                     ),
                 },
             ))),
-            PaginationPlan::OffsetLimit { .. }
-            | PaginationPlan::Paged { .. }
-            | PaginationPlan::Custom(_) => None,
+            PaginationPlan::OffsetLimit { .. } | PaginationPlan::Paged { .. } => None,
         }
     }
 }

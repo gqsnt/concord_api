@@ -3,10 +3,7 @@
 use crate::advanced::{MultipartBody, MultipartBodyError, MultipartFormat};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::multipart::MultipartBodyErrorKind;
-use crate::pagination::{
-    HasNextCursor, PageAdvance, PageDecision, PageInit, PageItems, PageRequest,
-    PaginationController, ProgressKey,
-};
+use crate::pagination::{HasNextCursor, PageItems};
 use crate::policy::ResolvedPolicy;
 use crate::record::RecordBody;
 use crate::stream_body::StreamBody;
@@ -225,31 +222,10 @@ pub enum PaginationPlan {
         page: u64,
         per_page: u64,
     },
-    Custom(CustomPaginationPlan),
 }
 
 pub type CursorNextFn =
     for<'a> fn(&(dyn Any + Send), ErrorContext) -> Result<Option<String>, ApiClientError>;
-
-pub type CustomPaginationInitFn =
-    for<'a> fn(PageInit<'a>) -> Result<Box<dyn Any + Send + Sync>, ApiClientError>;
-pub type CustomPaginationApplyFn =
-    for<'a> fn(&dyn Any, &mut PageRequest<'a>) -> Result<(), ApiClientError>;
-pub type CustomPaginationAdvanceFn = for<'a> fn(
-    &mut dyn Any,
-    &(dyn Any + Send),
-    PageAdvance<'a>,
-) -> Result<PageDecision, ApiClientError>;
-pub type CustomPaginationProgressKeyFn = fn(&dyn Any) -> Option<ProgressKey>;
-
-#[derive(Clone, Debug)]
-pub struct CustomPaginationPlan {
-    pub controller: &'static str,
-    pub init: CustomPaginationInitFn,
-    pub apply: CustomPaginationApplyFn,
-    pub advance: CustomPaginationAdvanceFn,
-    pub progress_key: CustomPaginationProgressKeyFn,
-}
 
 impl PaginationPlan {
     /// Built-in cursor pagination plan constructor.
@@ -267,25 +243,6 @@ impl PaginationPlan {
             stop_when_cursor_missing: value.stop_when_cursor_missing,
             next_cursor: cursor_next::<Page>,
         }
-    }
-
-    /// Legacy custom pagination plan constructor.
-    ///
-    /// This remains the compatibility path for old custom pagination
-    /// controllers. Built-in pagination and explicit endpoint-state custom
-    /// pagination use endpoint-state runtime hooks instead.
-    pub fn custom<C, Page>() -> Self
-    where
-        C: PaginationController<Page> + Default,
-        Page: PageItems,
-    {
-        Self::Custom(CustomPaginationPlan {
-            controller: std::any::type_name::<C>(),
-            init: custom_pagination_init::<C, Page>,
-            apply: custom_pagination_apply::<C, Page>,
-            advance: custom_pagination_advance::<C, Page>,
-            progress_key: custom_pagination_progress_key::<C, Page>,
-        })
     }
 }
 
@@ -306,75 +263,6 @@ where
         .next_cursor()
         .map(|cursor| cursor.to_string())
         .filter(|cursor| !cursor.is_empty()))
-}
-
-fn custom_pagination_init<C, Page>(
-    ctx: PageInit<'_>,
-) -> Result<Box<dyn Any + Send + Sync>, ApiClientError>
-where
-    C: PaginationController<Page> + Default,
-    Page: PageItems,
-{
-    let controller = C::default();
-    let state = controller.init(ctx)?;
-    Ok(Box::new(state))
-}
-
-fn custom_pagination_apply<C, Page>(
-    state: &dyn Any,
-    request: &mut PageRequest<'_>,
-) -> Result<(), ApiClientError>
-where
-    C: PaginationController<Page> + Default,
-    Page: PageItems,
-{
-    let Some(state) = state.downcast_ref::<C::State>() else {
-        return Err(custom_pagination_error(
-            "custom pagination state type mismatch",
-        ));
-    };
-    C::default().apply(state, request)
-}
-
-fn custom_pagination_advance<C, Page>(
-    state: &mut dyn Any,
-    page: &(dyn Any + Send),
-    ctx: PageAdvance<'_>,
-) -> Result<PageDecision, ApiClientError>
-where
-    C: PaginationController<Page> + Default,
-    Page: PageItems,
-{
-    let Some(state) = state.downcast_mut::<C::State>() else {
-        return Err(custom_pagination_error(
-            "custom pagination state type mismatch",
-        ));
-    };
-    let Some(page) = page.downcast_ref::<Page>() else {
-        return Err(custom_pagination_error(
-            "custom pagination page type mismatch",
-        ));
-    };
-    C::default().advance(state, page, ctx)
-}
-
-fn custom_pagination_progress_key<C, Page>(state: &dyn Any) -> Option<ProgressKey>
-where
-    C: PaginationController<Page> + Default,
-    Page: PageItems,
-{
-    let state = state.downcast_ref::<C::State>()?;
-    C::default().progress_key(state)
-}
-
-fn custom_pagination_error(msg: &'static str) -> ApiClientError {
-    ApiClientError::Pagination {
-        ctx: ErrorContext {
-            endpoint: "custom pagination",
-            method: Method::GET,
-        },
-        msg: msg.into(),
-    }
 }
 
 #[cfg(test)]
