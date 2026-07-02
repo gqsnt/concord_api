@@ -129,10 +129,10 @@ fn resolve_paginate(
         }
         controller_kind = PaginationControllerKind::CustomEndpointState;
     }
-    if matches!(controller_kind, PaginationControllerKind::Custom) && !p.assigns.is_empty() {
+    if matches!(controller_kind, PaginationControllerKind::Custom) {
         return Err(syn::Error::new_spanned(
             &p.ctrl_ty,
-            "custom pagination controllers use `paginate TypePath` without a configuration block",
+            "custom pagination must use `paginate endpoint_state Controller bindings Bindings { ... }`",
         ));
     }
     if matches!(controller_kind, PaginationControllerKind::CustomEndpointState)
@@ -259,9 +259,7 @@ fn resolve_paginate(
                 .clone()
                 .expect("endpoint_state bindings type was validated above"),
         },
-        PaginationControllerKind::Custom => PaginationControllerResolved::Custom {
-            ctrl_ty: p.ctrl_ty.clone(),
-        },
+        PaginationControllerKind::Custom => unreachable!(),
     };
     Ok(PaginateResolved {
         controller,

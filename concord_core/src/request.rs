@@ -306,6 +306,8 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         match first_plan.endpoint.pagination.clone() {
             Some(PaginationPlan::Custom(custom)) => {
                 // Legacy custom fallback only.
+                // Retained for compatibility with old `paginate Controller`
+                // syntax and `PaginationController` / `PageRequest`.
                 // Built-ins and explicit endpoint-state custom pagination use the
                 // endpoint-state runtime hook instead of this request mutation path.
                 let mut out: Vec<<E::Response as PageItems>::Item> = Vec::new();
@@ -816,6 +818,7 @@ fn push_identity_component(out: &mut String, label: &str, value: &str) {
 }
 
 // Legacy custom-only fallback machinery.
+// Retained for compatibility with old `paginate Controller` syntax.
 // Built-ins and explicit endpoint-state custom pagination should never reach
 // this runner.
 enum PaginationRunner {

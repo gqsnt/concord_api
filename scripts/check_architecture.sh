@@ -81,6 +81,12 @@ if "${RG[@]}" 'PaginationPlan::OffsetLimit\s*\{[^}]*offset_key|PaginationPlan::O
   fail_with_matches "concord_core/src/endpoint/plan.rs must not retain built-in pagination query-key metadata." "$built_in_pagination_metadata_refs"
 fi
 
+section "legacy custom codegen fence"
+legacy_custom_codegen_refs="$tmpdir/legacy_custom_codegen.refs"
+if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom|PaginationControllerResolved::Custom\b' concord_macros/src/codegen/endpoints/endpoint.rs >"$legacy_custom_codegen_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros codegen must not emit the legacy custom pagination plan path." "$legacy_custom_codegen_refs"
+fi
+
 section "codegen semantic boundary"
 codegen_refs="$tmpdir/codegen.refs"
 if "${RG[@]}" 'crate::ast|Raw(Api|Ast|Client|Scope|Endpoint|Item)|NormApiTree' concord_macros/src/codegen >"$codegen_refs" 2>/dev/null; then

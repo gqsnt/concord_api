@@ -1442,8 +1442,8 @@ fn custom_endpoint_state_pagination_reports_progress_and_typed_errors() {
     assert!(matches!(err, ApiClientError::Pagination { .. }));
 }
 
-#[tokio::test]
-async fn custom_pagination_query_request_fallback_still_works() -> Result<(), ApiClientError> {
+async fn legacy_custom_pagination_controller_without_endpoint_state_trait_still_works_impl()
+-> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -1496,6 +1496,17 @@ async fn custom_pagination_query_request_fallback_still_works() -> Result<(), Ap
         Some("1")
     );
     Ok(())
+}
+
+#[tokio::test]
+async fn legacy_custom_pagination_controller_without_endpoint_state_trait_still_works()
+-> Result<(), ApiClientError> {
+    legacy_custom_pagination_controller_without_endpoint_state_trait_still_works_impl().await
+}
+
+#[tokio::test]
+async fn custom_pagination_query_request_fallback_still_works() -> Result<(), ApiClientError> {
+    legacy_custom_pagination_controller_without_endpoint_state_trait_still_works_impl().await
 }
 
 #[tokio::test]

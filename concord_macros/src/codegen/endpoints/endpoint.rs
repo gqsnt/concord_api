@@ -715,15 +715,10 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
         .map(|m| m.out_ty.clone())
         .unwrap_or_else(|| resolved_response_output_ty(ep.response_io(), None));
     match &p.controller {
-        PaginationControllerResolved::Custom { ctrl_ty } => quote! {
-            let __pagination_plan = ::core::option::Option::Some(
-                ::concord_core::internal::PaginationPlan::custom::<#ctrl_ty, #page_ty>()
-            );
-        },
         PaginationControllerResolved::CustomEndpointState { .. } => quote! {
             // Endpoint-state custom pagination is driven entirely by the generated
             // `endpoint_state_pagination()` hook and runtime adapter, so it does
-            // not need old `PaginationPlan::custom::<...>()` metadata here.
+            // not need legacy custom-plan metadata here.
             let __pagination_plan = ::core::option::Option::None;
         },
         PaginationControllerResolved::OffsetLimit(ctrl) => {

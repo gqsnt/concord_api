@@ -529,7 +529,6 @@ pub enum PaginationControllerResolved {
     OffsetLimit(OffsetLimitPaginationResolved),
     Cursor(CursorPaginationResolved),
     Paged(PagedPaginationResolved),
-    Custom { ctrl_ty: syn::Path },
     CustomEndpointState {
         ctrl_ty: syn::Path,
         bindings_ty: Type,
@@ -542,7 +541,6 @@ impl PaginationControllerResolved {
             PaginationControllerResolved::OffsetLimit(_) => "OffsetLimitPagination".to_string(),
             PaginationControllerResolved::Cursor(_) => "CursorPagination".to_string(),
             PaginationControllerResolved::Paged(_) => "PagedPagination".to_string(),
-            PaginationControllerResolved::Custom { ctrl_ty } => quote::quote!(#ctrl_ty).to_string(),
             PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => {
                 quote::quote!(#ctrl_ty).to_string()
             }

@@ -252,6 +252,10 @@ pub struct CustomPaginationPlan {
 }
 
 impl PaginationPlan {
+    /// Built-in cursor pagination plan constructor.
+    ///
+    /// This compact built-in metadata is used by endpoint-state cursor
+    /// pagination. Query-key fields are intentionally not part of the plan.
     pub fn cursor<Page>(value: crate::pagination::CursorPagination) -> Self
     where
         Page: PageItems + HasNextCursor,
@@ -265,6 +269,11 @@ impl PaginationPlan {
         }
     }
 
+    /// Legacy custom pagination plan constructor.
+    ///
+    /// This remains the compatibility path for old custom pagination
+    /// controllers. Built-in pagination and explicit endpoint-state custom
+    /// pagination use endpoint-state runtime hooks instead.
     pub fn custom<C, Page>() -> Self
     where
         C: PaginationController<Page> + Default,

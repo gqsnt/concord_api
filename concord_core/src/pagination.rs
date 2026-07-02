@@ -140,6 +140,7 @@ pub struct PageAdvance<'a> {
 }
 
 // Legacy custom pagination request surface.
+// Retained for compatibility with `paginate Controller` syntax only.
 // Built-ins and explicit endpoint-state custom pagination do not use this API.
 pub struct PageRequest<'a> {
     query: &'a mut Vec<(String, String)>,
@@ -241,6 +242,7 @@ impl<'a> PageRequest<'a> {
 }
 
 // Legacy custom pagination controller API.
+// Retained for compatibility with `paginate Controller` syntax only.
 // Built-ins and explicit endpoint-state custom pagination use
 // `EndpointPaginationController` instead.
 pub trait PaginationController<Page>: Send + Sync + 'static

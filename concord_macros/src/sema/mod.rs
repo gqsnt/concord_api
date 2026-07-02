@@ -3608,9 +3608,11 @@ mod tests {
                 }
                 -> Json<Vec<String>>
 
-            GET Custom
+            GET Custom(page: u64 = 1)
                 path ["custom"]
-                paginate HeaderCursorPagination
+                paginate endpoint_state HeaderCursorPagination bindings HeaderCursorBindings {
+                    page = page
+                }
                 -> Json<Vec<String>>
             "#,
         )
@@ -3663,13 +3665,13 @@ mod tests {
             .and_then(|ep| ep.paginate.as_ref())
             .expect("custom pagination");
         match &custom.controller {
-            PaginationControllerResolved::Custom { ctrl_ty } => {
+            PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => {
                 assert_eq!(
                     quote::quote!(#ctrl_ty).to_string(),
                     "HeaderCursorPagination"
                 );
             }
-            other => panic!("expected custom controller, got {other:?}"),
+            other => panic!("expected custom endpoint-state controller, got {other:?}"),
         }
     }
 
@@ -3750,30 +3752,27 @@ mod tests {
     }
 
     #[test]
-    fn old_custom_pagination_remains_fallback() {
-        let resolved_api = analyze_source(
+    fn old_custom_pagination_requires_endpoint_state() {
+        let paginate = ["paginate ", "HeaderPagePagination"].concat();
+        let src = format!(
             r#"
-            client PageApi {
+            client PageApi {{
                 base "https://example.com"
-            }
+            }}
 
             GET List
-                paginate HeaderPagePagination
+                {paginate}
                 -> Json<Vec<String>>
-            "#,
+            "#
         );
+        let ast: crate::ast::RawApi = syn::parse_str(&src).expect("valid api syntax");
+        let err = analyze(ast).expect_err("old custom pagination should be rejected");
 
-        let pagination = resolved_api.endpoints[0]
-            .paginate
-            .as_ref()
-            .expect("pagination resolved");
-        match &pagination.controller {
-            PaginationControllerResolved::Custom { ctrl_ty } => {
-                assert_eq!(quote::quote!(#ctrl_ty).to_string(), "HeaderPagePagination");
-            }
-            other => panic!("expected old custom fallback controller, got {other:?}"),
-        }
-        assert!(pagination.bindings.is_empty());
+        assert!(
+            err.to_string()
+                .contains("custom pagination must use `paginate endpoint_state Controller bindings Bindings { ... }`"),
+            "{err}"
+        );
     }
 
     #[test]

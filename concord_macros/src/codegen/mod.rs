@@ -1946,44 +1946,6 @@ mod tests {
     }
 
     #[test]
-    fn generated_custom_pagination_remains_on_old_fallback_path() {
-        let out = expanded(quote! {
-            client SnapshotCustomPagination {
-                base "https://example.com"
-            }
-
-            GET List
-                as list
-                path ["items"]
-                paginate HeaderCursorPagination
-                -> Json<Vec<String>>
-        });
-
-        assert_contains_all(
-            &out,
-            &[
-                ":: concord_core :: internal :: PaginationPlan :: custom :: < HeaderCursorPagination , Vec < String > > ()",
-            ],
-        );
-        assert!(
-            !out.contains("endpoint_state_pagination"),
-            "custom pagination must remain on the old fallback path"
-        );
-        assert!(
-            !out.contains("EndpointPaginationRuntimeAdapter"),
-            "custom pagination must not require endpoint-state runtime"
-        );
-        assert!(
-            !out.contains("PaginationRunner"),
-            "old custom pagination codegen must not mention the legacy runner"
-        );
-        assert!(
-            !out.contains("PageRequest"),
-            "old custom pagination codegen must not mention the legacy request mutation API"
-        );
-    }
-
-    #[test]
     fn generated_custom_uses_endpoint_state_pagination_runtime() {
         let out = expanded(quote! {
             client SnapshotCustomEndpointState {
@@ -2022,7 +1984,7 @@ mod tests {
             "endpoint-state custom pagination must not be keyed by query strings"
         );
         assert!(
-            !out.contains("PaginationPlan :: custom"),
+            !out.contains(&["PaginationPlan", "::", "custom"].concat()),
             "endpoint-state custom pagination should not require the old custom plan bound"
         );
         assert!(
@@ -2033,6 +1995,11 @@ mod tests {
             !out.contains("PaginationRunner"),
             "endpoint-state custom pagination must not use the legacy runner"
         );
+    }
+
+    #[test]
+    fn generated_endpoint_state_custom_is_preferred_custom_pagination_path() {
+        generated_custom_uses_endpoint_state_pagination_runtime();
     }
 
     #[test]

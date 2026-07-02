@@ -1,5 +1,6 @@
 use concord_core::advanced::{
-    PageAdvance, PageDecision, PageInit, PageRequest, PaginationController, ProgressKey,
+    EndpointField, EndpointPaginationController, PageAdvance, PageApply, PageApplyResult,
+    PageDecision, PageItems, ProgressKey,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -31,45 +32,65 @@ impl PageItems for HeaderCursorPage {
 #[derive(Default)]
 pub struct HeaderCursorPagination;
 
+#[derive(Clone, Debug)]
+pub struct HeaderCursorBindings<E> {
+    pub page: EndpointField<E, u64>,
+    pub limit: EndpointField<E, u64>,
+}
+
 #[derive(Default)]
 pub struct HeaderCursorState {
     pub page: u64,
+    pub limit: u64,
 }
 
-impl PaginationController<HeaderCursorPage> for HeaderCursorPagination {
+impl<E, Page> EndpointPaginationController<E, Page> for HeaderCursorPagination
+where
+    E: 'static,
+    Page: PageItems,
+{
+    type Bindings = HeaderCursorBindings<E>;
     type State = HeaderCursorState;
 
-    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
-        Ok(HeaderCursorState::default())
+    fn init(
+        &self,
+        bindings: &Self::Bindings,
+        endpoint: &E,
+        _ctx: PageApply<'_>,
+    ) -> Result<Self::State, ApiClientError> {
+        Ok(HeaderCursorState {
+            page: bindings.page.get(endpoint),
+            limit: bindings.limit.get(endpoint),
+        })
     }
 
     fn apply(
         &self,
-        state: &Self::State,
-        request: &mut PageRequest<'_>,
-    ) -> Result<(), ApiClientError> {
+        bindings: &Self::Bindings,
+        state: &mut Self::State,
+        endpoint: &mut E,
+        _ctx: PageApply<'_>,
+    ) -> Result<PageApplyResult, ApiClientError> {
         // This example asks the remote for two items per page. The runtime uses
         // the exact item_count_hint plus this expected size to stop on a short
         // terminal page before calling advance().
-        request.set_query("page", state.page);
-        request.set_query("limit", 2);
-        request.set_expected_items_per_page(
-            NonZeroUsize::new(2).expect("example page size is non-zero"),
-        );
-        request.set_header(
-            "x-page-cursor",
-            http::HeaderValue::from_str(&state.page.to_string()).unwrap(),
-        )?;
-        Ok(())
+        bindings.page.set(endpoint, state.page);
+        bindings.limit.set(endpoint, state.limit);
+        Ok(PageApplyResult {
+            expected_items_per_page: NonZeroUsize::new(state.limit as usize),
+        })
     }
 
     fn advance(
         &self,
+        _bindings: &Self::Bindings,
         state: &mut Self::State,
-        page: &HeaderCursorPage,
+        page: &Page,
         _ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError> {
-        let _ = page;
+        if page.item_count_hint() == Some(0) {
+            return Ok(PageDecision::Stop);
+        }
         state.page += 1;
         Ok(PageDecision::Continue)
     }
@@ -84,10 +105,20 @@ api! {
         base "https://example.com"
     }
 
-    GET ListItems
+    GET ListItems(page: u64 = 0, limit: u64 = 2)
         as list_items
         path ["items"]
-        paginate HeaderCursorPagination
+        query {
+            "page" = page,
+            "limit" = limit,
+        }
+        headers {
+            "x-page-cursor" = page,
+        }
+        paginate endpoint_state HeaderCursorPagination bindings HeaderCursorBindings {
+            page = page,
+            limit = limit
+        }
         -> Json<HeaderCursorPage>
 }
 
