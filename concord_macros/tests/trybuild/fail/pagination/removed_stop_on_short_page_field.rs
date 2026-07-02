@@ -11,7 +11,7 @@ api! {
             page
             count
         }
-        paginate CursorPagination {
+        paginate CursorPagination<String> {
             stop_on_short_page = true
         }
         -> Json<Vec<String>>

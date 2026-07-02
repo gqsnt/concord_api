@@ -512,6 +512,7 @@ pub enum PolicyKeyKind {
 #[derive(Debug, Clone)]
 pub struct PaginateResolved {
     pub controller: PaginationControllerResolved,
+    pub assigns: Vec<PaginationAssignmentResolved>,
     pub bindings: Vec<PaginationBindingIr>,
 }
 
@@ -529,10 +530,7 @@ pub enum PaginationControllerResolved {
     OffsetLimit(OffsetLimitPaginationResolved),
     Cursor(CursorPaginationResolved),
     Paged(PagedPaginationResolved),
-    CustomEndpointState {
-        ctrl_ty: syn::Path,
-        bindings_ty: Type,
-    },
+    Custom { ctrl_ty: Type },
 }
 
 impl PaginationControllerResolved {
@@ -541,7 +539,7 @@ impl PaginationControllerResolved {
             PaginationControllerResolved::OffsetLimit(_) => "OffsetLimitPagination".to_string(),
             PaginationControllerResolved::Cursor(_) => "CursorPagination".to_string(),
             PaginationControllerResolved::Paged(_) => "PagedPagination".to_string(),
-            PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => {
+            PaginationControllerResolved::Custom { ctrl_ty } => {
                 quote::quote!(#ctrl_ty).to_string()
             }
         }

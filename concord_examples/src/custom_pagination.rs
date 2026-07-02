@@ -8,17 +8,17 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct EndpointStateItem {
+pub struct Item {
     pub id: u64,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct HeaderPage {
-    pub items: Vec<EndpointStateItem>,
+#[derive(Debug, Deserialize)]
+pub struct PaginationPage {
+    pub items: Vec<Item>,
 }
 
-impl PageItems for HeaderPage {
-    type Item = EndpointStateItem;
+impl PageItems for PaginationPage {
+    type Item = Item;
 
     fn item_count_hint(&self) -> Option<usize> {
         Some(self.items.len())
@@ -35,9 +35,6 @@ pub struct HeaderPagePagination {
     pub count: u64,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct HeaderPageBindings;
-
 impl<Page> EndpointPagination<Page> for HeaderPagePagination
 where
     Page: PageItems,
@@ -46,10 +43,10 @@ where
         if self.count == 0 {
             return Err(ApiClientError::Pagination {
                 ctx: concord_core::advanced::ErrorContext {
-                    endpoint: "ListItems",
+                    endpoint: "List",
                     method: ::http::Method::GET,
                 },
-                msg: "endpoint_state custom pagination requires a non-zero page size".into(),
+                msg: "custom pagination requires a non-zero page size".into(),
             });
         }
         Ok(PageApplyResult {
@@ -62,16 +59,7 @@ where
         _page: &Page,
         _ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError> {
-        self.page = self
-            .page
-            .checked_add(1)
-            .ok_or_else(|| ApiClientError::Pagination {
-                ctx: concord_core::advanced::ErrorContext {
-                    endpoint: "ListItems",
-                    method: ::http::Method::GET,
-                },
-                msg: "endpoint_state custom pagination page overflow".into(),
-            })?;
+        self.page = self.page.saturating_add(1);
         Ok(PageDecision::Continue)
     }
 
@@ -81,22 +69,20 @@ where
 }
 
 api! {
-    client CustomEndpointStateApi {
+    client CustomPaginationApi {
         base "https://example.com"
     }
 
     GET List(page: u64 = 1, count: u64 = 2)
-        as list_items
-        path ["items"]
         headers {
             "X-Page" = page,
             "X-Count" = count,
         }
-        paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+        paginate HeaderPagePagination {
             page = page,
             count = count
         }
-        -> Json<HeaderPage>
+        -> Json<PaginationPage>
 }
 
-pub use self::custom_endpoint_state_api::CustomEndpointStateApi;
+pub use self::custom_pagination_api::CustomPaginationApi;

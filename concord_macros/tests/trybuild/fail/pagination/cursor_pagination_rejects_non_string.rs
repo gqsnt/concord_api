@@ -1,18 +1,16 @@
 use concord_macros::api;
 
+struct Foo;
+
 api! {
-    client PaginationUnknownFieldCursorApi {
+    client CursorPaginationRejectsNonStringApi {
         base "https://example.com"
     }
 
     GET List(cursor?: String, count: u64 = 2)
         path ["items"]
-        query {
-            cursor
-            count
-        }
-        paginate CursorPagination<String> {
-            offset = count,
+        paginate CursorPagination<Foo> {
+            cursor = cursor,
             per_page = count
         }
         -> Json<Vec<String>>

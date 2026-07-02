@@ -39,7 +39,7 @@ api! {
             "X-Cursor" = cursor,
             "X-Count" = count,
         }
-        paginate CursorPagination {
+        paginate CursorPagination<String> {
             cursor = cursor,
             per_page = count
         }

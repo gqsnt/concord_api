@@ -627,7 +627,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_custom_paginate_syntax_without_endpoint_state() {
+    fn parses_custom_paginate_syntax() {
         let ast: RawApi = syn::parse_str(
             r#"
             client Api {
@@ -646,15 +646,13 @@ mod tests {
             panic!("expected endpoint");
         };
         let paginate = endpoint.paginate.as_ref().expect("paginate");
-        assert!(!paginate.endpoint_state);
-        assert!(paginate.bindings_ty.is_none());
         let ctrl_ty = &paginate.ctrl_ty;
         assert_eq!(quote::quote!(#ctrl_ty).to_string(), "HeaderPagePagination");
         assert!(paginate.assigns.is_empty());
     }
 
     #[test]
-    fn parses_endpoint_state_custom_paginate_syntax_with_bindings_type() {
+    fn parses_custom_paginate_syntax_with_assignments() {
         let ast: RawApi = syn::parse_str(
             r#"
             client Api {
@@ -663,30 +661,62 @@ mod tests {
 
             GET List(page: u64 = 1, count: u64 = 2)
                 path ["items"]
-                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                paginate HeaderPagePagination {
                     page = page,
                     count = count
                 }
                 -> Json<Vec<String>>
             "#,
         )
-        .expect("endpoint-state custom paginate syntax parses");
+        .expect("custom paginate syntax parses");
 
         let RawItem::Endpoint(endpoint) = &ast.items[0] else {
             panic!("expected endpoint");
         };
         let paginate = endpoint.paginate.as_ref().expect("paginate");
-        assert!(paginate.endpoint_state);
         let ctrl_ty = &paginate.ctrl_ty;
         assert_eq!(quote::quote!(#ctrl_ty).to_string(), "HeaderPagePagination");
-        let bindings_ty = paginate.bindings_ty.as_ref().expect("bindings ty");
-        assert_eq!(
-            quote::quote!(#bindings_ty).to_string(),
-            "HeaderPageBindings"
-        );
         assert_eq!(paginate.assigns.len(), 2);
         assert_eq!(paginate.assigns[0].key.to_string(), "page");
         assert_eq!(paginate.assigns[1].key.to_string(), "count");
+    }
+
+    #[test]
+    fn custom_pagination_single_object_syntax_resolves() {
+        parses_custom_paginate_syntax_with_assignments();
+    }
+
+    #[test]
+    fn parses_cursor_paginate_with_explicit_string_type() {
+        let ast: RawApi = syn::parse_str(
+            r#"
+            client Api {
+                base "https://example.com"
+            }
+
+            GET List(cursor?: String, count: u64 = 2)
+                path ["items"]
+                paginate CursorPagination<String> {
+                    cursor = cursor,
+                    per_page = count,
+                    send_cursor_on_first = true,
+                    stop_when_cursor_missing = false
+                }
+                -> Json<Vec<String>>
+            "#,
+        )
+        .expect("cursor paginate syntax parses");
+
+        let RawItem::Endpoint(endpoint) = &ast.items[0] else {
+            panic!("expected endpoint");
+        };
+        let paginate = endpoint.paginate.as_ref().expect("paginate");
+        let ctrl_ty = &paginate.ctrl_ty;
+        assert_eq!(
+            quote::quote!(#ctrl_ty).to_string(),
+            "CursorPagination < String >"
+        );
+        assert_eq!(paginate.assigns.len(), 4);
     }
 
     #[test]

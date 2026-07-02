@@ -180,7 +180,7 @@ api! {
         cursor
         count
     }
-    paginate CursorPagination {
+    paginate CursorPagination<String> {
         cursor = cursor,
         per_page = count
     }

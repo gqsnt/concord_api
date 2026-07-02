@@ -1,5 +1,5 @@
-error: custom pagination must use `paginate endpoint_state Controller bindings Bindings { ... }`
-  --> tests/trybuild/fail/pagination/custom_pagination_requires_endpoint_state.rs:12:18
+error: pagination no longer uses `endpoint_state ... bindings ...`; use `paginate Controller { ... }`
+  --> tests/trybuild/fail/pagination/custom_pagination_requires_endpoint_state.rs:15:18
    |
-12 |         paginate HeaderCursorPagination
-   |                  ^^^^^^^^^^^^^^^^^^^^^^
+15 |         paginate endpoint_state HeaderCursorPagination bindings HeaderCursorPaginationBindings {
+   |                  ^^^^^^^^^^^^^^

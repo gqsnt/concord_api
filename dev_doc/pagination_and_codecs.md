@@ -52,11 +52,11 @@ Built-in controllers:
 - `CursorPagination`
 - `PagedPagination`
 
-Endpoint-state custom pagination implements `EndpointPaginationController`.
+Custom pagination implements the single-object pagination traits.
 
 ## Runtime controller model
 
-Endpoint-state custom controllers receive bound endpoint fields and return `PageApplyResult`. Header mutation and query rendering happen through endpoint planning, not through pagination runtime request mutation. Custom controllers that request a known page size return it through `PageApplyResult::expected_items_per_page` during `apply()`. The value is per page request and starts as `None` for each page.
+Custom controllers receive bound endpoint fields through generated binding code and return `PageApplyResult`. Header mutation and query rendering happen through endpoint planning, not through pagination runtime request mutation. Custom controllers that request a known page size return it through `PageApplyResult::expected_items_per_page` during `apply()`. The value is per page request and starts as `None` for each page.
 
 `PageDecision` tells the runtime whether to continue, stop, or error.
 
@@ -68,7 +68,7 @@ identity returns a typed pagination error instead of silently reissuing the
 same page. The optional controller `ProgressKey` check remains available as an
 additional guard.
 
-The macro `paginate` block resolves controller field assignments. Built-in pagination uses assignment blocks for endpoint fields. Explicit endpoint-state custom pagination uses `paginate endpoint_state Controller bindings Bindings { ... }`, and codegen connects those bindings to the runtime controller traits; the runtime drives endpoint-state mutation and decodes each page through the endpoint response codec.
+The macro `paginate` block resolves controller field assignments. Built-in pagination and custom pagination both use assignment blocks for endpoint fields, and codegen connects those assignments to the single-object runtime path before the endpoint response codec decodes each page.
 
 Empty-page and short-page termination are runtime invariants, not
 controller-specific rules. The runtime obtains expected page size from built-in

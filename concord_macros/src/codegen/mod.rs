@@ -1258,7 +1258,7 @@ mod tests {
                     cursor
                     count
                 }
-                paginate CursorPagination {
+                paginate CursorPagination<String> {
                     cursor = cursor,
                     per_page = count
                 }
@@ -2103,7 +2103,7 @@ mod tests {
     #[test]
     fn generated_custom_uses_single_object_pagination_runtime_only() {
         let out = expanded(quote! {
-            client SnapshotCustomEndpointState {
+            client SnapshotCustomPagination {
                 base "https://example.com"
             }
 
@@ -2112,7 +2112,7 @@ mod tests {
                     "X-Page" = page,
                     "X-Count" = count,
                 }
-                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                paginate HeaderPagePagination {
                     page = page,
                     count = count
                 }
@@ -2151,9 +2151,9 @@ mod tests {
     }
 
     #[test]
-    fn generated_custom_endpoint_state_emits_paginate_binding_impl() {
+    fn generated_custom_emits_paginate_binding_impl() {
         let out = expanded(quote! {
-            client SnapshotCustomEndpointStateBinding {
+            client SnapshotCustomPaginationBinding {
                 base "https://example.com"
             }
 
@@ -2162,7 +2162,7 @@ mod tests {
                     "X-Page" = page,
                     "X-Count" = count,
                 }
-                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                paginate HeaderPagePagination {
                     page = page,
                     count = count
                 }
@@ -2194,7 +2194,7 @@ mod tests {
     #[test]
     fn generated_custom_exposes_single_object_pagination_runtime() {
         let out = expanded(quote! {
-            client SnapshotCustomEndpointStateSingleObjectRuntime {
+            client SnapshotCustomPaginationSingleObjectRuntime {
                 base "https://example.com"
             }
 
@@ -2203,7 +2203,7 @@ mod tests {
                     "X-Page" = page,
                     "X-Count" = count,
                 }
-                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                paginate HeaderPagePagination {
                     page = page,
                     count = count
                 }
@@ -2241,7 +2241,7 @@ mod tests {
                     "X-Cursor" = cursor,
                     "X-Count" = count,
                 }
-                paginate CursorPagination {
+                paginate CursorPagination<String> {
                     cursor = cursor,
                     per_page = count
                 }
@@ -2286,7 +2286,7 @@ mod tests {
                     "X-Cursor" = cursor,
                     "X-Count" = count,
                 }
-                paginate CursorPagination {
+                paginate CursorPagination<String> {
                     cursor = cursor,
                     per_page = count,
                     send_cursor_on_first = true,
@@ -2331,7 +2331,7 @@ mod tests {
                     "X-Cursor" = cursor,
                     "X-Count" = count,
                 }
-                paginate CursorPagination {
+                paginate CursorPagination<String> {
                     cursor = cursor,
                     per_page = count,
                     send_cursor_on_first = true,
@@ -2366,7 +2366,7 @@ mod tests {
                     "X-Cursor" = cursor,
                     "X-Count" = count,
                 }
-                paginate CursorPagination {
+                paginate CursorPagination<String> {
                     cursor = cursor,
                     per_page = count,
                     send_cursor_on_first = true,
@@ -2403,7 +2403,7 @@ mod tests {
                     cursor
                     count
                 }
-                paginate CursorPagination {
+                paginate CursorPagination<String> {
                     cursor = cursor,
                     per_page = count
                 }

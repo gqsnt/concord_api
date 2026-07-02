@@ -2,12 +2,12 @@
 
 pub mod auth_session;
 pub mod custom_codec;
-pub mod custom_endpoint_state;
+pub mod custom_cursor_pagination;
+pub mod custom_pagination;
 pub mod ddragon;
 pub mod docs_advanced_dsl;
 pub mod docs_dsl;
 pub mod endpoint_io;
-pub mod endpoint_state_custom_pagination;
 pub mod explicit_endpoint;
 pub mod minimal;
 pub mod pagination;

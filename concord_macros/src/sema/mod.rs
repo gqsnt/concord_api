@@ -3590,7 +3590,7 @@ mod tests {
                     cursor
                     count
                 }
-                paginate CursorPagination {
+                paginate CursorPagination<String> {
                     cursor = cursor,
                     per_page = count
                 }
@@ -3610,7 +3610,7 @@ mod tests {
 
             GET Custom(page: u64 = 1)
                 path ["custom"]
-                paginate endpoint_state HeaderCursorPagination bindings HeaderCursorPaginationBindings {
+                paginate HeaderCursorPagination {
                     page = page
                 }
                 -> Json<Vec<String>>
@@ -3665,18 +3665,18 @@ mod tests {
             .and_then(|ep| ep.paginate.as_ref())
             .expect("custom pagination");
         match &custom.controller {
-            PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => {
+            PaginationControllerResolved::Custom { ctrl_ty } => {
                 assert_eq!(
                     quote::quote!(#ctrl_ty).to_string(),
                     "HeaderCursorPagination"
                 );
             }
-            other => panic!("expected custom endpoint-state controller, got {other:?}"),
+            other => panic!("expected custom controller, got {other:?}"),
         }
     }
 
     #[test]
-    fn custom_pagination_bindings_resolve() {
+    fn custom_pagination_resolves() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client PageApi {
@@ -3685,7 +3685,7 @@ mod tests {
 
             GET List(page: u64 = 1, count: u64 = 2)
                 path ["items"]
-                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                paginate HeaderPagePagination {
                     page = page,
                     count = count
                 }
@@ -3700,17 +3700,10 @@ mod tests {
             .as_ref()
             .expect("pagination resolved");
         match &pagination.controller {
-            PaginationControllerResolved::CustomEndpointState {
-                ctrl_ty,
-                bindings_ty,
-            } => {
+            PaginationControllerResolved::Custom { ctrl_ty } => {
                 assert_eq!(quote::quote!(#ctrl_ty).to_string(), "HeaderPagePagination");
-                assert_eq!(
-                    quote::quote!(#bindings_ty).to_string(),
-                    "HeaderPageBindings"
-                );
             }
-            other => panic!("expected custom endpoint-state pagination, got {other:?}"),
+            other => panic!("expected custom pagination, got {other:?}"),
         }
         assert_eq!(pagination.bindings.len(), 2);
         assert_eq!(pagination.bindings[0].controller_field.to_string(), "page");
@@ -3734,7 +3727,7 @@ mod tests {
             }
 
             GET List(count: u64 = 2)
-                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                paginate HeaderPagePagination {
                     page = does_not_exist
                 }
                 -> Json<Vec<String>>
@@ -3752,8 +3745,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_pagination_requires_endpoint_state_bindings() {
-        let paginate = ["paginate ", "HeaderPagePagination"].concat();
+    fn custom_pagination_rejects_endpoint_state_bindings_syntax() {
         let src = format!(
             r#"
             client PageApi {{
@@ -3761,16 +3753,18 @@ mod tests {
             }}
 
             GET List
-                {paginate}
+                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {{
+                    page = page
+                }}
                 -> Json<Vec<String>>
             "#
         );
-        let ast: crate::ast::RawApi = syn::parse_str(&src).expect("valid api syntax");
-        let err = analyze(ast).expect_err("custom pagination should be rejected");
+        let err = syn::parse_str::<crate::ast::RawApi>(&src)
+            .expect_err("custom pagination should be rejected");
 
         assert!(
             err.to_string()
-                .contains("custom pagination must use `paginate endpoint_state Controller bindings Bindings { ... }`"),
+                .contains("pagination no longer uses `endpoint_state ... bindings ...`; use `paginate Controller { ... }`"),
             "{err}"
         );
     }
@@ -3896,7 +3890,7 @@ mod tests {
             }
 
             GET List(cursor?: String, count: u64 = 20)
-                paginate CursorPagination {
+                paginate CursorPagination<String> {
                     cursor = cursor,
                     per_page = count,
                     send_cursor_on_first = true,

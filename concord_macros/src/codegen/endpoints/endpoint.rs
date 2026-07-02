@@ -239,7 +239,7 @@ fn emit_endpoint_def(
                     }
                 }
             },
-            PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => quote! {
+            PaginationControllerResolved::Custom { ctrl_ty } => quote! {
                 impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name
                 where
                     #ctrl_ty: ::core::default::Default
@@ -413,43 +413,25 @@ fn emit_paginate_binding_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenSt
 
     let pagination_ty = pagination_controller_ty(p);
 
-    let load_assignments: Vec<TokenStream2> = match &p.controller {
-        PaginationControllerResolved::OffsetLimit(ctrl) => ctrl
-            .assigns
-            .iter()
-            .map(|assign| emit_paginate_binding_assignment(assign, p))
-            .collect(),
-        PaginationControllerResolved::Paged(ctrl) => ctrl
-            .assigns
-            .iter()
-            .map(|assign| emit_paginate_binding_assignment(assign, p))
-            .collect(),
+    let cursor_flags = match &p.controller {
         PaginationControllerResolved::Cursor(ctrl) => {
-            let send_cursor_on_first = ctrl.send_cursor_on_first;
-            let stop_when_cursor_missing = ctrl.stop_when_cursor_missing;
-            let mut assignments: Vec<TokenStream2> = ctrl
-                .assigns
-                .iter()
-                .map(|assign| emit_paginate_binding_assignment(assign, p))
-                .collect();
-            assignments.push(quote! {
-                pagination.send_cursor_on_first = #send_cursor_on_first;
-            });
-            assignments.push(quote! {
-                pagination.stop_when_cursor_missing = #stop_when_cursor_missing;
-            });
-            assignments
+            Some((ctrl.send_cursor_on_first, ctrl.stop_when_cursor_missing))
         }
-        PaginationControllerResolved::CustomEndpointState { .. } => p
-            .bindings
-            .iter()
-            .map(|binding| {
-                let field = &binding.controller_field;
-                let endpoint_field = &binding.endpoint_rust_field;
-                quote! { pagination.#field = self.#endpoint_field.clone(); }
-            })
-            .collect(),
+        _ => None,
     };
+    let mut load_assignments: Vec<TokenStream2> = p
+        .assigns
+        .iter()
+        .map(|assign| emit_paginate_binding_assignment(assign, p))
+        .collect();
+    if let Some((send_cursor_on_first, stop_when_cursor_missing)) = cursor_flags {
+        load_assignments.push(quote! {
+            pagination.send_cursor_on_first = #send_cursor_on_first;
+        });
+        load_assignments.push(quote! {
+            pagination.stop_when_cursor_missing = #stop_when_cursor_missing;
+        });
+    }
 
     let store_assignments: Vec<TokenStream2> = p.bindings.iter().map(|binding| {
         let field = &binding.controller_field;
@@ -483,7 +465,7 @@ fn pagination_controller_ty(p: &PaginateResolved) -> TokenStream2 {
         PaginationControllerResolved::Cursor(_) => {
             quote! { ::concord_core::advanced::CursorPagination<::std::string::String> }
         }
-        PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => quote! { #ctrl_ty },
+        PaginationControllerResolved::Custom { ctrl_ty } => quote! { #ctrl_ty },
     }
 }
 
@@ -602,7 +584,7 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
         .map(|m| m.out_ty.clone())
         .unwrap_or_else(|| resolved_response_output_ty(ep.response_io(), None));
     match &p.controller {
-        PaginationControllerResolved::CustomEndpointState { .. } => quote! {
+        PaginationControllerResolved::Custom { .. } => quote! {
             // Single-object custom pagination is driven entirely by the generated
             // runtime hook, so it does not need extra metadata here.
             let __pagination_plan = ::core::option::Option::None;

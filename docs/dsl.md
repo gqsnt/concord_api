@@ -477,7 +477,7 @@ Cursor pagination can use an optional cursor argument.
 GET ListCursor(cursor?: String, count: u64 = 20)
 path ["cursor-items"]
 query { cursor, count }
-paginate CursorPagination {
+paginate CursorPagination<String> {
     cursor = cursor,
     per_page = count
 }
@@ -743,10 +743,10 @@ The response line closes the normal endpoint contract. `map` is the documented e
 Built-in controllers:
 
 - `OffsetLimitPagination`
-- `CursorPagination`
+- `CursorPagination<String>`
 - `PagedPagination`
 
-Custom pagination uses explicit endpoint-state syntax.
+Custom pagination uses the uniform `paginate Type { ... }` syntax.
 
 ```rust
 GET ListItems(page: u64 = 0, count: u64 = 100)
@@ -756,14 +756,14 @@ GET ListItems(page: u64 = 0, count: u64 = 100)
         "page" = page,
         "count" = count,
     }
-    paginate endpoint_state custom::HeaderCursorPagination bindings custom::HeaderCursorBindings {
+    paginate custom::HeaderCursorPagination {
         page = page,
         count = count
     }
     -> Json<Page<String>>
 ```
 
-Built-in pagination controllers use assignment blocks for their configured fields. Custom pagination binds controller fields to endpoint fields with explicit endpoint-state syntax, and endpoint planning renders query, header, path, and body output.
+Built-in pagination controllers use assignment blocks for their configured fields. Custom pagination uses the same assignment blocks, and endpoint planning renders query, header, path, and body output.
 
 Built-in pagination controller fields are sema-validated against the actual semantic model. Removed short-page stop fields such as `stop` and `stop_on_short_page` are rejected rather than reintroduced as controller-owned syntax.
 

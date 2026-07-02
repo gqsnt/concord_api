@@ -90,10 +90,11 @@ if "${RG[@]}" 'pub (offset_key|limit_key|page_key|per_page_key|cursor_key):' \
   fail_with_matches "concord_core built-in pagination controllers must not expose inert query-key fields." "$built_in_controller_key_refs"
 fi
 
-section "unsupported custom pagination codegen fence"
-unsupported_custom_codegen_refs="$tmpdir/unsupported_custom_codegen.refs"
-if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom|PaginationControllerResolved::Custom\b' concord_macros/src/codegen/endpoints/endpoint.rs >"$unsupported_custom_codegen_refs" 2>/dev/null; then
-  fail_with_matches "concord_macros codegen must not emit removed custom pagination plan output." "$unsupported_custom_codegen_refs"
+section "removed custom pagination plan fence"
+custom_plan_refs="$tmpdir/custom_plan.refs"
+if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom' \
+  concord_macros/src/codegen concord_examples/src concord_macros/tests concord_core/tests >"$custom_plan_refs" 2>/dev/null; then
+  fail_with_matches "removed custom pagination plan output must not reappear." "$custom_plan_refs"
 fi
 
 section "removed endpoint-state runtime layer fence"
@@ -101,6 +102,13 @@ runtime_layer_refs="$tmpdir/runtime_layer.refs"
 if "${RG[@]}" 'EndpointField|EndpointPaginationController|EndpointPaginationRuntimeAdapter|EndpointPaginationRuntime|OffsetLimitBindings|PagedBindings|CursorBindings|OffsetLimitState|PagedState|CursorState|endpoint_state_pagination' \
   concord_core/src concord_macros/src/codegen concord_examples/src concord_core/tests concord_macros/tests >"$runtime_layer_refs" 2>/dev/null; then
   fail_with_matches "removed endpoint-state pagination runtime layer names must not reappear in production codegen examples or tests." "$runtime_layer_refs"
+fi
+
+section "removed endpoint-state pagination syntax fence"
+endpoint_state_syntax_refs="$tmpdir/endpoint_state_syntax.refs"
+if "${RG[@]}" -ni 'paginate endpoint[-_]state|\bendpoint[-_]state\b' \
+  concord_examples/src concord_examples/tests concord_macros/tests/trybuild/pass concord_macros/tests/snapshots docs dev_doc >"$endpoint_state_syntax_refs" 2>/dev/null; then
+  fail_with_matches "removed endpoint-state pagination syntax must not reappear in active examples, pass fixtures, snapshots, or docs." "$endpoint_state_syntax_refs"
 fi
 
 section "codegen semantic boundary"

@@ -1,7 +1,7 @@
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
-        "Concord examples are available as library modules and integration tests: minimal, docs_dsl, docs_advanced_dsl, endpoint_io, auth_session, pagination, endpoint_state_custom_pagination, custom_codec, policy_stack, explicit_endpoint, riot, and ddragon."
+        "Concord examples are available as library modules and integration tests: minimal, docs_dsl, docs_advanced_dsl, endpoint_io, auth_session, pagination, custom_pagination, custom_cursor_pagination, custom_codec, policy_stack, explicit_endpoint, riot, and ddragon."
     );
 
     concord_examples::riot::riot_test().await?;

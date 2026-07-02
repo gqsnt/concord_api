@@ -48,8 +48,9 @@ fn examples_cover_v1_usage_surface() {
         "auth_session",
         "policy_stack",
         "pagination",
+        "custom_pagination",
         "custom_codec",
-        "endpoint_state_custom_pagination",
+        "custom_cursor_pagination",
         "endpoint_io",
         "riot_large",
     ] {

@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use concord_core::prelude::PaginationTermination;
-use concord_examples::custom_endpoint_state::{CustomEndpointStateApi, EndpointStateItem};
+use concord_examples::custom_pagination::{CustomPaginationApi, Item as CustomPaginationItem};
 use concord_examples::pagination::{Item, PaginationApi, PaginationAuthApi};
 use concord_test_support::{MockReply, assert_request, mock};
 use http::StatusCode;
@@ -110,40 +110,36 @@ fn json_reply(body: &'static str) -> MockReply {
 }
 
 #[tokio::test]
-async fn generated_custom_endpoint_state_collect_renders_endpoint_fields() {
+async fn generated_custom_pagination_collect_renders_endpoint_fields() {
     let (transport, handle) = mock()
         .reply(json_reply(r#"{"items":[{"id":1},{"id":2}]}"#))
         .reply(json_reply(r#"{"items":[{"id":3}]}"#))
         .build();
-    let api = CustomEndpointStateApi::new_with_transport(transport);
+    let api = CustomPaginationApi::new_with_transport(transport);
 
     let items = api
-        .list_items()
+        .list()
         .paginate(PaginationTermination::hard_page_cap(10))
         .collect()
         .await
-        .expect("generated endpoint-state custom pagination collects");
+        .expect("generated custom pagination collects");
 
     assert_eq!(
         items,
         vec![
-            EndpointStateItem { id: 1 },
-            EndpointStateItem { id: 2 },
-            EndpointStateItem { id: 3 },
+            CustomPaginationItem { id: 1 },
+            CustomPaginationItem { id: 2 },
+            CustomPaginationItem { id: 3 },
         ]
     );
     let recorded = handle.recorded();
     assert_eq!(recorded.len(), 2);
     assert_request(&recorded[0])
-        .path("/items")
-        .query_absent("page")
-        .query_absent("count")
+        .path("/")
         .header("x-page", "1")
         .header("x-count", "2");
     assert_request(&recorded[1])
-        .path("/items")
-        .query_absent("page")
-        .query_absent("count")
+        .path("/")
         .header("x-page", "2")
         .header("x-count", "2");
     handle.finish();

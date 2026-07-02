@@ -8,11 +8,11 @@ use serde::Deserialize;
 use std::num::NonZeroUsize;
 
 #[derive(Debug, Deserialize)]
-pub struct Page {
+pub struct PaginationPage {
     pub items: Vec<String>,
 }
 
-impl PageItems for Page {
+impl PageItems for PaginationPage {
     type Item = String;
 
     fn item_count_hint(&self) -> Option<usize> {
@@ -30,9 +30,6 @@ pub struct HeaderPagePagination {
     pub count: u64,
 }
 
-#[derive(Default)]
-pub struct HeaderPageBindings;
-
 impl<Page> EndpointPagination<Page> for HeaderPagePagination
 where
     Page: PageItems,
@@ -44,7 +41,7 @@ where
                     endpoint: "List",
                     method: ::http::Method::GET,
                 },
-                msg: "endpoint_state custom pagination requires a non-zero page size".into(),
+                msg: "custom pagination requires a non-zero page size".into(),
             });
         }
         Ok(PageApplyResult {
@@ -67,7 +64,7 @@ where
 }
 
 api! {
-    client CustomEndpointStateApi {
+    client CustomPaginationApi {
         base "https://example.com"
     }
 
@@ -76,14 +73,14 @@ api! {
             "X-Page" = page,
             "X-Count" = count,
         }
-        paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+        paginate HeaderPagePagination {
             page = page,
             count = count
         }
-        -> Json<Page>
+        -> Json<PaginationPage>
 }
 
-fn usage(api: crate::custom_endpoint_state_api::CustomEndpointStateApi) {
+fn usage(api: crate::custom_pagination_api::CustomPaginationApi) {
     let _ = api.list().paginate(PaginationTermination::hard_page_cap(2));
 }
 

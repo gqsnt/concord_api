@@ -35,9 +35,6 @@ pub struct HeaderCursorPagination {
     pub limit: u64,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct HeaderCursorPaginationBindings;
-
 impl<Page> EndpointPagination<Page> for HeaderCursorPagination
 where
     Page: PageItems,
@@ -49,7 +46,7 @@ where
                     endpoint: "ListItems",
                     method: ::http::Method::GET,
                 },
-                msg: "endpoint_state custom pagination requires a non-zero page size".into(),
+                msg: "custom pagination requires a non-zero page size".into(),
             });
         }
         Ok(PageApplyResult {
@@ -62,16 +59,7 @@ where
         _page: &Page,
         _ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError> {
-        self.page = self
-            .page
-            .checked_add(1)
-            .ok_or_else(|| ApiClientError::Pagination {
-                ctx: concord_core::advanced::ErrorContext {
-                    endpoint: "ListItems",
-                    method: ::http::Method::GET,
-                },
-                msg: "endpoint_state custom pagination page overflow".into(),
-            })?;
+        self.page = self.page.saturating_add(1);
         Ok(PageDecision::Continue)
     }
 
@@ -81,25 +69,21 @@ where
 }
 
 api! {
-    client CustomPaginationApi {
+    client CustomCursorPaginationApi {
         base "https://example.com"
     }
 
     GET ListItems(page: u64 = 0, limit: u64 = 2)
         as list_items
         path ["items"]
-        query {
-            "page" = page,
-            "limit" = limit,
-        }
         headers {
-            "x-page-cursor" = page,
+            "X-Page-Cursor" = page,
         }
-        paginate endpoint_state HeaderCursorPagination bindings HeaderCursorPaginationBindings {
+        paginate HeaderCursorPagination {
             page = page,
             limit = limit
         }
         -> Json<HeaderCursorPage>
 }
 
-pub use self::custom_pagination_api::CustomPaginationApi;
+pub use self::custom_cursor_pagination_api::CustomCursorPaginationApi;

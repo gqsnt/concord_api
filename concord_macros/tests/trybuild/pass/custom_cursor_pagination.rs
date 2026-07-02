@@ -7,14 +7,14 @@ use concord_macros::api;
 use serde::Deserialize;
 use std::num::NonZeroUsize;
 
-use self::custom_pagination_api::CustomPaginationApi;
+use self::custom_cursor_pagination_api::CustomCursorPaginationApi;
 
 #[derive(Debug, Deserialize)]
-pub struct Page {
+pub struct PaginationPage {
     pub items: Vec<String>,
 }
 
-impl PageItems for Page {
+impl PageItems for PaginationPage {
     type Item = String;
 
     fn item_count_hint(&self) -> Option<usize> {
@@ -30,9 +30,6 @@ impl PageItems for Page {
 pub struct HeaderCursorPagination {
     pub page: u64,
 }
-
-#[derive(Default)]
-pub struct HeaderCursorPaginationBindings;
 
 impl<Page> EndpointPagination<Page> for HeaderCursorPagination
 where
@@ -59,7 +56,7 @@ where
 }
 
 api! {
-    client CustomPaginationApi { base "https://example.com" }
+    client CustomCursorPaginationApi { base "https://example.com" }
 
     GET List(page: u64 = 0)
         as list
@@ -67,13 +64,13 @@ api! {
         query {
             "page" = page,
         }
-        paginate endpoint_state HeaderCursorPagination bindings HeaderCursorPaginationBindings {
+        paginate HeaderCursorPagination {
             page = page
         }
-        -> Json<Page>
+        -> Json<PaginationPage>
 }
 
-fn usage(api: CustomPaginationApi) {
+fn usage(api: CustomCursorPaginationApi) {
     let _ = api.list().paginate(PaginationTermination::hard_page_cap(2));
 }
 

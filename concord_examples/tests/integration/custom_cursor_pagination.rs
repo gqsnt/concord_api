@@ -1,15 +1,15 @@
 use bytes::Bytes;
 use concord_core::prelude::PaginationTermination;
-use concord_examples::endpoint_state_custom_pagination::{CustomPaginationApi, Item};
+use concord_examples::custom_cursor_pagination::{CustomCursorPaginationApi, Item};
 use concord_test_support::{MockReply, assert_request, mock};
 
 #[tokio::test]
-async fn endpoint_state_custom_pagination_collects_pages() {
+async fn custom_cursor_pagination_collects_pages() {
     let (transport, handle) = mock()
         .reply(json_reply(r#"{"items":[{"id":1},{"id":2}]}"#))
         .reply(json_reply(r#"{"items":[{"id":3}]}"#))
         .build();
-    let api = CustomPaginationApi::new_with_transport(transport);
+    let api = CustomCursorPaginationApi::new_with_transport(transport);
 
     let items = api
         .list_items()
@@ -23,13 +23,9 @@ async fn endpoint_state_custom_pagination_collects_pages() {
     assert_eq!(recorded.len(), 2);
     assert_request(&recorded[0])
         .path("/items")
-        .query_has("page", "0")
-        .query_has("limit", "2")
         .header("x-page-cursor", "0");
     assert_request(&recorded[1])
         .path("/items")
-        .query_has("page", "1")
-        .query_has("limit", "2")
         .header("x-page-cursor", "1");
     handle.finish();
 }

@@ -4,5 +4,5 @@ custom extensibility generated snapshot
 - response decoding calls ResponseCodec::decode
 - request content type comes from EncodedBody
 - response Accept comes from ResponseCodec::try_accept
-- endpoint-state custom pagination emits single_object_pagination(...)
-- endpoint-state custom controller uses endpoint bindings rather than plan internals
+- custom pagination emits single_object_pagination(...)
+- custom pagination uses endpoint bindings rather than plan internals

@@ -1,11 +1,11 @@
 # Pagination
 
-Pagination is opt-in at the endpoint and call site. A paginated endpoint declares built-in pagination or explicit endpoint-state custom pagination in the DSL, then callers use `.paginate(PaginationTermination::...)` to choose paginated execution and an explicit termination policy. Response types such as `Vec<T>` can implement `PageItems`, but `.paginate(...)` is available only for endpoints that declare pagination. No page or item cap is implicit; loop detection is enabled by default.
+Pagination is opt-in at the endpoint and call site. A paginated endpoint declares built-in pagination or custom pagination in the DSL, then callers use `.paginate(PaginationTermination::...)` to choose paginated execution and an explicit termination policy. Response types such as `Vec<T>` can implement `PageItems`, but `.paginate(...)` is available only for endpoints that declare pagination. No page or item cap is implicit; loop detection is enabled by default.
 
 The runtime treats pagination as a deterministic page loop:
 
 1. build the logical page request
-2. apply endpoint-state pagination for that page
+2. apply pagination for that page
 3. validate auth collisions and acquire rate-limit permits
 4. send the page request through the normal transport, classification, auth, retry, and decode path
 5. use an exact item-count hint, when available, to apply common page-content stop rules before controller advance
@@ -17,7 +17,7 @@ Common page-content stop rules are runtime invariants, not controller-specific b
 - an empty page stops pagination
 - a short page stops pagination when Concord knows the expected page size
 
-The current page is included before stopping. `PageItems::item_count_hint()` is exact when present, and the runtime uses it before calling controller advance. Page types should implement it whenever they can expose the count without consuming themselves. An exact hint alone lets Concord stop before `advance()` for an empty page, hard-item-cap overflow, and provable `TakeItems` completion. Built-in offset, cursor, and page-number pagination provide the expected page size automatically from `limit` or `per_page`. Built-in controllers are `OffsetLimitPagination`, `CursorPagination`, and `PagedPagination`. Endpoint-state custom pagination can set `PageApplyResult::expected_items_per_page` during `apply()` when it requests a specific page size. With both an exact hint and an expected page size, the runtime also owns generic short-page stop before `advance()`. If endpoint-state custom pagination does not set an expected size, `collect()` still remains exact after consuming the page, but Concord cannot generically detect a short page before advance.
+The current page is included before stopping. `PageItems::item_count_hint()` is exact when present, and the runtime uses it before calling controller advance. Page types should implement it whenever they can expose the count without consuming themselves. An exact hint alone lets Concord stop before `advance()` for an empty page, hard-item-cap overflow, and provable `TakeItems` completion. Built-in offset, cursor, and page-number pagination provide the expected page size automatically from `limit` or `per_page`. Built-in controllers are `OffsetLimitPagination`, `CursorPagination<String>`, and `PagedPagination`. Custom pagination can set `PageApplyResult::expected_items_per_page` during `apply()` when it requests a specific page size. With both an exact hint and an expected page size, the runtime also owns generic short-page stop before `advance()`. If custom pagination does not set an expected size, `collect()` still remains exact after consuming the page, but Concord cannot generically detect a short page before advance.
 
 Removed controller-local short-page stop fields such as `stop` and `stop_on_short_page` remain unsupported. Runtime-owned short-page stopping is controlled by `PageItems::item_count_hint()` and `PageApplyResult::expected_items_per_page`.
 
@@ -54,15 +54,15 @@ let items = api
 
 The runtime keeps endpoint fields stable while advancing controller state.
 
-Endpoint-state custom pagination binds controller state directly to endpoint fields. Endpoint field mutation happens before planning, and planning remains the only place that renders query, header, path, or body output. Endpoint-state custom controllers that request a specific page size should return `PageApplyResult { expected_items_per_page: Some(...) }` from `apply()`. The expected count is per page and does not persist.
+Custom pagination binds controller state directly to endpoint fields. Endpoint field mutation happens before planning, and planning remains the only place that renders query, header, path, or body output. Custom controllers that request a specific page size should return `PageApplyResult { expected_items_per_page: Some(...) }` from `apply()`. The expected count is per page and does not persist.
 
 Paginated endpoints with request bodies are rejected in v1. Concord does not replay endpoint request bodies across page requests.
 
-Endpoint-state pagination cannot override auth-owned query or header material. If a controller creates a collision with query auth, bearer or Basic `Authorization`, or custom header auth, Concord rejects the request before rate-limit acquisition and transport send.
+Pagination cannot override auth-owned query or header material. If a controller creates a collision with query auth, bearer or Basic `Authorization`, or custom header auth, Concord rejects the request before rate-limit acquisition and transport send.
 
 ## Cursor Pagination
 
-Cursor pagination uses a response type that exposes items and a next cursor. Offset, page-number, and endpoint-state custom pagination collection only require `PageItems`; built-in cursor pagination additionally requires `HasNextCursor`.
+Cursor pagination uses a response type that exposes items and a next cursor. Offset, page-number, and custom pagination collection only require `PageItems`; built-in cursor pagination additionally requires `HasNextCursor`.
 
 ```rust
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -89,10 +89,10 @@ GET ListCursor(cursor?: String, count: u64 = 20)
     as list_cursor
     path ["cursor-items"]
     query { cursor, count }
-    paginate CursorPagination {
-        cursor = cursor,
-        per_page = count
-    }
+paginate CursorPagination<String> {
+    cursor = cursor,
+    per_page = count
+}
     -> Json<CursorPage>
 ```
 
