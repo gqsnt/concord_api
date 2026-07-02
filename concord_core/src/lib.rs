@@ -47,11 +47,11 @@ pub mod internal {
     pub use crate::multipart_response::{MultipartDecodePart, MultipartStream, RawResponsePart};
     #[doc(hidden)]
     pub use crate::pagination::{
-        Control, CursorBindings, CursorPagination, CursorState, EndpointField,
+        Control, CursorBindings, CursorPagination, CursorState, EndpointField, EndpointPagination,
         EndpointPaginationController, EndpointPaginationRuntime, EndpointPaginationRuntimeAdapter,
         HasNextCursor, OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState, PageAdvance,
         PageApply, PageApplyResult, PageDecision, PageItems, PagedBindings, PagedPagination,
-        PagedState, PaginationCaps, PaginationTermination, ProgressKey,
+        PagedState, PaginateBinding, PaginationCaps, PaginationTermination, ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
     pub use crate::record::{
@@ -120,11 +120,11 @@ pub mod advanced {
     };
     pub use crate::multipart_response::{MultipartDecodePart, MultipartStream, RawResponsePart};
     pub use crate::pagination::{
-        Control, CursorBindings, CursorPagination, CursorState, EndpointField,
+        Control, CursorBindings, CursorPagination, CursorState, EndpointField, EndpointPagination,
         EndpointPaginationController, EndpointPaginationRuntime, EndpointPaginationRuntimeAdapter,
         HasNextCursor, OffsetLimitBindings, OffsetLimitPagination, OffsetLimitState, PageAdvance,
         PageApply, PageApplyResult, PageDecision, PageItems, PagedBindings, PagedPagination,
-        PagedState, PaginationCaps, PaginationTermination, ProgressKey,
+        PagedState, PaginateBinding, PaginationCaps, PaginationTermination, ProgressKey,
     };
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,

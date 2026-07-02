@@ -134,6 +134,39 @@ pub struct PageAdvance<'a> {
     pub received_items: usize,
 }
 
+/// Single-object pagination state/controller contract.
+///
+/// Implementations own pagination state for a run and can update that state
+/// before a page is sent and after a page is decoded. Pagination controllers
+/// must not render HTTP query, header, path, or body material directly; the
+/// endpoint plan remains responsible for that output.
+pub trait EndpointPagination<Page>: Default + Send + Sync + 'static
+where
+    Page: PageItems,
+{
+    fn apply(&mut self, ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError>;
+
+    fn advance(
+        &mut self,
+        page: &Page,
+        ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError>;
+
+    fn progress_key(&self) -> Option<ProgressKey> {
+        None
+    }
+}
+
+/// Endpoint-to-pagination binding contract intended for generated endpoints.
+///
+/// The binding loads the pagination state from endpoint fields and stores the
+/// current pagination state back to those fields before endpoint planning.
+pub trait PaginateBinding<P> {
+    fn load_pagination(&self) -> P;
+
+    fn store_pagination(&mut self, pagination: &P);
+}
+
 pub trait EndpointPaginationController<E, Page>: Send + Sync + 'static
 where
     Page: PageItems,
@@ -311,16 +344,93 @@ impl<T: Send + 'static> PageItems for Vec<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::ClientContext;
+    use crate::endpoint::{ClientPlanContext, Endpoint, RequestPlan};
     use http::Method;
     use std::num::NonZeroUsize;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Clone)]
+    struct TestCx;
+
+    impl ClientContext for TestCx {
+        type Vars = ();
+        type AuthVars = ();
+        type AuthState = ();
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+        const DOMAIN: &'static str = "example.com";
+
+        fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+    }
 
     #[derive(Clone, Debug)]
     struct TestEndpoint {
         start: u64,
         count: u64,
         cursor: Option<String>,
+    }
+
+    #[derive(Clone, Debug)]
+    struct SingleObjectEndpoint {
+        page: u64,
+        count: u64,
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct SingleObjectPagePagination {
+        page: u64,
+        count: u64,
+    }
+
+    impl<Page> EndpointPagination<Page> for SingleObjectPagePagination
+    where
+        Page: PageItems,
+    {
+        fn apply(&mut self, _ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+            Ok(PageApplyResult {
+                expected_items_per_page: NonZeroUsize::new(self.count as usize),
+            })
+        }
+
+        fn advance(
+            &mut self,
+            page: &Page,
+            _ctx: PageAdvance<'_>,
+        ) -> Result<PageDecision, ApiClientError> {
+            if page.item_count_hint() == Some(0) {
+                return Ok(PageDecision::Stop);
+            }
+            self.page = self
+                .page
+                .checked_add(1)
+                .ok_or_else(|| ApiClientError::Pagination {
+                    ctx: crate::error::ErrorContext {
+                        endpoint: "SingleObjectEndpoint",
+                        method: Method::GET,
+                    },
+                    msg: "pagination page overflow".into(),
+                })?;
+            Ok(PageDecision::Continue)
+        }
+
+        fn progress_key(&self) -> Option<ProgressKey> {
+            Some(ProgressKey::U64(self.page))
+        }
+    }
+
+    impl PaginateBinding<SingleObjectPagePagination> for SingleObjectEndpoint {
+        fn load_pagination(&self) -> SingleObjectPagePagination {
+            SingleObjectPagePagination {
+                page: self.page,
+                count: self.count,
+            }
+        }
+
+        fn store_pagination(&mut self, pagination: &SingleObjectPagePagination) {
+            self.page = pagination.page;
+            self.count = pagination.count;
+        }
     }
 
     #[derive(Clone, Debug)]
@@ -385,6 +495,204 @@ mod tests {
             state.offset = state.offset.checked_add(state.limit).unwrap();
             Ok(PageDecision::Continue)
         }
+    }
+
+    #[test]
+    fn single_object_paginate_binding_loads_and_stores_endpoint_state() {
+        let mut endpoint = SingleObjectEndpoint { page: 1, count: 2 };
+
+        let mut pagination = endpoint.load_pagination();
+        assert_eq!(pagination.page, 1);
+        assert_eq!(pagination.count, 2);
+
+        let ctx = ErrorContext {
+            endpoint: "SingleObjectEndpoint",
+            method: Method::GET,
+        };
+        let applied = <SingleObjectPagePagination as EndpointPagination<Vec<String>>>::apply(
+            &mut pagination,
+            PageApply {
+                endpoint: "SingleObjectEndpoint",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )
+        .expect("pagination apply");
+        assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
+
+        pagination.page = 7;
+        pagination.count = 4;
+        endpoint.store_pagination(&pagination);
+        assert_eq!(endpoint.page, 7);
+        assert_eq!(endpoint.count, 4);
+
+        let mut page_plan_state = endpoint.load_pagination();
+        let page_plan = <SingleObjectPagePagination as EndpointPagination<Vec<String>>>::apply(
+            &mut page_plan_state,
+            PageApply {
+                endpoint: "SingleObjectEndpoint",
+                page_index: 1,
+                ctx: &ctx,
+            },
+        )
+        .expect("pagination apply after store");
+        assert_eq!(page_plan.expected_items_per_page, NonZeroUsize::new(4));
+    }
+
+    #[test]
+    fn single_object_pagination_state_drives_endpoint_planning_order() {
+        #[derive(Clone, Debug)]
+        struct PlannedEndpoint {
+            page: u64,
+            count: u64,
+            load_calls: Arc<AtomicUsize>,
+            plan_calls: Arc<AtomicUsize>,
+        }
+
+        impl Endpoint<TestCx> for PlannedEndpoint {
+            type Response = Vec<String>;
+
+            fn plan(
+                &self,
+                _ctx: &ClientPlanContext<'_, TestCx>,
+            ) -> Result<RequestPlan, ApiClientError> {
+                self.plan_calls.fetch_add(1, Ordering::SeqCst);
+                let mut plan = RequestPlan {
+                    endpoint: crate::endpoint::EndpointPlan {
+                        meta: crate::endpoint::EndpointMeta {
+                            name: "SingleObjectEndpoint",
+                            method: Method::GET,
+                            idempotent: true,
+                            facade_path: &[],
+                        },
+                        route: crate::endpoint::ResolvedRoute::new(
+                            http::uri::Scheme::HTTPS,
+                            "example.com",
+                            "/single-object",
+                        ),
+                        policy: Default::default(),
+                        body: Default::default(),
+                        response: crate::endpoint::ResponsePlan {
+                            accept: None,
+                            no_content: false,
+                            format: crate::codec::Format::Text,
+                            decode: |_resp, ctx| {
+                                Err(ApiClientError::decode_error(
+                                    ctx,
+                                    http::StatusCode::OK,
+                                    None,
+                                    std::io::Error::other("not used in test"),
+                                ))
+                            },
+                        },
+                        pagination: None,
+                    },
+                    args: Default::default(),
+                    overrides: Default::default(),
+                };
+                plan.endpoint
+                    .policy
+                    .query
+                    .push(("page".to_string(), self.page.to_string()));
+                plan.endpoint.policy.headers.insert(
+                    http::header::HeaderName::from_static("x-count"),
+                    http::HeaderValue::from_str(&self.count.to_string())
+                        .expect("valid header value"),
+                );
+                Ok(plan)
+            }
+        }
+
+        impl PaginateBinding<SingleObjectPagePagination> for PlannedEndpoint {
+            fn load_pagination(&self) -> SingleObjectPagePagination {
+                self.load_calls.fetch_add(1, Ordering::SeqCst);
+                SingleObjectPagePagination {
+                    page: self.page,
+                    count: self.count,
+                }
+            }
+
+            fn store_pagination(&mut self, pagination: &SingleObjectPagePagination) {
+                self.page = pagination.page;
+                self.count = pagination.count;
+            }
+        }
+
+        let mut endpoint = PlannedEndpoint {
+            page: 1,
+            count: 2,
+            load_calls: Arc::new(AtomicUsize::new(0)),
+            plan_calls: Arc::new(AtomicUsize::new(0)),
+        };
+        let mut pagination = endpoint.load_pagination();
+        assert_eq!(endpoint.load_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(endpoint.plan_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            <SingleObjectPagePagination as EndpointPagination<Vec<String>>>::progress_key(
+                &pagination
+            ),
+            Some(ProgressKey::U64(1))
+        );
+
+        let ctx = ErrorContext {
+            endpoint: "SingleObjectEndpoint",
+            method: Method::GET,
+        };
+
+        let applied = <SingleObjectPagePagination as EndpointPagination<Vec<String>>>::apply(
+            &mut pagination,
+            PageApply {
+                endpoint: "SingleObjectEndpoint",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )
+        .expect("apply");
+        assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
+
+        endpoint.store_pagination(&pagination);
+        let first_plan = endpoint
+            .plan(&ClientPlanContext {
+                vars: &(),
+                auth_vars: &(),
+            })
+            .expect("first plan");
+        assert_eq!(first_plan.endpoint.policy.query[0].0, "page");
+        assert_eq!(first_plan.endpoint.policy.query[0].1, "1");
+        assert_eq!(first_plan.endpoint.policy.headers["x-count"], "2");
+
+        let decision = <SingleObjectPagePagination as EndpointPagination<Vec<String>>>::advance(
+            &mut pagination,
+            &vec!["a".to_string()],
+            PageAdvance {
+                endpoint: "SingleObjectEndpoint",
+                page_index: 0,
+                received_items: 1,
+            },
+        )
+        .expect("advance");
+        assert_eq!(decision, PageDecision::Continue);
+        assert_eq!(pagination.page, 2);
+        assert_eq!(
+            <SingleObjectPagePagination as EndpointPagination<Vec<String>>>::progress_key(
+                &pagination
+            ),
+            Some(ProgressKey::U64(2))
+        );
+
+        endpoint.store_pagination(&pagination);
+        let second_plan = endpoint
+            .plan(&ClientPlanContext {
+                vars: &(),
+                auth_vars: &(),
+            })
+            .expect("second plan");
+        assert_eq!(second_plan.endpoint.policy.query[0].1, "2");
+        assert_eq!(second_plan.endpoint.policy.headers["x-count"], "2");
+        assert_eq!(endpoint.load_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(endpoint.plan_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(pagination.page, 2);
+        assert_eq!(pagination.count, 2);
     }
 
     #[derive(Clone)]
