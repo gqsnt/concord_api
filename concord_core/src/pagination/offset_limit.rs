@@ -3,7 +3,6 @@ use crate::pagination::{
     EndpointField, EndpointPaginationController, PageAdvance, PageApply, PageApplyResult,
     PageDecision, PageItems, ProgressKey,
 };
-use std::borrow::Cow;
 use std::num::NonZeroUsize;
 
 /// Offset/limit pagination (offset starts at 0 by default).
@@ -14,10 +13,6 @@ use std::num::NonZeroUsize;
 ///   endpoint-state runtime ignores them.
 #[derive(Clone, Debug)]
 pub struct OffsetLimitPagination {
-    /// Legacy compatibility metadata for old snapshots/codepaths.
-    pub offset_key: Cow<'static, str>,
-    /// Legacy compatibility metadata for old snapshots/codepaths.
-    pub limit_key: Cow<'static, str>,
     /// Initial offset value.
     pub offset: u64,
     /// Page size / limit (must be > 0).
@@ -40,8 +35,6 @@ pub struct OffsetLimitState {
 impl Default for OffsetLimitPagination {
     fn default() -> Self {
         Self {
-            offset_key: Cow::from("offset"),
-            limit_key: Cow::from("limit"),
             offset: 0,
             limit: 20,
         }

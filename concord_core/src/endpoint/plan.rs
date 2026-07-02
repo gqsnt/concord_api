@@ -273,8 +273,6 @@ mod tests {
     #[test]
     fn built_in_pagination_plan_metadata_has_no_query_keys() {
         let offset = PaginationPlan::from(OffsetLimitPagination {
-            offset_key: "offset".into(),
-            limit_key: "limit".into(),
             offset: 3,
             limit: 9,
         });
@@ -282,12 +280,8 @@ mod tests {
         assert!(offset_debug.contains("OffsetLimit"));
         assert!(offset_debug.contains("offset: 3"));
         assert!(offset_debug.contains("limit: 9"));
-        assert!(!offset_debug.contains("offset_key"));
-        assert!(!offset_debug.contains("limit_key"));
 
         let paged = PaginationPlan::from(PagedPagination {
-            page_key: "page".into(),
-            per_page_key: "per_page".into(),
             page: 2,
             per_page: 7,
         });
@@ -295,15 +289,40 @@ mod tests {
         assert!(paged_debug.contains("Paged"));
         assert!(paged_debug.contains("page: 2"));
         assert!(paged_debug.contains("per_page: 7"));
+    }
+
+    #[test]
+    fn built_in_pagination_controllers_have_no_query_key_fields() {
+        let offset = OffsetLimitPagination {
+            offset: 3,
+            limit: 9,
+        };
+        let offset_debug = format!("{offset:?}");
+        assert!(!offset_debug.contains("offset_key"));
+        assert!(!offset_debug.contains("limit_key"));
+
+        let paged = PagedPagination {
+            page: 2,
+            per_page: 7,
+        };
+        let paged_debug = format!("{paged:?}");
         assert!(!paged_debug.contains("page_key"));
         assert!(!paged_debug.contains("per_page_key"));
+
+        let cursor = CursorPagination {
+            cursor: Some("start".to_string()),
+            per_page: 5,
+            send_cursor_on_first: true,
+            stop_when_cursor_missing: false,
+        };
+        let cursor_debug = format!("{cursor:?}");
+        assert!(!cursor_debug.contains("cursor_key"));
+        assert!(!cursor_debug.contains("per_page_key"));
     }
 
     #[test]
     fn cursor_pagination_plan_preserves_endpoint_state_flags() {
         let plan = PaginationPlan::cursor::<Vec<String>>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "per_page".into(),
             cursor: Some("start".to_string()),
             per_page: 5,
             send_cursor_on_first: true,
@@ -328,7 +347,5 @@ mod tests {
         }
 
         assert!(debug.contains("Cursor"));
-        assert!(!debug.contains("cursor_key"));
-        assert!(!debug.contains("per_page_key"));
     }
 }

@@ -1,4 +1,4 @@
-error: unknown pagination field `cursor` for OffsetLimitPagination; allowed fields: offset_key, limit_key, offset, limit
+error: unknown pagination field `cursor` for OffsetLimitPagination; allowed fields: offset, limit
   --> tests/trybuild/fail/pagination/pagination_unknown_field.rs:15:9
    |
 15 |         cursor = start,

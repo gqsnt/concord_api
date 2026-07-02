@@ -1,4 +1,4 @@
-error: unknown pagination field `stop` for CursorPagination; allowed fields: cursor_key, per_page_key, cursor, per_page, send_cursor_on_first, stop_when_cursor_missing
+error: unknown pagination field `stop` for CursorPagination; allowed fields: cursor, per_page, send_cursor_on_first, stop_when_cursor_missing
   --> tests/trybuild/fail/pagination/removed_stop_field.rs:15:13
    |
 15 |             stop = true

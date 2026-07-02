@@ -300,16 +300,9 @@ fn validate_paginate_assignment_key(kind: PaginationControllerKind, key: &Ident)
     }
     let key_name = key.to_string();
     let allowed: &[&str] = match kind {
-        PaginationControllerKind::OffsetLimit => &["offset_key", "limit_key", "offset", "limit"],
-        PaginationControllerKind::Cursor => &[
-            "cursor_key",
-            "per_page_key",
-            "cursor",
-            "per_page",
-            "send_cursor_on_first",
-            "stop_when_cursor_missing",
-        ],
-        PaginationControllerKind::Paged => &["page_key", "per_page_key", "page", "per_page"],
+        PaginationControllerKind::OffsetLimit => &["offset", "limit"],
+        PaginationControllerKind::Cursor => &["cursor", "per_page", "send_cursor_on_first", "stop_when_cursor_missing"],
+        PaginationControllerKind::Paged => &["page", "per_page"],
         PaginationControllerKind::Custom | PaginationControllerKind::CustomEndpointState => &[],
     };
     if allowed.contains(&key_name.as_str()) {

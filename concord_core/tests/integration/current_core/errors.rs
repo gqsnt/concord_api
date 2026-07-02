@@ -801,8 +801,6 @@ async fn pagination_error_is_distinct_and_safe() {
         .request(CursorItemsEndpoint {
             policy: rate_policy(),
             pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-                cursor_key: "cursor".into(),
-                per_page_key: "limit".into(),
                 cursor: Some("start".to_string()),
                 per_page: 2,
                 send_cursor_on_first: true,

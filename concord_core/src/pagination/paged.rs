@@ -4,17 +4,11 @@ use crate::pagination::{
     EndpointField, EndpointPaginationController, PageAdvance, PageApply, PageApplyResult,
     PageDecision, PageItems, ProgressKey,
 };
-use std::borrow::Cow;
 use std::num::NonZeroUsize;
 
 /// Page/per_page pagination (page starts at 1 by default).
 #[derive(Clone, Debug)]
 pub struct PagedPagination {
-    /// Legacy compatibility metadata for old snapshots/codepaths.
-    pub page_key: Cow<'static, str>,
-    /// Legacy compatibility metadata for old snapshots/codepaths.
-    pub per_page_key: Cow<'static, str>,
-
     /// Initial page number.
     pub page: u64,
     /// Page size (must be > 0).
@@ -24,8 +18,6 @@ pub struct PagedPagination {
 impl Default for PagedPagination {
     fn default() -> Self {
         Self {
-            page_key: Cow::from("page"),
-            per_page_key: Cow::from("per_page"),
             page: 1,
             per_page: 20,
         }

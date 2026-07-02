@@ -547,8 +547,6 @@ impl Default for CursorItemsEndpoint {
             count: 2,
             policy: Default::default(),
             pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-                cursor_key: "cursor".into(),
-                per_page_key: "limit".into(),
                 cursor: Some("start".to_string()),
                 per_page: 2,
                 send_cursor_on_first: false,

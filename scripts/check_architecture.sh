@@ -81,6 +81,15 @@ if "${RG[@]}" 'PaginationPlan::OffsetLimit\s*\{[^}]*offset_key|PaginationPlan::O
   fail_with_matches "concord_core/src/endpoint/plan.rs must not retain built-in pagination query-key metadata." "$built_in_pagination_metadata_refs"
 fi
 
+section "built-in controller key-field fence"
+built_in_controller_key_refs="$tmpdir/built_in_controller_key.refs"
+if "${RG[@]}" 'pub (offset_key|limit_key|page_key|per_page_key|cursor_key):' \
+  concord_core/src/pagination/offset_limit.rs \
+  concord_core/src/pagination/paged.rs \
+  concord_core/src/pagination/cursor.rs >"$built_in_controller_key_refs" 2>/dev/null; then
+  fail_with_matches "concord_core built-in pagination controllers must not expose inert query-key fields." "$built_in_controller_key_refs"
+fi
+
 section "legacy custom codegen fence"
 legacy_custom_codegen_refs="$tmpdir/legacy_custom_codegen.refs"
 if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom|PaginationControllerResolved::Custom\b' concord_macros/src/codegen/endpoints/endpoint.rs >"$legacy_custom_codegen_refs" 2>/dev/null; then

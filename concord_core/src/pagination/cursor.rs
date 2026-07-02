@@ -3,7 +3,6 @@ use crate::pagination::{
     EndpointField, EndpointPaginationController, PageAdvance, PageApply, PageApplyResult,
     PageDecision, PageItems, ProgressKey,
 };
-use std::borrow::Cow;
 use std::num::NonZeroUsize;
 
 /// Output helper trait for cursor pagination.
@@ -28,11 +27,6 @@ impl<T: Send + 'static> HasNextCursor for Vec<T> {
 /// - response: provides a "next cursor"
 #[derive(Clone, Debug)]
 pub struct CursorPagination {
-    /// Legacy compatibility metadata for old snapshots/codepaths.
-    pub cursor_key: Cow<'static, str>,
-    /// Legacy compatibility metadata for old snapshots/codepaths.
-    pub per_page_key: Cow<'static, str>,
-
     /// Initial cursor (usually None).
     pub cursor: Option<String>,
     /// Page size (must be > 0).
@@ -48,8 +42,6 @@ pub struct CursorPagination {
 impl Default for CursorPagination {
     fn default() -> Self {
         Self {
-            cursor_key: Cow::from("cursor"),
-            per_page_key: Cow::from("per_page"),
             cursor: None,
             per_page: 20,
             send_cursor_on_first: false,

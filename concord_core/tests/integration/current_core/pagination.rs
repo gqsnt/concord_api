@@ -664,6 +664,103 @@ async fn custom_endpoint_state_pagination_renders_endpoint_fields() -> Result<()
 }
 
 #[tokio::test]
+async fn endpoint_state_custom_pagination_reports_progress_and_typed_errors()
+-> Result<(), ApiClientError> {
+    let endpoint = HeaderBoundCustomEndpoint {
+        page: 1,
+        count: 2,
+        pagination: None,
+    };
+    let bindings = HeaderBoundCustomBindings {
+        page: EndpointField::new(
+            |ep: &HeaderBoundCustomEndpoint| ep.page,
+            |ep: &mut HeaderBoundCustomEndpoint, value| ep.page = value,
+        ),
+        count: EndpointField::new(
+            |ep: &HeaderBoundCustomEndpoint| ep.count,
+            |ep: &mut HeaderBoundCustomEndpoint, value| ep.count = value,
+        ),
+    };
+    let ctx = concord_core::error::ErrorContext {
+        endpoint: "HeaderBoundCustom",
+        method: Method::GET,
+    };
+    let controller = HeaderBoundCustomPagination;
+    let mut runtime = EndpointPaginationRuntimeAdapter::new(controller, bindings);
+
+    runtime
+        .init(
+            &endpoint,
+            PageApply {
+                endpoint: "HeaderBoundCustom",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )
+        .expect("endpoint-state custom init");
+    assert_eq!(runtime.progress_key(), Some(ProgressKey::U64(1)));
+
+    let mut endpoint = endpoint;
+    let applied = runtime
+        .apply(
+            &mut endpoint,
+            PageApply {
+                endpoint: "HeaderBoundCustom",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )
+        .expect("endpoint-state custom apply");
+    assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
+    assert_eq!(endpoint.page, 1);
+    assert_eq!(endpoint.count, 2);
+
+    let decision = runtime
+        .advance(
+            &ctx,
+            &vec!["a".to_string()],
+            PageAdvance {
+                endpoint: "HeaderBoundCustom",
+                page_index: 0,
+                received_items: 1,
+            },
+        )
+        .expect("endpoint-state custom advance");
+    assert_eq!(decision, PageDecision::Continue);
+    assert_eq!(runtime.progress_key(), Some(ProgressKey::U64(2)));
+
+    let zero_count = HeaderBoundCustomEndpoint {
+        page: 1,
+        count: 0,
+        pagination: None,
+    };
+    let zero_bindings = HeaderBoundCustomBindings {
+        page: EndpointField::new(
+            |ep: &HeaderBoundCustomEndpoint| ep.page,
+            |ep: &mut HeaderBoundCustomEndpoint, value| ep.page = value,
+        ),
+        count: EndpointField::new(
+            |ep: &HeaderBoundCustomEndpoint| ep.count,
+            |ep: &mut HeaderBoundCustomEndpoint, value| ep.count = value,
+        ),
+    };
+    let mut zero_runtime =
+        EndpointPaginationRuntimeAdapter::new(HeaderBoundCustomPagination, zero_bindings);
+    assert!(matches!(
+        zero_runtime.init(
+            &zero_count,
+            PageApply {
+                endpoint: "HeaderBoundCustom",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        ),
+        Err(ApiClientError::Pagination { .. })
+    ));
+    Ok(())
+}
+
+#[tokio::test]
 
 async fn generated_custom_endpoint_state_collect_renders_endpoint_fields()
 -> Result<(), ApiClientError> {
@@ -1004,8 +1101,6 @@ async fn cursor_pagination_collects_until_cursor_missing() -> Result<(), ApiClie
         cursor: Some("start".to_string()),
         count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "limit".into(),
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: true,
@@ -1055,8 +1150,6 @@ async fn cursor_endpoint_state_mutation_renders_endpoint_fields() -> Result<(), 
         cursor: Some("start".to_string()),
         count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "limit".into(),
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: false,
@@ -1146,8 +1239,6 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
         cursor: Some("start".to_string()),
         count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "limit".into(),
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: true,
@@ -1197,8 +1288,6 @@ async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
         cursor: Some("start-a".to_string()),
         count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "limit".into(),
             cursor: Some("start-a".to_string()),
             per_page: 2,
             send_cursor_on_first: true,
@@ -1245,8 +1334,6 @@ async fn cursor_pagination_missing_cursor_without_stop_is_non_progress_error() {
         cursor: None,
         count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "limit".into(),
             cursor: None,
             per_page: 2,
             send_cursor_on_first: false,
@@ -1725,8 +1812,6 @@ async fn loop_detection_still_default_enabled() {
         cursor: Some("start".to_string()),
         count: 2,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "limit".into(),
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: true,
@@ -1882,8 +1967,6 @@ async fn collect_cursor_short_page_stops_even_with_next_cursor() -> Result<(), A
         cursor: Some("start".to_string()),
         count: 100,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "limit".into(),
             cursor: Some("start".to_string()),
             per_page: 100,
             send_cursor_on_first: true,
@@ -1919,8 +2002,6 @@ async fn collect_cursor_empty_page_stops_even_with_next_cursor() -> Result<(), A
         cursor: Some("start".to_string()),
         count: 100,
         pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
-            cursor_key: "cursor".into(),
-            per_page_key: "limit".into(),
             cursor: Some("start".to_string()),
             per_page: 100,
             send_cursor_on_first: true,
