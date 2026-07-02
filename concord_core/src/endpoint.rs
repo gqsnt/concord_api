@@ -16,7 +16,7 @@ use std::pin::Pin;
 pub mod plan;
 #[allow(unused_imports)]
 pub use plan::{
-    AttemptState, BodyPlan, CursorNextFn, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
+    AttemptState, BodyPlan, EndpointMeta, EndpointPlan, PaginationMarker, RequestArgs,
     RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute, ResponsePlan,
 };
 

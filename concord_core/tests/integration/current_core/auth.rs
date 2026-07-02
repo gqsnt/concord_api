@@ -1432,7 +1432,9 @@ impl Endpoint<RecordingAuthCx> for TextEndpoint {
             self.method.clone(),
             self.path,
             self.policy.clone(),
-            self.pagination.clone(),
+            self.pagination
+                .as_ref()
+                .map(|_| concord_core::internal::PaginationMarker),
             decode_string,
         ))
     }
@@ -1532,7 +1534,9 @@ impl Endpoint<PolicyAuthCx> for TextEndpoint {
             self.method.clone(),
             self.path,
             self.policy.clone(),
-            self.pagination.clone(),
+            self.pagination
+                .as_ref()
+                .map(|_| concord_core::internal::PaginationMarker),
             decode_string,
         ))
     }
@@ -1644,7 +1648,9 @@ impl Endpoint<RotatingPolicyAuthCx> for TextEndpoint {
             self.method.clone(),
             self.path,
             self.policy.clone(),
-            self.pagination.clone(),
+            self.pagination
+                .as_ref()
+                .map(|_| concord_core::internal::PaginationMarker),
             decode_string,
         ))
     }
@@ -1961,7 +1967,9 @@ impl Endpoint<SlotAuthCx> for TextEndpoint {
             self.method.clone(),
             self.path,
             self.policy.clone(),
-            self.pagination.clone(),
+            self.pagination
+                .as_ref()
+                .map(|_| concord_core::internal::PaginationMarker),
             decode_string,
         ))
     }

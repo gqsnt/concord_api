@@ -187,14 +187,6 @@ mod tests {
         ["Cursor", "Bindings"].concat()
     }
 
-    fn legacy_builtin_pagination_plan_from() -> String {
-        ["PaginationPlan", "::", "from"].concat()
-    }
-
-    fn legacy_builtin_pagination_plan_cursor() -> String {
-        ["PaginationPlan", "::", "cursor"].concat()
-    }
-
     fn generated_doc_attrs(expanded: &str) -> Vec<&str> {
         let mut docs = Vec::new();
         let mut rest = expanded;
@@ -1014,9 +1006,13 @@ mod tests {
                 ":: concord_core :: internal :: ResolvedRoute",
                 ":: concord_core :: internal :: ResolvedPolicy",
                 ":: concord_core :: internal :: ResponsePlan",
-                "let __pagination_plan = :: core :: option :: Option :: None",
+                "let __pagination_plan = :: core :: option :: Option :: Some",
+                "PaginationMarker",
             ],
         );
+        assert!(!out.contains("PaginationPlan"));
+        assert!(!out.contains("PaginationPlan :: from"));
+        assert!(!out.contains("PaginationPlan :: cursor"));
     }
 
     #[test]
@@ -1242,9 +1238,9 @@ mod tests {
     }
 
     #[test]
-    fn generated_pagination_plan_snapshot_contains_all_controller_shapes() {
+    fn generated_pagination_marker_snapshot_contains_all_controller_shapes() {
         let out = expanded(quote! {
-            client PaginationPlanApi {
+            client PaginationModelApi {
                 base "https://example.com"
             }
 
@@ -1291,11 +1287,13 @@ mod tests {
                 "single_object_pagination",
                 "SingleObjectPaginationRuntimeAdapter",
                 ":: concord_core :: advanced :: PaginateBinding",
-                "let __pagination_plan = :: core :: option :: Option :: None",
+                "let __pagination_plan = :: core :: option :: Option :: Some",
+                "PaginationMarker",
             ],
         );
-        assert!(!out.contains(&legacy_builtin_pagination_plan_from()));
-        assert!(!out.contains(&legacy_builtin_pagination_plan_cursor()));
+        assert!(!out.contains("PaginationPlan"));
+        assert!(!out.contains("PaginationPlan :: from"));
+        assert!(!out.contains("PaginationPlan :: cursor"));
     }
 
     #[test]
@@ -1808,11 +1806,32 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "let __pagination_plan = :: core :: option :: Option :: None",
+                "let __pagination_plan = :: core :: option :: Option :: Some",
                 "single_object_pagination",
                 "PaginateBinding",
+                "PaginationMarker",
             ],
         );
+    }
+
+    #[test]
+    fn generated_non_paginated_endpoint_sets_pagination_plan_none() {
+        let out = expanded(quote! {
+            client SnapshotNoPagination {
+                base "https://example.com"
+            }
+
+            GET Ping()
+                path ["ping"]
+                -> Json<String>
+        });
+
+        assert_contains_all(
+            &out,
+            &["let __pagination_plan = :: core :: option :: Option :: None"],
+        );
+        assert!(!out.contains("PaginationMarker"));
+        assert!(!out.contains("PaginationPlan"));
     }
 
     #[test]
@@ -2106,9 +2125,12 @@ mod tests {
             !out.contains(&legacy_endpoint_field()),
             "removed endpoint-state binding helpers must not appear in generated output"
         );
-        assert!(
-            !out.contains(&["PaginationPlan", "::", "custom"].concat()),
-            "single-object pagination should not require custom-plan metadata"
+        assert_contains_all(
+            &out,
+            &[
+                "let __pagination_plan = :: core :: option :: Option :: Some",
+                "PaginationMarker",
+            ],
         );
     }
 

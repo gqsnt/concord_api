@@ -2,8 +2,8 @@ use super::common::{MockResponse, MockTransport, TestAuthVars, TestCx, decode_st
 use bytes::{Bytes, BytesMut};
 use concord_core::advanced::{ContentType, FormData, Mixed, MultipartFormat, RawResponsePart};
 use concord_core::internal::{
-    BodyPlan, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs, RequestOverrides,
-    RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
+    ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClient, ApiClientError};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -452,10 +452,7 @@ async fn multipart_no_content_and_pagination_plans_are_rejected_before_transport
 
     let mut paginated =
         multipart_response_plan::<Mixed>("MultipartPagination", "/multipart-pagination");
-    paginated.endpoint.pagination = Some(PaginationPlan::Paged {
-        page: 1,
-        per_page: 10,
-    });
+    paginated.endpoint.pagination = Some(concord_core::internal::PaginationMarker);
     let err = client
         .execute_plan_multipart::<RawResponsePart, Mixed>(paginated)
         .await

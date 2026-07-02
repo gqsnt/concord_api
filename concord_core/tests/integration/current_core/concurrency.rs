@@ -8,7 +8,7 @@ use concord_core::advanced::{
     RequestMeta, Transport, TransportBody, TransportError, TransportErrorKind, TransportRequest,
     TransportResponse, apply_secret_credential,
 };
-use concord_core::internal::{PaginationPlan, ResolvedPolicy};
+use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{
     AccessToken, ApiClient, ApiClientError, ClientContext, CursorPagination, Endpoint,
     PaginationTermination,
@@ -645,7 +645,7 @@ async fn concurrent_pagination_runs_keep_independent_state() -> Result<(), ApiCl
                     policy: Default::default(),
                     page: 1,
                     count: 2,
-                    pagination: PaginationPlan::Paged {
+                    pagination: PaginationVariant::Paged {
                         page: 1,
                         per_page: 2,
                     },
@@ -662,7 +662,7 @@ async fn concurrent_pagination_runs_keep_independent_state() -> Result<(), ApiCl
             client
                 .request(CursorItemsEndpoint {
                     policy: Default::default(),
-                    pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+                    pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
                         cursor: Some("start".to_string()),
                         per_page: 2,
                         send_cursor_on_first: true,
@@ -967,7 +967,9 @@ impl Endpoint<SingleFlightCx> for TextEndpoint {
             self.method.clone(),
             self.path,
             self.policy.clone(),
-            self.pagination.clone(),
+            self.pagination
+                .as_ref()
+                .map(|_| concord_core::internal::PaginationMarker),
             decode_string,
         ))
     }

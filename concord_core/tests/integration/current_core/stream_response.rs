@@ -568,10 +568,7 @@ async fn stream_response_pagination_is_rejected_before_transport() {
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
     let mut plan = empty_response_plan("RawStreamPagination", "/raw-stream-pagination");
-    plan.endpoint.pagination = Some(concord_core::internal::PaginationPlan::Paged {
-        page: 1,
-        per_page: 10,
-    });
+    plan.endpoint.pagination = Some(concord_core::internal::PaginationMarker);
 
     let err = client
         .execute_plan_stream::<OctetStream>(plan)

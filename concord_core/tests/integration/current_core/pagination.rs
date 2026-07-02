@@ -5,7 +5,6 @@ use concord_core::advanced::{
     RateLimitResponseAction, RateLimitResponseContext, RateLimiter, SingleObjectPaginationRuntime,
     SingleObjectPaginationRuntimeAdapter,
 };
-use concord_core::internal::PaginationPlan;
 use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
     PaginationTermination,
@@ -50,7 +49,7 @@ struct DynamicRequestMutationState {
 struct HeaderBoundCustomEndpoint {
     page: u64,
     count: u64,
-    pagination: Option<PaginationPlan>,
+    pagination: Option<PaginationVariant>,
 }
 
 impl Endpoint<TestCx> for HeaderBoundCustomEndpoint {
@@ -65,7 +64,7 @@ impl Endpoint<TestCx> for HeaderBoundCustomEndpoint {
             Method::GET,
             "/header-custom",
             Default::default(),
-            self.pagination.clone(),
+            Some(concord_core::internal::PaginationMarker),
             decode_items,
         );
         plan.endpoint.policy.headers.insert(
@@ -224,7 +223,7 @@ impl PaginateBinding<HeaderBoundCustomPagination> for HeaderBoundCustomEndpoint 
 struct HeaderBoundOffsetLimitEndpoint {
     start: u64,
     count: u64,
-    pagination: PaginationPlan,
+    pagination: PaginationVariant,
 }
 
 impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
@@ -239,7 +238,7 @@ impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
             Method::GET,
             "/header-offset-limit",
             Default::default(),
-            Some(self.pagination.clone()),
+            Some(concord_core::internal::PaginationMarker),
             decode_items,
         );
         plan.endpoint.policy.headers.insert(
@@ -288,7 +287,7 @@ impl PaginateBinding<concord_core::advanced::OffsetLimitPagination>
 struct HeaderBoundPagedEndpoint {
     page: u64,
     count: u64,
-    pagination: PaginationPlan,
+    pagination: PaginationVariant,
 }
 
 impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
@@ -303,7 +302,7 @@ impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
             Method::GET,
             "/header-paged",
             Default::default(),
-            Some(self.pagination.clone()),
+            Some(concord_core::internal::PaginationMarker),
             decode_items,
         );
         plan.endpoint.policy.headers.insert(
@@ -350,7 +349,7 @@ impl PaginateBinding<concord_core::advanced::PagedPagination> for HeaderBoundPag
 struct HeaderBoundCursorEndpoint {
     cursor: Option<String>,
     count: u64,
-    pagination: PaginationPlan,
+    pagination: PaginationVariant,
 }
 
 impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
@@ -365,7 +364,7 @@ impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
             Method::GET,
             "/header-cursor",
             Default::default(),
-            Some(self.pagination.clone()),
+            Some(concord_core::internal::PaginationMarker),
             decode_cursor_items,
         );
         if let Some(cursor) = &self.cursor {
@@ -401,7 +400,7 @@ impl PaginateBinding<concord_core::advanced::CursorPagination<String>>
 {
     fn load_pagination(&self) -> concord_core::advanced::CursorPagination<String> {
         let (send_cursor_on_first, stop_when_cursor_missing) = match &self.pagination {
-            PaginationPlan::Cursor {
+            PaginationVariant::Cursor {
                 send_cursor_on_first,
                 stop_when_cursor_missing,
                 ..
@@ -426,7 +425,7 @@ impl PaginateBinding<concord_core::advanced::CursorPagination<String>>
 struct QueryBoundPagedEndpoint {
     page: u64,
     count: u64,
-    pagination: PaginationPlan,
+    pagination: PaginationVariant,
 }
 
 impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
@@ -441,7 +440,7 @@ impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
             Method::GET,
             "/query-paged",
             Default::default(),
-            Some(self.pagination.clone()),
+            Some(concord_core::internal::PaginationMarker),
             decode_items,
         );
         plan.endpoint
@@ -478,7 +477,7 @@ struct PaginationEndpoint {
     name: &'static str,
     path: &'static str,
     policy: concord_core::internal::ResolvedPolicy,
-    pagination: Option<PaginationPlan>,
+    pagination: Option<PaginationVariant>,
 }
 
 impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::Endpoint<Cx>
@@ -495,7 +494,9 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::Endpoint<C
             Method::GET,
             self.path,
             self.policy.clone(),
-            self.pagination.clone(),
+            self.pagination
+                .as_ref()
+                .map(|_| concord_core::internal::PaginationMarker),
             decode_items,
         ))
     }
@@ -860,7 +861,7 @@ async fn offset_limit_single_object_pagination_advances_offset() -> Result<(), A
     let endpoint = HeaderBoundOffsetLimitEndpoint {
         start: 0,
         count: 2,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -928,7 +929,7 @@ async fn paged_single_object_pagination_advances_page() -> Result<(), ApiClientE
     let endpoint = HeaderBoundPagedEndpoint {
         page: 1,
         count: 2,
-        pagination: PaginationPlan::Paged {
+        pagination: PaginationVariant::Paged {
             page: 1,
             per_page: 2,
         },
@@ -997,7 +998,7 @@ async fn single_object_pagination_requires_runtime_support_when_missing()
     let endpoint = QueryBoundPagedEndpoint {
         page: 1,
         count: 2,
-        pagination: PaginationPlan::Paged {
+        pagination: PaginationVariant::Paged {
             page: 1,
             per_page: 2,
         },
@@ -1031,7 +1032,7 @@ async fn retry_on_page_n_does_not_advance_page_state() -> Result<(), ApiClientEr
 
     let endpoint = ItemsEndpoint {
         policy: retry_policy(2),
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -1084,7 +1085,7 @@ async fn offset_pagination_collects_page_items_without_has_next_cursor()
 
     let endpoint = PageOnlyItemsEndpoint {
         policy: Default::default(),
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -1122,7 +1123,7 @@ async fn cursor_single_object_omits_initial_cursor_when_send_cursor_on_first_fal
     let endpoint = HeaderBoundCursorEndpoint {
         cursor: Some("start".to_string()),
         count: 2,
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: false,
@@ -1181,7 +1182,7 @@ async fn cursor_single_object_sends_initial_cursor_when_send_cursor_on_first_tru
     let endpoint = HeaderBoundCursorEndpoint {
         cursor: Some("start".to_string()),
         count: 2,
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: true,
@@ -1242,7 +1243,7 @@ async fn cursor_string_single_object_pagination_advances_cursor() -> Result<(), 
     let endpoint = HeaderBoundCursorEndpoint {
         cursor: Some("start".to_string()),
         count: 2,
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: false,
@@ -1290,7 +1291,7 @@ async fn cursor_string_single_object_pagination_preserves_empty_cursor()
         cursor: Some("start".to_string()),
         count: 2,
         policy: Default::default(),
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: true,
@@ -1361,7 +1362,7 @@ async fn cursor_string_single_object_pagination_requires_runtime_support_when_mi
 
     let endpoint = NoHintItemsEndpoint {
         policy: Default::default(),
-        pagination: PaginationPlan::Paged {
+        pagination: PaginationVariant::Paged {
             page: 1,
             per_page: 2,
         },
@@ -1397,7 +1398,7 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
         policy: Default::default(),
         cursor: Some("start".to_string()),
         count: 2,
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: true,
@@ -1446,7 +1447,7 @@ async fn cursor_pagination_cyclic_cursor_returns_non_progress_error() {
         policy: Default::default(),
         cursor: Some("start-a".to_string()),
         count: 2,
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: Some("start-a".to_string()),
             per_page: 2,
             send_cursor_on_first: true,
@@ -1489,7 +1490,7 @@ async fn cursor_pagination_missing_cursor_without_stop_is_non_progress_error() {
         policy: Default::default(),
         cursor: None,
         count: 2,
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: None,
             per_page: 2,
             send_cursor_on_first: false,
@@ -1529,7 +1530,7 @@ async fn paged_pagination_collects_page_items_without_has_next_cursor() -> Resul
         policy: Default::default(),
         page: 1,
         count: 2,
-        pagination: PaginationPlan::Paged {
+        pagination: PaginationVariant::Paged {
             page: 1,
             per_page: 2,
         },
@@ -1567,7 +1568,7 @@ async fn paged_pagination_uses_page_numbers() -> Result<(), ApiClientError> {
         policy: Default::default(),
         start: 1,
         count: 2,
-        pagination: PaginationPlan::Paged {
+        pagination: PaginationVariant::Paged {
             page: 1,
             per_page: 2,
         },
@@ -1603,7 +1604,7 @@ async fn hard_page_cap_zero_errors_before_transport() {
         policy: Default::default(),
         start: 0,
         count: 20,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -1634,7 +1635,7 @@ async fn hard_item_cap_zero_errors_before_transport() {
         policy: Default::default(),
         start: 0,
         count: 20,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -1665,7 +1666,7 @@ async fn take_pages_zero_returns_empty_without_transport() -> Result<(), ApiClie
         policy: Default::default(),
         start: 0,
         count: 2,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -1695,7 +1696,7 @@ async fn take_items_zero_returns_empty_without_transport() -> Result<(), ApiClie
         policy: Default::default(),
         start: 0,
         count: 2,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -1733,7 +1734,7 @@ async fn take_items_truncates_final_page() -> Result<(), ApiClientError> {
         policy: Default::default(),
         start: 0,
         count: 20,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 20,
         },
@@ -1771,7 +1772,7 @@ async fn take_items_less_than_first_page_sends_one_page() -> Result<(), ApiClien
         policy: Default::default(),
         start: 0,
         count: 20,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 20,
         },
@@ -1809,7 +1810,7 @@ async fn take_items_exact_boundary_stops_without_extra_page() -> Result<(), ApiC
         policy: Default::default(),
         start: 0,
         count: 2,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 20,
         },
@@ -1871,7 +1872,7 @@ async fn take_pages_stops_without_error() -> Result<(), ApiClientError> {
         policy: Default::default(),
         start: 0,
         count: 2,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -1916,7 +1917,7 @@ async fn hard_page_cap_errors_without_fetching_extra_page() {
         policy: Default::default(),
         start: 0,
         count: 2,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -1952,7 +1953,7 @@ async fn hard_item_cap_errors_without_truncating() {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 20,
         },
@@ -1989,7 +1990,7 @@ async fn loop_detection_still_default_enabled() {
         policy: Default::default(),
         cursor: Some("start".to_string()),
         count: 2,
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: Some("start".to_string()),
             per_page: 2,
             send_cursor_on_first: true,
@@ -2019,7 +2020,7 @@ async fn max_items_error_includes_page_context() {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 3,
         },
@@ -2051,7 +2052,7 @@ async fn collect_offset_short_first_page_stops_via_runtime() -> Result<(), ApiCl
         policy: Default::default(),
         start: 0,
         count: 100,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 100,
         },
@@ -2081,7 +2082,7 @@ async fn collect_offset_empty_first_page_stops_via_runtime() -> Result<(), ApiCl
         policy: Default::default(),
         start: 0,
         count: 100,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 100,
         },
@@ -2111,7 +2112,7 @@ async fn collect_paged_short_page_stops_via_runtime() -> Result<(), ApiClientErr
         policy: Default::default(),
         page: 1,
         count: 100,
-        pagination: PaginationPlan::Paged {
+        pagination: PaginationVariant::Paged {
             page: 1,
             per_page: 100,
         },
@@ -2144,7 +2145,7 @@ async fn collect_cursor_short_page_stops_even_with_next_cursor() -> Result<(), A
         policy: Default::default(),
         cursor: Some("start".to_string()),
         count: 100,
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: Some("start".to_string()),
             per_page: 100,
             send_cursor_on_first: true,
@@ -2179,7 +2180,7 @@ async fn collect_cursor_empty_page_stops_even_with_next_cursor() -> Result<(), A
         policy: Default::default(),
         cursor: Some("start".to_string()),
         count: 100,
-        pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
             cursor: Some("start".to_string()),
             per_page: 100,
             send_cursor_on_first: true,
@@ -2211,7 +2212,7 @@ async fn take_items_short_page_returns_short_page_under_limit() -> Result<(), Ap
         policy: Default::default(),
         start: 0,
         count: 100,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 100,
         },
@@ -2241,7 +2242,7 @@ async fn hard_item_cap_short_page_success_under_cap() -> Result<(), ApiClientErr
         policy: Default::default(),
         start: 0,
         count: 100,
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 100,
         },
@@ -2275,7 +2276,7 @@ async fn hard_item_cap_still_errors_before_short_stop_when_page_exceeds_cap() {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 90,
         },
@@ -2303,7 +2304,7 @@ async fn take_items_exact_limit_still_wins_before_short_stop() -> Result<(), Api
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 100,
         },
@@ -2336,7 +2337,7 @@ async fn max_pages_error_includes_seen_items() {
 
     let endpoint = ItemsEndpoint {
         policy: Default::default(),
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },
@@ -2379,7 +2380,7 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
 
     let endpoint = ItemsEndpoint {
         policy: auth_policy(AuthPlacement::Bearer),
-        pagination: PaginationPlan::OffsetLimit {
+        pagination: PaginationVariant::OffsetLimit {
             offset: 0,
             limit: 2,
         },

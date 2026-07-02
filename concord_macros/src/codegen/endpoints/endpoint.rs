@@ -500,9 +500,15 @@ fn emit_endpoint_plan_route_policy(
 
 
 fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
-    let _ = ep;
-    quote! {
-        let __pagination_plan = ::core::option::Option::None;
+    if ep.paginate.is_some() {
+        quote! {
+            let __pagination_plan =
+                ::core::option::Option::Some(::concord_core::internal::PaginationMarker);
+        }
+    } else {
+        quote! {
+            let __pagination_plan = ::core::option::Option::None;
+        }
     }
 }
 

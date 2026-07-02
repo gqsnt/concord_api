@@ -1,4 +1,3 @@
-use crate::endpoint::PaginationPlan;
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
     EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
@@ -87,13 +86,4 @@ fn validate_paged_page(value: u64, ctx: &ErrorContext) -> Result<(), ApiClientEr
         });
     }
     Ok(())
-}
-
-impl From<PagedPagination> for PaginationPlan {
-    fn from(value: PagedPagination) -> Self {
-        Self::Paged {
-            page: value.page,
-            per_page: value.per_page,
-        }
-    }
 }

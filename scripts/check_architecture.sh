@@ -15,8 +15,10 @@ fi
 
 if command -v rg >/dev/null 2>&1; then
   RG=(rg)
+  FILTER=(rg -v)
 else
   RG=(grep -R -n -E)
+  FILTER=(grep -n -E -v)
 fi
 
 tmpdir="$(mktemp -d)"
@@ -93,8 +95,17 @@ fi
 section "removed custom pagination plan fence"
 custom_plan_refs="$tmpdir/custom_plan.refs"
 if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom|PaginationPlan::from|PaginationPlan :: from|PaginationPlan::cursor|PaginationPlan :: cursor' \
-  concord_macros/src/codegen concord_macros/tests concord_examples/src docs dev_doc >"$custom_plan_refs" 2>/dev/null; then
+  concord_macros/src/codegen concord_macros/tests concord_examples/src docs dev_doc \
+  | "${FILTER[@]}" 'contains\("PaginationPlan(::| :: )(custom|from|cursor)"\)' >"$custom_plan_refs" 2>/dev/null; then
   fail_with_matches "removed custom or built-in pagination plan output must not reappear." "$custom_plan_refs"
+fi
+
+section "removed built-in pagination plan model fence"
+builtin_plan_model_refs="$tmpdir/builtin_plan_model.refs"
+if "${RG[@]}" '\bPaginationPlan\b|CursorNextFn' \
+  concord_core/src concord_core/tests concord_macros/src/codegen concord_macros/tests concord_examples/src docs dev_doc \
+  | "${FILTER[@]}" 'contains\("PaginationPlan(::| :: )(custom|from|cursor)"\)|contains\("PaginationPlan"\)' >"$builtin_plan_model_refs" 2>/dev/null; then
+  fail_with_matches "removed built-in pagination plan model must not reappear in active surfaces." "$builtin_plan_model_refs"
 fi
 
 section "macro pagination controller taxonomy fence"

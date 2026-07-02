@@ -11,7 +11,7 @@ use concord_core::advanced::{
     apply_basic_credential,
 };
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs,
+    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestArgs,
     RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{
@@ -92,6 +92,36 @@ impl Default for TestAuthVars {
 
 #[derive(Clone)]
 pub struct TestCx;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PaginationVariant {
+    OffsetLimit {
+        offset: u64,
+        limit: u64,
+    },
+    Paged {
+        page: u64,
+        per_page: u64,
+    },
+    Cursor {
+        cursor: Option<String>,
+        per_page: u64,
+        send_cursor_on_first: bool,
+        stop_when_cursor_missing: bool,
+    },
+}
+
+impl PaginationVariant {
+    pub fn cursor<Page>(value: CursorPagination) -> Self {
+        let _ = std::marker::PhantomData::<Page>;
+        Self::Cursor {
+            cursor: value.cursor,
+            per_page: value.per_page,
+            send_cursor_on_first: value.send_cursor_on_first,
+            stop_when_cursor_missing: value.stop_when_cursor_missing,
+        }
+    }
+}
 
 impl ClientContext for TestCx {
     type Vars = ();
@@ -194,7 +224,7 @@ pub struct TextEndpoint {
     pub method: Method,
     pub path: &'static str,
     pub policy: ResolvedPolicy,
-    pub pagination: Option<PaginationPlan>,
+    pub pagination: Option<PaginationVariant>,
 }
 
 impl Default for TextEndpoint {
@@ -218,7 +248,7 @@ impl Endpoint<TestCx> for TextEndpoint {
             self.method.clone(),
             self.path,
             self.policy.clone(),
-            self.pagination.clone(),
+            self.pagination.as_ref().map(|_| PaginationMarker),
             decode_string,
         ))
     }
@@ -229,7 +259,7 @@ pub struct ItemsEndpoint {
     pub start: u64,
     pub count: u64,
     pub policy: ResolvedPolicy,
-    pub pagination: PaginationPlan,
+    pub pagination: PaginationVariant,
 }
 
 impl Default for ItemsEndpoint {
@@ -238,7 +268,7 @@ impl Default for ItemsEndpoint {
             start: 0,
             count: 2,
             policy: Default::default(),
-            pagination: PaginationPlan::OffsetLimit {
+            pagination: PaginationVariant::OffsetLimit {
                 offset: 0,
                 limit: 2,
             },
@@ -255,11 +285,11 @@ impl Endpoint<TestCx> for ItemsEndpoint {
             Method::GET,
             "/items",
             self.policy.clone(),
-            Some(self.pagination.clone()),
+            Some(PaginationMarker),
             decode_items,
         );
         match &self.pagination {
-            PaginationPlan::OffsetLimit { .. } => {
+            PaginationVariant::OffsetLimit { .. } => {
                 plan.endpoint
                     .policy
                     .query
@@ -269,7 +299,7 @@ impl Endpoint<TestCx> for ItemsEndpoint {
                     .query
                     .push(("limit".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Paged { .. } => {
+            PaginationVariant::Paged { .. } => {
                 plan.endpoint
                     .policy
                     .query
@@ -279,7 +309,7 @@ impl Endpoint<TestCx> for ItemsEndpoint {
                     .query
                     .push(("per_page".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Cursor { .. } => {
+            PaginationVariant::Cursor { .. } => {
                 plan.endpoint
                     .policy
                     .query
@@ -303,15 +333,17 @@ impl PaginatedEndpoint<TestCx> for ItemsEndpoint {
         Self::Response: PageItems,
     {
         match &self.pagination {
-            PaginationPlan::OffsetLimit { .. } => {
+            PaginationVariant::OffsetLimit { .. } => {
                 Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
                     OffsetLimitPagination,
                 >::new()))
             }
-            PaginationPlan::Paged { .. } => Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
-                PagedPagination,
-            >::new())),
-            PaginationPlan::Cursor { .. } => None,
+            PaginationVariant::Paged { .. } => {
+                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+                    PagedPagination,
+                >::new()))
+            }
+            PaginationVariant::Cursor { .. } => None,
         }
     }
 }
@@ -377,14 +409,14 @@ impl PageItems for NoHintItems {
 #[derive(Clone)]
 pub struct NoHintItemsEndpoint {
     pub policy: ResolvedPolicy,
-    pub pagination: PaginationPlan,
+    pub pagination: PaginationVariant,
 }
 
 impl Default for NoHintItemsEndpoint {
     fn default() -> Self {
         Self {
             policy: Default::default(),
-            pagination: PaginationPlan::OffsetLimit {
+            pagination: PaginationVariant::OffsetLimit {
                 offset: 0,
                 limit: 2,
             },
@@ -401,7 +433,7 @@ impl Endpoint<TestCx> for NoHintItemsEndpoint {
             Method::GET,
             "/no-hint-items",
             self.policy.clone(),
-            Some(self.pagination.clone()),
+            Some(PaginationMarker),
             decode_no_hint_items,
         ))
     }
@@ -414,7 +446,7 @@ pub struct PageOnlyItemsEndpoint {
     pub page: u64,
     pub count: u64,
     pub policy: ResolvedPolicy,
-    pub pagination: PaginationPlan,
+    pub pagination: PaginationVariant,
 }
 
 impl Default for PageOnlyItemsEndpoint {
@@ -423,7 +455,7 @@ impl Default for PageOnlyItemsEndpoint {
             page: 0,
             count: 2,
             policy: Default::default(),
-            pagination: PaginationPlan::OffsetLimit {
+            pagination: PaginationVariant::OffsetLimit {
                 offset: 0,
                 limit: 2,
             },
@@ -440,11 +472,11 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
             Method::GET,
             "/page-only-items",
             self.policy.clone(),
-            Some(self.pagination.clone()),
+            Some(PaginationMarker),
             decode_page_only_items,
         );
         match &self.pagination {
-            PaginationPlan::Paged { .. } => {
+            PaginationVariant::Paged { .. } => {
                 plan.endpoint
                     .policy
                     .query
@@ -454,7 +486,7 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
                     .query
                     .push(("per_page".to_string(), self.count.to_string()));
             }
-            PaginationPlan::OffsetLimit { .. } => {
+            PaginationVariant::OffsetLimit { .. } => {
                 plan.endpoint
                     .policy
                     .query
@@ -464,7 +496,7 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
                     .query
                     .push(("limit".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Cursor { .. } => {
+            PaginationVariant::Cursor { .. } => {
                 plan.endpoint
                     .policy
                     .query
@@ -488,15 +520,17 @@ impl PaginatedEndpoint<TestCx> for PageOnlyItemsEndpoint {
         Self::Response: PageItems,
     {
         match &self.pagination {
-            PaginationPlan::Paged { .. } => Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
-                PagedPagination,
-            >::new())),
-            PaginationPlan::OffsetLimit { .. } => {
+            PaginationVariant::Paged { .. } => {
+                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+                    PagedPagination,
+                >::new()))
+            }
+            PaginationVariant::OffsetLimit { .. } => {
                 Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
                     OffsetLimitPagination,
                 >::new()))
             }
-            PaginationPlan::Cursor { .. } => None,
+            PaginationVariant::Cursor { .. } => None,
         }
     }
 }
@@ -560,7 +594,7 @@ pub struct CursorItemsEndpoint {
     pub cursor: Option<String>,
     pub count: u64,
     pub policy: ResolvedPolicy,
-    pub pagination: PaginationPlan,
+    pub pagination: PaginationVariant,
 }
 
 impl Default for CursorItemsEndpoint {
@@ -569,12 +603,12 @@ impl Default for CursorItemsEndpoint {
             cursor: Some("start".to_string()),
             count: 2,
             policy: Default::default(),
-            pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            pagination: PaginationVariant::Cursor {
                 cursor: Some("start".to_string()),
                 per_page: 2,
                 send_cursor_on_first: false,
                 stop_when_cursor_missing: true,
-            }),
+            },
         }
     }
 }
@@ -588,11 +622,11 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
             Method::GET,
             "/cursor-items",
             self.policy.clone(),
-            Some(self.pagination.clone()),
+            Some(PaginationMarker),
             decode_cursor_items,
         );
         match &self.pagination {
-            PaginationPlan::Cursor { .. } => {
+            PaginationVariant::Cursor { .. } => {
                 if let Some(cursor) = &self.cursor {
                     plan.endpoint
                         .policy
@@ -604,7 +638,7 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
                     .query
                     .push(("per_page".to_string(), self.count.to_string()));
             }
-            PaginationPlan::OffsetLimit { .. } => {
+            PaginationVariant::OffsetLimit { .. } => {
                 if let Some(cursor) = &self.cursor {
                     plan.endpoint
                         .policy
@@ -616,7 +650,7 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
                     .query
                     .push(("limit".to_string(), self.count.to_string()));
             }
-            PaginationPlan::Paged { .. } => {
+            PaginationVariant::Paged { .. } => {
                 if let Some(cursor) = &self.cursor {
                     plan.endpoint
                         .policy
@@ -642,12 +676,12 @@ impl PaginatedEndpoint<TestCx> for CursorItemsEndpoint {
         Self::Response: PageItems,
     {
         match &self.pagination {
-            PaginationPlan::Cursor { .. } => {
+            PaginationVariant::Cursor { .. } => {
                 Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
                     CursorPagination<String>,
                 >::new()))
             }
-            PaginationPlan::OffsetLimit { .. } | PaginationPlan::Paged { .. } => None,
+            PaginationVariant::OffsetLimit { .. } | PaginationVariant::Paged { .. } => None,
         }
     }
 }
@@ -655,7 +689,7 @@ impl PaginatedEndpoint<TestCx> for CursorItemsEndpoint {
 impl PaginateBinding<CursorPagination<String>> for CursorItemsEndpoint {
     fn load_pagination(&self) -> CursorPagination<String> {
         let (send_cursor_on_first, stop_when_cursor_missing) = match &self.pagination {
-            PaginationPlan::Cursor {
+            PaginationVariant::Cursor {
                 send_cursor_on_first,
                 stop_when_cursor_missing,
                 ..
@@ -681,7 +715,7 @@ pub fn request_plan(
     method: Method,
     path: &'static str,
     policy: ResolvedPolicy,
-    pagination: Option<PaginationPlan>,
+    pagination: Option<PaginationMarker>,
     decode: fn(
         BuiltResponse,
         concord_core::advanced::ErrorContext,
@@ -999,7 +1033,7 @@ impl Endpoint<ObservationAuthCx> for TextEndpoint {
             self.method.clone(),
             self.path,
             self.policy.clone(),
-            self.pagination.clone(),
+            self.pagination.as_ref().map(|_| PaginationMarker),
             decode_string,
         ))
     }

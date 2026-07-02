@@ -36,7 +36,7 @@ pub mod internal {
     };
     pub use crate::endpoint::{
         BodyPlan, ClientPlanContext, Decoded, EndpointMeta, EndpointPlan, Mapped, MappedResp,
-        MultipartResponseEndpoint, PaginatedEndpoint, PaginationPlan, RecordResponseEndpoint,
+        MultipartResponseEndpoint, PaginatedEndpoint, PaginationMarker, RecordResponseEndpoint,
         RequestArgs, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute, ResponsePlan,
         ResponseSpec, SseResponseEndpoint, StreamResponseEndpoint, Transform, TransformResp,
     };

@@ -64,15 +64,6 @@ where
     }
 }
 
-impl From<OffsetLimitPagination> for crate::endpoint::PaginationPlan {
-    fn from(value: OffsetLimitPagination) -> Self {
-        Self::OffsetLimit {
-            offset: value.offset,
-            limit: value.limit,
-        }
-    }
-}
-
 fn validate_page_size(
     value: u64,
     controller: &'static str,

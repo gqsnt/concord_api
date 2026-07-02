@@ -6,8 +6,8 @@ use concord_core::advanced::{
     TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::internal::{
-    BodyPlan, EndpointMeta, EndpointPlan, PaginationPlan, RequestArgs, RequestOverrides,
-    RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
+    ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -220,7 +220,7 @@ fn sse_response_plan(
     name: &'static str,
     path: &'static str,
     policy: ResolvedPolicy,
-    pagination: Option<PaginationPlan>,
+    pagination: Option<concord_core::internal::PaginationMarker>,
 ) -> RequestPlan {
     RequestPlan {
         endpoint: EndpointPlan {
@@ -698,10 +698,7 @@ async fn sse_pagination_is_rejected_before_transport() {
         "SsePagination",
         "/sse-pagination",
         ResolvedPolicy::default(),
-        Some(PaginationPlan::Paged {
-            page: 1,
-            per_page: 10,
-        }),
+        Some(concord_core::internal::PaginationMarker),
     );
     plan.endpoint.response.accept = Some(HeaderValue::from_static("text/event-stream"));
 

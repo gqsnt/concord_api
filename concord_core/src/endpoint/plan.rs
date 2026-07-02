@@ -3,7 +3,6 @@
 use crate::advanced::{MultipartBody, MultipartBodyError, MultipartFormat};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::multipart::MultipartBodyErrorKind;
-use crate::pagination::{HasNextCursor, PageItems};
 use crate::policy::ResolvedPolicy;
 use crate::record::RecordBody;
 use crate::stream_body::StreamBody;
@@ -43,7 +42,7 @@ pub struct EndpointPlan {
     pub policy: ResolvedPolicy,
     pub body: BodyPlan,
     pub response: ResponsePlan,
-    pub pagination: Option<PaginationPlan>,
+    pub pagination: Option<PaginationMarker>,
 }
 
 #[derive(Debug, Default)]
@@ -205,147 +204,19 @@ impl fmt::Debug for ResponsePlan {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum PaginationPlan {
-    OffsetLimit {
-        offset: u64,
-        limit: u64,
-    },
-    Cursor {
-        cursor: Option<String>,
-        per_page: u64,
-        send_cursor_on_first: bool,
-        stop_when_cursor_missing: bool,
-        next_cursor: CursorNextFn,
-    },
-    Paged {
-        page: u64,
-        per_page: u64,
-    },
-}
-
-pub type CursorNextFn =
-    for<'a> fn(&(dyn Any + Send), ErrorContext) -> Result<Option<String>, ApiClientError>;
-
-impl PaginationPlan {
-    /// Built-in cursor pagination plan constructor.
-    ///
-    /// This compact built-in metadata is used by endpoint-state cursor
-    /// pagination. Query-key fields are intentionally not part of the plan.
-    pub fn cursor<Page>(value: crate::pagination::CursorPagination) -> Self
-    where
-        Page: PageItems + HasNextCursor,
-    {
-        Self::Cursor {
-            cursor: value.cursor,
-            per_page: value.per_page,
-            send_cursor_on_first: value.send_cursor_on_first,
-            stop_when_cursor_missing: value.stop_when_cursor_missing,
-            next_cursor: cursor_next::<Page>,
-        }
-    }
-}
-
-fn cursor_next<Page>(
-    page: &(dyn Any + Send),
-    ctx: ErrorContext,
-) -> Result<Option<String>, ApiClientError>
-where
-    Page: PageItems + HasNextCursor,
-{
-    let Some(page) = page.downcast_ref::<Page>() else {
-        return Err(ApiClientError::Pagination {
-            ctx,
-            msg: "cursor pagination page type mismatch".into(),
-        });
-    };
-    Ok(page
-        .next_cursor()
-        .map(|cursor| cursor.to_string())
-        .filter(|cursor| !cursor.is_empty()))
-}
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PaginationMarker;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pagination::{CursorPagination, OffsetLimitPagination, PagedPagination};
 
     #[test]
-    fn built_in_pagination_plan_metadata_has_no_query_keys() {
-        let offset = PaginationPlan::from(OffsetLimitPagination {
-            offset: 3,
-            limit: 9,
-        });
-        let offset_debug = format!("{offset:?}");
-        assert!(offset_debug.contains("OffsetLimit"));
-        assert!(offset_debug.contains("offset: 3"));
-        assert!(offset_debug.contains("limit: 9"));
-
-        let paged = PaginationPlan::from(PagedPagination {
-            page: 2,
-            per_page: 7,
-        });
-        let paged_debug = format!("{paged:?}");
-        assert!(paged_debug.contains("Paged"));
-        assert!(paged_debug.contains("page: 2"));
-        assert!(paged_debug.contains("per_page: 7"));
-    }
-
-    #[test]
-    fn built_in_pagination_controllers_have_no_query_key_fields() {
-        let offset = OffsetLimitPagination {
-            offset: 3,
-            limit: 9,
-        };
-        let offset_debug = format!("{offset:?}");
-        assert!(!offset_debug.contains("offset_key"));
-        assert!(!offset_debug.contains("limit_key"));
-
-        let paged = PagedPagination {
-            page: 2,
-            per_page: 7,
-        };
-        let paged_debug = format!("{paged:?}");
-        assert!(!paged_debug.contains("page_key"));
-        assert!(!paged_debug.contains("per_page_key"));
-
-        let cursor = CursorPagination {
-            cursor: Some("start".to_string()),
-            per_page: 5,
-            send_cursor_on_first: true,
-            stop_when_cursor_missing: false,
-        };
-        let cursor_debug = format!("{cursor:?}");
-        assert!(!cursor_debug.contains("cursor_key"));
-        assert!(!cursor_debug.contains("per_page_key"));
-    }
-
-    #[test]
-    fn cursor_pagination_plan_preserves_endpoint_state_flags() {
-        let plan = PaginationPlan::cursor::<Vec<String>>(CursorPagination {
-            cursor: Some("start".to_string()),
-            per_page: 5,
-            send_cursor_on_first: true,
-            stop_when_cursor_missing: false,
-        });
-        let debug = format!("{plan:?}");
-
-        match &plan {
-            PaginationPlan::Cursor {
-                cursor,
-                per_page,
-                send_cursor_on_first,
-                stop_when_cursor_missing,
-                ..
-            } => {
-                assert_eq!(cursor, &Some("start".to_string()));
-                assert_eq!(*per_page, 5);
-                assert!(send_cursor_on_first);
-                assert!(!stop_when_cursor_missing);
-            }
-            other => panic!("expected cursor plan, got {other:?}"),
-        }
-
-        assert!(debug.contains("Cursor"));
+    fn pagination_marker_is_presence_only() {
+        let marker = PaginationMarker;
+        let debug = format!("{marker:?}");
+        assert_eq!(marker, PaginationMarker);
+        assert_eq!(PaginationMarker::default(), PaginationMarker);
+        assert!(debug.contains("PaginationMarker"));
     }
 }

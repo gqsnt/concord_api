@@ -1,7 +1,7 @@
 use super::common::{
     CursorItems, CursorItemsEndpoint, MockOutcome, MockResponse, MockTransport,
-    ObservationRateLimiter, ObservationRuntimeHooks, TestAuthVars, TestCx, TextEndpoint,
-    auth_policy, client, request_plan, retry_policy, retry_policy_for_statuses,
+    ObservationRateLimiter, ObservationRuntimeHooks, PaginationVariant, TestAuthVars, TestCx,
+    TextEndpoint, auth_policy, client, request_plan, retry_policy, retry_policy_for_statuses,
 };
 use bytes::Bytes;
 use concord_core::advanced::{
@@ -9,9 +9,7 @@ use concord_core::advanced::{
     RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter,
 };
 use concord_core::error::ErrorCategory;
-use concord_core::internal::{
-    ClientPlanContext, PaginationPlan, RequestPlan, ResolvedPolicy, ResponsePlan,
-};
+use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy, ResponsePlan};
 use concord_core::prelude::{ApiClientError, CursorPagination, DebugLevel, Endpoint};
 use concord_core::transport::TransportErrorKind;
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -800,7 +798,7 @@ async fn pagination_error_is_distinct_and_safe() {
     let err = client
         .request(CursorItemsEndpoint {
             policy: rate_policy(),
-            pagination: PaginationPlan::cursor::<CursorItems>(CursorPagination {
+            pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
                 cursor: Some("start".to_string()),
                 per_page: 2,
                 send_cursor_on_first: true,
