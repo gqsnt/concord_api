@@ -183,88 +183,7 @@ fn emit_endpoint_def(
 
     let paginate_binding_impl = emit_paginate_binding_impl(ep, ty_name);
     let pagination_plan = emit_endpoint_pagination_plan(ep);
-    let pagination_marker_impl = if let Some(p) = &ep.paginate {
-        match &p.controller {
-            PaginationControllerResolved::OffsetLimit(_) => quote! {
-                impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {
-                    #[inline]
-                    fn single_object_pagination(
-                        &self,
-                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::SingleObjectPaginationRuntime<Self, Self::Response>>>
-                    where
-                        Self: Sized,
-                        Self::Response: ::concord_core::advanced::PageItems,
-                    {
-                        ::core::option::Option::Some(::std::boxed::Box::new(
-                            ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<
-                                ::concord_core::advanced::OffsetLimitPagination
-                            >::new(),
-                        ))
-                    }
-                }
-            },
-            PaginationControllerResolved::Paged(_) => quote! {
-                impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {
-                    #[inline]
-                    fn single_object_pagination(
-                        &self,
-                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::SingleObjectPaginationRuntime<Self, Self::Response>>>
-                    where
-                        Self: Sized,
-                        Self::Response: ::concord_core::advanced::PageItems,
-                    {
-                        ::core::option::Option::Some(::std::boxed::Box::new(
-                            ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<
-                                ::concord_core::advanced::PagedPagination
-                            >::new(),
-                        ))
-                    }
-                }
-            },
-            PaginationControllerResolved::Cursor(_) => quote! {
-                impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name {
-                    #[inline]
-                    fn single_object_pagination(
-                        &self,
-                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::SingleObjectPaginationRuntime<Self, Self::Response>>>
-                    where
-                        Self: Sized,
-                        Self::Response: ::concord_core::advanced::PageItems,
-                    {
-                        ::core::option::Option::Some(::std::boxed::Box::new(
-                            ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<
-                                ::concord_core::advanced::CursorPagination<::std::string::String>
-                            >::new(),
-                        ))
-                    }
-                }
-            },
-            PaginationControllerResolved::Custom { ctrl_ty } => quote! {
-                impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name
-                where
-                    #ctrl_ty: ::core::default::Default
-                        + ::concord_core::advanced::EndpointPagination<
-                            <#ty_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::Response,
-                        >,
-                {
-                    #[inline]
-                    fn single_object_pagination(
-                        &self,
-                    ) -> ::core::option::Option<::std::boxed::Box<dyn ::concord_core::internal::SingleObjectPaginationRuntime<Self, Self::Response>>>
-                    where
-                        Self: Sized,
-                        Self::Response: ::concord_core::advanced::PageItems,
-                    {
-                        ::core::option::Option::Some(::std::boxed::Box::new(
-                            ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<#ctrl_ty>::new(),
-                        ))
-                    }
-                }
-            },
-        }
-    } else {
-        quote! {}
-    };
+    let pagination_marker_impl = emit_single_object_pagination_impl(ep, ty_name, cx_ty);
     let pending_ext_trait = endpoint_pending_ext_trait_ident(ep);
     let pending_setter_decls: Vec<TokenStream2> = facade
         .setters
@@ -411,27 +330,12 @@ fn emit_paginate_binding_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenSt
         return quote! {};
     };
 
-    let pagination_ty = pagination_controller_ty(p);
-
-    let cursor_flags = match &p.controller {
-        PaginationControllerResolved::Cursor(ctrl) => {
-            Some((ctrl.send_cursor_on_first, ctrl.stop_when_cursor_missing))
-        }
-        _ => None,
-    };
-    let mut load_assignments: Vec<TokenStream2> = p
+    let pagination_ty = &p.controller_ty;
+    let load_assignments: Vec<TokenStream2> = p
         .assigns
         .iter()
         .map(|assign| emit_paginate_binding_assignment(assign, p))
         .collect();
-    if let Some((send_cursor_on_first, stop_when_cursor_missing)) = cursor_flags {
-        load_assignments.push(quote! {
-            pagination.send_cursor_on_first = #send_cursor_on_first;
-        });
-        load_assignments.push(quote! {
-            pagination.stop_when_cursor_missing = #stop_when_cursor_missing;
-        });
-    }
 
     let store_assignments: Vec<TokenStream2> = p.bindings.iter().map(|binding| {
         let field = &binding.controller_field;
@@ -454,25 +358,48 @@ fn emit_paginate_binding_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenSt
     }
 }
 
-fn pagination_controller_ty(p: &PaginateResolved) -> TokenStream2 {
-    match &p.controller {
-        PaginationControllerResolved::OffsetLimit(_) => {
-            quote! { ::concord_core::advanced::OffsetLimitPagination }
+fn emit_single_object_pagination_impl(
+    ep: &ResolvedEndpoint,
+    ty_name: &Ident,
+    cx_ty: &Ident,
+) -> TokenStream2 {
+    let Some(p) = &ep.paginate else {
+        return quote! {};
+    };
+    let controller_ty = &p.controller_ty;
+
+    quote! {
+        impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name
+        where
+            #controller_ty: ::core::default::Default
+                + ::concord_core::advanced::EndpointPagination<
+                    <#ty_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::Response,
+                >,
+        {
+            #[inline]
+            fn single_object_pagination(
+                &self,
+            ) -> ::core::option::Option<
+                ::std::boxed::Box<
+                    dyn ::concord_core::internal::SingleObjectPaginationRuntime<
+                        Self,
+                        Self::Response,
+                    >,
+                >,
+            >
+            where
+                Self: Sized,
+                Self::Response: ::concord_core::advanced::PageItems,
+            {
+                ::core::option::Option::Some(::std::boxed::Box::new(
+                    ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<#controller_ty>::new(),
+                ))
+            }
         }
-        PaginationControllerResolved::Paged(_) => {
-            quote! { ::concord_core::advanced::PagedPagination }
-        }
-        PaginationControllerResolved::Cursor(_) => {
-            quote! { ::concord_core::advanced::CursorPagination<::std::string::String> }
-        }
-        PaginationControllerResolved::Custom { ctrl_ty } => quote! { #ctrl_ty },
     }
 }
 
-fn emit_paginate_binding_assignment(
-    assign: &PaginationAssignmentResolved,
-    p: &PaginateResolved,
-) -> TokenStream2 {
+fn emit_paginate_binding_assignment(assign: &PaginationAssignmentResolved, p: &PaginateResolved) -> TokenStream2 {
     let field = &assign.field;
     let value = match &assign.value {
         PaginationValueKind::EpField(_) => {
@@ -573,61 +500,10 @@ fn emit_endpoint_plan_route_policy(
 
 
 fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
-    let Some(p) = &ep.paginate else {
-        return quote! {
-            let __pagination_plan = ::core::option::Option::None;
-        };
-    };
-    let page_ty = ep
-        .map
-        .as_ref()
-        .map(|m| m.out_ty.clone())
-        .unwrap_or_else(|| resolved_response_output_ty(ep.response_io(), None));
-    match &p.controller {
-        PaginationControllerResolved::Custom { .. } => quote! {
-            // Single-object custom pagination is driven entirely by the generated
-            // runtime hook, so it does not need extra metadata here.
-            let __pagination_plan = ::core::option::Option::None;
-        },
-        PaginationControllerResolved::OffsetLimit(ctrl) => {
-            let assigns = ctrl.assigns.iter().map(|assign| emit_pagination_assign(assign));
-            quote! {
-                let mut ctrl: ::concord_core::internal::OffsetLimitPagination = ::core::default::Default::default();
-                #( #assigns )*
-                let __pagination_plan = ::core::option::Option::Some(::concord_core::internal::PaginationPlan::from(ctrl));
-            }
-        }
-        PaginationControllerResolved::Cursor(ctrl) => {
-            let assigns = ctrl.assigns.iter().map(|assign| emit_pagination_assign(assign));
-            quote! {
-                let mut ctrl: ::concord_core::internal::CursorPagination = ::core::default::Default::default();
-                #( #assigns )*
-                let __pagination_plan = ::core::option::Option::Some(::concord_core::internal::PaginationPlan::cursor::<#page_ty>(ctrl));
-            }
-        }
-        PaginationControllerResolved::Paged(ctrl) => {
-            let assigns = ctrl.assigns.iter().map(|assign| emit_pagination_assign(assign));
-            quote! {
-                let mut ctrl: ::concord_core::internal::PagedPagination = ::core::default::Default::default();
-                #( #assigns )*
-                let __pagination_plan = ::core::option::Option::Some(::concord_core::internal::PaginationPlan::from(ctrl));
-            }
-        }
+    let _ = ep;
+    quote! {
+        let __pagination_plan = ::core::option::Option::None;
     }
-}
-
-fn emit_pagination_assign(assign: &PaginationAssignmentResolved) -> TokenStream2 {
-    let field = &assign.field;
-    let value = match &assign.value {
-        PaginationValueKind::EpField(f) => quote! { ep.#f.clone() },
-        PaginationValueKind::LitStr(s) => quote! { ::std::borrow::Cow::from(#s) },
-        PaginationValueKind::OtherExpr(e) => quote! { (#e) },
-        PaginationValueKind::Fmt(fmt) => {
-            let build = emit_fmt_build_string(fmt);
-            quote! { { #build } }
-        }
-    };
-    quote! { ctrl.#field = #value; }
 }
 
 fn facade_setter_for_var<'a>(facade: &'a FacadeEndpoint, field: &Ident) -> Option<&'a FacadeSetter> {

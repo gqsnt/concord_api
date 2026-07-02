@@ -1071,8 +1071,9 @@ fn facade_endpoint_docs(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResol
         docs.push(LitStr::new(&line, ep.name.span()));
     }
     if let Some(pagination) = &ep.paginate {
+        let controller_ty = &pagination.controller_ty;
         docs.push(LitStr::new(
-            &format!("Pagination: {}", pagination.controller.display_name()),
+            &format!("Pagination: {}", quote::quote!(#controller_ty)),
             ep.name.span(),
         ));
     }

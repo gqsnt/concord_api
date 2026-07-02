@@ -1,5 +1,7 @@
-error: unknown pagination field `stop_on_short_page` for CursorPagination; allowed fields: cursor, per_page, send_cursor_on_first, stop_when_cursor_missing
-  --> tests/trybuild/fail/pagination/removed_stop_on_short_page_field.rs:15:13
+error[E0609]: no field `stop_on_short_page` on type `concord_core::internal::CursorPagination`
+  --> tests/trybuild/fail/pagination/removed_stop_on_short_page_field.rs:16:13
    |
-15 |             stop_on_short_page = true
-   |             ^^^^^^^^^^^^^^^^^^
+16 |             stop_on_short_page = true
+   |             ^^^^^^^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `cursor`, `per_page`, `send_cursor_on_first`, `stop_when_cursor_missing`

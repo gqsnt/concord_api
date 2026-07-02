@@ -1,5 +1,15 @@
-error: unknown pagination field `cursor` for OffsetLimitPagination; allowed fields: offset, limit
-  --> tests/trybuild/fail/pagination/pagination_unknown_field.rs:15:9
+error[E0609]: no field `cursor` on type `concord_core::internal::OffsetLimitPagination`
+  --> tests/trybuild/fail/pagination/pagination_unknown_field.rs:16:9
    |
-15 |         cursor = start,
-   |         ^^^^^^
+16 |         cursor = start,
+   |         ^^^^^^ unknown field
+   |
+   = note: available fields are: `offset`, `limit`
+
+error[E0609]: no field `cursor` on type `&concord_core::internal::OffsetLimitPagination`
+  --> tests/trybuild/fail/pagination/pagination_unknown_field.rs:16:9
+   |
+16 |         cursor = start,
+   |         ^^^^^^ unknown field
+   |
+   = note: available fields are: `offset`, `limit`

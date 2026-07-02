@@ -1,5 +1,0 @@
-error: built-in cursor pagination currently requires `CursorPagination<String>`
-  --> tests/trybuild/fail/pagination/cursor_pagination_requires_string.rs:10:18
-   |
-10 |         paginate CursorPagination {
-   |                  ^^^^^^^^^^^^^^^^

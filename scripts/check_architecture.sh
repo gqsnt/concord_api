@@ -92,9 +92,16 @@ fi
 
 section "removed custom pagination plan fence"
 custom_plan_refs="$tmpdir/custom_plan.refs"
-if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom' \
-  concord_macros/src/codegen concord_examples/src concord_macros/tests concord_core/tests >"$custom_plan_refs" 2>/dev/null; then
-  fail_with_matches "removed custom pagination plan output must not reappear." "$custom_plan_refs"
+if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom|PaginationPlan::from|PaginationPlan :: from|PaginationPlan::cursor|PaginationPlan :: cursor' \
+  concord_macros/src/codegen concord_macros/tests concord_examples/src docs dev_doc >"$custom_plan_refs" 2>/dev/null; then
+  fail_with_matches "removed custom or built-in pagination plan output must not reappear." "$custom_plan_refs"
+fi
+
+section "macro pagination controller taxonomy fence"
+controller_taxonomy_refs="$tmpdir/controller_taxonomy.refs"
+if "${RG[@]}" 'PaginationControllerResolved|OffsetLimitPaginationResolved|CursorPaginationResolved|PagedPaginationResolved|PaginationControllerKind|paginate_controller_kind|validate_paginate_assignment_key|validate_cursor_pagination_controller_ty|cursor_pagination_is_exact_string|parse_cursor_flag_value' \
+  concord_macros/src >"$controller_taxonomy_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros must not retain pagination controller taxonomy helpers." "$controller_taxonomy_refs"
 fi
 
 section "removed endpoint-state runtime layer fence"

@@ -511,7 +511,7 @@ pub enum PolicyKeyKind {
 
 #[derive(Debug, Clone)]
 pub struct PaginateResolved {
-    pub controller: PaginationControllerResolved,
+    pub controller_ty: Type,
     pub assigns: Vec<PaginationAssignmentResolved>,
     pub bindings: Vec<PaginationBindingIr>,
 }
@@ -523,44 +523,6 @@ pub struct PaginationBindingIr {
     pub endpoint_rust_field: Ident,
     pub endpoint_field_ty: Type,
     pub assignment_span: Span,
-}
-
-#[derive(Debug, Clone)]
-pub enum PaginationControllerResolved {
-    OffsetLimit(OffsetLimitPaginationResolved),
-    Cursor(CursorPaginationResolved),
-    Paged(PagedPaginationResolved),
-    Custom { ctrl_ty: Type },
-}
-
-impl PaginationControllerResolved {
-    pub fn display_name(&self) -> String {
-        match self {
-            PaginationControllerResolved::OffsetLimit(_) => "OffsetLimitPagination".to_string(),
-            PaginationControllerResolved::Cursor(_) => "CursorPagination".to_string(),
-            PaginationControllerResolved::Paged(_) => "PagedPagination".to_string(),
-            PaginationControllerResolved::Custom { ctrl_ty } => {
-                quote::quote!(#ctrl_ty).to_string()
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct OffsetLimitPaginationResolved {
-    pub assigns: Vec<PaginationAssignmentResolved>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CursorPaginationResolved {
-    pub assigns: Vec<PaginationAssignmentResolved>,
-    pub send_cursor_on_first: bool,
-    pub stop_when_cursor_missing: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct PagedPaginationResolved {
-    pub assigns: Vec<PaginationAssignmentResolved>,
 }
 
 #[derive(Debug, Clone)]

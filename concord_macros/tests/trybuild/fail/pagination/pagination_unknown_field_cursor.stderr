@@ -1,5 +1,15 @@
-error: unknown pagination field `offset` for CursorPagination; allowed fields: cursor, per_page, send_cursor_on_first, stop_when_cursor_missing
-  --> tests/trybuild/fail/pagination/pagination_unknown_field_cursor.rs:15:13
+error[E0609]: no field `offset` on type `concord_core::internal::CursorPagination`
+  --> tests/trybuild/fail/pagination/pagination_unknown_field_cursor.rs:16:13
    |
-15 |             offset = count,
-   |             ^^^^^^
+16 |             offset = count,
+   |             ^^^^^^ unknown field
+   |
+   = note: available fields are: `cursor`, `per_page`, `send_cursor_on_first`, `stop_when_cursor_missing`
+
+error[E0609]: no field `offset` on type `&concord_core::internal::CursorPagination`
+  --> tests/trybuild/fail/pagination/pagination_unknown_field_cursor.rs:16:13
+   |
+16 |             offset = count,
+   |             ^^^^^^ unknown field
+   |
+   = note: available fields are: `cursor`, `per_page`, `send_cursor_on_first`, `stop_when_cursor_missing`

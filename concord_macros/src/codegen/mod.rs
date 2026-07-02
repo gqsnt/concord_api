@@ -187,6 +187,14 @@ mod tests {
         ["Cursor", "Bindings"].concat()
     }
 
+    fn legacy_builtin_pagination_plan_from() -> String {
+        ["PaginationPlan", "::", "from"].concat()
+    }
+
+    fn legacy_builtin_pagination_plan_cursor() -> String {
+        ["PaginationPlan", "::", "cursor"].concat()
+    }
+
     fn generated_doc_attrs(expanded: &str) -> Vec<&str> {
         let mut docs = Vec::new();
         let mut rest = expanded;
@@ -1006,7 +1014,7 @@ mod tests {
                 ":: concord_core :: internal :: ResolvedRoute",
                 ":: concord_core :: internal :: ResolvedPolicy",
                 ":: concord_core :: internal :: ResponsePlan",
-                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
+                "let __pagination_plan = :: core :: option :: Option :: None",
             ],
         );
     }
@@ -1280,48 +1288,14 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "let mut ctrl : :: concord_core :: internal :: OffsetLimitPagination = :: core :: default :: Default :: default ()",
-                "let mut ctrl : :: concord_core :: internal :: CursorPagination = :: core :: default :: Default :: default ()",
-                "let mut ctrl : :: concord_core :: internal :: PagedPagination = :: core :: default :: Default :: default ()",
-                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter",
+                ":: concord_core :: advanced :: PaginateBinding",
+                "let __pagination_plan = :: core :: option :: Option :: None",
             ],
         );
-        assert!(
-            !out.contains(&legacy_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
-            "removed runtime adapter must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&legacy_offset_limit_bindings()),
-            "removed endpoint-state binding helpers must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&legacy_paged_bindings()),
-            "removed endpoint-state binding helpers must not appear in generated output"
-        );
-        assert!(
-            !out.contains("offset_key"),
-            "built-in pagination metadata must not retain offset query keys"
-        );
-        assert!(
-            !out.contains("limit_key"),
-            "built-in pagination metadata must not retain limit query keys"
-        );
-        assert!(
-            !out.contains("page_key"),
-            "built-in pagination metadata must not retain page query keys"
-        );
-        assert!(
-            !out.contains("per_page_key"),
-            "built-in pagination metadata must not retain per-page query keys"
-        );
-        assert!(
-            !out.contains("cursor_key"),
-            "built-in pagination metadata must not retain cursor query keys"
-        );
+        assert!(!out.contains(&legacy_builtin_pagination_plan_from()));
+        assert!(!out.contains(&legacy_builtin_pagination_plan_cursor()));
     }
 
     #[test]
@@ -1834,8 +1808,9 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "let __pagination_plan = :: core :: option :: Option :: Some",
-                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
+                "let __pagination_plan = :: core :: option :: Option :: None",
+                "single_object_pagination",
+                "PaginateBinding",
             ],
         );
     }
@@ -1862,27 +1837,14 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: OffsetLimitPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
                 "fn load_pagination",
                 "fn store_pagination",
                 "pagination . offset = self . start . clone ()",
                 "pagination . limit = self . count . clone ()",
                 "self . start = pagination . offset . clone ()",
                 "self . count = pagination . limit . clone ()",
-                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
             ],
-        );
-        assert!(
-            !out.contains(&legacy_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
-            "removed runtime adapter must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&legacy_endpoint_field()),
-            "removed endpoint-state binding helpers must not appear in generated output"
         );
     }
 
@@ -1909,8 +1871,8 @@ mod tests {
             &out,
             &[
                 "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: OffsetLimitPagination >",
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: OffsetLimitPagination >",
+                "SingleObjectPaginationRuntimeAdapter :: < OffsetLimitPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
             ],
         );
         assert!(
@@ -1954,8 +1916,8 @@ mod tests {
             &out,
             &[
                 "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: OffsetLimitPagination >",
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: OffsetLimitPagination >",
+                "SingleObjectPaginationRuntimeAdapter :: < OffsetLimitPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
             ],
         );
     }
@@ -1982,7 +1944,7 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: OffsetLimitPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
                 "fn load_pagination",
                 "fn store_pagination",
                 "pagination . offset = self . start . clone ()",
@@ -2016,8 +1978,8 @@ mod tests {
             &out,
             &[
                 "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: PagedPagination >",
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: PagedPagination >",
+                "SingleObjectPaginationRuntimeAdapter :: < PagedPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
             ],
         );
         assert!(
@@ -2060,7 +2022,7 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: PagedPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
                 "fn load_pagination",
                 "fn store_pagination",
                 "pagination . page = self . page . clone ()",
@@ -2094,8 +2056,8 @@ mod tests {
             &out,
             &[
                 "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: PagedPagination >",
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: PagedPagination >",
+                "SingleObjectPaginationRuntimeAdapter :: < PagedPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
             ],
         );
     }
@@ -2291,8 +2253,8 @@ mod tests {
             &out,
             &[
                 "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                "SingleObjectPaginationRuntimeAdapter :: < CursorPagination < String > >",
+                ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
             ],
         );
         assert!(
@@ -2337,13 +2299,13 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
                 "fn load_pagination",
                 "fn store_pagination",
                 "pagination . cursor = self . cursor . clone ()",
                 "pagination . per_page = self . count . clone ()",
-                "pagination . send_cursor_on_first = true",
-                "pagination . stop_when_cursor_missing = false",
+                "pagination . send_cursor_on_first = (true)",
+                "pagination . stop_when_cursor_missing = (false)",
                 "self . cursor = pagination . cursor . clone ()",
                 "self . count = pagination . per_page . clone ()",
             ],
@@ -2383,8 +2345,8 @@ mod tests {
             &out,
             &[
                 "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                "SingleObjectPaginationRuntimeAdapter :: < CursorPagination < String > >",
+                ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
             ],
         );
         assert!(
@@ -2418,10 +2380,10 @@ mod tests {
             &out,
             &[
                 "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
-                "send_cursor_on_first = true",
-                "stop_when_cursor_missing = false",
+                "SingleObjectPaginationRuntimeAdapter :: < CursorPagination < String > >",
+                ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+                "send_cursor_on_first = (true)",
+                "stop_when_cursor_missing = (false)",
             ],
         );
         assert!(
@@ -2452,7 +2414,7 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
                 "pagination . cursor = self . cursor . clone ()",
                 "self . cursor = pagination . cursor . clone ()",
             ],

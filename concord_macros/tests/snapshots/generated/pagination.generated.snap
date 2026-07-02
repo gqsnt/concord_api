@@ -1,8 +1,8 @@
 pagination.generated
 controller-plans:
-- OffsetLimitPagination -> PaginationPlan::from(ctrl)
-- CursorPagination -> PaginationPlan::cursor(ctrl)
-- PagedPagination -> PaginationPlan::from(ctrl)
+- OffsetLimitPagination -> single_object_pagination + PaginateBinding
+- CursorPagination<String> -> single_object_pagination + PaginateBinding
+- PagedPagination -> single_object_pagination + PaginateBinding
 helpers:
 - paginate
 - collect

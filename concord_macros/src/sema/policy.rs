@@ -119,30 +119,10 @@ fn resolve_paginate(
     auth_vars: &BTreeMap<String, VarInfo>,
     ep_vars: &BTreeMap<String, VarInfo>,
 ) -> Result<PaginateResolved> {
-    validate_cursor_pagination_controller_ty(&p.ctrl_ty)?;
-    let controller_kind = paginate_controller_kind(&p.ctrl_ty);
     let mut assigns = Vec::new();
     let mut bindings = Vec::new();
-    let mut send_cursor_on_first = false;
-    let mut stop_when_cursor_missing = true;
     for a in &p.assigns {
-        if !matches!(controller_kind, PaginationControllerKind::Custom) {
-            validate_paginate_assignment_key(controller_kind, &a.key)?;
-        }
         let lowered = lower_public_policy_expr_checked(&a.value)?;
-        if matches!(controller_kind, PaginationControllerKind::Cursor) {
-            match a.key.to_string().as_str() {
-                "send_cursor_on_first" => {
-                    send_cursor_on_first = parse_cursor_flag_value(&lowered, &a.key)?;
-                    continue;
-                }
-                "stop_when_cursor_missing" => {
-                    stop_when_cursor_missing = parse_cursor_flag_value(&lowered, &a.key)?;
-                    continue;
-                }
-                _ => {}
-            }
-        }
         let vk = resolve_value_kind(
             &lowered,
             client_vars,
@@ -177,119 +157,11 @@ fn resolve_paginate(
             value: vk,
         });
     }
-    let controller = match controller_kind {
-        PaginationControllerKind::OffsetLimit => {
-            PaginationControllerResolved::OffsetLimit(OffsetLimitPaginationResolved {
-                assigns: assigns.clone(),
-            })
-        }
-        PaginationControllerKind::Cursor => PaginationControllerResolved::Cursor(
-            CursorPaginationResolved {
-                assigns: assigns.clone(),
-                send_cursor_on_first,
-                stop_when_cursor_missing,
-            },
-        ),
-        PaginationControllerKind::Paged => {
-            PaginationControllerResolved::Paged(PagedPaginationResolved {
-                assigns: assigns.clone(),
-            })
-        }
-        PaginationControllerKind::Custom => PaginationControllerResolved::Custom {
-            ctrl_ty: p.ctrl_ty.clone(),
-        },
-    };
     Ok(PaginateResolved {
-        controller,
+        controller_ty: p.ctrl_ty.clone(),
         assigns,
         bindings,
     })
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum PaginationControllerKind {
-    OffsetLimit,
-    Cursor,
-    Paged,
-    Custom,
-}
-
-fn paginate_controller_kind(ctrl_ty: &Type) -> PaginationControllerKind {
-    let Type::Path(type_path) = ctrl_ty else {
-        return PaginationControllerKind::Custom;
-    };
-    if type_path.qself.is_some() || type_path.path.segments.len() != 1 {
-        return PaginationControllerKind::Custom;
-    }
-    match type_path.path.segments[0].ident.to_string().as_str() {
-        "OffsetLimitPagination" => PaginationControllerKind::OffsetLimit,
-        "CursorPagination" => PaginationControllerKind::Cursor,
-        "PagedPagination" => PaginationControllerKind::Paged,
-        _ => PaginationControllerKind::Custom,
-    }
-}
-
-fn validate_cursor_pagination_controller_ty(ctrl_ty: &Type) -> Result<()> {
-    let Type::Path(type_path) = ctrl_ty else {
-        return Ok(());
-    };
-    if type_path.qself.is_some() || type_path.path.segments.len() != 1 {
-        return Ok(());
-    }
-    let seg = &type_path.path.segments[0];
-    if seg.ident != "CursorPagination" {
-        return Ok(());
-    }
-    if cursor_pagination_is_exact_string(seg) {
-        return Ok(());
-    }
-    Err(syn::Error::new(
-        ctrl_ty.span(),
-        "built-in cursor pagination currently requires `CursorPagination<String>`",
-    ))
-}
-
-fn cursor_pagination_is_exact_string(seg: &syn::PathSegment) -> bool {
-    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
-        return false;
-    };
-    if args.args.len() != 1 {
-        return false;
-    }
-    matches!(
-        args.args.first(),
-        Some(syn::GenericArgument::Type(Type::Path(type_path)))
-            if type_path.qself.is_none()
-                && type_path.path.segments.len() == 1
-                && type_path.path.segments[0].ident == "String"
-                && matches!(type_path.path.segments[0].arguments, syn::PathArguments::None)
-    )
-}
-
-fn validate_paginate_assignment_key(kind: PaginationControllerKind, key: &Ident) -> Result<()> {
-    let key_name = key.to_string();
-    let allowed: &[&str] = match kind {
-        PaginationControllerKind::OffsetLimit => &["offset", "limit"],
-        PaginationControllerKind::Cursor => &["cursor", "per_page", "send_cursor_on_first", "stop_when_cursor_missing"],
-        PaginationControllerKind::Paged => &["page", "per_page"],
-        PaginationControllerKind::Custom => &[],
-    };
-    if matches!(kind, PaginationControllerKind::Custom) {
-        return Ok(());
-    }
-    if allowed.contains(&key_name.as_str()) {
-        return Ok(());
-    }
-    let controller = match kind {
-        PaginationControllerKind::OffsetLimit => "OffsetLimitPagination",
-        PaginationControllerKind::Cursor => "CursorPagination",
-        PaginationControllerKind::Paged => "PagedPagination",
-        PaginationControllerKind::Custom => unreachable!(),
-    };
-    Err(syn::Error::new(
-        key.span(),
-        format!("unknown pagination field `{key_name}` for {controller}; allowed fields: {}", allowed.join(", ")),
-    ))
 }
 
 fn resolve_policy_blocks(
@@ -778,18 +650,6 @@ fn pagination_value_from_value_kind(value: ValueKind, span: Span) -> Result<Pagi
         }
         ValueKind::CxField(_) => Err(pagination_scoped_ref_error(span)),
     }
-}
-
-fn parse_cursor_flag_value(expr: &Expr, key: &Ident) -> Result<bool> {
-    if let Expr::Lit(lit) = expr
-        && let syn::Lit::Bool(value) = &lit.lit
-    {
-        return Ok(value.value);
-    }
-    Err(syn::Error::new_spanned(
-        expr,
-        format!("`{key}` must be a boolean literal"),
-    ))
 }
 
 fn validate_public_expr(expr: &Expr) -> Result<()> {

@@ -3625,12 +3625,13 @@ mod tests {
             .find(|ep| ep.name == "Offset")
             .and_then(|ep| ep.paginate.as_ref())
             .expect("offset pagination");
-        match &offset.controller {
-            PaginationControllerResolved::OffsetLimit(ctrl) => {
-                assert_eq!(ctrl.assigns.len(), 2);
-            }
-            other => panic!("expected offset-limit controller, got {other:?}"),
-        }
+        let controller_ty = &offset.controller_ty;
+        assert_eq!(
+            quote::quote!(#controller_ty).to_string(),
+            "OffsetLimitPagination"
+        );
+        assert_eq!(offset.assigns.len(), 2);
+        assert_eq!(offset.bindings.len(), 2);
 
         let cursor = resolved_api
             .endpoints
@@ -3638,12 +3639,13 @@ mod tests {
             .find(|ep| ep.name == "Cursor")
             .and_then(|ep| ep.paginate.as_ref())
             .expect("cursor pagination");
-        match &cursor.controller {
-            PaginationControllerResolved::Cursor(ctrl) => {
-                assert_eq!(ctrl.assigns.len(), 2);
-            }
-            other => panic!("expected cursor controller, got {other:?}"),
-        }
+        let controller_ty = &cursor.controller_ty;
+        assert_eq!(
+            quote::quote!(#controller_ty).to_string(),
+            "CursorPagination < String >"
+        );
+        assert_eq!(cursor.assigns.len(), 2);
+        assert_eq!(cursor.bindings.len(), 2);
 
         let paged = resolved_api
             .endpoints
@@ -3651,12 +3653,10 @@ mod tests {
             .find(|ep| ep.name == "Paged")
             .and_then(|ep| ep.paginate.as_ref())
             .expect("paged pagination");
-        match &paged.controller {
-            PaginationControllerResolved::Paged(ctrl) => {
-                assert_eq!(ctrl.assigns.len(), 2);
-            }
-            other => panic!("expected paged controller, got {other:?}"),
-        }
+        let controller_ty = &paged.controller_ty;
+        assert_eq!(quote::quote!(#controller_ty).to_string(), "PagedPagination");
+        assert_eq!(paged.assigns.len(), 2);
+        assert_eq!(paged.bindings.len(), 2);
 
         let custom = resolved_api
             .endpoints
@@ -3664,15 +3664,13 @@ mod tests {
             .find(|ep| ep.name == "Custom")
             .and_then(|ep| ep.paginate.as_ref())
             .expect("custom pagination");
-        match &custom.controller {
-            PaginationControllerResolved::Custom { ctrl_ty } => {
-                assert_eq!(
-                    quote::quote!(#ctrl_ty).to_string(),
-                    "HeaderCursorPagination"
-                );
-            }
-            other => panic!("expected custom controller, got {other:?}"),
-        }
+        let controller_ty = &custom.controller_ty;
+        assert_eq!(
+            quote::quote!(#controller_ty).to_string(),
+            "HeaderCursorPagination"
+        );
+        assert_eq!(custom.assigns.len(), 1);
+        assert_eq!(custom.bindings.len(), 1);
     }
 
     #[test]
@@ -3699,12 +3697,12 @@ mod tests {
             .paginate
             .as_ref()
             .expect("pagination resolved");
-        match &pagination.controller {
-            PaginationControllerResolved::Custom { ctrl_ty } => {
-                assert_eq!(quote::quote!(#ctrl_ty).to_string(), "HeaderPagePagination");
-            }
-            other => panic!("expected custom pagination, got {other:?}"),
-        }
+        let controller_ty = &pagination.controller_ty;
+        assert_eq!(
+            quote::quote!(#controller_ty).to_string(),
+            "HeaderPagePagination"
+        );
+        assert_eq!(pagination.assigns.len(), 2);
         assert_eq!(pagination.bindings.len(), 2);
         assert_eq!(pagination.bindings[0].controller_field.to_string(), "page");
         assert_eq!(pagination.bindings[1].controller_field.to_string(), "count");
@@ -3719,7 +3717,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_pagination_rejects_unknown_endpoint_field() {
+    fn custom_pagination_assignment_rejects_unknown_endpoint_field() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client PageApi {
@@ -3795,12 +3793,13 @@ mod tests {
             .paginate
             .as_ref()
             .expect("pagination resolved");
-        match &pagination.controller {
-            PaginationControllerResolved::OffsetLimit(ctrl) => {
-                assert_eq!(ctrl.assigns.len(), 2);
-            }
-            other => panic!("expected offset-limit pagination, got {other:?}"),
-        }
+        let controller_ty = &pagination.controller_ty;
+        assert_eq!(
+            quote::quote!(#controller_ty).to_string(),
+            "OffsetLimitPagination"
+        );
+        assert_eq!(pagination.assigns.len(), 2);
+        assert_eq!(pagination.bindings.len(), 2);
     }
 
     #[test]
@@ -3870,6 +3869,9 @@ mod tests {
             .paginate
             .as_ref()
             .expect("pagination resolved");
+        let controller_ty = &pagination.controller_ty;
+        assert_eq!(quote::quote!(#controller_ty).to_string(), "PagedPagination");
+        assert_eq!(pagination.assigns.len(), 2);
         assert_eq!(pagination.bindings.len(), 2);
         assert_eq!(pagination.bindings[0].controller_field, "page");
         assert_eq!(pagination.bindings[0].endpoint_field, "page");
@@ -3882,7 +3884,7 @@ mod tests {
     }
 
     #[test]
-    fn pagination_cursor_flags_resolve_from_paginate_block() {
+    fn pagination_cursor_assignments_resolve_from_paginate_block() {
         let resolved_api = analyze_source(
             r#"
             client PageApi {
@@ -3904,18 +3906,26 @@ mod tests {
             .paginate
             .as_ref()
             .expect("pagination resolved");
-        match &pagination.controller {
-            PaginationControllerResolved::Cursor(ctrl) => {
-                assert!(ctrl.send_cursor_on_first);
-                assert!(!ctrl.stop_when_cursor_missing);
-            }
-            other => panic!("expected cursor controller, got {other:?}"),
-        }
+        let controller_ty = &pagination.controller_ty;
+        assert_eq!(
+            quote::quote!(#controller_ty).to_string(),
+            "CursorPagination < String >"
+        );
+        assert_eq!(pagination.assigns.len(), 4);
+        assert_eq!(pagination.bindings.len(), 2);
+        assert_eq!(
+            pagination.assigns[2].field.to_string(),
+            "send_cursor_on_first"
+        );
+        assert_eq!(
+            pagination.assigns[3].field.to_string(),
+            "stop_when_cursor_missing"
+        );
     }
 
     #[test]
-    fn unknown_pagination_field_fails_resolution() {
-        let ast: crate::ast::RawApi = syn::parse_str(
+    fn pagination_assignment_fields_are_type_driven() {
+        let resolved_api = analyze_source(
             r#"
             client PageApi {
                 base "https://example.com"
@@ -3931,14 +3941,22 @@ mod tests {
                 }
                 -> Json<Vec<String>>
             "#,
-        )
-        .expect("valid api syntax");
-        let err = analyze(ast).expect_err("unknown pagination assignment must fail");
-
-        assert!(
-            err.to_string()
-                .contains("unknown pagination field `per_page` for OffsetLimitPagination"),
-            "{err}"
+        );
+        let pagination = resolved_api.endpoints[0]
+            .paginate
+            .as_ref()
+            .expect("pagination resolved");
+        let controller_ty = &pagination.controller_ty;
+        assert_eq!(
+            quote::quote!(#controller_ty).to_string(),
+            "OffsetLimitPagination"
+        );
+        assert_eq!(pagination.assigns.len(), 1);
+        assert_eq!(pagination.assigns[0].field.to_string(), "per_page");
+        assert_eq!(pagination.bindings.len(), 1);
+        assert_eq!(
+            pagination.bindings[0].controller_field.to_string(),
+            "per_page"
         );
     }
 
