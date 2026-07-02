@@ -1,8 +1,8 @@
 use crate::endpoint::PaginationPlan;
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    EndpointField, EndpointPaginationController, PageAdvance, PageApply, PageApplyResult,
-    PageDecision, PageItems, ProgressKey,
+    EndpointField, EndpointPagination, EndpointPaginationController, PageAdvance, PageApply,
+    PageApplyResult, PageDecision, PageItems, ProgressKey,
 };
 use std::num::NonZeroUsize;
 
@@ -21,6 +21,46 @@ impl Default for PagedPagination {
             page: 1,
             per_page: 20,
         }
+    }
+}
+
+impl<Page> EndpointPagination<Page> for PagedPagination
+where
+    Page: PageItems,
+{
+    fn apply(&mut self, ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+        Ok(PageApplyResult {
+            expected_items_per_page: Some(validate_paged_page_size(self.per_page, ctx.ctx)?),
+        })
+    }
+
+    fn advance(
+        &mut self,
+        _page: &Page,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        let _ = validate_paged_page_size(
+            self.per_page,
+            &ErrorContext {
+                endpoint: "pagination",
+                method: http::Method::GET,
+            },
+        )?;
+        self.page = self
+            .page
+            .checked_add(1)
+            .ok_or_else(|| ApiClientError::Pagination {
+                ctx: ErrorContext {
+                    endpoint: "pagination",
+                    method: http::Method::GET,
+                },
+                msg: "paged: page overflow".into(),
+            })?;
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(self.page))
     }
 }
 
@@ -119,6 +159,89 @@ fn validate_paged_page(value: u64, ctx: &ErrorContext) -> Result<(), ApiClientEr
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod controller_tests {
+    use super::*;
+    use http::Method;
+
+    #[test]
+    fn paged_single_object_pagination_advances_page() {
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::GET,
+        };
+        let mut pagination = PagedPagination {
+            page: 1,
+            per_page: 2,
+        };
+
+        let applied = <PagedPagination as EndpointPagination<Vec<String>>>::apply(
+            &mut pagination,
+            PageApply {
+                endpoint: "List",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )
+        .expect("paged apply");
+        assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
+        assert_eq!(
+            <PagedPagination as EndpointPagination<Vec<String>>>::progress_key(&pagination),
+            Some(ProgressKey::U64(1))
+        );
+
+        let decision = <PagedPagination as EndpointPagination<Vec<String>>>::advance(
+            &mut pagination,
+            &vec!["a".to_string()],
+            PageAdvance {
+                endpoint: "List",
+                page_index: 0,
+                received_items: 1,
+            },
+        )
+        .expect("paged advance");
+        assert_eq!(decision, PageDecision::Continue);
+        assert_eq!(pagination.page, 2);
+        assert_eq!(
+            <PagedPagination as EndpointPagination<Vec<String>>>::progress_key(&pagination),
+            Some(ProgressKey::U64(2))
+        );
+
+        let mut zero_size = PagedPagination {
+            page: 1,
+            per_page: 0,
+        };
+        assert!(matches!(
+            <PagedPagination as EndpointPagination<Vec<String>>>::apply(
+                &mut zero_size,
+                PageApply {
+                    endpoint: "List",
+                    page_index: 0,
+                    ctx: &ctx,
+                },
+            ),
+            Err(ApiClientError::Pagination { .. })
+        ));
+
+        let mut overflow = PagedPagination {
+            page: u64::MAX,
+            per_page: 1,
+        };
+        assert!(matches!(
+            <PagedPagination as EndpointPagination<Vec<String>>>::advance(
+                &mut overflow,
+                &vec!["a".to_string()],
+                PageAdvance {
+                    endpoint: "List",
+                    page_index: 0,
+                    received_items: 1,
+                },
+            ),
+            Err(ApiClientError::Pagination { .. })
+        ));
+    }
 }
 
 #[cfg(test)]

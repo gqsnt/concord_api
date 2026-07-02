@@ -1,7 +1,7 @@
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    EndpointField, EndpointPaginationController, PageAdvance, PageApply, PageApplyResult,
-    PageDecision, PageItems, ProgressKey,
+    EndpointField, EndpointPagination, EndpointPaginationController, PageAdvance, PageApply,
+    PageApplyResult, PageDecision, PageItems, ProgressKey,
 };
 use std::num::NonZeroUsize;
 
@@ -26,20 +26,20 @@ impl<T: Send + 'static> HasNextCursor for Vec<T> {
 /// - request: cursor + per_page
 /// - response: provides a "next cursor"
 #[derive(Clone, Debug)]
-pub struct CursorPagination {
+pub struct CursorPagination<C = String> {
     /// Initial cursor (usually None).
-    pub cursor: Option<String>,
+    pub cursor: Option<C>,
     /// Page size (must be > 0).
     pub per_page: u64,
 
     /// If false, first request omits the cursor param when `cursor` is None.
     pub send_cursor_on_first: bool,
 
-    /// If true, stop when response has no cursor (None/empty) after collecting that page.
+    /// If true, stop when response has no cursor (None) after collecting that page.
     pub stop_when_cursor_missing: bool,
 }
 
-impl Default for CursorPagination {
+impl Default for CursorPagination<String> {
     fn default() -> Self {
         Self {
             cursor: None,
@@ -47,6 +47,43 @@ impl Default for CursorPagination {
             send_cursor_on_first: false,
             stop_when_cursor_missing: true,
         }
+    }
+}
+
+impl<Page> EndpointPagination<Page> for CursorPagination<String>
+where
+    Page: PageItems + HasNextCursor<Cursor = String>,
+{
+    fn apply(&mut self, ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+        Ok(PageApplyResult {
+            expected_items_per_page: Some(validate_per_page(self.per_page, "cursor", ctx.ctx)?),
+        })
+    }
+
+    fn advance(
+        &mut self,
+        page: &Page,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        let _ = validate_per_page(
+            self.per_page,
+            "cursor",
+            &ErrorContext {
+                endpoint: "pagination",
+                method: http::Method::GET,
+            },
+        )?;
+        self.cursor = page.next_cursor();
+        if self.cursor.is_none() && self.stop_when_cursor_missing {
+            return Ok(PageDecision::Stop);
+        }
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self) -> Option<ProgressKey> {
+        self.cursor
+            .as_ref()
+            .map(|cursor| ProgressKey::Str(cursor.to_string()))
     }
 }
 
@@ -63,7 +100,7 @@ pub struct CursorState<C> {
     pub started: bool,
 }
 
-impl<E: 'static, Page> EndpointPaginationController<E, Page> for CursorPagination
+impl<E: 'static, Page> EndpointPaginationController<E, Page> for CursorPagination<String>
 where
     Page: PageItems + HasNextCursor,
 {
@@ -142,6 +179,221 @@ fn validate_per_page(
         ctx: ctx.clone(),
         msg: format!("{controller}: per_page must be greater than zero").into(),
     })
+}
+
+#[cfg(test)]
+mod controller_tests {
+    use super::*;
+    use http::Method;
+
+    #[derive(Clone, Debug)]
+    struct TestPage {
+        items: Vec<String>,
+        next: Option<String>,
+    }
+
+    impl PageItems for TestPage {
+        type Item = String;
+
+        fn item_count_hint(&self) -> Option<usize> {
+            Some(self.items.len())
+        }
+
+        fn into_items(self) -> Vec<Self::Item> {
+            self.items
+        }
+    }
+
+    impl HasNextCursor for TestPage {
+        type Cursor = String;
+
+        fn next_cursor(&self) -> Option<Self::Cursor> {
+            self.next.clone()
+        }
+    }
+
+    #[test]
+    fn cursor_string_single_object_pagination_advances_cursor() {
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::GET,
+        };
+        let mut pagination = CursorPagination {
+            cursor: Some("start".to_string()),
+            per_page: 2,
+            send_cursor_on_first: false,
+            stop_when_cursor_missing: true,
+        };
+
+        let applied = <CursorPagination as EndpointPagination<TestPage>>::apply(
+            &mut pagination,
+            PageApply {
+                endpoint: "List",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )
+        .expect("cursor apply");
+        assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
+        assert_eq!(
+            <CursorPagination as EndpointPagination<TestPage>>::progress_key(&pagination),
+            Some(ProgressKey::Str("start".to_string()))
+        );
+
+        let decision = <CursorPagination as EndpointPagination<TestPage>>::advance(
+            &mut pagination,
+            &TestPage {
+                items: vec!["a".to_string()],
+                next: Some("next-1".to_string()),
+            },
+            PageAdvance {
+                endpoint: "List",
+                page_index: 0,
+                received_items: 1,
+            },
+        )
+        .expect("cursor advance");
+        assert_eq!(decision, PageDecision::Continue);
+        assert_eq!(
+            <CursorPagination as EndpointPagination<TestPage>>::progress_key(&pagination),
+            Some(ProgressKey::Str("next-1".to_string()))
+        );
+
+        let mut zero_per_page = CursorPagination {
+            cursor: None,
+            per_page: 0,
+            send_cursor_on_first: false,
+            stop_when_cursor_missing: true,
+        };
+        assert!(matches!(
+            <CursorPagination as EndpointPagination<TestPage>>::apply(
+                &mut zero_per_page,
+                PageApply {
+                    endpoint: "List",
+                    page_index: 0,
+                    ctx: &ctx,
+                },
+            ),
+            Err(ApiClientError::Pagination { .. })
+        ));
+    }
+
+    #[test]
+    fn cursor_string_single_object_pagination_respects_missing_cursor_stop() {
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::GET,
+        };
+
+        let mut stop_pagination = CursorPagination {
+            cursor: Some("start".to_string()),
+            per_page: 2,
+            send_cursor_on_first: false,
+            stop_when_cursor_missing: true,
+        };
+        let decision = <CursorPagination as EndpointPagination<TestPage>>::advance(
+            &mut stop_pagination,
+            &TestPage {
+                items: vec!["a".to_string()],
+                next: None,
+            },
+            PageAdvance {
+                endpoint: "List",
+                page_index: 0,
+                received_items: 1,
+            },
+        )
+        .expect("cursor stop advance");
+        assert_eq!(decision, PageDecision::Stop);
+        assert_eq!(
+            <CursorPagination as EndpointPagination<TestPage>>::progress_key(&stop_pagination),
+            None
+        );
+
+        let mut continue_pagination = CursorPagination {
+            cursor: Some("start".to_string()),
+            per_page: 2,
+            send_cursor_on_first: false,
+            stop_when_cursor_missing: false,
+        };
+        let decision = <CursorPagination as EndpointPagination<TestPage>>::advance(
+            &mut continue_pagination,
+            &TestPage {
+                items: vec!["a".to_string()],
+                next: None,
+            },
+            PageAdvance {
+                endpoint: "List",
+                page_index: 0,
+                received_items: 1,
+            },
+        )
+        .expect("cursor continue advance");
+        assert_eq!(decision, PageDecision::Continue);
+        assert_eq!(
+            <CursorPagination as EndpointPagination<TestPage>>::progress_key(&continue_pagination),
+            None
+        );
+
+        assert!(matches!(
+            <CursorPagination as EndpointPagination<TestPage>>::apply(
+                &mut continue_pagination,
+                PageApply {
+                    endpoint: "List",
+                    page_index: 0,
+                    ctx: &ctx,
+                },
+            ),
+            Ok(PageApplyResult {
+                expected_items_per_page: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn cursor_string_single_object_pagination_preserves_empty_cursor() {
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::GET,
+        };
+        let mut pagination = CursorPagination {
+            cursor: Some("start".to_string()),
+            per_page: 2,
+            send_cursor_on_first: false,
+            stop_when_cursor_missing: true,
+        };
+
+        let decision = <CursorPagination as EndpointPagination<TestPage>>::advance(
+            &mut pagination,
+            &TestPage {
+                items: vec!["a".to_string()],
+                next: Some(String::new()),
+            },
+            PageAdvance {
+                endpoint: "List",
+                page_index: 0,
+                received_items: 1,
+            },
+        )
+        .expect("cursor advance with empty string");
+        assert_eq!(decision, PageDecision::Continue);
+        assert_eq!(pagination.cursor, Some(String::new()));
+        assert_eq!(
+            <CursorPagination as EndpointPagination<TestPage>>::progress_key(&pagination),
+            Some(ProgressKey::Str(String::new()))
+        );
+
+        let applied = <CursorPagination as EndpointPagination<TestPage>>::apply(
+            &mut pagination,
+            PageApply {
+                endpoint: "List",
+                page_index: 1,
+                ctx: &ctx,
+            },
+        )
+        .expect("cursor apply after empty cursor");
+        assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
+    }
 }
 
 #[cfg(test)]

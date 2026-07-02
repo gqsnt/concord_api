@@ -1,7 +1,7 @@
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    EndpointField, EndpointPaginationController, PageAdvance, PageApply, PageApplyResult,
-    PageDecision, PageItems, ProgressKey,
+    EndpointField, EndpointPagination, EndpointPaginationController, PageAdvance, PageApply,
+    PageApplyResult, PageDecision, PageItems, ProgressKey,
 };
 use std::num::NonZeroUsize;
 
@@ -37,6 +37,47 @@ impl Default for OffsetLimitPagination {
             offset: 0,
             limit: 20,
         }
+    }
+}
+
+impl<Page> EndpointPagination<Page> for OffsetLimitPagination
+where
+    Page: PageItems,
+{
+    fn apply(&mut self, ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+        Ok(PageApplyResult {
+            expected_items_per_page: Some(validate_page_size(self.limit, "offset/limit", ctx.ctx)?),
+        })
+    }
+
+    fn advance(
+        &mut self,
+        _page: &Page,
+        _ctx: PageAdvance<'_>,
+    ) -> Result<PageDecision, ApiClientError> {
+        let _ = validate_page_size(
+            self.limit,
+            "offset/limit",
+            &ErrorContext {
+                endpoint: "pagination",
+                method: http::Method::GET,
+            },
+        )?;
+        self.offset =
+            self.offset
+                .checked_add(self.limit)
+                .ok_or_else(|| ApiClientError::Pagination {
+                    ctx: ErrorContext {
+                        endpoint: "pagination",
+                        method: http::Method::GET,
+                    },
+                    msg: "offset/limit: offset overflow".into(),
+                })?;
+        Ok(PageDecision::Continue)
+    }
+
+    fn progress_key(&self) -> Option<ProgressKey> {
+        Some(ProgressKey::U64(self.offset))
     }
 }
 
@@ -126,4 +167,87 @@ fn validate_page_size(
         ctx: ctx.clone(),
         msg: format!("{controller}: page size must be greater than zero").into(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::Method;
+
+    #[test]
+    fn offset_limit_single_object_pagination_advances_offset() {
+        let ctx = ErrorContext {
+            endpoint: "Items",
+            method: Method::GET,
+        };
+        let mut pagination = OffsetLimitPagination {
+            offset: 0,
+            limit: 2,
+        };
+
+        let applied = <OffsetLimitPagination as EndpointPagination<Vec<String>>>::apply(
+            &mut pagination,
+            PageApply {
+                endpoint: "List",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )
+        .expect("offset apply");
+        assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
+        assert_eq!(
+            <OffsetLimitPagination as EndpointPagination<Vec<String>>>::progress_key(&pagination),
+            Some(ProgressKey::U64(0))
+        );
+
+        let decision = <OffsetLimitPagination as EndpointPagination<Vec<String>>>::advance(
+            &mut pagination,
+            &vec!["a".to_string()],
+            PageAdvance {
+                endpoint: "List",
+                page_index: 0,
+                received_items: 1,
+            },
+        )
+        .expect("offset advance");
+        assert_eq!(decision, PageDecision::Continue);
+        assert_eq!(pagination.offset, 2);
+        assert_eq!(
+            <OffsetLimitPagination as EndpointPagination<Vec<String>>>::progress_key(&pagination),
+            Some(ProgressKey::U64(2))
+        );
+
+        let mut zero_limit = OffsetLimitPagination {
+            offset: 0,
+            limit: 0,
+        };
+        assert!(matches!(
+            <OffsetLimitPagination as EndpointPagination<Vec<String>>>::apply(
+                &mut zero_limit,
+                PageApply {
+                    endpoint: "List",
+                    page_index: 0,
+                    ctx: &ctx,
+                },
+            ),
+            Err(ApiClientError::Pagination { .. })
+        ));
+
+        let mut overflow = OffsetLimitPagination {
+            offset: u64::MAX,
+            limit: 1,
+        };
+        assert!(matches!(
+            <OffsetLimitPagination as EndpointPagination<Vec<String>>>::advance(
+                &mut overflow,
+                &vec!["a".to_string()],
+                PageAdvance {
+                    endpoint: "List",
+                    page_index: 0,
+                    received_items: 1,
+                },
+            ),
+            Err(ApiClientError::Pagination { .. })
+        ));
+    }
 }
