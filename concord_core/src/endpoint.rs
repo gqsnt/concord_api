@@ -150,17 +150,6 @@ pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     {
         None
     }
-
-    #[doc(hidden)]
-    fn endpoint_state_pagination(
-        &self,
-    ) -> Option<Box<dyn crate::pagination::EndpointPaginationRuntime<Self, Self::Response>>>
-    where
-        Self: Sized,
-        Self::Response: crate::pagination::PageItems,
-    {
-        None
-    }
 }
 
 /// Marker implemented only for endpoints whose primary response is a stream.

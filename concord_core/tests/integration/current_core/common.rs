@@ -1,13 +1,12 @@
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
-    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltResponse, CursorBindings,
-    CursorPagination, DecodedResponse, EndpointField, EndpointPaginationRuntime,
-    EndpointPaginationRuntimeAdapter, OffsetLimitBindings, OffsetLimitPagination, PagedBindings,
-    PagedPagination, PostResponseHookContext, PreSendHookContext, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RequestMeta, RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, Transport,
-    TransportBody, TransportByteStream, TransportError, TransportErrorHookContext,
+    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltResponse, CursorPagination,
+    DecodedResponse, OffsetLimitPagination, PagedPagination, PaginateBinding,
+    PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
+    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestMeta,
+    RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, SingleObjectPaginationRuntimeAdapter,
+    Transport, TransportBody, TransportByteStream, TransportError, TransportErrorHookContext,
     TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
     apply_basic_credential,
 };
@@ -296,40 +295,52 @@ impl Endpoint<TestCx> for ItemsEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for ItemsEndpoint {
-    fn endpoint_state_pagination(
+    fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
+    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    where
+        Self: Sized,
+        Self::Response: PageItems,
+    {
         match &self.pagination {
             PaginationPlan::OffsetLimit { .. } => {
-                Some(Box::new(EndpointPaginationRuntimeAdapter::new(
-                    OffsetLimitPagination::default(),
-                    OffsetLimitBindings {
-                        offset: EndpointField::new(
-                            |ep: &Self| ep.start,
-                            |ep: &mut Self, value| ep.start = value,
-                        ),
-                        limit: EndpointField::new(
-                            |ep: &Self| ep.count,
-                            |ep: &mut Self, value| ep.count = value,
-                        ),
-                    },
-                )))
+                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+                    OffsetLimitPagination,
+                >::new()))
             }
-            PaginationPlan::Paged { .. } => Some(Box::new(EndpointPaginationRuntimeAdapter::new(
-                PagedPagination::default(),
-                PagedBindings {
-                    page: EndpointField::new(
-                        |ep: &Self| ep.start,
-                        |ep: &mut Self, value| ep.start = value,
-                    ),
-                    per_page: EndpointField::new(
-                        |ep: &Self| ep.count,
-                        |ep: &mut Self, value| ep.count = value,
-                    ),
-                },
-            ))),
+            PaginationPlan::Paged { .. } => Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+                PagedPagination,
+            >::new())),
             PaginationPlan::Cursor { .. } => None,
         }
+    }
+}
+
+impl PaginateBinding<OffsetLimitPagination> for ItemsEndpoint {
+    fn load_pagination(&self) -> OffsetLimitPagination {
+        OffsetLimitPagination {
+            offset: self.start,
+            limit: self.count,
+        }
+    }
+
+    fn store_pagination(&mut self, pagination: &OffsetLimitPagination) {
+        self.start = pagination.offset;
+        self.count = pagination.limit;
+    }
+}
+
+impl PaginateBinding<PagedPagination> for ItemsEndpoint {
+    fn load_pagination(&self) -> PagedPagination {
+        PagedPagination {
+            page: self.start,
+            per_page: self.count,
+        }
+    }
+
+    fn store_pagination(&mut self, pagination: &PagedPagination) {
+        self.start = pagination.page;
+        self.count = pagination.per_page;
     }
 }
 
@@ -469,40 +480,52 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for PageOnlyItemsEndpoint {
-    fn endpoint_state_pagination(
+    fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
+    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    where
+        Self: Sized,
+        Self::Response: PageItems,
+    {
         match &self.pagination {
-            PaginationPlan::Paged { .. } => Some(Box::new(EndpointPaginationRuntimeAdapter::new(
-                PagedPagination::default(),
-                PagedBindings {
-                    page: EndpointField::new(
-                        |ep: &Self| ep.page,
-                        |ep: &mut Self, value| ep.page = value,
-                    ),
-                    per_page: EndpointField::new(
-                        |ep: &Self| ep.count,
-                        |ep: &mut Self, value| ep.count = value,
-                    ),
-                },
-            ))),
+            PaginationPlan::Paged { .. } => Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+                PagedPagination,
+            >::new())),
             PaginationPlan::OffsetLimit { .. } => {
-                Some(Box::new(EndpointPaginationRuntimeAdapter::new(
-                    OffsetLimitPagination::default(),
-                    OffsetLimitBindings {
-                        offset: EndpointField::new(
-                            |ep: &Self| ep.page,
-                            |ep: &mut Self, value| ep.page = value,
-                        ),
-                        limit: EndpointField::new(
-                            |ep: &Self| ep.count,
-                            |ep: &mut Self, value| ep.count = value,
-                        ),
-                    },
-                )))
+                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+                    OffsetLimitPagination,
+                >::new()))
             }
             PaginationPlan::Cursor { .. } => None,
         }
+    }
+}
+
+impl PaginateBinding<PagedPagination> for PageOnlyItemsEndpoint {
+    fn load_pagination(&self) -> PagedPagination {
+        PagedPagination {
+            page: self.page,
+            per_page: self.count,
+        }
+    }
+
+    fn store_pagination(&mut self, pagination: &PagedPagination) {
+        self.page = pagination.page;
+        self.count = pagination.per_page;
+    }
+}
+
+impl PaginateBinding<OffsetLimitPagination> for PageOnlyItemsEndpoint {
+    fn load_pagination(&self) -> OffsetLimitPagination {
+        OffsetLimitPagination {
+            offset: self.page,
+            limit: self.count,
+        }
+    }
+
+    fn store_pagination(&mut self, pagination: &OffsetLimitPagination) {
+        self.page = pagination.offset;
+        self.count = pagination.limit;
     }
 }
 
@@ -611,33 +634,45 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for CursorItemsEndpoint {
-    fn endpoint_state_pagination(
+    fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn EndpointPaginationRuntime<Self, Self::Response>>> {
+    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    where
+        Self: Sized,
+        Self::Response: PageItems,
+    {
         match &self.pagination {
+            PaginationPlan::Cursor { .. } => {
+                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+                    CursorPagination<String>,
+                >::new()))
+            }
+            PaginationPlan::OffsetLimit { .. } | PaginationPlan::Paged { .. } => None,
+        }
+    }
+}
+
+impl PaginateBinding<CursorPagination<String>> for CursorItemsEndpoint {
+    fn load_pagination(&self) -> CursorPagination<String> {
+        let (send_cursor_on_first, stop_when_cursor_missing) = match &self.pagination {
             PaginationPlan::Cursor {
                 send_cursor_on_first,
                 stop_when_cursor_missing,
                 ..
-            } => Some(Box::new(EndpointPaginationRuntimeAdapter::new(
-                CursorPagination {
-                    send_cursor_on_first: *send_cursor_on_first,
-                    stop_when_cursor_missing: *stop_when_cursor_missing,
-                    ..Default::default()
-                },
-                CursorBindings {
-                    cursor: EndpointField::new(
-                        |ep: &Self| ep.cursor.clone(),
-                        |ep: &mut Self, value| ep.cursor = value,
-                    ),
-                    per_page: EndpointField::new(
-                        |ep: &Self| ep.count,
-                        |ep: &mut Self, value| ep.count = value,
-                    ),
-                },
-            ))),
-            PaginationPlan::OffsetLimit { .. } | PaginationPlan::Paged { .. } => None,
+            } => (*send_cursor_on_first, *stop_when_cursor_missing),
+            _ => (false, true),
+        };
+        CursorPagination {
+            cursor: self.cursor.clone(),
+            per_page: self.count,
+            send_cursor_on_first,
+            stop_when_cursor_missing,
         }
+    }
+
+    fn store_pagination(&mut self, pagination: &CursorPagination<String>) {
+        self.cursor = pagination.cursor.clone();
+        self.count = pagination.per_page;
     }
 }
 
@@ -784,10 +819,7 @@ pub fn decode_cursor_items(
     } else {
         items_text.split(',').map(ToOwned::to_owned).collect()
     };
-    let next = next_text
-        .strip_prefix("next=")
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned);
+    let next = next_text.strip_prefix("next=").map(ToOwned::to_owned);
     Ok(Box::new(DecodedResponse {
         meta: resp.meta,
         url: resp.url,

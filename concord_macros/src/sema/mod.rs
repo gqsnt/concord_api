@@ -3610,7 +3610,7 @@ mod tests {
 
             GET Custom(page: u64 = 1)
                 path ["custom"]
-                paginate endpoint_state HeaderCursorPagination bindings HeaderCursorBindings {
+                paginate endpoint_state HeaderCursorPagination bindings HeaderCursorPaginationBindings {
                     page = page
                 }
                 -> Json<Vec<String>>
@@ -3676,7 +3676,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_endpoint_state_pagination_bindings_resolve() {
+    fn custom_pagination_bindings_resolve() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client PageApi {
@@ -3726,7 +3726,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_endpoint_state_pagination_rejects_unknown_endpoint_field() {
+    fn custom_pagination_rejects_unknown_endpoint_field() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client PageApi {

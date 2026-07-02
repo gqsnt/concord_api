@@ -1,6 +1,6 @@
 use concord_core::advanced::{
-    EndpointField, EndpointPagination, EndpointPaginationController, PageAdvance, PageApply,
-    PageApplyResult, PageDecision, PageItems, ProgressKey,
+    EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
+    ProgressKey,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -31,65 +31,8 @@ pub struct HeaderCursorPagination {
     pub page: u64,
 }
 
-pub struct HeaderCursorBindings<E> {
-    pub page: EndpointField<E, u64>,
-}
-
 #[derive(Default)]
-pub struct HeaderCursorState {
-    pub page: u64,
-}
-
-impl<E, Page> EndpointPaginationController<E, Page> for HeaderCursorPagination
-where
-    E: 'static,
-    Page: PageItems,
-{
-    type Bindings = HeaderCursorBindings<E>;
-    type State = HeaderCursorState;
-
-    fn init(
-        &self,
-        bindings: &Self::Bindings,
-        endpoint: &E,
-        _ctx: PageApply<'_>,
-    ) -> Result<Self::State, ApiClientError> {
-        Ok(HeaderCursorState {
-            page: bindings.page.get(endpoint),
-        })
-    }
-
-    fn apply(
-        &self,
-        bindings: &Self::Bindings,
-        state: &mut Self::State,
-        endpoint: &mut E,
-        _ctx: PageApply<'_>,
-    ) -> Result<PageApplyResult, ApiClientError> {
-        bindings.page.set(endpoint, state.page);
-        Ok(PageApplyResult {
-            expected_items_per_page: NonZeroUsize::new(2),
-        })
-    }
-
-    fn advance(
-        &self,
-        _bindings: &Self::Bindings,
-        state: &mut Self::State,
-        page: &Page,
-        _ctx: PageAdvance<'_>,
-    ) -> Result<PageDecision, ApiClientError> {
-        if page.item_count_hint() == Some(0) {
-            return Ok(PageDecision::Stop);
-        }
-        state.page += 1;
-        Ok(PageDecision::Continue)
-    }
-
-    fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
-        Some(ProgressKey::U64(state.page))
-    }
-}
+pub struct HeaderCursorPaginationBindings;
 
 impl<Page> EndpointPagination<Page> for HeaderCursorPagination
 where
@@ -124,7 +67,7 @@ api! {
         query {
             "page" = page,
         }
-        paginate endpoint_state HeaderCursorPagination bindings HeaderCursorBindings {
+        paginate endpoint_state HeaderCursorPagination bindings HeaderCursorPaginationBindings {
             page = page
         }
         -> Json<Page>

@@ -96,6 +96,13 @@ if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom|PaginationControl
   fail_with_matches "concord_macros codegen must not emit removed custom pagination plan output." "$unsupported_custom_codegen_refs"
 fi
 
+section "removed endpoint-state runtime layer fence"
+runtime_layer_refs="$tmpdir/runtime_layer.refs"
+if "${RG[@]}" 'EndpointField|EndpointPaginationController|EndpointPaginationRuntimeAdapter|EndpointPaginationRuntime|OffsetLimitBindings|PagedBindings|CursorBindings|OffsetLimitState|PagedState|CursorState|endpoint_state_pagination' \
+  concord_core/src concord_macros/src/codegen concord_examples/src concord_core/tests concord_macros/tests >"$runtime_layer_refs" 2>/dev/null; then
+  fail_with_matches "removed endpoint-state pagination runtime layer names must not reappear in production codegen examples or tests." "$runtime_layer_refs"
+fi
+
 section "codegen semantic boundary"
 codegen_refs="$tmpdir/codegen.refs"
 if "${RG[@]}" 'crate::ast|Raw(Api|Ast|Client|Scope|Endpoint|Item)|NormApiTree' concord_macros/src/codegen >"$codegen_refs" 2>/dev/null; then

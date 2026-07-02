@@ -1,6 +1,6 @@
 use concord_core::advanced::{
-    EndpointField, EndpointPagination, EndpointPaginationController, PageAdvance, PageApply,
-    PageApplyResult, PageDecision, PageItems, ProgressKey,
+    EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
+    ProgressKey,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -35,73 +35,8 @@ pub struct HeaderCursorPagination {
     pub limit: u64,
 }
 
-#[derive(Clone, Debug)]
-pub struct HeaderCursorBindings<E> {
-    pub page: EndpointField<E, u64>,
-    pub limit: EndpointField<E, u64>,
-}
-
-#[derive(Default)]
-pub struct HeaderCursorState {
-    pub page: u64,
-    pub limit: u64,
-}
-
-impl<E, Page> EndpointPaginationController<E, Page> for HeaderCursorPagination
-where
-    E: 'static,
-    Page: PageItems,
-{
-    type Bindings = HeaderCursorBindings<E>;
-    type State = HeaderCursorState;
-
-    fn init(
-        &self,
-        bindings: &Self::Bindings,
-        endpoint: &E,
-        _ctx: PageApply<'_>,
-    ) -> Result<Self::State, ApiClientError> {
-        Ok(HeaderCursorState {
-            page: bindings.page.get(endpoint),
-            limit: bindings.limit.get(endpoint),
-        })
-    }
-
-    fn apply(
-        &self,
-        bindings: &Self::Bindings,
-        state: &mut Self::State,
-        endpoint: &mut E,
-        _ctx: PageApply<'_>,
-    ) -> Result<PageApplyResult, ApiClientError> {
-        // This example asks the remote for two items per page. The runtime uses
-        // the exact item_count_hint plus this expected size to stop on a short
-        // terminal page before calling advance().
-        bindings.page.set(endpoint, state.page);
-        bindings.limit.set(endpoint, state.limit);
-        Ok(PageApplyResult {
-            expected_items_per_page: NonZeroUsize::new(state.limit as usize),
-        })
-    }
-
-    fn advance(
-        &self,
-        _bindings: &Self::Bindings,
-        state: &mut Self::State,
-        page: &Page,
-        _ctx: PageAdvance<'_>,
-    ) -> Result<PageDecision, ApiClientError> {
-        if page.item_count_hint() == Some(0) {
-            return Ok(PageDecision::Stop);
-        }
-        state.page += 1;
-        Ok(PageDecision::Continue)
-    }
-
-    fn progress_key(&self, state: &Self::State) -> Option<ProgressKey> {
-        Some(ProgressKey::U64(state.page))
-    }
-}
+#[derive(Clone, Debug, Default)]
+pub struct HeaderCursorPaginationBindings;
 
 impl<Page> EndpointPagination<Page> for HeaderCursorPagination
 where
@@ -160,7 +95,7 @@ api! {
         headers {
             "x-page-cursor" = page,
         }
-        paginate endpoint_state HeaderCursorPagination bindings HeaderCursorBindings {
+        paginate endpoint_state HeaderCursorPagination bindings HeaderCursorPaginationBindings {
             page = page,
             limit = limit
         }

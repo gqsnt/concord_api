@@ -163,6 +163,30 @@ mod tests {
         }
     }
 
+    fn legacy_runtime_hook_token() -> String {
+        ["endpoint", "_state", "_pagination"].concat()
+    }
+
+    fn legacy_endpoint_pagination_runtime_adapter() -> String {
+        ["EndpointPagination", "Runtime", "Adapter"].concat()
+    }
+
+    fn legacy_endpoint_field() -> String {
+        ["Endpoint", "Field"].concat()
+    }
+
+    fn legacy_offset_limit_bindings() -> String {
+        ["OffsetLimit", "Bindings"].concat()
+    }
+
+    fn legacy_paged_bindings() -> String {
+        ["Paged", "Bindings"].concat()
+    }
+
+    fn legacy_cursor_bindings() -> String {
+        ["Cursor", "Bindings"].concat()
+    }
+
     fn generated_doc_attrs(expanded: &str) -> Vec<&str> {
         let mut docs = Vec::new();
         let mut rest = expanded;
@@ -1257,16 +1281,26 @@ mod tests {
             &out,
             &[
                 "let mut ctrl : :: concord_core :: internal :: OffsetLimitPagination = :: core :: default :: Default :: default ()",
-                ":: concord_core :: advanced :: OffsetLimitBindings",
-                "endpoint_state_pagination",
-                "EndpointPaginationRuntimeAdapter",
-                ":: concord_core :: advanced :: PagedBindings",
-                "endpoint_state_pagination",
-                "EndpointPaginationRuntimeAdapter",
                 "let mut ctrl : :: concord_core :: internal :: CursorPagination = :: core :: default :: Default :: default ()",
                 "let mut ctrl : :: concord_core :: internal :: PagedPagination = :: core :: default :: Default :: default ()",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
             ],
+        );
+        assert!(
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            "removed runtime adapter must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_offset_limit_bindings()),
+            "removed endpoint-state binding helpers must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_paged_bindings()),
+            "removed endpoint-state binding helpers must not appear in generated output"
         );
         assert!(
             !out.contains("offset_key"),
@@ -1807,7 +1841,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_pagination_endpoint_state_bindings_for_offset_limit() {
+    fn generated_pagination_bindings_for_offset_limit() {
         let out = expanded(quote! {
             client SnapshotPaginationBindings {
                 base "https://example.com"
@@ -1828,19 +1862,32 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "EndpointField :: new",
-                ":: concord_core :: advanced :: OffsetLimitBindings",
-                "endpoint_state_pagination",
-                "EndpointPaginationRuntimeAdapter",
-                "ep . start . clone ()",
-                "ep . count . clone ()",
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: OffsetLimitPagination >",
+                "fn load_pagination",
+                "fn store_pagination",
+                "pagination . offset = self . start . clone ()",
+                "pagination . limit = self . count . clone ()",
+                "self . start = pagination . offset . clone ()",
+                "self . count = pagination . limit . clone ()",
                 ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
             ],
+        );
+        assert!(
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            "removed runtime adapter must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_endpoint_field()),
+            "removed endpoint-state binding helpers must not appear in generated output"
         );
     }
 
     #[test]
-    fn generated_offset_limit_uses_endpoint_state_pagination_runtime() {
+    fn generated_offset_limit_uses_single_object_pagination_runtime_only() {
         let out = expanded(quote! {
             client SnapshotOffsetLimitRuntime {
                 base "https://example.com"
@@ -1861,30 +1908,26 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                ":: concord_core :: advanced :: OffsetLimitBindings",
-                "endpoint_state_pagination",
-                "EndpointPaginationRuntimeAdapter",
-                "EndpointField :: new",
-                "ep . start . clone ()",
-                "ep . count . clone ()",
-                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: OffsetLimitPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: OffsetLimitPagination >",
             ],
         );
         assert!(
-            !out.contains("offset_key ="),
-            "endpoint-state binding helper must not use offset query keys"
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
         );
         assert!(
-            !out.contains("limit_key ="),
-            "endpoint-state binding helper must not use limit query keys"
+            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            "removed runtime adapter must not appear in generated output"
         );
         assert!(
-            !out.contains("offset_limit_pagination_bindings"),
-            "removed pagination hook must not appear in generated output"
+            !out.contains(&legacy_endpoint_field()),
+            "removed endpoint-state binding helpers must not appear in generated output"
         );
         assert!(
-            !out.contains("paged_pagination_bindings"),
-            "removed pagination hook must not appear in generated output"
+            !out.contains(&legacy_offset_limit_bindings()),
+            "removed endpoint-state binding types must not appear in generated output"
         );
     }
 
@@ -1951,7 +1994,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_paged_uses_endpoint_state_pagination_runtime() {
+    fn generated_paged_uses_single_object_pagination_runtime_only() {
         let out = expanded(quote! {
             client SnapshotPagedRuntime {
                 base "https://example.com"
@@ -1972,22 +2015,26 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                ":: concord_core :: advanced :: PagedBindings",
-                "endpoint_state_pagination",
-                "EndpointPaginationRuntimeAdapter",
-                "EndpointField :: new",
-                "ep . page . clone ()",
-                "ep . count . clone ()",
-                ":: concord_core :: internal :: PaginationPlan :: from (ctrl)",
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: PagedPagination >",
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: PagedPagination >",
             ],
         );
         assert!(
-            !out.contains("offset_limit_pagination_bindings"),
-            "removed pagination hook must not appear in generated output"
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
         );
         assert!(
-            !out.contains("paged_pagination_bindings"),
-            "removed pagination hook must not appear in generated output"
+            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            "removed runtime adapter must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_endpoint_field()),
+            "removed endpoint-state binding helpers must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_paged_bindings()),
+            "removed endpoint-state binding types must not appear in generated output"
         );
     }
 
@@ -2054,7 +2101,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_custom_uses_endpoint_state_pagination_runtime() {
+    fn generated_custom_uses_single_object_pagination_runtime_only() {
         let out = expanded(quote! {
             client SnapshotCustomEndpointState {
                 base "https://example.com"
@@ -2075,25 +2122,31 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "endpoint_state_pagination",
-                "EndpointPaginationRuntimeAdapter",
-                "EndpointPaginationController",
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter :: < HeaderPagePagination >",
+                ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
                 "HeaderPagePagination",
-                "HeaderPageBindings",
-                "EndpointField :: new",
             ],
         );
         assert!(
-            !out.contains("page_key"),
-            "endpoint-state custom pagination must not be keyed by query strings"
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
         );
         assert!(
-            !out.contains("count_key"),
-            "endpoint-state custom pagination must not be keyed by query strings"
+            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            "removed runtime adapter must not appear in generated output"
+        );
+        assert!(
+            !out.contains("HeaderPageBindings"),
+            "removed endpoint-state binding helpers must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_endpoint_field()),
+            "removed endpoint-state binding helpers must not appear in generated output"
         );
         assert!(
             !out.contains(&["PaginationPlan", "::", "custom"].concat()),
-            "endpoint-state custom pagination should not require custom-plan metadata"
+            "single-object pagination should not require custom-plan metadata"
         );
     }
 
@@ -2126,14 +2179,20 @@ mod tests {
                 "pagination . count = self . count . clone ()",
                 "self . page = pagination . page . clone ()",
                 "self . count = pagination . count . clone ()",
-                "endpoint_state_pagination",
-                "EndpointPaginationRuntimeAdapter",
             ],
+        );
+        assert!(
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            "removed runtime adapter must not appear in generated output"
         );
     }
 
     #[test]
-    fn generated_custom_endpoint_state_exposes_single_object_pagination_runtime() {
+    fn generated_custom_exposes_single_object_pagination_runtime() {
         let out = expanded(quote! {
             client SnapshotCustomEndpointStateSingleObjectRuntime {
                 base "https://example.com"
@@ -2156,19 +2215,22 @@ mod tests {
             &[
                 "single_object_pagination",
                 "SingleObjectPaginationRuntimeAdapter :: < HeaderPagePagination >",
-                "endpoint_state_pagination",
                 ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
             ],
+        );
+        assert!(
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
         );
     }
 
     #[test]
-    fn generated_custom_pagination_uses_endpoint_state_runtime() {
-        generated_custom_uses_endpoint_state_pagination_runtime();
+    fn generated_custom_pagination_uses_single_object_pagination_runtime_only() {
+        generated_custom_uses_single_object_pagination_runtime_only();
     }
 
     #[test]
-    fn generated_cursor_uses_endpoint_state_pagination_runtime() {
+    fn generated_cursor_uses_single_object_pagination_runtime_only() {
         let out = expanded(quote! {
             client SnapshotCursorRuntime {
                 base "https://example.com"
@@ -2189,24 +2251,26 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                ":: concord_core :: advanced :: CursorBindings",
-                "endpoint_state_pagination",
-                "EndpointPaginationRuntimeAdapter",
-                "EndpointField :: new",
-                "HasNextCursor",
-                "ep . cursor . clone ()",
-                "ep . count . clone ()",
-                "ep . cursor = value",
-                ":: concord_core :: advanced :: CursorPagination {",
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
             ],
         );
         assert!(
-            !out.contains("offset_limit_pagination_bindings"),
-            "removed pagination hook must not appear in generated output"
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
         );
         assert!(
-            !out.contains("paged_pagination_bindings"),
-            "removed pagination hook must not appear in generated output"
+            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            "removed runtime adapter must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_cursor_bindings()),
+            "removed endpoint-state binding types must not appear in generated output"
+        );
+        assert!(
+            !out.contains(&legacy_endpoint_field()),
+            "removed endpoint-state binding helpers must not appear in generated output"
         );
     }
 
@@ -2281,13 +2345,17 @@ mod tests {
             &[
                 "single_object_pagination",
                 "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
-                "endpoint_state_pagination",
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
             ],
+        );
+        assert!(
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
         );
     }
 
     #[test]
-    fn generated_cursor_endpoint_state_preserves_cursor_controller_flags() {
+    fn generated_cursor_single_object_pagination_preserves_controller_flags() {
         let out = expanded(quote! {
             client SnapshotCursorFlags {
                 base "https://example.com"
@@ -2310,21 +2378,23 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "endpoint_state_pagination",
-                "EndpointPaginationRuntimeAdapter",
-                "CursorBindings",
-                "EndpointField :: new",
-                "send_cursor_on_first:true",
-                "stop_when_cursor_missing:false",
-                "CursorPagination{",
+                "single_object_pagination",
+                "SingleObjectPaginationRuntimeAdapter :: < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                "send_cursor_on_first = true",
+                "stop_when_cursor_missing = false",
             ],
+        );
+        assert!(
+            !out.contains(&legacy_runtime_hook_token()),
+            "removed runtime hook must not appear in generated output"
         );
     }
 
     #[test]
-    fn generated_pagination_endpoint_state_bindings_clone_non_copy_cursor() {
+    fn generated_pagination_binding_clones_non_copy_cursor() {
         let out = expanded(quote! {
-            client SnapshotPaginationCursorBindings {
+            client SnapshotPaginationCursorFlow {
                 base "https://example.com"
             }
 
@@ -2343,12 +2413,9 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                ":: concord_core :: advanced :: CursorBindings",
-                "EndpointField :: new",
-                "ep . cursor . clone ()",
-                "ep . cursor = value",
-                ":: concord_core :: advanced :: CursorPagination {",
-                "HasNextCursor",
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                "pagination . cursor = self . cursor . clone ()",
+                "self . cursor = pagination . cursor . clone ()",
             ],
         );
     }
