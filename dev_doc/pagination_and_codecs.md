@@ -50,14 +50,13 @@ Built-in controllers:
 
 - `OffsetLimitPagination`
 - `CursorPagination`
+- `PagedPagination`
 
-Custom pagination implements `PaginationController`.
+Endpoint-state custom pagination implements `EndpointPaginationController`.
 
 ## Runtime controller model
 
-`PageRequest` represents the next page request mutation.
-
-`PageRequest` is constructed by the runtime, not by user code. Controllers mutate it through query/header helpers. Query keys can be owned or dynamic. Header mutation is fallible and invalid header names must return typed pagination errors rather than panicking. Custom controllers that request a known page size set it through `PageRequest::set_expected_items_per_page(NonZeroUsize)` during `apply()`. The value is per page request and starts as `None` for each page.
+Endpoint-state custom controllers receive bound endpoint fields and return `PageApplyResult`. Header mutation and query rendering happen through endpoint planning, not through pagination runtime request mutation. Custom controllers that request a known page size return it through `PageApplyResult::expected_items_per_page` during `apply()`. The value is per page request and starts as `None` for each page.
 
 `PageDecision` tells the runtime whether to continue, stop, or error.
 
@@ -69,16 +68,16 @@ identity returns a typed pagination error instead of silently reissuing the
 same page. The optional controller `ProgressKey` check remains available as an
 additional guard.
 
-The macro `paginate` block resolves controller field assignments. Codegen connects those assignments to the runtime controller traits; the runtime drives page requests and decodes each page through the endpoint response codec.
+The macro `paginate` block resolves controller field assignments. Built-in pagination uses assignment blocks for endpoint fields. Explicit endpoint-state custom pagination uses `paginate endpoint_state Controller bindings Bindings { ... }`, and codegen connects those bindings to the runtime controller traits; the runtime drives endpoint-state mutation and decodes each page through the endpoint response codec.
 
 Empty-page and short-page termination are runtime invariants, not
 controller-specific rules. The runtime obtains expected page size from built-in
 offset/page/cursor controllers (`limit` or `per_page`) or from custom
-`PageRequest::set_expected_items_per_page(NonZeroUsize)`. `PageItems` count
-hints are exact when present. An exact hint alone is enough for hinted
-empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion
-before controller advance. Exact hint plus expected page size is required for
-generic short-page stop before controller advance.
+`PageApplyResult::expected_items_per_page`. `PageItems` count hints are exact
+when present. An exact hint alone is enough for hinted empty-page stop,
+hard-item-cap overflow, and provable `TakeItems` completion before controller
+advance. Exact hint plus expected page size is required for generic short-page
+stop before controller advance.
 
 `collect()` still validates actual items and applies exact `TakeItems`
 truncation after `into_items()`. Because that method consumes the page while

@@ -1880,11 +1880,11 @@ mod tests {
         );
         assert!(
             !out.contains("offset_limit_pagination_bindings"),
-            "obsolete per-controller hook must not appear in generated output"
+            "removed pagination hook must not appear in generated output"
         );
         assert!(
             !out.contains("paged_pagination_bindings"),
-            "obsolete per-controller hook must not appear in generated output"
+            "removed pagination hook must not appear in generated output"
         );
     }
 
@@ -1921,11 +1921,11 @@ mod tests {
         );
         assert!(
             !out.contains("offset_limit_pagination_bindings"),
-            "obsolete per-controller hook must not appear in generated output"
+            "removed pagination hook must not appear in generated output"
         );
         assert!(
             !out.contains("paged_pagination_bindings"),
-            "obsolete per-controller hook must not appear in generated output"
+            "removed pagination hook must not appear in generated output"
         );
     }
 
@@ -1969,12 +1969,12 @@ mod tests {
         );
         assert!(
             !out.contains(&["PaginationPlan", "::", "custom"].concat()),
-            "endpoint-state custom pagination should not require the old custom plan bound"
+            "endpoint-state custom pagination should not require custom-plan metadata"
         );
     }
 
     #[test]
-    fn generated_endpoint_state_custom_is_preferred_custom_pagination_path() {
+    fn generated_custom_pagination_uses_endpoint_state_runtime() {
         generated_custom_uses_endpoint_state_pagination_runtime();
     }
 
@@ -2013,11 +2013,11 @@ mod tests {
         );
         assert!(
             !out.contains("offset_limit_pagination_bindings"),
-            "obsolete per-controller hook must not appear in generated output"
+            "removed pagination hook must not appear in generated output"
         );
         assert!(
             !out.contains("paged_pagination_bindings"),
-            "obsolete per-controller hook must not appear in generated output"
+            "removed pagination hook must not appear in generated output"
         );
     }
 
@@ -2089,7 +2089,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_pagination_public_surface_exposes_collect_not_for_each_page() {
+    fn generated_pagination_public_surface_exposes_collect_only() {
         let out = expanded(quote! {
             client SnapshotPaginationSurface {
                 base "https://example.com"

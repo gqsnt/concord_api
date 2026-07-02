@@ -7,10 +7,9 @@ use std::num::NonZeroUsize;
 
 /// Offset/limit pagination (offset starts at 0 by default).
 ///
-/// This is the single "engine" for all offset-based APIs:
+/// This is the single controller model for offset-based APIs:
 /// - you bind `offset` and `limit` to endpoint params via `paginate { offset: start, limit: count }`
-/// - the query-key fields below are legacy compatibility metadata only; built-in
-///   endpoint-state runtime ignores them.
+/// - endpoint-state runtime reads the bound endpoint fields directly.
 #[derive(Clone, Debug)]
 pub struct OffsetLimitPagination {
     /// Initial offset value.

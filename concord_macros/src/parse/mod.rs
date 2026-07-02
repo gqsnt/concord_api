@@ -627,7 +627,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_old_custom_paginate_syntax_as_fallback_controller() {
+    fn parses_custom_paginate_syntax_without_endpoint_state() {
         let ast: RawApi = syn::parse_str(
             r#"
             client Api {
@@ -640,7 +640,7 @@ mod tests {
                 -> Json<Vec<String>>
             "#,
         )
-        .expect("old custom paginate syntax parses");
+        .expect("custom paginate syntax parses");
 
         let RawItem::Endpoint(endpoint) = &ast.items[0] else {
             panic!("expected endpoint");

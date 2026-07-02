@@ -718,7 +718,7 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
         PaginationControllerResolved::CustomEndpointState { .. } => quote! {
             // Endpoint-state custom pagination is driven entirely by the generated
             // `endpoint_state_pagination()` hook and runtime adapter, so it does
-            // not need legacy custom-plan metadata here.
+            // not need extra metadata here.
             let __pagination_plan = ::core::option::Option::None;
         },
         PaginationControllerResolved::OffsetLimit(ctrl) => {

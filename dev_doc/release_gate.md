@@ -92,9 +92,9 @@ Current coverage:
   `concord_examples/tests/integration/policy_stack.rs`
 - Pagination collect and per-page callbacks:
   `concord_examples/tests/integration/pagination.rs`
-- Custom codecs and custom pagination controllers:
+- Custom codecs and endpoint-state custom pagination:
   `concord_examples/tests/integration/custom_codec.rs` and
-  `concord_examples/tests/integration/custom_pagination.rs`
+  `concord_examples/tests/integration/endpoint_state_custom_pagination.rs`
 - Explicit endpoint and manual runtime usage plus `execute_raw`:
   `concord_examples/src/explicit_endpoint.rs`
 - Large generated API shape:

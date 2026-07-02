@@ -63,10 +63,10 @@ if "${RG[@]}" 'concord_macros|crate::ast|Raw(Api|Ast|Client|Scope|Endpoint|Item)
   fail_with_matches "concord_core must not reference compiler-only concepts." "$core_refs"
 fi
 
-section "legacy pagination runner fence"
-legacy_pagination_refs="$tmpdir/legacy_pagination.refs"
-if "${RG[@]}" 'PaginationRunner::(OffsetLimit|Paged|Cursor)|Self::(OffsetLimit|Paged|Cursor)|apply_query' concord_core/src/request.rs >"$legacy_pagination_refs" 2>/dev/null; then
-  fail_with_matches "concord_core/src/request.rs must not contain built-in PaginationRunner branches or apply_query." "$legacy_pagination_refs"
+section "endpoint-state pagination runtime fence"
+pagination_runtime_refs="$tmpdir/pagination_runtime.refs"
+if "${RG[@]}" 'Pagination''Runner::(OffsetLimit|Paged|Cursor)|Self::(OffsetLimit|Paged|Cursor)|apply''_query' concord_core/src/request.rs >"$pagination_runtime_refs" 2>/dev/null; then
+  fail_with_matches "concord_core/src/request.rs must not contain built-in pagination runner branches or request mutation helpers." "$pagination_runtime_refs"
 fi
 
 section "pagination query-key inference fence"
@@ -90,10 +90,10 @@ if "${RG[@]}" 'pub (offset_key|limit_key|page_key|per_page_key|cursor_key):' \
   fail_with_matches "concord_core built-in pagination controllers must not expose inert query-key fields." "$built_in_controller_key_refs"
 fi
 
-section "legacy custom codegen fence"
-legacy_custom_codegen_refs="$tmpdir/legacy_custom_codegen.refs"
-if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom|PaginationControllerResolved::Custom\b' concord_macros/src/codegen/endpoints/endpoint.rs >"$legacy_custom_codegen_refs" 2>/dev/null; then
-  fail_with_matches "concord_macros codegen must not emit the legacy custom pagination plan path." "$legacy_custom_codegen_refs"
+section "unsupported custom pagination codegen fence"
+unsupported_custom_codegen_refs="$tmpdir/unsupported_custom_codegen.refs"
+if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom|PaginationControllerResolved::Custom\b' concord_macros/src/codegen/endpoints/endpoint.rs >"$unsupported_custom_codegen_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros codegen must not emit removed custom pagination plan output." "$unsupported_custom_codegen_refs"
 fi
 
 section "codegen semantic boundary"

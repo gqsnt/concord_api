@@ -746,13 +746,24 @@ Built-in controllers:
 - `CursorPagination`
 - `PagedPagination`
 
-Custom controllers are Rust type paths implementing the pagination traits.
+Custom pagination uses explicit endpoint-state syntax.
 
 ```rust
-paginate custom::HeaderCursorPagination
+GET ListItems(page: u64 = 0, count: u64 = 100)
+    as list_items
+    path ["items"]
+    query {
+        "page" = page,
+        "count" = count,
+    }
+    paginate endpoint_state custom::HeaderCursorPagination bindings custom::HeaderCursorBindings {
+        page = page,
+        count = count
+    }
+    -> Json<Page<String>>
 ```
 
-Built-in pagination controllers use assignment blocks for their configured fields. Custom pagination controllers use `paginate TypePath` without a block; their state and request mutation live in the Rust controller implementation.
+Built-in pagination controllers use assignment blocks for their configured fields. Custom pagination binds controller fields to endpoint fields with explicit endpoint-state syntax, and endpoint planning renders query, header, path, and body output.
 
 Built-in pagination controller fields are sema-validated against the actual semantic model. Removed short-page stop fields such as `stop` and `stop_on_short_page` are rejected rather than reintroduced as controller-owned syntax.
 

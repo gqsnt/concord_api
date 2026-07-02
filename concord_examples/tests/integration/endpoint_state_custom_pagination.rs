@@ -1,10 +1,10 @@
 use bytes::Bytes;
 use concord_core::prelude::PaginationTermination;
-use concord_examples::custom_pagination::{CustomPaginationApi, Item};
+use concord_examples::endpoint_state_custom_pagination::{CustomPaginationApi, Item};
 use concord_test_support::{MockReply, assert_request, mock};
 
 #[tokio::test]
-async fn custom_pagination_controller_collects_pages() {
+async fn endpoint_state_custom_pagination_collects_pages() {
     let (transport, handle) = mock()
         .reply(json_reply(r#"{"items":[{"id":1},{"id":2}]}"#))
         .reply(json_reply(r#"{"items":[{"id":3}]}"#))

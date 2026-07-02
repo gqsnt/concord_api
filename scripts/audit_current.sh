@@ -167,13 +167,13 @@ require_match \
   docs/customization.md
 
 fail_if_match \
-  "old custom codec signatures" \
+  "codec signature expectations" \
   "fn content_type\\(\\) -> &.static str|fn accept\\(\\) -> &.static str|fn encode\\(value: &Self::Value|fn decode\\(bytes: &Bytes" \
   concord_core/src docs concord_examples concord_macros/tests/trybuild/pass
 
 require_match \
-  "custom pagination API documented" \
-  "PaginationController|PageRequest|PageItems|HasNextCursor" \
+  "endpoint-state custom pagination API documented" \
+  "EndpointPaginationController|EndpointPaginationRuntimeAdapter|EndpointField|PageApplyResult|PageItems|HasNextCursor" \
   docs/customization.md docs/pagination.md
 
 fail_if_match \
@@ -189,21 +189,21 @@ fail_if_match \
 fail_if_match \
   "PageItems implementors must not define item_count" \
   "fn item_count\\(&self\\)" \
-  concord_core/src/pagination.rs docs/customization.md concord_examples/src/custom_pagination.rs
+  concord_core/src/pagination.rs docs/customization.md concord_examples/src/endpoint_state_custom_pagination.rs
 
 fail_if_match \
-  "PaginationController trait must not require Default" \
-  "trait PaginationController<.*Default" \
+  "endpoint-state custom controller trait must not require Default" \
+  "trait EndpointPaginationController<.*Default" \
   concord_core/src
 
 require_match \
-  "custom pagination Default policy documented" \
-  "Default \\+ PaginationController|must implement \`Default\`" \
+  "endpoint-state custom pagination Default policy documented" \
+  "Default \\+ EndpointPaginationController|must implement \`Default\`" \
   docs/customization.md
 
 require_match \
-  "custom pagination missing Default compile-fail fixture" \
+  "endpoint-state custom pagination requirement compile-fail fixture" \
   "struct HeaderCursorPagination" \
-  concord_macros/tests/trybuild/fail/pagination/custom_pagination_missing_default.rs
+  concord_macros/tests/trybuild/fail/pagination/custom_pagination_requires_endpoint_state.rs
 
 echo "current audit passed"

@@ -1,11 +1,11 @@
 # Pagination
 
-Pagination is opt-in at the endpoint and call site. A paginated endpoint first declares a pagination controller in the DSL, then callers use `.paginate(PaginationTermination::...)` to choose paginated execution and an explicit termination policy. Response types such as `Vec<T>` can implement `PageItems`, but `.paginate(...)` is available only for endpoints that declare pagination. No page or item cap is implicit; loop detection is enabled by default.
+Pagination is opt-in at the endpoint and call site. A paginated endpoint declares built-in pagination or explicit endpoint-state custom pagination in the DSL, then callers use `.paginate(PaginationTermination::...)` to choose paginated execution and an explicit termination policy. Response types such as `Vec<T>` can implement `PageItems`, but `.paginate(...)` is available only for endpoints that declare pagination. No page or item cap is implicit; loop detection is enabled by default.
 
 The runtime treats pagination as a deterministic page loop:
 
 1. build the logical page request
-2. apply pagination mutations for that page
+2. apply endpoint-state pagination for that page
 3. validate auth collisions and acquire rate-limit permits
 4. send the page request through the normal transport, classification, auth, retry, and decode path
 5. use an exact item-count hint, when available, to apply common page-content stop rules before controller advance
@@ -17,9 +17,9 @@ Common page-content stop rules are runtime invariants, not controller-specific b
 - an empty page stops pagination
 - a short page stops pagination when Concord knows the expected page size
 
-The current page is included before stopping. `PageItems::item_count_hint()` is exact when present, and the runtime uses it before calling controller advance. Page types should implement it whenever they can expose the count without consuming themselves. An exact hint alone lets Concord stop before `advance()` for an empty page, hard-item-cap overflow, and provable `TakeItems` completion. Built-in offset, cursor, and page-number pagination provide the expected page size automatically from `limit` or `per_page`. Built-in controllers are `OffsetLimitPagination`, `CursorPagination`, and `PagedPagination`. Custom pagination controllers can call `PageRequest::set_expected_items_per_page(NonZeroUsize)` during `apply()` when they request a specific page size. With both an exact hint and an expected page size, the runtime also owns generic short-page stop before `advance()`. If custom pagination does not set an expected size, `collect()` still remains exact after consuming the page, but Concord cannot generically detect a short page before advance.
+The current page is included before stopping. `PageItems::item_count_hint()` is exact when present, and the runtime uses it before calling controller advance. Page types should implement it whenever they can expose the count without consuming themselves. An exact hint alone lets Concord stop before `advance()` for an empty page, hard-item-cap overflow, and provable `TakeItems` completion. Built-in offset, cursor, and page-number pagination provide the expected page size automatically from `limit` or `per_page`. Built-in controllers are `OffsetLimitPagination`, `CursorPagination`, and `PagedPagination`. Endpoint-state custom pagination can set `PageApplyResult::expected_items_per_page` during `apply()` when it requests a specific page size. With both an exact hint and an expected page size, the runtime also owns generic short-page stop before `advance()`. If endpoint-state custom pagination does not set an expected size, `collect()` still remains exact after consuming the page, but Concord cannot generically detect a short page before advance.
 
-Removed controller-local short-page stop fields such as `stop` and `stop_on_short_page` remain unsupported. Runtime-owned short-page stopping is controlled by `PageItems::item_count_hint()` and `PageRequest::set_expected_items_per_page()`.
+Removed controller-local short-page stop fields such as `stop` and `stop_on_short_page` remain unsupported. Runtime-owned short-page stopping is controlled by `PageItems::item_count_hint()` and `PageApplyResult::expected_items_per_page`.
 
 If a later page request would reuse any previously seen logical request identity, the runtime returns a typed pagination error instead of silently looping. That guard is separate from the explicit termination policy and remains active even when controller loop-key checking is disabled.
 
@@ -52,19 +52,17 @@ let items = api
     .await?;
 ```
 
-The runtime keeps request parameters stable while advancing controller fields.
+The runtime keeps endpoint fields stable while advancing controller state.
 
-Custom pagination controllers receive a mutable `PageRequest` for the next page. Query mutation accepts borrowed or owned keys, so controllers can compute dynamic query names. Header mutation is fallible: invalid header names return `ApiClientError::Pagination` instead of panicking. Controllers that request a specific page size should call `set_expected_items_per_page(NonZeroUsize)` on each page request. The expected count is per page and does not persist. `PageRequest::new` is an internal runtime construction hook, not a public user construction API.
-
-`PageRequest` mutations are applied to the logical page request before auth collision validation, rate-limit acquisition, and transport materialization. Query mutation is deterministic: `set_query()` removes all prior values for that key and appends the new value at the end of the query list, while `remove_query()` removes every matching value and leaves missing keys unchanged. Header mutation is typed and fallible for invalid names; header values are already represented as `HeaderValue`, so invalid values are rejected before they reach `PageRequest` and controllers usually map `HeaderValue::from_str` failures into typed pagination errors.
+Endpoint-state custom pagination binds controller state directly to endpoint fields. Endpoint field mutation happens before planning, and planning remains the only place that renders query, header, path, or body output. Endpoint-state custom controllers that request a specific page size should return `PageApplyResult { expected_items_per_page: Some(...) }` from `apply()`. The expected count is per page and does not persist.
 
 Paginated endpoints with request bodies are rejected in v1. Concord does not replay endpoint request bodies across page requests.
 
-Custom pagination cannot override auth-owned query or header material. If a page controller creates a collision with query auth, bearer or Basic `Authorization`, or custom header auth, Concord rejects the request before rate-limit acquisition and transport send.
+Endpoint-state pagination cannot override auth-owned query or header material. If a controller creates a collision with query auth, bearer or Basic `Authorization`, or custom header auth, Concord rejects the request before rate-limit acquisition and transport send.
 
 ## Cursor Pagination
 
-Cursor pagination uses a response type that exposes items and a next cursor. Offset, page-number, and custom pagination collection only require `PageItems`; built-in cursor pagination additionally requires `HasNextCursor`.
+Cursor pagination uses a response type that exposes items and a next cursor. Offset, page-number, and endpoint-state custom pagination collection only require `PageItems`; built-in cursor pagination additionally requires `HasNextCursor`.
 
 ```rust
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -122,7 +120,7 @@ Soft limits stop cleanly:
 
 Hard caps must be greater than zero. `HardPageCap(0)` and `HardItemCap(0)` return typed pagination errors before the first page request is sent. `TakePages(0)` and `TakeItems(0)` return an empty collection without transport for `collect()`.
 
-`collect()` supports all four termination modes. Item collection, exact `TakeItems` truncation, and final hard-item-cap validation use the items returned by `PageItems::into_items()`. Pre-advance empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion require an exact `item_count_hint()`, because `into_items()` consumes the page while cursor and custom advance logic may need to borrow it. Generic pre-advance short-page stop also requires an expected page size from built-ins or `PageRequest::set_expected_items_per_page(NonZeroUsize)`. Without a hint, collection and limits remain exact and no extra page is fetched after the exact terminal result is known, but controller advance may already have run. `HardItemCap` never truncates.
+`collect()` supports all four termination modes. Item collection, exact `TakeItems` truncation, and final hard-item-cap validation use the items returned by `PageItems::into_items()`. Pre-advance empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion require an exact `item_count_hint()`, because `into_items()` consumes the page while cursor and custom advance logic may need to borrow it. Generic pre-advance short-page stop also requires an expected page size from built-ins or `PageApplyResult::expected_items_per_page`. Without a hint, collection and limits remain exact and no extra page is fetched after the exact terminal result is known, but controller advance may already have run. `HardItemCap` never truncates.
 
 Retry and auth refresh preserve the current page state. A retry for page `N` retries page `N`, not page `N + 1`.
 

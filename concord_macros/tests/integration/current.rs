@@ -81,7 +81,7 @@ fn removed_pagination_fields_absent_from_docs_and_examples() {
         "../dev_doc/architecture.md",
         "../dev_doc/auth_runtime.md",
         "../concord_examples/src/pagination.rs",
-        "../concord_examples/src/custom_pagination.rs",
+        "../concord_examples/src/endpoint_state_custom_pagination.rs",
         "../concord_examples/src/docs_dsl.rs",
     ] {
         let path = root.join(rel);

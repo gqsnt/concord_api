@@ -49,7 +49,7 @@ fn examples_cover_v1_usage_surface() {
         "policy_stack",
         "pagination",
         "custom_codec",
-        "custom_pagination",
+        "endpoint_state_custom_pagination",
         "endpoint_io",
         "riot_large",
     ] {

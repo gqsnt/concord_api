@@ -125,54 +125,78 @@ impl<T: Send + 'static> HasNextCursor for Page<T> {
 }
 ```
 
-## Custom Pagination Controllers
+## Endpoint-State Custom Pagination
 
-A custom controller implements `PaginationController<Page>`. The controller owns pagination state, mutates the next page request through `PageRequest`, and decides whether to continue after each page when the runtime has not already stopped.
+An endpoint-state custom controller implements `EndpointPaginationController<E, Page>`. The controller owns pagination state and returns `PageApplyResult` for the next page while the endpoint-state runtime applies those bindings to the endpoint model before planning.
 
-`paginate TypePath` constructs the controller through `Default`, so custom controller marker types must implement `Default + PaginationController<Page>`.
+`paginate endpoint_state Controller bindings Bindings { ... }` constructs the controller through `Default`, so custom controller marker types must implement `Default + EndpointPaginationController<E, Page>`.
 
 ```rust
 use concord_core::advanced::{
-    PageAdvance, PageDecision, PageInit, PageRequest, PaginationController, ProgressKey,
+    EndpointField, EndpointPaginationController, PageAdvance, PageApply, PageApplyResult,
+    PageDecision, PageItems, ProgressKey,
 };
 use concord_core::prelude::ApiClientError;
 use std::num::NonZeroUsize;
 
 #[derive(Default)]
-pub struct HeaderCursorPagination;
+pub struct HeaderPagePagination;
 
-#[derive(Default)]
-pub struct HeaderCursorState {
-    page: u64,
+pub struct HeaderPageBindings<E> {
+    pub page: EndpointField<E, u64>,
+    pub count: EndpointField<E, u64>,
 }
 
-impl PaginationController<Page<String>> for HeaderCursorPagination {
-    type State = HeaderCursorState;
+#[derive(Default)]
+pub struct HeaderPageState {
+    page: u64,
+    count: u64,
+}
 
-    fn init(&self, _ctx: PageInit<'_>) -> Result<Self::State, ApiClientError> {
-        Ok(HeaderCursorState::default())
+impl<E, Page> EndpointPaginationController<E, Page> for HeaderPagePagination
+where
+    E: 'static,
+    Page: PageItems,
+{
+    type Bindings = HeaderPageBindings<E>;
+    type State = HeaderPageState;
+
+    fn init(
+        &self,
+        bindings: &Self::Bindings,
+        endpoint: &E,
+        _ctx: PageApply<'_>,
+    ) -> Result<Self::State, ApiClientError> {
+        Ok(HeaderPageState {
+            page: bindings.page.get(endpoint),
+            count: bindings.count.get(endpoint),
+        })
     }
 
     fn apply(
         &self,
-        state: &Self::State,
-        request: &mut PageRequest<'_>,
-    ) -> Result<(), ApiClientError> {
-        request.set_query("page", state.page);
-        request.set_query("limit", 100);
-        request.set_expected_items_per_page(
-            NonZeroUsize::new(100).expect("page size is non-zero"),
-        );
-        Ok(())
+        bindings: &Self::Bindings,
+        state: &mut Self::State,
+        endpoint: &mut E,
+        _ctx: PageApply<'_>,
+    ) -> Result<PageApplyResult, ApiClientError> {
+        bindings.page.set(endpoint, state.page);
+        bindings.count.set(endpoint, state.count);
+        Ok(PageApplyResult {
+            expected_items_per_page: NonZeroUsize::new(state.count as usize),
+        })
     }
 
     fn advance(
         &self,
+        _bindings: &Self::Bindings,
         state: &mut Self::State,
-        page: &Page<String>,
+        page: &Page,
         _ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError> {
-        let _ = page;
+        if page.item_count_hint() == Some(0) {
+            return Ok(PageDecision::Stop);
+        }
         state.page += 1;
         Ok(PageDecision::Continue)
     }
@@ -183,31 +207,38 @@ impl PaginationController<Page<String>> for HeaderCursorPagination {
 }
 ```
 
-Declare it without a configuration block:
+Declare it with explicit endpoint-state pagination:
 
 ```rust
 api! {
     client ExampleApi { base "https://example.com" }
 
-    GET ListItems
+    GET ListItems(page: u64 = 0, count: u64 = 100)
         as list_items
         path ["items"]
-        paginate HeaderCursorPagination
+        query {
+            "page" = page,
+            "count" = count,
+        }
+        paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+            page = page,
+            count = count
+        }
         -> Json<Page<String>>
 }
 ```
 
-Controller rules:
+Rules:
 
 - Built-in pagination keeps using configuration blocks.
-- Custom pagination uses `paginate TypePath` without a block.
-- Custom pagination controller types must implement `Default`.
-- `PageRequest` can set or remove query parameters and headers. Query keys may be owned or dynamic strings. Header mutation is fallible and returns `ApiClientError` for invalid header names instead of panicking.
-- `PageRequest::set_expected_items_per_page(NonZeroUsize)` tells the runtime how many items the current page requested. Set it during every `apply()` call that asks for a known page size; the value is per-page and does not persist.
+- Endpoint-state custom pagination uses `paginate endpoint_state ... bindings ...`.
+- Endpoint-state custom controller types must implement `Default`.
+- `EndpointField` values are written by the controller and read by the endpoint planner.
+- `PageApplyResult::expected_items_per_page` tells the runtime how many items the current page requested. Set it during every `apply()` call that asks for a known page size.
 - `PageItems::item_count_hint()` must be exact when present. Implement it whenever possible so runtime empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion can be decided before `advance()`.
 - With both an exact hint and an expected page size, the runtime also owns generic short-page stop and will not call `advance()` for terminal hinted pages.
-- Without an exact hint, `collect()` remains exact after consuming the page, but custom `advance()` may already have run. Without an expected page size, Concord cannot generically detect a short page before `advance()`.
+- Without an exact hint, `collect()` remains exact after consuming the page, but controller advance may already have run. Without an expected page size, Concord cannot generically detect a short page before `advance()`.
 - `progress_key` is used for loop detection when enabled.
 - Runtime retry, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
 
-Complete examples live in `concord_examples/src/custom_codec.rs` and `concord_examples/src/custom_pagination.rs`.
+Complete examples live in `concord_examples/src/custom_codec.rs` and `concord_examples/src/endpoint_state_custom_pagination.rs`.

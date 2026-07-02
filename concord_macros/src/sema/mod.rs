@@ -3752,7 +3752,7 @@ mod tests {
     }
 
     #[test]
-    fn old_custom_pagination_requires_endpoint_state() {
+    fn custom_pagination_requires_endpoint_state_bindings() {
         let paginate = ["paginate ", "HeaderPagePagination"].concat();
         let src = format!(
             r#"
@@ -3766,7 +3766,7 @@ mod tests {
             "#
         );
         let ast: crate::ast::RawApi = syn::parse_str(&src).expect("valid api syntax");
-        let err = analyze(ast).expect_err("old custom pagination should be rejected");
+        let err = analyze(ast).expect_err("custom pagination should be rejected");
 
         assert!(
             err.to_string()
