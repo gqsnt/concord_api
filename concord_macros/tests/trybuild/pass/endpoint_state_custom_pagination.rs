@@ -27,7 +27,9 @@ impl PageItems for Page {
 }
 
 #[derive(Default)]
-pub struct HeaderCursorPagination;
+pub struct HeaderCursorPagination {
+    pub page: u64,
+}
 
 pub struct HeaderCursorBindings<E> {
     pub page: EndpointField<E, u64>,

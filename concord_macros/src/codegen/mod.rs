@@ -1889,6 +1889,39 @@ mod tests {
     }
 
     #[test]
+    fn generated_offset_limit_emits_paginate_binding_impl() {
+        let out = expanded(quote! {
+            client SnapshotOffsetLimitBinding {
+                base "https://example.com"
+            }
+
+            GET List(start: u64 = 0, count: u64 = 20)
+                headers {
+                    "X-Start" = start,
+                    "X-Count" = count,
+                }
+                paginate OffsetLimitPagination {
+                    offset = start,
+                    limit = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: OffsetLimitPagination >",
+                "fn load_pagination",
+                "fn store_pagination",
+                "pagination . offset = self . start . clone ()",
+                "pagination . limit = self . count . clone ()",
+                "self . start = pagination . offset . clone ()",
+                "self . count = pagination . limit . clone ()",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_paged_uses_endpoint_state_pagination_runtime() {
         let out = expanded(quote! {
             client SnapshotPagedRuntime {
@@ -1926,6 +1959,39 @@ mod tests {
         assert!(
             !out.contains("paged_pagination_bindings"),
             "removed pagination hook must not appear in generated output"
+        );
+    }
+
+    #[test]
+    fn generated_paged_emits_paginate_binding_impl() {
+        let out = expanded(quote! {
+            client SnapshotPagedBinding {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 20)
+                headers {
+                    "X-Page" = page,
+                    "X-Count" = count,
+                }
+                paginate PagedPagination {
+                    page = page,
+                    per_page = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: PagedPagination >",
+                "fn load_pagination",
+                "fn store_pagination",
+                "pagination . page = self . page . clone ()",
+                "pagination . per_page = self . count . clone ()",
+                "self . page = pagination . page . clone ()",
+                "self . count = pagination . per_page . clone ()",
+            ],
         );
     }
 
@@ -1974,6 +2040,41 @@ mod tests {
     }
 
     #[test]
+    fn generated_custom_endpoint_state_emits_paginate_binding_impl() {
+        let out = expanded(quote! {
+            client SnapshotCustomEndpointStateBinding {
+                base "https://example.com"
+            }
+
+            GET List(page: u64 = 1, count: u64 = 2)
+                headers {
+                    "X-Page" = page,
+                    "X-Count" = count,
+                }
+                paginate endpoint_state HeaderPagePagination bindings HeaderPageBindings {
+                    page = page,
+                    count = count
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+                "fn load_pagination",
+                "fn store_pagination",
+                "pagination . page = self . page . clone ()",
+                "pagination . count = self . count . clone ()",
+                "self . page = pagination . page . clone ()",
+                "self . count = pagination . count . clone ()",
+                "endpoint_state_pagination",
+                "EndpointPaginationRuntimeAdapter",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_custom_pagination_uses_endpoint_state_runtime() {
         generated_custom_uses_endpoint_state_pagination_runtime();
     }
@@ -2018,6 +2119,51 @@ mod tests {
         assert!(
             !out.contains("paged_pagination_bindings"),
             "removed pagination hook must not appear in generated output"
+        );
+    }
+
+    #[test]
+    fn generated_cursor_emits_paginate_binding_impl() {
+        let out = expanded(quote! {
+            client SnapshotCursorBinding {
+                base "https://example.com"
+            }
+
+            GET List(cursor?: String, count: u64 = 2)
+                headers {
+                    "X-Cursor" = cursor,
+                    "X-Count" = count,
+                }
+                paginate CursorPagination {
+                    cursor = cursor,
+                    per_page = count,
+                    send_cursor_on_first = true,
+                    stop_when_cursor_missing = false
+                }
+                -> Json<Vec<String>>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                ":: concord_core :: advanced :: PaginateBinding < :: concord_core :: advanced :: CursorPagination < :: std :: string :: String > >",
+                "fn load_pagination",
+                "fn store_pagination",
+                "pagination . cursor = self . cursor . clone ()",
+                "pagination . per_page = self . count . clone ()",
+                "pagination . send_cursor_on_first = true",
+                "pagination . stop_when_cursor_missing = false",
+                "self . cursor = pagination . cursor . clone ()",
+                "self . count = pagination . per_page . clone ()",
+            ],
+        );
+        assert!(
+            !out.contains("self.send_cursor_on_first=pagination.send_cursor_on_first"),
+            "cursor flags must not be stored back to endpoint state"
+        );
+        assert!(
+            !out.contains("self.stop_when_cursor_missing=pagination.stop_when_cursor_missing"),
+            "cursor flags must not be stored back to endpoint state"
         );
     }
 

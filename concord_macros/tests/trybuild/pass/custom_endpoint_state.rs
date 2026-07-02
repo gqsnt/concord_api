@@ -25,7 +25,10 @@ impl PageItems for Page {
 }
 
 #[derive(Default)]
-pub struct HeaderPagePagination;
+pub struct HeaderPagePagination {
+    pub page: u64,
+    pub count: u64,
+}
 
 pub struct HeaderPageBindings<E> {
     pub page: EndpointField<E, u64>,

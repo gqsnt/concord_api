@@ -181,6 +181,7 @@ fn emit_endpoint_def(
     let execute_override = endpoint_execute_override(ep, cx_ty);
     let response_marker_impl = endpoint_response_marker_impl(ep, ty_name, cx_ty);
 
+    let paginate_binding_impl = emit_paginate_binding_impl(ep, ty_name);
     let pagination_endpoint_state_bindings =
         emit_pagination_endpoint_state_bindings(ep, ty_name, cx_ty);
     let pagination_plan = emit_endpoint_pagination_plan(ep);
@@ -406,6 +407,8 @@ fn emit_endpoint_def(
 
         #response_decode_fn
 
+        #paginate_binding_impl
+
         impl ::concord_core::prelude::Endpoint<super::#cx_ty> for #ty_name {
             type Response = #final_response_ty;
             #execute_override
@@ -454,6 +457,111 @@ fn emit_endpoint_def(
 
         #pending_request_ext
     }
+}
+
+fn emit_paginate_binding_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenStream2 {
+    let Some(p) = &ep.paginate else {
+        return quote! {};
+    };
+
+    let pagination_ty = match &p.controller {
+        PaginationControllerResolved::OffsetLimit(_) => {
+            quote! { ::concord_core::advanced::OffsetLimitPagination }
+        }
+        PaginationControllerResolved::Paged(_) => {
+            quote! { ::concord_core::advanced::PagedPagination }
+        }
+        PaginationControllerResolved::Cursor(_) => {
+            quote! { ::concord_core::advanced::CursorPagination<::std::string::String> }
+        }
+        PaginationControllerResolved::CustomEndpointState { ctrl_ty, .. } => quote! { #ctrl_ty },
+    };
+
+    let load_assignments: Vec<TokenStream2> = match &p.controller {
+        PaginationControllerResolved::OffsetLimit(ctrl) => ctrl
+            .assigns
+            .iter()
+            .map(|assign| emit_paginate_binding_assignment(assign, p))
+            .collect(),
+        PaginationControllerResolved::Paged(ctrl) => ctrl
+            .assigns
+            .iter()
+            .map(|assign| emit_paginate_binding_assignment(assign, p))
+            .collect(),
+        PaginationControllerResolved::Cursor(ctrl) => {
+            let send_cursor_on_first = ctrl.send_cursor_on_first;
+            let stop_when_cursor_missing = ctrl.stop_when_cursor_missing;
+            let mut assignments: Vec<TokenStream2> = ctrl
+                .assigns
+                .iter()
+                .map(|assign| emit_paginate_binding_assignment(assign, p))
+                .collect();
+            assignments.push(quote! {
+                pagination.send_cursor_on_first = #send_cursor_on_first;
+            });
+            assignments.push(quote! {
+                pagination.stop_when_cursor_missing = #stop_when_cursor_missing;
+            });
+            assignments
+        }
+        PaginationControllerResolved::CustomEndpointState { .. } => p
+            .bindings
+            .iter()
+            .map(|binding| {
+                let field = &binding.controller_field;
+                let endpoint_field = &binding.endpoint_rust_field;
+                quote! { pagination.#field = self.#endpoint_field.clone(); }
+            })
+            .collect(),
+    };
+
+    let store_assignments: Vec<TokenStream2> = p.bindings.iter().map(|binding| {
+        let field = &binding.controller_field;
+        let endpoint_field = &binding.endpoint_rust_field;
+        quote! { self.#endpoint_field = pagination.#field.clone(); }
+    }).collect();
+
+    quote! {
+        impl ::concord_core::advanced::PaginateBinding<#pagination_ty> for #ty_name {
+            fn load_pagination(&self) -> #pagination_ty {
+                let mut pagination = <#pagination_ty as ::core::default::Default>::default();
+                #( #load_assignments )*
+                pagination
+            }
+
+            fn store_pagination(&mut self, pagination: &#pagination_ty) {
+                #( #store_assignments )*
+            }
+        }
+    }
+}
+
+fn emit_paginate_binding_assignment(
+    assign: &PaginationAssignmentResolved,
+    p: &PaginateResolved,
+) -> TokenStream2 {
+    let field = &assign.field;
+    let value = match &assign.value {
+        PaginationValueKind::EpField(_) => {
+            let field_name = field.to_string();
+            let Some(binding) = pagination_binding_for_controller_field(p, &field_name) else {
+                let err = emit_helpers::compile_error_expr(
+                    "missing pagination binding in resolved IR",
+                    assign.field.span(),
+                );
+                return quote! { #err };
+            };
+            let endpoint_field = &binding.endpoint_rust_field;
+            quote! { self.#endpoint_field.clone() }
+        }
+        PaginationValueKind::LitStr(s) => quote! { #s },
+        PaginationValueKind::OtherExpr(e) => quote! { (#e) },
+        PaginationValueKind::Fmt(fmt) => {
+            let build = emit_fmt_build_string(&fmt);
+            quote! { { #build } }
+        }
+    };
+    quote! { pagination.#field = #value; }
 }
 
 fn emit_pagination_endpoint_state_bindings(
