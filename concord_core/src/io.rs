@@ -948,8 +948,8 @@ mod tests {
     }
 
     #[cfg(feature = "json")]
-    #[test]
-    fn buffered_response_json_exposes_buffered_capabilities() {
+    #[tokio::test]
+    async fn buffered_response_json_exposes_buffered_capabilities() {
         #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
         struct Item {
             id: u32,
@@ -957,6 +957,7 @@ mod tests {
 
         let plan = BufferedResponse::<crate::codec::json::Json<Item>>::plan(ctx())
             .expect("buffered response");
+
         assert_eq!(
             plan.capabilities,
             ResponseEntityCapabilities {
@@ -965,10 +966,12 @@ mod tests {
                 is_no_content: false,
             }
         );
+
         assert_eq!(
             plan.response_plan.accept,
             Some(JsonContentType::try_header_value().expect("json content type"))
         );
+
         let client = ApiClient::<TestCx, _>::with_transport(
             (),
             (),
@@ -979,12 +982,14 @@ mod tests {
                 content_length: None,
             }),
         );
+
         let decoded = execute_buffered_codec_response::<_, _, crate::codec::json::Json<Item>>(
             &client,
             request_plan(plan.response_plan),
         )
         .await
         .expect("decode");
+
         assert_eq!(decoded, Item { id: 1 });
     }
 
