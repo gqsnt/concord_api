@@ -173,83 +173,83 @@ mod tests {
         }
     }
 
-    fn legacy_runtime_hook_token() -> String {
+    fn forbidden_runtime_hook_token() -> String {
         ["endpoint", "_state", "_pagination"].concat()
     }
 
-    fn legacy_endpoint_pagination_runtime_adapter() -> String {
+    fn forbidden_endpoint_pagination_runtime_adapter() -> String {
         ["EndpointPagination", "Runtime", "Adapter"].concat()
     }
 
-    fn legacy_endpoint_field() -> String {
+    fn forbidden_endpoint_field() -> String {
         ["Endpoint", "Field"].concat()
     }
 
-    fn legacy_offset_limit_bindings() -> String {
+    fn forbidden_offset_limit_bindings() -> String {
         ["OffsetLimit", "Bindings"].concat()
     }
 
-    fn legacy_paged_bindings() -> String {
+    fn forbidden_paged_bindings() -> String {
         ["Paged", "Bindings"].concat()
     }
 
-    fn legacy_cursor_bindings() -> String {
+    fn forbidden_cursor_bindings() -> String {
         ["Cursor", "Bindings"].concat()
     }
 
-    fn legacy_request_body_plan_encoded() -> String {
+    fn forbidden_request_body_plan_encoded() -> String {
         ["BodyPlan", "::", "Encoded"].concat()
     }
 
-    fn legacy_request_body_plan_raw_stream() -> String {
+    fn forbidden_request_body_plan_raw_stream() -> String {
         ["BodyPlan", "::", "RawStream"].concat()
     }
 
-    fn legacy_request_body_plan_records() -> String {
+    fn forbidden_request_body_plan_records() -> String {
         ["BodyPlan", "::", "Records"].concat()
     }
 
-    fn legacy_request_body_plan_multipart() -> String {
+    fn forbidden_request_body_plan_multipart() -> String {
         ["BodyPlan", "::", "Multipart"].concat()
     }
 
-    fn legacy_request_body_plan_none() -> String {
+    fn forbidden_request_body_plan_none() -> String {
         ["BodyPlan", "::", "None"].concat()
     }
 
-    fn legacy_request_args_with_body_bytes() -> String {
+    fn forbidden_request_args_with_body_bytes() -> String {
         ["RequestArgs", "::", "with_body_bytes"].concat()
     }
 
-    fn legacy_request_args_with_stream_body() -> String {
+    fn forbidden_request_args_with_stream_body() -> String {
         ["RequestArgs", "::", "with_stream_body"].concat()
     }
 
-    fn legacy_request_args_with_record_body() -> String {
+    fn forbidden_request_args_with_record_body() -> String {
         ["RequestArgs", "::", "with_record_body"].concat()
     }
 
-    fn legacy_request_args_with_multipart_body() -> String {
+    fn forbidden_request_args_with_multipart_body() -> String {
         ["RequestArgs", "::", "with_multipart_body"].concat()
     }
 
-    fn legacy_body_codec_encode() -> String {
+    fn forbidden_body_codec_encode() -> String {
         ["BodyCodec", "::", "encode"].concat()
     }
 
-    fn legacy_content_type_check_name() -> String {
+    fn forbidden_content_type_check_name() -> String {
         ["try_", "content_", "type"].concat()
     }
 
-    fn legacy_stream_exec_call() -> String {
+    fn forbidden_stream_exec_call() -> String {
         ["execute_plan_", "stream::<", "OctetStream", ">"].concat()
     }
 
-    fn legacy_records_exec_call() -> String {
+    fn forbidden_records_exec_call() -> String {
         ["execute_plan_", "records::<", " LogEntry , NdJson ", ">"].concat()
     }
 
-    fn legacy_multipart_exec_call() -> String {
+    fn forbidden_multipart_exec_call() -> String {
         [
             "execute_plan_",
             "multipart::<",
@@ -257,6 +257,22 @@ mod tests {
             ">",
         ]
         .concat()
+    }
+
+    fn forbidden_response_plan_struct() -> String {
+        ["ResponsePlan", " {"].concat()
+    }
+
+    fn forbidden_response_codec_try_accept() -> String {
+        ["ResponseCodec", ">::try_accept()"].concat()
+    }
+
+    fn forbidden_response_codec_decode() -> String {
+        ["ResponseCodec", ">::decode"].concat()
+    }
+
+    fn forbidden_generated_decode_binding() -> String {
+        ["decode", " : __decode_"].concat()
     }
 
     fn generated_doc_attrs(expanded: &str) -> Vec<&str> {
@@ -523,9 +539,9 @@ mod tests {
         assert_not_contains_all(
             &expanded,
             &[
-                &legacy_request_body_plan_raw_stream(),
-                &legacy_request_args_with_stream_body(),
-                &legacy_stream_exec_call(),
+                &forbidden_request_body_plan_raw_stream(),
+                &forbidden_request_args_with_stream_body(),
+                &forbidden_stream_exec_call(),
                 &["Stream", "ResponseEndpoint"].concat(),
             ],
         );
@@ -558,10 +574,10 @@ mod tests {
         assert_not_contains_all(
             &expanded,
             &[
-                &legacy_request_body_plan_encoded(),
-                &legacy_request_args_with_body_bytes(),
-                &legacy_body_codec_encode(),
-                &legacy_content_type_check_name(),
+                &forbidden_request_body_plan_encoded(),
+                &forbidden_request_args_with_body_bytes(),
+                &forbidden_body_codec_encode(),
+                &forbidden_content_type_check_name(),
             ],
         );
     }
@@ -589,7 +605,7 @@ mod tests {
                 "StatusResponse",
             ],
         );
-        assert_not_contains_all(&expanded, &[&legacy_request_body_plan_none()]);
+        assert_not_contains_all(&expanded, &[&forbidden_request_body_plan_none()]);
     }
 
     #[test]
@@ -622,9 +638,9 @@ mod tests {
         assert_not_contains_all(
             &expanded,
             &[
-                &legacy_request_body_plan_records(),
-                &legacy_request_args_with_record_body(),
-                &legacy_records_exec_call(),
+                &forbidden_request_body_plan_records(),
+                &forbidden_request_args_with_record_body(),
+                &forbidden_records_exec_call(),
                 &["Record", "ResponseEndpoint"].concat(),
             ],
         );
@@ -660,10 +676,10 @@ mod tests {
         assert_not_contains_all(
             &expanded,
             &[
-                &legacy_request_body_plan_multipart(),
-                &legacy_request_args_with_multipart_body(),
-                &legacy_content_type_check_name(),
-                &legacy_multipart_exec_call(),
+                &forbidden_request_body_plan_multipart(),
+                &forbidden_request_args_with_multipart_body(),
+                &forbidden_content_type_check_name(),
+                &forbidden_multipart_exec_call(),
                 &["Multipart", "ResponseEndpoint"].concat(),
             ],
         );
@@ -1379,10 +1395,10 @@ mod tests {
         assert_not_contains_all(
             &out,
             &[
-                "ResponsePlan {",
-                "ResponseCodec>::try_accept()",
-                "ResponseCodec>::decode",
-                "decode : __decode_",
+                &forbidden_response_plan_struct(),
+                &forbidden_response_codec_try_accept(),
+                &forbidden_response_codec_decode(),
+                &forbidden_generated_decode_binding(),
                 "BodyPlan :: Encoded",
                 "BodyCodec>::encode",
             ],
@@ -1416,11 +1432,11 @@ mod tests {
         assert_not_contains_all(
             &out,
             &[
-                &legacy_content_type_check_name(),
-                &legacy_request_body_plan_encoded(),
-                "ResponseCodec>::try_accept()",
-                "ResponseCodec>::decode",
-                "decode : __decode_",
+                &forbidden_content_type_check_name(),
+                &forbidden_request_body_plan_encoded(),
+                &forbidden_response_codec_try_accept(),
+                &forbidden_response_codec_decode(),
+                &forbidden_generated_decode_binding(),
             ],
         );
     }
@@ -1451,10 +1467,10 @@ mod tests {
         assert_not_contains_all(
             &out,
             &[
-                "ResponsePlan {",
-                "ResponseCodec>::try_accept()",
-                "ResponseCodec>::decode",
-                "decode : __decode_",
+                &forbidden_response_plan_struct(),
+                &forbidden_response_codec_try_accept(),
+                &forbidden_response_codec_decode(),
+                &forbidden_generated_decode_binding(),
                 "no_content :",
                 "format :",
             ],
@@ -1492,10 +1508,10 @@ mod tests {
         assert_not_contains_all(
             &out,
             &[
-                "ResponsePlan {",
-                "ResponseCodec>::try_accept()",
-                "ResponseCodec>::decode",
-                "decode : __decode_",
+                &forbidden_response_plan_struct(),
+                &forbidden_response_codec_try_accept(),
+                &forbidden_response_codec_decode(),
+                &forbidden_generated_decode_binding(),
                 "BodyPlan :: Encoded",
                 "BodyCodec>::encode",
             ],
@@ -1528,10 +1544,10 @@ mod tests {
         assert_not_contains_all(
             &out,
             &[
-                "ResponsePlan {",
-                "ResponseCodec>::try_accept()",
-                "ResponseCodec>::decode",
-                "decode : __decode_",
+                &forbidden_response_plan_struct(),
+                &forbidden_response_codec_try_accept(),
+                &forbidden_response_codec_decode(),
+                &forbidden_generated_decode_binding(),
                 "no_content :",
                 "format :",
             ],
@@ -2192,19 +2208,19 @@ mod tests {
             ],
         );
         assert!(
-            !out.contains(&legacy_runtime_hook_token()),
+            !out.contains(&forbidden_runtime_hook_token()),
             "removed runtime hook must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
             "removed runtime adapter must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_endpoint_field()),
+            !out.contains(&forbidden_endpoint_field()),
             "removed pagination binding helpers must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_offset_limit_bindings()),
+            !out.contains(&forbidden_offset_limit_bindings()),
             "removed pagination binding types must not appear in generated output"
         );
     }
@@ -2299,19 +2315,19 @@ mod tests {
             ],
         );
         assert!(
-            !out.contains(&legacy_runtime_hook_token()),
+            !out.contains(&forbidden_runtime_hook_token()),
             "removed runtime hook must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
             "removed runtime adapter must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_endpoint_field()),
+            !out.contains(&forbidden_endpoint_field()),
             "removed pagination binding helpers must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_paged_bindings()),
+            !out.contains(&forbidden_paged_bindings()),
             "removed pagination binding types must not appear in generated output"
         );
     }
@@ -2407,11 +2423,11 @@ mod tests {
             ],
         );
         assert!(
-            !out.contains(&legacy_runtime_hook_token()),
+            !out.contains(&forbidden_runtime_hook_token()),
             "removed runtime hook must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
             "removed runtime adapter must not appear in generated output"
         );
         assert!(
@@ -2419,7 +2435,7 @@ mod tests {
             "removed pagination binding helpers must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_endpoint_field()),
+            !out.contains(&forbidden_endpoint_field()),
             "removed pagination binding helpers must not appear in generated output"
         );
         assert_contains_all(
@@ -2463,11 +2479,11 @@ mod tests {
             ],
         );
         assert!(
-            !out.contains(&legacy_runtime_hook_token()),
+            !out.contains(&forbidden_runtime_hook_token()),
             "removed runtime hook must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
             "removed runtime adapter must not appear in generated output"
         );
     }
@@ -2539,7 +2555,7 @@ mod tests {
             ],
         );
         assert!(
-            !out.contains(&legacy_runtime_hook_token()),
+            !out.contains(&forbidden_runtime_hook_token()),
             "removed runtime hook must not appear in generated output"
         );
     }
@@ -2577,19 +2593,19 @@ mod tests {
             ],
         );
         assert!(
-            !out.contains(&legacy_runtime_hook_token()),
+            !out.contains(&forbidden_runtime_hook_token()),
             "removed runtime hook must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_endpoint_pagination_runtime_adapter()),
+            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
             "removed runtime adapter must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_cursor_bindings()),
+            !out.contains(&forbidden_cursor_bindings()),
             "removed pagination binding types must not appear in generated output"
         );
         assert!(
-            !out.contains(&legacy_endpoint_field()),
+            !out.contains(&forbidden_endpoint_field()),
             "removed pagination binding helpers must not appear in generated output"
         );
     }
@@ -2669,7 +2685,7 @@ mod tests {
             ],
         );
         assert!(
-            !out.contains(&legacy_runtime_hook_token()),
+            !out.contains(&forbidden_runtime_hook_token()),
             "removed runtime hook must not appear in generated output"
         );
     }
@@ -2706,7 +2722,7 @@ mod tests {
             ],
         );
         assert!(
-            !out.contains(&legacy_runtime_hook_token()),
+            !out.contains(&forbidden_runtime_hook_token()),
             "removed runtime hook must not appear in generated output"
         );
     }

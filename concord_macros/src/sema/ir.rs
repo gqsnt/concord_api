@@ -41,7 +41,6 @@ pub struct BehaviorDocMeta {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct ResolvedEndpoint {
     pub name: Ident,
     pub alias: Option<Ident>,
@@ -68,9 +67,14 @@ pub struct ResolvedEndpoint {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ResolvedHttpEndpointIo {
+    // Retained as syntax classification for sema diagnostics/tests; runtime
+    // codegen uses the entity metadata fields below.
+    #[allow(dead_code)]
     pub request: ResolvedRequestBodyIo,
+    // Retained as syntax classification for sema diagnostics/tests; runtime
+    // codegen uses the entity metadata fields below.
+    #[allow(dead_code)]
     pub response: ResolvedResponseBodyIo,
     pub request_entity: RequestEntityPlanIr,
     pub response_entity: ResponseEntityPlanIr,
@@ -99,7 +103,6 @@ pub struct ResponseIoCapabilities {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct RequestEntityPlanIr {
     pub adapter_ty: Type,
     pub public_input_ty: Option<Type>,
@@ -109,7 +112,6 @@ pub struct RequestEntityPlanIr {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ResponseEntityPlanIr {
     pub adapter_ty: Type,
     pub public_output_ty: Type,
@@ -120,7 +122,6 @@ pub struct ResponseEntityPlanIr {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct BufferedCodecIo {
     pub marker: Type,
     pub codec_path: Path,
@@ -130,7 +131,6 @@ pub struct BufferedCodecIo {
 /// Syntax-level request body classification used while deriving entity metadata.
 /// Runtime planning and execution must use [`RequestEntityPlanIr`].
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum ResolvedRequestBodyIo {
     None,
     BufferedCodec(BufferedCodecIo),
@@ -142,7 +142,6 @@ pub enum ResolvedRequestBodyIo {
 /// Syntax-level response body classification used while deriving entity metadata.
 /// Runtime planning and execution must use [`ResponseEntityPlanIr`].
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum ResolvedResponseBodyIo {
     BufferedCodec(BufferedCodecIo),
     BufferedBytes,
@@ -153,36 +152,8 @@ pub enum ResolvedResponseBodyIo {
     Sse { event_ty: Type, codec_ty: Type },
 }
 
-#[allow(dead_code)]
-impl ResolvedRequestBodyIo {
-    pub fn is_none(&self) -> bool {
-        matches!(self, ResolvedRequestBodyIo::None)
-    }
-
-    pub fn as_buffered_codec(&self) -> Option<&BufferedCodecIo> {
-        match self {
-            ResolvedRequestBodyIo::BufferedCodec(io) => Some(io),
-            _ => None,
-        }
-    }
-}
-
-#[allow(dead_code)]
-impl ResolvedResponseBodyIo {
-    pub fn buffered_codec(&self) -> Option<&BufferedCodecIo> {
-        match self {
-            ResolvedResponseBodyIo::BufferedCodec(io) => Some(io),
-            _ => None,
-        }
-    }
-}
-
-#[allow(dead_code)]
+#[cfg(test)]
 impl ResolvedEndpoint {
-    pub fn http_io(&self) -> &ResolvedHttpEndpointIo {
-        &self.io
-    }
-
     pub fn request_io(&self) -> &ResolvedRequestBodyIo {
         &self.io.request
     }

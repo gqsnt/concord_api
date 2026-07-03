@@ -4,20 +4,20 @@
 
 This document records the endpoint I/O contract and the current implementation surface. It defines the model and the constraints later work must preserve, but it does not itself introduce new runtime behavior, DSL support, code generation, or public API changes.
 
-## Current Baseline
+## Current Model
 
-The current implementation distinguishes buffered codecs from the reserved endpoint I/O families that have dedicated runtime support and generated endpoint support.
+Endpoint I/O distinguishes buffered codecs from reserved endpoint I/O families that have dedicated adapter support.
 
 - Macro raw AST and semantic IR carry explicit endpoint I/O shapes.
-- Resolved semantic IR carries HTTP request and response body I/O only.
+- Resolved semantic IR carries syntax classification and entity metadata.
 - Non-reserved families keep the buffered-codec shape used by `BodyCodec` and `ResponseCodec`.
-- `ContentType` is the shared wire-content marker trait for buffered codecs and reserved family markers.
-- Buffered codecs continue to use buffered request bodies and buffered response decode.
-- Dedicated runtime paths exist for `Stream`, `Records`, `Multipart`, and `Sse` families so they do not have to buffer the whole body.
+- `ContentType` is the shared wire-content contract for buffered codecs and reserved family media or format types.
+- Buffered codecs use buffered request bodies and typed buffered response decode.
+- `Stream`, `Records`, `Multipart`, and `Sse` families execute through response adapters so they do not buffer the whole body.
 - Buffered codec support exists for `Json<T>` and `Text<String>`, with custom buffered codecs remaining open-ended.
 - Macro/codegen support exists for `Stream<M>`, `Records<T, NdJson>`, `Records<T, Csv<Cfg>>`, `Multipart<T, F>`, and `Sse<T, C>`.
 - Response-only `NoContent` is implemented and returns `()`.
-- Response-only `Bytes` is implemented and returns `bytes::Bytes` through the ordinary bounded buffered response path.
+- Response-only `Bytes` is implemented and returns `bytes::Bytes` through the bytes response adapter.
 - `.execute_raw()` remains bounded-buffered.
 - Custom buffered codecs are already open-ended and must stay that way.
 
@@ -31,27 +31,32 @@ The current implementation distinguishes buffered codecs from the reserved endpo
 - Resolved IR must not contain impossible endpoint I/O states.
 - Behavior profiles lower before runtime and do not change endpoint I/O runtime semantics directly.
 
-## Adapter Boundary
+## Final Adapter Architecture
 
-PR52 introduces the new core adapter contracts beside the current family-enum system.
+Endpoint I/O follows this pipeline:
 
-- Macros will eventually resolve DSL I/O syntax to request and response entity adapter types.
-- Core owns request body preparation, response planning, media handling, streaming behavior, and replayability metadata.
-- The current resolved family enums and generated-code branches remain temporarily during migration.
-- This PR does not migrate generated macro output yet.
-- PR54 has now migrated generated request-body planning to `RequestEntity`, but response planning and execution still use the older generated family paths.
-- PR55 has now migrated unmapped buffered, bytes, and no-content response planning to `ResponseEntity`; mapped buffered responses and streaming response execution still use the older generated family paths.
-- PR56 extends `ResponseEntity` with execution support in core. Response adapters now delegate to existing core execution paths, and generated streaming endpoints still use the older marker/override paths until later PRs.
-- PR57 migrated generated unmapped streaming response execution to `ResponseEntity::execute`. Streaming adapters still delegate to the existing core helper functions internally, and mapped buffered responses remain on the older generated path.
-- PR58 migrated mapped buffered responses to `MappedResponse<Base, Transform>`, so generated response planning and execution now flow through `ResponseEntity` for mapped and unmapped endpoints. Core legacy execution helpers remain as adapter internals.
-- PR59 removed generated streaming marker-trait dependency. Pending-request streaming helpers now route through endpoint execution / response-entity execution, while core specialized helpers remain as adapter internals.
-- PR60 removed the legacy streaming response marker traits and the temporary response-kind routing traits. Pending-request streaming helpers are now available through concrete endpoint response-type bounds and still execute through `E::execute(...)`.
-- PR61 made the specialized streaming, records, multipart, and SSE execution helpers internal adapter implementation details. Public and generated execution continues through `ResponseEntity::execute` and pending-request helpers.
-- PR62 removed the decode callback field from `ResponsePlan` and the type-erased buffered response decode path. `ResponsePlan` now carries response metadata only, while buffered, bytes, no-content, mapped, and streaming behavior lives in `ResponseEntity` adapters.
-- PR63 demoted the old resolved request and response body family enums to syntax classification only. Codegen now uses I/O entity metadata as the source of truth for request preparation, response planning, and response execution.
+```text
+DSL syntax
+  -> sema syntax classification
+  -> sema entity metadata
+  -> generated adapter types
+  -> core RequestEntity / ResponseEntity runtime
+```
+
+- Request syntax is classified in sema.
+- Sema derives `RequestEntityPlanIr`.
+- Codegen emits `<Adapter as RequestEntity>::prepare(...)`.
+- Core request adapters produce `PreparedRequestEntity { body_plan, args, replayability }`.
+- Response syntax is classified in sema.
+- Sema derives `ResponseEntityPlanIr`.
+- Codegen emits `<Adapter as ResponseEntity>::plan(...)` and `<Adapter as ResponseEntity>::execute(...)`.
+- `ResponsePlan` contains metadata only: `accept`, `no_content`, and `format`.
+- Buffered decoding is typed through response codecs.
+- Bytes, no-content, streaming, records, multipart, and SSE behavior lives in response adapters.
+- Pagination executes each page through `Endpoint::execute`.
 - `ResponseCodec` remains a codec/adapter contract. Decoded values such as `String`, `Bytes`, `()`, and domain models do not implement it merely because an endpoint returns them; `Text<String>`, `Json<T>`, `BytesResponse`, and `NoContentResponse` own that behavior.
-- Pagination continues to execute each page through `Endpoint::execute`; decoded page value types do not need to implement `ResponseCodec`.
-- Without type-erased default decoding, manual `Endpoint` implementations must provide their typed `execute` method. Generated endpoints already do this through `ResponseEntity`; low-level metadata access uses `execute_decoded_with::<C>()` with an explicit codec type.
+- Manual `Endpoint` implementations must provide their typed `execute` method. Generated endpoints do this through `ResponseEntity`; low-level metadata access uses `execute_decoded_with::<C>()` with an explicit codec type.
+- `ResolvedRequestBodyIo` and `ResolvedResponseBodyIo` are syntax classification only. Codegen uses entity metadata for runtime behavior.
 
 ## Endpoint I/O Families
 
@@ -76,7 +81,7 @@ BufferedCodec is the default family. Everything non-reserved is a buffered codec
 - It omits `Accept`.
 - It is not a stream.
 - Request-side `Bytes` remains invalid.
-- It may reuse buffered internals.
+- It is implemented by `BytesResponse`.
 
 For large or unbounded byte transfer, use `Stream<OctetStream>` rather than trying to stretch `Bytes`.
 
@@ -86,7 +91,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 
 - It returns `()` in generated facades.
 - It is not a stream.
-- It may reuse existing no-content codec behavior internally if appropriate.
+- It is implemented by `NoContentResponse`.
 - Request-side `NoContent` remains invalid.
 - The core `NoContent` codec exists for ordinary buffered endpoints. The DSL spelling `-> NoContent` is now implemented as response-only reserved endpoint I/O.
 
@@ -154,7 +159,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - Built-in codec: `JsonSse`.
 - SSE responses parse `text/event-stream` incrementally and expose decoded events through `SseStream<T>`.
 - SSE responses are stream-like and do not support map or pagination.
-- SSE reconnect, `Last-Event-ID` resume, and browser/EventSource compatibility remain future work.
+- SSE reconnect, `Last-Event-ID` resume, and browser/EventSource alignment are not part of the current runtime contract.
 - It must not be implemented through `ResponseCodec`.
 
 ## Reserved Endpoint I/O Names
@@ -380,8 +385,8 @@ pub enum TransportRequestBody {
 - The current transport request body enum is the request/transport boundary and should be preserved.
 - Existing response transport is already chunk-capable and should be preserved or reused.
 - Do not create unnecessary special transport paths for `Bytes` unless current code requires it.
-- The response-only `NoContent` spelling may reuse the existing no-content path internally.
-- The response-only `Bytes` spelling may reuse the existing bounded buffered response path internally.
+- The response-only `NoContent` spelling is implemented by `NoContentResponse`.
+- The response-only `Bytes` spelling is implemented by `BytesResponse`.
 
 ## Advanced Execution Surfaces
 
@@ -403,14 +408,7 @@ pub enum TransportRequestBody {
 
 ## Explicit Non-Goals
 
-- No runtime implementation in PR87.
-- No DSL support in PR87.
-- No macro parser, sema, or codegen change in PR87.
-- No public API change in PR87.
-- No public docs expansion in PR87 unless a docs index requires a link.
-- No stream retry or replay design in PR87.
 - No automatic SSE reconnect.
-- No CSV implementation in PR87. CSV runtime support was added later in PR116.
 - No nested multipart.
 - No multipart derive macros.
 - No cache reintroduction.
@@ -420,7 +418,7 @@ pub enum TransportRequestBody {
 Cache has been removed from Concord.
 
 - Endpoint I/O expansion must not reintroduce cache directly or indirectly.
-- Do not design around cache admission, stale fallback, cache identity, cache keys, cache body limits, cache compatibility, or cache-like behavior under another name.
+- Do not design around cache admission, stale data paths, cache identity, cache keys, cache body limits, cache interoperability, or cache-like behavior under another name.
 - Any remaining stale cache mention in the repository is cleanup debt, not an active design constraint.
 
 ## Review Checklist For Future PRs

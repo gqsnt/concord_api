@@ -4,7 +4,7 @@ Pagination and codecs are extension points in `concord_core` that generated code
 
 ## Codecs
 
-`BodyCodec` encodes request bodies. `ResponseCodec` decodes raw responses. `ContentType` is the shared wire-content marker trait used by codec marker types and reserved endpoint I/O formats.
+`BodyCodec` encodes request bodies. `ResponseCodec` decodes raw responses. `ContentType` is the shared wire-content trait used by codec marker types and reserved endpoint I/O formats.
 
 Built-ins:
 
@@ -38,7 +38,7 @@ Codec helpers use the fallible header conversion path:
 - `BodyCodec::try_content_type()`
 - `ResponseCodec::try_accept()`
 
-The convenience `content_type()` and `accept()` methods remain available for trusted built-in markers and compatibility call sites. Generated planning uses the fallible helpers so invalid user-defined markers return typed errors instead of panicking.
+The convenience `content_type()` and `accept()` methods remain available for trusted built-in markers and established call sites. Generated planning uses the fallible helpers so invalid user-defined markers return typed errors instead of panicking.
 
 ## Pagination traits
 

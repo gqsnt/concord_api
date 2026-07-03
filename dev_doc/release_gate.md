@@ -76,7 +76,7 @@ PageItems
 ResolvedPolicy
 ```
 
-The check is compile-only. It proves imports and trait and type names remain available; behavioral compatibility is owned by the runtime and example suites.
+The check is compile-only. It proves imports and trait and type names remain available; behavioral stability is owned by the runtime and example suites.
 
 ## Examples Compatibility
 
@@ -211,6 +211,6 @@ Add checks to the narrowest owner first. Use compile-only public surface tests f
 
 Repository search checks are part of the contract for removed or reserved features:
 
-- The legacy media-type trait name should have zero repository hits; `ContentType` is the only supported wire-content marker trait.
+- The removed media-type trait name should have zero repository hits; `ContentType` is the only supported wire-content contract.
 - `WebSocket` and `execute_websocket` should only appear in deliberate removal-proof negative fixtures, if any remain.
 - `Cache` should only appear in the intentional removed-feature maintainer note.

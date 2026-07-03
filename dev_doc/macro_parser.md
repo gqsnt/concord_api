@@ -20,7 +20,7 @@ The client parser accepts grouped config:
 - `behaviors { ... }`
 - `defaults { ... }`
 
-It also accepts flat compatibility forms for `secret`, `credential`, `retry`, `rate_limit`, `behavior`, and `default { ... }`.
+It also accepts flat forms for `secret`, `credential`, `retry`, `rate_limit`, `behavior`, and `default { ... }`.
 
 Grouped blocks flatten into the same raw storage used by flat declarations. Duplicate profile names are resolved later by sema.
 

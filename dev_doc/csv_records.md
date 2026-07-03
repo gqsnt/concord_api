@@ -118,7 +118,7 @@ impl ContentType for Csv<Cfg> {
 
 The delimiter must not be encoded as a `Content-Type` parameter initially.
 No `header=present` or similar parameter should be emitted in v1.
-Future parameters require a separate compatibility review.
+Future parameters require a separate API stability review.
 
 ## Error Hygiene
 

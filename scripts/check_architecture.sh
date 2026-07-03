@@ -186,16 +186,15 @@ fi
 
 section "macro response plan construction fence"
 macro_response_plan_refs="$tmpdir/macro_response_plan.refs"
-if "${RG[@]}" 'ResponsePlan \{|ResponseCodec>::try_accept|ResponseCodec>::decode|decode : __decode_|decode: __decode_|endpoint_response_decode_fn|endpoint_response_accept_tokens|endpoint_response_no_content_tokens|endpoint_response_format_tokens' \
-  concord_macros/src/codegen/endpoints/endpoint.rs >"$macro_response_plan_refs" 2>/dev/null; then
+if "${RG[@]}" 'ResponsePlan \{|ResponsePlan\.decode|PlanDecodeFn|ResponseCodec>::try_accept|ResponseCodec>::decode|decode : __decode_|decode: __decode_|endpoint_response_decode_fn|endpoint_response_accept_tokens|endpoint_response_no_content_tokens|endpoint_response_format_tokens' \
+  concord_macros/src/codegen >"$macro_response_plan_refs" 2>/dev/null; then
   fail_with_matches "concord_macros response planning must flow through ResponseEntity adapters." "$macro_response_plan_refs"
 fi
 
 section "legacy response decode plumbing fence"
 legacy_response_decode_refs="$tmpdir/legacy_response_decode.refs"
 if "${RG[@]}" 'ResponsePlan\.decode|PlanDecodeFn|Box\s*<\s*dyn\s+(std::any::)?Any\s*\+\s*Send|std::any::Any|downcast_response|downcast::<DecodedResponse' \
-  concord_core/src concord_core/tests/integration/current_core/common.rs \
-  concord_macros/src/codegen/endpoints/endpoint.rs docs dev_doc >"$legacy_response_decode_refs" 2>/dev/null; then
+  concord_core/src concord_macros/src/codegen docs dev_doc >"$legacy_response_decode_refs" 2>/dev/null; then
   fail_with_matches "legacy response decode plumbing must not reappear in active core, codegen, or docs surfaces." "$legacy_response_decode_refs"
 fi
 
@@ -239,9 +238,23 @@ fi
 
 section "legacy streaming trait fence"
 legacy_streaming_traits_refs="$tmpdir/legacy_streaming_traits.refs"
-if "${RG[@]}" 'StreamResponseEndpoint|RecordResponseEndpoint|MultipartResponseEndpoint|SseResponseEndpoint|StreamResponseKind|RecordResponseKind|MultipartResponseKind|SseResponseKind' \
+if "${RG[@]}" 'StreamResponseEndpoint|RecordResponseEndpoint|MultipartResponseEndpoint|SseResponseEndpoint|StreamResponseKind|RecordResponseKind|MultipartResponseKind|SseResponseKind|mod response_kind|trait Sealed' \
   concord_core/src concord_macros/src/codegen docs dev_doc concord_core/tests concord_macros/tests >"$legacy_streaming_traits_refs" 2>/dev/null; then
   fail_with_matches "legacy streaming marker traits and response-kind routing traits must not reappear in production code, docs, or tests." "$legacy_streaming_traits_refs"
+fi
+
+section "entity codegen positive fence"
+entity_codegen_refs="$tmpdir/entity_codegen.refs"
+"${RG[@]}" 'RequestEntity>::prepare|ResponseEntity>::plan|ResponseEntity>::execute' \
+  concord_macros/src/codegen/endpoints/endpoint.rs >"$entity_codegen_refs" 2>/dev/null || true
+if ! "${RG[@]}" 'RequestEntity>::prepare' "$entity_codegen_refs" >/dev/null 2>&1; then
+  fail "concord_macros endpoint codegen must prepare request bodies through RequestEntity."
+fi
+if ! "${RG[@]}" 'ResponseEntity>::plan' "$entity_codegen_refs" >/dev/null 2>&1; then
+  fail "concord_macros endpoint codegen must plan responses through ResponseEntity."
+fi
+if ! "${RG[@]}" 'ResponseEntity>::execute' "$entity_codegen_refs" >/dev/null 2>&1; then
+  fail "concord_macros endpoint codegen must execute responses through ResponseEntity."
 fi
 
 section "codegen panic hygiene"

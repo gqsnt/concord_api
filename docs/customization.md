@@ -6,7 +6,7 @@ Use these extension points when the protocol is part of your API contract. Do no
 
 ## Custom Codecs
 
-A request body codec implements `BodyCodec`. A response codec implements `ResponseCodec`. The shared marker trait is `ContentType`; codec markers carry their wire content identity through an associated `Content` type.
+A request body codec implements `BodyCodec`. A response codec implements `ResponseCodec`. The shared wire-content trait is `ContentType`; codec markers carry their wire content identity through an associated `Content` type.
 
 ```rust
 use bytes::Bytes;

@@ -109,5 +109,5 @@ and verify that public docs and examples do not describe rejected DSL forms as v
 - No broad clippy allows.
 - No runtime behavior changed without characterization tests.
 - No macro behavior changed without parser, sema, or codegen tests.
-- No public API change was made without explicit compatibility review.
+- No public API change was made without explicit stability review.
 - No crates.io publishing or packaging step is included in this PR.

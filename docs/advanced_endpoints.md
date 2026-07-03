@@ -62,7 +62,7 @@ The generated advanced surfaces are family-specific and keep runtime values free
 | `NoContent` | no | yes | `()` | no body | no | no |
 | `Bytes` | no | yes | `bytes::Bytes` | yes | yes | no |
 
-- `ContentType` is the shared wire-content marker trait for buffered codec associated content markers and reserved endpoint I/O media markers.
+- `ContentType` is the shared wire-content trait for buffered codec associated content markers and reserved endpoint I/O media markers.
 - Built-in markers include `JsonContentType`, `TextContentType`, `OctetStream`, `NdJson`, `FormData`, `Mixed`, and `EventStream`.
 - `Json<T>` is the ordinary buffered JSON codec. `Text<String>` is the ordinary buffered text codec.
 - `Stream<M>` uses `StreamBody` for request bodies and `StreamResponse<M>` for responses.

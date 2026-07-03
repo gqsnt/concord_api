@@ -3999,7 +3999,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_pagination_rejects_legacy_syntax() {
+    fn custom_pagination_rejects_removed_syntax() {
         let src = format!(
             r#"
             client PageApi {{
