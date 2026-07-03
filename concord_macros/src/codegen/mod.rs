@@ -241,6 +241,24 @@ mod tests {
         ["try_", "content_", "type"].concat()
     }
 
+    fn legacy_stream_exec_call() -> String {
+        ["execute_plan_", "stream::<", "OctetStream", ">"].concat()
+    }
+
+    fn legacy_records_exec_call() -> String {
+        ["execute_plan_", "records::<", " LogEntry , NdJson ", ">"].concat()
+    }
+
+    fn legacy_multipart_exec_call() -> String {
+        [
+            "execute_plan_",
+            "multipart::<",
+            " RawResponsePart , Mixed ",
+            ">",
+        ]
+        .concat()
+    }
+
     fn generated_doc_attrs(expanded: &str) -> Vec<&str> {
         let mut docs = Vec::new();
         let mut rest = expanded;
@@ -497,8 +515,9 @@ mod tests {
                 "RawStreamRequest",
                 "prepare(",
                 "StreamResponse<OctetStream>",
-                "execute_plan_stream::<OctetStream>",
-                "StreamResponseEndpoint",
+                "ResponseEntity",
+                "RawStreamResponse",
+                "ResponseEntity>::execute",
             ],
         );
         assert_not_contains_all(
@@ -506,6 +525,7 @@ mod tests {
             &[
                 &legacy_request_body_plan_raw_stream(),
                 &legacy_request_args_with_stream_body(),
+                &legacy_stream_exec_call(),
             ],
         );
     }
@@ -593,8 +613,9 @@ mod tests {
                 "RecordRequest",
                 "prepare(",
                 "RecordStream < LogEntry >",
-                "execute_plan_records::< LogEntry , NdJson >",
-                "RecordResponseEndpoint",
+                "ResponseEntity",
+                "RecordResponse",
+                "ResponseEntity>::execute",
             ],
         );
         assert_not_contains_all(
@@ -602,6 +623,7 @@ mod tests {
             &[
                 &legacy_request_body_plan_records(),
                 &legacy_request_args_with_record_body(),
+                &legacy_records_exec_call(),
             ],
         );
     }
@@ -628,8 +650,9 @@ mod tests {
                 "MultipartRequest",
                 "prepare(",
                 "MultipartStream < RawResponsePart >",
-                "execute_plan_multipart::< RawResponsePart , Mixed >",
-                "MultipartResponseEndpoint",
+                "ResponseEntity",
+                "MultipartResponse",
+                "ResponseEntity>::execute",
             ],
         );
         assert_not_contains_all(
@@ -638,6 +661,7 @@ mod tests {
                 &legacy_request_body_plan_multipart(),
                 &legacy_request_args_with_multipart_body(),
                 &legacy_content_type_check_name(),
+                &legacy_multipart_exec_call(),
             ],
         );
     }
@@ -660,11 +684,9 @@ mod tests {
             &expanded,
             &[
                 "SseStream < MyEvent >",
-                "execute_plan_sse::< MyEvent , ::concord_core::advanced::JsonSse >",
-                "SseResponseEndpoint",
-                "EventStream",
-                "try_header_value",
-                "Format::Text",
+                "ResponseEntity",
+                "SseResponse",
+                "ResponseEntity>::execute",
             ],
         );
     }
@@ -687,11 +709,9 @@ mod tests {
             &expanded,
             &[
                 "SseStream < MyEvent >",
-                "execute_plan_sse::< MyEvent , MyCodec >",
-                "SseResponseEndpoint",
-                "EventStream",
-                "try_header_value",
-                "Format::Text",
+                "ResponseEntity",
+                "SseResponse",
+                "ResponseEntity>::execute",
             ],
         );
     }

@@ -271,6 +271,7 @@ fn emit_endpoint_def(
         #response_decode_fn
 
         #paginate_binding_impl
+        #response_marker_impl
 
         impl ::concord_core::prelude::Endpoint<super::#cx_ty> for #ty_name {
             type Response = #final_response_ty;
@@ -309,8 +310,6 @@ fn emit_endpoint_def(
                 })
             }
         }
-
-        #response_marker_impl
 
         #pagination_marker_impl
 
@@ -661,10 +660,7 @@ fn endpoint_response_plan_tokens(
 ) {
     let response_entity_adapter_ty = &ep.io.response_entity.adapter_ty;
     let decode_fn = emit_helpers::ident(&format!("__decode_{ty_name}"), Span::call_site());
-    let use_response_entity_plan = matches!(
-        ep.response_io(),
-        ResolvedResponseBodyIo::BufferedCodec(_) | ResolvedResponseBodyIo::BufferedBytes | ResolvedResponseBodyIo::NoContent
-    ) && ep.map.is_none();
+    let use_response_entity_plan = ep.map.is_none();
 
     if use_response_entity_plan {
         let response_plan_setup = quote! {
@@ -701,6 +697,73 @@ fn endpoint_response_plan_tokens(
         response_plan_accept,
         response_plan_no_content,
     )
+}
+
+fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStream2 {
+    if ep.map.is_some() {
+        return quote! {};
+    }
+
+    let response_entity_adapter_ty = &ep.io.response_entity.adapter_ty;
+    quote! {
+        fn execute<'a, T>(
+            client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+            plan: ::concord_core::internal::RequestPlan,
+        ) -> ::core::pin::Pin<
+            ::std::boxed::Box<
+                dyn ::core::future::Future<
+                        Output = ::core::result::Result<
+                            Self::Response,
+                            ::concord_core::prelude::ApiClientError,
+                        >,
+                    > + Send + 'a,
+            >,
+        >
+        where
+            T: ::concord_core::advanced::Transport + 'a,
+        {
+            ::std::boxed::Box::pin(async move {
+                <#response_entity_adapter_ty as ::concord_core::advanced::ResponseEntity>::execute(
+                    client,
+                    plan,
+                )
+                .await
+            })
+        }
+    }
+}
+
+fn endpoint_response_marker_impl(
+    ep: &ResolvedEndpoint,
+    ty_name: &Ident,
+    cx_ty: &Ident,
+) -> TokenStream2 {
+    match ep.response_io() {
+        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => quote! {
+            impl ::concord_core::prelude::MultipartResponseEndpoint<super::#cx_ty> for #ty_name {
+                type Part = #part_ty;
+                type Format = #format_ty;
+            }
+        },
+        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => quote! {
+            impl ::concord_core::prelude::SseResponseEndpoint<super::#cx_ty> for #ty_name {
+                type Event = #event_ty;
+                type Codec = #codec_ty;
+            }
+        },
+        ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
+            impl ::concord_core::prelude::StreamResponseEndpoint<super::#cx_ty> for #ty_name {
+                type Media = #media_ty;
+            }
+        },
+        ResolvedResponseBodyIo::Records { item_ty, format_ty } => quote! {
+            impl ::concord_core::prelude::RecordResponseEndpoint<super::#cx_ty> for #ty_name {
+                type Item = #item_ty;
+                type Format = #format_ty;
+            }
+        },
+        _ => quote! {},
+    }
 }
 
 fn endpoint_response_decode_fn(
@@ -852,134 +915,5 @@ fn endpoint_response_decode_fn(
             }
     }
 }
-
-fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStream2 {
-    match ep.response_io() {
-        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => quote! {
-            fn execute<'a, T>(
-                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
-                plan: ::concord_core::internal::RequestPlan,
-            ) -> ::core::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::core::future::Future<
-                            Output = ::core::result::Result<
-                                Self::Response,
-                                ::concord_core::prelude::ApiClientError,
-                            >,
-                        > + Send + 'a,
-                >,
-            >
-            where
-                T: ::concord_core::advanced::Transport + 'a,
-            {
-                ::std::boxed::Box::pin(async move {
-                    client.execute_plan_multipart::<#part_ty, #format_ty>(plan).await
-                })
-            }
-        },
-        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => quote! {
-            fn execute<'a, T>(
-                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
-                plan: ::concord_core::internal::RequestPlan,
-            ) -> ::core::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::core::future::Future<
-                            Output = ::core::result::Result<
-                                Self::Response,
-                                ::concord_core::prelude::ApiClientError,
-                            >,
-                        > + Send + 'a,
-                >,
-            >
-            where
-                T: ::concord_core::advanced::Transport + 'a,
-            {
-                ::std::boxed::Box::pin(async move {
-                    client.execute_plan_sse::<#event_ty, #codec_ty>(plan).await
-                })
-            }
-        },
-        ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
-            fn execute<'a, T>(
-                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
-                plan: ::concord_core::internal::RequestPlan,
-            ) -> ::core::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::core::future::Future<
-                            Output = ::core::result::Result<
-                                Self::Response,
-                                ::concord_core::prelude::ApiClientError,
-                            >,
-                        > + Send + 'a,
-                >,
-            >
-            where
-                T: ::concord_core::advanced::Transport + 'a,
-            {
-                ::std::boxed::Box::pin(async move {
-                    client.execute_plan_stream::<#media_ty>(plan).await
-                })
-            }
-        },
-        ResolvedResponseBodyIo::Records { item_ty, format_ty } => quote! {
-            fn execute<'a, T>(
-                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
-                plan: ::concord_core::internal::RequestPlan,
-            ) -> ::core::pin::Pin<
-                ::std::boxed::Box<
-                    dyn ::core::future::Future<
-                            Output = ::core::result::Result<
-                                Self::Response,
-                                ::concord_core::prelude::ApiClientError,
-                            >,
-                        > + Send + 'a,
-                >,
-            >
-            where
-                T: ::concord_core::advanced::Transport + 'a,
-            {
-                ::std::boxed::Box::pin(async move {
-                    client.execute_plan_records::<#item_ty, #format_ty>(plan).await
-                })
-            }
-        },
-        _ => quote! {},
-    }
-}
-
-fn endpoint_response_marker_impl(
-    ep: &ResolvedEndpoint,
-    ty_name: &Ident,
-    cx_ty: &Ident,
-) -> TokenStream2 {
-    match ep.response_io() {
-        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => quote! {
-            impl ::concord_core::prelude::MultipartResponseEndpoint<super::#cx_ty> for #ty_name {
-                type Part = #part_ty;
-                type Format = #format_ty;
-            }
-        },
-        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => quote! {
-            impl ::concord_core::prelude::SseResponseEndpoint<super::#cx_ty> for #ty_name {
-                type Event = #event_ty;
-                type Codec = #codec_ty;
-            }
-        },
-        ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
-            impl ::concord_core::prelude::StreamResponseEndpoint<super::#cx_ty> for #ty_name {
-                type Media = #media_ty;
-            }
-        },
-        ResolvedResponseBodyIo::Records { item_ty, format_ty } => quote! {
-            impl ::concord_core::prelude::RecordResponseEndpoint<super::#cx_ty> for #ty_name {
-                type Item = #item_ty;
-                type Format = #format_ty;
-            }
-        },
-        _ => quote! {},
-    }
-}
-
-
 
 

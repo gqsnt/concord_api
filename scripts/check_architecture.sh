@@ -171,6 +171,13 @@ if "${RG[@]}" 'BodyPlan::(Encoded|RawStream|Records|Multipart|None)|RequestArgs:
   fail_with_matches "concord_macros request-body planning must flow through RequestEntity adapters." "$macro_request_body_refs"
 fi
 
+section "macro streaming response execution fence"
+macro_response_exec_refs="$tmpdir/macro_response_exec.refs"
+if "${RG[@]}" 'execute_plan_stream|execute_plan_records|execute_plan_multipart|execute_plan_sse' \
+  concord_macros/src/codegen/endpoints/endpoint.rs >"$macro_response_exec_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros streaming response execution must flow through ResponseEntity adapters." "$macro_response_exec_refs"
+fi
+
 section "codegen panic hygiene"
 panic_refs="$tmpdir/panic.refs"
 if "${RG[@]}" 'expect\("validated|expect\("valid|unreachable!|\.unwrap\(\)' concord_macros/src/codegen >"$panic_refs" 2>/dev/null; then
