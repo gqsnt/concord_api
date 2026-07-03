@@ -1,9 +1,9 @@
 use super::common::*;
 use concord_core::advanced::{
     AuthPlacement, EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision,
-    PaginateBinding, ProgressKey, RateLimitContext, RateLimitFuture, RateLimitPermit,
-    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, SingleObjectPaginationRuntime,
-    SingleObjectPaginationRuntimeAdapter,
+    PaginateBinding, PaginationRuntime, PaginationRuntimeAdapter, ProgressKey, RateLimitContext,
+    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+    RateLimiter,
 };
 use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
@@ -119,9 +119,8 @@ impl PaginatedEndpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
-    {
-        Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
+        Some(Box::new(PaginationRuntimeAdapter::<
             HeaderBoundCustomPagination,
         >::new()))
     }
@@ -198,12 +197,12 @@ impl PaginatedEndpoint<TestCx> for HeaderBoundCustomEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
         Self: Sized,
         Self::Response: PageItems,
     {
-        Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+        Some(Box::new(PaginationRuntimeAdapter::<
             HeaderBoundCustomPagination,
         >::new()))
     }
@@ -262,12 +261,12 @@ impl PaginatedEndpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
         Self: Sized,
         Self::Response: PageItems,
     {
-        Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+        Some(Box::new(PaginationRuntimeAdapter::<
             concord_core::advanced::OffsetLimitPagination,
         >::new()))
     }
@@ -328,12 +327,12 @@ impl PaginatedEndpoint<TestCx> for HeaderBoundPagedEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
         Self: Sized,
         Self::Response: PageItems,
     {
-        Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+        Some(Box::new(PaginationRuntimeAdapter::<
             concord_core::advanced::PagedPagination,
         >::new()))
     }
@@ -394,12 +393,12 @@ impl PaginatedEndpoint<TestCx> for HeaderBoundCursorEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
         Self: Sized,
         Self::Response: PageItems,
     {
-        Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
+        Some(Box::new(PaginationRuntimeAdapter::<
             concord_core::advanced::CursorPagination<String>,
         >::new()))
     }
@@ -470,8 +469,7 @@ impl PaginatedEndpoint<TestCx> for QueryBoundPagedEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
-    {
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
         None
     }
 }
@@ -542,8 +540,7 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::PaginatedE
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
-    {
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
         None
     }
 }
@@ -761,9 +758,9 @@ async fn single_object_paginate_binding_loads_and_stores_endpoint_state()
         load_calls: load_calls.clone(),
         store_calls: store_calls.clone(),
     };
-    let mut runtime = SingleObjectPaginationRuntimeAdapter::<HeaderBoundCustomPagination>::new();
-    type Runtime = SingleObjectPaginationRuntimeAdapter<HeaderBoundCustomPagination>;
-    <Runtime as SingleObjectPaginationRuntime<GeneratedHeaderBoundCustomEndpoint, Vec<String>>>::init(
+    let mut runtime = PaginationRuntimeAdapter::<HeaderBoundCustomPagination>::new();
+    type Runtime = PaginationRuntimeAdapter<HeaderBoundCustomPagination>;
+    <Runtime as PaginationRuntime<GeneratedHeaderBoundCustomEndpoint, Vec<String>>>::init(
         &mut runtime,
         &endpoint,
         PageApply {
@@ -774,7 +771,7 @@ async fn single_object_paginate_binding_loads_and_stores_endpoint_state()
     )?;
     assert_eq!(load_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert_eq!(
-        <Runtime as SingleObjectPaginationRuntime<
+        <Runtime as PaginationRuntime<
             GeneratedHeaderBoundCustomEndpoint,
             Vec<String>,
         >>::progress_key(&runtime),
@@ -782,41 +779,37 @@ async fn single_object_paginate_binding_loads_and_stores_endpoint_state()
     );
 
     let mut endpoint = endpoint;
-    let applied = <Runtime as SingleObjectPaginationRuntime<
-        GeneratedHeaderBoundCustomEndpoint,
-        Vec<String>,
-    >>::apply(
-        &mut runtime,
-        &mut endpoint,
-        PageApply {
-            endpoint: "HeaderBoundCustom",
-            page_index: 0,
-            ctx: &ctx,
-        },
-    )?;
+    let applied =
+        <Runtime as PaginationRuntime<GeneratedHeaderBoundCustomEndpoint, Vec<String>>>::apply(
+            &mut runtime,
+            &mut endpoint,
+            PageApply {
+                endpoint: "HeaderBoundCustom",
+                page_index: 0,
+                ctx: &ctx,
+            },
+        )?;
     assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
     assert_eq!(endpoint.page, 1);
     assert_eq!(endpoint.count, 2);
     assert_eq!(store_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
 
-    let decision = <Runtime as SingleObjectPaginationRuntime<
-        GeneratedHeaderBoundCustomEndpoint,
-        Vec<String>,
-    >>::advance(
-        &mut runtime,
-        &mut endpoint,
-        &ctx,
-        &vec!["a".to_string()],
-        PageAdvance {
-            endpoint: "HeaderBoundCustom",
-            page_index: 0,
-            received_items: 1,
-        },
-    )?;
+    let decision =
+        <Runtime as PaginationRuntime<GeneratedHeaderBoundCustomEndpoint, Vec<String>>>::advance(
+            &mut runtime,
+            &mut endpoint,
+            &ctx,
+            &vec!["a".to_string()],
+            PageAdvance {
+                endpoint: "HeaderBoundCustom",
+                page_index: 0,
+                received_items: 1,
+            },
+        )?;
     assert_eq!(decision, PageDecision::Continue);
     assert_eq!(endpoint.page, 2);
     assert_eq!(
-        <Runtime as SingleObjectPaginationRuntime<
+        <Runtime as PaginationRuntime<
             GeneratedHeaderBoundCustomEndpoint,
             Vec<String>,
         >>::progress_key(&runtime),
@@ -1349,9 +1342,9 @@ async fn cursor_string_single_object_pagination_preserves_empty_cursor()
             stop_when_cursor_missing: true,
         }),
     };
-    let mut runtime = SingleObjectPaginationRuntimeAdapter::<CursorPagination<String>>::new();
-    type Runtime = SingleObjectPaginationRuntimeAdapter<CursorPagination<String>>;
-    <Runtime as SingleObjectPaginationRuntime<CursorItemsEndpoint, CursorItems>>::init(
+    let mut runtime = PaginationRuntimeAdapter::<CursorPagination<String>>::new();
+    type Runtime = PaginationRuntimeAdapter<CursorPagination<String>>;
+    <Runtime as PaginationRuntime<CursorItemsEndpoint, CursorItems>>::init(
         &mut runtime,
         &endpoint,
         PageApply {
@@ -1360,7 +1353,7 @@ async fn cursor_string_single_object_pagination_preserves_empty_cursor()
             ctx: &ctx,
         },
     )?;
-    let _ = <Runtime as SingleObjectPaginationRuntime<CursorItemsEndpoint, CursorItems>>::apply(
+    let _ = <Runtime as PaginationRuntime<CursorItemsEndpoint, CursorItems>>::apply(
         &mut runtime,
         &mut endpoint,
         PageApply {
@@ -1373,24 +1366,21 @@ async fn cursor_string_single_object_pagination_preserves_empty_cursor()
         items: vec!["a".to_string()],
         next: Some(String::new()),
     };
-    let decision =
-        <Runtime as SingleObjectPaginationRuntime<CursorItemsEndpoint, CursorItems>>::advance(
-            &mut runtime,
-            &mut endpoint,
-            &ctx,
-            &page,
-            PageAdvance {
-                endpoint: "CursorItemsEndpoint",
-                page_index: 0,
-                received_items: 1,
-            },
-        )?;
+    let decision = <Runtime as PaginationRuntime<CursorItemsEndpoint, CursorItems>>::advance(
+        &mut runtime,
+        &mut endpoint,
+        &ctx,
+        &page,
+        PageAdvance {
+            endpoint: "CursorItemsEndpoint",
+            page_index: 0,
+            received_items: 1,
+        },
+    )?;
     assert_eq!(decision, PageDecision::Continue);
     assert_eq!(endpoint.cursor, Some(String::new()));
     assert_eq!(
-        <Runtime as SingleObjectPaginationRuntime<CursorItemsEndpoint, CursorItems>>::progress_key(
-            &runtime
-        ),
+        <Runtime as PaginationRuntime<CursorItemsEndpoint, CursorItems>>::progress_key(&runtime),
         Some(ProgressKey::Str(String::new()))
     );
     Ok(())

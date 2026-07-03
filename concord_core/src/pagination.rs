@@ -145,7 +145,7 @@ pub trait PaginateBinding<P> {
 
 /// Runtime adapter for pagination objects that own both pagination state and
 /// pagination decisions.
-pub trait SingleObjectPaginationRuntime<E, Page>: Send
+pub trait PaginationRuntime<E, Page>: Send
 where
     Page: PageItems,
 {
@@ -168,18 +168,18 @@ where
     fn progress_key(&self) -> Option<ProgressKey>;
 }
 
-pub struct SingleObjectPaginationRuntimeAdapter<P> {
+pub struct PaginationRuntimeAdapter<P> {
     pagination: Option<P>,
 }
 
-impl<P> SingleObjectPaginationRuntimeAdapter<P> {
+impl<P> PaginationRuntimeAdapter<P> {
     #[inline]
     pub fn new() -> Self {
         Self { pagination: None }
     }
 }
 
-impl<E, Page, P> SingleObjectPaginationRuntime<E, Page> for SingleObjectPaginationRuntimeAdapter<P>
+impl<E, Page, P> PaginationRuntime<E, Page> for PaginationRuntimeAdapter<P>
 where
     E: PaginateBinding<P>,
     P: EndpointPagination<Page>,

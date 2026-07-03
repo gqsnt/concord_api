@@ -6,8 +6,8 @@ use crate::endpoint::{
 };
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    Control, PageAdvance, PageApply, PageItems, PaginationCaps, PaginationTermination, ProgressKey,
-    SingleObjectPaginationRuntime,
+    Control, PageAdvance, PageApply, PageItems, PaginationCaps, PaginationRuntime,
+    PaginationTermination, ProgressKey,
 };
 use crate::timeout::TimeoutOverride;
 use crate::transport::{BuiltResponse, DecodedResponse};
@@ -316,7 +316,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
 }
 async fn collect_with_single_object_pagination<'a, Cx, E, T>(
     mut pending: PendingRequest<'a, Cx, E, T>,
-    mut runtime: Box<dyn SingleObjectPaginationRuntime<E, E::Response>>,
+    mut runtime: Box<dyn PaginationRuntime<E, E::Response>>,
     caps: PaginationCaps,
     ctx: ErrorContext,
 ) -> Result<Vec<<E::Response as PageItems>::Item>, ApiClientError>

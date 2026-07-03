@@ -54,7 +54,7 @@ let items = api
 
 The runtime keeps endpoint fields stable while advancing controller state.
 
-Custom pagination uses generated `PaginateBinding` to synchronize endpoint fields with controller state before planning. The generated endpoint type implements `PaginatedEndpoint<Cx> { type Pagination = Type; }`, and `EndpointPlan.pagination` is only a `PaginationMarker` presence flag. Endpoint-bound assignments load from endpoint fields and store back after the page advances. Literal or config assignments initialize pagination fields during load and are not stored back to endpoint fields. Planning remains the only place that renders query, header, path, or body output. Custom controllers that request a specific page size should return `PageApplyResult { expected_items_per_page: Some(...) }` from `apply()`. The expected count is per page and does not persist.
+Custom pagination uses generated `PaginateBinding` to synchronize endpoint fields with controller state before planning. The generated endpoint type implements `PaginatedEndpoint<Cx> { type Pagination = Type; }`, and `EndpointPlan.pagination` is only a `PaginationMarker` presence flag. Core owns the runtime loop through `PaginationRuntime` and `PaginationRuntimeAdapter`. Endpoint-bound assignments load from endpoint fields and store back after the page advances. Literal or config assignments initialize pagination fields during load and are not stored back to endpoint fields. Planning remains the only place that renders query, header, path, or body output. Custom controllers that request a specific page size should return `PageApplyResult { expected_items_per_page: Some(...) }` from `apply()`. The expected count is per page and does not persist.
 
 Paginated endpoints with request bodies are rejected in v1. Concord does not replay endpoint request bodies across page requests.
 
@@ -127,3 +127,4 @@ Retry and auth refresh preserve the current page state. A retry for page `N` ret
 Successful page responses with an exact item-count hint are checked for common content termination before the controller can advance. A hinted hard-item-cap overflow or completed `TakeItems` request also prevents advance. For page types without a hint, `collect()` can determine exact item termination only after `into_items()` consumes the page, so controller advance may already have run. Decode failure and retry for a page never advance controller state.
 
 Cursor pagination follows the same per-page runtime order. `stop_when_cursor_missing` stops when a cursor is absent; if pagination continues without changing the next request identity, Concord raises a typed non-progress error rather than reissuing the same page.
+

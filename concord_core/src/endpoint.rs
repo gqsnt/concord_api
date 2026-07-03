@@ -150,13 +150,13 @@ where
     #[doc(hidden)]
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn crate::pagination::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    ) -> Option<Box<dyn crate::pagination::PaginationRuntime<Self, Self::Response>>>
     where
         Self: Sized,
     {
-        Some(Box::new(
-            crate::pagination::SingleObjectPaginationRuntimeAdapter::<Self::Pagination>::new(),
-        ))
+        Some(Box::new(crate::pagination::PaginationRuntimeAdapter::<
+            Self::Pagination,
+        >::new()))
     }
 }
 

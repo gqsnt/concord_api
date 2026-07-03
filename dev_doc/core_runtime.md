@@ -44,7 +44,7 @@ Credential slot generations are monotonic across empty, in-flight, ready, and fa
 
 Pagination drives one logical request per page and always checks page progress. The runtime records every logical request identity seen during a pagination run and returns a typed pagination error if a later page would reuse any previously seen identity instead of advancing.
 
-Pagination is type-driven at runtime: generated endpoints name a pagination controller type, `PaginateBinding` loads and stores endpoint-backed fields, and core owns the loop around `EndpointPagination` implementations.
+Pagination is type-driven at runtime: generated endpoints name a pagination controller type, `PaginateBinding` loads and stores endpoint-backed fields, and core owns the loop around `PaginationRuntime` / `PaginationRuntimeAdapter` over `EndpointPagination` implementations.
 
 Controller loop-key checking is an additional pagination defense, not the only non-progress guard. Even when a controller disables its own loop-key check, the runtime request-identity guard remains active for the logical page request.
 
@@ -89,3 +89,4 @@ Runtime order is covered by characterization tests in `concord_core`.
 Endpoint concurrency tests use deterministic gates and explicit arrival counts rather than short sleeps. Timeouts in those tests are deadlock guards, not timing assertions.
 
 Cancellation tests use the same deterministic harness to abort requests after a known phase entry. The supported proofs are phase-local cleanup, no late decode or map, no late page advancement, and no leaked body or auth material in safe metadata.
+

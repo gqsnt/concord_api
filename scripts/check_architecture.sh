@@ -122,6 +122,13 @@ if "${RG[@]}" 'EndpointField|EndpointPaginationController|EndpointPaginationRunt
   fail_with_matches "removed endpoint-state pagination runtime layer names must not reappear in production codegen examples or tests." "$runtime_layer_refs"
 fi
 
+section "final runtime name fence"
+final_runtime_name_refs="$tmpdir/final_runtime_name.refs"
+if "${RG[@]}" -n 'SingleObjectPaginationRuntime|SingleObjectPaginationRuntimeAdapter|single-object pagination runtime' \
+  concord_core/src concord_core/tests concord_macros/src concord_macros/tests concord_examples/src docs dev_doc >"$final_runtime_name_refs" 2>/dev/null; then
+  fail_with_matches "final pagination runtime names must stay out of active production code, tests, examples, and docs." "$final_runtime_name_refs"
+fi
+
 section "removed endpoint-state pagination syntax fence"
 endpoint_state_syntax_refs="$tmpdir/endpoint_state_syntax.refs"
 if "${RG[@]}" -ni 'paginate endpoint[-_]state|\bendpoint[-_]state\b' \
@@ -152,7 +159,7 @@ fi
 
 section "macro pagination runtime construction fence"
 macro_pagination_runtime_refs="$tmpdir/macro_pagination_runtime.refs"
-if "${RG[@]}" 'SingleObjectPaginationRuntimeAdapter|EndpointPagination\s*<' \
+if "${RG[@]}" 'SingleObjectPaginationRuntimeAdapter|PaginationRuntimeAdapter|EndpointPagination\s*<' \
   concord_macros/src/codegen >"$macro_pagination_runtime_refs" 2>/dev/null; then
   fail_with_matches "concord_macros codegen must not construct single-object pagination runtimes directly." "$macro_pagination_runtime_refs"
 fi

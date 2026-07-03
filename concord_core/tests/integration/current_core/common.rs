@@ -3,10 +3,10 @@ use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
     AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltResponse, CursorPagination,
     DecodedResponse, OffsetLimitPagination, PagedPagination, PaginateBinding,
-    PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
-    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestMeta,
-    RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, SingleObjectPaginationRuntimeAdapter,
-    Transport, TransportBody, TransportByteStream, TransportError, TransportErrorHookContext,
+    PaginationRuntimeAdapter, PostResponseHookContext, PreSendHookContext, RateLimitContext,
+    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+    RateLimiter, RequestMeta, RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, Transport,
+    TransportBody, TransportByteStream, TransportError, TransportErrorHookContext,
     TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
     apply_basic_credential,
 };
@@ -329,21 +329,17 @@ impl PaginatedEndpoint<TestCx> for ItemsEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
         Self: Sized,
         Self::Response: PageItems,
     {
         match &self.pagination {
-            PaginationVariant::OffsetLimit { .. } => {
-                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
-                    OffsetLimitPagination,
-                >::new()))
-            }
+            PaginationVariant::OffsetLimit { .. } => Some(Box::new(PaginationRuntimeAdapter::<
+                OffsetLimitPagination,
+            >::new())),
             PaginationVariant::Paged { .. } => {
-                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
-                    PagedPagination,
-                >::new()))
+                Some(Box::new(PaginationRuntimeAdapter::<PagedPagination>::new()))
             }
             PaginationVariant::Cursor { .. } => None,
         }
@@ -446,8 +442,7 @@ impl PaginatedEndpoint<TestCx> for NoHintItemsEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
-    {
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
         None
     }
 }
@@ -535,22 +530,18 @@ impl PaginatedEndpoint<TestCx> for PageOnlyItemsEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
         Self: Sized,
         Self::Response: PageItems,
     {
         match &self.pagination {
             PaginationVariant::Paged { .. } => {
-                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
-                    PagedPagination,
-                >::new()))
+                Some(Box::new(PaginationRuntimeAdapter::<PagedPagination>::new()))
             }
-            PaginationVariant::OffsetLimit { .. } => {
-                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
-                    OffsetLimitPagination,
-                >::new()))
-            }
+            PaginationVariant::OffsetLimit { .. } => Some(Box::new(PaginationRuntimeAdapter::<
+                OffsetLimitPagination,
+            >::new())),
             PaginationVariant::Cursor { .. } => None,
         }
     }
@@ -693,17 +684,15 @@ impl PaginatedEndpoint<TestCx> for CursorItemsEndpoint {
 
     fn single_object_pagination(
         &self,
-    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
         Self: Sized,
         Self::Response: PageItems,
     {
         match &self.pagination {
-            PaginationVariant::Cursor { .. } => {
-                Some(Box::new(SingleObjectPaginationRuntimeAdapter::<
-                    CursorPagination<String>,
-                >::new()))
-            }
+            PaginationVariant::Cursor { .. } => Some(Box::new(PaginationRuntimeAdapter::<
+                CursorPagination<String>,
+            >::new())),
             PaginationVariant::OffsetLimit { .. } | PaginationVariant::Paged { .. } => None,
         }
     }

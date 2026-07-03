@@ -65,3 +65,4 @@ Generated endpoint and auth-internal response handling must preserve the core bo
 Rustdoc is generated from resolved endpoint metadata. Behavior labels attached through defaults, scopes, and endpoints are emitted as a concise `Behavior: ...` line. Do not render secrets or secret values in rustdoc.
 
 Semantic logic should stay in sema where possible. Codegen mainly turns resolved model data into Rust.
+
