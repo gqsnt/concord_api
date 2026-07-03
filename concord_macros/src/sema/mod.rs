@@ -858,8 +858,8 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
             params,
             policy,
             facade,
-            ep.response_io(),
-            !matches!(ep.request_io(), ResolvedRequestBodyIo::None),
+            ep.io.response_entity.public_output_ty,
+            ep.io.request_entity.capabilities.has_body,
             ep.paginate.is_some(),
         ));
     }
@@ -3419,7 +3419,7 @@ mod tests {
     }
 
     #[test]
-    fn body_signature_response_and_map_resolve_into_endpoint_model() {
+    fn body_signature_response_resolve_into_endpoint_model() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client BodyApi {
@@ -3440,17 +3440,21 @@ mod tests {
             .find(|ep| ep.name == "Create")
             .expect("Create endpoint");
 
-        let body = match endpoint.request_io() {
-            ResolvedRequestBodyIo::BufferedCodec(io) => io,
-            other => panic!("expected buffered request body, got {other:?}"),
-        };
-        let response_ty = match endpoint.response_io() {
-            ResolvedResponseBodyIo::BufferedCodec(io) => &io.value_ty,
-            other => panic!("expected buffered response body, got {other:?}"),
-        };
-        let body_ty = &body.value_ty;
-        assert_eq!(quote::quote!(#body_ty).to_string(), "CreateBody");
-        assert_eq!(quote::quote!(#response_ty).to_string(), "CreateResponse");
+        assert_eq!(
+            ty_string(&endpoint.io.request_entity.adapter_ty),
+            "::concord_core::advanced::EncodedRequest<Json<CreateBody>>"
+        );
+        assert_eq!(
+            ty_string(
+                endpoint
+                    .io
+                    .request_entity
+                    .public_input_ty
+                    .as_ref()
+                    .expect("public input type")
+            ),
+            "CreateBody"
+        );
         assert_eq!(
             ty_string(&endpoint.io.response_entity.adapter_ty),
             "::concord_core::advanced::BufferedResponse<Json<CreateResponse>>"
@@ -3501,54 +3505,54 @@ mod tests {
             .iter()
             .find(|ep| ep.name == "Buffered")
             .expect("buffered endpoint");
-        assert!(matches!(
-            buffered.request_io(),
-            ResolvedRequestBodyIo::BufferedCodec(_)
-        ));
-        assert!(matches!(
-            buffered.response_io(),
-            ResolvedResponseBodyIo::BufferedCodec(_)
-        ));
+        assert_eq!(
+            ty_string(&buffered.io.request_entity.adapter_ty),
+            "::concord_core::advanced::EncodedRequest<Json<Body>>"
+        );
+        assert_eq!(
+            ty_string(&buffered.io.response_entity.adapter_ty),
+            "::concord_core::advanced::BufferedResponse<Json<Resp>>"
+        );
 
         let streamed = resolved_api
             .endpoints
             .iter()
             .find(|ep| ep.name == "Streamed")
             .expect("streamed endpoint");
-        assert!(matches!(
-            streamed.response_io(),
-            ResolvedResponseBodyIo::RawStream { .. }
-        ));
+        assert_eq!(
+            ty_string(&streamed.io.response_entity.adapter_ty),
+            "::concord_core::advanced::RawStreamResponse<Bytes>"
+        );
 
         let listed = resolved_api
             .endpoints
             .iter()
             .find(|ep| ep.name == "Listed")
             .expect("listed endpoint");
-        assert!(matches!(
-            listed.response_io(),
-            ResolvedResponseBodyIo::Records { .. }
-        ));
+        assert_eq!(
+            ty_string(&listed.io.response_entity.adapter_ty),
+            "::concord_core::advanced::RecordResponse<Item,NdJson>"
+        );
 
         let multiparted = resolved_api
             .endpoints
             .iter()
             .find(|ep| ep.name == "Multiparted")
             .expect("multiparted endpoint");
-        assert!(matches!(
-            multiparted.response_io(),
-            ResolvedResponseBodyIo::Multipart { .. }
-        ));
+        assert_eq!(
+            ty_string(&multiparted.io.response_entity.adapter_ty),
+            "::concord_core::advanced::MultipartResponse<Part,::concord_core::advanced::FormData>"
+        );
 
         let ssed = resolved_api
             .endpoints
             .iter()
             .find(|ep| ep.name == "Ssed")
             .expect("ssed endpoint");
-        assert!(matches!(
-            ssed.response_io(),
-            ResolvedResponseBodyIo::Sse { .. }
-        ));
+        assert_eq!(
+            ty_string(&ssed.io.response_entity.adapter_ty),
+            "::concord_core::advanced::SseResponse<Event,::concord_core::advanced::JsonSse>"
+        );
     }
 
     fn ty_string(ty: &Type) -> String {
@@ -3593,7 +3597,6 @@ mod tests {
         );
         assert!(no_body.io.request_entity.public_input_ty.is_none());
         assert!(no_body.io.request_entity.body_field_ty.is_none());
-        assert!(no_body.io.request_entity.capabilities.replayable);
         assert!(no_body.io.request_entity.doc.facade_summary.is_none());
         assert_eq!(
             ty_string(&no_body.io.response_entity.adapter_ty),
@@ -3638,7 +3641,6 @@ mod tests {
             ),
             "BufferedBody"
         );
-        assert!(buffered.io.request_entity.capabilities.replayable);
         assert_eq!(
             buffered.io.request_entity.doc.facade_summary.as_deref(),
             Some("Body: Json<BufferedBody>")
@@ -3663,7 +3665,6 @@ mod tests {
         );
         assert!(stream_req.io.request_entity.capabilities.has_body);
         assert!(stream_req.io.request_entity.capabilities.is_streaming);
-        assert!(!stream_req.io.request_entity.capabilities.replayable);
         assert_eq!(
             ty_string(
                 &stream_req

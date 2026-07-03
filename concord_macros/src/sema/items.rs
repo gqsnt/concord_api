@@ -220,7 +220,6 @@ fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPl
                 has_body: false,
                 is_streaming: false,
                 is_multipart: false,
-                replayable: true,
             },
         },
         ResolvedRequestBodyIo::BufferedCodec(io) => {
@@ -243,7 +242,6 @@ fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPl
                     has_body: true,
                     is_streaming: false,
                     is_multipart: false,
-                    replayable: true,
                 },
             }
         }
@@ -259,7 +257,6 @@ fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPl
                 has_body: true,
                 is_streaming: true,
                 is_multipart: false,
-                replayable: false,
             },
         },
         ResolvedRequestBodyIo::Records { item_ty, format_ty } => RequestEntityPlanIr {
@@ -278,7 +275,6 @@ fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPl
                 has_body: true,
                 is_streaming: true,
                 is_multipart: false,
-                replayable: false,
             },
         },
         ResolvedRequestBodyIo::Multipart {
@@ -300,7 +296,6 @@ fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPl
                 has_body: true,
                 is_streaming: true,
                 is_multipart: true,
-                replayable: false,
             },
         },
     }
@@ -869,8 +864,6 @@ fn analyze_endpoint(
         vars: endpoint_decls,
 
         io: ResolvedHttpEndpointIo {
-            request: request_io,
-            response: response_io,
             request_entity,
             response_entity,
         },

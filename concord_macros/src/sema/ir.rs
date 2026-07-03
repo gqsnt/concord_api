@@ -67,14 +67,6 @@ pub struct ResolvedEndpoint {
 
 #[derive(Debug, Clone)]
 pub struct ResolvedHttpEndpointIo {
-    // Retained as syntax classification for sema diagnostics/tests; runtime
-    // codegen uses the entity metadata fields below.
-    #[allow(dead_code)]
-    pub request: ResolvedRequestBodyIo,
-    // Retained as syntax classification for sema diagnostics/tests; runtime
-    // codegen uses the entity metadata fields below.
-    #[allow(dead_code)]
-    pub response: ResolvedResponseBodyIo,
     pub request_entity: RequestEntityPlanIr,
     pub response_entity: ResponseEntityPlanIr,
 }
@@ -90,7 +82,6 @@ pub struct RequestIoCapabilities {
     pub has_body: bool,
     pub is_streaming: bool,
     pub is_multipart: bool,
-    pub replayable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,17 +137,6 @@ pub enum ResolvedResponseBodyIo {
     Records { item_ty: Type, format_ty: Type },
     Multipart { part_ty: Type, format_ty: Type },
     Sse { event_ty: Type, codec_ty: Type },
-}
-
-#[cfg(test)]
-impl ResolvedEndpoint {
-    pub fn request_io(&self) -> &ResolvedRequestBodyIo {
-        &self.io.request
-    }
-
-    pub fn response_io(&self) -> &ResolvedResponseBodyIo {
-        &self.io.response
-    }
 }
 
 #[derive(Debug)]

@@ -46,7 +46,7 @@ DSL syntax
 - Request syntax is classified in sema.
 - Sema derives `RequestEntityPlanIr`.
 - Codegen emits `<Adapter as RequestEntity>::prepare(...)`.
-- Core request adapters produce `PreparedRequestEntity { body_plan, args, replayability }`.
+- Core request adapters produce `PreparedRequestEntity { body_plan, args }`.
 - Response syntax is classified in sema.
 - Sema derives `ResponseEntityPlanIr`.
 - Codegen emits `<Adapter as ResponseEntity>::plan(...)` and `<Adapter as ResponseEntity>::execute(...)`.
