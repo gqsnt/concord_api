@@ -40,6 +40,7 @@ PR52 introduces the new core adapter contracts beside the current family-enum sy
 - The current resolved family enums and generated-code branches remain temporarily during migration.
 - This PR does not migrate generated macro output yet.
 - PR54 has now migrated generated request-body planning to `RequestEntity`, but response planning and execution still use the older generated family paths.
+- PR55 has now migrated unmapped buffered, bytes, and no-content response planning to `ResponseEntity`; mapped buffered responses and streaming response execution still use the older generated family paths.
 
 ## Endpoint I/O Families
 

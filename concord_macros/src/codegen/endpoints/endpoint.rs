@@ -155,11 +155,8 @@ fn emit_endpoint_def(
     let response_dec = &response_dec_ty;
     let decoded_ty = &decoded_ty_ty;
     let final_response_ty = endpoint_response_output_ty(ep);
-    let decode_fn = emit_helpers::ident(&format!("__decode_{ty_name}"), Span::call_site());
-    let response_decode_fn = endpoint_response_decode_fn(ep, ty_name, response_dec, decoded_ty);
-    let response_plan_accept = endpoint_response_accept_tokens(ep, response_dec);
-    let response_plan_no_content = endpoint_response_no_content_tokens(ep, response_dec);
-    let response_plan_format = endpoint_response_format_tokens(ep, response_dec);
+    let (response_plan_setup, response_plan_expr, response_decode_fn, response_plan_accept, response_plan_no_content) =
+        endpoint_response_plan_tokens(ep, ty_name, response_dec, decoded_ty);
     let idempotent = matches!(
         method.to_string().as_str(),
         "GET" | "HEAD" | "PUT" | "DELETE" | "OPTIONS"
@@ -289,6 +286,7 @@ fn emit_endpoint_def(
                 let ctx_err = ::concord_core::error::ErrorContext { endpoint: #endpoint_name, method: ::http::Method::#method };
                 let __auth_plan = #auth_plan;
                 let ctx = ctx_err.clone();
+                #response_plan_setup
                 #route_policy
                 #body_plan
                 #pagination_plan
@@ -303,12 +301,7 @@ fn emit_endpoint_def(
                         route: __resolved_route,
                         policy: __resolved_policy,
                         body: __body_plan,
-                        response: ::concord_core::internal::ResponsePlan {
-                            accept: #response_plan_accept,
-                            no_content: #response_plan_no_content,
-                            format: #response_plan_format,
-                            decode: #decode_fn,
-                        },
+                        response: #response_plan_expr,
                         pagination: __pagination_plan,
                     },
                     args: __request_args,
@@ -588,35 +581,8 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
     }
 }
 
-fn resolved_response_output_ty(
-    response_io: &ResolvedResponseBodyIo,
-    map: Option<&MapResolved>,
-) -> syn::Type {
-    if let Some(map) = map {
-        return map.out_ty.clone();
-    }
-
-    match response_io {
-        ResolvedResponseBodyIo::BufferedCodec(io) => io.value_ty.clone(),
-        ResolvedResponseBodyIo::BufferedBytes => syn::parse_quote!(::bytes::Bytes),
-        ResolvedResponseBodyIo::NoContent => syn::parse_quote!(()),
-        ResolvedResponseBodyIo::RawStream { media_ty } => {
-            syn::parse_quote!(::concord_core::advanced::StreamResponse<#media_ty>)
-        }
-        ResolvedResponseBodyIo::Records { item_ty, .. } => {
-            syn::parse_quote!(::concord_core::advanced::RecordStream<#item_ty>)
-        }
-        ResolvedResponseBodyIo::Multipart { part_ty, .. } => {
-            syn::parse_quote!(::concord_core::advanced::MultipartStream<#part_ty>)
-        }
-        ResolvedResponseBodyIo::Sse { event_ty, .. } => {
-            syn::parse_quote!(::concord_core::advanced::SseStream<#event_ty>)
-        }
-    }
-}
-
 fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
-    let response_ty = resolved_response_output_ty(ep.response_io(), ep.map.as_ref());
+    let response_ty = ep.io.response_entity.public_output_ty.clone();
     quote! { #response_ty }
 }
 
@@ -655,10 +621,7 @@ fn endpoint_response_accept_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Ty
     }
 }
 
-fn endpoint_response_no_content_tokens(
-    ep: &ResolvedEndpoint,
-    response_dec: &syn::Type,
-) -> TokenStream2 {
+fn endpoint_response_no_content_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
     match ep.response_io() {
         ResolvedResponseBodyIo::NoContent => quote! { true },
         ResolvedResponseBodyIo::BufferedBytes => quote! { false },
@@ -672,10 +635,7 @@ fn endpoint_response_no_content_tokens(
     }
 }
 
-fn endpoint_response_format_tokens(
-    ep: &ResolvedEndpoint,
-    response_dec: &syn::Type,
-) -> TokenStream2 {
+fn endpoint_response_format_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
     match ep.response_io() {
         ResolvedResponseBodyIo::NoContent => quote! { ::concord_core::internal::Format::Text },
         ResolvedResponseBodyIo::BufferedBytes => quote! { ::concord_core::internal::Format::Binary },
@@ -685,6 +645,62 @@ fn endpoint_response_format_tokens(
         ResolvedResponseBodyIo::Sse { .. } => quote! { ::concord_core::internal::Format::Text },
         _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::format() },
     }
+}
+
+fn endpoint_response_plan_tokens(
+    ep: &ResolvedEndpoint,
+    ty_name: &Ident,
+    response_dec: &syn::Type,
+    decoded_ty: &syn::Type,
+) -> (
+    TokenStream2,
+    TokenStream2,
+    TokenStream2,
+    TokenStream2,
+    TokenStream2,
+) {
+    let response_entity_adapter_ty = &ep.io.response_entity.adapter_ty;
+    let decode_fn = emit_helpers::ident(&format!("__decode_{ty_name}"), Span::call_site());
+    let use_response_entity_plan = matches!(
+        ep.response_io(),
+        ResolvedResponseBodyIo::BufferedCodec(_) | ResolvedResponseBodyIo::BufferedBytes | ResolvedResponseBodyIo::NoContent
+    ) && ep.map.is_none();
+
+    if use_response_entity_plan {
+        let response_plan_setup = quote! {
+            let __response_entity_plan = <#response_entity_adapter_ty as ::concord_core::advanced::ResponseEntity>::plan(ctx_err.clone())?;
+            let __response_plan = __response_entity_plan.response_plan.clone();
+            let __response_accept = __response_plan.accept.clone();
+            let __response_no_content = __response_plan.no_content;
+        };
+        return (
+            response_plan_setup,
+            quote! { __response_plan },
+            quote! {},
+            quote! { __response_accept },
+            quote! { __response_no_content },
+        );
+    }
+
+    let response_decode_fn = endpoint_response_decode_fn(ep, ty_name, response_dec, decoded_ty);
+    let response_plan_accept = endpoint_response_accept_tokens(ep, response_dec);
+    let response_plan_no_content = endpoint_response_no_content_tokens(ep, response_dec);
+    let response_plan_format = endpoint_response_format_tokens(ep, response_dec);
+
+    (
+        quote! {},
+        quote! {
+            ::concord_core::internal::ResponsePlan {
+                accept: #response_plan_accept,
+                no_content: #response_plan_no_content,
+                format: #response_plan_format,
+                decode: #decode_fn,
+            }
+        },
+        response_decode_fn,
+        response_plan_accept,
+        response_plan_no_content,
+    )
 }
 
 fn endpoint_response_decode_fn(

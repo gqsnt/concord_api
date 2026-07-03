@@ -1103,7 +1103,10 @@ mod tests {
                 "fn plan (& self, plan_ctx : & :: concord_core :: internal :: ClientPlanContext",
                 ":: concord_core :: internal :: RequestPlan",
                 ":: concord_core :: internal :: EndpointPlan",
-                ":: concord_core :: internal :: ResponsePlan",
+                "ResponseEntity",
+                "BufferedResponse",
+                "__response_entity_plan",
+                "response: __response_plan",
             ],
         );
     }
@@ -1145,7 +1148,10 @@ mod tests {
                 ":: concord_core :: internal :: EndpointMeta",
                 ":: concord_core :: internal :: ResolvedRoute",
                 ":: concord_core :: internal :: ResolvedPolicy",
-                ":: concord_core :: internal :: ResponsePlan",
+                "ResponseEntity",
+                "BufferedResponse",
+                "__response_entity_plan",
+                "response: __response_plan",
                 "let __pagination_plan = :: core :: option :: Option :: Some",
                 "PaginationMarker",
             ],
@@ -1339,6 +1345,7 @@ mod tests {
                 "RequestEntity",
                 "EncodedRequest",
                 "prepare(",
+                "__prepared_request_entity",
                 "ResponsePlan",
                 "decode : __decode_",
             ],
@@ -1346,10 +1353,12 @@ mod tests {
         assert_not_contains_all(
             &out,
             &[
-                &legacy_request_body_plan_encoded(),
-                &legacy_request_args_with_body_bytes(),
-                &legacy_body_codec_encode(),
-                &legacy_content_type_check_name(),
+                "ResponseEntity",
+                "BufferedResponse",
+                "BytesResponse",
+                "NoContentResponse",
+                "BodyPlan :: Encoded",
+                "BodyCodec>::encode",
             ],
         );
     }
@@ -1372,7 +1381,9 @@ mod tests {
                 "RequestEntity",
                 "EncodedRequest",
                 "prepare(",
-                "ResponseCodec>::try_accept()",
+                "ResponseEntity",
+                "BufferedResponse",
+                "__response_entity_plan",
                 "::concord_core::prelude::ApiClientError::invalid_param",
             ],
         );
@@ -1381,6 +1392,79 @@ mod tests {
             &[
                 &legacy_content_type_check_name(),
                 &legacy_request_body_plan_encoded(),
+                "ResponseCodec>::try_accept()",
+                "ResponseCodec>::decode",
+                "decode : __decode_",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_bytes_response_uses_response_entity_plan() {
+        let out = expanded(quote! {
+            client BytesEntityApi {
+                base "https://example.com"
+            }
+
+            GET Download
+                path ["download"]
+                -> Bytes
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "ResponseEntity",
+                "BytesResponse",
+                "__response_entity_plan",
+                "response: __response_plan",
+                "NoRequestBody",
+            ],
+        );
+        assert_not_contains_all(
+            &out,
+            &[
+                "ResponsePlan {",
+                "ResponseCodec>::try_accept()",
+                "ResponseCodec>::decode",
+                "decode : __decode_",
+                "no_content :",
+                "format :",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_no_content_response_uses_response_entity_plan() {
+        let out = expanded(quote! {
+            client NoContentEntityApi {
+                base "https://example.com"
+            }
+
+            DELETE Remove
+                path ["remove"]
+                -> NoContent
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "ResponseEntity",
+                "NoContentResponse",
+                "__response_entity_plan",
+                "response: __response_plan",
+                "NoRequestBody",
+            ],
+        );
+        assert_not_contains_all(
+            &out,
+            &[
+                "ResponsePlan {",
+                "ResponseCodec>::try_accept()",
+                "ResponseCodec>::decode",
+                "decode : __decode_",
+                "no_content :",
+                "format :",
             ],
         );
     }
