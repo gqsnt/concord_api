@@ -117,7 +117,7 @@ impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
 impl PaginatedEndpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
     type Pagination = HeaderBoundCustomPagination;
 
-    fn single_object_pagination(
+    fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
         Some(Box::new(PaginationRuntimeAdapter::<
@@ -195,7 +195,7 @@ impl PaginateBinding<HeaderBoundCustomPagination> for GeneratedHeaderBoundCustom
 impl PaginatedEndpoint<TestCx> for HeaderBoundCustomEndpoint {
     type Pagination = HeaderBoundCustomPagination;
 
-    fn single_object_pagination(
+    fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
@@ -259,7 +259,7 @@ impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
 impl PaginatedEndpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
     type Pagination = concord_core::advanced::OffsetLimitPagination;
 
-    fn single_object_pagination(
+    fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
@@ -325,7 +325,7 @@ impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
 impl PaginatedEndpoint<TestCx> for HeaderBoundPagedEndpoint {
     type Pagination = concord_core::advanced::PagedPagination;
 
-    fn single_object_pagination(
+    fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
@@ -391,7 +391,7 @@ impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
 impl PaginatedEndpoint<TestCx> for HeaderBoundCursorEndpoint {
     type Pagination = concord_core::advanced::CursorPagination<String>;
 
-    fn single_object_pagination(
+    fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
     where
@@ -467,7 +467,7 @@ impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
 impl PaginatedEndpoint<TestCx> for QueryBoundPagedEndpoint {
     type Pagination = concord_core::advanced::PagedPagination;
 
-    fn single_object_pagination(
+    fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
         None
@@ -538,7 +538,7 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::PaginatedE
 {
     type Pagination = concord_core::advanced::OffsetLimitPagination;
 
-    fn single_object_pagination(
+    fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
         None
@@ -676,8 +676,7 @@ struct AlwaysContinueNeverExpectedState {
 
 #[tokio::test]
 
-async fn single_object_pagination_state_drives_endpoint_planning_order()
--> Result<(), ApiClientError> {
+async fn pagination_runtime_state_drives_endpoint_planning_order() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -744,8 +743,7 @@ async fn single_object_pagination_state_drives_endpoint_planning_order()
 }
 
 #[tokio::test]
-async fn single_object_paginate_binding_loads_and_stores_endpoint_state()
--> Result<(), ApiClientError> {
+async fn pagination_runtime_loads_and_stores_endpoint_state() -> Result<(), ApiClientError> {
     let ctx = concord_core::error::ErrorContext {
         endpoint: "HeaderBoundCustom",
         method: Method::GET,
@@ -890,7 +888,7 @@ async fn generated_custom_endpoint_state_collect_renders_endpoint_fields()
 
 #[tokio::test]
 
-async fn offset_limit_single_object_pagination_advances_offset() -> Result<(), ApiClientError> {
+async fn offset_limit_pagination_runtime_advances_offset() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -958,7 +956,7 @@ async fn offset_limit_single_object_pagination_advances_offset() -> Result<(), A
 
 #[tokio::test]
 
-async fn paged_single_object_pagination_advances_page() -> Result<(), ApiClientError> {
+async fn paged_pagination_runtime_advances_page() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -1026,8 +1024,7 @@ async fn paged_single_object_pagination_advances_page() -> Result<(), ApiClientE
 
 #[tokio::test]
 
-async fn single_object_pagination_requires_runtime_support_when_missing()
--> Result<(), ApiClientError> {
+async fn pagination_runtime_requires_runtime_support_when_missing() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -1151,7 +1148,7 @@ async fn offset_pagination_collects_page_items_without_has_next_cursor()
 
 #[tokio::test]
 
-async fn cursor_single_object_omits_initial_cursor_when_send_cursor_on_first_false()
+async fn cursor_pagination_runtime_omits_initial_cursor_when_send_cursor_on_first_false()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -1210,7 +1207,7 @@ async fn cursor_single_object_omits_initial_cursor_when_send_cursor_on_first_fal
 
 #[tokio::test]
 
-async fn cursor_single_object_sends_initial_cursor_when_send_cursor_on_first_true()
+async fn cursor_pagination_runtime_sends_initial_cursor_when_send_cursor_on_first_true()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -1272,7 +1269,7 @@ async fn cursor_single_object_sends_initial_cursor_when_send_cursor_on_first_tru
 
 #[tokio::test]
 
-async fn cursor_string_single_object_pagination_advances_cursor() -> Result<(), ApiClientError> {
+async fn cursor_string_pagination_runtime_advances_cursor() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -1325,8 +1322,7 @@ async fn cursor_string_single_object_pagination_advances_cursor() -> Result<(), 
 
 #[tokio::test]
 
-async fn cursor_string_single_object_pagination_preserves_empty_cursor()
--> Result<(), ApiClientError> {
+async fn cursor_string_pagination_runtime_preserves_empty_cursor() -> Result<(), ApiClientError> {
     let ctx = concord_core::error::ErrorContext {
         endpoint: "CursorItemsEndpoint",
         method: Method::GET,
@@ -1388,7 +1384,7 @@ async fn cursor_string_single_object_pagination_preserves_empty_cursor()
 
 #[tokio::test]
 
-async fn cursor_string_single_object_pagination_requires_runtime_support_when_missing()
+async fn cursor_string_pagination_runtime_requires_runtime_support_when_missing()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -1871,7 +1867,7 @@ async fn take_items_exact_boundary_stops_without_extra_page() -> Result<(), ApiC
 }
 
 #[test]
-fn paged_single_object_pagination_rejects_zero_page() {
+fn paged_pagination_runtime_rejects_zero_page() {
     let mut pagination = PagedPagination {
         page: 0,
         per_page: 20,

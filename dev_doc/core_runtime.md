@@ -90,3 +90,4 @@ Endpoint concurrency tests use deterministic gates and explicit arrival counts r
 
 Cancellation tests use the same deterministic harness to abort requests after a known phase entry. The supported proofs are phase-local cleanup, no late decode or map, no late page advancement, and no leaked body or auth material in safe metadata.
 
+

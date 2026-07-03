@@ -148,7 +148,7 @@ where
     type Pagination;
 
     #[doc(hidden)]
-    fn single_object_pagination(
+    fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn crate::pagination::PaginationRuntime<Self, Self::Response>>>
     where

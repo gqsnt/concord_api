@@ -49,10 +49,12 @@ The convenience `content_type()` and `accept()` methods remain available for tru
 Built-in controllers:
 
 - `OffsetLimitPagination`
-- `CursorPagination`
+- `CursorPagination<String>`
 - `PagedPagination`
 
-Custom pagination implements the single-object pagination traits.
+Custom pagination controllers implement `Default + EndpointPagination<Page>`.
+Generated endpoints implement `PaginateBinding<P>` from the DSL assignment block.
+Core runs pagination through `PaginationRuntime` and `PaginationRuntimeAdapter`.
 
 ## Runtime controller model
 
@@ -68,7 +70,7 @@ identity returns a typed pagination error instead of silently reissuing the
 same page. The optional controller `ProgressKey` check remains available as an
 additional guard.
 
-The macro `paginate` block resolves controller field assignments. Built-in pagination and custom pagination both use assignment blocks for endpoint fields, and codegen connects those assignments to the single-object runtime path before the endpoint response codec decodes each page.
+The macro `paginate` block resolves controller field assignments. Built-in pagination and custom pagination both use assignment blocks for endpoint fields, and codegen connects those assignments to the pagination runtime path before the endpoint response codec decodes each page.
 
 Empty-page and short-page termination are runtime invariants, not
 controller-specific rules. The runtime obtains expected page size from built-in
@@ -99,3 +101,4 @@ collected items in `collect()`. Cursor pagination with
 the request identity is a typed non-progress error instead of an infinite loop.
 Pagination progress is checked against every logical request identity seen so
 far in the run, not just the immediately previous page.
+

@@ -110,7 +110,7 @@ pub struct PageAdvance<'a> {
     pub received_items: usize,
 }
 
-/// Single-object pagination state/controller contract.
+/// Pagination runtime contract for stateful controllers.
 ///
 /// Implementations own pagination state for a run and can update that state
 /// before a page is sent and after a page is decoded. Pagination controllers

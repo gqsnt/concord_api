@@ -128,3 +128,4 @@ Successful page responses with an exact item-count hint are checked for common c
 
 Cursor pagination follows the same per-page runtime order. `stop_when_cursor_missing` stops when a cursor is absent; if pagination continues without changing the next request identity, Concord raises a typed non-progress error rather than reissuing the same page.
 
+

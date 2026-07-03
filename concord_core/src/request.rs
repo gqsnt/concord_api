@@ -299,8 +299,8 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         ) {
             return Ok(Vec::new());
         }
-        if let Some(runtime) = pending.ep.single_object_pagination() {
-            return collect_with_single_object_pagination(pending, runtime, caps, ctx).await;
+        if let Some(runtime) = pending.ep.pagination_runtime() {
+            return collect_with_pagination_runtime(pending, runtime, caps, ctx).await;
         }
         if first_plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::Pagination {
@@ -314,7 +314,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         })
     }
 }
-async fn collect_with_single_object_pagination<'a, Cx, E, T>(
+async fn collect_with_pagination_runtime<'a, Cx, E, T>(
     mut pending: PendingRequest<'a, Cx, E, T>,
     mut runtime: Box<dyn PaginationRuntime<E, E::Response>>,
     caps: PaginationCaps,
