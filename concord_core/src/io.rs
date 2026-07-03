@@ -1,5 +1,6 @@
+use crate::client::{ApiClient, ClientContext};
 use crate::codec::{BodyCodec, ContentType, DecodeContext, EncodeContext, ResponseCodec};
-use crate::endpoint::{BodyPlan, RequestArgs, ResponsePlan};
+use crate::endpoint::{BodyPlan, RequestArgs, RequestPlan, ResponsePlan};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::media::EventStream;
 use crate::multipart::{MultipartBody, MultipartFormat};
@@ -10,7 +11,9 @@ use crate::stream_response::StreamResponse;
 use crate::transport::{BuiltResponse, DecodedResponse};
 use bytes::Bytes;
 use std::any::Any;
+use std::future::Future;
 use std::marker::PhantomData;
+use std::pin::Pin;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Replayability {
@@ -178,6 +181,14 @@ pub trait ResponseEntity {
     type Output;
 
     fn plan(ctx: ErrorContext) -> Result<ResponseEntityPlan, ApiClientError>;
+
+    fn execute<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a;
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -199,6 +210,17 @@ where
                 is_no_content: C::is_no_content(),
             },
         })
+    }
+
+    fn execute<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(async move { execute_buffered_response::<Cx, T, C::Value>(client, plan).await })
     }
 }
 
@@ -224,6 +246,17 @@ impl ResponseEntity for BytesResponse {
             },
         })
     }
+
+    fn execute<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(async move { execute_buffered_response::<Cx, T, Bytes>(client, plan).await })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -247,6 +280,17 @@ impl ResponseEntity for NoContentResponse {
                 is_no_content: true,
             },
         })
+    }
+
+    fn execute<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(async move { execute_buffered_response::<Cx, T, ()>(client, plan).await })
     }
 }
 
@@ -277,6 +321,17 @@ where
                 is_no_content: false,
             },
         })
+    }
+
+    fn execute<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(async move { client.execute_plan_stream::<M>(plan).await })
     }
 }
 
@@ -309,6 +364,17 @@ where
             },
         })
     }
+
+    fn execute<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(async move { client.execute_plan_records::<Item, F>(plan).await })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -339,6 +405,17 @@ where
                 is_no_content: false,
             },
         })
+    }
+
+    fn execute<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(async move { client.execute_plan_multipart::<Part, F>(plan).await })
     }
 }
 
@@ -371,6 +448,29 @@ where
             },
         })
     }
+
+    fn execute<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(async move { client.execute_plan_sse::<Event, C>(plan).await })
+    }
+}
+
+fn execute_buffered_response<'a, Cx, T, R>(
+    client: &'a ApiClient<Cx, T>,
+    plan: RequestPlan,
+) -> Pin<Box<dyn Future<Output = Result<R, ApiClientError>> + Send + 'a>>
+where
+    Cx: ClientContext,
+    T: crate::transport::Transport + 'a,
+    R: Send + 'static,
+{
+    Box::pin(async move { Ok(client.execute_plan::<R>(plan).await?.value) })
 }
 
 fn response_plan_from_codec<C>(ctx: ErrorContext) -> Result<ResponsePlan, ApiClientError>
@@ -455,9 +555,10 @@ mod tests {
     use crate::codec::text::Text;
     use crate::codec::{BodyCodec, ContentType, EncodeContext, EncodedBody, Format};
     use crate::media::{EventStream, OctetStream, TextContentType};
-    use crate::multipart::{FormData, MultipartBody};
+    use crate::multipart::{FormData, Mixed, MultipartBody};
+    use crate::multipart_response::RawResponsePart;
     use crate::record::NdJson;
-    use crate::transport::{BuiltResponse, RequestMeta};
+    use crate::transport::{BuiltResponse, RequestMeta, Transport};
     use http::{HeaderMap, Method, StatusCode};
     use serde::{Deserialize, Serialize};
     use url::Url;
@@ -526,6 +627,136 @@ mod tests {
         *value
             .downcast::<DecodedResponse<T>>()
             .expect("decoded response type")
+    }
+
+    #[derive(Clone)]
+    struct TestCx;
+
+    impl ClientContext for TestCx {
+        type Vars = ();
+        type AuthVars = ();
+        type AuthState = crate::auth::NoAuthState;
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+        const DOMAIN: &'static str = "example.test";
+
+        fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {
+            crate::auth::NoAuthState
+        }
+    }
+
+    #[derive(Clone)]
+    struct StaticTransport {
+        response: StaticResponse,
+    }
+
+    #[derive(Clone)]
+    struct StaticResponse {
+        status: StatusCode,
+        headers: HeaderMap,
+        chunks: Vec<Bytes>,
+        content_length: Option<u64>,
+    }
+
+    struct ChunkBody {
+        chunks: std::collections::VecDeque<Bytes>,
+    }
+
+    impl ChunkBody {
+        fn new(chunks: Vec<Bytes>) -> Self {
+            Self {
+                chunks: chunks.into(),
+            }
+        }
+    }
+
+    impl crate::transport::TransportBody for ChunkBody {
+        fn next_chunk<'a>(
+            &'a mut self,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<Option<Bytes>, crate::transport::TransportError>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            let chunk = self.chunks.pop_front();
+            Box::pin(async move { Ok(chunk) })
+        }
+    }
+
+    impl StaticTransport {
+        fn new(response: StaticResponse) -> Self {
+            Self { response }
+        }
+    }
+
+    impl Transport for StaticTransport {
+        fn send(
+            &self,
+            req: crate::transport::TransportRequest,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<
+                            crate::transport::TransportResponse,
+                            crate::transport::TransportError,
+                        >,
+                    > + Send,
+            >,
+        > {
+            let response = self.response.clone();
+            Box::pin(async move {
+                Ok(crate::transport::TransportResponse {
+                    meta: req.meta,
+                    url: req.url,
+                    status: response.status,
+                    headers: response.headers,
+                    content_length: response.content_length,
+                    rate_limit: req.rate_limit,
+                    body: Box::new(ChunkBody::new(response.chunks)),
+                })
+            })
+        }
+    }
+
+    fn request_plan(response_plan: ResponsePlan) -> RequestPlan {
+        RequestPlan {
+            endpoint: crate::endpoint::EndpointPlan {
+                meta: crate::endpoint::EndpointMeta {
+                    name: "Example",
+                    method: Method::POST,
+                    idempotent: true,
+                    facade_path: &[],
+                },
+                route: crate::endpoint::ResolvedRoute::new(
+                    http::uri::Scheme::HTTPS,
+                    "example.test",
+                    "/items",
+                ),
+                policy: crate::policy::ResolvedPolicy::default(),
+                body: BodyPlan::None,
+                response: response_plan,
+                pagination: None,
+            },
+            args: RequestArgs::empty(),
+            overrides: crate::endpoint::RequestOverrides::default(),
+        }
+    }
+
+    fn response_headers(content_type: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        if let Some(content_type) = content_type {
+            headers.insert(
+                http::header::CONTENT_TYPE,
+                http::HeaderValue::from_str(content_type).expect("valid content type"),
+            );
+        }
+        headers
+    }
+
+    fn transport(response: StaticResponse) -> StaticTransport {
+        StaticTransport::new(response)
     }
 
     #[test]
@@ -610,6 +841,153 @@ mod tests {
         assert!(multipart.args.body.is_stream());
         assert!(multipart.args.multipart_content_type.is_some());
         assert_eq!(multipart.replayability, Replayability::NonReplayable);
+    }
+
+    #[tokio::test]
+    async fn buffered_response_execute_returns_decoded_value() {
+        let plan = BufferedResponse::<Text<String>>::plan(ctx()).expect("buffered response");
+        let transport = transport(StaticResponse {
+            status: StatusCode::OK,
+            headers: response_headers(Some("text/plain")),
+            chunks: vec![Bytes::from_static(b"hello")],
+            content_length: None,
+        });
+        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
+        let response =
+            BufferedResponse::<Text<String>>::execute(&client, request_plan(plan.response_plan))
+                .await
+                .expect("buffered execute");
+        assert_eq!(response, "hello");
+    }
+
+    #[tokio::test]
+    async fn bytes_response_execute_returns_bytes() {
+        let plan = BytesResponse::plan(ctx()).expect("bytes response");
+        let transport = transport(StaticResponse {
+            status: StatusCode::OK,
+            headers: response_headers(None),
+            chunks: vec![Bytes::from_static(b"hello"), Bytes::from_static(b" world")],
+            content_length: None,
+        });
+        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
+        let response = BytesResponse::execute(&client, request_plan(plan.response_plan))
+            .await
+            .expect("bytes execute");
+        assert_eq!(response, Bytes::from_static(b"hello world"));
+    }
+
+    #[tokio::test]
+    async fn no_content_response_execute_returns_unit() {
+        let plan = NoContentResponse::plan(ctx()).expect("no content response");
+        let transport = transport(StaticResponse {
+            status: StatusCode::NO_CONTENT,
+            headers: response_headers(None),
+            chunks: vec![],
+            content_length: None,
+        });
+        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
+        let response = NoContentResponse::execute(&client, request_plan(plan.response_plan))
+            .await
+            .expect("no content execute");
+        assert_eq!(response, ());
+    }
+
+    #[tokio::test]
+    async fn streaming_response_adapter_executes_through_existing_stream_path() {
+        let plan = RawStreamResponse::<OctetStream>::plan(ctx()).expect("stream response");
+        let transport = transport(StaticResponse {
+            status: StatusCode::OK,
+            headers: response_headers(Some(OctetStream::CONTENT_TYPE)),
+            chunks: vec![Bytes::from_static(b"abc"), Bytes::from_static(b"def")],
+            content_length: None,
+        });
+        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
+        let mut response =
+            RawStreamResponse::<OctetStream>::execute(&client, request_plan(plan.response_plan))
+                .await
+                .expect("stream execute");
+        let mut out = Vec::new();
+        while let Some(chunk) = response.next_chunk().await.expect("stream chunk") {
+            out.extend_from_slice(&chunk);
+        }
+        assert_eq!(Bytes::from(out), Bytes::from_static(b"abcdef"));
+    }
+
+    #[tokio::test]
+    async fn record_response_adapter_executes_through_existing_record_path() {
+        let plan = RecordResponse::<Payload, NdJson>::plan(ctx()).expect("record response");
+        let transport = transport(StaticResponse {
+            status: StatusCode::OK,
+            headers: response_headers(Some(NdJson::CONTENT_TYPE)),
+            chunks: vec![Bytes::from_static(b"{\"id\":1}\n{\"id\":2}\n")],
+            content_length: None,
+        });
+        let client = ApiClient::<TestCx, _>::with_transport((), (), transport);
+        let mut response =
+            RecordResponse::<Payload, NdJson>::execute(&client, request_plan(plan.response_plan))
+                .await
+                .expect("record execute");
+        let mut out = Vec::new();
+        while let Some(item) = response.next_record().await.expect("record item") {
+            out.push(item.id);
+        }
+        assert_eq!(out, vec![1, 2]);
+    }
+
+    #[tokio::test]
+    async fn multipart_response_adapter_executes_through_existing_multipart_path() {
+        let plan =
+            MultipartResponse::<RawResponsePart, Mixed>::plan(ctx()).expect("multipart response");
+        let boundary = "concord-test-boundary";
+        let body = Bytes::from_static(
+            b"--concord-test-boundary\r\ncontent-type: text/plain\r\n\r\nhello\r\n--concord-test-boundary--\r\n",
+        );
+        let transport = transport(StaticResponse {
+            status: StatusCode::OK,
+            headers: response_headers(Some(&format!("multipart/mixed; boundary={boundary}"))),
+            chunks: vec![body],
+            content_length: None,
+        });
+        let client = ApiClient::<TestCx, _>::with_transport((), (), transport);
+        let mut response = MultipartResponse::<RawResponsePart, Mixed>::execute(
+            &client,
+            request_plan(plan.response_plan),
+        )
+        .await
+        .expect("multipart execute");
+        let part = response
+            .next_part()
+            .await
+            .expect("multipart part result")
+            .expect("multipart part");
+        assert_eq!(
+            part.content_type().and_then(|value| value.to_str().ok()),
+            Some("text/plain")
+        );
+    }
+
+    #[tokio::test]
+    async fn sse_response_adapter_executes_through_existing_sse_path() {
+        let plan = SseResponse::<Payload, crate::sse::JsonSse>::plan(ctx()).expect("sse");
+        let transport = transport(StaticResponse {
+            status: StatusCode::OK,
+            headers: response_headers(Some(EventStream::CONTENT_TYPE)),
+            chunks: vec![Bytes::from_static(b"data: {\"id\":1}\n\n")],
+            content_length: None,
+        });
+        let client = ApiClient::<TestCx, _>::with_transport((), (), transport);
+        let mut response = SseResponse::<Payload, crate::sse::JsonSse>::execute(
+            &client,
+            request_plan(plan.response_plan),
+        )
+        .await
+        .expect("sse execute");
+        let event = response
+            .next_event()
+            .await
+            .expect("sse event result")
+            .expect("sse event");
+        assert_eq!(event.data.id, 1);
     }
 
     #[cfg(feature = "json")]
