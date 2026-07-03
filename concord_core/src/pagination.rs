@@ -184,23 +184,24 @@ where
 {
     fn init(&mut self, endpoint: &E, ctx: PageApply<'_>) -> Result<(), ApiClientError> {
         if self.pagination.is_some() {
-            return Err(ApiClientError::Pagination {
-                ctx: ctx.ctx.clone(),
-                msg: "pagination runtime was initialized more than once".into(),
-            });
+            return Err(ApiClientError::pagination(
+                ctx.ctx.clone(),
+                crate::error::PaginationErrorKind::RuntimeAlreadyInitialized,
+                "pagination runtime was initialized more than once",
+            ));
         }
         self.pagination = Some(endpoint.load_pagination());
         Ok(())
     }
 
     fn apply(&mut self, endpoint: &mut E, ctx: PageApply<'_>) -> Result<(), ApiClientError> {
-        let pagination = self
-            .pagination
-            .as_mut()
-            .ok_or_else(|| ApiClientError::Pagination {
-                ctx: ctx.ctx.clone(),
-                msg: "pagination runtime was used before initialization".into(),
-            })?;
+        let pagination = self.pagination.as_mut().ok_or_else(|| {
+            ApiClientError::pagination(
+                ctx.ctx.clone(),
+                crate::error::PaginationErrorKind::RuntimeNotInitialized,
+                "pagination runtime was used before initialization",
+            )
+        })?;
         pagination.apply(ctx)?;
         endpoint.store_pagination(pagination);
         Ok(())
@@ -213,13 +214,13 @@ where
         page: &Page,
         page_ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError> {
-        let pagination = self
-            .pagination
-            .as_mut()
-            .ok_or_else(|| ApiClientError::Pagination {
-                ctx: err_ctx.clone(),
-                msg: "pagination runtime was used before initialization".into(),
-            })?;
+        let pagination = self.pagination.as_mut().ok_or_else(|| {
+            ApiClientError::pagination(
+                err_ctx.clone(),
+                crate::error::PaginationErrorKind::RuntimeNotInitialized,
+                "pagination runtime was used before initialization",
+            )
+        })?;
         let decision = pagination.advance(page, page_ctx)?;
         endpoint.store_pagination(pagination);
         Ok(decision)

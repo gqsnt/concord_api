@@ -74,7 +74,7 @@ pub mod prelude {
     pub use crate::codec::{ContentType, NoContent, text::Text};
     pub use crate::debug::DebugLevel;
     pub use crate::endpoint::{Endpoint, PaginatedEndpoint};
-    pub use crate::error::{ApiClientError, ErrorCategory};
+    pub use crate::error::{ApiClientError, ErrorCategory, PaginationError, PaginationErrorKind};
     pub use crate::pagination::{
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
         PaginationTermination,
@@ -108,7 +108,7 @@ pub mod advanced {
         ResponseCodec,
     };
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
-    pub use crate::error::{ErrorContext, FxError};
+    pub use crate::error::{ErrorContext, FxError, PaginationError, PaginationErrorKind};
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
         NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,

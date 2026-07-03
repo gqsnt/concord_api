@@ -88,13 +88,14 @@ struct HeaderBoundCustomPagination {
 impl EndpointPagination<Vec<String>> for HeaderBoundCustomPagination {
     fn apply(&mut self, _ctx: PageApply<'_>) -> Result<(), ApiClientError> {
         if self.count == 0 {
-            return Err(ApiClientError::Pagination {
-                ctx: concord_core::advanced::ErrorContext {
+            return Err(ApiClientError::pagination(
+                concord_core::advanced::ErrorContext {
                     endpoint: "GeneratedHeaderBoundCustom",
                     method: Method::GET,
                 },
-                msg: "custom pagination page size must be non-zero".into(),
-            });
+                concord_core::error::PaginationErrorKind::InvalidSize,
+                "custom pagination page size must be non-zero",
+            ));
         }
         Ok(())
     }
@@ -111,16 +112,16 @@ impl EndpointPagination<Vec<String>> for HeaderBoundCustomPagination {
         if page.is_empty() {
             return Ok(PageDecision::Stop);
         }
-        self.page = self
-            .page
-            .checked_add(1)
-            .ok_or_else(|| ApiClientError::Pagination {
-                ctx: concord_core::advanced::ErrorContext {
+        self.page = self.page.checked_add(1).ok_or_else(|| {
+            ApiClientError::pagination(
+                concord_core::advanced::ErrorContext {
                     endpoint: "GeneratedHeaderBoundCustom",
                     method: Method::GET,
                 },
-                msg: "custom pagination page overflow".into(),
-            })?;
+                concord_core::error::PaginationErrorKind::Overflow,
+                "custom pagination page overflow",
+            )
+        })?;
         Ok(PageDecision::Continue)
     }
 
@@ -1216,6 +1217,10 @@ async fn cursor_string_pagination_runtime_requires_runtime_support_when_missing(
         .await
         .expect_err("built-in pagination without runtime support must be rejected");
     assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::UnsupportedPagination)
+    );
     assert!(sent.requests().await.is_empty());
     Ok(())
 }
@@ -1256,6 +1261,10 @@ async fn cursor_pagination_repeated_cursor_returns_non_progress_error() {
         .expect_err("repeated cursor should stop with a typed pagination error");
 
     assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::NonProgress)
+    );
     assert!(err.to_string().contains("non-progress"));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 2);
@@ -1459,6 +1468,10 @@ async fn hard_page_cap_zero_errors_before_transport() {
         .expect_err("zero hard page cap should fail before transport");
 
     assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::InvalidSize)
+    );
     assert!(err.to_string().contains("hard pagination page cap"));
     assert_eq!(sent.sent_count().await, 0);
 }
@@ -1490,6 +1503,10 @@ async fn hard_item_cap_zero_errors_before_transport() {
         .expect_err("zero hard item cap should fail before transport");
 
     assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::InvalidSize)
+    );
     assert!(err.to_string().contains("hard pagination item cap"));
     assert_eq!(sent.sent_count().await, 0);
 }
@@ -1691,6 +1708,10 @@ fn paged_pagination_runtime_rejects_zero_page() {
     .expect_err("page zero must be rejected");
 
     assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::InvalidSize)
+    );
 }
 
 #[tokio::test]
@@ -1772,6 +1793,10 @@ async fn hard_page_cap_errors_without_fetching_extra_page() {
         .expect_err("hard page cap should fail before fetching page 3");
 
     assert!(matches!(err, ApiClientError::PaginationLimit { .. }));
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::PageLimitExceeded)
+    );
     assert!(err.to_string().contains("hard page cap"));
     assert_eq!(sent.sent_count().await, 2);
 }
@@ -1808,6 +1833,10 @@ async fn hard_item_cap_errors_without_truncating() {
         .expect_err("hard item cap should fail rather than truncate");
 
     assert!(matches!(err, ApiClientError::PaginationLimit { .. }));
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::ItemLimitExceeded)
+    );
     assert!(err.to_string().contains("hard item cap"));
     assert_eq!(sent.sent_count().await, 2);
 }
@@ -1847,6 +1876,10 @@ async fn loop_detection_still_default_enabled() {
         .expect_err("loop detection should run before soft page termination");
 
     assert!(matches!(err, ApiClientError::Pagination { .. }));
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::NonProgress)
+    );
     assert!(err.to_string().contains("loop detected"));
     assert_eq!(sent.sent_count().await, 2);
 }
@@ -1875,6 +1908,10 @@ async fn max_items_error_includes_page_context() {
         .expect_err("hard item cap should stop pagination");
 
     let msg = err.to_string();
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::ItemLimitExceeded)
+    );
     assert!(msg.contains("hard item cap"));
     assert!(msg.contains("Items"));
     assert!(msg.contains("page_index=0"));
@@ -2155,6 +2192,10 @@ async fn hard_item_cap_still_errors_before_short_stop_when_page_exceeds_cap() {
         .expect_err("hard item cap must not be hidden by short-page stop");
 
     assert!(matches!(err, ApiClientError::PaginationLimit { .. }));
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::ItemLimitExceeded)
+    );
     assert_eq!(sent.sent_count().await, 2);
 }
 
@@ -2216,6 +2257,10 @@ async fn max_pages_error_includes_seen_items() {
         .expect_err("hard page cap should stop pagination");
 
     let msg = err.to_string();
+    assert_eq!(
+        err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::PageLimitExceeded)
+    );
     assert!(msg.contains("hard page cap"));
     assert!(msg.contains("seen_items=2"));
     assert!(msg.contains("page_index=1"));

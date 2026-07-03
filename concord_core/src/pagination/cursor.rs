@@ -1,4 +1,4 @@
-use crate::error::{ApiClientError, ErrorContext};
+use crate::error::{ApiClientError, ErrorContext, PaginationErrorKind};
 use crate::pagination::{
     EndpointPagination, PageAdvance, PageApply, PageDecision, PageItems, ProgressKey,
 };
@@ -100,12 +100,18 @@ fn validate_per_page(
     controller: &'static str,
     ctx: &ErrorContext,
 ) -> Result<NonZeroUsize, ApiClientError> {
-    let value = usize::try_from(value).map_err(|_| ApiClientError::Pagination {
-        ctx: ctx.clone(),
-        msg: format!("{controller}: per_page does not fit in usize").into(),
+    let value = usize::try_from(value).map_err(|_| {
+        ApiClientError::pagination(
+            ctx.clone(),
+            PaginationErrorKind::Overflow,
+            format!("{controller}: per_page does not fit in usize"),
+        )
     })?;
-    NonZeroUsize::new(value).ok_or_else(|| ApiClientError::Pagination {
-        ctx: ctx.clone(),
-        msg: format!("{controller}: per_page must be greater than zero").into(),
+    NonZeroUsize::new(value).ok_or_else(|| {
+        ApiClientError::pagination(
+            ctx.clone(),
+            PaginationErrorKind::InvalidSize,
+            format!("{controller}: per_page must be greater than zero"),
+        )
     })
 }

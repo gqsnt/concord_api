@@ -1,7 +1,7 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{Endpoint, PaginatedEndpoint};
-use crate::error::{ApiClientError, ErrorContext};
+use crate::error::{ApiClientError, ErrorContext, PaginationErrorKind};
 use crate::multipart_response::MultipartStream;
 use crate::pagination::{
     Control, PageAdvance, PageApply, PageItems, PaginationCaps, PaginationRuntime,
@@ -298,15 +298,17 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             return collect_with_pagination_runtime(pending, runtime, caps, ctx).await;
         }
         if first_plan.endpoint.pagination.is_some() {
-            return Err(ApiClientError::Pagination {
+            return Err(ApiClientError::pagination(
                 ctx,
-                msg: "pagination requires runtime support".into(),
-            });
+                PaginationErrorKind::UnsupportedPagination,
+                "pagination requires runtime support",
+            ));
         }
-        Err(ApiClientError::Pagination {
+        Err(ApiClientError::pagination(
             ctx,
-            msg: "endpoint is not paginated".into(),
-        })
+            PaginationErrorKind::UnsupportedPagination,
+            "endpoint is not paginated",
+        ))
     }
 }
 async fn collect_with_pagination_runtime<'a, Cx, E, T>(
@@ -343,10 +345,11 @@ where
             && let Some(k) = runtime.progress_key()
             && !seen.insert(k.clone())
         {
-            return Err(ApiClientError::Pagination {
-                ctx: ctx.clone(),
-                msg: format!("loop detected (page_index={} key={:?})", page_index, k).into(),
-            });
+            return Err(ApiClientError::pagination(
+                ctx.clone(),
+                PaginationErrorKind::NonProgress,
+                format!("loop detected (page_index={} key={:?})", page_index, k),
+            ));
         }
 
         runtime.apply(
@@ -408,10 +411,11 @@ where
         match caps.termination {
             PaginationTermination::HardItemCap(max_items) => {
                 let new_total = items_count.checked_add(page_len).ok_or_else(|| {
-                    ApiClientError::Pagination {
-                        ctx: ctx.clone(),
-                        msg: "items overflow".into(),
-                    }
+                    ApiClientError::pagination(
+                        ctx.clone(),
+                        PaginationErrorKind::Overflow,
+                        "items overflow",
+                    )
                 })?;
                 if new_total > max_items {
                     return Err(hard_item_cap_error(&ctx, max_items, new_total, page_index));
@@ -421,29 +425,32 @@ where
             }
             PaginationTermination::TakeItems(max_items) => {
                 let remaining = max_items.checked_sub(items_count).ok_or_else(|| {
-                    ApiClientError::Pagination {
-                        ctx: ctx.clone(),
-                        msg: "items overflow".into(),
-                    }
+                    ApiClientError::pagination(
+                        ctx.clone(),
+                        PaginationErrorKind::Overflow,
+                        "items overflow",
+                    )
                 })?;
                 if page_len >= remaining {
                     out.extend(items.into_iter().take(remaining));
                     return Ok(out);
                 }
                 items_count = items_count.checked_add(page_len).ok_or_else(|| {
-                    ApiClientError::Pagination {
-                        ctx: ctx.clone(),
-                        msg: "items overflow".into(),
-                    }
+                    ApiClientError::pagination(
+                        ctx.clone(),
+                        PaginationErrorKind::Overflow,
+                        "items overflow",
+                    )
                 })?;
                 out.extend(items);
             }
             _ => {
                 items_count = items_count.checked_add(page_len).ok_or_else(|| {
-                    ApiClientError::Pagination {
-                        ctx: ctx.clone(),
-                        msg: "items overflow".into(),
-                    }
+                    ApiClientError::pagination(
+                        ctx.clone(),
+                        PaginationErrorKind::Overflow,
+                        "items overflow",
+                    )
                 })?;
                 out.extend(items);
             }
@@ -455,26 +462,26 @@ where
         match control_ctrl {
             Control::Continue => match caps.termination {
                 PaginationTermination::HardPageCap(max_pages) if fetched_pages >= max_pages => {
-                    return Err(ApiClientError::PaginationLimit {
+                    return Err(ApiClientError::pagination_limit(
                         ctx,
-                        msg: format!(
+                        PaginationErrorKind::PageLimitExceeded,
+                        format!(
                             "pagination hard page cap exceeded (max={} seen_items={} page_index={})",
                             max_pages, items_count, fetched_pages
-                        )
-                        .into(),
-                    });
+                        ),
+                    ));
                 }
                 PaginationTermination::TakePages(max_pages) if fetched_pages >= max_pages => {
                     return Ok(out);
                 }
                 _ => {
-                    page_index =
-                        page_index
-                            .checked_add(1)
-                            .ok_or_else(|| ApiClientError::Pagination {
-                                ctx: ctx.clone(),
-                                msg: "page index overflow".into(),
-                            })?;
+                    page_index = page_index.checked_add(1).ok_or_else(|| {
+                        ApiClientError::pagination(
+                            ctx.clone(),
+                            PaginationErrorKind::Overflow,
+                            "page index overflow",
+                        )
+                    })?;
                 }
             },
             Control::Stop => return Ok(out),
@@ -487,14 +494,16 @@ fn validate_collect_termination(
     ctx: &crate::error::ErrorContext,
 ) -> Result<(), ApiClientError> {
     match termination {
-        PaginationTermination::HardPageCap(0) => Err(ApiClientError::Pagination {
-            ctx: ctx.clone(),
-            msg: "hard pagination page cap must be greater than zero".into(),
-        }),
-        PaginationTermination::HardItemCap(0) => Err(ApiClientError::Pagination {
-            ctx: ctx.clone(),
-            msg: "hard pagination item cap must be greater than zero".into(),
-        }),
+        PaginationTermination::HardPageCap(0) => Err(ApiClientError::pagination(
+            ctx.clone(),
+            PaginationErrorKind::InvalidSize,
+            "hard pagination page cap must be greater than zero",
+        )),
+        PaginationTermination::HardItemCap(0) => Err(ApiClientError::pagination(
+            ctx.clone(),
+            PaginationErrorKind::InvalidSize,
+            "hard pagination item cap must be greater than zero",
+        )),
         _ => Ok(()),
     }
 }
@@ -515,12 +524,13 @@ fn pre_advance_decision(
 ) -> Result<PreAdvanceDecision, ApiClientError> {
     let hinted_total = actual_hint
         .map(|actual| {
-            items_count
-                .checked_add(actual)
-                .ok_or_else(|| ApiClientError::Pagination {
-                    ctx: ctx.clone(),
-                    msg: "items overflow".into(),
-                })
+            items_count.checked_add(actual).ok_or_else(|| {
+                ApiClientError::pagination(
+                    ctx.clone(),
+                    PaginationErrorKind::Overflow,
+                    "items overflow",
+                )
+            })
         })
         .transpose()?;
     let hard_item_cap_exceeded = match (termination, hinted_total) {
@@ -548,14 +558,14 @@ fn hard_item_cap_error(
     seen_items: usize,
     page_index: u32,
 ) -> ApiClientError {
-    ApiClientError::PaginationLimit {
-        ctx: ctx.clone(),
-        msg: format!(
+    ApiClientError::pagination_limit(
+        ctx.clone(),
+        PaginationErrorKind::ItemLimitExceeded,
+        format!(
             "pagination hard item cap exceeded (max={} seen={} page_index={})",
             max_items, seen_items, page_index
-        )
-        .into(),
-    }
+        ),
+    )
 }
 
 fn common_content_stop(actual_items: Option<usize>, expected_items: Option<NonZeroUsize>) -> bool {
@@ -579,14 +589,14 @@ impl PaginationRunState {
         page_index: u32,
     ) -> Result<(), ApiClientError> {
         if !self.seen_request_identities.insert(current_identity) {
-            return Err(ApiClientError::Pagination {
-                ctx: ctx.clone(),
-                msg: format!(
+            return Err(ApiClientError::pagination(
+                ctx.clone(),
+                PaginationErrorKind::NonProgress,
+                format!(
                     "non-progress detected (page_index={} request repeated)",
                     page_index
-                )
-                .into(),
-            });
+                ),
+            ));
         }
         Ok(())
     }

@@ -18,7 +18,7 @@ Concord runtime failures surface as `ApiClientError`. The enum is `non_exhaustiv
 | Content-Length body limit | `ApiClientError::ResponseTooLarge`; category `Decode` | After transport metadata classification, before body chunks are read | No | No ordinary retry | Reports limit and content length only. |
 | Streaming body limit | `ApiClientError::ResponseBodyLimitExceeded`; category `Decode` | During bounded body read | Reads only enough chunks to detect overflow | No ordinary retry | Does not include partial body bytes. |
 | Decode failure under limit | `ApiClientError::Decode` or `Codec`; category `Decode` | After bounded body read | Yes, within limit | No ordinary retry | Context may include status and content type, not payload bytes. |
-| Pagination non-progress or cap failure | `ApiClientError::Pagination` or `PaginationLimit`; category `Pagination` | Depends on page stage; non-progress happens after a page completes | Depends on completed page | Page retry or auth refresh keeps page identity | Error is page and control metadata only. |
+| Pagination non-progress or cap failure | `ApiClientError::Pagination` or `PaginationLimit` with a `PaginationErrorKind`; category `Pagination` | Depends on page stage; non-progress happens after a page completes | Depends on completed page | Page retry or auth refresh keeps page identity | Error is page and control metadata only; the kind is machine-readable and the message stays safe. |
 | Runtime config invalid values | Most v1 runtime config setters are infallible; invalid runtime state uses `RuntimeState` or typed subsystem errors | Where the configured subsystem is used | Depends on subsystem | Depends on subsystem | Diagnostics remain body-free and auth-free. |
 
 ## `execute_raw()`

@@ -37,13 +37,14 @@ where
 {
     fn apply(&mut self, _ctx: PageApply<'_>) -> Result<(), ApiClientError> {
         if self.count == 0 {
-            return Err(ApiClientError::Pagination {
-                ctx: concord_core::advanced::ErrorContext {
+            return Err(ApiClientError::pagination(
+                concord_core::advanced::ErrorContext {
                     endpoint: "List",
                     method: ::http::Method::GET,
                 },
-                msg: "custom pagination requires a non-zero page size".into(),
-            });
+                concord_core::error::PaginationErrorKind::InvalidSize,
+                "custom pagination requires a non-zero page size",
+            ));
         }
         Ok(())
     }

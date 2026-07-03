@@ -325,16 +325,17 @@ async fn error_taxonomy_variant_snapshot() {
         ),
         (
             "pagination",
-            ApiClientError::Pagination {
-                ctx: ctx.clone(),
-                msg: "pagination did not make progress".into(),
-            },
+            ApiClientError::pagination(
+                ctx.clone(),
+                concord_core::error::PaginationErrorKind::NonProgress,
+                "pagination did not make progress",
+            ),
             ErrorCategory::Pagination,
         ),
         (
             "runtime state",
             ApiClientError::RuntimeState {
-                ctx,
+                ctx: ctx.clone(),
                 subsystem: "rate-limit",
                 msg: "state unavailable",
             },
@@ -346,6 +347,17 @@ async fn error_taxonomy_variant_snapshot() {
         assert_eq!(err.category(), category, "{name}");
         assert_error_safe(&err);
     }
+
+    let pagination_err = ApiClientError::pagination(
+        ctx,
+        concord_core::error::PaginationErrorKind::PageLimitExceeded,
+        "pagination hard page cap exceeded",
+    );
+    assert_eq!(pagination_err.category(), ErrorCategory::Pagination);
+    assert_eq!(
+        pagination_err.pagination_error_kind(),
+        Some(concord_core::error::PaginationErrorKind::PageLimitExceeded)
+    );
 }
 
 #[tokio::test]

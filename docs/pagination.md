@@ -120,6 +120,8 @@ Soft limits stop cleanly:
 
 Hard caps must be greater than zero. `HardPageCap(0)` and `HardItemCap(0)` return typed pagination errors before the first page request is sent. `TakePages(0)` and `TakeItems(0)` return an empty collection without transport for `collect()`.
 
+Structured pagination failures use `ApiClientError::Pagination` or `PaginationLimit` with a `PaginationErrorKind`. The kind is stable for machine handling, and the message is safe metadata only.
+
 `collect()` supports all four termination modes. Item collection, exact `TakeItems` truncation, and final hard-item-cap validation use the items returned by `PageItems::into_items()`. Pre-advance empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion require an exact `item_count_hint()`, because `into_items()` consumes the page while cursor and custom advance logic may need to borrow it. Generic pre-advance short-page stop also requires an expected page size from built-ins or `EndpointPagination::expected_items_per_page()`. Without a hint, collection and limits remain exact and no extra page is fetched after the exact terminal result is known, but controller advance may already have run. `HardItemCap` never truncates.
 
 Retry and auth refresh preserve the current page state. A retry for page `N` retries page `N`, not page `N + 1`.

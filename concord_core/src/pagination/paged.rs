@@ -1,4 +1,4 @@
-use crate::error::{ApiClientError, ErrorContext};
+use crate::error::{ApiClientError, ErrorContext, PaginationErrorKind};
 use crate::pagination::{
     EndpointPagination, PageAdvance, PageApply, PageDecision, PageItems, ProgressKey,
 };
@@ -50,16 +50,16 @@ where
                 method: http::Method::GET,
             },
         )?;
-        self.page = self
-            .page
-            .checked_add(1)
-            .ok_or_else(|| ApiClientError::Pagination {
-                ctx: ErrorContext {
+        self.page = self.page.checked_add(1).ok_or_else(|| {
+            ApiClientError::pagination(
+                ErrorContext {
                     endpoint: "pagination",
                     method: http::Method::GET,
                 },
-                msg: "paged: page overflow".into(),
-            })?;
+                PaginationErrorKind::Overflow,
+                "paged: page overflow",
+            )
+        })?;
         Ok(PageDecision::Continue)
     }
 
@@ -72,22 +72,29 @@ fn validate_paged_page_size(
     value: u64,
     ctx: &ErrorContext,
 ) -> Result<NonZeroUsize, ApiClientError> {
-    let value = usize::try_from(value).map_err(|_| ApiClientError::Pagination {
-        ctx: ctx.clone(),
-        msg: "paged: page size does not fit in usize".into(),
+    let value = usize::try_from(value).map_err(|_| {
+        ApiClientError::pagination(
+            ctx.clone(),
+            PaginationErrorKind::Overflow,
+            "paged: page size does not fit in usize",
+        )
     })?;
-    NonZeroUsize::new(value).ok_or_else(|| ApiClientError::Pagination {
-        ctx: ctx.clone(),
-        msg: "paged: page size must be greater than zero".into(),
+    NonZeroUsize::new(value).ok_or_else(|| {
+        ApiClientError::pagination(
+            ctx.clone(),
+            PaginationErrorKind::InvalidSize,
+            "paged: page size must be greater than zero",
+        )
     })
 }
 
 fn validate_paged_page(value: u64, ctx: &ErrorContext) -> Result<(), ApiClientError> {
     if value == 0 {
-        return Err(ApiClientError::Pagination {
-            ctx: ctx.clone(),
-            msg: "paged: page=0".into(),
-        });
+        return Err(ApiClientError::pagination(
+            ctx.clone(),
+            PaginationErrorKind::InvalidSize,
+            "paged: page=0",
+        ));
     }
     Ok(())
 }

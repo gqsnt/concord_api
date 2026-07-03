@@ -86,16 +86,16 @@ pub enum ApiClientError {
         source: crate::rate_limit::RateLimitError,
     },
 
-    #[error("{ctx}: pagination: {msg}")]
+    #[error("{ctx}: pagination: {source}")]
     Pagination {
         ctx: ErrorContext,
-        msg: Cow<'static, str>,
+        source: PaginationError,
     },
 
-    #[error("{ctx}: pagination limit reached: {msg}")]
+    #[error("{ctx}: pagination limit reached: {source}")]
     PaginationLimit {
         ctx: ErrorContext,
-        msg: Cow<'static, str>,
+        source: PaginationError,
     },
 
     #[error("{ctx}: auth: {source}")]
@@ -200,15 +200,15 @@ impl Debug for ApiClientError {
                 .field("ctx", ctx)
                 .field("source", source)
                 .finish(),
-            Self::Pagination { ctx, msg } => f
+            Self::Pagination { ctx, source } => f
                 .debug_struct("Pagination")
                 .field("ctx", ctx)
-                .field("msg", msg)
+                .field("source", source)
                 .finish(),
-            Self::PaginationLimit { ctx, msg } => f
+            Self::PaginationLimit { ctx, source } => f
                 .debug_struct("PaginationLimit")
                 .field("ctx", ctx)
-                .field("msg", msg)
+                .field("source", source)
                 .finish(),
             Self::Auth { ctx, source } => f
                 .debug_struct("Auth")
@@ -262,6 +262,49 @@ pub enum ErrorCategory {
     RateLimit,
     InternalInvariant,
 }
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum PaginationErrorKind {
+    RuntimeAlreadyInitialized,
+    RuntimeNotInitialized,
+    UnsupportedPagination,
+    InvalidState,
+    InvalidSize,
+    Overflow,
+    NonProgress,
+    PageLimitExceeded,
+    ItemLimitExceeded,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PaginationError {
+    kind: PaginationErrorKind,
+    msg: Cow<'static, str>,
+}
+
+impl PaginationError {
+    #[inline]
+    pub fn new(kind: PaginationErrorKind, msg: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            kind,
+            msg: msg.into(),
+        }
+    }
+
+    #[inline]
+    pub const fn kind(&self) -> PaginationErrorKind {
+        self.kind
+    }
+}
+
+impl Display for PaginationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.msg)
+    }
+}
+
+impl Error for PaginationError {}
 
 #[derive(Copy, Clone, Debug)]
 pub enum HostLabelInvalidReason {
@@ -325,6 +368,30 @@ impl ApiClientError {
         ApiClientError::RateLimit {
             ctx,
             source: crate::rate_limit::RateLimitError::new(kind, message).with_source(source),
+        }
+    }
+
+    #[inline]
+    pub fn pagination(
+        ctx: ErrorContext,
+        kind: PaginationErrorKind,
+        message: impl Into<Cow<'static, str>>,
+    ) -> ApiClientError {
+        ApiClientError::Pagination {
+            ctx,
+            source: PaginationError::new(kind, message),
+        }
+    }
+
+    #[inline]
+    pub fn pagination_limit(
+        ctx: ErrorContext,
+        kind: PaginationErrorKind,
+        message: impl Into<Cow<'static, str>>,
+    ) -> ApiClientError {
+        ApiClientError::PaginationLimit {
+            ctx,
+            source: PaginationError::new(kind, message),
         }
     }
 
@@ -492,6 +559,15 @@ impl ApiClientError {
             _ => None,
         }
     }
+
+    #[inline]
+    pub fn pagination_error_kind(&self) -> Option<PaginationErrorKind> {
+        match self {
+            ApiClientError::Pagination { source, .. }
+            | ApiClientError::PaginationLimit { source, .. } => Some(source.kind()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -563,6 +639,20 @@ mod tests {
         assert_eq!(err.endpoint(), "Ping");
         assert_eq!(*err.method(), http::Method::GET);
         assert_eq!(err.redacted_url(), None);
+
+        let pagination = ApiClientError::pagination(
+            ErrorContext {
+                endpoint: "Page",
+                method: http::Method::GET,
+            },
+            PaginationErrorKind::PageLimitExceeded,
+            "pagination hard page cap exceeded",
+        );
+        assert_eq!(pagination.category(), ErrorCategory::Pagination);
+        assert_eq!(
+            pagination.pagination_error_kind(),
+            Some(PaginationErrorKind::PageLimitExceeded)
+        );
     }
 
     #[test]
