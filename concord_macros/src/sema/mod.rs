@@ -732,16 +732,6 @@ fn effective_endpoint_rate_limit_bucket_names(
 }
 
 #[cfg(test)]
-fn auth_use_names(auth: &[AuthUsePlanIr]) -> Vec<String> {
-    auth.iter()
-        .map(|plan| {
-            let AuthUsePlanIr::Use(auth_use) = plan;
-            auth_use_credential_ident_ir(auth_use).to_string()
-        })
-        .collect()
-}
-
-#[cfg(test)]
 fn auth_requirement_names(auth: &[AuthRequirementIr]) -> Vec<String> {
     auth.iter().map(|req| req.credential.to_string()).collect()
 }
@@ -3831,17 +3821,13 @@ mod tests {
 
         let offset = &pagination.bindings[0];
         assert_eq!(offset.controller_field, "offset");
-        assert_eq!(offset.endpoint_field, "start");
-        let offset_ty = &offset.endpoint_field_ty;
-        assert_eq!(quote::quote!(#offset_ty).to_string(), "u64");
+        assert_eq!(offset.endpoint_rust_field, "start");
 
         let limit = &pagination.bindings[1];
         assert_eq!(limit.controller_field, "limit");
-        assert_eq!(limit.endpoint_field, "count");
-        let limit_ty = &limit.endpoint_field_ty;
-        assert_eq!(quote::quote!(#limit_ty).to_string(), "u64");
-        assert_ne!(offset.endpoint_field, "from");
-        assert_ne!(limit.endpoint_field, "pageSize");
+        assert_eq!(limit.endpoint_rust_field, "count");
+        assert_ne!(offset.endpoint_rust_field, "from");
+        assert_ne!(limit.endpoint_rust_field, "pageSize");
     }
 
     #[test]
@@ -3874,13 +3860,9 @@ mod tests {
         assert_eq!(pagination.assigns.len(), 2);
         assert_eq!(pagination.bindings.len(), 2);
         assert_eq!(pagination.bindings[0].controller_field, "page");
-        assert_eq!(pagination.bindings[0].endpoint_field, "page");
+        assert_eq!(pagination.bindings[0].endpoint_rust_field, "page");
         assert_eq!(pagination.bindings[1].controller_field, "per_page");
-        assert_eq!(pagination.bindings[1].endpoint_field, "count");
-        let page_ty = &pagination.bindings[0].endpoint_field_ty;
-        let count_ty = &pagination.bindings[1].endpoint_field_ty;
-        assert_eq!(quote::quote!(#page_ty).to_string(), "u64");
-        assert_eq!(quote::quote!(#count_ty).to_string(), "u64");
+        assert_eq!(pagination.bindings[1].endpoint_rust_field, "count");
     }
 
     #[test]

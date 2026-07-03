@@ -407,17 +407,12 @@ impl PageItems for NoHintItems {
 #[derive(Clone)]
 pub struct NoHintItemsEndpoint {
     pub policy: ResolvedPolicy,
-    pub pagination: PaginationVariant,
 }
 
 impl Default for NoHintItemsEndpoint {
     fn default() -> Self {
         Self {
             policy: Default::default(),
-            pagination: PaginationVariant::OffsetLimit {
-                offset: 0,
-                limit: 2,
-            },
         }
     }
 }

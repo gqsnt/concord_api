@@ -3,7 +3,7 @@ use concord_core::advanced::{
     JsonSse, SseStream, Transport, TransportBody, TransportError, TransportRequest,
     TransportRequestBody, TransportResponse,
 };
-use concord_core::prelude::{ApiClientError, Json};
+use concord_core::prelude::ApiClientError;
 use concord_macros::api;
 use futures_core::Stream;
 use http::{HeaderMap, HeaderValue, StatusCode};
@@ -18,11 +18,6 @@ use std::sync::{Arc, Mutex as StdMutex};
 pub struct LogEvent {
     id: u64,
     msg: String,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-pub struct UploadResult {
-    ok: bool,
 }
 
 const SSE_SENTINEL: &str = "SECRET_SSE_SENTINEL_MUST_NOT_APPEAR";
@@ -48,9 +43,6 @@ mod sse_helper_contract {
             path ["events-limit"]
             -> Sse<LogEvent>
 
-        GET Buffered
-            path ["buffered"]
-            -> Json<UploadResult>
     }
 
     pub(super) use sse_helper_api::SseHelperApi;
@@ -104,12 +96,6 @@ enum ResponseFixture {
         content_length: Option<u64>,
         poll_flag: Arc<AtomicBool>,
     },
-    BufferedJson {
-        status: StatusCode,
-        headers: HeaderMap,
-        body: Bytes,
-        content_length: Option<u64>,
-    },
 }
 
 impl ResponseFixture {
@@ -132,20 +118,6 @@ impl ResponseFixture {
             poll_flag,
         }
     }
-
-    fn buffered_json(body: &'static str) -> Self {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            http::header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
-        Self::BufferedJson {
-            status: StatusCode::OK,
-            headers,
-            body: Bytes::from_static(body.as_bytes()),
-            content_length: Some(body.len() as u64),
-        }
-    }
 }
 
 impl RecordingTransport {
@@ -160,10 +132,6 @@ impl RecordingTransport {
 
     fn requests(&self) -> Vec<CapturedRequest> {
         self.requests.lock().expect("requests lock").clone()
-    }
-
-    fn events(&self) -> Vec<String> {
-        self.events.lock().expect("events lock").clone()
     }
 
     fn send_count(&self) -> usize {
@@ -208,20 +176,6 @@ impl Transport for RecordingTransport {
                 });
 
             match transport.response.clone() {
-                ResponseFixture::BufferedJson {
-                    status,
-                    headers,
-                    body,
-                    content_length,
-                } => Ok(TransportResponse {
-                    meta: req.meta,
-                    url: req.url,
-                    status,
-                    headers,
-                    content_length,
-                    rate_limit: req.rate_limit,
-                    body: Box::new(StaticBody(Some(body))),
-                }),
                 ResponseFixture::Sse {
                     status,
                     headers,
@@ -239,16 +193,6 @@ impl Transport for RecordingTransport {
                 }),
             }
         })
-    }
-}
-
-struct StaticBody(Option<Bytes>);
-
-impl TransportBody for StaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.0.take()) })
     }
 }
 

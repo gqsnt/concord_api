@@ -1132,10 +1132,6 @@ mod tests {
             ],
         );
         assert!(
-            !out.contains("auth_use_credential_ident_ir"),
-            "generated code should not call old auth-use helpers"
-        );
-        assert!(
             !out.contains("emit_auth_usage_id"),
             "generated code should not call old auth-use helpers"
         );

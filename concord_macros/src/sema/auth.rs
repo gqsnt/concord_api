@@ -239,16 +239,6 @@ fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
     }
 }
 
-fn auth_use_credential_ident_ir(u: &AuthUseIr) -> &Ident {
-    match &u.kind {
-        AuthUseKindIr::Bearer { credential }
-        | AuthUseKindIr::Header { credential, .. }
-        | AuthUseKindIr::Query { credential, .. }
-        | AuthUseKindIr::Basic { credential }
-        | AuthUseKindIr::Certificate { credential } => credential,
-    }
-}
-
 fn auth_plan_references_credential(plans: &[AuthRequirementIr], target: &Ident) -> bool {
     plans.iter().any(|plan| match plan {
         plan => &plan.credential == target,

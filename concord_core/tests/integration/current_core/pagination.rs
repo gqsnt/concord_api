@@ -1,9 +1,7 @@
 use super::common::*;
 use concord_core::advanced::{
     AuthPlacement, EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision,
-    PaginateBinding, PaginationRuntime, PaginationRuntimeAdapter, ProgressKey, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter,
+    PaginateBinding, PaginationRuntime, PaginationRuntimeAdapter, ProgressKey,
 };
 use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
@@ -21,62 +19,6 @@ tokio::task_local! {
 
 tokio::task_local! {
     static PR69_MUTATION_EVENTS: Arc<StdMutex<Vec<&'static str>>>;
-}
-
-#[derive(Default)]
-struct HeaderTokenPagination;
-
-#[derive(Default)]
-struct HeaderTokenState {
-    token: u64,
-}
-
-#[derive(Default)]
-struct InvalidHeaderPagination;
-
-#[derive(Default)]
-struct InvalidHeaderValuePagination;
-
-#[derive(Default)]
-struct DynamicRequestMutationPagination;
-
-struct DynamicRequestMutationState {
-    query_key: String,
-    header_name: String,
-}
-
-#[derive(Clone)]
-struct HeaderBoundCustomEndpoint {
-    page: u64,
-    count: u64,
-    pagination: Option<PaginationVariant>,
-}
-
-impl Endpoint<TestCx> for HeaderBoundCustomEndpoint {
-    type Response = Vec<String>;
-
-    fn plan(
-        &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
-    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
-        let mut plan = request_plan(
-            "HeaderBoundCustom",
-            Method::GET,
-            "/header-custom",
-            Default::default(),
-            Some(concord_core::internal::PaginationMarker),
-            decode_items,
-        );
-        plan.endpoint.policy.headers.insert(
-            http::header::HeaderName::from_static("x-page"),
-            HeaderValue::from_str(&self.page.to_string()).expect("valid header value"),
-        );
-        plan.endpoint.policy.headers.insert(
-            http::header::HeaderName::from_static("x-count"),
-            HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
-        );
-        Ok(plan)
-    }
 }
 
 #[derive(Clone)]
@@ -192,41 +134,10 @@ impl PaginateBinding<HeaderBoundCustomPagination> for GeneratedHeaderBoundCustom
     }
 }
 
-impl PaginatedEndpoint<TestCx> for HeaderBoundCustomEndpoint {
-    type Pagination = HeaderBoundCustomPagination;
-
-    fn pagination_runtime(
-        &self,
-    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>>
-    where
-        Self: Sized,
-        Self::Response: PageItems,
-    {
-        Some(Box::new(PaginationRuntimeAdapter::<
-            HeaderBoundCustomPagination,
-        >::new()))
-    }
-}
-
-impl PaginateBinding<HeaderBoundCustomPagination> for HeaderBoundCustomEndpoint {
-    fn load_pagination(&self) -> HeaderBoundCustomPagination {
-        HeaderBoundCustomPagination {
-            page: self.page,
-            count: self.count,
-        }
-    }
-
-    fn store_pagination(&mut self, pagination: &HeaderBoundCustomPagination) {
-        self.page = pagination.page;
-        self.count = pagination.count;
-    }
-}
-
 #[derive(Clone)]
 struct HeaderBoundOffsetLimitEndpoint {
     start: u64,
     count: u64,
-    pagination: PaginationVariant,
 }
 
 impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
@@ -292,7 +203,6 @@ impl PaginateBinding<concord_core::advanced::OffsetLimitPagination>
 struct HeaderBoundPagedEndpoint {
     page: u64,
     count: u64,
-    pagination: PaginationVariant,
 }
 
 impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
@@ -356,7 +266,8 @@ impl PaginateBinding<concord_core::advanced::PagedPagination> for HeaderBoundPag
 struct HeaderBoundCursorEndpoint {
     cursor: Option<String>,
     count: u64,
-    pagination: PaginationVariant,
+    send_cursor_on_first: bool,
+    stop_when_cursor_missing: bool,
 }
 
 impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
@@ -408,19 +319,11 @@ impl PaginateBinding<concord_core::advanced::CursorPagination<String>>
     for HeaderBoundCursorEndpoint
 {
     fn load_pagination(&self) -> concord_core::advanced::CursorPagination<String> {
-        let (send_cursor_on_first, stop_when_cursor_missing) = match &self.pagination {
-            PaginationVariant::Cursor {
-                send_cursor_on_first,
-                stop_when_cursor_missing,
-                ..
-            } => (*send_cursor_on_first, *stop_when_cursor_missing),
-            _ => (false, true),
-        };
         concord_core::advanced::CursorPagination {
             cursor: self.cursor.clone(),
             per_page: self.count,
-            send_cursor_on_first,
-            stop_when_cursor_missing,
+            send_cursor_on_first: self.send_cursor_on_first,
+            stop_when_cursor_missing: self.stop_when_cursor_missing,
         }
     }
 
@@ -434,7 +337,6 @@ impl PaginateBinding<concord_core::advanced::CursorPagination<String>>
 struct QueryBoundPagedEndpoint {
     page: u64,
     count: u64,
-    pagination: PaginationVariant,
 }
 
 impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
@@ -488,21 +390,6 @@ impl PaginateBinding<concord_core::advanced::PagedPagination> for QueryBoundPage
     }
 }
 
-#[derive(Default)]
-struct AuthQueryCollisionPagination;
-
-#[derive(Default)]
-struct TracedAuthQueryCollisionPagination;
-
-#[derive(Default)]
-struct AuthHeaderCollisionPagination;
-
-#[derive(Default)]
-struct AuthorizationCollisionPagination;
-
-#[derive(Default)]
-struct PublicMutationPagination;
-
 #[derive(Clone)]
 struct PaginationEndpoint {
     name: &'static str,
@@ -555,123 +442,9 @@ impl concord_core::advanced::PaginateBinding<concord_core::advanced::OffsetLimit
     fn store_pagination(&mut self, _pagination: &concord_core::advanced::OffsetLimitPagination) {}
 }
 
-#[derive(Default)]
-struct RecordingSanitizedUrlRateLimiter {
-    acquires: Arc<Mutex<Vec<String>>>,
-}
-
-impl RecordingSanitizedUrlRateLimiter {
-    fn new(acquires: Arc<Mutex<Vec<String>>>) -> Self {
-        Self { acquires }
-    }
-}
-
-impl RateLimiter for RecordingSanitizedUrlRateLimiter {
-    fn acquire<'a>(
-        &'a self,
-        ctx: RateLimitContext<'a>,
-    ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
-        let acquires = self.acquires.clone();
-        Box::pin(async move {
-            acquires.lock().await.push(ctx.url.to_string());
-            Ok(RateLimitPermit)
-        })
-    }
-
-    fn on_response<'a>(
-        &'a self,
-        _ctx: RateLimitResponseContext<'a>,
-    ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
-        Box::pin(async move { Ok(RateLimitResponseAction::Continue) })
-    }
-}
-
-#[derive(Default)]
-struct StopAfterFirstNoHintPagination;
-
-#[derive(Default)]
-struct ConstantProgressChangingQueryPagination;
-
-struct ConstantProgressChangingQueryState {
-    page: u64,
-}
-
-#[derive(Default)]
-struct AlwaysContinueExpectedPagination;
-
-struct AlwaysContinueExpectedState {
-    page: u64,
-}
-
-macro_rules! counting_expected_controller {
-    ($controller:ident, $state:ident, $counter:ident) => {
-        static $counter: AtomicUsize = AtomicUsize::new(0);
-
-        #[derive(Default)]
-        struct $controller;
-
-        struct $state {
-            page: u64,
-        }
-    };
-}
-
-counting_expected_controller!(
-    EmptyHintCountingPagination,
-    EmptyHintState,
-    EMPTY_HINT_ADVANCES
-);
-counting_expected_controller!(
-    ShortHintCountingPagination,
-    ShortHintState,
-    SHORT_HINT_ADVANCES
-);
-counting_expected_controller!(HardCapCountingPagination, HardCapState, HARD_CAP_ADVANCES);
-counting_expected_controller!(
-    TakeItemsCountingPagination,
-    TakeItemsState,
-    TAKE_ITEMS_ADVANCES
-);
-
 #[test]
-
 fn custom_expected_items_per_page_zero_is_unrepresentable() {
     assert!(NonZeroUsize::new(0).is_none());
-}
-
-static NO_HINT_ADVANCES: AtomicUsize = AtomicUsize::new(0);
-
-#[derive(Default)]
-struct NoHintCountingPagination;
-
-struct NoHintCountingState;
-
-#[derive(Default)]
-struct Pr64RuntimeOwnedShortPagePagination;
-
-struct Pr64RuntimeOwnedShortPageState {
-    page: u64,
-}
-
-static PR63_PAGINATED_DECODE_FAILURE_ADVANCES: AtomicUsize = AtomicUsize::new(0);
-
-#[derive(Default)]
-struct Pr63PaginatedDecodeFailurePagination;
-
-struct Pr63PaginatedDecodeFailureState;
-
-#[derive(Default)]
-struct AlwaysContinueNoExpectedPagination;
-
-struct AlwaysContinueNoExpectedState {
-    page: u64,
-}
-
-#[derive(Default)]
-struct AlwaysContinueNeverExpectedPagination;
-
-struct AlwaysContinueNeverExpectedState {
-    page: u64,
 }
 
 #[tokio::test]
@@ -900,14 +673,7 @@ async fn offset_limit_pagination_runtime_advances_offset() -> Result<(), ApiClie
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
-    let endpoint = HeaderBoundOffsetLimitEndpoint {
-        start: 0,
-        count: 2,
-        pagination: PaginationVariant::OffsetLimit {
-            offset: 0,
-            limit: 2,
-        },
-    };
+    let endpoint = HeaderBoundOffsetLimitEndpoint { start: 0, count: 2 };
 
     let items = client
         .request(endpoint)
@@ -968,14 +734,7 @@ async fn paged_pagination_runtime_advances_page() -> Result<(), ApiClientError> 
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
-    let endpoint = HeaderBoundPagedEndpoint {
-        page: 1,
-        count: 2,
-        pagination: PaginationVariant::Paged {
-            page: 1,
-            per_page: 2,
-        },
-    };
+    let endpoint = HeaderBoundPagedEndpoint { page: 1, count: 2 };
 
     let items = client
         .request(endpoint)
@@ -1036,14 +795,7 @@ async fn pagination_runtime_requires_runtime_support_when_missing() -> Result<()
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
-    let endpoint = QueryBoundPagedEndpoint {
-        page: 1,
-        count: 2,
-        pagination: PaginationVariant::Paged {
-            page: 1,
-            per_page: 2,
-        },
-    };
+    let endpoint = QueryBoundPagedEndpoint { page: 1, count: 2 };
 
     let err = client
         .request(endpoint)
@@ -1164,12 +916,8 @@ async fn cursor_pagination_runtime_omits_initial_cursor_when_send_cursor_on_firs
     let endpoint = HeaderBoundCursorEndpoint {
         cursor: Some("start".to_string()),
         count: 2,
-        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
-            cursor: Some("start".to_string()),
-            per_page: 2,
-            send_cursor_on_first: false,
-            stop_when_cursor_missing: true,
-        }),
+        send_cursor_on_first: false,
+        stop_when_cursor_missing: true,
     };
 
     let items = client
@@ -1223,12 +971,8 @@ async fn cursor_pagination_runtime_sends_initial_cursor_when_send_cursor_on_firs
     let endpoint = HeaderBoundCursorEndpoint {
         cursor: Some("start".to_string()),
         count: 2,
-        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
-            cursor: Some("start".to_string()),
-            per_page: 2,
-            send_cursor_on_first: true,
-            stop_when_cursor_missing: true,
-        }),
+        send_cursor_on_first: true,
+        stop_when_cursor_missing: true,
     };
 
     let items = client
@@ -1284,12 +1028,8 @@ async fn cursor_string_pagination_runtime_advances_cursor() -> Result<(), ApiCli
     let endpoint = HeaderBoundCursorEndpoint {
         cursor: Some("start".to_string()),
         count: 2,
-        pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
-            cursor: Some("start".to_string()),
-            per_page: 2,
-            send_cursor_on_first: false,
-            stop_when_cursor_missing: true,
-        }),
+        send_cursor_on_first: false,
+        stop_when_cursor_missing: true,
     };
 
     let items = client
@@ -1399,10 +1139,6 @@ async fn cursor_string_pagination_runtime_requires_runtime_support_when_missing(
 
     let endpoint = NoHintItemsEndpoint {
         policy: Default::default(),
-        pagination: PaginationVariant::Paged {
-            page: 1,
-            per_page: 2,
-        },
         ..Default::default()
     };
 
