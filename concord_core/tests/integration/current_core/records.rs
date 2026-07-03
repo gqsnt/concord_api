@@ -1,4 +1,4 @@
-use super::common::{TestAuthVars, TestCx, auth_policy, decode_string};
+use super::common::{TestAuthVars, TestCx, auth_policy};
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthPlacement, CodecError, ContentType, Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim,
@@ -586,7 +586,6 @@ fn record_request_plan(
                 accept: Some(HeaderValue::from_static(accept)),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
-                decode: decode_string,
             },
             pagination: None,
         },
@@ -619,7 +618,6 @@ fn record_response_plan_with_accept(
                 accept: Some(HeaderValue::from_static(accept)),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
-                decode: decode_string,
             },
             pagination: None,
         },
@@ -719,7 +717,9 @@ async fn ndjson_record_request_reaches_transport_and_is_body_free_in_debug()
         NdJson::CONTENT_TYPE,
     );
 
-    let decoded = client.execute_plan::<String>(plan).await?;
+    let decoded = client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await?;
     assert_eq!(decoded.into_value(), "{\"id\":10}\n");
     assert_eq!(transport.send_count(), 1);
     let captured = transport.captured();
@@ -770,7 +770,7 @@ async fn record_request_is_not_polled_before_auth_collision_validation() {
     );
 
     let err = client
-        .execute_plan::<String>(record_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(record_request_plan(
             "RecordAuthCollision",
             Method::POST,
             "/record-auth-collision",
@@ -813,7 +813,7 @@ async fn record_request_is_not_polled_before_rate_limit_acquisition() -> Result<
     });
 
     let decoded = client
-        .execute_plan::<String>(record_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(record_request_plan(
             "RecordOrdering",
             Method::POST,
             "/record-ordering",
@@ -863,7 +863,7 @@ async fn record_request_is_not_retried_on_transport_error() {
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
     let err = client
-        .execute_plan::<String>(record_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(record_request_plan(
             "RecordNoRetry",
             Method::GET,
             "/record-no-retry",
@@ -899,7 +899,7 @@ async fn record_request_encoding_error_maps_to_codec_error() {
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
     let err = client
-        .execute_plan::<String>(record_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(record_request_plan(
             "RecordCodecError",
             Method::POST,
             "/record-codec-error",
@@ -939,7 +939,7 @@ async fn record_request_limit_applies_to_encoded_stream() {
         cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
     });
     let err = client
-        .execute_plan::<String>(record_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(record_request_plan(
             "RecordLimit",
             Method::POST,
             "/record-limit",
@@ -1551,7 +1551,9 @@ async fn custom_record_request_reaches_transport_and_is_body_free_in_debug()
         PipeText::CONTENT_TYPE,
     );
 
-    let decoded = client.execute_plan::<String>(plan).await?;
+    let decoded = client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await?;
     assert_eq!(decoded.into_value(), "{\"ok\":true}");
     assert_eq!(transport.send_count(), 1);
     let captured = transport.captured();
@@ -1716,7 +1718,7 @@ async fn csv_record_request_sets_text_csv_and_remains_streamed() -> Result<(), A
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
     let _decoded = client
-        .execute_plan::<String>(record_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(record_request_plan(
             "CsvRecordRequest",
             Method::POST,
             "/csv-record-request",
@@ -1781,7 +1783,7 @@ async fn csv_record_request_large_batch_does_not_accumulate_bytes() -> Result<()
         message: "repeat".to_string(),
     });
     let _decoded = client
-        .execute_plan::<String>(record_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(record_request_plan(
             "CsvRecordRequestLargeBatch",
             Method::POST,
             "/csv-record-request-large-batch",
@@ -2175,7 +2177,7 @@ async fn custom_record_encoder_error_is_sanitized() {
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
     let err = client
-        .execute_plan::<String>(record_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(record_request_plan(
             "PipeRecordEncodeError",
             Method::POST,
             "/pipe-record-encode-error",
@@ -2214,7 +2216,7 @@ async fn custom_record_request_stream_limit_applies() {
     });
 
     let err = client
-        .execute_plan::<String>(record_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(record_request_plan(
             "PipeRecordRequestLimit",
             Method::POST,
             "/pipe-record-request-limit",

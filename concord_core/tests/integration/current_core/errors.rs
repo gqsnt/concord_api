@@ -1,16 +1,18 @@
 use super::common::{
     CursorItems, CursorItemsEndpoint, MockOutcome, MockResponse, MockTransport,
     ObservationRateLimiter, ObservationRuntimeHooks, PaginationVariant, TestAuthVars, TestCx,
-    TextEndpoint, auth_policy, client, request_plan, retry_policy, retry_policy_for_statuses,
+    TextEndpoint, auth_policy, buffered_endpoint_execute, client, request_plan, retry_policy,
+    retry_policy_for_statuses,
 };
 use bytes::Bytes;
 use concord_core::advanced::{
-    BuiltResponse, DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
-    RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter,
+    BufferedResponse, DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture,
+    RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter, ResponseEntity,
+    ResponseTransform,
 };
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy, ResponsePlan};
-use concord_core::prelude::{ApiClientError, CursorPagination, DebugLevel, Endpoint};
+use concord_core::prelude::{ApiClientError, CursorPagination, DebugLevel, Endpoint, Text};
 use concord_core::transport::TransportErrorKind;
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::error::Error;
@@ -40,54 +42,25 @@ impl Endpoint<TestCx> for InvalidParamEndpoint {
             "id",
         ))
     }
-}
 
-#[derive(Clone)]
-struct TransformEndpoint {
-    policy: ResolvedPolicy,
-}
-
-impl Endpoint<TestCx> for TransformEndpoint {
-    type Response = String;
-
-    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
-        let mut plan = request_plan(
-            "Transform",
-            Method::GET,
-            "/transform",
-            self.policy.clone(),
-            None,
-            decode_then_transform_error,
-        );
-        plan.endpoint.response = ResponsePlan {
-            accept: Some(HeaderValue::from_static("text/plain")),
-            no_content: false,
-            format: concord_core::internal::Format::Text,
-            decode: decode_then_transform_error,
-        };
-        Ok(plan)
-    }
-}
-
-fn decode_then_transform_error(
-    resp: BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let _decoded = std::str::from_utf8(&resp.body)
-        .map_err(|e| ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e))?;
-    Err(ApiClientError::Transform {
-        ctx,
-        source: std::io::Error::other("transform failed without echoing payload").into(),
-    })
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Default)]
 struct CapturingDebugSink {
     events: Arc<Mutex<Vec<String>>>,
+}
+
+struct FailingTransform;
+
+impl ResponseTransform<String> for FailingTransform {
+    type Output = usize;
+
+    fn transform(_input: String) -> Result<Self::Output, concord_core::error::FxError> {
+        Err(Box::new(std::io::Error::other(
+            "transform failed without echoing payload",
+        )))
+    }
 }
 
 impl CapturingDebugSink {
@@ -408,7 +381,7 @@ async fn request_construction_errors_are_typed_and_pre_transport() {
 
     let err = client
         .request(InvalidParamEndpoint)
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("invalid request construction should fail");
 
@@ -449,7 +422,7 @@ async fn auth_collision_errors_are_typed_and_pre_rate_transport() {
             policy,
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("auth collision should fail before side effects");
 
@@ -492,7 +465,7 @@ async fn auth_rejection_error_is_distinct_from_status_retry() {
                 policy,
                 ..TextEndpoint::default()
             })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("auth rejection should be terminal");
 
@@ -523,7 +496,7 @@ async fn transport_error_is_distinct_from_http_status_error() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("transport error should surface");
 
@@ -558,7 +531,7 @@ async fn http_status_error_is_distinct_from_transport_and_auth() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("500 should surface as status error");
 
@@ -590,7 +563,7 @@ async fn retry_exhaustion_returns_documented_final_error_and_safe_diagnostics() 
             policy: retry_policy(3),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("retry exhaustion should return final status error");
 
@@ -621,7 +594,7 @@ async fn rate_limit_acquire_error_is_typed_and_pre_transport() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("rate limiter acquire should fail before transport");
 
@@ -658,7 +631,7 @@ async fn rate_limit_response_action_error_is_typed_and_post_transport() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("rate limiter response action should fail after transport");
 
@@ -713,7 +686,7 @@ async fn body_limit_errors_are_distinguishable_and_safe() {
                 policy: rate_policy(),
                 ..TextEndpoint::default()
             })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
         {
             Ok(_) => panic!("{name} over-limit response should fail"),
@@ -761,20 +734,26 @@ async fn decode_and_transform_errors_are_distinct_and_safe() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("invalid utf-8 under limit should decode-error");
     assert!(matches!(decode_err, ApiClientError::Decode { .. }));
     assert_eq!(decode_err.category(), ErrorCategory::Decode);
     assert_error_safe(&decode_err);
 
-    let transform_err = client
-        .request(TransformEndpoint {
-            policy: rate_policy(),
-        })
-        .execute_decoded()
-        .await
-        .expect_err("transform should fail after decode");
+    let mut transform_plan =
+        request_plan("Transform", Method::GET, "/transform", rate_policy(), None);
+    transform_plan.endpoint.response = ResponsePlan {
+        accept: Some(HeaderValue::from_static("text/plain")),
+        no_content: false,
+        format: concord_core::internal::Format::Text,
+    };
+    let transform_err = concord_core::advanced::MappedResponse::<
+        BufferedResponse<Text<String>>,
+        FailingTransform,
+    >::execute(&client, transform_plan)
+    .await
+    .expect_err("transform should fail after decode");
     assert!(matches!(transform_err, ApiClientError::Transform { .. }));
     assert_eq!(transform_err.category(), ErrorCategory::Decode);
     assert_error_safe(&transform_err);

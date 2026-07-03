@@ -178,6 +178,31 @@ if "${RG[@]}" 'ResponsePlan \{|ResponseCodec>::try_accept|ResponseCodec>::decode
   fail_with_matches "concord_macros response planning must flow through ResponseEntity adapters." "$macro_response_plan_refs"
 fi
 
+section "legacy response decode plumbing fence"
+legacy_response_decode_refs="$tmpdir/legacy_response_decode.refs"
+if "${RG[@]}" 'ResponsePlan\.decode|PlanDecodeFn|Box\s*<\s*dyn\s+(std::any::)?Any\s*\+\s*Send|std::any::Any|downcast_response|downcast::<DecodedResponse' \
+  concord_core/src concord_core/tests/integration/current_core/common.rs \
+  concord_macros/src/codegen/endpoints/endpoint.rs docs dev_doc >"$legacy_response_decode_refs" 2>/dev/null; then
+  fail_with_matches "legacy response decode plumbing must not reappear in active core, codegen, or docs surfaces." "$legacy_response_decode_refs"
+fi
+
+section "pagination response codec fence"
+pagination_execution="$tmpdir/pagination_execution.rs"
+sed -n '/pub async fn collect/,/^fn validate_collect_termination/p' \
+  concord_core/src/request.rs >"$pagination_execution"
+pagination_codec_refs="$tmpdir/pagination_codec.refs"
+if "${RG[@]}" 'ResponseCodec|execute_plan::<E::Response>' \
+  "$pagination_execution" >"$pagination_codec_refs" 2>/dev/null; then
+  fail_with_matches "pagination must execute decoded pages through Endpoint::execute without requiring page values to be response codecs." "$pagination_codec_refs"
+fi
+
+section "decoded value response codec fence"
+decoded_value_codec_refs="$tmpdir/decoded_value_codec.refs"
+if "${RG[@]}" 'impl ResponseCodec for (String|Bytes|\(\)|User|PaginationItems|MatchIds)' \
+  concord_core/src concord_core/tests concord_examples concord_macros/tests >"$decoded_value_codec_refs" 2>/dev/null; then
+  fail_with_matches "decoded values and domain models must not implement ResponseCodec; endpoint adapters own decoding." "$decoded_value_codec_refs"
+fi
+
 section "macro streaming response execution fence"
 macro_response_exec_refs="$tmpdir/macro_response_exec.refs"
 if "${RG[@]}" 'execute_plan_stream|execute_plan_records|execute_plan_multipart|execute_plan_sse' \

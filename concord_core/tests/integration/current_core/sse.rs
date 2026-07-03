@@ -1,4 +1,4 @@
-use super::common::{TestAuthVars, TestCx, decode_string};
+use super::common::{TestAuthVars, TestCx};
 use bytes::Bytes;
 use concord_core::advanced::{
     JsonSse, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
@@ -237,7 +237,6 @@ fn sse_response_plan(
                 accept: Some(HeaderValue::from_static("text/event-stream")),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
-                decode: decode_string,
             },
             pagination,
         },

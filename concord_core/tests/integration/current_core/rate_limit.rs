@@ -2,8 +2,8 @@ use super::common::*;
 
 use bytes::Bytes;
 use concord_core::advanced::{
-    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter,
+    BufferedResponse, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter, ResponseEntity,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
@@ -11,6 +11,8 @@ use concord_core::internal::{
 };
 use concord_core::prelude::{ApiClientError, Endpoint, RateLimitObservation, RateLimitObserver};
 use http::{HeaderValue, Method, StatusCode};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -47,13 +49,24 @@ impl Endpoint<TestCx> for ObservationFailureEndpoint {
                     accept: Some(HeaderValue::from_static("application/json")),
                     no_content: false,
                     format: concord_core::internal::Format::Text,
-                    decode: decode_observation_failure,
                 },
                 pagination: None,
             },
             args: RequestArgs::with_body_bytes(self.request_body.clone()),
             overrides: RequestOverrides::default(),
         })
+    }
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        Box::pin(
+            async move { BufferedResponse::<InvalidJsonResponse>::execute(client, plan).await },
+        )
     }
 }
 
@@ -81,7 +94,6 @@ impl Endpoint<TestCx> for HostlessEndpoint {
                     accept: Some(HeaderValue::from_static("text/plain")),
                     no_content: false,
                     format: concord_core::internal::Format::Text,
-                    decode: decode_string,
                 },
                 pagination: None,
             },
@@ -89,24 +101,8 @@ impl Endpoint<TestCx> for HostlessEndpoint {
             overrides: RequestOverrides::default(),
         })
     }
-}
 
-fn decode_observation_failure(
-    resp: concord_core::advanced::BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let _ = std::str::from_utf8(&resp.body)
-        .map_err(|e| ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e))?;
-    Err(ApiClientError::decode_error(
-        ctx,
-        resp.status,
-        content_type,
-        std::io::Error::other("invalid JSON payload"),
-    ))
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Clone)]
@@ -241,7 +237,7 @@ async fn rate_limit_observation_happens_after_response_classification() -> Resul
 
     client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     let events = events.lock().await.clone();
@@ -305,7 +301,7 @@ async fn rate_limit_observes_200_before_decode_failure() {
             policy: Default::default(),
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
         })
-        .execute_decoded()
+        .execute()
         .await
         .expect_err("invalid payload should fail decode");
 
@@ -358,7 +354,7 @@ async fn rate_limit_observes_retryable_status_before_retry() -> Result<(), ApiCl
             policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), SECOND_SENTINEL);
@@ -400,7 +396,7 @@ async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientEr
             policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("403 query-auth rejection should remain terminal");
 
@@ -449,7 +445,7 @@ async fn rate_limit_does_not_observe_transport_error_as_response() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("transport error should remain terminal when not retryable");
 
@@ -478,7 +474,7 @@ async fn missing_host_fails_before_rate_limit_acquire() {
         .request(HostlessEndpoint {
             policy: ResolvedPolicy::default(),
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("hostless route should fail before rate limit acquisition");
 
@@ -514,7 +510,7 @@ async fn rate_limit_acquire_context_does_not_expose_bearer_auth() -> Result<(), 
             policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -555,7 +551,7 @@ async fn rate_limit_acquire_context_does_not_expose_query_auth() -> Result<(), A
             policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -596,7 +592,7 @@ async fn rate_limit_acquire_context_does_not_expose_basic_auth_material()
             policy: auth_policy(concord_core::advanced::AuthPlacement::Basic),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -636,7 +632,7 @@ async fn rate_limit_response_context_does_not_expose_bearer_auth() -> Result<(),
             policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     let events = events.lock().await.clone();
@@ -676,7 +672,7 @@ async fn rate_limit_response_context_does_not_expose_query_auth() -> Result<(), 
             policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     let events = events.lock().await.clone();
@@ -716,7 +712,7 @@ async fn rate_limit_response_context_does_not_expose_basic_auth_material()
             policy: auth_policy(concord_core::advanced::AuthPlacement::Basic),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     let events = events.lock().await.clone();
@@ -752,7 +748,7 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
             policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("overflowing rate-limit delay should return a typed error");
 
@@ -799,7 +795,7 @@ async fn rate_limit_response_zero_delay_is_allowed() -> Result<(), ApiClientErro
             policy: retry_policy(2),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -844,7 +840,7 @@ async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(),
             policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("auth rejection should remain terminal");
 
@@ -891,7 +887,7 @@ async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
                 policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
                 ..Default::default()
             })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
     });
     let decoded = tokio::time::timeout(Duration::from_secs(3), handle)

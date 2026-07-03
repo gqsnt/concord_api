@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use crate::advanced::{MultipartBody, MultipartBodyError, MultipartFormat};
-use crate::error::{ApiClientError, ErrorContext};
 use crate::multipart::MultipartBodyErrorKind;
 use crate::policy::ResolvedPolicy;
 use crate::record::RecordBody;
@@ -11,7 +10,6 @@ use crate::transport::TransportRequestBody;
 use bytes::Bytes;
 use http::HeaderValue;
 use http::Method;
-use std::any::Any;
 use std::fmt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -181,17 +179,11 @@ pub enum BodyPlan {
     },
 }
 
-pub type PlanDecodeFn = fn(
-    crate::transport::BuiltResponse,
-    ErrorContext,
-) -> Result<Box<dyn Any + Send>, ApiClientError>;
-
 #[derive(Clone)]
 pub struct ResponsePlan {
     pub accept: Option<HeaderValue>,
     pub no_content: bool,
     pub format: crate::codec::Format,
-    pub decode: PlanDecodeFn,
 }
 
 impl fmt::Debug for ResponsePlan {

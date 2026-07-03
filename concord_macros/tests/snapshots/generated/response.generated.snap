@@ -1,8 +1,8 @@
 response.generated
 plan-shape:
-- response codec Decodes<T>::decode
-- map block transforms decoded response value after decode
+- response adapter owns typed decode and transform behavior
+- map block transforms decoded response value through ResponseTransform
 - decode errors include status and content type
 - body codec Encodes<T>::encode for body signature args
 - BodyPlan::Encoded or BodyPlan::None
-- ResponsePlan { accept, no_content, format, decode }
+- ResponsePlan { accept, no_content, format }

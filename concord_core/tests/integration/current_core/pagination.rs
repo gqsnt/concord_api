@@ -8,7 +8,9 @@ use concord_core::prelude::{
     PaginationTermination,
 };
 use http::{HeaderValue, Method, StatusCode};
+use std::future::Future;
 use std::num::NonZeroUsize;
+use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex;
@@ -42,7 +44,6 @@ impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
             "/generated-header-custom",
             Default::default(),
             None,
-            decode_items,
         );
         plan.endpoint.policy.headers.insert(
             http::header::HeaderName::from_static("x-page"),
@@ -53,6 +54,16 @@ impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
             HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
         );
         Ok(plan)
+    }
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -153,7 +164,6 @@ impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
             "/header-offset-limit",
             Default::default(),
             Some(concord_core::internal::PaginationMarker),
-            decode_items,
         );
         plan.endpoint.policy.headers.insert(
             http::header::HeaderName::from_static("x-start"),
@@ -164,6 +174,16 @@ impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
             HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
         );
         Ok(plan)
+    }
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -218,7 +238,6 @@ impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
             "/header-paged",
             Default::default(),
             Some(concord_core::internal::PaginationMarker),
-            decode_items,
         );
         plan.endpoint.policy.headers.insert(
             http::header::HeaderName::from_static("x-page"),
@@ -229,6 +248,16 @@ impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
             HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
         );
         Ok(plan)
+    }
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -283,7 +312,6 @@ impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
             "/header-cursor",
             Default::default(),
             Some(concord_core::internal::PaginationMarker),
-            decode_cursor_items,
         );
         if let Some(cursor) = &self.cursor {
             plan.endpoint.policy.headers.insert(
@@ -296,6 +324,16 @@ impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
             HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
         );
         Ok(plan)
+    }
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CursorItemsCodec>(client, plan)
     }
 }
 
@@ -352,7 +390,6 @@ impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
             "/query-paged",
             Default::default(),
             Some(concord_core::internal::PaginationMarker),
-            decode_items,
         );
         plan.endpoint
             .policy
@@ -363,6 +400,16 @@ impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
             .query
             .push(("pageSize".into(), self.count.to_string()));
         Ok(plan)
+    }
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -415,8 +462,17 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::Endpoint<C
             self.pagination
                 .as_ref()
                 .map(|_| concord_core::internal::PaginationMarker),
-            decode_items,
         ))
+    }
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<Cx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -542,10 +598,9 @@ async fn pagination_runtime_loads_and_stores_endpoint_state() -> Result<(), ApiC
     )?;
     assert_eq!(load_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert_eq!(
-        <Runtime as PaginationRuntime<
-            GeneratedHeaderBoundCustomEndpoint,
-            Vec<String>,
-        >>::progress_key(&runtime),
+        <Runtime as PaginationRuntime<GeneratedHeaderBoundCustomEndpoint, Vec<String>>>::progress_key(
+            &runtime
+        ),
         Some(ProgressKey::U64(1))
     );
 
@@ -580,10 +635,9 @@ async fn pagination_runtime_loads_and_stores_endpoint_state() -> Result<(), ApiC
     assert_eq!(decision, PageDecision::Continue);
     assert_eq!(endpoint.page, 2);
     assert_eq!(
-        <Runtime as PaginationRuntime<
-            GeneratedHeaderBoundCustomEndpoint,
-            Vec<String>,
-        >>::progress_key(&runtime),
+        <Runtime as PaginationRuntime<GeneratedHeaderBoundCustomEndpoint, Vec<String>>>::progress_key(
+            &runtime
+        ),
         Some(ProgressKey::U64(2))
     );
     assert_eq!(store_calls.load(std::sync::atomic::Ordering::SeqCst), 2);

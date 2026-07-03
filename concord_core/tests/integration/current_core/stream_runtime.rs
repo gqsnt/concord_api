@@ -1,4 +1,4 @@
-use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy, decode_string};
+use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy};
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthPlacement, BodySizeHint, DebugSink, PostResponseHookContext, PreSendHookContext,
@@ -426,7 +426,6 @@ fn stream_request_plan(
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
-                decode: decode_string,
             },
             pagination: None,
         },
@@ -458,7 +457,6 @@ fn mismatched_request_plan(
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
-                decode: decode_string,
             },
             pagination: None,
         },
@@ -499,7 +497,7 @@ async fn raw_stream_request_reaches_transport_and_decodes_response() -> Result<(
     let sentinel = Bytes::from_static(b"SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR");
     push_event(&events, "build");
     let decoded = client
-        .execute_plan::<String>(stream_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
             "RawStreamSuccess",
             Method::POST,
             "/raw-stream",
@@ -567,7 +565,7 @@ async fn stream_request_debug_and_observation_surfaces_are_body_free() {
 
     let sentinel = Bytes::from_static(b"SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR");
     let err = client
-        .execute_plan::<String>(stream_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
             "RawStreamError",
             Method::POST,
             "/raw-stream-error",
@@ -621,7 +619,7 @@ async fn stream_is_not_polled_before_auth_collision_validation() {
     );
 
     let err = client
-        .execute_plan::<String>(mismatched_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(mismatched_request_plan(
             "RawStreamCollision",
             Method::POST,
             "/raw-stream-collision",
@@ -656,7 +654,7 @@ async fn stream_is_not_polled_before_rate_limit_acquisition() -> Result<(), ApiC
     push_event(&events, "build");
 
     let decoded = client
-        .execute_plan::<String>(stream_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
             "RawStreamOrdering",
             Method::POST,
             "/raw-stream-ordering",
@@ -702,7 +700,7 @@ async fn stream_request_is_not_retried_on_transport_error() {
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
     let err = client
-        .execute_plan::<String>(stream_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
             "RawStreamTransportError",
             Method::POST,
             "/raw-stream-transport-error",
@@ -739,7 +737,7 @@ async fn stream_request_is_not_retried_after_auth_rejection() {
     policy.retry = concord_core::internal::RetrySetting::Off;
 
     let err = client
-        .execute_plan::<String>(stream_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
             "RawStreamAuthRejection",
             Method::POST,
             "/raw-stream-auth-rejection",
@@ -770,7 +768,7 @@ async fn stream_request_size_hint_exceeds_limit_before_transport() {
     client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
 
     let err = client
-        .execute_plan::<String>(stream_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
             "RawStreamPreflightLimit",
             Method::POST,
             "/raw-stream-preflight-limit",
@@ -821,7 +819,7 @@ async fn stream_request_is_counted_while_transport_consumes_it() {
     client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
 
     let err = client
-        .execute_plan::<String>(stream_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
             "RawStreamConsumeLimit",
             Method::POST,
             "/raw-stream-consume-limit",
@@ -911,7 +909,7 @@ async fn mismatched_body_plan_and_request_args_are_rejected() {
         let client =
             ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
         let err = client
-            .execute_plan::<String>(mismatched_request_plan(
+            .execute_plan::<concord_core::prelude::Text<String>>(mismatched_request_plan(
                 name,
                 Method::POST,
                 "/mismatch",

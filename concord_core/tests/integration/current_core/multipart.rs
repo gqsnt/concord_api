@@ -1,4 +1,4 @@
-use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy, decode_string};
+use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy};
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthPlacement, ContentType, DebugSink, FormData, Mixed, MultipartBody, MultipartBodyErrorKind,
@@ -433,7 +433,6 @@ fn multipart_request_plan_with_content_type<F: MultipartFormat>(
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
-                decode: decode_string,
             },
             pagination: None,
         },
@@ -465,7 +464,7 @@ async fn multipart_form_data_request_reaches_transport_and_is_body_free_in_debug
     assert!(!rendered_body.contains("abc"));
 
     let decoded = client
-        .execute_plan::<String>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
             "MultipartFormData",
             Method::POST,
             "/multipart-form-data",
@@ -524,7 +523,7 @@ async fn multipart_mixed_request_reaches_transport() -> Result<(), ApiClientErro
     let body = MultipartBody::new().bytes("payload", Bytes::from_static(b"xyz"));
 
     let _ = client
-        .execute_plan::<String>(multipart_request_plan::<Mixed>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<Mixed>(
             "MultipartMixed",
             Method::POST,
             "/multipart-mixed",
@@ -576,7 +575,7 @@ async fn multipart_stream_part_is_not_polled_before_auth_collision_validation() 
     );
 
     let err = client
-        .execute_plan::<String>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
             "MultipartAuthCollision",
             Method::POST,
             "/multipart-auth-collision",
@@ -614,7 +613,7 @@ async fn multipart_stream_part_is_not_polled_before_rate_limit_acquisition()
     );
 
     let _ = client
-        .execute_plan::<String>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
             "MultipartOrdering",
             Method::POST,
             "/multipart-ordering",
@@ -665,7 +664,7 @@ async fn multipart_request_is_not_retried_or_replayed() {
         });
 
     let err = client
-        .execute_plan::<String>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
             "MultipartNoReplay",
             Method::GET,
             "/multipart-no-replay",
@@ -700,7 +699,7 @@ async fn multipart_request_stream_limit_applies() {
     );
 
     let err = client
-        .execute_plan::<String>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
             "MultipartRequestLimit",
             Method::POST,
             "/multipart-request-limit",
@@ -794,7 +793,7 @@ async fn multipart_boundary_mismatch_is_rejected_before_transport() {
     let args = RequestArgs::with_multipart_body::<FormData>(args_body)
         .expect("multipart body args should be valid");
     let err = client
-        .execute_plan::<String>(RequestPlan {
+        .execute_plan::<concord_core::prelude::Text<String>>(RequestPlan {
             endpoint: EndpointPlan {
                 meta: EndpointMeta {
                     name: "MultipartBoundaryMismatch",
@@ -816,7 +815,6 @@ async fn multipart_boundary_mismatch_is_rejected_before_transport() {
                     accept: Some(HeaderValue::from_static("text/plain")),
                     no_content: false,
                     format: concord_core::internal::Format::Text,
-                    decode: decode_string,
                 },
                 pagination: None,
             },

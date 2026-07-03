@@ -37,6 +37,11 @@ api! {
             -> Json<User>
     }
 
+    GET Health
+        as health
+        path ["health"]
+        -> Text<String>
+
     GET List(start: u64 = 0, count: u64 = 20)
         as list
         path ["items"]
@@ -55,13 +60,13 @@ async fn execution_usage(api: UsageExecutionApi) -> Result<(), ApiClientError> {
     let _awaited = api.list().await?;
     let _value = api.list().count(100).execute().await?;
     let _decoded = api
-        .list()
+        .health()
         .debug_level(DebugLevel::V)
         .timeout(Duration::from_secs(2))
         .clear_timeout()
         .inherit_timeout()
         .attempt(1)
-        .execute_decoded()
+        .execute_decoded_with::<Text<String>>()
         .await?;
     let _raw = api.list().execute_raw().await?;
     let _items = api

@@ -1,4 +1,4 @@
-use super::common::{TestAuthVars, TestCx, auth_policy, decode_string, retry_policy_for_statuses};
+use super::common::{TestAuthVars, TestCx, auth_policy, retry_policy_for_statuses};
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthPlacement, ContentType, DebugSink, OctetStream, PostResponseHookContext,
@@ -333,7 +333,6 @@ fn stream_response_plan(
                 accept: Some(HeaderValue::from_static(accept)),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
-                decode: decode_string,
             },
             pagination: None,
         },

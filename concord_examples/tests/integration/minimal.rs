@@ -27,7 +27,12 @@ async fn minimal_api_generated_client_execute_and_direct_await_work() {
     let via_direct_await = api.users().get_user(7).await.unwrap();
     assert_eq!(via_direct_await.name, "Grace");
 
-    let decoded = api.users().get_user(9).execute_decoded().await.unwrap();
+    let decoded = api
+        .users()
+        .get_user(9)
+        .execute_decoded_with::<concord_core::prelude::Json<User>>()
+        .await
+        .unwrap();
     assert_eq!(decoded.value().name, "Linus");
     assert_eq!(decoded.status(), StatusCode::OK);
     assert_eq!(decoded.meta().endpoint, "users::GetUser");

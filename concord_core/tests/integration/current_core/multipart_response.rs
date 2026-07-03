@@ -1,4 +1,4 @@
-use super::common::{MockResponse, MockTransport, TestAuthVars, TestCx, decode_string};
+use super::common::{MockResponse, MockTransport, TestAuthVars, TestCx};
 use bytes::{Bytes, BytesMut};
 use concord_core::advanced::{ContentType, FormData, Mixed, MultipartFormat, RawResponsePart};
 use concord_core::internal::{
@@ -29,7 +29,6 @@ fn multipart_response_plan<F: MultipartFormat>(
                 accept: Some(HeaderValue::from_static(F::CONTENT_TYPE)),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
-                decode: decode_string,
             },
             pagination: None,
         },

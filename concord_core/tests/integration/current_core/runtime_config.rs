@@ -41,7 +41,7 @@ async fn client_config_applies_to_requests() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("client body limit should reject 5-byte response");
 
@@ -69,7 +69,7 @@ async fn per_request_debug_override_wins_and_does_not_leak() -> Result<(), ApiCl
     let first = client
         .request(TextEndpoint::default())
         .debug_level(DebugLevel::VV)
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
     assert_eq!(first.value, "ok");
     let after_first = debug.events().await;
@@ -96,7 +96,7 @@ async fn per_request_debug_override_wins_and_does_not_leak() -> Result<(), ApiCl
 
     let second = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
     assert_eq!(second.value, "ok");
     assert_eq!(
@@ -129,7 +129,7 @@ async fn clone_config_isolated_after_execute_starts() {
     let in_flight = tokio::spawn(async move {
         request_client
             .request(TextEndpoint::default())
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
     });
     transport.wait_for_sends(1).await;
@@ -146,7 +146,7 @@ async fn clone_config_isolated_after_execute_starts() {
 
     let later = base_client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect("later request should use updated no-limit config");
     assert_eq!(later.value, "abcde");
@@ -176,9 +176,12 @@ async fn per_request_timeout_override_wins_and_does_not_leak() -> Result<(), Api
     client
         .request(endpoint.clone())
         .timeout(Duration::from_secs(2))
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
-    client.request(endpoint).execute_decoded().await?;
+    client
+        .request(endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
 
     let requests = transport.requests().await;
     assert_eq!(requests[0].timeout, Some(Duration::from_secs(2)));
@@ -201,11 +204,11 @@ async fn per_request_attempt_override_wins_and_does_not_leak() -> Result<(), Api
     client
         .request(TextEndpoint::default())
         .attempt(7)
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
     client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     let requests = transport.requests().await;
@@ -291,7 +294,7 @@ async fn disabled_body_limit_behavior_characterized() -> Result<(), ApiClientErr
             policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value, RESPONSE_BODY_SENTINEL);
@@ -331,14 +334,14 @@ async fn runtime_hooks_config_is_request_scoped() -> Result<(), ApiClientError> 
     });
     client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
     client.configure(|cfg| {
         cfg.runtime_hooks(Arc::new(NamedHooks::new("B", events.clone())));
     });
     client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     let events = transport_events(&events).await;
@@ -369,7 +372,7 @@ async fn rate_limiter_config_is_request_scoped() -> Result<(), ApiClientError> {
             policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
     client.configure(|cfg| {
         cfg.rate_limiter(Arc::new(NamedRateLimiter::new("B", events.clone())));
@@ -379,7 +382,7 @@ async fn rate_limiter_config_is_request_scoped() -> Result<(), ApiClientError> {
             policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     let events = transport_events(&events).await;
@@ -433,7 +436,7 @@ async fn run_debug_safety_request(level: DebugLevel) -> Result<Vec<String>, ApiC
             policy,
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
     Ok(debug.events().await)
 }

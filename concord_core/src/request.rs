@@ -128,10 +128,15 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
         Ok(())
     }
 
-    pub async fn execute_decoded(self) -> Result<DecodedResponse<E::Response>, ApiClientError> {
+    pub async fn execute_decoded_with<C>(
+        self,
+    ) -> Result<DecodedResponse<E::Response>, ApiClientError>
+    where
+        C: crate::codec::ResponseCodec<Value = E::Response>,
+    {
         let client = self.client;
         let plan = self.request_plan()?;
-        client.execute_plan::<E::Response>(plan).await
+        client.execute_plan::<C>(plan).await
     }
 
     pub async fn execute_raw(self) -> Result<BuiltResponse, ApiClientError> {
@@ -372,9 +377,8 @@ where
         plan.overrides.page_index = page_index;
         let request_identity = pagination_request_identity(&plan);
         progress_state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
-        let resp: DecodedResponse<E::Response> =
-            pending.client.execute_plan::<E::Response>(plan).await?;
-        let page_len_hint = resp.value.item_count_hint();
+        let page = E::execute(pending.client, plan).await?;
+        let page_len_hint = page.item_count_hint();
         let pre_advance = pre_advance_decision(
             caps.termination,
             items_count,
@@ -394,7 +398,7 @@ where
                 .advance(
                     &mut pending.ep,
                     &ctx,
-                    &resp.value,
+                    &page,
                     PageAdvance {
                         endpoint: ctx.endpoint,
                         page_index: page_index as u64,
@@ -403,7 +407,7 @@ where
                 )?
                 .into()
         };
-        let items = <E::Response as PageItems>::into_items(resp.value);
+        let items = <E::Response as PageItems>::into_items(page);
         let page_len = items.len();
         let common_stop =
             common_content_stop(page_len_hint, expected_items.expected_items_per_page);

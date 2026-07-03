@@ -1,14 +1,14 @@
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
-    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BuiltResponse, CursorPagination,
-    DecodedResponse, OffsetLimitPagination, PagedPagination, PaginateBinding,
+    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BufferedResponse, CodecError,
+    CursorPagination, DecodeContext, OffsetLimitPagination, PagedPagination, PaginateBinding,
     PaginationRuntimeAdapter, PostResponseHookContext, PreSendHookContext, RateLimitContext,
     RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RequestMeta, RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, Transport,
-    TransportBody, TransportByteStream, TransportError, TransportErrorHookContext,
-    TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
-    apply_basic_credential,
+    RateLimiter, RequestMeta, ResponseCodec, ResponseEntity, RetryContext, RetryDecision,
+    RetryPolicy, RuntimeHooks, TextContentType, Transport, TransportBody, TransportByteStream,
+    TransportError, TransportErrorHookContext, TransportErrorKind, TransportRequest,
+    TransportRequestBody, TransportResponse, apply_basic_credential,
 };
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestArgs,
@@ -249,8 +249,17 @@ impl Endpoint<TestCx> for TextEndpoint {
             self.path,
             self.policy.clone(),
             self.pagination.as_ref().map(|_| PaginationMarker),
-            decode_string,
         ))
+    }
+
+    fn execute<'a, T>(
+        client: &'a ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        execute_buffered::<_, _, concord_core::prelude::Text<String>>(client, plan)
     }
 }
 
@@ -286,7 +295,6 @@ impl Endpoint<TestCx> for ItemsEndpoint {
             "/items",
             self.policy.clone(),
             Some(PaginationMarker),
-            decode_items,
         );
         match &self.pagination {
             PaginationVariant::OffsetLimit { .. } => {
@@ -321,6 +329,16 @@ impl Endpoint<TestCx> for ItemsEndpoint {
             }
         }
         Ok(plan)
+    }
+
+    fn execute<'a, T>(
+        client: &'a ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -427,8 +445,17 @@ impl Endpoint<TestCx> for NoHintItemsEndpoint {
             "/no-hint-items",
             self.policy.clone(),
             Some(PaginationMarker),
-            decode_no_hint_items,
         ))
+    }
+
+    fn execute<'a, T>(
+        client: &'a ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        execute_buffered::<_, _, NoHintItemsCodec>(client, plan)
     }
 }
 
@@ -482,7 +509,6 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
             "/page-only-items",
             self.policy.clone(),
             Some(PaginationMarker),
-            decode_page_only_items,
         );
         match &self.pagination {
             PaginationVariant::Paged { .. } => {
@@ -517,6 +543,16 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
             }
         }
         Ok(plan)
+    }
+
+    fn execute<'a, T>(
+        client: &'a ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        execute_buffered::<_, _, PageOnlyItemsCodec>(client, plan)
     }
 }
 
@@ -596,6 +632,93 @@ impl HasNextCursor for CursorItems {
     }
 }
 
+pub struct CommaSeparatedItems;
+
+impl ResponseCodec for CommaSeparatedItems {
+    type Value = Vec<String>;
+    type Content = TextContentType;
+
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|err| CodecError::with_source("text decode failed", err))?;
+        Ok(if text.is_empty() {
+            Vec::new()
+        } else {
+            text.split(',').map(ToOwned::to_owned).collect()
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct InvalidJsonResponse;
+
+impl ResponseCodec for InvalidJsonResponse {
+    type Value = String;
+    type Content = TextContentType;
+
+    fn decode(_bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        Err(CodecError::new("invalid JSON payload"))
+    }
+}
+
+pub struct PageOnlyItemsCodec;
+
+impl ResponseCodec for PageOnlyItemsCodec {
+    type Value = PageOnlyItems;
+    type Content = TextContentType;
+
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|err| CodecError::with_source("text decode failed", err))?;
+        Ok(PageOnlyItems {
+            items: if text.is_empty() {
+                Vec::new()
+            } else {
+                text.split(',').map(ToOwned::to_owned).collect()
+            },
+        })
+    }
+}
+
+pub struct NoHintItemsCodec;
+
+impl ResponseCodec for NoHintItemsCodec {
+    type Value = NoHintItems;
+    type Content = TextContentType;
+
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|err| CodecError::with_source("text decode failed", err))?;
+        Ok(NoHintItems {
+            items: if text.is_empty() {
+                Vec::new()
+            } else {
+                text.split(',').map(ToOwned::to_owned).collect()
+            },
+        })
+    }
+}
+
+pub struct CursorItemsCodec;
+
+impl ResponseCodec for CursorItemsCodec {
+    type Value = CursorItems;
+    type Content = TextContentType;
+
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|err| CodecError::with_source("text decode failed", err))?;
+        let (items_text, next_text) = text.split_once('|').unwrap_or((text, ""));
+        let items = if items_text.is_empty() {
+            Vec::new()
+        } else {
+            items_text.split(',').map(ToOwned::to_owned).collect()
+        };
+        let next = next_text.strip_prefix("next=").map(ToOwned::to_owned);
+        Ok(CursorItems { items, next })
+    }
+}
+
 #[derive(Clone)]
 pub struct CursorItemsEndpoint {
     pub cursor: Option<String>,
@@ -630,7 +753,6 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
             "/cursor-items",
             self.policy.clone(),
             Some(PaginationMarker),
-            decode_cursor_items,
         );
         match &self.pagination {
             PaginationVariant::Cursor { .. } => {
@@ -671,6 +793,16 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
             }
         }
         Ok(plan)
+    }
+
+    fn execute<'a, T>(
+        client: &'a ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        execute_buffered::<_, _, CursorItemsCodec>(client, plan)
     }
 }
 
@@ -723,10 +855,6 @@ pub fn request_plan(
     path: &'static str,
     policy: ResolvedPolicy,
     pagination: Option<PaginationMarker>,
-    decode: fn(
-        BuiltResponse,
-        concord_core::advanced::ErrorContext,
-    ) -> Result<Box<dyn std::any::Any + Send>, ApiClientError>,
 ) -> RequestPlan {
     RequestPlan {
         endpoint: EndpointPlan {
@@ -743,7 +871,6 @@ pub fn request_plan(
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
                 format: concord_core::internal::Format::Text,
-                decode,
             },
             pagination,
         },
@@ -752,123 +879,42 @@ pub fn request_plan(
     }
 }
 
-pub fn decode_string(
-    resp: BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let value = std::str::from_utf8(&resp.body)
-        .map(str::to_string)
-        .map_err(|e| ApiClientError::decode_error(ctx, resp.status, content_type, e))?;
-    Ok(Box::new(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value,
-    }))
+pub fn execute_buffered<'a, Cx, T, C>(
+    client: &'a ApiClient<Cx, T>,
+    plan: RequestPlan,
+) -> Pin<Box<dyn Future<Output = Result<C::Value, ApiClientError>> + Send + 'a>>
+where
+    Cx: ClientContext,
+    T: Transport + 'a,
+    C: ResponseCodec,
+{
+    BufferedResponse::<C>::execute(client, plan)
 }
 
-pub fn decode_items(
-    resp: BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let text = std::str::from_utf8(&resp.body)
-        .map_err(|e| ApiClientError::decode_error(ctx, resp.status, content_type, e))?;
-    let value = if text.is_empty() {
-        Vec::new()
-    } else {
-        text.split(',').map(ToOwned::to_owned).collect()
+macro_rules! buffered_endpoint_execute {
+    ($cx:ty, $codec:ty) => {
+        fn execute<'a, T>(
+            client: &'a concord_core::prelude::ApiClient<$cx, T>,
+            plan: concord_core::internal::RequestPlan,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<Self::Response, concord_core::prelude::ApiClientError>,
+                    > + Send
+                    + 'a,
+            >,
+        >
+        where
+            T: concord_core::advanced::Transport + 'a,
+        {
+            $crate::integration::current_core::common::execute_buffered::<_, _, $codec>(
+                client, plan,
+            )
+        }
     };
-    Ok(Box::new(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value,
-    }))
 }
 
-pub fn decode_page_only_items(
-    resp: BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let text = std::str::from_utf8(&resp.body)
-        .map_err(|e| ApiClientError::decode_error(ctx, resp.status, content_type, e))?;
-    let items = if text.is_empty() {
-        Vec::new()
-    } else {
-        text.split(',').map(ToOwned::to_owned).collect()
-    };
-    Ok(Box::new(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value: PageOnlyItems { items },
-    }))
-}
-
-pub fn decode_no_hint_items(
-    resp: BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let text = std::str::from_utf8(&resp.body)
-        .map_err(|e| ApiClientError::decode_error(ctx, resp.status, content_type, e))?;
-    let items = if text.is_empty() {
-        Vec::new()
-    } else {
-        text.split(',').map(ToOwned::to_owned).collect()
-    };
-    Ok(Box::new(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value: NoHintItems { items },
-    }))
-}
-
-pub fn decode_cursor_items(
-    resp: BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let text = std::str::from_utf8(&resp.body)
-        .map_err(|e| ApiClientError::decode_error(ctx, resp.status, content_type, e))?;
-    let (items_text, next_text) = text.split_once('|').unwrap_or((text, ""));
-    let items = if items_text.is_empty() {
-        Vec::new()
-    } else {
-        items_text.split(',').map(ToOwned::to_owned).collect()
-    };
-    let next = next_text.strip_prefix("next=").map(ToOwned::to_owned);
-    Ok(Box::new(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value: CursorItems { items, next },
-    }))
-}
+pub(crate) use buffered_endpoint_execute;
 
 #[derive(Clone)]
 pub struct ObservationAuthVars {
@@ -1041,9 +1087,10 @@ impl Endpoint<ObservationAuthCx> for TextEndpoint {
             self.path,
             self.policy.clone(),
             self.pagination.as_ref().map(|_| PaginationMarker),
-            decode_string,
         ))
     }
+
+    buffered_endpoint_execute!(ObservationAuthCx, concord_core::prelude::Text<String>);
 }
 
 pub fn auth_policy(placement: AuthPlacement) -> ResolvedPolicy {

@@ -47,6 +47,10 @@ PR52 introduces the new core adapter contracts beside the current family-enum sy
 - PR59 removed generated streaming marker-trait dependency. Pending-request streaming helpers now route through endpoint execution / response-entity execution, while core specialized helpers remain as adapter internals.
 - PR60 removed the legacy streaming response marker traits and the temporary response-kind routing traits. Pending-request streaming helpers are now available through concrete endpoint response-type bounds and still execute through `E::execute(...)`.
 - PR61 made the specialized streaming, records, multipart, and SSE execution helpers internal adapter implementation details. Public and generated execution continues through `ResponseEntity::execute` and pending-request helpers.
+- PR62 removed the decode callback field from `ResponsePlan` and the type-erased buffered response decode path. `ResponsePlan` now carries response metadata only, while buffered, bytes, no-content, mapped, and streaming behavior lives in `ResponseEntity` adapters.
+- `ResponseCodec` remains a codec/adapter contract. Decoded values such as `String`, `Bytes`, `()`, and domain models do not implement it merely because an endpoint returns them; `Text<String>`, `Json<T>`, `BytesResponse`, and `NoContentResponse` own that behavior.
+- Pagination continues to execute each page through `Endpoint::execute`; decoded page value types do not need to implement `ResponseCodec`.
+- Without type-erased default decoding, manual `Endpoint` implementations must provide their typed `execute` method. Generated endpoints already do this through `ResponseEntity`; low-level metadata access uses `execute_decoded_with::<C>()` with an explicit codec type.
 
 ## Endpoint I/O Families
 

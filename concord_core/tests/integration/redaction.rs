@@ -1,7 +1,7 @@
 mod query_auth_redaction {
     use super::super::current_core::common::{
-        CapturedTransportRequest, MockResponse, MockTransport, auth_policy, decode_string,
-        request_plan,
+        CapturedTransportRequest, MockResponse, MockTransport, auth_policy,
+        buffered_endpoint_execute, request_plan,
     };
     use bytes::Bytes;
     use concord_core::advanced::ClientCertificate;
@@ -242,9 +242,10 @@ mod query_auth_redaction {
                 "/text",
                 self.policy.clone(),
                 None,
-                decode_string,
             ))
         }
+
+        buffered_endpoint_execute!(RedactionCx, concord_core::prelude::Text<String>);
     }
 
     #[derive(Default)]
@@ -346,7 +347,7 @@ mod query_auth_redaction {
         let request = client
             .request(RedactionEndpoint { policy })
             .debug_level(DebugLevel::VV)
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await;
 
         if status.is_success() {
@@ -428,7 +429,7 @@ mod query_auth_redaction {
         let err = client
             .request(RedactionEndpoint { policy })
             .debug_level(DebugLevel::V)
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("transport error should be returned");
         let output = format!("{}\n{}", err, hooks.events().await.join("\n"));
@@ -558,7 +559,7 @@ mod query_auth_redaction {
 
         client
             .request(RedactionEndpoint { policy })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await?;
 
         let requests = sent.requests().await;
@@ -691,7 +692,7 @@ mod query_auth_redaction {
         let err = client
             .request(RedactionEndpoint { policy })
             .debug_level(DebugLevel::VV)
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("duplicate query auth key should fail before transport");
 
@@ -823,7 +824,7 @@ mod query_auth_redaction {
 
         let err = client
             .request(RedactionEndpoint { policy })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("bearer Authorization collision should fail before transport");
 
@@ -853,7 +854,7 @@ mod query_auth_redaction {
 
         let err = client
             .request(RedactionEndpoint { policy })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("header auth collision should fail before transport");
 
@@ -883,7 +884,7 @@ mod query_auth_redaction {
 
         let err = client
             .request(RedactionEndpoint { policy })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("basic auth collision should fail before transport");
 
@@ -968,7 +969,7 @@ mod query_auth_redaction {
             .request(RedactionEndpoint {
                 policy: auth_policy(AuthPlacement::Header("X-Api-Key")),
             })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("empty header secret should fail before transport");
 
@@ -1073,9 +1074,10 @@ mod query_auth_redaction {
                     "/refresh",
                     auth_policy(AuthPlacement::Header("X-Custom")),
                     None,
-                    decode_string,
                 ))
             }
+
+            buffered_endpoint_execute!(RefreshCx, concord_core::prelude::Text<String>);
         }
 
         let events = Arc::new(TokioMutex::new(Vec::new()));
@@ -1100,7 +1102,7 @@ mod query_auth_redaction {
         let value = client
             .request(RefreshEndpoint)
             .debug_level(DebugLevel::VV)
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await?;
         assert_eq!(value.into_value(), "ok");
 
@@ -1203,9 +1205,10 @@ mod query_auth_redaction {
                     "/certificate",
                     auth_policy(AuthPlacement::Certificate),
                     None,
-                    decode_string,
                 ))
             }
+
+            buffered_endpoint_execute!(CertificateCx, concord_core::prelude::Text<String>);
         }
 
         let events = Arc::new(TokioMutex::new(Vec::new()));
@@ -1221,7 +1224,7 @@ mod query_auth_redaction {
 
         client
             .request(CertificateEndpoint)
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await?
             .into_value();
 
@@ -1344,9 +1347,10 @@ mod query_auth_redaction {
                     "/protected",
                     auth_policy(AuthPlacement::Bearer),
                     None,
-                    decode_string,
                 ))
             }
+
+            buffered_endpoint_execute!(InternalAuthCx, concord_core::prelude::Text<String>);
         }
 
         let transport = MockTransport::new(
@@ -1368,7 +1372,7 @@ mod query_auth_redaction {
 
         let value = client
             .request(InternalEndpoint)
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await?
             .into_value();
         assert_eq!(value, "protected-ok");

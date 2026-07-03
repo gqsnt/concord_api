@@ -38,10 +38,14 @@ let api = minimal_api::MinimalApi::new();
 let user = api.users().get_user(42).await?;
 ```
 
-Use `.execute_decoded()` when response metadata is needed:
+Use `.execute_decoded_with::<Json<User>>()` when response metadata is needed and the endpoint codec is known explicitly:
 
 ```rust
-let response = api.users().get_user(42).execute_decoded().await?;
+let response = api
+    .users()
+    .get_user(42)
+    .execute_decoded_with::<Json<User>>()
+    .await?;
 let status = response.status();
 let user = response.into_value();
 ```

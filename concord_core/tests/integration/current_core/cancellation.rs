@@ -96,7 +96,12 @@ async fn cancel_during_rate_limit_acquire_does_not_send_transport() {
     gate.block("rate_acquire").await;
     let task = tokio::spawn({
         let client = client.clone();
-        async move { client.request(endpoint).execute_decoded().await }
+        async move {
+            client
+                .request(endpoint)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
     });
 
     gate.wait_for("rate_acquire", 1).await;
@@ -115,7 +120,7 @@ async fn cancel_during_rate_limit_acquire_does_not_send_transport() {
                     policy: rate_limit_policy(),
                     ..Default::default()
                 })
-                .execute_decoded()
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
                 .await
         }
     });
@@ -158,7 +163,12 @@ async fn cancel_during_pre_send_hook_does_not_send_transport() {
     gate.block("hook_pre_send").await;
     let task = tokio::spawn({
         let client = client.clone();
-        async move { client.request(endpoint).execute_decoded().await }
+        async move {
+            client
+                .request(endpoint)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
     });
 
     gate.wait_for("hook_pre_send", 1).await;
@@ -176,7 +186,7 @@ async fn cancel_during_pre_send_hook_does_not_send_transport() {
                     policy: rate_limit_policy(),
                     ..Default::default()
                 })
-                .execute_decoded()
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
                 .await
         }
     });
@@ -221,7 +231,7 @@ async fn transport_timeout_error_is_typed_and_safe() {
 
     let err = client
         .request(endpoint)
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("transport timeout should surface as a transport error");
 
@@ -409,7 +419,7 @@ async fn cancellation_observer_surfaces_are_body_auth_free() {
                     policy,
                     ..Default::default()
                 })
-                .execute_decoded()
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
                 .await
         }
     });
@@ -444,9 +454,12 @@ async fn transport_timeout_metadata_reaches_transport_and_is_request_scoped()
     client
         .request(endpoint.clone())
         .timeout(std::time::Duration::from_secs(2))
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
-    client.request(endpoint).execute_decoded().await?;
+    client
+        .request(endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
     let requests = transport.requests().await;
     assert_eq!(requests[0].timeout, Some(std::time::Duration::from_secs(2)));
     assert_eq!(requests[1].timeout, Some(std::time::Duration::from_secs(5)));

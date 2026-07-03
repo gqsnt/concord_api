@@ -8,9 +8,8 @@ use crate::record::{RecordBody, RecordFormat};
 use crate::sse::SseCodec;
 use crate::stream_body::StreamBody;
 use crate::stream_response::StreamResponse;
-use crate::transport::{BuiltResponse, DecodedResponse};
+use crate::transport::BuiltResponse;
 use bytes::Bytes;
-use std::any::Any;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -272,7 +271,7 @@ where
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { execute_buffered_response::<Cx, T, C::Value>(client, plan).await })
+        Box::pin(async move { execute_buffered_codec_response::<Cx, T, C>(client, plan).await })
     }
 }
 
@@ -288,7 +287,6 @@ impl ResponseEntity for BytesResponse {
                 accept: None,
                 no_content: false,
                 format: crate::codec::Format::Binary,
-                decode: decode_bytes_response,
             },
             capabilities: ResponseEntityCapabilities {
                 supports_map: true,
@@ -307,7 +305,7 @@ impl ResponseEntity for BytesResponse {
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { execute_buffered_response::<Cx, T, Bytes>(client, plan).await })
+        Box::pin(async move { execute_bytes_response(client, plan).await })
     }
 }
 
@@ -323,7 +321,6 @@ impl ResponseEntity for NoContentResponse {
                 accept: None,
                 no_content: true,
                 format: crate::codec::Format::Text,
-                decode: decode_no_content_response,
             },
             capabilities: ResponseEntityCapabilities {
                 supports_map: false,
@@ -342,7 +339,7 @@ impl ResponseEntity for NoContentResponse {
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { execute_buffered_response::<Cx, T, ()>(client, plan).await })
+        Box::pin(async move { execute_no_content_response(client, plan).await })
     }
 }
 
@@ -364,7 +361,6 @@ where
                 ),
                 no_content: false,
                 format: crate::codec::Format::Binary,
-                decode: decode_streaming_response,
             },
             capabilities: ResponseEntityCapabilities {
                 supports_map: false,
@@ -406,7 +402,6 @@ where
                 ),
                 no_content: false,
                 format: crate::codec::Format::Text,
-                decode: decode_streaming_response,
             },
             capabilities: ResponseEntityCapabilities {
                 supports_map: false,
@@ -448,7 +443,6 @@ where
                 ),
                 no_content: false,
                 format: crate::codec::Format::Text,
-                decode: decode_streaming_response,
             },
             capabilities: ResponseEntityCapabilities {
                 supports_map: false,
@@ -490,7 +484,6 @@ where
                 ),
                 no_content: false,
                 format: crate::codec::Format::Text,
-                decode: decode_streaming_response,
             },
             capabilities: ResponseEntityCapabilities {
                 supports_map: false,
@@ -513,16 +506,49 @@ where
     }
 }
 
-fn execute_buffered_response<'a, Cx, T, R>(
+fn execute_buffered_codec_response<'a, Cx, T, C>(
     client: &'a ApiClient<Cx, T>,
     plan: RequestPlan,
-) -> Pin<Box<dyn Future<Output = Result<R, ApiClientError>> + Send + 'a>>
+) -> Pin<Box<dyn Future<Output = Result<C::Value, ApiClientError>> + Send + 'a>>
 where
     Cx: ClientContext,
     T: crate::transport::Transport + 'a,
-    R: Send + 'static,
+    C: ResponseCodec,
 {
-    Box::pin(async move { Ok(client.execute_plan::<R>(plan).await?.value) })
+    Box::pin(async move {
+        if C::is_no_content() {
+            let resp = client.execute_plan_raw_skip_body(plan).await?;
+            return decode_buffered_response::<C>(resp);
+        }
+        let resp = client.execute_plan_raw(plan).await?;
+        decode_buffered_response::<C>(resp)
+    })
+}
+
+async fn execute_bytes_response<Cx, T>(
+    client: &ApiClient<Cx, T>,
+    plan: RequestPlan,
+) -> Result<Bytes, ApiClientError>
+where
+    Cx: ClientContext,
+    T: crate::transport::Transport,
+{
+    let resp = client.execute_plan_raw(plan).await?;
+    validate_buffered_response(&resp, false)?;
+    Ok(resp.body)
+}
+
+async fn execute_no_content_response<Cx, T>(
+    client: &ApiClient<Cx, T>,
+    plan: RequestPlan,
+) -> Result<(), ApiClientError>
+where
+    Cx: ClientContext,
+    T: crate::transport::Transport,
+{
+    let resp = client.execute_plan_raw_skip_body(plan).await?;
+    validate_buffered_response(&resp, true)?;
+    Ok(())
 }
 
 fn response_plan_from_codec<C>(ctx: ErrorContext) -> Result<ResponsePlan, ApiClientError>
@@ -534,21 +560,27 @@ where
             .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
         no_content: C::is_no_content(),
         format: C::format(),
-        decode: decode_buffered_response::<C>,
     })
 }
 
-fn decode_buffered_response<C>(
-    resp: BuiltResponse,
-    ctx: ErrorContext,
-) -> Result<Box<dyn Any + Send>, ApiClientError>
+fn decode_buffered_response<C>(resp: BuiltResponse) -> Result<C::Value, ApiClientError>
 where
     C: ResponseCodec,
 {
+    let ctx = validate_buffered_response(&resp, C::is_no_content())?;
     let content_type = resp
         .headers
         .get(http::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok());
+    if C::is_no_content() {
+        return C::decode(
+            Bytes::new(),
+            DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
+        )
+        .map_err(|source| {
+            ApiClientError::decode_error(ctx.clone(), resp.status, content_type, source)
+        });
+    }
     let decoded = C::decode(
         resp.body.clone(),
         DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
@@ -556,49 +588,31 @@ where
     .map_err(|source| {
         ApiClientError::decode_error(ctx.clone(), resp.status, content_type, source)
     })?;
-    Ok(Box::new(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value: decoded,
-    }))
+    Ok(decoded)
 }
 
-fn decode_bytes_response(
-    resp: BuiltResponse,
-    _ctx: ErrorContext,
-) -> Result<Box<dyn Any + Send>, ApiClientError> {
-    Ok(Box::new(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value: resp.body,
-    }))
-}
-
-fn decode_no_content_response(
-    resp: BuiltResponse,
-    _ctx: ErrorContext,
-) -> Result<Box<dyn Any + Send>, ApiClientError> {
-    Ok(Box::new(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value: (),
-    }))
-}
-
-fn decode_streaming_response(
-    _resp: BuiltResponse,
-    ctx: ErrorContext,
-) -> Result<Box<dyn Any + Send>, ApiClientError> {
-    Err(ApiClientError::PolicyViolation {
-        ctx,
-        msg: "streaming response adapters do not use buffered decode execution",
-    })
+fn validate_buffered_response(
+    resp: &BuiltResponse,
+    no_content: bool,
+) -> Result<ErrorContext, ApiClientError> {
+    let ctx = ErrorContext {
+        endpoint: resp.meta.endpoint,
+        method: resp.meta.method.clone(),
+    };
+    if resp.meta.method == http::Method::HEAD && !no_content {
+        return Err(ApiClientError::HeadRequiresNoContent { ctx });
+    }
+    if matches!(
+        resp.status,
+        http::StatusCode::NO_CONTENT | http::StatusCode::RESET_CONTENT
+    ) && !no_content
+    {
+        return Err(ApiClientError::NoContentStatusRequiresNoContent {
+            ctx: ctx.clone(),
+            status: resp.status,
+        });
+    }
+    Ok(ctx)
 }
 
 #[cfg(test)]
@@ -610,10 +624,9 @@ mod tests {
     use crate::multipart::{FormData, Mixed, MultipartBody};
     use crate::multipart_response::RawResponsePart;
     use crate::record::NdJson;
-    use crate::transport::{BuiltResponse, RequestMeta, Transport};
+    use crate::transport::Transport;
     use http::{HeaderMap, Method, StatusCode};
     use serde::{Deserialize, Serialize};
-    use url::Url;
 
     #[cfg(feature = "json")]
     use crate::media::JsonContentType;
@@ -669,36 +682,6 @@ mod tests {
         fn transform(_input: String) -> Result<Self::Output, FxError> {
             Err(Box::new(std::io::Error::other("map failed")))
         }
-    }
-
-    fn built_response(body: Bytes, content_type: Option<&str>) -> BuiltResponse {
-        let mut headers = HeaderMap::new();
-        if let Some(content_type) = content_type {
-            headers.insert(
-                http::header::CONTENT_TYPE,
-                http::HeaderValue::from_str(content_type).expect("valid test content type"),
-            );
-        }
-        BuiltResponse {
-            meta: RequestMeta {
-                endpoint: "Example",
-                method: Method::POST,
-                idempotent: true,
-                attempt: 0,
-                page_index: 0,
-            },
-            url: Url::parse("https://example.test/items").expect("url"),
-            status: StatusCode::OK,
-            headers,
-            body,
-            rate_limit: Default::default(),
-        }
-    }
-
-    fn downcast_response<T: Send + 'static>(value: Box<dyn Any + Send>) -> DecodedResponse<T> {
-        *value
-            .downcast::<DecodedResponse<T>>()
-            .expect("decoded response type")
     }
 
     #[derive(Clone)]
@@ -1144,18 +1127,27 @@ mod tests {
             plan.response_plan.accept,
             Some(JsonContentType::try_header_value().expect("json content type"))
         );
-        let decoded = downcast_response::<Item>(
-            (plan.response_plan.decode)(
-                built_response(Bytes::from_static(br#"{"id":1}"#), Some("application/json")),
-                ctx(),
-            )
-            .expect("decode"),
+        let client = ApiClient::<TestCx, _>::with_transport(
+            (),
+            (),
+            transport(StaticResponse {
+                status: StatusCode::OK,
+                headers: response_headers(Some("application/json")),
+                chunks: vec![Bytes::from_static(br#"{"id":1}"#)],
+                content_length: None,
+            }),
         );
-        assert_eq!(decoded.value, Item { id: 1 });
+        let decoded = execute_buffered_codec_response::<_, _, crate::codec::json::Json<Item>>(
+            &client,
+            request_plan(plan.response_plan),
+        )
+        .await
+        .expect("decode");
+        assert_eq!(decoded, Item { id: 1 });
     }
 
-    #[test]
-    fn buffered_response_text_is_buffered_and_non_streaming() {
+    #[tokio::test]
+    async fn buffered_response_text_is_buffered_and_non_streaming() {
         let plan = BufferedResponse::<Text<String>>::plan(ctx()).expect("buffered response");
         assert_eq!(
             plan.capabilities,
@@ -1166,21 +1158,27 @@ mod tests {
                 is_no_content: false,
             }
         );
-        let decoded = downcast_response::<String>(
-            (plan.response_plan.decode)(
-                built_response(
-                    Bytes::from_static(b"hello"),
-                    Some("text/plain; charset=utf-8"),
-                ),
-                ctx(),
-            )
-            .expect("decode"),
+        let client = ApiClient::<TestCx, _>::with_transport(
+            (),
+            (),
+            transport(StaticResponse {
+                status: StatusCode::OK,
+                headers: response_headers(Some("text/plain; charset=utf-8")),
+                chunks: vec![Bytes::from_static(b"hello")],
+                content_length: None,
+            }),
         );
-        assert_eq!(decoded.value, "hello");
+        let decoded = execute_buffered_codec_response::<_, _, Text<String>>(
+            &client,
+            request_plan(plan.response_plan),
+        )
+        .await
+        .expect("decode");
+        assert_eq!(decoded, "hello");
     }
 
-    #[test]
-    fn bytes_response_exposes_buffered_bytes_capabilities() {
+    #[tokio::test]
+    async fn bytes_response_exposes_buffered_bytes_capabilities() {
         let plan = BytesResponse::plan(ctx()).expect("bytes response");
         assert_eq!(
             plan.capabilities,
@@ -1191,15 +1189,24 @@ mod tests {
                 is_no_content: false,
             }
         );
-        let decoded = downcast_response::<Bytes>(
-            (plan.response_plan.decode)(built_response(Bytes::from_static(b"bytes"), None), ctx())
-                .expect("decode"),
+        let client = ApiClient::<TestCx, _>::with_transport(
+            (),
+            (),
+            transport(StaticResponse {
+                status: StatusCode::OK,
+                headers: response_headers(None),
+                chunks: vec![Bytes::from_static(b"bytes")],
+                content_length: None,
+            }),
         );
-        assert_eq!(decoded.value, Bytes::from_static(b"bytes"));
+        let decoded = BytesResponse::execute(&client, request_plan(plan.response_plan))
+            .await
+            .expect("decode");
+        assert_eq!(decoded, Bytes::from_static(b"bytes"));
     }
 
-    #[test]
-    fn no_content_response_has_no_content_capabilities() {
+    #[tokio::test]
+    async fn no_content_response_has_no_content_capabilities() {
         let plan = NoContentResponse::plan(ctx()).expect("no content response");
         assert_eq!(
             plan.capabilities,
@@ -1210,10 +1217,20 @@ mod tests {
                 is_no_content: true,
             }
         );
-        let decoded = downcast_response::<()>(
-            (plan.response_plan.decode)(built_response(Bytes::new(), None), ctx()).expect("decode"),
+        let client = ApiClient::<TestCx, _>::with_transport(
+            (),
+            (),
+            transport(StaticResponse {
+                status: StatusCode::NO_CONTENT,
+                headers: response_headers(None),
+                chunks: vec![],
+                content_length: None,
+            }),
         );
-        assert_eq!(decoded.value, ());
+        let decoded = NoContentResponse::execute(&client, request_plan(plan.response_plan))
+            .await
+            .expect("decode");
+        assert_eq!(decoded, ());
     }
 
     #[test]

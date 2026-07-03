@@ -117,15 +117,16 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
 
     fn plan(&self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError>;
 
+    /// Executes a planned endpoint through its typed response path.
+    ///
+    /// Generated endpoints implement this with their resolved response entity.
+    /// Manual endpoints must provide the corresponding typed execution path.
     fn execute<'a, T>(
         client: &'a ApiClient<Cx, T>,
         plan: RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
     where
-        T: Transport + 'a,
-    {
-        Box::pin(async move { Ok(client.execute_plan::<Self::Response>(plan).await?.value) })
-    }
+        T: Transport + 'a;
 }
 
 /// Marker implemented only for endpoints that declare pagination.

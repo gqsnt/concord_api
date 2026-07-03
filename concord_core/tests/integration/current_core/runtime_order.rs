@@ -1,15 +1,19 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, DebugSink, NoopRateLimiter, RetryContext, RetryDecision, RetryPolicy,
-    TransportErrorKind,
+    AuthPlacement, BufferedResponse, CodecError, DebugSink, DecodeContext, MappedResponse,
+    NoopRateLimiter, ResponseCodec, ResponseEntity, ResponseTransform, RetryContext, RetryDecision,
+    RetryPolicy, TextContentType, TransportErrorKind,
 };
+use concord_core::error::FxError;
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
     RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClientError, DebugLevel, Endpoint};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
@@ -28,32 +32,34 @@ fn record_order_event(event: &str) {
     });
 }
 
-#[derive(Clone, Copy)]
-enum MapMode {
-    Fail,
-}
-
 #[derive(Clone)]
 struct OrderingEndpoint {
     policy: ResolvedPolicy,
-    map_mode: MapMode,
 }
 
 impl Endpoint<TestCx> for OrderingEndpoint {
     type Response = String;
 
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
-        let decode = match self.map_mode {
-            MapMode::Fail => decode_ordering_fail,
-        };
         Ok(request_plan(
             "Ordering",
             Method::GET,
             "/ordering",
             self.policy.clone(),
             None,
-            decode,
         ))
+    }
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        Box::pin(async move {
+            MappedResponse::<BufferedResponse<LoggingText>, FailingMap>::execute(client, plan).await
+        })
     }
 }
 
@@ -89,7 +95,6 @@ impl Endpoint<TestCx> for ObservationFailureEndpoint {
                     accept: Some(HeaderValue::from_static("application/json")),
                     no_content: false,
                     format: concord_core::internal::Format::Text,
-                    decode: decode_observation_failure,
                 },
                 pagination: None,
             },
@@ -97,43 +102,44 @@ impl Endpoint<TestCx> for ObservationFailureEndpoint {
             overrides: RequestOverrides::default(),
         })
     }
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        Box::pin(
+            async move { BufferedResponse::<InvalidJsonResponse>::execute(client, plan).await },
+        )
+    }
 }
 
-fn decode_observation_failure(
-    resp: concord_core::advanced::BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let _ = std::str::from_utf8(&resp.body)
-        .map_err(|e| ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e))?;
-    Err(ApiClientError::decode_error(
-        ctx,
-        resp.status,
-        content_type,
-        std::io::Error::other("invalid JSON payload"),
-    ))
+struct LoggingText;
+
+impl ResponseCodec for LoggingText {
+    type Value = String;
+    type Content = TextContentType;
+
+    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        record_order_event("decode");
+        let value = std::str::from_utf8(&bytes)
+            .map(str::to_string)
+            .map_err(|e| CodecError::with_source("text decode failed", e))?;
+        Ok(value)
+    }
 }
 
-fn decode_ordering_fail(
-    resp: concord_core::advanced::BuiltResponse,
-    ctx: concord_core::advanced::ErrorContext,
-) -> Result<Box<dyn std::any::Any + Send>, ApiClientError> {
-    record_order_event("decode");
-    let content_type = resp
-        .headers
-        .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
-    let value = std::str::from_utf8(&resp.body)
-        .map(str::to_string)
-        .map_err(|e| ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e))?;
-    record_order_event("map");
-    Err(ApiClientError::Transform {
-        ctx,
-        source: std::io::Error::other(format!("mapping failed for {value}")).into(),
-    })
+struct FailingMap;
+
+impl ResponseTransform<String> for FailingMap {
+    type Output = String;
+
+    fn transform(value: String) -> Result<Self::Output, FxError> {
+        record_order_event("map");
+        Err(std::io::Error::other(format!("mapping failed for {value}")).into())
+    }
 }
 
 fn positions(events: &[String], needle: &str) -> Vec<usize> {
@@ -179,7 +185,6 @@ impl Endpoint<TestCx> for UnsafeEndpoint {
                     accept: Some(http::HeaderValue::from_static("text/plain")),
                     no_content: false,
                     format: concord_core::internal::Format::Text,
-                    decode: decode_string,
                 },
                 pagination: None,
             },
@@ -187,6 +192,8 @@ impl Endpoint<TestCx> for UnsafeEndpoint {
             overrides: RequestOverrides::default(),
         })
     }
+
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Clone)]
@@ -217,7 +224,6 @@ impl Endpoint<TestCx> for BodyDebugEndpoint {
                     accept: Some(http::HeaderValue::from_static("text/plain")),
                     no_content: false,
                     format: concord_core::internal::Format::Text,
-                    decode: decode_string,
                 },
                 pagination: None,
             },
@@ -228,6 +234,8 @@ impl Endpoint<TestCx> for BodyDebugEndpoint {
             },
         })
     }
+
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
 struct HugeDelayRetryPolicy;
@@ -274,7 +282,10 @@ async fn retry_decision_happens_before_decode() -> Result<(), ApiClientError> {
         policy: retry_policy(2),
         ..Default::default()
     };
-    let decoded = client.request(endpoint).execute_decoded().await?;
+    let decoded = client
+        .request(endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
 
     assert_eq!(decoded.value(), "ok");
     assert_eq!(sent_transport.sent_count().await, 2);
@@ -297,7 +308,7 @@ async fn custom_retry_policy_huge_retry_after_returns_typed_error() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("huge custom retry delay should be rejected before sleeping");
 
@@ -322,7 +333,7 @@ async fn custom_retry_policy_valid_retry_after_still_retries() -> Result<(), Api
 
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -351,7 +362,7 @@ async fn custom_retry_policy_huge_delay_returns_typed_error() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("huge custom retry delay should be rejected before sleeping");
 
@@ -388,7 +399,7 @@ async fn custom_retry_policy_zero_delay_is_allowed_and_retries() -> Result<(), A
 
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -424,7 +435,7 @@ async fn custom_retry_policy_cannot_exceed_configured_max_attempts() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("retry budget exhaustion should stop after one retry");
 
@@ -464,7 +475,7 @@ async fn custom_retry_decision_happens_after_hook_and_rate_limit_observation()
 
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -499,7 +510,7 @@ async fn configured_transport_error_kind_retries_then_succeeds() -> Result<(), A
             policy: retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -525,7 +536,7 @@ async fn unconfigured_transport_error_kind_does_not_retry() {
             policy: retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("unconfigured transport error kind should not retry");
 
@@ -551,7 +562,7 @@ async fn transport_error_retry_budget_exhaustion_returns_final_typed_error() {
             policy: retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("retry budget exhaustion should return final transport error");
 
@@ -586,7 +597,7 @@ async fn unsafe_method_without_idempotency_header_does_not_retry() {
 
     let err = client
         .request(UnsafeEndpoint { policy })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("unsafe request without idempotency signal should not retry");
 
@@ -626,7 +637,7 @@ async fn unsafe_method_with_idempotency_header_retries_with_stable_value()
 
     let decoded = client
         .request(UnsafeEndpoint { policy })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -670,7 +681,7 @@ async fn rate_limit_acquire_runs_before_each_transport_attempt() -> Result<(), A
             policy: retry_policy(2),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -705,7 +716,7 @@ async fn rate_limit_observation_runs_before_retry_decision() -> Result<(), ApiCl
             policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -746,7 +757,7 @@ async fn runtime_hooks_observe_200_before_decode_failure() {
             policy: ResolvedPolicy::default(),
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
         })
-        .execute_decoded()
+        .execute()
         .await
         .expect_err("invalid payload should fail decode");
 
@@ -790,7 +801,7 @@ async fn runtime_hooks_observe_retryable_status_before_retry() -> Result<(), Api
             policy: retry_policy(2),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), SECOND_SENTINEL);
@@ -827,7 +838,7 @@ async fn runtime_hooks_observe_auth_rejection_before_auth_handling() -> Result<(
             policy: auth_policy(AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "recovered");
@@ -884,7 +895,7 @@ async fn auth_rejection_preempts_custom_retry_policy_for_401() -> Result<(), Api
             policy: auth_policy(AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "recovered");
@@ -933,7 +944,7 @@ async fn auth_rejection_preempts_custom_retry_policy_for_403() -> Result<(), Api
             policy: auth_policy(AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "recovered");
@@ -988,7 +999,7 @@ async fn never_refresh_auth_rejection_does_not_fall_through_to_custom_retry() {
                 },
                 ..Default::default()
             })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("terminal auth rejection should win");
 
@@ -1041,7 +1052,7 @@ async fn auth_rejection_does_not_read_body() -> Result<(), ApiClientError> {
                 policy: auth_policy(AuthPlacement::Bearer),
                 ..Default::default()
             })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("auth rejection should happen before body read");
 
@@ -1077,7 +1088,7 @@ async fn runtime_hooks_do_not_observe_body_on_http_status_error() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("HTTP status error should remain terminal");
 
@@ -1123,7 +1134,7 @@ async fn transport_observation_does_not_leak_basic_auth_material() -> Result<(),
             policy: auth_policy(AuthPlacement::Basic),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "basic-ok");
@@ -1185,7 +1196,7 @@ async fn custom_retry_context_does_not_expose_bearer_auth() {
             policy: auth_policy(AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("http status error should remain terminal");
 
@@ -1238,7 +1249,7 @@ async fn custom_retry_context_does_not_expose_query_auth() {
             policy: auth_policy(AuthPlacement::Query("api_key")),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("http status error should remain terminal");
 
@@ -1297,7 +1308,7 @@ async fn custom_retry_context_does_not_expose_basic_auth_material() {
             policy: auth_policy(AuthPlacement::Basic),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("http status error should remain terminal");
 
@@ -1352,7 +1363,7 @@ async fn oversized_live_body_fails_typed() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("oversized live body should fail typed");
 
@@ -1390,7 +1401,7 @@ async fn custom_retry_policy_not_invoked_for_decode_failure() {
             policy: ResolvedPolicy::default(),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("decode failure should be terminal");
 
@@ -1424,7 +1435,7 @@ async fn decode_failure_does_not_consume_retry_budget() {
             policy: ResolvedPolicy::default(),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("decode failure should be terminal");
 
@@ -1457,9 +1468,8 @@ async fn custom_retry_policy_not_invoked_for_map_failure() -> Result<(), ApiClie
             client
                 .request(OrderingEndpoint {
                     policy: ResolvedPolicy::default(),
-                    map_mode: MapMode::Fail,
                 })
-                .execute_decoded()
+                .execute()
                 .await
         })
         .await
@@ -1482,7 +1492,7 @@ async fn decoded_response_exposes_user_metadata() -> Result<(), ApiClientError> 
 
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.status(), StatusCode::CREATED);
@@ -1500,7 +1510,11 @@ async fn direct_await_returns_decoded_value() -> Result<(), ApiClientError> {
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "await")]);
     let client = client(TestAuthVars::default(), transport);
 
-    let value = client.request(TextEndpoint::default()).await?;
+    let value = client
+        .request(TextEndpoint::default())
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?
+        .into_value();
 
     assert_eq!(value, "await");
     Ok(())
@@ -1512,7 +1526,11 @@ async fn execute_returns_same_decoded_value_as_await() -> Result<(), ApiClientEr
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "execute")]);
     let client = client(TestAuthVars::default(), transport);
 
-    let value = client.request(TextEndpoint::default()).execute().await?;
+    let value = client
+        .request(TextEndpoint::default())
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?
+        .into_value();
 
     assert_eq!(value, "execute");
     Ok(())
@@ -1598,7 +1616,7 @@ async fn per_call_overrides_apply_to_pending_request() -> Result<(), ApiClientEr
         .debug_level(DebugLevel::V)
         .timeout(Duration::from_millis(250))
         .attempt(7)
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "override");
@@ -1627,7 +1645,7 @@ async fn decode_error_includes_endpoint_status_and_content_type() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("invalid utf-8 should fail decode");
     let msg = err.to_string();
@@ -1657,7 +1675,7 @@ async fn very_verbose_debug_does_not_emit_request_or_response_body_bytes()
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
             policy: ResolvedPolicy::default(),
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), RESPONSE_SENTINEL);
@@ -1687,7 +1705,7 @@ async fn dev_body_capture_disabled_by_default() -> Result<(), ApiClientError> {
 
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "PR52_DISABLED_CAPTURE_SENTINEL");
@@ -1723,7 +1741,7 @@ async fn dev_body_capture_writes_response_only_to_safe_file() -> Result<(), ApiC
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
             policy: ResolvedPolicy::default(),
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), RESPONSE_SENTINEL);
@@ -1771,7 +1789,7 @@ async fn dev_body_capture_skips_oversized_response() -> Result<(), ApiClientErro
 
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), RESPONSE_SENTINEL);
@@ -1815,7 +1833,7 @@ async fn dev_body_capture_skips_protected_auth_response() -> Result<(), ApiClien
             policy,
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), AUTH_RESPONSE_SENTINEL);
@@ -1850,7 +1868,7 @@ async fn debug_sink_body_free_when_dev_body_capture_enabled() -> Result<(), ApiC
             request_body: Bytes::from_static(b"PR64_DEBUG_SINK_REQUEST_SENTINEL"),
             policy: ResolvedPolicy::default(),
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), RESPONSE_SENTINEL);
@@ -1891,7 +1909,7 @@ async fn runtime_hooks_body_free_when_dev_body_capture_enabled() -> Result<(), A
             request_body: Bytes::from_static(b"PR64_RUNTIME_HOOK_REQUEST_SENTINEL"),
             policy: ResolvedPolicy::default(),
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), RESPONSE_SENTINEL);
@@ -2005,7 +2023,7 @@ async fn decode_error_does_not_trigger_transport_retry() {
             policy: retry_policy(2),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("decode failure is terminal");
 
@@ -2032,7 +2050,7 @@ async fn runtime_config_applies_debug_rate_limit_transport_and_pagination_loop_d
     assert!(!client.pagination_detect_loops());
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
     assert_eq!(decoded.into_value(), "configured");
     assert_eq!(transport.sent_count().await, 1);
@@ -2053,7 +2071,7 @@ async fn response_content_length_above_limit_fails_before_decode() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("known content length above limit should fail");
 
@@ -2085,7 +2103,7 @@ async fn response_unknown_length_above_limit_fails_while_reading() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("chunked body above limit should fail");
 
@@ -2106,7 +2124,7 @@ async fn response_exactly_at_limit_succeeds() -> Result<(), ApiClientError> {
 
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "abcd");
@@ -2124,7 +2142,7 @@ async fn response_below_limit_succeeds() -> Result<(), ApiClientError> {
 
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "abc");
@@ -2162,7 +2180,7 @@ async fn content_length_over_limit_rejects_before_body_read() {
             policy: ResolvedPolicy::default(),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("known content length above limit should fail before reading body");
 
@@ -2220,7 +2238,7 @@ async fn streaming_body_over_limit_rejects_during_bounded_read() {
             policy: ResolvedPolicy::default(),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("chunked body above limit should fail while reading");
 
@@ -2259,7 +2277,7 @@ async fn body_at_exact_limit_succeeds() -> Result<(), ApiClientError> {
 
     let decoded = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "abcd");
@@ -2294,7 +2312,7 @@ async fn rate_limit_response_context_remains_body_free() {
             policy: ResolvedPolicy::default(),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("body limit should fail before rate-limit metadata can expose body bytes");
 
@@ -2356,7 +2374,7 @@ async fn debug_hooks_never_receive_body_bytes_on_body_errors() {
                 policy: ResolvedPolicy::default(),
                 ..Default::default()
             })
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
             .expect_err("body error should remain body-free in debug and hooks");
 
@@ -2398,7 +2416,7 @@ async fn body_limit_plus_one_fails() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("limit+1 body should fail");
 
@@ -2437,7 +2455,7 @@ async fn decode_failure_under_limit_is_not_body_limit() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("invalid utf-8 below the body limit should fail as decode");
 
@@ -2472,7 +2490,7 @@ async fn response_too_large_does_not_decode() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("body limit should fail before utf-8 decode");
 
@@ -2491,7 +2509,7 @@ async fn response_limit_applies() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("response limit applies");
 
@@ -2525,7 +2543,7 @@ async fn body_limit_error_does_not_trigger_ordinary_retry() {
             policy: retry_policy(2),
             ..Default::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("body limit should stop before ordinary retry");
 
@@ -2607,7 +2625,7 @@ async fn request_body_bytes_remain_transport_only() -> Result<(), ApiClientError
             request_body: Bytes::from_static(REQUEST_SENTINEL.as_bytes()),
             policy: ResolvedPolicy::default(),
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -2647,7 +2665,7 @@ async fn request_without_body_reaches_transport_as_empty() -> Result<(), ApiClie
         .request(UnsafeEndpoint {
             policy: ResolvedPolicy::default(),
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await?;
 
     assert_eq!(decoded.value(), "ok");

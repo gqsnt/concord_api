@@ -64,12 +64,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(Some(delay))
     }
 
-    pub async fn execute_plan<R>(
+    pub async fn execute_plan<C>(
         &self,
         plan: RequestPlan,
-    ) -> Result<DecodedResponse<R>, ApiClientError>
+    ) -> Result<DecodedResponse<C::Value>, ApiClientError>
     where
-        R: Send + 'static,
+        C: crate::codec::ResponseCodec,
     {
         let RequestPlan {
             endpoint,
@@ -193,7 +193,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     }
                     self.maybe_capture_dev_response_body(&plan, &resp);
                     self.debug_planned_response(dbg, &resp, &url_str);
-                    let decoded = Self::decode_planned_response::<R>(&plan, resp, ctx.clone())?;
+                    let decoded = Self::decode_planned_response::<C>(&plan, resp, ctx.clone())?;
                     return Ok(decoded);
                 }
                 Err(err) => {
@@ -292,6 +292,21 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         plan: RequestPlan,
     ) -> Result<BuiltResponse, ApiClientError> {
+        self.execute_plan_raw_with_body(plan, false).await
+    }
+
+    pub(crate) async fn execute_plan_raw_skip_body(
+        &self,
+        plan: RequestPlan,
+    ) -> Result<BuiltResponse, ApiClientError> {
+        self.execute_plan_raw_with_body(plan, true).await
+    }
+
+    async fn execute_plan_raw_with_body(
+        &self,
+        plan: RequestPlan,
+        skip_body: bool,
+    ) -> Result<BuiltResponse, ApiClientError> {
         let RequestPlan {
             endpoint,
             mut args,
@@ -346,7 +361,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let send_result = self
                 .send_and_classify_once(
                     built,
-                    false,
+                    skip_body,
                     SendClassifyCtx {
                         dbg,
                         dbg_verbose,
@@ -1307,33 +1322,49 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(false)
     }
 
-    fn decode_planned_response<R>(
+    fn decode_planned_response<C>(
         plan: &crate::endpoint::RequestPlanView,
         resp: BuiltResponse,
         ctx: ErrorContext,
-    ) -> Result<DecodedResponse<R>, ApiClientError>
+    ) -> Result<DecodedResponse<C::Value>, ApiClientError>
     where
-        R: Send + 'static,
+        C: crate::codec::ResponseCodec,
     {
-        if resp.meta.method == http::Method::HEAD && !plan.endpoint.response.no_content {
+        let no_content = plan.endpoint.response.no_content || C::is_no_content();
+        if resp.meta.method == http::Method::HEAD && !no_content {
             return Err(ApiClientError::HeadRequiresNoContent { ctx });
         }
         if matches!(resp.status, StatusCode::NO_CONTENT | StatusCode::RESET_CONTENT)
-            && !plan.endpoint.response.no_content
+            && !no_content
         {
             return Err(ApiClientError::NoContentStatusRequiresNoContent {
                 ctx: ctx.clone(),
                 status: resp.status,
             });
         }
-        let decoded = (plan.endpoint.response.decode)(resp, ctx.clone())?;
-        decoded
-            .downcast::<DecodedResponse<R>>()
-            .map(|boxed| *boxed)
-            .map_err(|_| ApiClientError::Transform {
-                ctx,
-                source: "planned response decoder returned an unexpected type".into(),
-            })
+        let content_type = resp
+            .headers
+            .get(http::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok());
+        let value = C::decode(
+            resp.body.clone(),
+            crate::codec::DecodeContext::new(
+                ctx.endpoint,
+                &ctx.method,
+                resp.status,
+                content_type,
+            ),
+        )
+        .map_err(|source| {
+            ApiClientError::decode_error(ctx.clone(), resp.status, content_type, source)
+        })?;
+        Ok(DecodedResponse {
+            meta: resp.meta,
+            url: resp.url,
+            status: resp.status,
+            headers: resp.headers,
+            value,
+        })
     }
 
     fn debug_planned_request(&self, dbg: DebugLevel, plan: &crate::endpoint::RequestPlanView, built: &BuiltRequest, url_str: &str) {

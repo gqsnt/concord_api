@@ -290,7 +290,7 @@ async fn gateable_transport_blocks_send_until_released() {
     let mut task = tokio::spawn(async move {
         client
             .request(TextEndpoint::default())
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
     });
 
@@ -331,7 +331,7 @@ async fn gateable_body_blocks_reads_and_counts_chunks() {
     let mut task = tokio::spawn(async move {
         client
             .request(TextEndpoint::default())
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
     });
 
@@ -378,7 +378,7 @@ async fn counting_rate_limiter_records_lifecycle_completion() {
             policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect("request should succeed");
 
@@ -443,7 +443,7 @@ async fn counting_rate_limiter_records_lifecycle_completion() {
             policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect_err("acquire failure should stop before transport");
     assert!(matches!(err, ApiClientError::RateLimit { .. }));
@@ -480,7 +480,7 @@ async fn gateable_hooks_block_pre_send_before_transport() {
     let task = tokio::spawn(async move {
         client
             .request(TextEndpoint::default())
-            .execute_decoded()
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
             .await
     });
 
@@ -540,7 +540,7 @@ async fn harness_observer_surfaces_remain_body_auth_free() {
             policy,
             ..TextEndpoint::default()
         })
-        .execute_decoded()
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
         .await
         .expect("request should succeed");
 
