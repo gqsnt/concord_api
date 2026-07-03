@@ -200,12 +200,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Ok(resp) => {
                     let (response_status, response_meta, response_headers) = match &resp {
                         AttemptResult::Buffered(resp) => {
-                            (resp.status(), resp.meta(), Some(resp.headers()))
+                            (resp.status, &resp.meta, Some(&resp.headers))
                         }
                         AttemptResult::Stream(resp) => (resp.status(), resp.meta(), Some(resp.headers())),
                         AttemptResult::Sse(resp) => (resp.status(), resp.meta(), Some(resp.headers())),
                         AttemptResult::Multipart(resp) => {
-                            (resp.status(), resp.meta(), Some(resp.headers()))
+                            (resp.status, &resp.meta, Some(&resp.headers))
                         }
                         AttemptResult::_Marker(_) => unreachable!(),
                     };
@@ -655,7 +655,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             _ => unreachable!(),
         };
         let boundary = crate::multipart_response::parse_response_boundary::<Fmt>(
-            resp.headers(),
+            &resp.headers,
             ctx.clone(),
         )?;
         if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
