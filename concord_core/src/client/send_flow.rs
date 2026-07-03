@@ -1,3 +1,79 @@
+pub(crate) trait AttemptResponse {
+    fn meta(&self) -> &RequestMeta;
+    fn status(&self) -> StatusCode;
+    fn headers(&self) -> &http::HeaderMap;
+}
+
+impl AttemptResponse for BuiltResponse {
+    fn meta(&self) -> &RequestMeta {
+        &self.meta
+    }
+
+    fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    fn headers(&self) -> &http::HeaderMap {
+        &self.headers
+    }
+}
+
+impl AttemptResponse for TransportResponse {
+    fn meta(&self) -> &RequestMeta {
+        &self.meta
+    }
+
+    fn status(&self) -> StatusCode {
+        self.status
+    }
+
+    fn headers(&self) -> &http::HeaderMap {
+        &self.headers
+    }
+}
+
+impl<M> AttemptResponse for crate::stream_response::StreamResponse<M> {
+    fn meta(&self) -> &RequestMeta {
+        self.meta()
+    }
+
+    fn status(&self) -> StatusCode {
+        self.status()
+    }
+
+    fn headers(&self) -> &http::HeaderMap {
+        self.headers()
+    }
+}
+
+impl<T> AttemptResponse for crate::multipart_response::MultipartStream<T> {
+    fn meta(&self) -> &RequestMeta {
+        self.meta()
+    }
+
+    fn status(&self) -> StatusCode {
+        self.status()
+    }
+
+    fn headers(&self) -> &http::HeaderMap {
+        self.headers()
+    }
+}
+
+impl<T> AttemptResponse for crate::sse::SseStream<T> {
+    fn meta(&self) -> &RequestMeta {
+        self.meta()
+    }
+
+    fn status(&self) -> StatusCode {
+        self.status()
+    }
+
+    fn headers(&self) -> &http::HeaderMap {
+        self.headers()
+    }
+}
+
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn run_post_response_hook(
         &self,
