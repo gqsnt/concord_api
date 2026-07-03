@@ -1,6 +1,5 @@
 use concord_core::advanced::{
-    EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
-    ProgressKey,
+    EndpointPagination, PageAdvance, PageApply, PageDecision, PageItems, ProgressKey,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -39,7 +38,7 @@ impl<Page> EndpointPagination<Page> for HeaderCursorPagination
 where
     Page: PageItems,
 {
-    fn apply(&mut self, _ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+    fn apply(&mut self, _ctx: PageApply<'_>) -> Result<(), ApiClientError> {
         if self.limit == 0 {
             return Err(ApiClientError::Pagination {
                 ctx: concord_core::advanced::ErrorContext {
@@ -49,9 +48,11 @@ where
                 msg: "custom pagination requires a non-zero page size".into(),
             });
         }
-        Ok(PageApplyResult {
-            expected_items_per_page: NonZeroUsize::new(self.limit as usize),
-        })
+        Ok(())
+    }
+
+    fn expected_items_per_page(&self) -> Option<NonZeroUsize> {
+        usize::try_from(self.limit).ok().and_then(NonZeroUsize::new)
     }
 
     fn advance(

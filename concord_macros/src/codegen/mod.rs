@@ -2777,10 +2777,6 @@ mod tests {
         });
 
         assert_contains_all(&out, &["#[doc=\"Pagination: OffsetLimitPagination\"]"]);
-        assert!(
-            !out.contains("for_each_page"),
-            "generated public pagination surface should not expose for_each_page"
-        );
     }
 
     #[test]

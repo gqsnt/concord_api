@@ -1,5 +1,5 @@
 use concord_core::advanced::{
-    EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
+    EndpointPagination, PageAdvance, PageApply, PageDecision, PageItems,
     ProgressKey,
 };
 use concord_core::prelude::*;
@@ -35,10 +35,12 @@ impl<Page> EndpointPagination<Page> for HeaderCursorPagination
 where
     Page: PageItems,
 {
-    fn apply(&mut self, _ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
-        Ok(PageApplyResult {
-            expected_items_per_page: NonZeroUsize::new(2),
-        })
+    fn apply(&mut self, _ctx: PageApply<'_>) -> Result<(), ApiClientError> {
+        Ok(())
+    }
+
+    fn expected_items_per_page(&self) -> Option<NonZeroUsize> {
+        NonZeroUsize::new(2)
     }
 
     fn advance(

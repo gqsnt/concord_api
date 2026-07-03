@@ -1,7 +1,7 @@
 use super::common::*;
 use concord_core::advanced::{
-    AuthPlacement, EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision,
-    PaginateBinding, PaginationRuntime, PaginationRuntimeAdapter, ProgressKey,
+    AuthPlacement, EndpointPagination, PageAdvance, PageApply, PageDecision, PaginateBinding,
+    PaginationRuntime, PaginationRuntimeAdapter, ProgressKey,
 };
 use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
@@ -86,7 +86,7 @@ struct HeaderBoundCustomPagination {
 }
 
 impl EndpointPagination<Vec<String>> for HeaderBoundCustomPagination {
-    fn apply(&mut self, _ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+    fn apply(&mut self, _ctx: PageApply<'_>) -> Result<(), ApiClientError> {
         if self.count == 0 {
             return Err(ApiClientError::Pagination {
                 ctx: concord_core::advanced::ErrorContext {
@@ -96,9 +96,11 @@ impl EndpointPagination<Vec<String>> for HeaderBoundCustomPagination {
                 msg: "custom pagination page size must be non-zero".into(),
             });
         }
-        Ok(PageApplyResult {
-            expected_items_per_page: NonZeroUsize::new(self.count as usize),
-        })
+        Ok(())
+    }
+
+    fn expected_items_per_page(&self) -> Option<NonZeroUsize> {
+        usize::try_from(self.count).ok().and_then(NonZeroUsize::new)
     }
 
     fn advance(
@@ -605,17 +607,21 @@ async fn pagination_runtime_loads_and_stores_endpoint_state() -> Result<(), ApiC
     );
 
     let mut endpoint = endpoint;
-    let applied =
-        <Runtime as PaginationRuntime<GeneratedHeaderBoundCustomEndpoint, Vec<String>>>::apply(
-            &mut runtime,
-            &mut endpoint,
-            PageApply {
-                endpoint: "HeaderBoundCustom",
-                page_index: 0,
-                ctx: &ctx,
-            },
-        )?;
-    assert_eq!(applied.expected_items_per_page, NonZeroUsize::new(2));
+    <Runtime as PaginationRuntime<GeneratedHeaderBoundCustomEndpoint, Vec<String>>>::apply(
+        &mut runtime,
+        &mut endpoint,
+        PageApply {
+            endpoint: "HeaderBoundCustom",
+            page_index: 0,
+            ctx: &ctx,
+        },
+    )?;
+    assert_eq!(
+        <Runtime as PaginationRuntime<GeneratedHeaderBoundCustomEndpoint, Vec<String>>>::expected_items_per_page(
+            &runtime
+        ),
+        NonZeroUsize::new(2)
+    );
     assert_eq!(endpoint.page, 1);
     assert_eq!(endpoint.count, 2);
     assert_eq!(store_calls.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -629,7 +635,7 @@ async fn pagination_runtime_loads_and_stores_endpoint_state() -> Result<(), ApiC
             PageAdvance {
                 endpoint: "HeaderBoundCustom",
                 page_index: 0,
-                received_items: 1,
+                item_count_hint: Some(1),
             },
         )?;
     assert_eq!(decision, PageDecision::Continue);
@@ -1164,7 +1170,7 @@ async fn cursor_string_pagination_runtime_preserves_empty_cursor() -> Result<(),
         PageAdvance {
             endpoint: "CursorItemsEndpoint",
             page_index: 0,
-            received_items: 1,
+            item_count_hint: Some(1),
         },
     )?;
     assert_eq!(decision, PageDecision::Continue);
@@ -1191,9 +1197,16 @@ async fn cursor_string_pagination_runtime_requires_runtime_support_when_missing(
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
-    let endpoint = NoHintItemsEndpoint {
+    let endpoint = ItemsEndpoint {
+        start: 0,
+        count: 2,
         policy: Default::default(),
-        ..Default::default()
+        pagination: PaginationVariant::Cursor {
+            cursor: Some("start".to_string()),
+            per_page: 2,
+            send_cursor_on_first: true,
+            stop_when_cursor_missing: true,
+        },
     };
 
     let err = client
@@ -2013,6 +2026,30 @@ async fn collect_cursor_empty_page_stops_even_with_next_cursor() -> Result<(), A
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
         }),
+        ..Default::default()
+    };
+
+    let items = client
+        .request(endpoint)
+        .paginate(PaginationTermination::take_pages(100))
+        .collect()
+        .await?;
+
+    assert!(items.is_empty());
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[tokio::test]
+
+async fn collect_no_hint_empty_page_stops_after_consumption() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = NoHintItemsEndpoint {
+        policy: Default::default(),
         ..Default::default()
     };
 

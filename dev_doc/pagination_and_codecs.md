@@ -58,7 +58,7 @@ Core runs pagination through `PaginationRuntime` and `PaginationRuntimeAdapter`.
 
 ## Runtime controller model
 
-Custom controllers receive bound endpoint fields through generated binding code and return `PageApplyResult`. Header mutation and query rendering happen through endpoint planning, not through pagination runtime request mutation. Custom controllers that request a known page size return it through `PageApplyResult::expected_items_per_page` during `apply()`. The value is per page request and starts as `None` for each page.
+Custom controllers receive bound endpoint fields through generated binding code and mutate their own pagination state during `apply()`. Header mutation and query rendering happen through endpoint planning, not through pagination runtime request mutation. Custom controllers that request a known page size report it through `EndpointPagination::expected_items_per_page()` during `apply()`. The value is per page request and starts as `None` for each page.
 
 `PageDecision` tells the runtime whether to continue, stop, or error.
 
@@ -75,7 +75,7 @@ The macro `paginate` block resolves controller field assignments. Built-in pagin
 Empty-page and short-page termination are runtime invariants, not
 controller-specific rules. The runtime obtains expected page size from built-in
 offset/page/cursor controllers (`limit` or `per_page`) or from custom
-`PageApplyResult::expected_items_per_page`. `PageItems` count hints are exact
+`EndpointPagination::expected_items_per_page()`. `PageItems` count hints are exact
 when present. An exact hint alone is enough for hinted empty-page stop,
 hard-item-cap overflow, and provable `TakeItems` completion before controller
 advance. Exact hint plus expected page size is required for generic short-page

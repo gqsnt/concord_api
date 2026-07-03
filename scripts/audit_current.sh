@@ -173,7 +173,7 @@ fail_if_match \
 
 require_match \
   "endpoint-state custom pagination API documented" \
-  "EndpointPaginationController|EndpointPaginationRuntimeAdapter|EndpointField|PageApplyResult|PageItems|HasNextCursor" \
+  "EndpointPaginationController|EndpointPaginationRuntimeAdapter|EndpointField|EndpointPagination::expected_items_per_page|PageItems|HasNextCursor" \
   docs/customization.md docs/pagination.md
 
 fail_if_match \

@@ -1,7 +1,6 @@
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
-    ProgressKey,
+    EndpointPagination, PageAdvance, PageApply, PageDecision, PageItems, ProgressKey,
 };
 use std::num::NonZeroUsize;
 
@@ -27,11 +26,16 @@ impl<Page> EndpointPagination<Page> for PagedPagination
 where
     Page: PageItems,
 {
-    fn apply(&mut self, ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
+    fn apply(&mut self, ctx: PageApply<'_>) -> Result<(), ApiClientError> {
         validate_paged_page(self.page, ctx.ctx)?;
-        Ok(PageApplyResult {
-            expected_items_per_page: Some(validate_paged_page_size(self.per_page, ctx.ctx)?),
-        })
+        validate_paged_page_size(self.per_page, ctx.ctx)?;
+        Ok(())
+    }
+
+    fn expected_items_per_page(&self) -> Option<NonZeroUsize> {
+        usize::try_from(self.per_page)
+            .ok()
+            .and_then(NonZeroUsize::new)
     }
 
     fn advance(

@@ -139,7 +139,7 @@ Assignment rules are shared across built-in and custom pagination controllers:
 
 ```rust
 use concord_core::advanced::{
-    EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
+    EndpointPagination, PageAdvance, PageApply, PageDecision, PageItems,
     ProgressKey,
 };
 use concord_core::prelude::ApiClientError;
@@ -158,7 +158,7 @@ where
     fn apply(
         &mut self,
         _ctx: PageApply<'_>,
-    ) -> Result<PageApplyResult, ApiClientError> {
+    ) -> Result<(), ApiClientError> {
         if self.count == 0 {
             return Err(ApiClientError::Pagination {
                 ctx: concord_core::advanced::ErrorContext {
@@ -168,9 +168,11 @@ where
                 msg: "custom pagination requires a non-zero page size".into(),
             });
         }
-        Ok(PageApplyResult {
-            expected_items_per_page: NonZeroUsize::new(self.count as usize),
-        })
+        Ok(())
+    }
+
+    fn expected_items_per_page(&self) -> Option<NonZeroUsize> {
+        usize::try_from(self.count).ok().and_then(NonZeroUsize::new)
     }
 
     fn advance(&mut self, page: &Page, _ctx: PageAdvance<'_>) -> Result<PageDecision, ApiClientError> {
@@ -212,7 +214,7 @@ Rules:
 
 - Built-in pagination and custom pagination both use `paginate Type { ... }`.
 - Custom controller types must implement `Default + EndpointPagination<Page>`.
-- `PageApplyResult::expected_items_per_page` tells the runtime how many items the current page requested. Set it during every `apply()` call that asks for a known page size.
+- `EndpointPagination::expected_items_per_page()` tells the runtime how many items the current page requested. Set it during every `apply()` call that asks for a known page size.
 - `PageItems::item_count_hint()` must be exact when present. Implement it whenever possible so runtime empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion can be decided before `advance()`.
 - With both an exact hint and an expected page size, the runtime also owns generic short-page stop and will not call `advance()` for terminal hinted pages.
 - Without an exact hint, `collect()` remains exact after consuming the page, but controller advance may already have run. Without an expected page size, Concord cannot generically detect a short page before `advance()`.

@@ -1,7 +1,6 @@
 use crate::error::{ApiClientError, ErrorContext};
 use crate::pagination::{
-    EndpointPagination, PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems,
-    ProgressKey,
+    EndpointPagination, PageAdvance, PageApply, PageDecision, PageItems, ProgressKey,
 };
 use std::num::NonZeroUsize;
 
@@ -55,14 +54,18 @@ impl<Page> EndpointPagination<Page> for CursorPagination<String>
 where
     Page: PageItems + HasNextCursor<Cursor = String>,
 {
-    fn apply(&mut self, ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError> {
-        let per_page = validate_per_page(self.per_page, "cursor", ctx.ctx)?;
+    fn apply(&mut self, ctx: PageApply<'_>) -> Result<(), ApiClientError> {
+        validate_per_page(self.per_page, "cursor", ctx.ctx)?;
         if ctx.page_index == 0 && !self.send_cursor_on_first {
             self.cursor = None;
         }
-        Ok(PageApplyResult {
-            expected_items_per_page: Some(per_page),
-        })
+        Ok(())
+    }
+
+    fn expected_items_per_page(&self) -> Option<NonZeroUsize> {
+        usize::try_from(self.per_page)
+            .ok()
+            .and_then(NonZeroUsize::new)
     }
 
     fn advance(

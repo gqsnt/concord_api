@@ -55,9 +55,9 @@ pub mod internal {
     #[doc(hidden)]
     pub use crate::pagination::{
         Control, CursorPagination, EndpointPagination, HasNextCursor, OffsetLimitPagination,
-        PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems, PagedPagination,
-        PaginateBinding, PaginationCaps, PaginationRuntime, PaginationRuntimeAdapter,
-        PaginationTermination, ProgressKey,
+        PageAdvance, PageApply, PageDecision, PageItems, PagedPagination, PaginateBinding,
+        PaginationCaps, PaginationRuntime, PaginationRuntimeAdapter, PaginationTermination,
+        ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
     pub use crate::record::{
@@ -127,9 +127,9 @@ pub mod advanced {
     pub use crate::multipart_response::{MultipartDecodePart, MultipartStream, RawResponsePart};
     pub use crate::pagination::{
         Control, CursorPagination, EndpointPagination, HasNextCursor, OffsetLimitPagination,
-        PageAdvance, PageApply, PageApplyResult, PageDecision, PageItems, PagedPagination,
-        PaginateBinding, PaginationCaps, PaginationRuntime, PaginationRuntimeAdapter,
-        PaginationTermination, ProgressKey,
+        PageAdvance, PageApply, PageDecision, PageItems, PagedPagination, PaginateBinding,
+        PaginationCaps, PaginationRuntime, PaginationRuntimeAdapter, PaginationTermination,
+        ProgressKey,
     };
     pub use crate::rate_limit::{
         DefaultRateLimitResponsePolicy, DefaultRateLimiter, GovernorRateLimiter, NoopRateLimiter,

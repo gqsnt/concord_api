@@ -166,15 +166,6 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     {
         PaginatedRequest::new(self, termination)
     }
-
-    #[inline]
-    pub fn pages(self, termination: PaginationTermination) -> PaginatedRequest<'a, Cx, E, T>
-    where
-        E: PaginatedEndpoint<Cx>,
-        E::Response: PageItems,
-    {
-        self.paginate(termination)
-    }
 }
 
 impl<'a, Cx, E, T, M> PendingRequest<'a, Cx, E, T>
@@ -358,7 +349,7 @@ where
             });
         }
 
-        let expected_items = runtime.apply(
+        runtime.apply(
             &mut pending.ep,
             PageApply {
                 endpoint: ctx.endpoint,
@@ -366,6 +357,7 @@ where
                 ctx: &ctx,
             },
         )?;
+        let expected_items = runtime.expected_items_per_page();
         let mut plan = pending.ep.plan(&pending.client.plan_context())?;
         plan.overrides.timeout = match pending.opts.timeout_override {
             TimeoutOverride::Inherit => plan.overrides.timeout,
@@ -383,7 +375,7 @@ where
             caps.termination,
             items_count,
             page_len_hint,
-            expected_items.expected_items_per_page,
+            expected_items,
             &ctx,
         )?;
         if let (PaginationTermination::HardItemCap(max_items), Some(new_total)) =
@@ -402,15 +394,17 @@ where
                     PageAdvance {
                         endpoint: ctx.endpoint,
                         page_index: page_index as u64,
-                        received_items: page_len_hint.unwrap_or(0),
+                        item_count_hint: page_len_hint,
                     },
                 )?
                 .into()
         };
         let items = <E::Response as PageItems>::into_items(page);
         let page_len = items.len();
-        let common_stop =
-            common_content_stop(page_len_hint, expected_items.expected_items_per_page);
+        if page_len == 0 {
+            return Ok(out);
+        }
+        let common_stop = common_content_stop(page_len_hint, expected_items);
         match caps.termination {
             PaginationTermination::HardItemCap(max_items) => {
                 let new_total = items_count.checked_add(page_len).ok_or_else(|| {

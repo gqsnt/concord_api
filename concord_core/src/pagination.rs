@@ -99,15 +99,10 @@ pub struct PageApply<'a> {
     pub ctx: &'a ErrorContext,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct PageApplyResult {
-    pub expected_items_per_page: Option<NonZeroUsize>,
-}
-
 pub struct PageAdvance<'a> {
     pub endpoint: &'a str,
     pub page_index: u64,
-    pub received_items: usize,
+    pub item_count_hint: Option<usize>,
 }
 
 /// Pagination runtime contract for stateful controllers.
@@ -120,7 +115,11 @@ pub trait EndpointPagination<Page>: Default + Send + Sync + 'static
 where
     Page: PageItems,
 {
-    fn apply(&mut self, ctx: PageApply<'_>) -> Result<PageApplyResult, ApiClientError>;
+    fn apply(&mut self, ctx: PageApply<'_>) -> Result<(), ApiClientError>;
+
+    fn expected_items_per_page(&self) -> Option<NonZeroUsize> {
+        None
+    }
 
     fn advance(
         &mut self,
@@ -151,11 +150,7 @@ where
 {
     fn init(&mut self, endpoint: &E, ctx: PageApply<'_>) -> Result<(), ApiClientError>;
 
-    fn apply(
-        &mut self,
-        endpoint: &mut E,
-        ctx: PageApply<'_>,
-    ) -> Result<PageApplyResult, ApiClientError>;
+    fn apply(&mut self, endpoint: &mut E, ctx: PageApply<'_>) -> Result<(), ApiClientError>;
 
     fn advance(
         &mut self,
@@ -164,6 +159,8 @@ where
         page: &Page,
         page_ctx: PageAdvance<'_>,
     ) -> Result<PageDecision, ApiClientError>;
+
+    fn expected_items_per_page(&self) -> Option<NonZeroUsize>;
 
     fn progress_key(&self) -> Option<ProgressKey>;
 }
@@ -196,11 +193,7 @@ where
         Ok(())
     }
 
-    fn apply(
-        &mut self,
-        endpoint: &mut E,
-        ctx: PageApply<'_>,
-    ) -> Result<PageApplyResult, ApiClientError> {
+    fn apply(&mut self, endpoint: &mut E, ctx: PageApply<'_>) -> Result<(), ApiClientError> {
         let pagination = self
             .pagination
             .as_mut()
@@ -208,9 +201,9 @@ where
                 ctx: ctx.ctx.clone(),
                 msg: "pagination runtime was used before initialization".into(),
             })?;
-        let result = pagination.apply(ctx)?;
+        pagination.apply(ctx)?;
         endpoint.store_pagination(pagination);
-        Ok(result)
+        Ok(())
     }
 
     fn advance(
@@ -236,6 +229,12 @@ where
         self.pagination
             .as_ref()
             .and_then(EndpointPagination::progress_key)
+    }
+
+    fn expected_items_per_page(&self) -> Option<NonZeroUsize> {
+        self.pagination
+            .as_ref()
+            .and_then(EndpointPagination::expected_items_per_page)
     }
 }
 

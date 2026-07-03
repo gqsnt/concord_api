@@ -465,7 +465,9 @@ impl PaginatedEndpoint<TestCx> for NoHintItemsEndpoint {
     fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
-        None
+        Some(Box::new(
+            PaginationRuntimeAdapter::<OffsetLimitPagination>::new(),
+        ))
     }
 }
 
