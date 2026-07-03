@@ -1,12 +1,6 @@
 use crate::client::{ApiClient, ClientContext};
-use crate::codec::ContentType;
 use crate::codec::ResponseCodec;
 use crate::error::ApiClientError;
-use crate::multipart::MultipartFormat;
-use crate::multipart_response::{MultipartDecodePart, MultipartStream};
-use crate::record::{RecordFormat, RecordStream};
-use crate::sse::{SseCodec, SseStream};
-use crate::stream_response::StreamResponse;
 use crate::transport::DecodedResponse;
 use crate::transport::Transport;
 use std::future::Future;
@@ -157,99 +151,5 @@ where
         Some(Box::new(crate::pagination::PaginationRuntimeAdapter::<
             Self::Pagination,
         >::new()))
-    }
-}
-
-/// Legacy compatibility marker for endpoints whose primary response is a stream.
-///
-/// Generated endpoints no longer depend on this trait. It remains only for
-/// compatibility with older direct helper routing.
-pub trait StreamResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-    type Media: ContentType;
-
-    fn execute_stream<'a, T>(
-        client: &'a ApiClient<Cx, T>,
-        plan: RequestPlan,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<StreamResponse<Self::Media>, ApiClientError>> + Send + 'a>,
-    >
-    where
-        T: Transport + 'a,
-    {
-        Box::pin(async move { client.execute_plan_stream::<Self::Media>(plan).await })
-    }
-}
-
-/// Legacy compatibility marker for endpoints whose primary response is a
-/// record stream.
-///
-/// Generated endpoints no longer depend on this trait. It remains only for
-/// compatibility with older direct helper routing.
-pub trait RecordResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-    type Item: Send + 'static;
-    type Format: RecordFormat<Self::Item>;
-
-    fn execute_records<'a, T>(
-        client: &'a ApiClient<Cx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<RecordStream<Self::Item>, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-    {
-        Box::pin(async move {
-            client
-                .execute_plan_records::<Self::Item, Self::Format>(plan)
-                .await
-        })
-    }
-}
-
-/// Legacy compatibility marker for endpoints whose primary response is
-/// multipart.
-///
-/// Generated endpoints no longer depend on this trait. It remains only for
-/// compatibility with older direct helper routing.
-pub trait MultipartResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-    type Part: MultipartDecodePart<Self::Format>;
-    type Format: MultipartFormat;
-
-    fn execute_multipart<'a, T>(
-        client: &'a ApiClient<Cx, T>,
-        plan: RequestPlan,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<MultipartStream<Self::Part>, ApiClientError>> + Send + 'a>,
-    >
-    where
-        T: Transport + 'a,
-    {
-        Box::pin(async move {
-            client
-                .execute_plan_multipart::<Self::Part, Self::Format>(plan)
-                .await
-        })
-    }
-}
-
-/// Legacy compatibility marker for endpoints whose primary response is SSE.
-///
-/// Generated endpoints no longer depend on this trait. It remains only for
-/// compatibility with older direct helper routing.
-pub trait SseResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-    type Event: Send + 'static;
-    type Codec: SseCodec<Self::Event>;
-
-    fn execute_sse<'a, T>(
-        client: &'a ApiClient<Cx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<SseStream<Self::Event>, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-        Self::Event: Send + 'static,
-    {
-        Box::pin(async move {
-            client
-                .execute_plan_sse::<Self::Event, Self::Codec>(plan)
-                .await
-        })
     }
 }

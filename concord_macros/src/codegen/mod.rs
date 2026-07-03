@@ -259,22 +259,6 @@ mod tests {
         .concat()
     }
 
-    fn legacy_stream_marker_trait() -> String {
-        "StreamResponseEndpoint".to_string()
-    }
-
-    fn legacy_records_marker_trait() -> String {
-        "RecordResponseEndpoint".to_string()
-    }
-
-    fn legacy_multipart_marker_trait() -> String {
-        "MultipartResponseEndpoint".to_string()
-    }
-
-    fn legacy_sse_marker_trait() -> String {
-        "SseResponseEndpoint".to_string()
-    }
-
     fn generated_doc_attrs(expanded: &str) -> Vec<&str> {
         let mut docs = Vec::new();
         let mut rest = expanded;
@@ -542,7 +526,7 @@ mod tests {
                 &legacy_request_body_plan_raw_stream(),
                 &legacy_request_args_with_stream_body(),
                 &legacy_stream_exec_call(),
-                &legacy_stream_marker_trait(),
+                &["Stream", "ResponseEndpoint"].concat(),
             ],
         );
     }
@@ -641,7 +625,7 @@ mod tests {
                 &legacy_request_body_plan_records(),
                 &legacy_request_args_with_record_body(),
                 &legacy_records_exec_call(),
-                &legacy_records_marker_trait(),
+                &["Record", "ResponseEndpoint"].concat(),
             ],
         );
     }
@@ -680,7 +664,7 @@ mod tests {
                 &legacy_request_args_with_multipart_body(),
                 &legacy_content_type_check_name(),
                 &legacy_multipart_exec_call(),
-                &legacy_multipart_marker_trait(),
+                &["Multipart", "ResponseEndpoint"].concat(),
             ],
         );
     }
@@ -708,7 +692,7 @@ mod tests {
                 "ResponseEntity>::execute",
             ],
         );
-        assert_not_contains_all(&expanded, &[&legacy_sse_marker_trait()]);
+        assert_not_contains_all(&expanded, &[&["Sse", "ResponseEndpoint"].concat()]);
     }
 
     #[test]
@@ -734,7 +718,7 @@ mod tests {
                 "ResponseEntity>::execute",
             ],
         );
-        assert_not_contains_all(&expanded, &[&legacy_sse_marker_trait()]);
+        assert_not_contains_all(&expanded, &[&["Sse", "ResponseEndpoint"].concat()]);
     }
 
     #[test]

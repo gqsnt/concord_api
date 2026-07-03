@@ -192,6 +192,13 @@ if "${RG[@]}" 'StreamResponseEndpoint|RecordResponseEndpoint|MultipartResponseEn
   fail_with_matches "concord_macros codegen must not reference legacy streaming marker traits." "$macro_stream_marker_refs"
 fi
 
+section "legacy streaming trait fence"
+legacy_streaming_traits_refs="$tmpdir/legacy_streaming_traits.refs"
+if "${RG[@]}" 'StreamResponseEndpoint|RecordResponseEndpoint|MultipartResponseEndpoint|SseResponseEndpoint|StreamResponseKind|RecordResponseKind|MultipartResponseKind|SseResponseKind' \
+  concord_core/src concord_macros/src/codegen docs dev_doc concord_core/tests concord_macros/tests >"$legacy_streaming_traits_refs" 2>/dev/null; then
+  fail_with_matches "legacy streaming marker traits and response-kind routing traits must not reappear in production code, docs, or tests." "$legacy_streaming_traits_refs"
+fi
+
 section "codegen panic hygiene"
 panic_refs="$tmpdir/panic.refs"
 if "${RG[@]}" 'expect\("validated|expect\("valid|unreachable!|\.unwrap\(\)' concord_macros/src/codegen >"$panic_refs" 2>/dev/null; then

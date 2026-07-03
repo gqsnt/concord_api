@@ -20,24 +20,6 @@ use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::time::Duration;
 
-mod response_kind {
-    pub trait Sealed {}
-}
-
-pub trait StreamResponseKind: response_kind::Sealed {}
-pub trait RecordResponseKind: response_kind::Sealed {}
-pub trait MultipartResponseKind: response_kind::Sealed {}
-pub trait SseResponseKind: response_kind::Sealed {}
-
-impl<M> response_kind::Sealed for StreamResponse<M> {}
-impl<M> StreamResponseKind for StreamResponse<M> {}
-impl<T> response_kind::Sealed for RecordStream<T> {}
-impl<T> RecordResponseKind for RecordStream<T> {}
-impl<T> response_kind::Sealed for MultipartStream<T> {}
-impl<T> MultipartResponseKind for MultipartStream<T> {}
-impl<T> response_kind::Sealed for SseStream<T> {}
-impl<T> SseResponseKind for SseStream<T> {}
-
 /// Options runtime partagées entre requête simple et pagination.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RequestOptions {
@@ -190,72 +172,60 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     }
 }
 
-impl<'a, Cx, E, T> PendingRequest<'a, Cx, E, T>
+impl<'a, Cx, E, T, M> PendingRequest<'a, Cx, E, T>
 where
     Cx: ClientContext + 'a,
-    E: Endpoint<Cx> + 'a,
+    E: Endpoint<Cx, Response = StreamResponse<M>> + 'a,
     T: crate::transport::Transport + 'a,
+    M: 'a,
 {
     #[inline]
-    pub async fn execute_stream<R>(self) -> Result<R, ApiClientError>
-    where
-        E: Endpoint<Cx, Response = R> + 'a,
-        R: StreamResponseKind + 'a,
-    {
+    pub async fn execute_stream(self) -> Result<StreamResponse<M>, ApiClientError> {
         let client = self.client;
         let plan = self.request_plan()?;
         E::execute(client, plan).await
     }
 }
 
-impl<'a, Cx, E, T> PendingRequest<'a, Cx, E, T>
+impl<'a, Cx, E, T, Item> PendingRequest<'a, Cx, E, T>
 where
     Cx: ClientContext + 'a,
-    E: Endpoint<Cx> + 'a,
+    E: Endpoint<Cx, Response = RecordStream<Item>> + 'a,
     T: crate::transport::Transport + 'a,
+    Item: 'a,
 {
     #[inline]
-    pub async fn execute_records<R>(self) -> Result<R, ApiClientError>
-    where
-        E: Endpoint<Cx, Response = R> + 'a,
-        R: RecordResponseKind + 'a,
-    {
+    pub async fn execute_records(self) -> Result<RecordStream<Item>, ApiClientError> {
         let client = self.client;
         let plan = self.request_plan()?;
         E::execute(client, plan).await
     }
 }
 
-impl<'a, Cx, E, T> PendingRequest<'a, Cx, E, T>
+impl<'a, Cx, E, T, Part> PendingRequest<'a, Cx, E, T>
 where
     Cx: ClientContext + 'a,
-    E: Endpoint<Cx> + 'a,
+    E: Endpoint<Cx, Response = MultipartStream<Part>> + 'a,
     T: crate::transport::Transport + 'a,
+    Part: 'a,
 {
     #[inline]
-    pub async fn execute_multipart<R>(self) -> Result<R, ApiClientError>
-    where
-        E: Endpoint<Cx, Response = R> + 'a,
-        R: MultipartResponseKind + 'a,
-    {
+    pub async fn execute_multipart(self) -> Result<MultipartStream<Part>, ApiClientError> {
         let client = self.client;
         let plan = self.request_plan()?;
         E::execute(client, plan).await
     }
 }
 
-impl<'a, Cx, E, T> PendingRequest<'a, Cx, E, T>
+impl<'a, Cx, E, T, Event> PendingRequest<'a, Cx, E, T>
 where
     Cx: ClientContext + 'a,
-    E: Endpoint<Cx> + 'a,
+    E: Endpoint<Cx, Response = SseStream<Event>> + 'a,
     T: crate::transport::Transport + 'a,
+    Event: 'a,
 {
     #[inline]
-    pub async fn execute_sse<R>(self) -> Result<R, ApiClientError>
-    where
-        E: Endpoint<Cx, Response = R> + 'a,
-        R: SseResponseKind + 'a,
-    {
+    pub async fn execute_sse(self) -> Result<SseStream<Event>, ApiClientError> {
         let client = self.client;
         let plan = self.request_plan()?;
         E::execute(client, plan).await

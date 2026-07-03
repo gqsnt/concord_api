@@ -37,9 +37,8 @@ pub mod internal {
     };
     pub use crate::endpoint::{
         BodyPlan, ClientPlanContext, Decoded, EndpointMeta, EndpointPlan, Mapped, MappedResp,
-        MultipartResponseEndpoint, PaginatedEndpoint, PaginationMarker, RecordResponseEndpoint,
-        RequestArgs, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute, ResponsePlan,
-        ResponseSpec, SseResponseEndpoint, StreamResponseEndpoint, Transform, TransformResp,
+        PaginatedEndpoint, PaginationMarker, RequestArgs, RequestOverrides, RequestPlan,
+        RequestPlanView, ResolvedRoute, ResponsePlan, ResponseSpec, Transform, TransformResp,
     };
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MappedResponse, MultipartRequest,
@@ -75,10 +74,7 @@ pub mod prelude {
     pub use crate::codec::json::Json;
     pub use crate::codec::{ContentType, NoContent, text::Text};
     pub use crate::debug::DebugLevel;
-    pub use crate::endpoint::{
-        Endpoint, MultipartResponseEndpoint, PaginatedEndpoint, RecordResponseEndpoint,
-        SseResponseEndpoint, StreamResponseEndpoint,
-    };
+    pub use crate::endpoint::{Endpoint, PaginatedEndpoint};
     pub use crate::error::{ApiClientError, ErrorCategory};
     pub use crate::pagination::{
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
@@ -113,10 +109,6 @@ pub mod advanced {
         ResponseCodec,
     };
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
-    pub use crate::endpoint::{
-        MultipartResponseEndpoint, RecordResponseEndpoint, SseResponseEndpoint,
-        StreamResponseEndpoint,
-    };
     pub use crate::error::{ErrorContext, FxError};
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MappedResponse, MultipartRequest,

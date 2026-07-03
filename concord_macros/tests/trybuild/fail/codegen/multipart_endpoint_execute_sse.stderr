@@ -1,59 +1,15 @@
-error[E0277]: the trait bound `MultipartStream<concord_core::internal::RawResponsePart>: concord_core::request::SseResponseKind` is not satisfied
+error[E0599]: the method `execute_sse` exists for struct `PendingRequest<'_, MultipartEndpointExecuteSseApiCx, EpDownloadHd3386a2ef42e80b9, ReqwestTransport>`, but its trait bounds were not satisfied
   --> tests/trybuild/fail/codegen/multipart_endpoint_execute_sse.rs:16:28
    |
-16 |     let _ = api.download().execute_sse().await.unwrap();
-   |                            ^^^^^^^^^^^ the trait `concord_core::request::SseResponseKind` is not implemented for `MultipartStream<concord_core::internal::RawResponsePart>`
-   |
-help: the trait `concord_core::request::SseResponseKind` is implemented for `SseStream<T>`
-  --> $WORKSPACE/concord_core/src/request.rs
-   |
-   | impl<T> SseResponseKind for SseStream<T> {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
-  --> $WORKSPACE/concord_core/src/request.rs
-   |
-   |     pub async fn execute_sse<R>(self) -> Result<R, ApiClientError>
-   |                  ----------- required by a bound in this associated function
+ 5 | / api! {
+ 6 | |     client MultipartEndpointExecuteSseApi {
+ 7 | |         base "https://example.com"
+...  |
+10 | |     GET Download
+   | |________________- doesn't satisfy `<_ as Endpoint<MultipartEndpointExecuteSseApiCx>>::Response = SseStream<_>`
 ...
-   |         R: SseResponseKind + 'a,
-   |            ^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
-
-error[E0277]: the trait bound `MultipartStream<concord_core::internal::RawResponsePart>: concord_core::request::SseResponseKind` is not satisfied
-  --> tests/trybuild/fail/codegen/multipart_endpoint_execute_sse.rs:16:13
+16 |       let _ = api.download().execute_sse().await.unwrap();
+   |                              ^^^^^^^^^^^
    |
-16 |     let _ = api.download().execute_sse().await.unwrap();
-   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `concord_core::request::SseResponseKind` is not implemented for `MultipartStream<concord_core::internal::RawResponsePart>`
-   |
-help: the trait `concord_core::request::SseResponseKind` is implemented for `SseStream<T>`
-  --> $WORKSPACE/concord_core/src/request.rs
-   |
-   | impl<T> SseResponseKind for SseStream<T> {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
-  --> $WORKSPACE/concord_core/src/request.rs
-   |
-   |     pub async fn execute_sse<R>(self) -> Result<R, ApiClientError>
-   |                  ----------- required by a bound in this associated function
-...
-   |         R: SseResponseKind + 'a,
-   |            ^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
-
-error[E0277]: the trait bound `MultipartStream<concord_core::internal::RawResponsePart>: concord_core::request::SseResponseKind` is not satisfied
-  --> tests/trybuild/fail/codegen/multipart_endpoint_execute_sse.rs:16:42
-   |
-16 |     let _ = api.download().execute_sse().await.unwrap();
-   |                                          ^^^^^ the trait `concord_core::request::SseResponseKind` is not implemented for `MultipartStream<concord_core::internal::RawResponsePart>`
-   |
-help: the trait `concord_core::request::SseResponseKind` is implemented for `SseStream<T>`
-  --> $WORKSPACE/concord_core/src/request.rs
-   |
-   | impl<T> SseResponseKind for SseStream<T> {}
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
-  --> $WORKSPACE/concord_core/src/request.rs
-   |
-   |     pub async fn execute_sse<R>(self) -> Result<R, ApiClientError>
-   |                  ----------- required by a bound in this associated function
-...
-   |         R: SseResponseKind + 'a,
-   |            ^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
+   = note: the following trait bounds were not satisfied:
+           `<EpDownloadHd3386a2ef42e80b9 as concord_core::prelude::Endpoint<MultipartEndpointExecuteSseApiCx>>::Response = SseStream<_>`

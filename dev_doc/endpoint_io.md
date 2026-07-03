@@ -45,6 +45,7 @@ PR52 introduces the new core adapter contracts beside the current family-enum sy
 - PR57 migrated generated unmapped streaming response execution to `ResponseEntity::execute`. Streaming adapters still delegate to the existing core `execute_plan_*` functions internally, and mapped buffered responses remain on the older generated path.
 - PR58 migrated mapped buffered responses to `MappedResponse<Base, Transform>`, so generated response planning and execution now flow through `ResponseEntity` for mapped and unmapped endpoints. Core legacy execution helpers remain as adapter internals.
 - PR59 removed generated streaming marker-trait dependency. Pending-request streaming helpers now route through endpoint execution / response-entity execution, while core `execute_plan_*` helpers remain as adapter internals.
+- PR60 removed the legacy streaming response marker traits and the temporary response-kind routing traits. Pending-request streaming helpers are now available through concrete endpoint response-type bounds and still execute through `E::execute(...)`.
 
 ## Endpoint I/O Families
 
