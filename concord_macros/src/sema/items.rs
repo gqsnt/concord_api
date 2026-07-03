@@ -305,6 +305,7 @@ fn response_entity_plan_ir(
                 adapter_ty: syn::parse_quote!(::concord_core::advanced::BufferedResponse<#marker>),
                 public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
                 decoded_value_ty: Some(io.value_ty.clone()),
+                mapped: map.is_some(),
                 doc: IoDocIr {
                     summary: format!(
                         "Buffered response decoded by {}.",
@@ -323,6 +324,7 @@ fn response_entity_plan_ir(
             adapter_ty: syn::parse_quote!(::concord_core::advanced::BytesResponse),
             public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
             decoded_value_ty: Some(syn::parse_quote!(::bytes::Bytes)),
+            mapped: map.is_some(),
             doc: IoDocIr {
                 summary: "Buffered bytes response.".to_string(),
             },
@@ -337,6 +339,7 @@ fn response_entity_plan_ir(
             adapter_ty: syn::parse_quote!(::concord_core::advanced::NoContentResponse),
             public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
             decoded_value_ty: None,
+            mapped: false,
             doc: IoDocIr {
                 summary: "No response body.".to_string(),
             },
@@ -351,6 +354,7 @@ fn response_entity_plan_ir(
             adapter_ty: syn::parse_quote!(::concord_core::advanced::RawStreamResponse<#media_ty>),
             public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
             decoded_value_ty: Some(media_ty.clone()),
+            mapped: false,
             doc: IoDocIr {
                 summary: "Streaming response body.".to_string(),
             },
@@ -365,6 +369,7 @@ fn response_entity_plan_ir(
             adapter_ty: syn::parse_quote!(::concord_core::advanced::RecordResponse<#item_ty, #format_ty>),
             public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
             decoded_value_ty: Some(item_ty.clone()),
+            mapped: false,
             doc: IoDocIr {
                 summary: "Record-streaming response body.".to_string(),
             },
@@ -379,6 +384,7 @@ fn response_entity_plan_ir(
             adapter_ty: syn::parse_quote!(::concord_core::advanced::MultipartResponse<#part_ty, #format_ty>),
             public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
             decoded_value_ty: Some(part_ty.clone()),
+            mapped: false,
             doc: IoDocIr {
                 summary: "Multipart response body.".to_string(),
             },
@@ -393,6 +399,7 @@ fn response_entity_plan_ir(
             adapter_ty: syn::parse_quote!(::concord_core::advanced::SseResponse<#event_ty, #codec_ty>),
             public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
             decoded_value_ty: Some(event_ty.clone()),
+            mapped: false,
             doc: IoDocIr {
                 summary: "Server-sent events response.".to_string(),
             },

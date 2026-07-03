@@ -1340,7 +1340,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_response_snapshot_contains_decode_and_body_plan() {
+    fn generated_mapped_response_uses_response_entity_transform() {
         let out = expanded(quote! {
             client ResponsePlanApi {
                 base "https://example.com"
@@ -1358,25 +1358,26 @@ mod tests {
             &out,
             &[
                 "type Response = AccessToken",
-                "fn __decode_",
-                "< Json < LoginResponse > as :: concord_core :: advanced :: ResponseCodec > :: decode",
-                "let r : LoginResponse = decoded",
+                "MappedResponse",
+                "ResponseTransform",
+                "ResponseEntity",
+                "ResponseEntity>::plan",
+                "ResponseEntity>::execute",
+                "let r : LoginResponse = input",
                 "let value : AccessToken = (AccessToken :: new (r . access_token))",
                 "RequestEntity",
                 "EncodedRequest",
                 "prepare(",
                 "__prepared_request_entity",
-                "ResponsePlan",
-                "decode : __decode_",
             ],
         );
         assert_not_contains_all(
             &out,
             &[
-                "ResponseEntity",
-                "BufferedResponse",
-                "BytesResponse",
-                "NoContentResponse",
+                "ResponsePlan {",
+                "ResponseCodec>::try_accept()",
+                "ResponseCodec>::decode",
+                "decode : __decode_",
                 "BodyPlan :: Encoded",
                 "BodyCodec>::encode",
             ],
@@ -1438,6 +1439,7 @@ mod tests {
                 "BytesResponse",
                 "__response_entity_plan",
                 "response: __response_plan",
+                "ResponseEntity>::execute",
                 "NoRequestBody",
             ],
         );
@@ -1450,6 +1452,47 @@ mod tests {
                 "decode : __decode_",
                 "no_content :",
                 "format :",
+            ],
+        );
+    }
+
+    #[test]
+    fn generated_mapped_bytes_response_uses_mapped_response_entity() {
+        let out = expanded(quote! {
+            client BytesMappedEntityApi {
+                base "https://example.com"
+            }
+
+            GET Download
+                path ["download"]
+                -> Bytes
+                map usize {
+                    r.len()
+                }
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "MappedResponse",
+                "ResponseTransform",
+                "BytesResponse",
+                "ResponseEntity",
+                "ResponseEntity>::plan",
+                "ResponseEntity>::execute",
+                "let r : :: bytes :: Bytes = input",
+                "let value : usize = (r . len ())",
+            ],
+        );
+        assert_not_contains_all(
+            &out,
+            &[
+                "ResponsePlan {",
+                "ResponseCodec>::try_accept()",
+                "ResponseCodec>::decode",
+                "decode : __decode_",
+                "BodyPlan :: Encoded",
+                "BodyCodec>::encode",
             ],
         );
     }
@@ -1473,6 +1516,7 @@ mod tests {
                 "NoContentResponse",
                 "__response_entity_plan",
                 "response: __response_plan",
+                "ResponseEntity>::execute",
                 "NoRequestBody",
             ],
         );

@@ -113,6 +113,7 @@ pub struct ResponseEntityPlanIr {
     pub adapter_ty: Type,
     pub public_output_ty: Type,
     pub decoded_value_ty: Option<Type>,
+    pub mapped: bool,
     pub doc: IoDocIr,
     pub capabilities: ResponseIoCapabilities,
 }

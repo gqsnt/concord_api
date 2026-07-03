@@ -120,43 +120,11 @@ fn emit_endpoint_def(
         init_parts.push(quote! { body: ::std::sync::Mutex::new(::core::option::Option::Some(body)) });
     }
 
-    let response_dec_ty;
-    let decoded_ty_ty;
-    match ep.response_io() {
-        ResolvedResponseBodyIo::BufferedCodec(io) => {
-            response_dec_ty = io.marker.clone();
-            decoded_ty_ty = io.value_ty.clone();
-        }
-        ResolvedResponseBodyIo::BufferedBytes => {
-            response_dec_ty = syn::parse_quote!(::bytes::Bytes);
-            decoded_ty_ty = syn::parse_quote!(::bytes::Bytes);
-        }
-        ResolvedResponseBodyIo::NoContent => {
-            response_dec_ty = syn::parse_quote!(());
-            decoded_ty_ty = syn::parse_quote!(());
-        }
-        ResolvedResponseBodyIo::RawStream { media_ty } => {
-            response_dec_ty = media_ty.clone();
-            decoded_ty_ty = media_ty.clone();
-        }
-        ResolvedResponseBodyIo::Records { item_ty, .. } => {
-            response_dec_ty = item_ty.clone();
-            decoded_ty_ty = item_ty.clone();
-        }
-        ResolvedResponseBodyIo::Multipart { part_ty, .. } => {
-            response_dec_ty = part_ty.clone();
-            decoded_ty_ty = part_ty.clone();
-        }
-        ResolvedResponseBodyIo::Sse { event_ty, .. } => {
-            response_dec_ty = event_ty.clone();
-            decoded_ty_ty = event_ty.clone();
-        }
-    }
-    let response_dec = &response_dec_ty;
-    let decoded_ty = &decoded_ty_ty;
     let final_response_ty = endpoint_response_output_ty(ep);
-    let (response_plan_setup, response_plan_expr, response_decode_fn, response_plan_accept, response_plan_no_content) =
-        endpoint_response_plan_tokens(ep, ty_name, response_dec, decoded_ty);
+    let response_transform_impl = endpoint_response_transform_impl(ep, ty_name);
+    let response_plan_setup = endpoint_response_plan_tokens(ep, ty_name);
+    let response_plan_accept = quote! { __response_accept };
+    let response_plan_no_content = quote! { __response_no_content };
     let idempotent = matches!(
         method.to_string().as_str(),
         "GET" | "HEAD" | "PUT" | "DELETE" | "OPTIONS"
@@ -175,7 +143,7 @@ fn emit_endpoint_def(
         Ok(body_plan) => body_plan,
         Err(err) => return err,
     };
-    let execute_override = endpoint_execute_override(ep, cx_ty);
+    let execute_override = endpoint_execute_override(ep, ty_name, cx_ty);
     let response_marker_impl = endpoint_response_marker_impl(ep, ty_name, cx_ty);
 
     let paginate_binding_impl = emit_paginate_binding_impl(ep, ty_name);
@@ -268,7 +236,7 @@ fn emit_endpoint_def(
             #( #setters_ts )*
         }
 
-        #response_decode_fn
+        #response_transform_impl
 
         #paginate_binding_impl
         #response_marker_impl
@@ -302,7 +270,7 @@ fn emit_endpoint_def(
                         route: __resolved_route,
                         policy: __resolved_policy,
                         body: __body_plan,
-                        response: #response_plan_expr,
+                        response: __response_plan,
                         pagination: __pagination_plan,
                     },
                     args: __request_args,
@@ -585,126 +553,64 @@ fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
     quote! { #response_ty }
 }
 
-fn endpoint_response_accept_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
-    match ep.response_io() {
-        ResolvedResponseBodyIo::NoContent => quote! { ::core::option::Option::None },
-        ResolvedResponseBodyIo::BufferedBytes => quote! { ::core::option::Option::None },
-        ResolvedResponseBodyIo::Multipart { format_ty, .. } => quote! {
-            ::core::option::Option::Some(
-                <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
-            )
-        },
-        ResolvedResponseBodyIo::Sse { .. } => quote! {
-            ::core::option::Option::Some(
-                <::concord_core::advanced::EventStream as ::concord_core::advanced::ContentType>::try_header_value()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
-            )
-        },
-        ResolvedResponseBodyIo::Records { format_ty, .. } => quote! {
-            ::core::option::Option::Some(
-                <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
-            )
-        },
-        ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
-            ::core::option::Option::Some(
-                <#media_ty as ::concord_core::advanced::ContentType>::try_header_value()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
-            )
-        },
-        _ => quote! {
-            <#response_dec as ::concord_core::advanced::ResponseCodec>::try_accept()
-                .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?
-        },
-    }
-}
-
-fn endpoint_response_no_content_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
-    match ep.response_io() {
-        ResolvedResponseBodyIo::NoContent => quote! { true },
-        ResolvedResponseBodyIo::BufferedBytes => quote! { false },
-        ResolvedResponseBodyIo::RawStream { .. }
-        | ResolvedResponseBodyIo::Records { .. }
-        | ResolvedResponseBodyIo::Multipart { .. }
-        | ResolvedResponseBodyIo::Sse { .. } => {
-            quote! { false }
-        }
-        _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::is_no_content() },
-    }
-}
-
-fn endpoint_response_format_tokens(ep: &ResolvedEndpoint, response_dec: &syn::Type) -> TokenStream2 {
-    match ep.response_io() {
-        ResolvedResponseBodyIo::NoContent => quote! { ::concord_core::internal::Format::Text },
-        ResolvedResponseBodyIo::BufferedBytes => quote! { ::concord_core::internal::Format::Binary },
-        ResolvedResponseBodyIo::Multipart { .. } => quote! { ::concord_core::internal::Format::Text },
-        ResolvedResponseBodyIo::RawStream { .. } => quote! { ::concord_core::internal::Format::Binary },
-        ResolvedResponseBodyIo::Records { .. } => quote! { ::concord_core::internal::Format::Text },
-        ResolvedResponseBodyIo::Sse { .. } => quote! { ::concord_core::internal::Format::Text },
-        _ => quote! { <#response_dec as ::concord_core::advanced::ResponseCodec>::format() },
-    }
-}
-
-fn endpoint_response_plan_tokens(
-    ep: &ResolvedEndpoint,
-    ty_name: &Ident,
-    response_dec: &syn::Type,
-    decoded_ty: &syn::Type,
-) -> (
-    TokenStream2,
-    TokenStream2,
-    TokenStream2,
-    TokenStream2,
-    TokenStream2,
-) {
-    let response_entity_adapter_ty = &ep.io.response_entity.adapter_ty;
-    let decode_fn = emit_helpers::ident(&format!("__decode_{ty_name}"), Span::call_site());
-    let use_response_entity_plan = ep.map.is_none();
-
-    if use_response_entity_plan {
-        let response_plan_setup = quote! {
-            let __response_entity_plan = <#response_entity_adapter_ty as ::concord_core::advanced::ResponseEntity>::plan(ctx_err.clone())?;
-            let __response_plan = __response_entity_plan.response_plan.clone();
-            let __response_accept = __response_plan.accept.clone();
-            let __response_no_content = __response_plan.no_content;
-        };
-        return (
-            response_plan_setup,
-            quote! { __response_plan },
-            quote! {},
-            quote! { __response_accept },
-            quote! { __response_no_content },
-        );
-    }
-
-    let response_decode_fn = endpoint_response_decode_fn(ep, ty_name, response_dec, decoded_ty);
-    let response_plan_accept = endpoint_response_accept_tokens(ep, response_dec);
-    let response_plan_no_content = endpoint_response_no_content_tokens(ep, response_dec);
-    let response_plan_format = endpoint_response_format_tokens(ep, response_dec);
-
-    (
-        quote! {},
+fn endpoint_response_adapter_ty(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenStream2 {
+    let base_adapter_ty = &ep.io.response_entity.adapter_ty;
+    if ep.io.response_entity.mapped {
+        let transform_ty = emit_helpers::ident(&format!("__Map{ty_name}"), Span::call_site());
         quote! {
-            ::concord_core::internal::ResponsePlan {
-                accept: #response_plan_accept,
-                no_content: #response_plan_no_content,
-                format: #response_plan_format,
-                decode: #decode_fn,
-            }
-        },
-        response_decode_fn,
-        response_plan_accept,
-        response_plan_no_content,
-    )
+            ::concord_core::advanced::MappedResponse<#base_adapter_ty, #transform_ty>
+        }
+    } else {
+        quote! { #base_adapter_ty }
+    }
 }
 
-fn endpoint_execute_override(ep: &ResolvedEndpoint, cx_ty: &Ident) -> TokenStream2 {
-    if ep.map.is_some() {
+fn endpoint_response_transform_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenStream2 {
+    let Some(map) = ep.map.as_ref() else {
         return quote! {};
-    }
+    };
 
-    let response_entity_adapter_ty = &ep.io.response_entity.adapter_ty;
+    let transform_ty = emit_helpers::ident(&format!("__Map{ty_name}"), Span::call_site());
+    let decoded_ty = match ep.io.response_entity.decoded_value_ty.as_ref() {
+        Some(ty) => ty,
+        None => {
+            return quote! {
+                compile_error!("mapped response is missing a decoded value type in resolved IR");
+            };
+        }
+    };
+    let out_ty = &ep.io.response_entity.public_output_ty;
+    let body = &map.body;
+
+    quote! {
+        struct #transform_ty;
+
+        impl ::concord_core::advanced::ResponseTransform<#decoded_ty> for #transform_ty {
+            type Output = #out_ty;
+
+            fn transform(
+                input: #decoded_ty,
+            ) -> ::core::result::Result<Self::Output, ::concord_core::advanced::FxError> {
+                let r: #decoded_ty = input;
+                let value: #out_ty = (#body);
+                ::core::result::Result::Ok(value)
+            }
+        }
+    }
+}
+
+fn endpoint_response_plan_tokens(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenStream2 {
+    let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
+    quote! {
+        let __response_entity_plan = <#response_entity_adapter_ty as ::concord_core::advanced::ResponseEntity>::plan(ctx_err.clone())?;
+        let __response_plan = __response_entity_plan.response_plan.clone();
+        let __response_accept = __response_plan.accept.clone();
+        let __response_no_content = __response_plan.no_content;
+    }
+}
+
+fn endpoint_execute_override(ep: &ResolvedEndpoint, ty_name: &Ident, cx_ty: &Ident) -> TokenStream2 {
+    let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
     quote! {
         fn execute<'a, T>(
             client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
@@ -765,155 +671,4 @@ fn endpoint_response_marker_impl(
         _ => quote! {},
     }
 }
-
-fn endpoint_response_decode_fn(
-    ep: &ResolvedEndpoint,
-    ty_name: &Ident,
-    response_dec: &syn::Type,
-    decoded_ty: &syn::Type,
-) -> TokenStream2 {
-    let decode_fn = emit_helpers::ident(&format!("__decode_{ty_name}"), Span::call_site());
-    match ep.response_io() {
-        ResolvedResponseBodyIo::NoContent => quote! {
-                fn #decode_fn(
-                    resp: ::concord_core::transport::BuiltResponse,
-                    _ctx: ::concord_core::error::ErrorContext,
-                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                    let out = ::concord_core::transport::DecodedResponse {
-                        meta: resp.meta,
-                        url: resp.url,
-                        status: resp.status,
-                        headers: resp.headers,
-                        value: (),
-                    };
-                    ::core::result::Result::Ok(::std::boxed::Box::new(out))
-                }
-            },
-        ResolvedResponseBodyIo::BufferedBytes => {
-            let decode_body = if let Some(map) = &ep.map {
-                let out_ty = &map.out_ty;
-                let body = &map.body;
-                quote! {
-                    let r: ::bytes::Bytes = decoded;
-                    let value: #out_ty = (#body);
-                }
-            } else {
-                quote! { let value: ::bytes::Bytes = decoded; }
-            };
-
-            quote! {
-                fn #decode_fn(
-                    resp: ::concord_core::transport::BuiltResponse,
-                    _ctx: ::concord_core::error::ErrorContext,
-                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                    let ::concord_core::transport::BuiltResponse { meta, url, status, headers, body, .. } = resp;
-                    let decoded: ::bytes::Bytes = body;
-                    #decode_body
-                    let out = ::concord_core::transport::DecodedResponse {
-                        meta,
-                        url,
-                        status,
-                        headers,
-                        value,
-                    };
-                    ::core::result::Result::Ok(::std::boxed::Box::new(out))
-                }
-            }
-        }
-        ResolvedResponseBodyIo::Multipart { .. } => quote! {
-                fn #decode_fn(
-                    _resp: ::concord_core::transport::BuiltResponse,
-                    ctx: ::concord_core::error::ErrorContext,
-                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                    Err(::concord_core::prelude::ApiClientError::PolicyViolation {
-                        ctx,
-                        msg: "multipart responses must use multipart execution".into(),
-                    })
-                }
-            },
-        ResolvedResponseBodyIo::RawStream { .. } => quote! {
-                fn #decode_fn(
-                    _resp: ::concord_core::transport::BuiltResponse,
-                    ctx: ::concord_core::error::ErrorContext,
-                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                    Err(::concord_core::prelude::ApiClientError::PolicyViolation {
-                        ctx,
-                        msg: "stream responses must use stream execution".into(),
-                    })
-                }
-            },
-        ResolvedResponseBodyIo::Records { .. } => quote! {
-                fn #decode_fn(
-                    _resp: ::concord_core::transport::BuiltResponse,
-                    ctx: ::concord_core::error::ErrorContext,
-                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                    Err(::concord_core::prelude::ApiClientError::PolicyViolation {
-                        ctx,
-                        msg: "record responses must use record execution".into(),
-                    })
-                }
-            },
-        ResolvedResponseBodyIo::Sse { .. } => quote! {
-                fn #decode_fn(
-                    _resp: ::concord_core::transport::BuiltResponse,
-                    ctx: ::concord_core::error::ErrorContext,
-                ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                    Err(::concord_core::prelude::ApiClientError::PolicyViolation {
-                        ctx,
-                        msg: "sse responses must use sse execution".into(),
-                    })
-                }
-            },
-        _ => {
-                let decode_body = if let Some(map) = &ep.map {
-                    let out_ty = &map.out_ty;
-                    let body = &map.body;
-                    quote! {
-                        let r: #decoded_ty = decoded;
-                        let value: #out_ty = (#body);
-                    }
-                } else {
-                    quote! { let value: #decoded_ty = decoded; }
-                };
-
-                quote! {
-                    fn #decode_fn(
-                        resp: ::concord_core::transport::BuiltResponse,
-                        ctx: ::concord_core::error::ErrorContext,
-                    ) -> ::core::result::Result<::std::boxed::Box<dyn ::std::any::Any + Send>, ::concord_core::prelude::ApiClientError> {
-                        let __content_type = resp
-                            .headers
-                            .get(::http::header::CONTENT_TYPE)
-                            .and_then(|value| value.to_str().ok());
-                        let decoded: #decoded_ty = <#response_dec as ::concord_core::advanced::ResponseCodec>::decode(
-                            resp.body.clone(),
-                            ::concord_core::advanced::DecodeContext::new(
-                                ctx.endpoint,
-                                &ctx.method,
-                                resp.status,
-                                __content_type,
-                            ),
-                        )
-                            .map_err(|e| {
-                                let content_type = resp
-                                    .headers
-                                    .get(::http::header::CONTENT_TYPE)
-                                    .and_then(|value| value.to_str().ok());
-                                ::concord_core::prelude::ApiClientError::decode_error(ctx.clone(), resp.status, content_type, e)
-                            })?;
-                        #decode_body
-                        let out = ::concord_core::transport::DecodedResponse {
-                            meta: resp.meta,
-                            url: resp.url,
-                            status: resp.status,
-                            headers: resp.headers,
-                            value,
-                        };
-                        ::core::result::Result::Ok(::std::boxed::Box::new(out))
-                    }
-                }
-            }
-    }
-}
-
 

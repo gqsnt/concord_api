@@ -113,7 +113,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
         };
-        let value = client.execute_plan::<E::Response>(plan).await?.value;
+        let value = E::execute(client, plan).await?;
         let auth_state = client
             .try_auth_state()
             .map_err(|source| ApiClientError::Auth {

@@ -3466,6 +3466,27 @@ mod tests {
         assert_eq!(quote::quote!(#body_ty).to_string(), "CreateBody");
         assert_eq!(quote::quote!(#response_ty).to_string(), "CreateResponse");
         assert_eq!(quote::quote!(#map_ty).to_string(), "Created");
+        assert_eq!(
+            ty_string(&endpoint.io.response_entity.adapter_ty),
+            "::concord_core::advanced::BufferedResponse<Json<CreateResponse>>"
+        );
+        assert_eq!(
+            ty_string(&endpoint.io.response_entity.public_output_ty),
+            "Created"
+        );
+        assert_eq!(
+            ty_string(
+                endpoint
+                    .io
+                    .response_entity
+                    .decoded_value_ty
+                    .as_ref()
+                    .expect("decoded value type")
+            ),
+            "CreateResponse"
+        );
+        assert!(endpoint.io.response_entity.mapped);
+        assert!(endpoint.io.response_entity.capabilities.supports_map);
     }
 
     #[test]
