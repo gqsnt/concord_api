@@ -9,7 +9,7 @@ use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
     ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
-use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
+use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel, ErrorCategory};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use serde::Deserialize;
 use std::collections::VecDeque;
@@ -547,7 +547,8 @@ async fn sse_wrong_content_type_is_rejected_before_body_exposure() {
         .await
         .expect_err("wrong content type should fail");
 
-    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    assert!(matches!(err, ApiClientError::ResponseContract { .. }));
+    assert_eq!(err.category(), ErrorCategory::ResponseContract);
     assert!(
         err.to_string()
             .contains("sse response content type did not match expected media type")
@@ -582,7 +583,8 @@ async fn sse_missing_content_type_is_rejected_before_body_exposure() {
         .await
         .expect_err("missing content type should fail");
 
-    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    assert!(matches!(err, ApiClientError::ResponseContract { .. }));
+    assert_eq!(err.category(), ErrorCategory::ResponseContract);
     assert!(
         err.to_string()
             .contains("sse response content type did not match expected media type")

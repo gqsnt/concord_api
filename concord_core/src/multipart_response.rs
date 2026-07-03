@@ -722,40 +722,41 @@ pub(crate) fn parse_response_boundary<F: MultipartFormat>(
     ctx: ErrorContext,
 ) -> Result<String, ApiClientError> {
     let Some(value) = headers.get(CONTENT_TYPE) else {
-        return Err(ApiClientError::PolicyViolation {
+        return Err(ApiClientError::response_contract(
             ctx,
-            msg: "multipart response content type is missing a boundary parameter",
-        });
+            "multipart response content type is missing a boundary parameter",
+        ));
     };
-    let text = value
-        .to_str()
-        .map_err(|_| ApiClientError::PolicyViolation {
-            ctx: ctx.clone(),
-            msg: "multipart response content type did not match expected media type",
-        })?;
+    let text = value.to_str().map_err(|_| {
+        ApiClientError::response_contract(
+            ctx.clone(),
+            "multipart response content type did not match expected media type",
+        )
+    })?;
     let mut segments = text.split(';');
     let base = segments.next().unwrap_or_default().trim();
     if !base.eq_ignore_ascii_case(F::CONTENT_TYPE) {
-        return Err(ApiClientError::PolicyViolation {
+        return Err(ApiClientError::response_contract(
             ctx,
-            msg: "multipart response content type did not match expected media type",
-        });
+            "multipart response content type did not match expected media type",
+        ));
     }
     for param in segments {
         let param = param.trim();
         if let Some(value) = param.strip_prefix("boundary=") {
-            let boundary =
-                parse_boundary_value(value).map_err(|_| ApiClientError::PolicyViolation {
-                    ctx: ctx.clone(),
-                    msg: "multipart response boundary is invalid",
-                })?;
+            let boundary = parse_boundary_value(value).map_err(|_| {
+                ApiClientError::response_contract(
+                    ctx.clone(),
+                    "multipart response boundary is invalid",
+                )
+            })?;
             return Ok(boundary);
         }
     }
-    Err(ApiClientError::PolicyViolation {
+    Err(ApiClientError::response_contract(
         ctx,
-        msg: "multipart response content type is missing a boundary parameter",
-    })
+        "multipart response content type is missing a boundary parameter",
+    ))
 }
 
 fn parse_boundary_value(value: &str) -> Result<String, ()> {

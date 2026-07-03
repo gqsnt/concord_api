@@ -485,10 +485,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             _ => unreachable!(),
         };
         if !Self::header_matches_media_type(resp.headers.get(CONTENT_TYPE), M::CONTENT_TYPE) {
-            return Err(ApiClientError::PolicyViolation {
+            return Err(ApiClientError::response_contract(
                 ctx,
-                msg: "stream response content type did not match expected media type".into(),
-            });
+                "stream response content type did not match expected media type",
+            ));
         }
         Ok(crate::stream_response::StreamResponse::new(resp, stream_response_limit))
     }
@@ -549,10 +549,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             _ => unreachable!(),
         };
         if !Self::header_matches_media_type(resp.headers.get(CONTENT_TYPE), "text/event-stream") {
-            return Err(ApiClientError::PolicyViolation {
+            return Err(ApiClientError::response_contract(
                 ctx,
-                msg: "sse response content type did not match expected media type".into(),
-            });
+                "sse response content type did not match expected media type",
+            ));
         }
         Ok(SseStream::new(resp, response_limit, Codec::decode_event))
     }

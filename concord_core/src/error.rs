@@ -77,6 +77,11 @@ pub enum ApiClientError {
         ctx: ErrorContext,
         status: StatusCode,
     },
+    #[error("{ctx}: response contract: {msg}")]
+    ResponseContract {
+        ctx: ErrorContext,
+        msg: Cow<'static, str>,
+    },
     #[error("{ctx}: codec: {source}")]
     Codec { ctx: ErrorContext, source: FxError },
 
@@ -190,6 +195,11 @@ impl Debug for ApiClientError {
                 .field("ctx", ctx)
                 .field("status", status)
                 .finish(),
+            Self::ResponseContract { ctx, msg } => f
+                .debug_struct("ResponseContract")
+                .field("ctx", ctx)
+                .field("msg", msg)
+                .finish(),
             Self::Codec { ctx, source } => f
                 .debug_struct("Codec")
                 .field("ctx", ctx)
@@ -260,6 +270,7 @@ pub enum ErrorCategory {
     Decode,
     Pagination,
     RateLimit,
+    ResponseContract,
     InternalInvariant,
 }
 
@@ -396,6 +407,17 @@ impl ApiClientError {
     }
 
     #[inline]
+    pub fn response_contract(
+        ctx: ErrorContext,
+        message: impl Into<Cow<'static, str>>,
+    ) -> ApiClientError {
+        ApiClientError::ResponseContract {
+            ctx,
+            msg: message.into(),
+        }
+    }
+
+    #[inline]
     pub fn invalid_param(ctx: ErrorContext, param: impl Into<Cow<'static, str>>) -> ApiClientError {
         ApiClientError::InvalidParam {
             ctx,
@@ -416,6 +438,7 @@ impl ApiClientError {
             | ApiClientError::Decode { ctx, .. }
             | ApiClientError::HeadRequiresNoContent { ctx }
             | ApiClientError::NoContentStatusRequiresNoContent { ctx, .. }
+            | ApiClientError::ResponseContract { ctx, .. }
             | ApiClientError::Codec { ctx, .. }
             | ApiClientError::RateLimit { ctx, .. }
             | ApiClientError::Pagination { ctx, .. }
@@ -446,10 +469,10 @@ impl ApiClientError {
                 ErrorCategory::RateLimit
             }
             ApiClientError::HttpStatus { .. } => ErrorCategory::HttpStatus,
-            ApiClientError::Decode { .. }
-            | ApiClientError::HeadRequiresNoContent { .. }
+            ApiClientError::Decode { .. } | ApiClientError::Codec { .. } => ErrorCategory::Decode,
+            ApiClientError::HeadRequiresNoContent { .. }
             | ApiClientError::NoContentStatusRequiresNoContent { .. }
-            | ApiClientError::Codec { .. } => ErrorCategory::Decode,
+            | ApiClientError::ResponseContract { .. } => ErrorCategory::ResponseContract,
             ApiClientError::RateLimit { .. } => ErrorCategory::RateLimit,
             ApiClientError::Pagination { .. } | ApiClientError::PaginationLimit { .. } => {
                 ErrorCategory::Pagination
@@ -626,6 +649,42 @@ mod tests {
         assert_eq!(
             pagination.pagination_error_kind(),
             Some(PaginationErrorKind::PageLimitExceeded)
+        );
+
+        let response_contract = ApiClientError::response_contract(
+            ErrorContext {
+                endpoint: "RawStream",
+                method: http::Method::GET,
+            },
+            "stream response content type did not match expected media type",
+        );
+        assert_eq!(
+            response_contract.category(),
+            ErrorCategory::ResponseContract
+        );
+
+        let head_requires_no_content = ApiClientError::HeadRequiresNoContent {
+            ctx: ErrorContext {
+                endpoint: "Head",
+                method: http::Method::HEAD,
+            },
+        };
+        assert_eq!(
+            head_requires_no_content.category(),
+            ErrorCategory::ResponseContract
+        );
+
+        let no_content_status_requires_no_content =
+            ApiClientError::NoContentStatusRequiresNoContent {
+                ctx: ErrorContext {
+                    endpoint: "NoContent",
+                    method: http::Method::GET,
+                },
+                status: StatusCode::NO_CONTENT,
+            };
+        assert_eq!(
+            no_content_status_requires_no_content.category(),
+            ErrorCategory::ResponseContract
         );
     }
 

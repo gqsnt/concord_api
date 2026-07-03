@@ -328,6 +328,14 @@ async fn error_taxonomy_variant_snapshot() {
             ErrorCategory::Decode,
         ),
         (
+            "response contract",
+            ApiClientError::response_contract(
+                ctx.clone(),
+                "stream response content type did not match expected media type",
+            ),
+            ErrorCategory::ResponseContract,
+        ),
+        (
             "pagination",
             ApiClientError::pagination(
                 ctx.clone(),
@@ -362,6 +370,29 @@ async fn error_taxonomy_variant_snapshot() {
         pagination_err.pagination_error_kind(),
         Some(concord_core::error::PaginationErrorKind::PageLimitExceeded)
     );
+}
+
+#[tokio::test]
+async fn no_content_status_mismatch_remains_structured_and_response_contract_categorized() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::NO_CONTENT, "ignored")],
+    );
+    let mut client = client(TestAuthVars::default(), transport.clone());
+    with_runtime_observers(&mut client, events.clone());
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("no-content status mismatch should fail");
+
+    assert!(matches!(
+        err,
+        ApiClientError::NoContentStatusRequiresNoContent { .. }
+    ));
+    assert_eq!(err.category(), ErrorCategory::ResponseContract);
 }
 
 #[tokio::test]

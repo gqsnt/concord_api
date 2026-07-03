@@ -10,7 +10,7 @@ use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
     ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
-use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
+use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel, ErrorCategory};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::collections::VecDeque;
 use std::future::Future;
@@ -499,7 +499,8 @@ async fn stream_response_content_type_mismatch_is_rejected_before_body_polling()
         .await
         .expect_err("mismatched content type should fail");
 
-    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    assert!(matches!(err, ApiClientError::ResponseContract { .. }));
+    assert_eq!(err.category(), ErrorCategory::ResponseContract);
     assert!(
         err.to_string()
             .contains("stream response content type did not match expected media type")
@@ -530,7 +531,8 @@ async fn stream_response_missing_content_type_is_rejected_before_body_polling() 
         .await
         .expect_err("missing content type should fail");
 
-    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    assert!(matches!(err, ApiClientError::ResponseContract { .. }));
+    assert_eq!(err.category(), ErrorCategory::ResponseContract);
     assert!(
         err.to_string()
             .contains("stream response content type did not match expected media type")

@@ -5,7 +5,7 @@ use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
     ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
-use concord_core::prelude::{ApiClient, ApiClientError};
+use concord_core::prelude::{ApiClient, ApiClientError, ErrorCategory};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -255,7 +255,8 @@ async fn multipart_missing_boundary_is_rejected_before_body_exposure() {
         .await
         .expect_err("missing boundary should fail");
 
-    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    assert!(matches!(err, ApiClientError::ResponseContract { .. }));
+    assert_eq!(err.category(), ErrorCategory::ResponseContract);
     assert!(format!("{err}").contains("missing a boundary parameter"));
     assert_eq!(read_count.load(Ordering::SeqCst), 0);
 }
@@ -313,7 +314,8 @@ async fn multipart_wrong_content_type_is_rejected_before_body_exposure() {
         .await
         .expect_err("content type mismatch should fail");
 
-    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    assert!(matches!(err, ApiClientError::ResponseContract { .. }));
+    assert_eq!(err.category(), ErrorCategory::ResponseContract);
     assert!(format!("{err}").contains("did not match expected media type"));
     assert_eq!(read_count.load(Ordering::SeqCst), 0);
 }
