@@ -160,7 +160,10 @@ where
     }
 }
 
-/// Marker implemented only for endpoints whose primary response is a stream.
+/// Legacy compatibility marker for endpoints whose primary response is a stream.
+///
+/// Generated endpoints no longer depend on this trait. It remains only for
+/// compatibility with older direct helper routing.
 pub trait StreamResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     type Media: ContentType;
 
@@ -177,7 +180,11 @@ pub trait StreamResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     }
 }
 
-/// Marker implemented only for endpoints whose primary response is a record stream.
+/// Legacy compatibility marker for endpoints whose primary response is a
+/// record stream.
+///
+/// Generated endpoints no longer depend on this trait. It remains only for
+/// compatibility with older direct helper routing.
 pub trait RecordResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     type Item: Send + 'static;
     type Format: RecordFormat<Self::Item>;
@@ -197,7 +204,11 @@ pub trait RecordResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     }
 }
 
-/// Marker implemented only for endpoints whose primary response is multipart.
+/// Legacy compatibility marker for endpoints whose primary response is
+/// multipart.
+///
+/// Generated endpoints no longer depend on this trait. It remains only for
+/// compatibility with older direct helper routing.
 pub trait MultipartResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     type Part: MultipartDecodePart<Self::Format>;
     type Format: MultipartFormat;
@@ -219,7 +230,10 @@ pub trait MultipartResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     }
 }
 
-/// Marker implemented only for endpoints whose primary response is SSE.
+/// Legacy compatibility marker for endpoints whose primary response is SSE.
+///
+/// Generated endpoints no longer depend on this trait. It remains only for
+/// compatibility with older direct helper routing.
 pub trait SseResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
     type Event: Send + 'static;
     type Codec: SseCodec<Self::Event>;

@@ -1,20 +1,59 @@
-error[E0599]: the method `execute_sse` exists for struct `PendingRequest<'_, RecordEndpointExecuteSseApiCx, EpTailH03da57fb09094b03, ReqwestTransport>`, but its trait bounds were not satisfied
+error[E0277]: the trait bound `RecordStream<String>: concord_core::request::SseResponseKind` is not satisfied
   --> tests/trybuild/fail/codegen/record_endpoint_execute_sse.rs:16:24
    |
- 5 | / api! {
- 6 | |     client RecordEndpointExecuteSseApi {
- 7 | |         base "https://example.com"
-...  |
-10 | |     GET Tail
-   | |____________- doesn't satisfy `_: SseResponseEndpoint<RecordEndpointExecuteSseApiCx>`
+16 |     let _ = api.tail().execute_sse().await.unwrap();
+   |                        ^^^^^^^^^^^ the trait `concord_core::request::SseResponseKind` is not implemented for `RecordStream<String>`
+   |
+help: the trait `concord_core::request::SseResponseKind` is implemented for `SseStream<T>`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   | impl<T> SseResponseKind for SseStream<T> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn execute_sse<R>(self) -> Result<R, ApiClientError>
+   |                  ----------- required by a bound in this associated function
 ...
-16 |       let _ = api.tail().execute_sse().await.unwrap();
-   |                          ^^^^^^^^^^^
+   |         R: SseResponseKind + 'a,
+   |            ^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
+
+error[E0277]: the trait bound `RecordStream<String>: concord_core::request::SseResponseKind` is not satisfied
+  --> tests/trybuild/fail/codegen/record_endpoint_execute_sse.rs:16:13
    |
-   = note: the following trait bounds were not satisfied:
-           `EpTailH03da57fb09094b03: SseResponseEndpoint<RecordEndpointExecuteSseApiCx>`
-note: the trait `SseResponseEndpoint` must be implemented
-  --> $WORKSPACE/concord_core/src/endpoint.rs
+16 |     let _ = api.tail().execute_sse().await.unwrap();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^ the trait `concord_core::request::SseResponseKind` is not implemented for `RecordStream<String>`
    |
-   | pub trait SseResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `concord_core::request::SseResponseKind` is implemented for `SseStream<T>`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   | impl<T> SseResponseKind for SseStream<T> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn execute_sse<R>(self) -> Result<R, ApiClientError>
+   |                  ----------- required by a bound in this associated function
+...
+   |         R: SseResponseKind + 'a,
+   |            ^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
+
+error[E0277]: the trait bound `RecordStream<String>: concord_core::request::SseResponseKind` is not satisfied
+  --> tests/trybuild/fail/codegen/record_endpoint_execute_sse.rs:16:38
+   |
+16 |     let _ = api.tail().execute_sse().await.unwrap();
+   |                                      ^^^^^ the trait `concord_core::request::SseResponseKind` is not implemented for `RecordStream<String>`
+   |
+help: the trait `concord_core::request::SseResponseKind` is implemented for `SseStream<T>`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   | impl<T> SseResponseKind for SseStream<T> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn execute_sse<R>(self) -> Result<R, ApiClientError>
+   |                  ----------- required by a bound in this associated function
+...
+   |         R: SseResponseKind + 'a,
+   |            ^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_sse`

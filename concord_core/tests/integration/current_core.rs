@@ -16,6 +16,8 @@ mod multipart;
 mod multipart_response;
 #[path = "current_core/pagination.rs"]
 mod pagination;
+#[path = "current_core/pending_request_streaming.rs"]
+mod pending_request_streaming;
 #[path = "current_core/public_api.rs"]
 mod public_api;
 #[path = "current_core/rate_limit.rs"]

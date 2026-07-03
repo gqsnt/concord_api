@@ -185,6 +185,13 @@ if "${RG[@]}" 'execute_plan_stream|execute_plan_records|execute_plan_multipart|e
   fail_with_matches "concord_macros streaming response execution must flow through ResponseEntity adapters." "$macro_response_exec_refs"
 fi
 
+section "macro streaming marker trait fence"
+macro_stream_marker_refs="$tmpdir/macro_stream_marker.refs"
+if "${RG[@]}" 'StreamResponseEndpoint|RecordResponseEndpoint|MultipartResponseEndpoint|SseResponseEndpoint' \
+  concord_macros/src/codegen/endpoints/endpoint.rs >"$macro_stream_marker_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros codegen must not reference legacy streaming marker traits." "$macro_stream_marker_refs"
+fi
+
 section "codegen panic hygiene"
 panic_refs="$tmpdir/panic.refs"
 if "${RG[@]}" 'expect\("validated|expect\("valid|unreachable!|\.unwrap\(\)' concord_macros/src/codegen >"$panic_refs" 2>/dev/null; then

@@ -144,7 +144,6 @@ fn emit_endpoint_def(
         Err(err) => return err,
     };
     let execute_override = endpoint_execute_override(ep, ty_name, cx_ty);
-    let response_marker_impl = endpoint_response_marker_impl(ep, ty_name, cx_ty);
 
     let paginate_binding_impl = emit_paginate_binding_impl(ep, ty_name);
     let pagination_plan = emit_endpoint_pagination_plan(ep);
@@ -239,7 +238,6 @@ fn emit_endpoint_def(
         #response_transform_impl
 
         #paginate_binding_impl
-        #response_marker_impl
 
         impl ::concord_core::prelude::Endpoint<super::#cx_ty> for #ty_name {
             type Response = #final_response_ty;
@@ -636,39 +634,6 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, ty_name: &Ident, cx_ty: &Ide
                 .await
             })
         }
-    }
-}
-
-fn endpoint_response_marker_impl(
-    ep: &ResolvedEndpoint,
-    ty_name: &Ident,
-    cx_ty: &Ident,
-) -> TokenStream2 {
-    match ep.response_io() {
-        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => quote! {
-            impl ::concord_core::prelude::MultipartResponseEndpoint<super::#cx_ty> for #ty_name {
-                type Part = #part_ty;
-                type Format = #format_ty;
-            }
-        },
-        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => quote! {
-            impl ::concord_core::prelude::SseResponseEndpoint<super::#cx_ty> for #ty_name {
-                type Event = #event_ty;
-                type Codec = #codec_ty;
-            }
-        },
-        ResolvedResponseBodyIo::RawStream { media_ty } => quote! {
-            impl ::concord_core::prelude::StreamResponseEndpoint<super::#cx_ty> for #ty_name {
-                type Media = #media_ty;
-            }
-        },
-        ResolvedResponseBodyIo::Records { item_ty, format_ty } => quote! {
-            impl ::concord_core::prelude::RecordResponseEndpoint<super::#cx_ty> for #ty_name {
-                type Item = #item_ty;
-                type Format = #format_ty;
-            }
-        },
-        _ => quote! {},
     }
 }
 

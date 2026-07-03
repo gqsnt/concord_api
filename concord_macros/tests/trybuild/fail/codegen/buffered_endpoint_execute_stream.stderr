@@ -1,20 +1,59 @@
-error[E0599]: the method `execute_stream` exists for struct `PendingRequest<'_, BufferedEndpointExecuteStreamApiCx, EpUserHa48f81f001b893d2, ReqwestTransport>`, but its trait bounds were not satisfied
+error[E0277]: the trait bound `String: concord_core::request::StreamResponseKind` is not satisfied
   --> tests/trybuild/fail/codegen/buffered_endpoint_execute_stream.rs:16:24
    |
- 5 | / api! {
- 6 | |     client BufferedEndpointExecuteStreamApi {
- 7 | |         base "https://example.com"
-...  |
-10 | |     GET User
-   | |____________- doesn't satisfy `_: StreamResponseEndpoint<BufferedEndpointExecuteStreamApiCx>`
+16 |     let _ = api.user().execute_stream().await.unwrap();
+   |                        ^^^^^^^^^^^^^^ the trait `concord_core::request::StreamResponseKind` is not implemented for `String`
+   |
+help: the trait `concord_core::request::StreamResponseKind` is implemented for `StreamResponse<M>`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   | impl<M> StreamResponseKind for StreamResponse<M> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_stream`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn execute_stream<R>(self) -> Result<R, ApiClientError>
+   |                  -------------- required by a bound in this associated function
 ...
-16 |       let _ = api.user().execute_stream().await.unwrap();
-   |                          ^^^^^^^^^^^^^^
+   |         R: StreamResponseKind + 'a,
+   |            ^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_stream`
+
+error[E0277]: the trait bound `String: concord_core::request::StreamResponseKind` is not satisfied
+  --> tests/trybuild/fail/codegen/buffered_endpoint_execute_stream.rs:16:13
    |
-   = note: the following trait bounds were not satisfied:
-           `EpUserHa48f81f001b893d2: StreamResponseEndpoint<BufferedEndpointExecuteStreamApiCx>`
-note: the trait `StreamResponseEndpoint` must be implemented
-  --> $WORKSPACE/concord_core/src/endpoint.rs
+16 |     let _ = api.user().execute_stream().await.unwrap();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `concord_core::request::StreamResponseKind` is not implemented for `String`
    |
-   | pub trait StreamResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `concord_core::request::StreamResponseKind` is implemented for `StreamResponse<M>`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   | impl<M> StreamResponseKind for StreamResponse<M> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_stream`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn execute_stream<R>(self) -> Result<R, ApiClientError>
+   |                  -------------- required by a bound in this associated function
+...
+   |         R: StreamResponseKind + 'a,
+   |            ^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_stream`
+
+error[E0277]: the trait bound `String: concord_core::request::StreamResponseKind` is not satisfied
+  --> tests/trybuild/fail/codegen/buffered_endpoint_execute_stream.rs:16:41
+   |
+16 |     let _ = api.user().execute_stream().await.unwrap();
+   |                                         ^^^^^ the trait `concord_core::request::StreamResponseKind` is not implemented for `String`
+   |
+help: the trait `concord_core::request::StreamResponseKind` is implemented for `StreamResponse<M>`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   | impl<M> StreamResponseKind for StreamResponse<M> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_stream`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn execute_stream<R>(self) -> Result<R, ApiClientError>
+   |                  -------------- required by a bound in this associated function
+...
+   |         R: StreamResponseKind + 'a,
+   |            ^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_stream`

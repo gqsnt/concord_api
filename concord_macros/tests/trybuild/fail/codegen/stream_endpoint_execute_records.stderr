@@ -1,20 +1,59 @@
-error[E0599]: the method `execute_records` exists for struct `PendingRequest<'_, StreamEndpointExecuteRecordsApiCx, EpDownloadHd3386a2ef42e80b9, ReqwestTransport>`, but its trait bounds were not satisfied
+error[E0277]: the trait bound `StreamResponse<concord_core::advanced::OctetStream>: concord_core::request::RecordResponseKind` is not satisfied
   --> tests/trybuild/fail/codegen/stream_endpoint_execute_records.rs:16:28
    |
- 5 | / api! {
- 6 | |     client StreamEndpointExecuteRecordsApi {
- 7 | |         base "https://example.com"
-...  |
-10 | |     GET Download
-   | |________________- doesn't satisfy `_: RecordResponseEndpoint<StreamEndpointExecuteRecordsApiCx>`
+16 |     let _ = api.download().execute_records().await.unwrap();
+   |                            ^^^^^^^^^^^^^^^ the trait `concord_core::request::RecordResponseKind` is not implemented for `StreamResponse<concord_core::advanced::OctetStream>`
+   |
+help: the trait `concord_core::request::RecordResponseKind` is implemented for `RecordStream<T>`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   | impl<T> RecordResponseKind for RecordStream<T> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_records`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn execute_records<R>(self) -> Result<R, ApiClientError>
+   |                  --------------- required by a bound in this associated function
 ...
-16 |       let _ = api.download().execute_records().await.unwrap();
-   |                              ^^^^^^^^^^^^^^^
+   |         R: RecordResponseKind + 'a,
+   |            ^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_records`
+
+error[E0277]: the trait bound `StreamResponse<concord_core::advanced::OctetStream>: concord_core::request::RecordResponseKind` is not satisfied
+  --> tests/trybuild/fail/codegen/stream_endpoint_execute_records.rs:16:13
    |
-   = note: the following trait bounds were not satisfied:
-           `EpDownloadHd3386a2ef42e80b9: RecordResponseEndpoint<StreamEndpointExecuteRecordsApiCx>`
-note: the trait `RecordResponseEndpoint` must be implemented
-  --> $WORKSPACE/concord_core/src/endpoint.rs
+16 |     let _ = api.download().execute_records().await.unwrap();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `concord_core::request::RecordResponseKind` is not implemented for `StreamResponse<concord_core::advanced::OctetStream>`
    |
-   | pub trait RecordResponseEndpoint<Cx: ClientContext>: Endpoint<Cx> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the trait `concord_core::request::RecordResponseKind` is implemented for `RecordStream<T>`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   | impl<T> RecordResponseKind for RecordStream<T> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_records`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn execute_records<R>(self) -> Result<R, ApiClientError>
+   |                  --------------- required by a bound in this associated function
+...
+   |         R: RecordResponseKind + 'a,
+   |            ^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_records`
+
+error[E0277]: the trait bound `StreamResponse<concord_core::advanced::OctetStream>: concord_core::request::RecordResponseKind` is not satisfied
+  --> tests/trybuild/fail/codegen/stream_endpoint_execute_records.rs:16:46
+   |
+16 |     let _ = api.download().execute_records().await.unwrap();
+   |                                              ^^^^^ the trait `concord_core::request::RecordResponseKind` is not implemented for `StreamResponse<concord_core::advanced::OctetStream>`
+   |
+help: the trait `concord_core::request::RecordResponseKind` is implemented for `RecordStream<T>`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   | impl<T> RecordResponseKind for RecordStream<T> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::execute_records`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn execute_records<R>(self) -> Result<R, ApiClientError>
+   |                  --------------- required by a bound in this associated function
+...
+   |         R: RecordResponseKind + 'a,
+   |            ^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::execute_records`
