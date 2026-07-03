@@ -32,9 +32,9 @@ Raw credential material is kept in a short-lived per-attempt sidecar and is inse
 
 Page and custom pagination mutation happens before auth-collision validation, rate-limit acquisition, and transport materialization. The runtime uses the final mutated logical request as the input to safe metadata construction, then materializes raw auth only into `TransportRequest`.
 
-Query-auth materialization must reject a public query parameter that already uses the auth query key. The rejection happens before raw query-auth material is appended and before rate-limit acquisition and transport send, and the typed error may name the key but must not include the secret value.
+Query-auth materialization must reject a public query parameter that already uses the auth query key. Final endpoint auth validation happens after inheritance and before raw query-auth material is appended, rate-limit acquisition, and transport send, and the typed error may name the key but must not include the secret value.
 
-Header-auth materialization follows the same structural rule: public headers cannot silently collide with bearer, Basic, or custom auth headers, and header matching is case-insensitive. The runtime rejects those collisions before rate-limit acquisition and transport rather than overwriting the public header value.
+Header-auth materialization follows the same structural rule: public headers cannot silently collide with bearer, Basic, or custom auth headers, and header matching is case-insensitive. Final endpoint auth validation rejects those collisions after inheritance and before rate-limit acquisition and transport rather than overwriting the public header value.
 
 Custom transports receive the materialized `TransportRequest`, so they see real credentials at the send boundary. Transport implementations must not log the raw request.
 

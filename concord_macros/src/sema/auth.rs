@@ -245,6 +245,66 @@ fn auth_plan_references_credential(plans: &[AuthRequirementIr], target: &Ident) 
     })
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum AuthMaterializationTargetKey {
+    Header(String),
+    Query(String),
+    Authorization,
+    Certificate,
+}
+
+impl AuthMaterializationTargetKey {
+    fn display_string(&self) -> String {
+        match self {
+            AuthMaterializationTargetKey::Header(name) => format!("header `{name}`"),
+            AuthMaterializationTargetKey::Query(key) => format!("query `{key}`"),
+            AuthMaterializationTargetKey::Authorization => "Authorization".to_string(),
+            AuthMaterializationTargetKey::Certificate => "certificate".to_string(),
+        }
+    }
+}
+
+fn final_auth_materialization_target(req: &AuthRequirementIr) -> AuthMaterializationTargetKey {
+    match &req.placement {
+        AuthPlacementIr::Header { name } => {
+            let name = name.value();
+            if name.eq_ignore_ascii_case("authorization") {
+                AuthMaterializationTargetKey::Authorization
+            } else {
+                AuthMaterializationTargetKey::Header(name.to_ascii_lowercase())
+            }
+        }
+        AuthPlacementIr::Query { key } => AuthMaterializationTargetKey::Query(key.value()),
+        AuthPlacementIr::Bearer | AuthPlacementIr::Basic => {
+            AuthMaterializationTargetKey::Authorization
+        }
+        AuthPlacementIr::Certificate => AuthMaterializationTargetKey::Certificate,
+    }
+}
+
+pub(crate) fn validate_final_auth_materialization_targets(
+    auth: &[AuthRequirementIr],
+    endpoint_display: &str,
+    endpoint_span: Span,
+) -> Result<()> {
+    let mut seen: BTreeMap<AuthMaterializationTargetKey, &AuthRequirementIr> = BTreeMap::new();
+    for req in auth {
+        let target = final_auth_materialization_target(req);
+        if let Some(first) = seen.insert(target.clone(), req) {
+            return Err(syn::Error::new(
+                endpoint_span,
+                format!(
+                    "final endpoint `{endpoint_display}` has duplicate auth materialization target `{}` between `{}` and `{}`",
+                    target.display_string(),
+                    first.provenance.label,
+                    req.provenance.label
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<()> {
     let shape = match &cred.kind {
         AuthCredentialKindIr::ApiKey { .. } => AuthMaterialShapeIr::SecretValue,

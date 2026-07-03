@@ -1329,6 +1329,41 @@ mod tests {
     }
 
     #[test]
+    fn generated_inherited_auth_step_ids_use_final_endpoint_target() {
+        let out = expanded(quote! {
+            client InheritedAuthStepsApi {
+                base "https://example.com"
+                secret client_token: String
+                secret scope_token: String
+                secret endpoint_token: String
+                credential client_auth = api_key(secret.client_token)
+                credential scope_auth = api_key(secret.scope_token)
+                credential endpoint_auth = api_key(secret.endpoint_token)
+                auth header "X-Read-Token" = client_auth
+            }
+
+            scope users {
+                path ["users"]
+                auth query "read_key" = scope_auth
+
+                GET Me
+                    path ["me"]
+                    auth header "X-Endpoint-Token" = endpoint_auth
+                    -> Json<()>
+            }
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "users::Me:0:client_auth",
+                "users::Me:1:scope_auth",
+                "users::Me:2:endpoint_auth",
+            ],
+        );
+    }
+
+    #[test]
     fn generated_oauth2_client_credentials_provider_is_typed() {
         let out = expanded(quote! {
             client OAuthProviderApi {
@@ -1614,8 +1649,6 @@ mod tests {
         let out = expanded(quote! {
             client LabelDedup {
                 base "https://example.com"
-                secret token: String
-                credential read_auth = bearer(secret.token)
 
                 retry read {
                     max_attempts 2
@@ -1630,7 +1663,6 @@ mod tests {
 
                 behaviors {
                     behavior read {
-                        auth bearer read_auth
                         retry read
                         rate_limit read_limit
                     }
@@ -1659,19 +1691,6 @@ mod tests {
             .filter(|doc| doc.contains("Behavior:`"))
             .collect::<Vec<_>>();
         assert_eq!(behavior_doc_lines.len(), 1);
-        for idx in 0..3 {
-            assert!(
-                out.contains(&format!("users::Me:{idx}:read_auth")),
-                "missing repeated auth step {idx}\n{out}"
-            );
-        }
-        assert_eq!(
-            out.match_indices("users::Me:0:read_auth")
-                .chain(out.match_indices("users::Me:1:read_auth"))
-                .chain(out.match_indices("users::Me:2:read_auth"))
-                .count(),
-            3
-        );
         assert_eq!(
             out.match_indices("RateLimitBucketUse::new(\"read\",\"read_limit_0\"")
                 .count(),
@@ -1685,7 +1704,7 @@ mod tests {
             client BehaviorCodegen {
                 base "https://example.com"
                 secret token: String
-                credential session = bearer(secret.token)
+                credential session = api_key(secret.token)
 
                 retry read {
                     max_attempts 2
@@ -1702,7 +1721,7 @@ mod tests {
 
                 behaviors {
                         behavior alpha {
-                            auth bearer session
+                            auth header "X-Behavior-Token" = session
                             retry read
                             rate_limit app
                         }
@@ -1713,16 +1732,15 @@ mod tests {
                 }
             }
 
-            GET Ping
-                path ["ping"]
-                behavior alpha
-                -> Json<()>
+                GET Ping
+                    path ["ping"]
+                    -> Json<()>
         });
         let beta = expanded(quote! {
             client BehaviorCodegen {
                 base "https://example.com"
                 secret token: String
-                credential session = bearer(secret.token)
+                credential session = api_key(secret.token)
 
                 retry read {
                     max_attempts 2
@@ -1739,7 +1757,7 @@ mod tests {
 
                 behaviors {
                         behavior beta {
-                            auth bearer session
+                            auth header "X-Behavior-Token" = session
                             retry read
                             rate_limit app
                         }
@@ -1750,10 +1768,9 @@ mod tests {
                 }
             }
 
-            GET Ping
-                path ["ping"]
-                behavior beta
-                -> Json<()>
+                GET Ping
+                    path ["ping"]
+                    -> Json<()>
         });
 
         assert_contains_all(

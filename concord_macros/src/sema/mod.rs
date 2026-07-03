@@ -1539,6 +1539,254 @@ mod tests {
     }
 
     #[test]
+    fn final_auth_materialization_rejects_case_insensitive_header_collisions() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret client_token: String
+                    secret scope_token: String
+                    credential client_auth = api_key(secret.client_token)
+                    credential scope_auth = api_key(secret.scope_token)
+                    auth header "X-Token" = client_auth
+                }
+
+                scope protected {
+                    path ["protected"]
+                    auth header "x-token" = scope_auth
+
+                    GET Show
+                        path ["show"]
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("final header collision must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("final endpoint `protected::Show`"));
+        assert!(msg.contains("header `x-token`"));
+        assert!(msg.contains("client"));
+        assert!(msg.contains("scope:0"));
+    }
+
+    #[test]
+    fn final_auth_materialization_rejects_query_collisions() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret client_token: String
+                    secret endpoint_token: String
+                    credential client_auth = api_key(secret.client_token)
+                    credential endpoint_auth = api_key(secret.endpoint_token)
+                    auth query "api_key" = client_auth
+                }
+
+                scope protected {
+                    path ["protected"]
+
+                    GET Show
+                        path ["show"]
+                        auth query "api_key" = endpoint_auth
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("final query collision must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("final endpoint `protected::Show`"));
+        assert!(msg.contains("query `api_key`"));
+        assert!(msg.contains("client"));
+        assert!(msg.contains("endpoint"));
+    }
+
+    #[test]
+    fn final_auth_materialization_rejects_bearer_plus_basic_authorization_collisions() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret bearer_token: String
+                    secret basic_user: String
+                    secret basic_password: String
+                    credential bearer_auth = bearer(secret.bearer_token)
+                    credential basic_auth = basic(secret.basic_user, secret.basic_password)
+                    auth bearer bearer_auth
+                }
+
+                scope protected {
+                    path ["protected"]
+                    auth basic basic_auth
+
+                    GET Show
+                        path ["show"]
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("authorization target collisions must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("final endpoint `protected::Show`"));
+        assert!(msg.contains("Authorization"));
+        assert!(msg.contains("client"));
+        assert!(msg.contains("scope:0"));
+        assert!(msg.contains("between `client` and `scope:0`"));
+    }
+
+    #[test]
+    fn final_auth_materialization_rejects_bearer_plus_custom_authorization_header_collisions() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret bearer_token: String
+                    secret header_token: String
+                    credential bearer_auth = bearer(secret.bearer_token)
+                    credential header_auth = api_key(secret.header_token)
+                    auth bearer bearer_auth
+                }
+
+                GET Show
+                    path ["show"]
+                    auth header "Authorization" = header_auth
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("authorization target collisions must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("final endpoint `Show`"));
+        assert!(msg.contains("Authorization"));
+        assert!(msg.contains("client"));
+        assert!(msg.contains("endpoint"));
+        assert!(msg.contains("between `client` and `endpoint`"));
+    }
+
+    #[test]
+    fn final_auth_materialization_rejects_duplicate_bearer_across_layers() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret client_token: String
+                    secret scope_token: String
+                    credential client_auth = bearer(secret.client_token)
+                    credential scope_auth = bearer(secret.scope_token)
+                    auth bearer client_auth
+                }
+
+                scope protected {
+                    path ["protected"]
+                    auth bearer scope_auth
+
+                    GET Show
+                        path ["show"]
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("duplicate bearer targets must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("Authorization"));
+        assert!(msg.contains("client"));
+        assert!(msg.contains("scope:0"));
+        assert!(msg.contains("between `client` and `scope:0`"));
+    }
+
+    #[test]
+    fn final_auth_materialization_rejects_duplicate_basic_across_layers() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret client_user: String
+                    secret client_pass: String
+                    secret endpoint_user: String
+                    secret endpoint_pass: String
+                    credential client_basic = basic(secret.client_user, secret.client_pass)
+                    credential endpoint_basic = basic(secret.endpoint_user, secret.endpoint_pass)
+                    auth basic client_basic
+                }
+
+                GET Show
+                    path ["show"]
+                    auth basic endpoint_basic
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("duplicate basic targets must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("Authorization"));
+        assert!(msg.contains("client"));
+        assert!(msg.contains("endpoint"));
+        assert!(msg.contains("between `client` and `endpoint`"));
+    }
+
+    #[test]
+    fn final_auth_materialization_rejects_certificate_collisions() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    credential client_cert = endpoint auth_a::IssueClientCert
+                    credential scope_cert = endpoint auth_b::IssueScopeCert
+                }
+
+                scope auth_a {
+                    path ["auth-a"]
+
+                    GET IssueClientCert
+                        path ["cert"]
+                        -> Json<ClientCertificate>
+                }
+
+                scope auth_b {
+                    path ["auth-b"]
+
+                    GET IssueScopeCert
+                        path ["cert"]
+                        -> Json<ClientCertificate>
+                }
+
+                scope protected {
+                    path ["protected"]
+                    auth certificate client_cert
+
+                    GET Show
+                        path ["show"]
+                        auth certificate scope_cert
+                        -> Json<()>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let err = analyze(ast).expect_err("certificate collisions must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("final endpoint `protected::Show`"));
+        assert!(msg.contains("certificate"));
+        assert!(msg.contains("endpoint"));
+    }
+
+    #[test]
     fn endpoint_backed_credential_resolves_to_endpoint_output() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
@@ -1686,6 +1934,79 @@ mod tests {
         .expect("valid api syntax");
 
         let err = analyze(ast).expect_err("self-use must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("cannot acquire via endpoint"));
+        assert!(msg.contains("uses that credential"));
+    }
+
+    #[test]
+    fn endpoint_backed_credential_rejects_inherited_client_auth_self_use() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret upstream_key: String
+                    credential upstream = api_key(secret.upstream_key)
+                    credential session = endpoint auth_api::Login
+                    auth bearer session
+                }
+
+                scope auth_api {
+                    path ["auth"]
+
+                    POST Login
+                        path ["login"]
+                        auth header "X-Upstream-Key" = upstream
+                        -> Json<AccessToken>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+
+        let err = analyze(ast).expect_err("inherited client auth self-use must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("cannot acquire via endpoint"));
+        assert!(msg.contains("uses that credential"));
+    }
+
+    #[test]
+    fn endpoint_backed_credential_rejects_inherited_behavior_auth_self_use() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+                    secret upstream_key: String
+                    credential upstream = api_key(secret.upstream_key)
+                    credential session = endpoint auth_api::Login
+
+                    behaviors {
+                        behavior default_auth {
+                            auth bearer session
+                        }
+                    }
+
+                    defaults {
+                        behavior default_auth
+                    }
+                }
+
+                scope auth_api {
+                    path ["auth"]
+
+                    POST Login
+                        path ["login"]
+                        auth header "X-Upstream-Key" = upstream
+                        -> Json<AccessToken>
+                }
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+
+        let err = analyze(ast).expect_err("inherited behavior auth self-use must be rejected");
         let msg = err.to_string();
         assert!(msg.contains("cannot acquire via endpoint"));
         assert!(msg.contains("uses that credential"));

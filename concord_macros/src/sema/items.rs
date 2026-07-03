@@ -778,6 +778,11 @@ fn analyze_endpoint(
         AuthUseProvenanceIr::Endpoint,
     )?);
     let auth = materialize_auth_requirements(&auth_plans, &current_endpoint_target.display_string(), 0);
+    validate_final_auth_materialization_targets(
+        &auth,
+        &current_endpoint_target.display_string(),
+        ed.name.span(),
+    )?;
     for credential in ctx.auth_credentials.values() {
         let AuthCredentialKindIr::Endpoint { target, .. } = &credential.kind else {
             continue;

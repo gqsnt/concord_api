@@ -116,7 +116,7 @@ Request bodies, response bodies, raw auth, and secrets remain absent from `Displ
 
 Proof owners: `concord_core/tests/integration/current_core/runtime_order.rs`, `pagination.rs`, and macro trybuild and codegen fixtures.
 
-Page and custom request mutation happens before auth collision validation, rate-limit acquire, and transport materialization.
+Page and custom request mutation happens before final auth collision validation, rate-limit acquire, and transport materialization.
 
 ### url-host-path-hardening
 
