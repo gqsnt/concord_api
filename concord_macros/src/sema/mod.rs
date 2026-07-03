@@ -3569,7 +3569,7 @@ mod tests {
     }
 
     #[test]
-    fn pagination_controllers_resolve_into_endpoint_model() {
+    fn pagination_assignments_resolve_into_endpoint_model() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             client PageApi {
@@ -3743,7 +3743,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_pagination_rejects_endpoint_state_syntax() {
+    fn custom_pagination_rejects_legacy_syntax() {
         let src = format!(
             r#"
             client PageApi {{

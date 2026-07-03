@@ -41,7 +41,7 @@ Unknown profile diagnostics should generally be emitted here because sema has th
 
 ## Codegen Phase
 
-Codegen translates the resolved model into Rust tokens: client structs, facade methods, endpoint builders, request plan construction, policy functions, auth state, pagination helpers, and rustdoc.
+Codegen translates the resolved model into Rust tokens: client structs, facade methods, endpoint builders, request plan construction, policy functions, auth state, pagination bindings, and rustdoc.
 
 Codegen should not duplicate semantic merge rules. If generated output needs a resolved answer, compute that answer in sema.
 

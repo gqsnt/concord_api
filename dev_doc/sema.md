@@ -13,7 +13,7 @@ Sema resolves:
 - route atoms in `host`, `path`, and `fmt[...]`
 - query and header values
 - retry, rate-limit, and behavior profile references
-- pagination controller fields
+- pagination controller types and assignment values
 - auth endpoint references
 - endpoint aliases and facade names
 

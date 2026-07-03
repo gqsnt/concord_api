@@ -28,6 +28,8 @@ Pagination and page-request mutation belong in the logical-request phase before 
 
 Code generation consumes resolved semantic data, not raw syntax. If codegen needs to know whether something came from `defaults { ... }` versus `default { ... }`, that is usually a design smell. Sema should resolve aliases, inheritance, profile names, and merge rules before codegen.
 
+Pagination follows the same rule: codegen should work from controller types, endpoint-field bindings, and presence markers rather than classifier-specific controller metadata.
+
 Endpoint I/O follows the same principle: the resolved semantic model keeps HTTP endpoint I/O separate from the rest of the request and response plumbing. HTTP endpoints carry HTTP request/response body shapes, and codegen should dispatch on resolved HTTP shapes directly instead of inferring behavior from raw syntax.
 
 Raw parser AST may contain invalid forms long enough to produce good diagnostics. Resolved semantic IR should not. Sema lowers public policy, route, and pagination values into context-specific IR that cannot contain auth-secret references or other values rejected for that context. Codegen renders already-valid IR and must not rely on `expect("validated ...")`, `expect("valid ...")`, or `unreachable!()` for semantic invalid states.

@@ -458,7 +458,7 @@ The actual outbound request still carries the credential material required by th
 
 ## Pagination
 
-Pagination is declared on endpoints with a controller and controller field assignments.
+Pagination is declared on endpoints with a Rust controller type and controller field assignments.
 
 ```rust
 GET ListItems(start: u64 = 0, count: u64 = 20)
@@ -743,8 +743,8 @@ The response line closes the normal endpoint contract. `map` is the documented e
 Built-in controllers:
 
 - `OffsetLimitPagination`
-- `CursorPagination<String>`
 - `PagedPagination`
+- `CursorPagination<String>`
 
 Custom pagination uses the uniform `paginate Type { ... }` syntax.
 

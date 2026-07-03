@@ -70,7 +70,7 @@ Auth locks are not held across credential endpoint or token endpoint I/O.
 
 The runtime pipeline order is fixed.
 
-DSL improvements should compile to existing semantic concepts such as auth requirements, retry settings, rate-limit plans, codecs, pagination plans, and request plans.
+DSL improvements should compile to existing semantic concepts such as auth requirements, retry settings, rate-limit profiles, codecs, pagination controller types, and request plans.
 
 Changing runtime order requires dedicated tests and a dedicated PR.
 

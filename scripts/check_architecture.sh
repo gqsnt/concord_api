@@ -129,6 +129,14 @@ if "${RG[@]}" -ni 'paginate endpoint[-_]state|\bendpoint[-_]state\b' \
   fail_with_matches "removed endpoint-state pagination syntax must not reappear in active examples, pass fixtures, snapshots, or docs." "$endpoint_state_syntax_refs"
 fi
 
+section "final pagination terminology fence"
+final_pagination_terms_refs="$tmpdir/final_pagination_terms.refs"
+if "${RG[@]}" -ni 'bindings type|pagination[- ]plans?|controller[- ]plans?|query-key inference|query key inference|generated single_object_pagination' \
+  concord_examples/src concord_examples/tests concord_macros/tests/trybuild/pass concord_macros/tests/snapshots concord_macros/src/codegen \
+  docs dev_doc >"$final_pagination_terms_refs" 2>/dev/null; then
+  fail_with_matches "final pagination terminology must stay out of active examples, pass fixtures, snapshots, codegen, and docs." "$final_pagination_terms_refs"
+fi
+
 section "bare built-in cursor syntax fence"
 bare_cursor_refs="$tmpdir/bare_cursor.refs"
 if "${RG[@]}" -n 'paginate CursorPagination[^<]' \

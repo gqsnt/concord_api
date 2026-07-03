@@ -26,7 +26,7 @@ Constructor shape is stable: generated `new(...)`, `builder()`, and `new_with_tr
 
 ## Request Plans
 
-Endpoint builders collect field values, route pieces, query and header policy, auth requirements, body codec information, response codec information, retry and rate-limit plans, pagination plans, and endpoint metadata. They build `concord_core` request plans.
+Endpoint builders collect field values, route pieces, query and header policy, auth requirements, body codec information, response codec information, retry and rate-limit plans, pagination controller types and bindings, and endpoint metadata. They build `concord_core` request plans.
 
 ## Policies And Routes
 

@@ -1235,7 +1235,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_pagination_marker_snapshot_contains_all_controller_shapes() {
+    fn generated_pagination_marker_snapshot_covers_controller_types() {
         let out = expanded(quote! {
             client PaginationModelApi {
                 base "https://example.com"
@@ -1777,7 +1777,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_pagination_snapshot_contains_pagination_plan() {
+    fn generated_pagination_snapshot_contains_pagination_marker() {
         let out = expanded(quote! {
             client SnapshotPagination {
                 base "https://example.com"
@@ -1809,7 +1809,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_non_paginated_endpoint_sets_pagination_plan_none() {
+    fn generated_non_paginated_endpoint_sets_pagination_marker_none() {
         let out = expanded(quote! {
             client SnapshotNoPagination {
                 base "https://example.com"
@@ -1861,7 +1861,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_offset_limit_uses_single_object_pagination_runtime_only() {
+    fn generated_offset_limit_uses_type_driven_pagination_only() {
         let out = expanded(quote! {
             client SnapshotOffsetLimitRuntime {
                 base "https://example.com"
@@ -1897,16 +1897,16 @@ mod tests {
         );
         assert!(
             !out.contains(&legacy_endpoint_field()),
-            "removed endpoint-state binding helpers must not appear in generated output"
+            "removed pagination binding helpers must not appear in generated output"
         );
         assert!(
             !out.contains(&legacy_offset_limit_bindings()),
-            "removed endpoint-state binding types must not appear in generated output"
+            "removed pagination binding types must not appear in generated output"
         );
     }
 
     #[test]
-    fn generated_offset_limit_exposes_single_object_pagination_runtime() {
+    fn generated_offset_limit_exposes_pagination_binding_and_type() {
         let out = expanded(quote! {
             client SnapshotOffsetLimitSingleObjectRuntime {
                 base "https://example.com"
@@ -1968,7 +1968,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_paged_uses_single_object_pagination_runtime_only() {
+    fn generated_paged_uses_type_driven_pagination_only() {
         let out = expanded(quote! {
             client SnapshotPagedRuntime {
                 base "https://example.com"
@@ -2004,11 +2004,11 @@ mod tests {
         );
         assert!(
             !out.contains(&legacy_endpoint_field()),
-            "removed endpoint-state binding helpers must not appear in generated output"
+            "removed pagination binding helpers must not appear in generated output"
         );
         assert!(
             !out.contains(&legacy_paged_bindings()),
-            "removed endpoint-state binding types must not appear in generated output"
+            "removed pagination binding types must not appear in generated output"
         );
     }
 
@@ -2046,7 +2046,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_paged_exposes_single_object_pagination_runtime() {
+    fn generated_paged_exposes_pagination_binding_and_type() {
         let out = expanded(quote! {
             client SnapshotPagedSingleObjectRuntime {
                 base "https://example.com"
@@ -2075,7 +2075,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_custom_uses_single_object_pagination_runtime_only() {
+    fn generated_custom_uses_type_driven_pagination_only() {
         let out = expanded(quote! {
             client SnapshotCustomPagination {
                 base "https://example.com"
@@ -2112,11 +2112,11 @@ mod tests {
         );
         assert!(
             !out.contains("HeaderPageBindings"),
-            "removed endpoint-state binding helpers must not appear in generated output"
+            "removed pagination binding helpers must not appear in generated output"
         );
         assert!(
             !out.contains(&legacy_endpoint_field()),
-            "removed endpoint-state binding helpers must not appear in generated output"
+            "removed pagination binding helpers must not appear in generated output"
         );
         assert_contains_all(
             &out,
@@ -2208,7 +2208,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_custom_exposes_single_object_pagination_runtime() {
+    fn generated_custom_exposes_pagination_binding_and_type() {
         let out = expanded(quote! {
             client SnapshotCustomPaginationSingleObjectRuntime {
                 base "https://example.com"
@@ -2241,12 +2241,12 @@ mod tests {
     }
 
     #[test]
-    fn generated_custom_pagination_uses_single_object_pagination_runtime_only() {
-        generated_custom_uses_single_object_pagination_runtime_only();
+    fn generated_custom_pagination_uses_type_driven_pagination_only() {
+        generated_custom_uses_type_driven_pagination_only();
     }
 
     #[test]
-    fn generated_cursor_uses_single_object_pagination_runtime_only() {
+    fn generated_cursor_uses_type_driven_pagination_only() {
         let out = expanded(quote! {
             client SnapshotCursorRuntime {
                 base "https://example.com"
@@ -2282,11 +2282,11 @@ mod tests {
         );
         assert!(
             !out.contains(&legacy_cursor_bindings()),
-            "removed endpoint-state binding types must not appear in generated output"
+            "removed pagination binding types must not appear in generated output"
         );
         assert!(
             !out.contains(&legacy_endpoint_field()),
-            "removed endpoint-state binding helpers must not appear in generated output"
+            "removed pagination binding helpers must not appear in generated output"
         );
     }
 
@@ -2336,7 +2336,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_cursor_exposes_single_object_pagination_runtime() {
+    fn generated_cursor_exposes_pagination_binding_and_type() {
         let out = expanded(quote! {
             client SnapshotCursorSingleObjectRuntime {
                 base "https://example.com"
@@ -2371,7 +2371,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_cursor_single_object_pagination_preserves_controller_flags() {
+    fn generated_cursor_pagination_preserves_controller_flags() {
         let out = expanded(quote! {
             client SnapshotCursorFlags {
                 base "https://example.com"

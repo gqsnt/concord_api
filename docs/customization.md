@@ -127,11 +127,11 @@ impl<T: Send + 'static> HasNextCursor for Page<T> {
 
 ## Custom Pagination
 
-A custom pagination controller implements `EndpointPagination<Page>`. The controller owns pagination state and returns `PageApplyResult` for the next page while the runtime keeps the endpoint model in sync through `PaginateBinding<P>` before planning.
+A custom pagination controller type implements `Default + EndpointPagination<Page>`. Generated endpoints set `PaginatedEndpoint::Pagination = Type` and keep the endpoint model in sync through `PaginateBinding<Type>` before planning.
 
 `paginate Controller { ... }` constructs the controller through `Default`, so custom controller marker types must implement `Default + EndpointPagination<Page>`.
 
-Assignment rules are shared with built-in pagination:
+Assignment rules are shared across built-in and custom pagination controllers:
 
 - endpoint-field assignments are loaded from the endpoint into the pagination object and stored back after the page advances
 - literal and config assignments initialize pagination fields but are not stored back to endpoint fields

@@ -44,6 +44,8 @@ Credential slot generations are monotonic across empty, in-flight, ready, and fa
 
 Pagination drives one logical request per page and always checks page progress. The runtime records every logical request identity seen during a pagination run and returns a typed pagination error if a later page would reuse any previously seen identity instead of advancing.
 
+Pagination is type-driven at runtime: generated endpoints name a pagination controller type, `PaginateBinding` loads and stores endpoint-backed fields, and core owns the loop around `EndpointPagination` implementations.
+
 Controller loop-key checking is an additional pagination defense, not the only non-progress guard. Even when a controller disables its own loop-key check, the runtime request-identity guard remains active for the logical page request.
 
 Public query parameters and public headers cannot silently collide with reserved auth names. Query-auth keys are rejected before transport if they already exist as public query parameters, and bearer, Basic, and custom header-auth names are rejected before rate-limit acquisition and transport if they already exist as public headers.
