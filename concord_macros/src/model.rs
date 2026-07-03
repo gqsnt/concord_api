@@ -8,7 +8,6 @@
 pub(crate) mod docs;
 pub(crate) mod facade;
 pub(crate) mod norm;
-pub(crate) mod resolved;
 
 pub(crate) use norm::*;
 
