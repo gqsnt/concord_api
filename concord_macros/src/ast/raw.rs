@@ -86,7 +86,6 @@ pub struct RawEndpoint {
     pub body: RawRequestIo,
 
     pub response: RawResponseIo,
-    pub map: Option<MapSpec>,
 }
 
 #[derive(Debug)]

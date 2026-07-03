@@ -63,7 +63,6 @@ pub struct ResolvedEndpoint {
     pub behavior_doc: BehaviorDocMeta,
 
     pub paginate: Option<PaginateResolved>,
-    pub map: Option<MapResolved>,
 }
 
 #[derive(Debug, Clone)]
@@ -96,7 +95,6 @@ pub struct RequestIoCapabilities {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResponseIoCapabilities {
-    pub supports_map: bool,
     pub supports_pagination: bool,
     pub is_streaming: bool,
     pub is_no_content: bool,
@@ -115,8 +113,6 @@ pub struct RequestEntityPlanIr {
 pub struct ResponseEntityPlanIr {
     pub adapter_ty: Type,
     pub public_output_ty: Type,
-    pub decoded_value_ty: Option<Type>,
-    pub mapped: bool,
     pub doc: IoDocIr,
     pub capabilities: ResponseIoCapabilities,
 }
@@ -548,9 +544,4 @@ pub struct PaginationAssignmentResolved {
     pub value: PaginationValueKind,
 }
 
-#[derive(Debug)]
-pub struct MapResolved {
-    pub body: syn::Expr,
-    pub out_ty: Type,
-}
 

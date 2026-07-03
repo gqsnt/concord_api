@@ -88,30 +88,13 @@ impl EndpointBlockParts {
     }
 }
 
-fn parse_endpoint_response_spec(input: ParseStream<'_>) -> Result<(RawResponseIo, Option<MapSpec>)> {
+fn parse_endpoint_response_spec(input: ParseStream<'_>) -> Result<RawResponseIo> {
     input.parse::<Token![->]>()?;
     let response: RawIoSpec = input.parse()?;
-
-    let map = if input.peek(Token![|]) {
+    if input.peek(Token![|]) {
         return Err(syn::Error::new(input.span(), "unexpected token in endpoint stanza"));
-    } else if input.peek(kw::map) {
-        input.parse::<kw::map>()?;
-        let out_ty: Type = input.parse()?;
-        let content;
-        braced!(content in input);
-        let body: Expr = content.parse()?;
-        if !content.is_empty() {
-            return Err(syn::Error::new(
-                content.span(),
-                "unexpected tokens after map expression",
-            ));
-        }
-        Some(MapSpec { out_ty, body })
-    } else {
-        None
-    };
-
-    Ok((response, map))
+    }
+    Ok(response)
 }
 
 fn parse_endpoint_signature_args(
@@ -225,11 +208,6 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
                 return Err(syn::Error::new(name.span(), "duplicate `paginate`"));
             }
             parts.paginate = Some(input.parse::<PaginateSpec>()?);
-        } else if input.peek(kw::map) {
-            return Err(syn::Error::new(
-                input.span(),
-                "map clause must appear after endpoint response",
-            ));
         } else if input.peek(kw::body) {
             let body: kw::body = input.parse()?;
             return Err(syn::Error::new(

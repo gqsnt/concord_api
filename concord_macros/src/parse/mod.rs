@@ -917,7 +917,7 @@ mod tests {
     }
 
     #[test]
-    fn endpoint_map_after_response_parses() {
+    fn endpoint_response_after_response_parses() {
         let ast: RawApi = syn::parse_str(
             r#"
             api! {
@@ -928,19 +928,20 @@ mod tests {
                 POST Login(body: Json<LoginResponse>)
                     path ["login"]
                     -> Json<LoginResponse>
-                    map AccessToken {
-                        AccessToken::new(r.access_token)
-                    }
             }
             "#,
         )
-        .expect("map after response parses");
+        .expect("response after response marker parses");
 
         let RawItem::Endpoint(endpoint) = &ast.items[0] else {
             panic!("expected endpoint");
         };
         assert!(endpoint.body.is_some());
-        assert!(endpoint.map.is_some());
+        assert_eq!(
+            endpoint.response.marker,
+            syn::parse_quote!(Json<LoginResponse>)
+        );
+        assert!(endpoint.response.had_angle_args);
     }
 
     #[test]
@@ -981,47 +982,6 @@ mod tests {
         .expect_err("duplicate response must fail");
 
         assert!(err.to_string().contains("duplicate endpoint response"));
-    }
-
-    #[test]
-    fn endpoint_map_before_response_fails() {
-        let err = syn::parse_str::<RawApi>(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-                }
-
-                GET Ping
-                    map String { r }
-                    -> Json<String>
-            }
-            "#,
-        )
-        .expect_err("map before response must fail");
-
-        assert!(err.to_string().contains("map clause must appear after"));
-    }
-
-    #[test]
-    fn endpoint_duplicate_map_fails() {
-        let err = syn::parse_str::<RawApi>(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-                }
-
-                GET Ping
-                    -> Json<String>
-                    map String { r }
-                    map String { r }
-            }
-            "#,
-        )
-        .expect_err("duplicate map must fail");
-
-        assert!(err.to_string().contains("map clause must appear after"));
     }
 
     #[test]

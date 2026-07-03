@@ -192,7 +192,7 @@ impl Parse for RawEndpoint {
             ));
         }
 
-        let (response, map) = parse_endpoint_response_spec(input)?;
+        let response = parse_endpoint_response_spec(input)?;
         let trailing_parts = parse_endpoint_inline_parts(input, &name)?;
         let inline_parts = leading_parts.merge(trailing_parts, &name)?;
 
@@ -201,9 +201,6 @@ impl Parse for RawEndpoint {
                 input.span(),
                 "duplicate endpoint response marker",
             ));
-        }
-        if input.peek(kw::map) {
-            return Err(syn::Error::new(input.span(), "duplicate endpoint map clause"));
         }
         if input.peek(token::Semi) {
             let _semi: token::Semi = input.parse()?;
@@ -223,7 +220,6 @@ impl Parse for RawEndpoint {
                 inline_parts.paginate,
                 body,
                 response,
-                map,
             ));
         }
 
@@ -250,7 +246,6 @@ impl Parse for RawEndpoint {
             inline_parts.paginate,
             body,
             response,
-            map,
         ))
     }
 }
@@ -272,7 +267,6 @@ fn raw_endpoint(
     paginate: Option<PaginateSpec>,
     body: RawRequestIo,
     response: RawResponseIo,
-    map: Option<MapSpec>,
 ) -> RawEndpoint {
     RawEndpoint {
         line: RawEndpointLine {
@@ -296,7 +290,6 @@ fn raw_endpoint(
         paginate,
         body,
         response,
-        map,
     }
 }
 

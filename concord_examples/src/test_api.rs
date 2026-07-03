@@ -107,9 +107,6 @@ api! {
                     "userId" = user_id
                 }
                 -> Json<Vec<models::Post>>
-                map Vec<String> {
-                    IntoIterator::into_iter(r).map(|p| p.title).collect()
-                }
         }
     }
 }
@@ -153,8 +150,8 @@ pub async fn test_api() -> Result<(), ApiClientError> {
     let user = client.jsonplaceholder().users().by_id(1).await?;
     println!("GET /users/1 => username={}", user.username);
 
-    let titles = client.jsonplaceholder().users().posts(1).await?;
-    println!("GET /users/1/posts => {} titles (mapped)", titles.len());
+    let posts = client.jsonplaceholder().users().posts(1).await?;
+    println!("GET /users/1/posts => {} posts", posts.len());
 
     Ok(())
 }

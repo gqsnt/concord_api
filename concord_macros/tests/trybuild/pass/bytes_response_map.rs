@@ -9,13 +9,10 @@ api! {
     GET Download
         path ["download"]
         -> Bytes
-        map usize {
-            r.len()
-        }
 }
 
 async fn usage(api: BytesResponseMapApi) {
-    let _: usize = api.download().execute().await.unwrap();
+    let _ = api.download().execute().await.unwrap();
 }
 
 fn main() {}

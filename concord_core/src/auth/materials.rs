@@ -1,5 +1,6 @@
 use super::credentials::{CredentialMaterial, SecretCredential};
 use crate::secret::SecretString;
+use serde::Deserialize;
 use std::time::Instant;
 
 #[derive(Clone, Debug)]
@@ -42,7 +43,35 @@ impl SecretCredential for AccessToken {
     }
 }
 
-#[derive(Clone, Debug)]
+impl<'de> Deserialize<'de> for AccessToken {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct AccessTokenPayload {
+            #[serde(rename = "access_token")]
+            token: SecretString,
+            #[serde(default)]
+            refresh_token: Option<SecretString>,
+            #[serde(default)]
+            scope: Vec<String>,
+            #[serde(default)]
+            audience: Option<String>,
+        }
+
+        let payload = AccessTokenPayload::deserialize(deserializer)?;
+        Ok(AccessToken {
+            token: payload.token,
+            expires_at: None,
+            refresh_token: payload.refresh_token,
+            scope: payload.scope,
+            audience: payload.audience,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct ApiKey {
     pub value: SecretString,
 }
@@ -64,7 +93,7 @@ impl SecretCredential for ApiKey {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct BasicCredential {
     pub username: SecretString,
     pub password: SecretString,
@@ -82,7 +111,7 @@ impl BasicCredential {
 
 impl CredentialMaterial for BasicCredential {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ClientCertificate {
     pub identity_id: String,
 }

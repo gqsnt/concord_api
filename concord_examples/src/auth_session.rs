@@ -9,11 +9,6 @@ pub struct SessionLoginRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionLoginResponse {
-    pub access_token: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionUser {
     pub id: u64,
     pub username: String,
@@ -33,10 +28,7 @@ api! {
         POST LoginForSession(body: Json<SessionLoginRequest>)
             path ["login"]
             auth header "X-Upstream-Key" = upstream
-            -> Json<SessionLoginResponse>
-            map AccessToken {
-            AccessToken::new(r.access_token)
-        }
+            -> Json<AccessToken>
     }
 
     scope protected {

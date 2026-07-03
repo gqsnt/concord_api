@@ -76,5 +76,5 @@ The generated advanced surfaces are family-specific and keep runtime values free
 - `.execute()` also routes through the family-specific execution path for these endpoint I/O shapes.
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` are the codec-level override points for buffered codecs. `content_type()` and `accept()` are the convenience forms.
 - Retry policies remain available for ordinary HTTP endpoints, including buffered responses and supported stream/records/multipart/SSE response endpoints. Stream-like request bodies are not automatically replayed by retry unless a future replayable-body contract is introduced.
-- Map and pagination remain buffered-response-only and are rejected for `Stream`, `Records`, `Multipart`, `Sse`, and `NoContent` endpoint responses. `Bytes` allows `map` but rejects pagination.
+- Pagination remains buffered-response-only and is rejected for `Stream`, `Records`, `Multipart`, `Sse`, and `NoContent` endpoint responses. `Bytes` rejects pagination.
 - Request-side SSE remains unsupported.

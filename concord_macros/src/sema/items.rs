@@ -202,15 +202,8 @@ fn collect_endpoint_output_types_into(
 }
 
 fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Result<Type> {
-    if let Some(map) = &endpoint.map {
-        return Ok(map.out_ty.clone());
-    }
-
     let response_io = classify_http_response_io(&endpoint.response)?;
-    Ok(response_public_output_ty(
-        &response_io,
-        endpoint.map.as_ref().map(|map| &map.out_ty),
-    ))
+    Ok(response_public_output_ty(&response_io))
 }
 
 fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPlanIr {
@@ -313,18 +306,13 @@ fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPl
     }
 }
 
-fn response_entity_plan_ir(
-    response_io: &ResolvedResponseBodyIo,
-    map: Option<&MapResolved>,
-) -> ResponseEntityPlanIr {
+fn response_entity_plan_ir(response_io: &ResolvedResponseBodyIo) -> ResponseEntityPlanIr {
     match response_io {
         ResolvedResponseBodyIo::BufferedCodec(io) => {
             let marker = &io.marker;
             ResponseEntityPlanIr {
                 adapter_ty: syn::parse_quote!(::concord_core::advanced::BufferedResponse<#marker>),
-                public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
-                decoded_value_ty: Some(io.value_ty.clone()),
-                mapped: map.is_some(),
+                public_output_ty: response_public_output_ty(response_io),
                 doc: IoDocIr {
                     summary: format!(
                         "Buffered response decoded by {}.",
@@ -336,7 +324,6 @@ fn response_entity_plan_ir(
                     )),
                 },
                 capabilities: ResponseIoCapabilities {
-                    supports_map: true,
                     supports_pagination: true,
                     is_streaming: false,
                     is_no_content: false,
@@ -345,15 +332,12 @@ fn response_entity_plan_ir(
         }
         ResolvedResponseBodyIo::BufferedBytes => ResponseEntityPlanIr {
             adapter_ty: syn::parse_quote!(::concord_core::advanced::BytesResponse),
-            public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
-            decoded_value_ty: Some(syn::parse_quote!(::bytes::Bytes)),
-            mapped: map.is_some(),
+            public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Buffered bytes response.".to_string(),
                 facade_summary: Some("Response: bytes::Bytes".to_string()),
             },
             capabilities: ResponseIoCapabilities {
-                supports_map: true,
                 supports_pagination: false,
                 is_streaming: false,
                 is_no_content: false,
@@ -361,15 +345,12 @@ fn response_entity_plan_ir(
         },
         ResolvedResponseBodyIo::NoContent => ResponseEntityPlanIr {
             adapter_ty: syn::parse_quote!(::concord_core::advanced::NoContentResponse),
-            public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
-            decoded_value_ty: None,
-            mapped: false,
+            public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "No response body.".to_string(),
                 facade_summary: Some("Response: ()".to_string()),
             },
             capabilities: ResponseIoCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: false,
                 is_no_content: true,
@@ -377,9 +358,7 @@ fn response_entity_plan_ir(
         },
         ResolvedResponseBodyIo::RawStream { media_ty } => ResponseEntityPlanIr {
             adapter_ty: syn::parse_quote!(::concord_core::advanced::RawStreamResponse<#media_ty>),
-            public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
-            decoded_value_ty: Some(media_ty.clone()),
-            mapped: false,
+            public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Streaming response body.".to_string(),
                 facade_summary: Some(format!(
@@ -388,7 +367,6 @@ fn response_entity_plan_ir(
                 )),
             },
             capabilities: ResponseIoCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,
@@ -396,9 +374,7 @@ fn response_entity_plan_ir(
         },
         ResolvedResponseBodyIo::Records { item_ty, format_ty } => ResponseEntityPlanIr {
             adapter_ty: syn::parse_quote!(::concord_core::advanced::RecordResponse<#item_ty, #format_ty>),
-            public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
-            decoded_value_ty: Some(item_ty.clone()),
-            mapped: false,
+            public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Record-streaming response body.".to_string(),
                 facade_summary: Some(format!(
@@ -408,7 +384,6 @@ fn response_entity_plan_ir(
                 )),
             },
             capabilities: ResponseIoCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,
@@ -416,9 +391,7 @@ fn response_entity_plan_ir(
         },
         ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => ResponseEntityPlanIr {
             adapter_ty: syn::parse_quote!(::concord_core::advanced::MultipartResponse<#part_ty, #format_ty>),
-            public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
-            decoded_value_ty: Some(part_ty.clone()),
-            mapped: false,
+            public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Multipart response body.".to_string(),
                 facade_summary: Some(format!(
@@ -428,7 +401,6 @@ fn response_entity_plan_ir(
                 )),
             },
             capabilities: ResponseIoCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,
@@ -436,9 +408,7 @@ fn response_entity_plan_ir(
         },
         ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => ResponseEntityPlanIr {
             adapter_ty: syn::parse_quote!(::concord_core::advanced::SseResponse<#event_ty, #codec_ty>),
-            public_output_ty: response_public_output_ty(response_io, map.map(|map| &map.out_ty)),
-            decoded_value_ty: Some(event_ty.clone()),
-            mapped: false,
+            public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Server-sent events response.".to_string(),
                 facade_summary: Some(format!(
@@ -448,7 +418,6 @@ fn response_entity_plan_ir(
                 )),
             },
             capabilities: ResponseIoCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,
@@ -457,13 +426,7 @@ fn response_entity_plan_ir(
     }
 }
 
-fn response_public_output_ty(
-    response_io: &ResolvedResponseBodyIo,
-    map_out_ty: Option<&Type>,
-) -> Type {
-    if let Some(map_out_ty) = map_out_ty {
-        return map_out_ty.clone();
-    }
+fn response_public_output_ty(response_io: &ResolvedResponseBodyIo) -> Type {
 
     match response_io {
         ResolvedResponseBodyIo::BufferedCodec(io) => io.value_ty.clone(),
@@ -852,17 +815,7 @@ fn analyze_endpoint(
     let request_io = classify_request_io(ed.body.as_ref())?;
     let request_entity = request_entity_plan_ir(&request_io);
     let response_io = classify_http_response_io(&ed.response)?;
-    let map = ed.map.as_ref().map(|m| MapResolved {
-        out_ty: m.out_ty.clone(),
-        body: m.body.clone(),
-    });
-    let response_entity = response_entity_plan_ir(&response_io, map.as_ref());
-    if !response_entity.capabilities.supports_map && map.is_some() {
-        return Err(syn::Error::new(
-            ed.name.span(),
-            "`map` is only supported for buffered responses",
-        ));
-    }
+    let response_entity = response_entity_plan_ir(&response_io);
     if matches!(response_io, ResolvedResponseBodyIo::BufferedBytes) && ed.paginate.is_some() {
         return Err(syn::Error::new(
             ed.name.span(),
@@ -931,7 +884,6 @@ fn analyze_endpoint(
             names: behavior_doc_names,
         },
         paginate,
-        map,
     })
 }
 

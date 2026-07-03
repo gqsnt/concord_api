@@ -121,7 +121,6 @@ fn emit_endpoint_def(
     }
 
     let final_response_ty = endpoint_response_output_ty(ep);
-    let response_transform_impl = endpoint_response_transform_impl(ep, ty_name);
     let response_plan_setup = endpoint_response_plan_tokens(ep, ty_name);
     let response_plan_accept = quote! { __response_accept };
     let response_plan_no_content = quote! { __response_no_content };
@@ -234,8 +233,6 @@ fn emit_endpoint_def(
             }
             #( #setters_ts )*
         }
-
-        #response_transform_impl
 
         #paginate_binding_impl
 
@@ -506,48 +503,8 @@ fn endpoint_response_output_ty(ep: &ResolvedEndpoint) -> TokenStream2 {
 
 fn endpoint_response_adapter_ty(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenStream2 {
     let base_adapter_ty = &ep.io.response_entity.adapter_ty;
-    if ep.io.response_entity.mapped {
-        let transform_ty = emit_helpers::ident(&format!("__Map{ty_name}"), Span::call_site());
-        quote! {
-            ::concord_core::advanced::MappedResponse<#base_adapter_ty, #transform_ty>
-        }
-    } else {
-        quote! { #base_adapter_ty }
-    }
-}
-
-fn endpoint_response_transform_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenStream2 {
-    let Some(map) = ep.map.as_ref() else {
-        return quote! {};
-    };
-
-    let transform_ty = emit_helpers::ident(&format!("__Map{ty_name}"), Span::call_site());
-    let decoded_ty = match ep.io.response_entity.decoded_value_ty.as_ref() {
-        Some(ty) => ty,
-        None => {
-            return quote! {
-                compile_error!("mapped response is missing a decoded value type in resolved IR");
-            };
-        }
-    };
-    let out_ty = &ep.io.response_entity.public_output_ty;
-    let body = &map.body;
-
-    quote! {
-        struct #transform_ty;
-
-        impl ::concord_core::advanced::ResponseTransform<#decoded_ty> for #transform_ty {
-            type Output = #out_ty;
-
-            fn transform(
-                input: #decoded_ty,
-            ) -> ::core::result::Result<Self::Output, ::concord_core::advanced::FxError> {
-                let r: #decoded_ty = input;
-                let value: #out_ty = (#body);
-                ::core::result::Result::Ok(value)
-            }
-        }
-    }
+    let _ = ty_name;
+    quote! { #base_adapter_ty }
 }
 
 fn endpoint_response_plan_tokens(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenStream2 {

@@ -12,9 +12,6 @@ pub struct Post;
 pub struct SearchResponse;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginRequest;
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LoginResponse { access_token: String }
-
 api! {
     client CurrentEndpointStanzaApi {
         base "https://example.com"
@@ -41,14 +38,11 @@ api! {
         }
         -> Json<SearchResponse>
 
-    POST LoginForSession(body: Json<LoginRequest>)
-        as login_for_session
-        path ["login"]
-        auth header "X-Upstream-Key" = upstream
-        -> Json<LoginResponse>
-        map AccessToken {
-            AccessToken::new(r.access_token)
-        }
+        POST LoginForSession(body: Json<LoginRequest>)
+            as login_for_session
+            path ["login"]
+            auth header "X-Upstream-Key" = upstream
+            -> Json<ApiKey>
 }
 
 fn main() {}

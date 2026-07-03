@@ -141,7 +141,6 @@ fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEndpoint> {
         paginate: raw.paginate,
         body: raw.body,
         response: raw.response,
-        map: raw.map,
     })
 }
 

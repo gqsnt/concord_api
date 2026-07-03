@@ -1,7 +1,7 @@
 //! Canonical macro model produced by raw syntax normalization.
 
 use crate::ast::{
-    AuthCredentials, AuthUseKind, BehaviorProfilesBlock, BehaviorUseSpec, MapSpec, PaginateSpec,
+    AuthCredentials, AuthUseKind, BehaviorProfilesBlock, BehaviorUseSpec, PaginateSpec,
     PolicyBlocks, RateLimitKeyBindingSpec, RateLimitProfilesBlock, RateLimitSpec, RawRequestIo,
     RawResponseIo, RetryProfilesBlock, RetrySpec, RouteExpr, VarDeclNoWire,
 };
@@ -93,7 +93,6 @@ pub(crate) struct NormEndpoint {
     pub paginate: Option<PaginateSpec>,
     pub body: RawRequestIo,
     pub response: RawResponseIo,
-    pub map: Option<MapSpec>,
 }
 
 #[derive(Clone, Debug)]
@@ -156,7 +155,6 @@ mod tests {
                 args: vec![syn::parse_quote!(String)],
                 had_angle_args: true,
             },
-            map: None,
         };
 
         assert_eq!(endpoint.method, "GET");

@@ -2,7 +2,7 @@
 
 Concord runtime failures surface as `ApiClientError`. The enum is `non_exhaustive`, so application code should prefer variant matching for known cases and `ErrorCategory` for broader grouping.
 
-`Display`, `Debug`, and `source()` diagnostics are safe metadata surfaces. They must not contain request body bytes, response body bytes, raw bearer tokens, query auth values, header auth values, Basic usernames or passwords, or secret values. Debug sinks, runtime hooks, rate-limit contexts, and retry contexts follow the same boundary. A custom transport or user-authored map or codec error can still log or return unsafe text if the integration writes it; Concord does not add body or auth material to those diagnostics itself.
+`Display`, `Debug`, and `source()` diagnostics are safe metadata surfaces. They must not contain request body bytes, response body bytes, raw bearer tokens, query auth values, header auth values, Basic usernames or passwords, or secret values. Debug sinks, runtime hooks, rate-limit contexts, and retry contexts follow the same boundary. A custom transport or user-authored codec error can still log or return unsafe text if the integration writes it; Concord does not add body or auth material to those diagnostics itself.
 
 ## Taxonomy
 
@@ -18,18 +18,17 @@ Concord runtime failures surface as `ApiClientError`. The enum is `non_exhaustiv
 | Content-Length body limit | `ApiClientError::ResponseTooLarge`; category `Decode` | After transport metadata classification, before body chunks are read | No | No ordinary retry | Reports limit and content length only. |
 | Streaming body limit | `ApiClientError::ResponseBodyLimitExceeded`; category `Decode` | During bounded body read | Reads only enough chunks to detect overflow | No ordinary retry | Does not include partial body bytes. |
 | Decode failure under limit | `ApiClientError::Decode` or `Codec`; category `Decode` | After bounded body read | Yes, within limit | No ordinary retry | Context may include status and content type, not payload bytes. |
-| Map or transform failure | `ApiClientError::Transform`; category `Decode` | After decode | Already read within limit | No ordinary retry | Concord does not add body bytes; integration-authored source errors must avoid unsafe text. |
 | Pagination non-progress or cap failure | `ApiClientError::Pagination` or `PaginationLimit`; category `Pagination` | Depends on page stage; non-progress happens after a page completes | Depends on completed page | Page retry or auth refresh keeps page identity | Error is page and control metadata only. |
 | Runtime config invalid values | Most v1 runtime config setters are infallible; invalid runtime state uses `RuntimeState` or typed subsystem errors | Where the configured subsystem is used | Depends on subsystem | Depends on subsystem | Diagnostics remain body-free and auth-free. |
 
 ## `execute_raw()`
 
-`execute_raw()` skips endpoint decode and mapping. It still performs logical request construction, auth collision validation, rate-limit acquire and observation, transport send, retry, response classification, auth rejection handling, and runtime response-body limits.
+`execute_raw()` skips endpoint decode. It still performs logical request construction, auth collision validation, rate-limit acquire and observation, transport send, retry, response classification, auth rejection handling, and runtime response-body limits.
 
 Consequences:
 
 - it can return validation, auth, rate-limit, transport, HTTP status, retry final-error, and body-limit errors;
-- it does not produce endpoint decode, map or transform, or pagination collection errors;
+- it does not produce endpoint decode or pagination collection errors;
 - diagnostics follow the same body-free and raw-auth-free rules as decoded execution.
 
 ## Testing Guidance

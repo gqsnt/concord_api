@@ -433,18 +433,8 @@ path ["items"]
 -> Json<Item>
 ```
 
-### Response Mapping
-
-Response mapping is the exception when used:
-
-```rust
-GET Login
-path ["login"]
--> Json<LoginResponse>
-map AccessToken { AccessToken::new(r.access_token) }
-```
-
-Behavior names also appear on endpoint docs. Generated endpoint documentation includes attached behavior names from client defaults, scopes, and endpoints.
+### Response Output
+Endpoint output is exactly the decoded response entity output. Behavior names also appear on endpoint docs. Generated endpoint documentation includes attached behavior names from client defaults, scopes, and endpoints.
 
 ### Auth Keyword Reference
 
@@ -734,9 +724,7 @@ Endpoint leaves support:
 - `retry ...`
 - `rate_limit ...`
 - `-> Codec<T>`
-- `map Type { expr }` after the response line
-
-The response line closes the normal endpoint contract. `map` is the documented exception because it transforms the decoded response into credential or facade output material.
+The response line closes the normal endpoint contract.
 
 ### Pagination
 

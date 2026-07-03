@@ -50,7 +50,7 @@ Valid OAuth tokens are reused through the credential slot. A protected `401` inv
 
 ## Endpoint-Backed Credentials
 
-An endpoint can produce a credential for later requests. Declare the credential as an endpoint path and map the auth endpoint response into the credential material.
+An endpoint can produce credential material for later requests. Declare the credential as an endpoint path and return the credential material directly.
 
 ```rust
 client SessionApi {
@@ -68,8 +68,7 @@ scope auth_api {
     POST LoginForSession(body: Json<LoginRequest>)
         path ["login"]
         auth header "X-Upstream-Key" = upstream
-        -> Json<LoginResponse>
-        map AccessToken { AccessToken::new(r.access_token) }
+        -> Json<AccessToken>
 }
 
 scope protected {
@@ -102,7 +101,7 @@ let me = api.protected().me().await?;
 
 Protected calls fail before transport if a required endpoint-backed credential has not been acquired.
 
-Endpoint-backed material can be `AccessToken`, API-key-like material, `BasicCredential`, or `ClientCertificate` when attached to the matching auth placement.
+Endpoint-backed material can be `AccessToken`, `BasicCredential`, or `ClientCertificate` when attached to the matching auth placement. For bearer auth, the endpoint should return `AccessToken` directly.
 
 ## Auth State
 

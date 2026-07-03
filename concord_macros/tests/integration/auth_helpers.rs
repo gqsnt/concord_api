@@ -20,22 +20,6 @@ pub struct LoginRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct LoginResponse {
-    access_token: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BasicLoginResponse {
-    username: String,
-    password: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CertificateLoginResponse {
-    identity_id: String,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct User {
     name: String,
 }
@@ -67,8 +51,7 @@ mod auth_helper_contract {
             POST LoginForSession(body: Json<LoginRequest>)
                 path ["login"]
                 auth header "X-Upstream-Key" = upstream
-                -> Json<LoginResponse>
-                map AccessToken { AccessToken::new(r.access_token) }
+                -> Json<AccessToken>
         }
 
         scope protected {
@@ -117,10 +100,7 @@ mod basic_endpoint_helper_contract {
         scope auth_api {
             POST LoginForBasic(body: Json<LoginRequest>)
                 path ["login-basic"]
-                -> Json<BasicLoginResponse>
-                map BasicCredential {
-                    BasicCredential::new(r.username, r.password)
-                }
+                -> Json<BasicCredential>
         }
 
         scope protected {
@@ -148,10 +128,7 @@ mod certificate_endpoint_helper_contract {
         scope auth_api {
             POST GetCertificate(body: Json<LoginRequest>)
                 path ["cert"]
-                -> Json<CertificateLoginResponse>
-                map ClientCertificate {
-                    ClientCertificate::new(r.identity_id)
-                }
+                -> Json<ClientCertificate>
         }
 
         scope protected {

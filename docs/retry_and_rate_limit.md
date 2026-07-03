@@ -36,7 +36,7 @@ Flat `retry` and `rate_limit` profile declarations remain valid. `policies { ...
 
 `max_attempts` is the total number of send tries, including the first send. `retry_after` honors `Retry-After` response headers for retryable statuses.
 
-Retry is a bounded transport/status decision layer. Retry decisions happen after transport-response metadata observation and auth rejection handling, and before endpoint decode and mapping. Retry does not handle decode failures or map failures.
+Retry is a bounded transport/status decision layer. Retry decisions happen after transport-response metadata observation and auth rejection handling, and before endpoint decode. Retry does not handle decode failures.
 
 Invalid or overflowing retry delays return a typed configuration error rather than panicking or sleeping.
 
@@ -153,9 +153,8 @@ The execution order is fixed:
 9. Observe rate-limit response metadata.
 10. Handle auth rejection and bounded auth refresh.
 11. Apply normal retry policy.
-12. Decode the endpoint response.
-13. Apply any endpoint map or transform.
-14. Return the final value.
+12. Decode the endpoint response and return the decoded response entity output.
+13. Return the final value.
 
 `execute_raw()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding.
 

@@ -781,7 +781,7 @@ fn debug_norm_tree(norm: &NormApiTree) -> String {
                 }
                 NormNode::Endpoint(endpoint) => {
                     out.push_str(&format!(
-                        "{indent}endpoint {} method={} alias={:?} params={} body={} query={} paginate={} map={}\n",
+                        "{indent}endpoint {} method={} alias={:?} params={} body={} query={} paginate={}\n",
                         endpoint.name,
                         endpoint.method,
                         endpoint.alias.as_ref().map(ToString::to_string),
@@ -789,7 +789,6 @@ fn debug_norm_tree(norm: &NormApiTree) -> String {
                         endpoint.body.is_some(),
                         endpoint.policy.query.as_ref().map_or(0, |q| q.stmts.len()),
                         endpoint.paginate.is_some(),
-                        endpoint.map.is_some(),
                     ));
                 }
             }
@@ -852,7 +851,7 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
             )
         };
         out.push_str(&format!(
-            "{} method={} route=[{}] params=[{}] policy=[{}] facade={} response={:?} body={} pagination={} map={}\n",
+            "{} method={} route=[{}] params=[{}] policy=[{}] facade={} response={:?} body={} pagination={}\n",
             ep.name,
             ep.method,
             route,
@@ -862,7 +861,6 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
             ep.response_io(),
             !matches!(ep.request_io(), ResolvedRequestBodyIo::None),
             ep.paginate.is_some(),
-            ep.map.is_some()
         ));
     }
     out
@@ -1558,10 +1556,7 @@ mod tests {
                     POST Login(body: Json<LoginRequest>)
                         path ["login"]
                         auth header "X-Upstream-Key" = upstream
-                        -> Json<LoginResponse>
-                        map AccessToken {
-                            AccessToken::new(r.access_token)
-                        }
+                        -> Json<AccessToken>
                 }
 
                 scope protected {
@@ -1683,10 +1678,7 @@ mod tests {
                         path ["login"]
                         auth header "X-Upstream-Key" = upstream
                         auth bearer session
-                        -> Json<LoginResponse>
-                        map AccessToken {
-                            AccessToken::new(r.access_token)
-                        }
+                        -> Json<AccessToken>
                 }
             }
             "#,
@@ -3438,9 +3430,6 @@ mod tests {
                 as create
                 path ["items"]
                 -> Json<CreateResponse>
-                map Created {
-                    Created::from(r)
-                }
             "#,
         )
         .expect("valid api syntax");
@@ -3459,34 +3448,17 @@ mod tests {
             ResolvedResponseBodyIo::BufferedCodec(io) => &io.value_ty,
             other => panic!("expected buffered response body, got {other:?}"),
         };
-        let map = endpoint.map.as_ref().expect("map resolved");
-        let map_ty = &map.out_ty;
-
         let body_ty = &body.value_ty;
         assert_eq!(quote::quote!(#body_ty).to_string(), "CreateBody");
         assert_eq!(quote::quote!(#response_ty).to_string(), "CreateResponse");
-        assert_eq!(quote::quote!(#map_ty).to_string(), "Created");
         assert_eq!(
             ty_string(&endpoint.io.response_entity.adapter_ty),
             "::concord_core::advanced::BufferedResponse<Json<CreateResponse>>"
         );
         assert_eq!(
             ty_string(&endpoint.io.response_entity.public_output_ty),
-            "Created"
-        );
-        assert_eq!(
-            ty_string(
-                endpoint
-                    .io
-                    .response_entity
-                    .decoded_value_ty
-                    .as_ref()
-                    .expect("decoded value type")
-            ),
             "CreateResponse"
         );
-        assert!(endpoint.io.response_entity.mapped);
-        assert!(endpoint.io.response_entity.capabilities.supports_map);
     }
 
     #[test]
@@ -3631,7 +3603,6 @@ mod tests {
             ty_string(&no_body.io.response_entity.public_output_ty),
             "NoBodyResponse"
         );
-        assert!(no_body.io.response_entity.capabilities.supports_map);
         assert!(no_body.io.response_entity.capabilities.supports_pagination);
         assert!(!no_body.io.response_entity.capabilities.is_streaming);
         assert!(!no_body.io.response_entity.capabilities.is_no_content);
@@ -3756,8 +3727,6 @@ mod tests {
         );
         assert!(streamed.io.response_entity.capabilities.is_streaming);
         assert!(!streamed.io.response_entity.capabilities.supports_pagination);
-        assert!(!streamed.io.response_entity.capabilities.supports_map);
-
         let listed = resolved_api
             .endpoints
             .iter()
@@ -3769,8 +3738,6 @@ mod tests {
         );
         assert!(listed.io.response_entity.capabilities.is_streaming);
         assert!(!listed.io.response_entity.capabilities.supports_pagination);
-        assert!(!listed.io.response_entity.capabilities.supports_map);
-
         let multiparted = resolved_api
             .endpoints
             .iter()
@@ -3788,8 +3755,6 @@ mod tests {
                 .capabilities
                 .supports_pagination
         );
-        assert!(!multiparted.io.response_entity.capabilities.supports_map);
-
         let ssed = resolved_api
             .endpoints
             .iter()
@@ -3801,8 +3766,6 @@ mod tests {
         );
         assert!(ssed.io.response_entity.capabilities.is_streaming);
         assert!(!ssed.io.response_entity.capabilities.supports_pagination);
-        assert!(!ssed.io.response_entity.capabilities.supports_map);
-
         let no_content = resolved_api
             .endpoints
             .iter()
@@ -3814,7 +3777,6 @@ mod tests {
         );
         assert!(no_content.io.response_entity.capabilities.is_no_content);
         assert!(!no_content.io.response_entity.capabilities.is_streaming);
-        assert!(!no_content.io.response_entity.capabilities.supports_map);
         assert!(
             !no_content
                 .io
@@ -4293,10 +4255,7 @@ mod tests {
 
             POST Login(body: Json<LoginRequest>)
                 path ["login"]
-                -> Json<LoginResponse>
-                map AccessToken {
-                    AccessToken::new(r.access_token)
-                }
+                -> Json<ApiKey>
             "#,
         )
         .expect("valid api syntax");
@@ -4313,7 +4272,6 @@ mod tests {
         assert!(snapshot.contains("pagination=true"));
         assert!(snapshot.contains("Login method=POST"));
         assert!(snapshot.contains("body=true"));
-        assert!(snapshot.contains("map=true"));
         assert!(snapshot.contains("scopes=1"));
     }
 }

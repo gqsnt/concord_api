@@ -23,14 +23,6 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoginResponse {
-    pub access_token: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct GuideAccessToken(pub String);
-
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Item {
     pub id: u64,
@@ -153,8 +145,7 @@ api! {
 
     POST Login(body: Json<LoginRequest>)
     path ["login"]
-    -> Json<LoginResponse>
-    map GuideAccessToken { GuideAccessToken(r.access_token) }
+    -> Json<AccessToken>
 }
 
 api! {

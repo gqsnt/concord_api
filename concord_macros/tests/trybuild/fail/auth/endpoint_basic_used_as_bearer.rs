@@ -1,28 +1,26 @@
 use concord_macros::api;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
-pub struct LoginResponse {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoginRequest {
     username: String,
-    password: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct User;
+pub struct User {
+    name: String,
+}
 
 api! {
-    client EndpointBasicAsBearerApi {
+    client EndpointBasicUsedAsBearerApi {
         base "https://example.com"
         credential session = endpoint auth_api::Login
     }
 
     scope auth_api {
-        GET Login
+        POST Login(body: Json<LoginRequest>)
             path ["login"]
-            -> Json<LoginResponse>
-            map BasicCredential {
-                BasicCredential::new(r.username, r.password)
-            }
+            -> Json<BasicCredential>
     }
 
     scope protected {

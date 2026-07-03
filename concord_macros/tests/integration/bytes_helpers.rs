@@ -23,13 +23,6 @@ mod bytes_response_contract {
         GET Download
             path ["download"]
             -> Bytes
-
-        GET DownloadMapped
-            path ["download-mapped"]
-            -> Bytes
-            map usize {
-                r.len()
-            }
     }
 
     pub(super) use bytes_response_api::BytesResponseApi;
@@ -185,27 +178,6 @@ async fn generated_bytes_response_reads_body_without_accept_header() {
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].method, Method::GET);
     assert_eq!(requests[0].accept, None);
-    assert!(polls.load(Ordering::SeqCst) > 0);
-}
-
-#[tokio::test]
-async fn generated_bytes_map_transforms_body() {
-    let (fixture, polls) = buffered_fixture(
-        StatusCode::OK,
-        vec![Bytes::from_static(b"hello"), Bytes::from_static(b" world")],
-    );
-    let transport = RecordingBytesTransport::new(fixture);
-    let api = BytesResponseApi::new_with_transport(transport.clone());
-
-    let len = api
-        .download_mapped()
-        .execute()
-        .await
-        .expect("bytes map succeeds");
-
-    assert_eq!(len, 11);
-    assert_eq!(transport.send_count(), 1);
-    assert_eq!(transport.requests()[0].accept, None);
     assert!(polls.load(Ordering::SeqCst) > 0);
 }
 

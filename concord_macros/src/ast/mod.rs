@@ -17,6 +17,5 @@ include!("retry.rs");
 include!("rate_limit.rs");
 include!("behavior.rs");
 include!("pagination.rs");
-include!("mapping.rs");
 include!("policy.rs");
 include!("raw.rs");

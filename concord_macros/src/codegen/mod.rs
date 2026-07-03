@@ -1361,51 +1361,6 @@ mod tests {
     }
 
     #[test]
-    fn generated_mapped_response_uses_response_entity_transform() {
-        let out = expanded(quote! {
-            client ResponsePlanApi {
-                base "https://example.com"
-            }
-
-            POST Login(body: Json<LoginRequest>)
-                path ["login"]
-                -> Json<LoginResponse>
-                map AccessToken {
-                    AccessToken::new(r.access_token)
-                }
-        });
-
-        assert_contains_all(
-            &out,
-            &[
-                "type Response = AccessToken",
-                "MappedResponse",
-                "ResponseTransform",
-                "ResponseEntity",
-                "ResponseEntity>::plan",
-                "ResponseEntity>::execute",
-                "let r : LoginResponse = input",
-                "let value : AccessToken = (AccessToken :: new (r . access_token))",
-                "RequestEntity",
-                "EncodedRequest",
-                "prepare(",
-                "__prepared_request_entity",
-            ],
-        );
-        assert_not_contains_all(
-            &out,
-            &[
-                &forbidden_response_plan_struct(),
-                &forbidden_response_codec_try_accept(),
-                &forbidden_response_codec_decode(),
-                &forbidden_generated_decode_binding(),
-                "BodyPlan :: Encoded",
-                "BodyCodec>::encode",
-            ],
-        );
-    }
-
-    #[test]
     fn generated_invalid_codec_headers_return_typed_errors() {
         let out = expanded(quote! {
             client CodecErrorApi {
@@ -1473,47 +1428,6 @@ mod tests {
                 &forbidden_generated_decode_binding(),
                 "no_content :",
                 "format :",
-            ],
-        );
-    }
-
-    #[test]
-    fn generated_mapped_bytes_response_uses_mapped_response_entity() {
-        let out = expanded(quote! {
-            client BytesMappedEntityApi {
-                base "https://example.com"
-            }
-
-            GET Download
-                path ["download"]
-                -> Bytes
-                map usize {
-                    r.len()
-                }
-        });
-
-        assert_contains_all(
-            &out,
-            &[
-                "MappedResponse",
-                "ResponseTransform",
-                "BytesResponse",
-                "ResponseEntity",
-                "ResponseEntity>::plan",
-                "ResponseEntity>::execute",
-                "let r : :: bytes :: Bytes = input",
-                "let value : usize = (r . len ())",
-            ],
-        );
-        assert_not_contains_all(
-            &out,
-            &[
-                &forbidden_response_plan_struct(),
-                &forbidden_response_codec_try_accept(),
-                &forbidden_response_codec_decode(),
-                &forbidden_generated_decode_binding(),
-                "BodyPlan :: Encoded",
-                "BodyCodec>::encode",
             ],
         );
     }
@@ -2023,10 +1937,7 @@ mod tests {
                 POST LoginForSession(body: Json<LoginRequest>)
                     path ["login"]
                     auth header "X-Upstream-Key" = upstream
-                    -> Json<LoginResponse>
-                    map AccessToken {
-                        AccessToken::new(r.access_token)
-                    }
+                    -> Json<AccessToken>
             }
 
             scope protected {
@@ -2077,10 +1988,7 @@ mod tests {
                 POST LoginForSession(body: Json<LoginRequest>)
                     path ["login"]
                     auth header "X-Upstream-Key" = upstream
-                    -> Json<LoginResponse>
-                    map AccessToken {
-                        AccessToken::new(r.access_token)
-                    }
+                    -> Json<AccessToken>
             }
         });
 
@@ -3048,29 +2956,5 @@ mod tests {
         assert!(!out.contains("policy.retry().cloned().unwrap_or_default()"));
         assert!(!out.contains("__retry.max_attempts"));
         assert!(!out.contains("__retry.methods"));
-    }
-
-    #[test]
-    fn generated_mapping_snapshot_contains_final_response_type_and_transform() {
-        let out = expanded(quote! {
-            client SnapshotMapping {
-                base "https://example.com"
-            }
-
-            POST Login(body: Json<LoginRequest>)
-                path ["login"]
-                -> Json<LoginResponse>
-                map AccessToken {
-                    AccessToken::new(r.access_token)
-                }
-        });
-
-        assert_contains_all(
-            &out,
-            &[
-                "type Response = AccessToken",
-                "let value : AccessToken = (AccessToken :: new (r . access_token))",
-            ],
-        );
     }
 }

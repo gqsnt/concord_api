@@ -6,8 +6,6 @@ use std::time::Duration;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginRequest { username: String }
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LoginResponse { access_token: String }
-#[derive(Debug, Serialize, Deserialize)]
 pub struct User;
 use self::usage_execution_api::UsageExecutionApi;
 
@@ -24,8 +22,7 @@ api! {
             as login_for_session
             path ["login"]
             auth header "X-Upstream-Key" = upstream
-            -> Json<LoginResponse>
-            map AccessToken { AccessToken::new(r.access_token) }
+            -> Json<AccessToken>
     }
 
     scope protected {

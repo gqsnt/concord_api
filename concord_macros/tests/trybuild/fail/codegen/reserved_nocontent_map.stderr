@@ -1,5 +1,0 @@
-error: `map` is only supported for buffered responses
-  --> tests/trybuild/fail/codegen/reserved_nocontent_map.rs:10:9
-   |
-10 |     GET Ping
-   |         ^^^^
