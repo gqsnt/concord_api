@@ -325,6 +325,8 @@ impl Endpoint<TestCx> for ItemsEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for ItemsEndpoint {
+    type Pagination = OffsetLimitPagination;
+
     fn single_object_pagination(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
@@ -439,7 +441,24 @@ impl Endpoint<TestCx> for NoHintItemsEndpoint {
     }
 }
 
-impl PaginatedEndpoint<TestCx> for NoHintItemsEndpoint {}
+impl PaginatedEndpoint<TestCx> for NoHintItemsEndpoint {
+    type Pagination = OffsetLimitPagination;
+
+    fn single_object_pagination(
+        &self,
+    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    {
+        None
+    }
+}
+
+impl PaginateBinding<OffsetLimitPagination> for NoHintItemsEndpoint {
+    fn load_pagination(&self) -> OffsetLimitPagination {
+        OffsetLimitPagination::default()
+    }
+
+    fn store_pagination(&mut self, _pagination: &OffsetLimitPagination) {}
+}
 
 #[derive(Clone)]
 pub struct PageOnlyItemsEndpoint {
@@ -512,6 +531,8 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for PageOnlyItemsEndpoint {
+    type Pagination = PagedPagination;
+
     fn single_object_pagination(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
@@ -668,6 +689,8 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for CursorItemsEndpoint {
+    type Pagination = CursorPagination<String>;
+
     fn single_object_pagination(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>

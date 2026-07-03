@@ -142,6 +142,13 @@ if "${RG[@]}" 'crate::ast|Raw(Api|Ast|Client|Scope|Endpoint|Item)|NormApiTree' c
   fail_with_matches "concord_macros codegen must not import raw AST or normalized parser tree types." "$codegen_refs"
 fi
 
+section "macro pagination runtime construction fence"
+macro_pagination_runtime_refs="$tmpdir/macro_pagination_runtime.refs"
+if "${RG[@]}" 'SingleObjectPaginationRuntimeAdapter|EndpointPagination\s*<' \
+  concord_macros/src/codegen >"$macro_pagination_runtime_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros codegen must not construct single-object pagination runtimes directly." "$macro_pagination_runtime_refs"
+fi
+
 section "codegen panic hygiene"
 panic_refs="$tmpdir/panic.refs"
 if "${RG[@]}" 'expect\("validated|expect\("valid|unreachable!|\.unwrap\(\)' concord_macros/src/codegen >"$panic_refs" 2>/dev/null; then

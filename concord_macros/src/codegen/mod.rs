@@ -1010,9 +1010,6 @@ mod tests {
                 "PaginationMarker",
             ],
         );
-        assert!(!out.contains("PaginationPlan"));
-        assert!(!out.contains("PaginationPlan :: from"));
-        assert!(!out.contains("PaginationPlan :: cursor"));
     }
 
     #[test]
@@ -1284,16 +1281,13 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = OffsetLimitPagination",
                 ":: concord_core :: advanced :: PaginateBinding",
                 "let __pagination_plan = :: core :: option :: Option :: Some",
                 "PaginationMarker",
             ],
         );
-        assert!(!out.contains("PaginationPlan"));
-        assert!(!out.contains("PaginationPlan :: from"));
-        assert!(!out.contains("PaginationPlan :: cursor"));
     }
 
     #[test]
@@ -1807,7 +1801,7 @@ mod tests {
             &out,
             &[
                 "let __pagination_plan = :: core :: option :: Option :: Some",
-                "single_object_pagination",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
                 "PaginateBinding",
                 "PaginationMarker",
             ],
@@ -1831,7 +1825,6 @@ mod tests {
             &["let __pagination_plan = :: core :: option :: Option :: None"],
         );
         assert!(!out.contains("PaginationMarker"));
-        assert!(!out.contains("PaginationPlan"));
     }
 
     #[test]
@@ -1889,8 +1882,8 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < OffsetLimitPagination >",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = OffsetLimitPagination",
                 ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
             ],
         );
@@ -1934,8 +1927,8 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < OffsetLimitPagination >",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = OffsetLimitPagination",
                 ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
             ],
         );
@@ -1996,8 +1989,8 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < PagedPagination >",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = PagedPagination",
                 ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
             ],
         );
@@ -2074,8 +2067,8 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < PagedPagination >",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = PagedPagination",
                 ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
             ],
         );
@@ -2103,8 +2096,8 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < HeaderPagePagination >",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = HeaderPagePagination",
                 ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
                 "HeaderPagePagination",
             ],
@@ -2236,8 +2229,8 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < HeaderPagePagination >",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = HeaderPagePagination",
                 ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
             ],
         );
@@ -2274,8 +2267,8 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < CursorPagination < String > >",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = CursorPagination < String >",
                 ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
             ],
         );
@@ -2366,8 +2359,8 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < CursorPagination < String > >",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = CursorPagination < String >",
                 ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
             ],
         );
@@ -2401,8 +2394,8 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "single_object_pagination",
-                "SingleObjectPaginationRuntimeAdapter :: < CursorPagination < String > >",
+                "impl :: concord_core :: prelude :: PaginatedEndpoint",
+                "type Pagination = CursorPagination < String >",
                 ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
                 "send_cursor_on_first = (true)",
                 "stop_when_cursor_missing = (false)",

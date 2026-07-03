@@ -139,16 +139,24 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
 /// A response type implementing [`crate::pagination::PageItems`] is not enough
 /// to make an endpoint paginated; the endpoint plan must also carry an
 /// explicit pagination controller.
-pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx> {
+pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx>
+where
+    Self: crate::pagination::PaginateBinding<Self::Pagination>,
+    Self::Pagination: crate::pagination::EndpointPagination<Self::Response>,
+    Self::Response: crate::pagination::PageItems,
+{
+    type Pagination;
+
     #[doc(hidden)]
     fn single_object_pagination(
         &self,
     ) -> Option<Box<dyn crate::pagination::SingleObjectPaginationRuntime<Self, Self::Response>>>
     where
         Self: Sized,
-        Self::Response: crate::pagination::PageItems,
     {
-        None
+        Some(Box::new(
+            crate::pagination::SingleObjectPaginationRuntimeAdapter::<Self::Pagination>::new(),
+        ))
     }
 }
 

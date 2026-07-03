@@ -115,6 +115,8 @@ impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
+    type Pagination = HeaderBoundCustomPagination;
+
     fn single_object_pagination(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
@@ -192,6 +194,8 @@ impl PaginateBinding<HeaderBoundCustomPagination> for GeneratedHeaderBoundCustom
 }
 
 impl PaginatedEndpoint<TestCx> for HeaderBoundCustomEndpoint {
+    type Pagination = HeaderBoundCustomPagination;
+
     fn single_object_pagination(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
@@ -254,6 +258,8 @@ impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
+    type Pagination = concord_core::advanced::OffsetLimitPagination;
+
     fn single_object_pagination(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
@@ -318,6 +324,8 @@ impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for HeaderBoundPagedEndpoint {
+    type Pagination = concord_core::advanced::PagedPagination;
+
     fn single_object_pagination(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
@@ -382,6 +390,8 @@ impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
 }
 
 impl PaginatedEndpoint<TestCx> for HeaderBoundCursorEndpoint {
+    type Pagination = concord_core::advanced::CursorPagination<String>;
+
     fn single_object_pagination(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
@@ -455,7 +465,30 @@ impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
     }
 }
 
-impl PaginatedEndpoint<TestCx> for QueryBoundPagedEndpoint {}
+impl PaginatedEndpoint<TestCx> for QueryBoundPagedEndpoint {
+    type Pagination = concord_core::advanced::PagedPagination;
+
+    fn single_object_pagination(
+        &self,
+    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    {
+        None
+    }
+}
+
+impl PaginateBinding<concord_core::advanced::PagedPagination> for QueryBoundPagedEndpoint {
+    fn load_pagination(&self) -> concord_core::advanced::PagedPagination {
+        concord_core::advanced::PagedPagination {
+            page: self.page,
+            per_page: self.count,
+        }
+    }
+
+    fn store_pagination(&mut self, pagination: &concord_core::advanced::PagedPagination) {
+        self.page = pagination.page;
+        self.count = pagination.per_page;
+    }
+}
 
 #[derive(Default)]
 struct AuthQueryCollisionPagination;
@@ -505,6 +538,24 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::Endpoint<C
 impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::PaginatedEndpoint<Cx>
     for PaginationEndpoint
 {
+    type Pagination = concord_core::advanced::OffsetLimitPagination;
+
+    fn single_object_pagination(
+        &self,
+    ) -> Option<Box<dyn concord_core::advanced::SingleObjectPaginationRuntime<Self, Self::Response>>>
+    {
+        None
+    }
+}
+
+impl concord_core::advanced::PaginateBinding<concord_core::advanced::OffsetLimitPagination>
+    for PaginationEndpoint
+{
+    fn load_pagination(&self) -> concord_core::advanced::OffsetLimitPagination {
+        concord_core::advanced::OffsetLimitPagination::default()
+    }
+
+    fn store_pagination(&mut self, _pagination: &concord_core::advanced::OffsetLimitPagination) {}
 }
 
 #[derive(Default)]

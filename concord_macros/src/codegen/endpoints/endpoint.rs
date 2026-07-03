@@ -183,7 +183,7 @@ fn emit_endpoint_def(
 
     let paginate_binding_impl = emit_paginate_binding_impl(ep, ty_name);
     let pagination_plan = emit_endpoint_pagination_plan(ep);
-    let pagination_marker_impl = emit_single_object_pagination_impl(ep, ty_name, cx_ty);
+    let pagination_marker_impl = emit_paginated_endpoint_impl(ep, ty_name, cx_ty);
     let pending_ext_trait = endpoint_pending_ext_trait_ident(ep);
     let pending_setter_decls: Vec<TokenStream2> = facade
         .setters
@@ -358,7 +358,7 @@ fn emit_paginate_binding_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenSt
     }
 }
 
-fn emit_single_object_pagination_impl(
+fn emit_paginated_endpoint_impl(
     ep: &ResolvedEndpoint,
     ty_name: &Ident,
     cx_ty: &Ident,
@@ -370,31 +370,8 @@ fn emit_single_object_pagination_impl(
 
     quote! {
         impl ::concord_core::prelude::PaginatedEndpoint<super::#cx_ty> for #ty_name
-        where
-            #controller_ty: ::core::default::Default
-                + ::concord_core::advanced::EndpointPagination<
-                    <#ty_name as ::concord_core::prelude::Endpoint<super::#cx_ty>>::Response,
-                >,
         {
-            #[inline]
-            fn single_object_pagination(
-                &self,
-            ) -> ::core::option::Option<
-                ::std::boxed::Box<
-                    dyn ::concord_core::internal::SingleObjectPaginationRuntime<
-                        Self,
-                        Self::Response,
-                    >,
-                >,
-            >
-            where
-                Self: Sized,
-                Self::Response: ::concord_core::advanced::PageItems,
-            {
-                ::core::option::Option::Some(::std::boxed::Box::new(
-                    ::concord_core::internal::SingleObjectPaginationRuntimeAdapter::<#controller_ty>::new(),
-                ))
-            }
+            type Pagination = #controller_ty;
         }
     }
 }
