@@ -270,270 +270,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    async fn send_and_classify_stream_once<M>(
-        &self,
-        built: BuiltRequest,
-        send_ctx: SendClassifyCtx<'_>,
-        response_limit: Option<usize>,
-    ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
-    where
-        M: crate::codec::ContentType,
-    {
-        let transport_resp = self
-            .acquire_rate_limit_and_send(
-                built,
-                send_ctx,
-                self.runtime_state.max_stream_request_body_bytes(),
-            )
-            .await?;
-        self.classify_transport_stream_response::<M>(
-            transport_resp,
-            send_ctx.dbg,
-            send_ctx.dbg_verbose,
-            send_ctx.dbg_vv,
-            send_ctx.url_str,
-            send_ctx.error_ctx,
-            response_limit,
-        )
-        .await
-    }
-
-    async fn send_and_classify_multipart_once<PartT, Fmt>(
-        &self,
-        built: BuiltRequest,
-        send_ctx: SendClassifyCtx<'_>,
-        response_limit: Option<usize>,
-    ) -> Result<TransportResponse, ApiClientError>
-    where
-        Fmt: crate::multipart::MultipartFormat,
-        PartT: crate::multipart_response::MultipartDecodePart<Fmt>,
-    {
-        let transport_resp = self
-            .acquire_rate_limit_and_send(
-                built,
-                send_ctx,
-                self.runtime_state.max_stream_request_body_bytes(),
-            )
-            .await?;
-        self.classify_transport_multipart_response::<PartT, Fmt>(
-            transport_resp,
-            send_ctx.dbg,
-            send_ctx.dbg_verbose,
-            send_ctx.dbg_vv,
-            send_ctx.url_str,
-            send_ctx.error_ctx,
-            response_limit,
-        )
-        .await
-    }
-
-    async fn send_and_classify_sse_once<Item, Codec>(
-        &self,
-        built: BuiltRequest,
-        send_ctx: SendClassifyCtx<'_>,
-        response_limit: Option<usize>,
-    ) -> Result<SseStream<Item>, ApiClientError>
-    where
-        Item: Send + 'static,
-        Codec: SseCodec<Item>,
-    {
-        let transport_resp = self
-            .acquire_rate_limit_and_send(
-                built,
-                send_ctx,
-                self.runtime_state.max_stream_request_body_bytes(),
-            )
-            .await?;
-        self.classify_transport_sse_response::<Item, Codec>(
-            transport_resp,
-            send_ctx.dbg,
-            send_ctx.dbg_verbose,
-            send_ctx.dbg_vv,
-            send_ctx.url_str,
-            send_ctx.error_ctx,
-            response_limit,
-        )
-        .await
-    }
-
-    async fn classify_transport_stream_response<M>(
-        &self,
-        resp: TransportResponse,
-        dbg: DebugLevel,
-        dbg_verbose: bool,
-        _dbg_vv: bool,
-        url_str: &str,
-        ctx: &ErrorContext,
-        response_limit: Option<usize>,
-    ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
-    where
-        M: crate::codec::ContentType,
-    {
-        let observe_ctx = Self::response_observation_ctx(&resp, url_str);
-        self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self
-            .observe_rate_limit_response(observe_ctx, ctx)
-            .await?;
-        match classify_status(resp.status) {
-            ResponseClass::HttpStatusError => {
-                if dbg_verbose {
-                    self.debug_sink
-                        .response_status(dbg, resp.status, url_str, false);
-                    self.debug_sink.response_headers(dbg, &resp.headers);
-                }
-                Err(ApiClientError::HttpStatus {
-                    ctx: ctx.clone(),
-                    status: resp.status,
-                    headers: Box::new(resp.headers),
-                    rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
-                        .then_some(Box::new(rate_limit_action)),
-                })
-            }
-            ResponseClass::Success => {
-                if dbg_verbose {
-                    self.debug_sink
-                        .response_status(dbg, resp.status, url_str, true);
-                    self.debug_sink.response_headers(dbg, &resp.headers);
-                }
-                if !Self::header_matches_media_type(resp.headers.get(CONTENT_TYPE), M::CONTENT_TYPE)
-                {
-                    return Err(ApiClientError::PolicyViolation {
-                        ctx: ctx.clone(),
-                        msg: "stream response content type did not match expected media type",
-                    });
-                }
-                if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
-                    if actual > limit as u64 {
-                        return Err(ApiClientError::ResponseTooLarge {
-                            ctx: ctx.clone(),
-                            limit,
-                            actual,
-                        });
-                    }
-                }
-                Ok(crate::stream_response::StreamResponse::new(resp, response_limit))
-            }
-        }
-    }
-
-    async fn classify_transport_multipart_response<PartT, Fmt>(
-        &self,
-        resp: TransportResponse,
-        dbg: DebugLevel,
-        dbg_verbose: bool,
-        _dbg_vv: bool,
-        url_str: &str,
-        ctx: &ErrorContext,
-        response_limit: Option<usize>,
-    ) -> Result<TransportResponse, ApiClientError>
-    where
-        Fmt: crate::multipart::MultipartFormat,
-        PartT: crate::multipart_response::MultipartDecodePart<Fmt>,
-    {
-        let observe_ctx = Self::response_observation_ctx(&resp, url_str);
-        self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self
-            .observe_rate_limit_response(observe_ctx, ctx)
-            .await?;
-        match classify_status(resp.status) {
-            ResponseClass::HttpStatusError => {
-                if dbg_verbose {
-                    self.debug_sink
-                        .response_status(dbg, resp.status, url_str, false);
-                    self.debug_sink.response_headers(dbg, &resp.headers);
-                }
-                Err(ApiClientError::HttpStatus {
-                    ctx: ctx.clone(),
-                    status: resp.status,
-                    headers: Box::new(resp.headers),
-                    rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
-                        .then_some(Box::new(rate_limit_action)),
-                })
-            }
-            ResponseClass::Success => {
-                if dbg_verbose {
-                    self.debug_sink
-                        .response_status(dbg, resp.status, url_str, true);
-                    self.debug_sink.response_headers(dbg, &resp.headers);
-                }
-                if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
-                    if actual > limit as u64 {
-                        return Err(ApiClientError::ResponseTooLarge {
-                            ctx: ctx.clone(),
-                            limit,
-                            actual,
-                        });
-                    }
-                }
-                let _ = std::marker::PhantomData::<PartT>;
-                Ok(resp)
-            }
-        }
-    }
-
-    async fn classify_transport_sse_response<Item, Codec>(
-        &self,
-        resp: TransportResponse,
-        dbg: DebugLevel,
-        dbg_verbose: bool,
-        _dbg_vv: bool,
-        url_str: &str,
-        ctx: &ErrorContext,
-        response_limit: Option<usize>,
-    ) -> Result<SseStream<Item>, ApiClientError>
-    where
-        Item: Send + 'static,
-        Codec: SseCodec<Item>,
-    {
-        let observe_ctx = Self::response_observation_ctx(&resp, url_str);
-        self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self
-            .observe_rate_limit_response(observe_ctx, ctx)
-            .await?;
-        match classify_status(resp.status) {
-            ResponseClass::HttpStatusError => {
-                if dbg_verbose {
-                    self.debug_sink
-                        .response_status(dbg, resp.status, url_str, false);
-                    self.debug_sink.response_headers(dbg, &resp.headers);
-                }
-                Err(ApiClientError::HttpStatus {
-                    ctx: ctx.clone(),
-                    status: resp.status,
-                    headers: Box::new(resp.headers),
-                    rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
-                        .then_some(Box::new(rate_limit_action)),
-                })
-            }
-            ResponseClass::Success => {
-                if dbg_verbose {
-                    self.debug_sink
-                        .response_status(dbg, resp.status, url_str, true);
-                    self.debug_sink.response_headers(dbg, &resp.headers);
-                }
-                if !Self::header_matches_media_type(
-                    resp.headers.get(CONTENT_TYPE),
-                    "text/event-stream",
-                ) {
-                    return Err(ApiClientError::PolicyViolation {
-                        ctx: ctx.clone(),
-                        msg: "sse response content type did not match expected media type",
-                    });
-                }
-                if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
-                    if actual > limit as u64 {
-                        return Err(ApiClientError::ResponseTooLarge {
-                            ctx: ctx.clone(),
-                            limit,
-                            actual,
-                        });
-                    }
-                }
-                Ok(SseStream::new(resp, response_limit, Codec::decode_event))
-            }
-        }
-    }
-
     async fn send_and_classify_once(
         &self,
         built: BuiltRequest,
@@ -557,6 +293,81 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             send_ctx.error_ctx,
         )
         .await
+    }
+
+    async fn send_and_classify_transport_once(
+        &self,
+        built: BuiltRequest,
+        send_ctx: SendClassifyCtx<'_>,
+        response_limit: Option<usize>,
+    ) -> Result<TransportResponse, ApiClientError> {
+        let transport_resp = self
+            .acquire_rate_limit_and_send(
+                built,
+                send_ctx,
+                self.runtime_state.max_stream_request_body_bytes(),
+            )
+            .await?;
+        self.observe_and_classify_transport_response(
+            transport_resp,
+            send_ctx.dbg,
+            send_ctx.dbg_verbose,
+            send_ctx.dbg_vv,
+            send_ctx.url_str,
+            send_ctx.error_ctx,
+            response_limit,
+        )
+        .await
+    }
+
+    async fn observe_and_classify_transport_response(
+        &self,
+        resp: TransportResponse,
+        dbg: DebugLevel,
+        dbg_verbose: bool,
+        _dbg_vv: bool,
+        url_str: &str,
+        ctx: &ErrorContext,
+        response_limit: Option<usize>,
+    ) -> Result<TransportResponse, ApiClientError> {
+        let observe_ctx = Self::response_observation_ctx(&resp, url_str);
+        self.run_post_response_hook(observe_ctx).await;
+        let rate_limit_action = self
+            .observe_rate_limit_response(observe_ctx, ctx)
+            .await?;
+        match classify_status(resp.status) {
+            ResponseClass::HttpStatusError => {
+                if dbg_verbose {
+                    self.debug_sink
+                        .response_status(dbg, resp.status, url_str, false);
+                    self.debug_sink.response_headers(dbg, &resp.headers);
+                }
+                Err(ApiClientError::HttpStatus {
+                    ctx: ctx.clone(),
+                    status: resp.status,
+                    headers: Box::new(resp.headers),
+                    rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
+                        .then_some(Box::new(rate_limit_action)),
+                })
+            }
+            ResponseClass::Success => {
+                if dbg_verbose {
+                    self.debug_sink
+                        .response_status(dbg, resp.status, url_str, true);
+                    self.debug_sink.response_headers(dbg, &resp.headers);
+                }
+                if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
+                    if actual > limit as u64 {
+                        return Err(ApiClientError::ResponseTooLarge {
+                            ctx: ctx.clone(),
+                            limit,
+                            actual,
+                        });
+                    }
+                }
+                Ok(resp)
+            }
+        }
     }
 
     fn response_observation_ctx<'a>(

@@ -13,12 +13,9 @@ enum AttemptFamily {
     Multipart { response_limit: Option<usize> },
 }
 
-enum AttemptResult<M, Item, Codec, PartT, Fmt> {
+enum AttemptTransportSuccess {
     Buffered(BuiltResponse),
-    Stream(crate::stream_response::StreamResponse<M>),
-    Sse(crate::sse::SseStream<Item>),
-    Multipart(TransportResponse),
-    _Marker(std::marker::PhantomData<(Codec, PartT, Fmt)>),
+    Transport(TransportResponse),
 }
 
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
@@ -80,21 +77,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(Some(delay))
     }
 
-    async fn drive_attempts<M, Item, Codec, PartT, Fmt>(
+    async fn drive_attempts(
         &self,
         plan: &crate::endpoint::RequestPlanView,
         args: &mut crate::endpoint::RequestArgs,
         ctx: ErrorContext,
         dbg: DebugLevel,
         family: AttemptFamily,
-    ) -> Result<AttemptResult<M, Item, Codec, PartT, Fmt>, ApiClientError>
-    where
-        M: crate::codec::ContentType,
-        Item: Send + 'static,
-        Codec: crate::sse::SseCodec<Item>,
-        PartT: crate::multipart_response::MultipartDecodePart<Fmt>,
-        Fmt: crate::multipart::MultipartFormat,
-    {
+    ) -> Result<AttemptTransportSuccess, ApiClientError> {
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
         let is_replayable = plan.replayability.is_replayable();
@@ -159,9 +149,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         },
                     )
                     .await
-                    .map(AttemptResult::Buffered),
-                AttemptFamily::Stream { response_limit } => self
-                    .send_and_classify_stream_once::<M>(
+                    .map(AttemptTransportSuccess::Buffered),
+                AttemptFamily::Stream { response_limit }
+                | AttemptFamily::Sse { response_limit }
+                | AttemptFamily::Multipart { response_limit } => self
+                    .send_and_classify_transport_once(
                         built,
                         SendClassifyCtx {
                             dbg,
@@ -174,51 +166,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         response_limit,
                     )
                     .await
-                    .map(AttemptResult::Stream),
-                AttemptFamily::Sse { response_limit } => self
-                    .send_and_classify_sse_once::<Item, Codec>(
-                        built,
-                        SendClassifyCtx {
-                            dbg,
-                            dbg_verbose,
-                            dbg_vv,
-                            url_str: &url_str,
-                            error_ctx: &ctx,
-                            auth_materials: &auth_attempt.materials,
-                        },
-                        response_limit,
-                    )
-                    .await
-                    .map(AttemptResult::Sse),
-                AttemptFamily::Multipart { response_limit } => self
-                    .send_and_classify_multipart_once::<PartT, Fmt>(
-                        built,
-                        SendClassifyCtx {
-                            dbg,
-                            dbg_verbose,
-                            dbg_vv,
-                            url_str: &url_str,
-                            error_ctx: &ctx,
-                            auth_materials: &auth_attempt.materials,
-                        },
-                        response_limit,
-                    )
-                    .await
-                    .map(AttemptResult::Multipart),
+                    .map(AttemptTransportSuccess::Transport),
             };
 
             match send_result {
                 Ok(resp) => {
                     let (response_status, response_meta, response_headers) = match &resp {
-                        AttemptResult::Buffered(resp) => {
+                        AttemptTransportSuccess::Buffered(resp) => {
                             (resp.status, &resp.meta, Some(&resp.headers))
                         }
-                        AttemptResult::Stream(resp) => (resp.status(), resp.meta(), Some(resp.headers())),
-                        AttemptResult::Sse(resp) => (resp.status(), resp.meta(), Some(resp.headers())),
-                        AttemptResult::Multipart(resp) => {
+                        AttemptTransportSuccess::Transport(resp) => {
                             (resp.status, &resp.meta, Some(&resp.headers))
                         }
-                        AttemptResult::_Marker(_) => unreachable!(),
                     };
                     if !is_replayable && Self::is_protected_auth_rejection(plan, response_status) {
                         return Err(ApiClientError::Auth {
@@ -404,13 +363,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         };
         let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let resp = match self
-            .drive_attempts::<
-                crate::media::EventStream,
-                serde_json::Value,
-                crate::sse::JsonSse,
-                crate::multipart_response::RawResponsePart,
-                crate::multipart::Mixed,
-            >(
+            .drive_attempts(
                 &plan,
                 &mut args,
                 ctx.clone(),
@@ -421,7 +374,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             )
             .await?
         {
-            AttemptResult::Buffered(resp) => resp,
+            AttemptTransportSuccess::Buffered(resp) => resp,
             _ => unreachable!(),
         };
         self.maybe_capture_dev_response_body(&plan, &resp);
@@ -464,22 +417,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             method: plan.endpoint.meta.method.clone(),
         };
         let resp = match self
-            .drive_attempts::<
-                crate::media::EventStream,
-                serde_json::Value,
-                crate::sse::JsonSse,
-                crate::multipart_response::RawResponsePart,
-                crate::multipart::Mixed,
-            >(
-                &plan,
-                &mut args,
-                ctx,
-                dbg,
-                AttemptFamily::Buffered { skip_body },
-            )
+            .drive_attempts(&plan, &mut args, ctx, dbg, AttemptFamily::Buffered { skip_body })
             .await?
         {
-            AttemptResult::Buffered(resp) => resp,
+            AttemptTransportSuccess::Buffered(resp) => resp,
             _ => unreachable!(),
         };
         self.maybe_capture_dev_response_body(&plan, &resp);
@@ -528,17 +469,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
         let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let stream_response_limit = self.runtime_state.max_stream_response_body_bytes();
-        match self
-            .drive_attempts::<
-                M,
-                serde_json::Value,
-                crate::sse::JsonSse,
-                crate::multipart_response::RawResponsePart,
-                crate::multipart::Mixed,
-            >(
+        let resp = match self
+            .drive_attempts(
                 &plan,
                 &mut args,
-                ctx,
+                ctx.clone(),
                 dbg,
                 AttemptFamily::Stream {
                     response_limit: stream_response_limit,
@@ -546,9 +481,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             )
             .await?
         {
-            AttemptResult::Stream(resp) => Ok(resp),
+            AttemptTransportSuccess::Transport(resp) => resp,
             _ => unreachable!(),
+        };
+        if !Self::header_matches_media_type(resp.headers.get(CONTENT_TYPE), M::CONTENT_TYPE) {
+            return Err(ApiClientError::PolicyViolation {
+                ctx,
+                msg: "stream response content type did not match expected media type".into(),
+            });
         }
+        Ok(crate::stream_response::StreamResponse::new(resp, stream_response_limit))
     }
     pub(crate) async fn execute_sse_response<Item, Codec>(
         &self,
@@ -593,25 +535,26 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
         let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let response_limit = self.runtime_state.max_stream_response_body_bytes();
-        match self
-            .drive_attempts::<
-                crate::media::EventStream,
-                Item,
-                Codec,
-                crate::multipart_response::RawResponsePart,
-                crate::multipart::Mixed,
-            >(
+        let resp = match self
+            .drive_attempts(
                 &plan,
                 &mut args,
-                ctx,
+                ctx.clone(),
                 dbg,
                 AttemptFamily::Sse { response_limit },
             )
             .await?
         {
-            AttemptResult::Sse(resp) => Ok(resp),
+            AttemptTransportSuccess::Transport(resp) => resp,
             _ => unreachable!(),
+        };
+        if !Self::header_matches_media_type(resp.headers.get(CONTENT_TYPE), "text/event-stream") {
+            return Err(ApiClientError::PolicyViolation {
+                ctx,
+                msg: "sse response content type did not match expected media type".into(),
+            });
         }
+        Ok(SseStream::new(resp, response_limit, Codec::decode_event))
     }
     pub(crate) async fn execute_record_response<Item, F>(
         &self,
@@ -672,13 +615,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let response_limit = self.runtime_state.max_stream_response_body_bytes();
         let resp = match self
-            .drive_attempts::<
-                crate::media::EventStream,
-                serde_json::Value,
-                crate::sse::JsonSse,
-                PartT,
-                Fmt,
-            >(
+            .drive_attempts(
                 &plan,
                 &mut args,
                 ctx.clone(),
@@ -687,7 +624,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             )
             .await?
         {
-            AttemptResult::Multipart(resp) => resp,
+            AttemptTransportSuccess::Transport(resp) => resp,
             _ => unreachable!(),
         };
         let boundary = crate::multipart_response::parse_response_boundary::<Fmt>(
