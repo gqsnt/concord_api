@@ -31,6 +31,15 @@ The current implementation distinguishes buffered codecs from the reserved endpo
 - Resolved IR must not contain impossible endpoint I/O states.
 - Behavior profiles lower before runtime and do not change endpoint I/O runtime semantics directly.
 
+## Adapter Boundary
+
+PR52 introduces the new core adapter contracts beside the current family-enum system.
+
+- Macros will eventually resolve DSL I/O syntax to request and response entity adapter types.
+- Core owns request body preparation, response planning, media handling, streaming behavior, and replayability metadata.
+- The current resolved family enums and generated-code branches remain temporarily during migration.
+- This PR does not migrate generated macro output yet.
+
 ## Endpoint I/O Families
 
 ### BufferedCodec

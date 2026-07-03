@@ -4,6 +4,7 @@ mod codec;
 mod debug;
 mod endpoint;
 pub mod error;
+mod io;
 mod media;
 mod multipart;
 mod multipart_response;
@@ -39,6 +40,12 @@ pub mod internal {
         MultipartResponseEndpoint, PaginatedEndpoint, PaginationMarker, RecordResponseEndpoint,
         RequestArgs, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute, ResponsePlan,
         ResponseSpec, SseResponseEndpoint, StreamResponseEndpoint, Transform, TransformResp,
+    };
+    pub use crate::io::{
+        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
+        NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,
+        RawStreamResponse, RecordRequest, RecordResponse, Replayability, RequestEntity,
+        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
     };
     pub use crate::multipart::{
         FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
@@ -110,6 +117,12 @@ pub mod advanced {
         StreamResponseEndpoint,
     };
     pub use crate::error::{ErrorContext, FxError};
+    pub use crate::io::{
+        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
+        NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,
+        RawStreamResponse, RecordRequest, RecordResponse, Replayability, RequestEntity,
+        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
+    };
     pub use crate::media::{
         EventStream, Jpeg, JsonContentType, Mp3, Mp4, OctetStream, Pdf, Png, TextContentType, Zip,
     };
