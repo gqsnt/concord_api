@@ -97,6 +97,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
+        let is_replayable = plan.replayability.is_replayable();
         if let RetrySetting::Config(config) = &plan.endpoint.policy.retry {
             config.validate(ctx.clone())?;
         }
@@ -127,7 +128,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     source,
                 }
             })?;
-            let has_stream_body = built.has_stream_body();
+            if is_replayable
+                && matches!(
+                    &built.body,
+                    crate::transport::TransportRequestBody::Stream(_)
+                )
+            {
+                return Err(ApiClientError::PolicyViolation {
+                    ctx: ctx.clone(),
+                    msg: "replayable request plan cannot use a non-replayable body plan",
+                });
+            }
             let url_str = built.debug_url();
 
             self.debug_planned_request(dbg, plan, &built, &url_str);
@@ -209,7 +220,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         }
                         AttemptResult::_Marker(_) => unreachable!(),
                     };
-                    if has_stream_body && Self::is_protected_auth_rejection(plan, response_status) {
+                    if !is_replayable && Self::is_protected_auth_rejection(plan, response_status) {
                         return Err(ApiClientError::Auth {
                             ctx: ctx.clone(),
                             source: AuthError::new(
@@ -231,7 +242,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         .await?
                     {
                         AuthRejectionOutcome::Retry => {
-                            if has_stream_body {
+                            if !is_replayable {
                                 return Err(ApiClientError::Auth {
                                     ctx: ctx.clone(),
                                     source: AuthError::new(
@@ -277,7 +288,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         return Err(err);
                     }
                     if let ApiClientError::HttpStatus { status, headers, .. } = &err {
-                        if has_stream_body && Self::is_protected_auth_rejection(plan, *status) {
+                        if !is_replayable && Self::is_protected_auth_rejection(plan, *status) {
                             return Err(ApiClientError::Auth {
                                 ctx: ctx.clone(),
                                 source: AuthError::new(
@@ -301,7 +312,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             .await?
                         {
                             AuthRejectionOutcome::Retry => {
-                                if has_stream_body {
+                                if !is_replayable {
                                     return Err(ApiClientError::Auth {
                                         ctx: ctx.clone(),
                                         source: AuthError::new(
@@ -337,7 +348,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             AuthRejectionOutcome::NotProtected => {}
                         }
                     }
-                    if has_stream_body {
+                    if !is_replayable {
                         return Err(err);
                     }
                     let outcome = Self::retry_outcome_from_error(&err);
@@ -380,8 +391,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             endpoint,
             mut args,
             overrides,
+            replayability,
         } = plan;
-        let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
+        let plan = crate::endpoint::RequestPlanView {
+            endpoint,
+            overrides,
+            replayability,
+        };
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
@@ -435,8 +451,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             endpoint,
             mut args,
             overrides,
+            replayability,
         } = plan;
-        let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
+        let plan = crate::endpoint::RequestPlanView {
+            endpoint,
+            overrides,
+            replayability,
+        };
         let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
@@ -476,6 +497,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             mut endpoint,
             mut args,
             overrides,
+            replayability,
         } = plan;
         let ctx = ErrorContext {
             endpoint: endpoint.meta.name,
@@ -487,7 +509,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
             );
         }
-        let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
+        let plan = crate::endpoint::RequestPlanView {
+            endpoint,
+            overrides,
+            replayability,
+        };
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
@@ -536,6 +562,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             mut endpoint,
             mut args,
             overrides,
+            replayability,
         } = plan;
         let ctx = ErrorContext {
             endpoint: endpoint.meta.name,
@@ -547,7 +574,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
             );
         }
-        let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
+        let plan = crate::endpoint::RequestPlanView {
+            endpoint,
+            overrides,
+            replayability,
+        };
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
@@ -609,6 +640,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             mut endpoint,
             mut args,
             overrides,
+            replayability,
         } = plan;
         let ctx = ErrorContext {
             endpoint: endpoint.meta.name,
@@ -620,7 +652,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
             );
         }
-        let plan = crate::endpoint::RequestPlanView { endpoint, overrides };
+        let plan = crate::endpoint::RequestPlanView {
+            endpoint,
+            overrides,
+            replayability,
+        };
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),

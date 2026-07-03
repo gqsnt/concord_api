@@ -318,6 +318,14 @@ fn stream_response_plan(
     args: RequestArgs,
     accept: &'static str,
 ) -> RequestPlan {
+    let replayability = match &body {
+        BodyPlan::None | BodyPlan::Encoded { .. } => {
+            concord_core::internal::Replayability::Replayable
+        }
+        BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. } | BodyPlan::Records { .. } => {
+            concord_core::internal::Replayability::NonReplayable
+        }
+    };
     RequestPlan {
         endpoint: EndpointPlan {
             meta: EndpointMeta {
@@ -338,6 +346,7 @@ fn stream_response_plan(
         },
         args,
         overrides: RequestOverrides::default(),
+        replayability,
     }
 }
 

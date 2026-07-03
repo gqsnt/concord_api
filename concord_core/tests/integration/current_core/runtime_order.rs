@@ -68,6 +68,7 @@ impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
             },
             args: RequestArgs::with_body_bytes(self.request_body.clone()),
             overrides: RequestOverrides::default(),
+            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }
@@ -124,6 +125,7 @@ impl ReusableEndpoint<TestCx> for UnsafeEndpoint {
             },
             args: RequestArgs::default(),
             overrides: RequestOverrides::default(),
+            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }
@@ -168,7 +170,40 @@ impl ReusableEndpoint<TestCx> for BodyDebugEndpoint {
                 debug_level: Some(DebugLevel::VV),
                 ..Default::default()
             },
+            replayability: concord_core::internal::Replayability::Replayable,
         })
+    }
+}
+
+fn non_replayable_request_plan(
+    name: &'static str,
+    method: Method,
+    path: &'static str,
+    policy: ResolvedPolicy,
+    body: BodyPlan,
+) -> RequestPlan {
+    let idempotent = matches!(method, Method::GET | Method::HEAD);
+    RequestPlan {
+        endpoint: EndpointPlan {
+            meta: EndpointMeta {
+                name,
+                method,
+                idempotent,
+                facade_path: &[],
+            },
+            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
+            policy,
+            body,
+            response: ResponsePlan {
+                accept: Some(HeaderValue::from_static("text/plain")),
+                no_content: false,
+                format: concord_core::internal::Format::Text,
+            },
+            pagination: None,
+        },
+        args: RequestArgs::default(),
+        overrides: RequestOverrides::default(),
+        replayability: concord_core::internal::Replayability::NonReplayable,
     }
 }
 
@@ -345,6 +380,68 @@ async fn custom_retry_policy_zero_delay_is_allowed_and_retries() -> Result<(), A
             .any(|event| event.starts_with("retry_decision:RetryAfter"))
     );
     Ok(())
+}
+
+#[tokio::test]
+async fn non_replayable_request_plan_without_stream_body_does_not_retry() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(non_replayable_request_plan(
+            "NonReplayablePlan",
+            Method::POST,
+            "/non-replayable-plan",
+            retry_policy(2),
+            BodyPlan::None,
+        ))
+        .await
+        .expect_err("non-replayable plan should not retry");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(sent.sent_count().await, 1);
+}
+
+#[tokio::test]
+async fn non_replayable_request_plan_without_stream_body_does_not_auth_refresh() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
+            MockResponse::text(StatusCode::OK, "refreshed"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(
+        TestAuthVars {
+            token: Some("refreshable".to_string()),
+            identity: "refresh",
+        },
+        transport,
+    );
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(non_replayable_request_plan(
+            "NonReplayableAuthPlan",
+            Method::POST,
+            "/non-replayable-auth-plan",
+            auth_policy(AuthPlacement::Bearer),
+            BodyPlan::None,
+        ))
+        .await
+        .expect_err("non-replayable plan should not auth-refresh");
+
+    assert!(err.to_string().contains("auth challenge rejected"));
+    assert_eq!(sent.sent_count().await, 1);
 }
 
 #[tokio::test]

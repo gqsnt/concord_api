@@ -112,12 +112,14 @@ pub struct RequestPlan {
     pub endpoint: EndpointPlan,
     pub args: RequestArgs,
     pub overrides: RequestOverrides,
+    pub replayability: crate::io::Replayability,
 }
 
 #[derive(Clone, Debug)]
 pub struct RequestPlanView {
     pub endpoint: EndpointPlan,
     pub overrides: RequestOverrides,
+    pub replayability: crate::io::Replayability,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -22,6 +22,17 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::task::{Context, Poll};
 
+fn request_replayability(body: &BodyPlan) -> concord_core::internal::Replayability {
+    match body {
+        BodyPlan::None | BodyPlan::Encoded { .. } => {
+            concord_core::internal::Replayability::Replayable
+        }
+        BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. } | BodyPlan::Records { .. } => {
+            concord_core::internal::Replayability::NonReplayable
+        }
+    }
+}
+
 #[derive(Clone)]
 struct RecordingDebugSink {
     events: Arc<StdMutex<Vec<String>>>,
@@ -571,6 +582,7 @@ fn record_request_plan(
     args: RequestArgs,
     accept: &'static str,
 ) -> RequestPlan {
+    let replayability = request_replayability(&body);
     RequestPlan {
         endpoint: EndpointPlan {
             meta: EndpointMeta {
@@ -591,6 +603,7 @@ fn record_request_plan(
         },
         args,
         overrides: RequestOverrides::default(),
+        replayability,
     }
 }
 
@@ -603,6 +616,7 @@ fn record_response_plan_with_accept(
     args: RequestArgs,
     accept: &'static str,
 ) -> RequestPlan {
+    let replayability = request_replayability(&body);
     RequestPlan {
         endpoint: EndpointPlan {
             meta: EndpointMeta {
@@ -623,6 +637,7 @@ fn record_response_plan_with_accept(
         },
         args,
         overrides: RequestOverrides::default(),
+        replayability,
     }
 }
 

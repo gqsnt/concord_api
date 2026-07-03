@@ -438,6 +438,7 @@ fn multipart_request_plan_with_content_type<F: MultipartFormat>(
         },
         args: RequestArgs::with_multipart_body::<F>(body).expect("multipart body"),
         overrides: RequestOverrides::default(),
+        replayability: concord_core::internal::Replayability::NonReplayable,
     }
 }
 
@@ -820,6 +821,7 @@ async fn multipart_boundary_mismatch_is_rejected_before_transport() {
             },
             args,
             overrides: RequestOverrides::default(),
+            replayability: concord_core::internal::Replayability::NonReplayable,
         })
         .await
         .expect_err("boundary mismatch should fail before transport");

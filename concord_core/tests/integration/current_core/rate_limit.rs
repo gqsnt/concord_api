@@ -70,6 +70,7 @@ impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
             },
             args: RequestArgs::with_body_bytes(self.request_body.clone()),
             overrides: RequestOverrides::default(),
+            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }
@@ -107,6 +108,7 @@ impl ReusableEndpoint<TestCx> for HostlessEndpoint {
             },
             args: RequestArgs::default(),
             overrides: RequestOverrides::default(),
+            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }

@@ -34,6 +34,7 @@ fn multipart_response_plan<F: MultipartFormat>(
         },
         args: RequestArgs::default(),
         overrides: RequestOverrides::default(),
+        replayability: concord_core::internal::Replayability::Replayable,
     }
 }
 

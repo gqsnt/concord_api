@@ -431,6 +431,7 @@ fn stream_request_plan(
         },
         args: RequestArgs::with_stream_body(body),
         overrides: RequestOverrides::default(),
+        replayability: concord_core::internal::Replayability::NonReplayable,
     }
 }
 
@@ -442,6 +443,14 @@ fn mismatched_request_plan(
     body: BodyPlan,
     args: RequestArgs,
 ) -> RequestPlan {
+    let replayability = match &body {
+        BodyPlan::None | BodyPlan::Encoded { .. } => {
+            concord_core::internal::Replayability::Replayable
+        }
+        BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. } | BodyPlan::Records { .. } => {
+            concord_core::internal::Replayability::NonReplayable
+        }
+    };
     RequestPlan {
         endpoint: EndpointPlan {
             meta: EndpointMeta {
@@ -462,6 +471,7 @@ fn mismatched_request_plan(
         },
         args,
         overrides: RequestOverrides::default(),
+        replayability,
     }
 }
 
@@ -750,6 +760,52 @@ async fn stream_request_is_not_retried_after_auth_rejection() {
 
     assert_eq!(transport.send_count(), 1);
     assert!(matches!(err, ApiClientError::Auth { .. }));
+}
+
+#[tokio::test]
+async fn replayable_stream_body_plan_is_rejected_defensively() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport =
+        StreamTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(RequestPlan {
+            endpoint: EndpointPlan {
+                meta: EndpointMeta {
+                    name: "ReplayableStreamBody",
+                    method: Method::POST,
+                    idempotent: false,
+                    facade_path: &[],
+                },
+                route: ResolvedRoute::new(
+                    http::uri::Scheme::HTTPS,
+                    "example.com",
+                    "/replayable-stream-body",
+                ),
+                policy: ResolvedPolicy::default(),
+                body: BodyPlan::RawStream {
+                    content_type: HeaderValue::from_static("application/octet-stream"),
+                },
+                response: ResponsePlan {
+                    accept: Some(HeaderValue::from_static("text/plain")),
+                    no_content: false,
+                    format: concord_core::internal::Format::Text,
+                },
+                pagination: None,
+            },
+            args: RequestArgs::with_stream_body(StreamBody::from_bytes(Bytes::from_static(
+                b"replayable-stream",
+            ))),
+            overrides: RequestOverrides::default(),
+            replayability: concord_core::internal::Replayability::Replayable,
+        })
+        .await
+        .expect_err("replayable stream body plan should be rejected defensively");
+
+    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    assert_eq!(transport.send_count(), 0);
 }
 
 #[tokio::test]

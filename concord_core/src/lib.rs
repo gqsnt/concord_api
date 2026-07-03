@@ -43,8 +43,8 @@ pub mod internal {
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
         NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,
-        RawStreamResponse, RecordRequest, RecordResponse, RequestEntity, ResponseEntity,
-        ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
+        RawStreamResponse, RecordRequest, RecordResponse, Replayability, RequestEntity,
+        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
     };
     pub use crate::multipart::{
         FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
@@ -113,8 +113,8 @@ pub mod advanced {
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
         NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,
-        RawStreamResponse, RecordRequest, RecordResponse, RequestEntity, ResponseEntity,
-        ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
+        RawStreamResponse, RecordRequest, RecordResponse, Replayability, RequestEntity,
+        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
     };
     pub use crate::media::{
         EventStream, Jpeg, JsonContentType, Mp3, Mp4, OctetStream, Pdf, Png, TextContentType, Zip,

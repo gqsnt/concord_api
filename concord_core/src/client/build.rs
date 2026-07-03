@@ -144,6 +144,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             },
         };
 
+        if plan.replayability.is_replayable()
+            && matches!(
+                &plan.endpoint.body,
+                BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. } | BodyPlan::Records { .. }
+            )
+        {
+            return Err(ApiClientError::PolicyViolation {
+                ctx,
+                msg: "replayable request plan cannot use a non-replayable body plan",
+            });
+        }
+
         Ok(BuiltRequest {
             meta,
             url,

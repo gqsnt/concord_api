@@ -428,6 +428,7 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
             )?;
             let __body_plan = __prepared_request_entity.body_plan;
             let __request_args = __prepared_request_entity.args;
+            let __replayability = __prepared_request_entity.replayability;
         })
     } else {
         Ok(quote! {
@@ -438,6 +439,7 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
                 )?;
             let __body_plan = __prepared_request_entity.body_plan;
             let __request_args = __prepared_request_entity.args;
+            let __replayability = ::concord_core::internal::Replayability::Replayable;
         })
     }
 }
@@ -500,6 +502,7 @@ fn endpoint_plan_impl(
             },
             args: __request_args,
             overrides: ::concord_core::internal::RequestOverrides::default(),
+            replayability: __replayability,
         })
     };
     if owned {

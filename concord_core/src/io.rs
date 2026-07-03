@@ -14,10 +14,29 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Replayability {
+    Replayable,
+    NonReplayable,
+}
+
+impl Replayability {
+    #[inline]
+    pub const fn is_replayable(self) -> bool {
+        matches!(self, Self::Replayable)
+    }
+
+    #[inline]
+    pub const fn is_non_replayable(self) -> bool {
+        matches!(self, Self::NonReplayable)
+    }
+}
+
 #[derive(Debug)]
 pub struct PreparedRequestEntity {
     pub body_plan: BodyPlan,
     pub args: RequestArgs,
+    pub replayability: Replayability,
 }
 
 pub trait RequestEntity {
@@ -42,6 +61,7 @@ impl RequestEntity for NoRequestBody {
         Ok(PreparedRequestEntity {
             body_plan: BodyPlan::None,
             args: RequestArgs::empty(),
+            replayability: Replayability::Replayable,
         })
     }
 }
@@ -70,6 +90,7 @@ where
                 format,
             },
             args: RequestArgs::with_body_bytes(bytes),
+            replayability: Replayability::Replayable,
         })
     }
 }
@@ -92,6 +113,7 @@ where
         Ok(PreparedRequestEntity {
             body_plan: BodyPlan::RawStream { content_type },
             args: RequestArgs::with_stream_body(input),
+            replayability: Replayability::NonReplayable,
         })
     }
 }
@@ -118,6 +140,7 @@ where
                 format: crate::codec::Format::Text,
             },
             args: RequestArgs::with_record_body::<Item, F>(input),
+            replayability: Replayability::NonReplayable,
         })
     }
 }
@@ -146,6 +169,7 @@ where
                 format: crate::codec::Format::Text,
             },
             args,
+            replayability: Replayability::NonReplayable,
         })
     }
 }
@@ -704,6 +728,7 @@ mod tests {
             },
             args: RequestArgs::empty(),
             overrides: crate::endpoint::RequestOverrides::default(),
+            replayability: Replayability::Replayable,
         }
     }
 
@@ -728,6 +753,7 @@ mod tests {
         assert_eq!(prepared.body_plan, BodyPlan::None);
         assert!(prepared.args.body.is_empty());
         assert!(prepared.args.stream_size_hint.is_none());
+        assert_eq!(prepared.replayability, Replayability::Replayable);
     }
 
     #[test]
@@ -767,6 +793,7 @@ mod tests {
             prepared.args.body.as_bytes(),
             Some(&Bytes::from_static(b"hello"))
         );
+        assert_eq!(prepared.replayability, Replayability::Replayable);
     }
 
     #[test]
@@ -778,6 +805,7 @@ mod tests {
         .expect("stream request");
         assert!(matches!(prepared.body_plan, BodyPlan::RawStream { .. }));
         assert!(prepared.args.body.is_stream());
+        assert_eq!(prepared.replayability, Replayability::NonReplayable);
     }
 
     #[test]
@@ -789,6 +817,7 @@ mod tests {
         .expect("record request");
         assert!(matches!(record.body_plan, BodyPlan::Records { .. }));
         assert!(record.args.body.is_stream());
+        assert_eq!(record.replayability, Replayability::NonReplayable);
 
         let multipart = MultipartRequest::<FormData>::prepare(
             MultipartBody::new().bytes("payload", Bytes::from_static(b"abc")),
@@ -798,6 +827,7 @@ mod tests {
         assert!(matches!(multipart.body_plan, BodyPlan::Multipart { .. }));
         assert!(multipart.args.body.is_stream());
         assert!(multipart.args.multipart_content_type.is_some());
+        assert_eq!(multipart.replayability, Replayability::NonReplayable);
     }
 
     #[tokio::test]

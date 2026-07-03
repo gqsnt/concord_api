@@ -889,6 +889,7 @@ pub fn request_plan(
         },
         args: RequestArgs::default(),
         overrides: RequestOverrides::default(),
+        replayability: concord_core::internal::Replayability::Replayable,
     }
 }
 
