@@ -601,17 +601,7 @@ fn facade_setter_docs(ep: &ResolvedEndpoint, var: &VarInfo) -> (String, String, 
 }
 
 fn facade_request_body_ty(ep: &ResolvedEndpoint) -> Option<Type> {
-    match ep.request_io() {
-        ResolvedRequestBodyIo::None => None,
-        ResolvedRequestBodyIo::BufferedCodec(io) => Some(io.value_ty.clone()),
-        ResolvedRequestBodyIo::Multipart { .. } => {
-            Some(syn::parse_quote!(::concord_core::advanced::MultipartBody))
-        }
-        ResolvedRequestBodyIo::Records { item_ty, .. } => Some(syn::parse_quote!(
-            ::concord_core::advanced::RecordBody<#item_ty>
-        )),
-        ResolvedRequestBodyIo::RawStream { .. } => Some(syn::parse_quote!(StreamBody)),
-    }
+    ep.io.request_entity.public_input_ty.clone()
 }
 
 fn endpoint_var_role(ep: &ResolvedEndpoint, field: &Ident) -> &'static str {

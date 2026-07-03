@@ -72,6 +72,49 @@ pub struct ResolvedEndpoint {
 pub struct ResolvedHttpEndpointIo {
     pub request: ResolvedRequestBodyIo,
     pub response: ResolvedResponseBodyIo,
+    pub request_entity: RequestEntityPlanIr,
+    pub response_entity: ResponseEntityPlanIr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IoDocIr {
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RequestIoCapabilities {
+    pub has_body: bool,
+    pub is_streaming: bool,
+    pub is_multipart: bool,
+    pub replayable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResponseIoCapabilities {
+    pub supports_map: bool,
+    pub supports_pagination: bool,
+    pub is_streaming: bool,
+    pub is_no_content: bool,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct RequestEntityPlanIr {
+    pub adapter_ty: Type,
+    pub public_input_ty: Option<Type>,
+    pub body_field_ty: Option<Type>,
+    pub doc: IoDocIr,
+    pub capabilities: RequestIoCapabilities,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ResponseEntityPlanIr {
+    pub adapter_ty: Type,
+    pub public_output_ty: Type,
+    pub decoded_value_ty: Option<Type>,
+    pub doc: IoDocIr,
+    pub capabilities: ResponseIoCapabilities,
 }
 
 #[derive(Debug, Clone)]

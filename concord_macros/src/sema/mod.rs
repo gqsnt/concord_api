@@ -3558,6 +3558,242 @@ mod tests {
         ));
     }
 
+    fn ty_string(ty: &Type) -> String {
+        quote::quote!(#ty).to_string().replace(' ', "")
+    }
+
+    #[test]
+    fn resolved_endpoint_io_entity_metadata_covers_buffered_and_request_adapters() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client MetaApi {
+                    base "https://example.com"
+                }
+
+                GET NoBody
+                    path ["no-body"]
+                    -> Json<NoBodyResponse>
+
+                POST Buffered(body: Json<BufferedBody>)
+                    path ["buffered"]
+                    -> Json<BufferedResponse>
+
+                POST StreamReq(body: Stream<OctetStream>)
+                    path ["stream-req"]
+                    -> Json<StreamResponse>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let no_body = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "NoBody")
+            .expect("no body endpoint");
+        assert_eq!(
+            ty_string(&no_body.io.request_entity.adapter_ty),
+            "::concord_core::advanced::NoRequestBody"
+        );
+        assert!(no_body.io.request_entity.public_input_ty.is_none());
+        assert!(no_body.io.request_entity.body_field_ty.is_none());
+        assert!(no_body.io.request_entity.capabilities.replayable);
+        assert_eq!(
+            ty_string(&no_body.io.response_entity.adapter_ty),
+            "::concord_core::advanced::BufferedResponse<Json<NoBodyResponse>>"
+        );
+        assert_eq!(
+            ty_string(&no_body.io.response_entity.public_output_ty),
+            "NoBodyResponse"
+        );
+        assert!(no_body.io.response_entity.capabilities.supports_map);
+        assert!(no_body.io.response_entity.capabilities.supports_pagination);
+        assert!(!no_body.io.response_entity.capabilities.is_streaming);
+        assert!(!no_body.io.response_entity.capabilities.is_no_content);
+
+        let buffered = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Buffered")
+            .expect("buffered endpoint");
+        assert_eq!(
+            ty_string(&buffered.io.request_entity.adapter_ty),
+            "::concord_core::advanced::EncodedRequest<Json<BufferedBody>>"
+        );
+        assert_eq!(
+            ty_string(
+                buffered
+                    .io
+                    .request_entity
+                    .public_input_ty
+                    .as_ref()
+                    .expect("public input type")
+            ),
+            "BufferedBody"
+        );
+        assert_eq!(
+            ty_string(
+                buffered
+                    .io
+                    .request_entity
+                    .body_field_ty
+                    .as_ref()
+                    .expect("body field type")
+            ),
+            "BufferedBody"
+        );
+        assert!(buffered.io.request_entity.capabilities.replayable);
+        assert_eq!(
+            ty_string(&buffered.io.response_entity.adapter_ty),
+            "::concord_core::advanced::BufferedResponse<Json<BufferedResponse>>"
+        );
+        assert_eq!(
+            ty_string(&buffered.io.response_entity.public_output_ty),
+            "BufferedResponse"
+        );
+
+        let stream_req = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "StreamReq")
+            .expect("stream request endpoint");
+        assert_eq!(
+            ty_string(&stream_req.io.request_entity.adapter_ty),
+            "::concord_core::advanced::RawStreamRequest<OctetStream>"
+        );
+        assert!(stream_req.io.request_entity.capabilities.has_body);
+        assert!(stream_req.io.request_entity.capabilities.is_streaming);
+        assert!(!stream_req.io.request_entity.capabilities.replayable);
+        assert_eq!(
+            ty_string(
+                &stream_req
+                    .io
+                    .request_entity
+                    .public_input_ty
+                    .as_ref()
+                    .expect("stream body type")
+            ),
+            "StreamBody"
+        );
+    }
+
+    #[test]
+    fn resolved_endpoint_io_entity_metadata_covers_streaming_response_families() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client StreamMetaApi {
+                    base "https://example.com"
+                }
+
+                GET Streamed
+                    path ["streamed"]
+                    -> Stream<OctetStream>
+
+                GET Listed
+                    path ["listed"]
+                    -> Records<Item, NdJson>
+
+                GET Multiparted
+                    path ["multiparted"]
+                    -> Multipart<Part, Mixed>
+
+                GET Ssed
+                    path ["ssed"]
+                    -> Sse<Event>
+
+                GET NoContent
+                    path ["no-content"]
+                    -> NoContent
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let streamed = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Streamed")
+            .expect("streamed endpoint");
+        assert_eq!(
+            ty_string(&streamed.io.response_entity.adapter_ty),
+            "::concord_core::advanced::RawStreamResponse<OctetStream>"
+        );
+        assert!(streamed.io.response_entity.capabilities.is_streaming);
+        assert!(!streamed.io.response_entity.capabilities.supports_pagination);
+        assert!(!streamed.io.response_entity.capabilities.supports_map);
+
+        let listed = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Listed")
+            .expect("listed endpoint");
+        assert_eq!(
+            ty_string(&listed.io.response_entity.adapter_ty),
+            "::concord_core::advanced::RecordResponse<Item,NdJson>"
+        );
+        assert!(listed.io.response_entity.capabilities.is_streaming);
+        assert!(!listed.io.response_entity.capabilities.supports_pagination);
+        assert!(!listed.io.response_entity.capabilities.supports_map);
+
+        let multiparted = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Multiparted")
+            .expect("multiparted endpoint");
+        assert_eq!(
+            ty_string(&multiparted.io.response_entity.adapter_ty),
+            "::concord_core::advanced::MultipartResponse<Part,Mixed>"
+        );
+        assert!(multiparted.io.response_entity.capabilities.is_streaming);
+        assert!(
+            !multiparted
+                .io
+                .response_entity
+                .capabilities
+                .supports_pagination
+        );
+        assert!(!multiparted.io.response_entity.capabilities.supports_map);
+
+        let ssed = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "Ssed")
+            .expect("ssed endpoint");
+        assert_eq!(
+            ty_string(&ssed.io.response_entity.adapter_ty),
+            "::concord_core::advanced::SseResponse<Event,::concord_core::advanced::JsonSse>"
+        );
+        assert!(ssed.io.response_entity.capabilities.is_streaming);
+        assert!(!ssed.io.response_entity.capabilities.supports_pagination);
+        assert!(!ssed.io.response_entity.capabilities.supports_map);
+
+        let no_content = resolved_api
+            .endpoints
+            .iter()
+            .find(|ep| ep.name == "NoContent")
+            .expect("no content endpoint");
+        assert_eq!(
+            ty_string(&no_content.io.response_entity.adapter_ty),
+            "::concord_core::advanced::NoContentResponse"
+        );
+        assert!(no_content.io.response_entity.capabilities.is_no_content);
+        assert!(!no_content.io.response_entity.capabilities.is_streaming);
+        assert!(!no_content.io.response_entity.capabilities.supports_map);
+        assert!(
+            !no_content
+                .io
+                .response_entity
+                .capabilities
+                .supports_pagination
+        );
+    }
+
     #[test]
     fn pagination_assignments_resolve_into_endpoint_model() {
         let ast: crate::ast::RawApi = syn::parse_str(
