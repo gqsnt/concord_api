@@ -648,7 +648,7 @@ async fn pagination_runtime_loads_and_stores_endpoint_state() -> Result<(), ApiC
             PageAdvance {
                 endpoint: "HeaderBoundCustom",
                 page_index: 0,
-                item_count_hint: Some(1),
+                item_count: 1,
             },
         )?;
     assert_eq!(decision, PageDecision::Continue);
@@ -1183,7 +1183,7 @@ async fn cursor_string_pagination_runtime_preserves_empty_cursor() -> Result<(),
         PageAdvance {
             endpoint: "CursorItemsEndpoint",
             page_index: 0,
-            item_count_hint: Some(1),
+            item_count: 1,
         },
     )?;
     assert_eq!(decision, PageDecision::Continue);
@@ -2091,14 +2091,18 @@ async fn collect_cursor_empty_page_stops_even_with_next_cursor() -> Result<(), A
 
 #[tokio::test]
 
-async fn collect_no_hint_empty_page_stops_after_consumption() -> Result<(), ApiClientError> {
+async fn collect_exact_count_empty_page_stops_after_consumption() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "")]);
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
-    let endpoint = NoHintItemsEndpoint {
+    let endpoint = PageOnlyItemsEndpoint {
         policy: Default::default(),
+        pagination: PaginationVariant::OffsetLimit {
+            offset: 0,
+            limit: 2,
+        },
         ..Default::default()
     };
 

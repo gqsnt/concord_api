@@ -384,11 +384,11 @@ where
         let request_identity = pagination_request_identity(&plan);
         progress_state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
         let page = E::execute(pending.client, plan).await?;
-        let page_len_hint = page.item_count_hint();
+        let page_len = page.item_count();
         let pre_advance = pre_advance_decision(
             caps.termination,
             items_count,
-            page_len_hint,
+            page_len,
             expected_items,
             &ctx,
         )?;
@@ -408,17 +408,16 @@ where
                     PageAdvance {
                         endpoint: ctx.endpoint,
                         page_index: page_index as u64,
-                        item_count_hint: page_len_hint,
+                        item_count: page_len,
                     },
                 )?
                 .into()
         };
         let items = <E::Response as PageItems>::into_items(page);
-        let page_len = items.len();
         if page_len == 0 {
             return Ok(out);
         }
-        let common_stop = common_content_stop(page_len_hint, expected_items);
+        let common_stop = common_content_stop(page_len, expected_items);
         match caps.termination {
             PaginationTermination::HardItemCap(max_items) => {
                 let new_total = items_count.checked_add(page_len).ok_or_else(|| {
@@ -529,35 +528,27 @@ struct PreAdvanceDecision {
 fn pre_advance_decision(
     termination: PaginationTermination,
     items_count: usize,
-    actual_hint: Option<usize>,
+    item_count: usize,
     expected_items: Option<NonZeroUsize>,
     ctx: &crate::error::ErrorContext,
 ) -> Result<PreAdvanceDecision, ApiClientError> {
-    let hinted_total = actual_hint
-        .map(|actual| {
-            items_count.checked_add(actual).ok_or_else(|| {
-                ApiClientError::pagination(
-                    ctx.clone(),
-                    PaginationErrorKind::Overflow,
-                    "items overflow",
-                )
-            })
-        })
-        .transpose()?;
-    let hard_item_cap_exceeded = match (termination, hinted_total) {
-        (PaginationTermination::HardItemCap(max_items), Some(total)) if total > max_items => {
-            Some(total)
+    let hinted_total = items_count.checked_add(item_count).ok_or_else(|| {
+        ApiClientError::pagination(ctx.clone(), PaginationErrorKind::Overflow, "items overflow")
+    })?;
+    let hard_item_cap_exceeded = match termination {
+        PaginationTermination::HardItemCap(max_items) if hinted_total > max_items => {
+            Some(hinted_total)
         }
         _ => None,
     };
-    let take_items_done = match (termination, actual_hint) {
-        (PaginationTermination::TakeItems(max_items), Some(actual)) => {
-            actual >= max_items.saturating_sub(items_count)
+    let take_items_done = match termination {
+        PaginationTermination::TakeItems(max_items) => {
+            item_count >= max_items.saturating_sub(items_count)
         }
         _ => false,
     };
     Ok(PreAdvanceDecision {
-        common_stop: common_content_stop(actual_hint, expected_items),
+        common_stop: common_content_stop(item_count, expected_items),
         take_items_done,
         hard_item_cap_exceeded,
     })
@@ -579,12 +570,8 @@ fn hard_item_cap_error(
     )
 }
 
-fn common_content_stop(actual_items: Option<usize>, expected_items: Option<NonZeroUsize>) -> bool {
-    actual_items == Some(0)
-        || matches!(
-            (actual_items, expected_items),
-            (Some(actual), Some(expected)) if actual < expected.get()
-        )
+fn common_content_stop(item_count: usize, expected_items: Option<NonZeroUsize>) -> bool {
+    item_count == 0 || expected_items.is_some_and(|expected| item_count < expected.get())
 }
 
 #[derive(Default)]

@@ -8,7 +8,7 @@ The runtime treats pagination as a deterministic page loop:
 2. apply pagination for that page
 3. validate auth collisions and acquire rate-limit permits
 4. send the page request through the normal transport, classification, auth, retry, and decode path
-5. use an exact item-count hint, when available, to apply common page-content stop rules before controller advance
+5. use the exact item count to apply common page-content stop rules before controller advance
 6. ask the pagination controller whether to continue or stop only when the runtime has not already stopped
 7. derive the next page request or return
 
@@ -17,9 +17,9 @@ Common page-content stop rules are runtime invariants, not controller-specific b
 - an empty page stops pagination
 - a short page stops pagination when Concord knows the expected page size
 
-The current page is included before stopping. `PageItems::item_count_hint()` is exact when present, and the runtime uses it before calling controller advance. Page types should implement it whenever they can expose the count without consuming themselves. An exact hint alone lets Concord stop before `advance()` for an empty page, hard-item-cap overflow, and provable `TakeItems` completion. Built-in offset, cursor, and page-number pagination provide the expected page size automatically from `limit` or `per_page`. Built-in controllers are just core-provided Rust types: `OffsetLimitPagination`, `CursorPagination<String>`, and `PagedPagination`. Custom pagination controllers expose their expected page size through `EndpointPagination::expected_items_per_page()`. With both an exact hint and an expected page size, the runtime also owns generic short-page stop before `advance()`. If custom pagination does not report an expected size, `collect()` still remains exact after consuming the page, but Concord cannot generically detect a short page before advance.
+The current page is included before stopping. `PageItems::item_count()` returns the exact number of items, and the runtime uses it before calling controller advance. Built-in offset, cursor, and page-number pagination provide the expected page size automatically from `limit` or `per_page`. Built-in controllers are just core-provided Rust types: `OffsetLimitPagination`, `CursorPagination<String>`, and `PagedPagination`. Custom pagination controllers expose their expected page size through `EndpointPagination::expected_items_per_page()`. With both an exact item count and an expected page size, the runtime also owns generic short-page stop before `advance()`.
 
-Removed controller-local short-page stop fields such as `stop` and `stop_on_short_page` remain unsupported. Runtime-owned short-page stopping is controlled by `PageItems::item_count_hint()` and `EndpointPagination::expected_items_per_page()`.
+Removed controller-local short-page stop fields such as `stop` and `stop_on_short_page` remain unsupported. Runtime-owned short-page stopping is controlled by `PageItems::item_count()` and `EndpointPagination::expected_items_per_page()`.
 
 If a later page request would reuse any previously seen logical request identity, the runtime returns a typed pagination error instead of silently looping. That guard is separate from the explicit termination policy and remains active even when controller loop-key checking is disabled.
 
@@ -74,7 +74,7 @@ pub struct CursorPage {
 impl PageItems for CursorPage {
     type Item = Item;
 
-    fn item_count_hint(&self) -> Option<usize> { Some(self.items.len()) }
+    fn item_count(&self) -> usize { self.items.len() }
     fn into_items(self) -> Vec<Self::Item> { self.items }
 }
 
@@ -122,11 +122,11 @@ Hard caps must be greater than zero. `HardPageCap(0)` and `HardItemCap(0)` retur
 
 Structured pagination failures use `ApiClientError::Pagination` or `PaginationLimit` with a `PaginationErrorKind`. The kind is stable for machine handling, and the message is safe metadata only.
 
-`collect()` supports all four termination modes. Item collection, exact `TakeItems` truncation, and final hard-item-cap validation use the items returned by `PageItems::into_items()`. Pre-advance empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion require an exact `item_count_hint()`, because `into_items()` consumes the page while cursor and custom advance logic may need to borrow it. Generic pre-advance short-page stop also requires an expected page size from built-ins or `EndpointPagination::expected_items_per_page()`. Without a hint, collection and limits remain exact and no extra page is fetched after the exact terminal result is known, but controller advance may already have run. `HardItemCap` never truncates.
+`collect()` supports all four termination modes. Item collection, exact `TakeItems` truncation, and final hard-item-cap validation use the items returned by `PageItems::into_items()`. Pre-advance empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion use the exact item count, because `into_items()` consumes the page while cursor and custom advance logic may need to borrow it. Generic pre-advance short-page stop also requires an expected page size from built-ins or `EndpointPagination::expected_items_per_page()`. `HardItemCap` never truncates.
 
 Retry and auth refresh preserve the current page state. A retry for page `N` retries page `N`, not page `N + 1`.
 
-Successful page responses with an exact item-count hint are checked for common content termination before the controller can advance. A hinted hard-item-cap overflow or completed `TakeItems` request also prevents advance. For page types without a hint, `collect()` can determine exact item termination only after `into_items()` consumes the page, so controller advance may already have run. Decode failure and retry for a page never advance controller state.
+Successful page responses are checked for common content termination before the controller can advance. A hard-item-cap overflow or completed `TakeItems` request also prevents advance. Decode failure and retry for a page never advance controller state.
 
 Cursor pagination follows the same per-page runtime order. `stop_when_cursor_missing` stops when a cursor is absent; if pagination continues without changing the next request identity, Concord raises a typed non-progress error rather than reissuing the same page.
 

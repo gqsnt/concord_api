@@ -177,7 +177,7 @@ where
     }
 
     fn advance(&mut self, page: &Page, _ctx: PageAdvance<'_>) -> Result<PageDecision, ApiClientError> {
-        if page.item_count_hint() == Some(0) {
+        if page.item_count() == 0 {
             return Ok(PageDecision::Stop);
         }
         self.page = self.page.saturating_add(1);
@@ -216,9 +216,9 @@ Rules:
 - Built-in pagination and custom pagination both use `paginate Type { ... }`.
 - Custom controller types must implement `Default + EndpointPagination<Page>`.
 - `EndpointPagination::expected_items_per_page()` tells the runtime how many items the current page requested. Set it during every `apply()` call that asks for a known page size.
-- `PageItems::item_count_hint()` must be exact when present. Implement it whenever possible so runtime empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion can be decided before `advance()`.
-- With both an exact hint and an expected page size, the runtime also owns generic short-page stop and will not call `advance()` for terminal hinted pages.
-- Without an exact hint, `collect()` remains exact after consuming the page, but controller advance may already have run. Without an expected page size, Concord cannot generically detect a short page before `advance()`.
+- `PageItems::item_count()` must return the exact page size. Implement it whenever possible so runtime empty-page stop, hard-item-cap overflow, and provable `TakeItems` completion can be decided before `advance()`.
+- With an exact item count and an expected page size, the runtime also owns generic short-page stop and will not call `advance()` for terminal short pages.
+- Without an expected page size, Concord cannot generically detect a short page before `advance()`.
 - `progress_key` is used for loop detection when enabled.
 - Runtime retry, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
 

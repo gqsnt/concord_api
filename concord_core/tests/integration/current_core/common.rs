@@ -405,85 +405,13 @@ pub struct PageOnlyItems {
 impl PageItems for PageOnlyItems {
     type Item = String;
 
-    fn item_count_hint(&self) -> Option<usize> {
-        Some(self.items.len())
+    fn item_count(&self) -> usize {
+        self.items.len()
     }
 
     fn into_items(self) -> Vec<Self::Item> {
         self.items
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NoHintItems {
-    pub items: Vec<String>,
-}
-
-impl PageItems for NoHintItems {
-    type Item = String;
-
-    fn into_items(self) -> Vec<Self::Item> {
-        self.items
-    }
-}
-
-#[derive(Clone)]
-pub struct NoHintItemsEndpoint {
-    pub policy: ResolvedPolicy,
-}
-
-impl Default for NoHintItemsEndpoint {
-    fn default() -> Self {
-        Self {
-            policy: Default::default(),
-        }
-    }
-}
-
-impl Endpoint<TestCx> for NoHintItemsEndpoint {
-    type Response = NoHintItems;
-
-    fn execute<'a, T>(
-        client: &'a ApiClient<TestCx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-    {
-        execute_buffered::<_, _, NoHintItemsCodec>(client, plan)
-    }
-}
-
-impl ReusableEndpoint<TestCx> for NoHintItemsEndpoint {
-    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
-        Ok(request_plan(
-            "NoHintItems",
-            Method::GET,
-            "/no-hint-items",
-            self.policy.clone(),
-            Some(PaginationMarker),
-        ))
-    }
-}
-
-impl PaginatedEndpoint<TestCx> for NoHintItemsEndpoint {
-    type Pagination = OffsetLimitPagination;
-
-    fn pagination_runtime(
-        &self,
-    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
-        Some(Box::new(
-            PaginationRuntimeAdapter::<OffsetLimitPagination>::new(),
-        ))
-    }
-}
-
-impl PaginateBinding<OffsetLimitPagination> for NoHintItemsEndpoint {
-    fn load_pagination(&self) -> OffsetLimitPagination {
-        OffsetLimitPagination::default()
-    }
-
-    fn store_pagination(&mut self, _pagination: &OffsetLimitPagination) {}
 }
 
 #[derive(Clone)]
@@ -626,8 +554,8 @@ pub struct CursorItems {
 impl PageItems for CursorItems {
     type Item = String;
 
-    fn item_count_hint(&self) -> Option<usize> {
-        Some(self.items.len())
+    fn item_count(&self) -> usize {
+        self.items.len()
     }
 
     fn into_items(self) -> Vec<Self::Item> {
@@ -682,25 +610,6 @@ impl ResponseCodec for PageOnlyItemsCodec {
         let text = std::str::from_utf8(&bytes)
             .map_err(|err| CodecError::with_source("text decode failed", err))?;
         Ok(PageOnlyItems {
-            items: if text.is_empty() {
-                Vec::new()
-            } else {
-                text.split(',').map(ToOwned::to_owned).collect()
-            },
-        })
-    }
-}
-
-pub struct NoHintItemsCodec;
-
-impl ResponseCodec for NoHintItemsCodec {
-    type Value = NoHintItems;
-    type Content = TextContentType;
-
-    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
-        let text = std::str::from_utf8(&bytes)
-            .map_err(|err| CodecError::with_source("text decode failed", err))?;
-        Ok(NoHintItems {
             items: if text.is_empty() {
                 Vec::new()
             } else {

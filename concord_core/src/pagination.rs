@@ -102,7 +102,7 @@ pub struct PageApply<'a> {
 pub struct PageAdvance<'a> {
     pub endpoint: &'a str,
     pub page_index: u64,
-    pub item_count_hint: Option<usize>,
+    pub item_count: usize,
 }
 
 /// Pagination runtime contract for stateful controllers.
@@ -243,20 +243,12 @@ where
 pub trait PageItems: Send + 'static {
     type Item: Send + 'static;
 
-    /// Returns the exact number of items in this page when it can be observed
-    /// without consuming the page.
-    ///
-    /// If this returns `Some(n)`, `n` must be exact. The runtime uses this
-    /// value for pre-advance empty/short-page termination and for
-    /// `collect()` item-cap checks. Return `None` only when the page type
-    /// cannot expose the count without consuming itself.
-    fn item_count_hint(&self) -> Option<usize> {
-        None
-    }
+    /// Returns the exact number of items in this page.
+    fn item_count(&self) -> usize;
 
     #[inline]
     fn is_empty(&self) -> bool {
-        self.item_count_hint() == Some(0)
+        self.item_count() == 0
     }
 
     fn into_items(self) -> Vec<Self::Item>;
@@ -264,8 +256,8 @@ pub trait PageItems: Send + 'static {
 impl<T: Send + 'static> PageItems for Vec<T> {
     type Item = T;
 
-    fn item_count_hint(&self) -> Option<usize> {
-        Some(Vec::len(self))
+    fn item_count(&self) -> usize {
+        Vec::len(self)
     }
 
     fn into_items(self) -> Vec<Self::Item> {

@@ -19,8 +19,8 @@ pub struct HeaderCursorPage {
 impl PageItems for HeaderCursorPage {
     type Item = Item;
 
-    fn item_count_hint(&self) -> Option<usize> {
-        Some(self.items.len())
+    fn item_count(&self) -> usize {
+        self.items.len()
     }
 
     fn into_items(self) -> Vec<Self::Item> {
