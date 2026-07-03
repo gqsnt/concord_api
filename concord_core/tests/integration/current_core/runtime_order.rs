@@ -1,11 +1,9 @@
 use super::common::*;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, BufferedResponse, CodecError, DebugSink, DecodeContext, MappedResponse,
-    NoopRateLimiter, ResponseCodec, ResponseEntity, ResponseTransform, RetryContext, RetryDecision,
-    RetryPolicy, TextContentType, TransportErrorKind,
+    AuthPlacement, BufferedResponse, DebugSink, NoopRateLimiter, ResponseEntity, RetryContext,
+    RetryDecision, RetryPolicy, TransportErrorKind,
 };
-use concord_core::error::FxError;
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
     RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
@@ -18,50 +16,6 @@ use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::Mutex;
-
-tokio::task_local! {
-    static ORDER_EVENTS: Arc<StdMutex<Vec<String>>>;
-}
-
-fn record_order_event(event: &str) {
-    ORDER_EVENTS.with(|events| {
-        events
-            .lock()
-            .expect("order events lock")
-            .push(event.to_string());
-    });
-}
-
-#[derive(Clone)]
-struct OrderingEndpoint {
-    policy: ResolvedPolicy,
-}
-
-impl Endpoint<TestCx> for OrderingEndpoint {
-    type Response = String;
-
-    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
-        Ok(request_plan(
-            "Ordering",
-            Method::GET,
-            "/ordering",
-            self.policy.clone(),
-            None,
-        ))
-    }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        Box::pin(async move {
-            MappedResponse::<BufferedResponse<LoggingText>, FailingMap>::execute(client, plan).await
-        })
-    }
-}
 
 #[derive(Clone)]
 struct ObservationFailureEndpoint {
@@ -113,32 +67,6 @@ impl Endpoint<TestCx> for ObservationFailureEndpoint {
         Box::pin(
             async move { BufferedResponse::<InvalidJsonResponse>::execute(client, plan).await },
         )
-    }
-}
-
-struct LoggingText;
-
-impl ResponseCodec for LoggingText {
-    type Value = String;
-    type Content = TextContentType;
-
-    fn decode(bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
-        record_order_event("decode");
-        let value = std::str::from_utf8(&bytes)
-            .map(str::to_string)
-            .map_err(|e| CodecError::with_source("text decode failed", e))?;
-        Ok(value)
-    }
-}
-
-struct FailingMap;
-
-impl ResponseTransform<String> for FailingMap {
-    type Output = String;
-
-    fn transform(value: String) -> Result<Self::Output, FxError> {
-        record_order_event("map");
-        Err(std::io::Error::other(format!("mapping failed for {value}")).into())
     }
 }
 
@@ -1442,43 +1370,6 @@ async fn decode_failure_does_not_consume_retry_budget() {
     assert_eq!(err.category(), concord_core::error::ErrorCategory::Decode);
     assert_eq!(sent_transport.sent_count().await, 1);
     assert!(retry_events.lock().await.is_empty());
-}
-
-#[tokio::test]
-async fn custom_retry_policy_not_invoked_for_map_failure() -> Result<(), ApiClientError> {
-    let retry_events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        Arc::new(Mutex::new(Vec::new())),
-        vec![
-            MockResponse::text(StatusCode::OK, "mapped"),
-            MockResponse::text(StatusCode::OK, "mapped-again"),
-        ],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, None);
-    client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
-        retry_events.clone(),
-        RetryDecision::Retry,
-        8,
-    )));
-
-    let err = ORDER_EVENTS
-        .scope(Arc::new(StdMutex::new(Vec::new())), async {
-            client
-                .request(OrderingEndpoint {
-                    policy: ResolvedPolicy::default(),
-                })
-                .execute()
-                .await
-        })
-        .await
-        .expect_err("map failure should be terminal");
-
-    assert!(err.to_string().contains("transform error"));
-    assert_eq!(sent_transport.sent_count().await, 1);
-    assert!(retry_events.lock().await.is_empty());
-    Ok(())
 }
 
 #[tokio::test]

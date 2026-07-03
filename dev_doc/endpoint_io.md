@@ -68,7 +68,7 @@ BufferedCodec is the default family. Everything non-reserved is a buffered codec
 - Uses the existing full-body buffered traits: `BodyCodec` and `ResponseCodec`.
 - Encodes the full request into bytes.
 - Reads the full response under buffered body limits before decode.
-- Supports the current buffered-only behavior for decode, map, pagination, and retry when otherwise safe.
+- Supports the current buffered-only behavior for decode, pagination, and retry when otherwise safe.
 - `Json<T>` is not sema-special.
 - Custom codec markers must continue to work through the ordinary buffered codec extension path.
 
@@ -120,7 +120,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - CSV runtime support is implemented as `Records<T, Csv<Cfg>>`. The runtime contract lives in [csv_records.md](csv_records.md).
 - Batched record consumption is a `RecordStream<T>` consumer API. It is not a DSL feature, not runtime config, not a new endpoint family, and it does not introduce a new batch-specific runtime stream value. The caller must pass the batch size explicitly. Partial batch plus decode error returns the partial batch first and reports the pending sanitized error on the next call.
 - Request bodies are stream-like and non-replayable.
-- Response bodies are incremental and do not support map or pagination.
+- Response bodies are incremental and do not support pagination.
 - It must not be implemented through `BodyCodec` or `ResponseCodec`.
 
 ### Multipart
@@ -138,7 +138,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
   - generated request endpoints accept `MultipartBody`;
   - generated response endpoints return `MultipartStream<T>`;
   - `Multipart<T>` defaults to `Multipart<T, FormData>`;
-  - multipart responses reject map and pagination;
+  - multipart responses reject pagination;
   - runtime values remain non-format-generic.
 - Multipart response parsing continues to use `MultipartStream<T>` and `RawResponsePart` at runtime.
 - `Related` and `ByteRanges` are later possibilities.
@@ -158,7 +158,7 @@ For large or unbounded byte transfer, use `Stream<OctetStream>` rather than tryi
 - Runtime codec trait: `SseCodec<T>`.
 - Built-in codec: `JsonSse`.
 - SSE responses parse `text/event-stream` incrementally and expose decoded events through `SseStream<T>`.
-- SSE responses are stream-like and do not support map or pagination.
+- SSE responses are stream-like and do not support pagination.
 - SSE reconnect, `Last-Event-ID` resume, and browser/EventSource alignment are not part of the current runtime contract.
 - It must not be implemented through `ResponseCodec`.
 
@@ -328,12 +328,6 @@ logs() -> RecordStream<LogEntry>
 Avoid broad endpoint parameters such as `upload<B: Into<StreamBody>>(body: B)` unless later evidence shows the tradeoff is worth it.
 
 ## Policy Compatibility
-
-### Map
-
-- `map` is allowed only when the response is buffered and decoded.
-- A streaming request with a buffered response may still allow `map`.
-- `map` is rejected for `Stream` responses, `Records` responses, `Multipart` responses, `Sse` responses, and `NoContent` responses. `Bytes` allows `map`.
 
 ### Pagination
 

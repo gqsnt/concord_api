@@ -4,7 +4,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             ApiClientError::Transport { source, .. } => RetryOutcome::Transport(source),
             ApiClientError::HttpStatus { status, .. } => RetryOutcome::HttpStatus(*status),
             ApiClientError::Decode { .. } => RetryOutcome::Decode,
-            ApiClientError::Transform { .. } => RetryOutcome::Transform,
             _ => RetryOutcome::Other,
         }
     }

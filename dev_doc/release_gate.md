@@ -128,7 +128,7 @@ Base URLs reject dangerous forms, dynamic path segments reject `.`, `..`, `/`, a
 
 Proof owners: `concord_core/tests/integration/current_core/runtime_order.rs`, `runtime_config.rs`, `cancellation.rs`, and `errors.rs`.
 
-`Content-Length` over limit fails before body read. Unknown and chunked overflow fails during bounded read. Body-limit errors do not decode or map and do not retry as ordinary transport or status failures.
+`Content-Length` over limit fails before body read. Unknown and chunked overflow fails during bounded read. Body-limit errors do not decode and do not retry as ordinary transport or status failures.
 
 ### feature-dependency-matrix
 
@@ -158,19 +158,19 @@ Phase gates, drop probes, gateable rate, transport, body, and hook helpers, plus
 
 Proof owners: `concord_core/tests/integration/current_core/cancellation.rs` and `dev_doc/core_runtime.md`.
 
-Timeout is transport-delegated in v1. Cancellation by dropping or aborting request futures must not produce late decode, map, or page-advance side effects or poison later requests.
+Timeout is transport-delegated in v1. Cancellation by dropping or aborting request futures must not produce late decode or page-advance side effects or poison later requests.
 
 ### concurrency-shared-state-isolation
 
 Proof owners: `concord_core/tests/integration/current_core/concurrency.rs` and `dev_doc/core_runtime.md`.
 
-Concurrent requests may interleave, but policy, auth identity, rate-limit key, body limit, timeout metadata, observer metadata, decode and map results, and pagination state remain request-local unless a test explicitly documents different behavior.
+Concurrent requests may interleave, but policy, auth identity, rate-limit key, body limit, timeout metadata, observer metadata, decode results, and pagination state remain request-local unless a test explicitly documents different behavior.
 
 ### execute-raw-bypass-contract
 
 Proof owners: `concord_core/tests/integration/current_core/runtime_order.rs`, `runtime_config.rs`, `errors.rs`, `cancellation.rs`, `concurrency.rs`, and `concord_examples/src/explicit_endpoint.rs`.
 
-`execute_raw` uses validation, rate-limit, retry, and body-limit safety but bypasses endpoint decode and map.
+`execute_raw` uses validation, rate-limit, retry, and body-limit safety but bypasses endpoint decode.
 
 ### pagination-loop-snapshot-behavior
 
@@ -194,7 +194,7 @@ Behavior and profile names are semantic-only policy sugar. Generated runtime cod
 
 Proof owners: `docs/advanced_endpoints.md`, `docs/customization.md`, `docs/retry_and_rate_limit.md`, `dev_doc/endpoint_io.md`, `dev_doc/architecture.md`, `concord_examples/src/endpoint_io.rs`, and `concord_examples/src/custom_codec.rs`.
 
-The current endpoint I/O contract is documented as current behavior, not future work. `ContentType` is the shared wire-content marker, `Json<T>`, `Text<String>`, `Stream`, `Records<T, NdJson>`, `Records<T, Csv<Cfg>>`, `Multipart`, `Sse`, response-only `NoContent`, and response-only `Bytes` have generated support, explicit `Multipart<T, F>` and `Sse<T, C>` forms remain supported, stream-like request bodies are not automatically replayed, `map` and pagination remain buffered-response-only with `Bytes` as the raw buffered map-allowed exception, the core `NoContent` codec is distinguished from the DSL `-> NoContent` spelling, `-> NoContent` returns `()`, `-> Bytes` returns `bytes::Bytes` through the ordinary bounded buffered response path, and request-side `NoContent` and `Bytes` remain unsupported.
+The current endpoint I/O contract is documented as current behavior, not future work. `ContentType` is the shared wire-content marker, `Json<T>`, `Text<String>`, `Stream`, `Records<T, NdJson>`, `Records<T, Csv<Cfg>>`, `Multipart`, `Sse`, response-only `NoContent`, and response-only `Bytes` have generated support, explicit `Multipart<T, F>` and `Sse<T, C>` forms remain supported, stream-like request bodies are not automatically replayed, pagination remains buffered-response-only, the core `NoContent` codec is distinguished from the DSL `-> NoContent` spelling, `-> NoContent` returns `()`, `-> Bytes` returns `bytes::Bytes` through the ordinary bounded buffered response path, and request-side `NoContent` and `Bytes` remain unsupported.
 
 Batched record consumption is a `RecordStream<T>` consumer API, not a DSL feature, not runtime config, and not a new endpoint family. The caller must pass the batch size explicitly. Partial batch plus decode error returns the partial batch first and reports the pending sanitized error on the next call.
 
@@ -203,7 +203,7 @@ Batched record consumption is a `RecordStream<T>` consumer API, not a DSL featur
 - `concord_examples --no-default-features` is intentionally unsupported.
 - Ordinary endpoint requests are not in-flight coalesced. Credential acquisition and refresh may single-flight for the same credential slot.
 - Timeout enforcement is transport-delegated unless a specific transport implements a timer.
-- `execute_raw` is intentionally lower level and bypasses endpoint decode and map behavior.
+- `execute_raw` is intentionally lower level and bypasses endpoint decode behavior.
 
 ## Adding Future Release Checks
 

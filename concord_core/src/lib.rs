@@ -36,16 +36,15 @@ pub mod internal {
         Encodes, Format, FormatType, ResponseCodec,
     };
     pub use crate::endpoint::{
-        BodyPlan, ClientPlanContext, Decoded, EndpointMeta, EndpointPlan, Mapped, MappedResp,
-        PaginatedEndpoint, PaginationMarker, RequestArgs, RequestOverrides, RequestPlan,
-        RequestPlanView, ResolvedRoute, ResponsePlan, ResponseSpec, Transform, TransformResp,
+        BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginatedEndpoint,
+        PaginationMarker, RequestArgs, RequestOverrides, RequestPlan, RequestPlanView,
+        ResolvedRoute, ResponsePlan,
     };
     pub use crate::io::{
-        BufferedResponse, BytesResponse, EncodedRequest, MappedResponse, MultipartRequest,
-        MultipartResponse, NoContentResponse, NoRequestBody, PreparedRequestEntity,
-        RawStreamRequest, RawStreamResponse, RecordRequest, RecordResponse, Replayability,
-        RequestEntity, ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
-        ResponseTransform, SseResponse,
+        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
+        NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,
+        RawStreamResponse, RecordRequest, RecordResponse, Replayability, RequestEntity,
+        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
     };
     pub use crate::multipart::{
         FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
@@ -111,11 +110,10 @@ pub mod advanced {
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
     pub use crate::error::{ErrorContext, FxError};
     pub use crate::io::{
-        BufferedResponse, BytesResponse, EncodedRequest, MappedResponse, MultipartRequest,
-        MultipartResponse, NoContentResponse, NoRequestBody, PreparedRequestEntity,
-        RawStreamRequest, RawStreamResponse, RecordRequest, RecordResponse, Replayability,
-        RequestEntity, ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
-        ResponseTransform, SseResponse,
+        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
+        NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,
+        RawStreamResponse, RecordRequest, RecordResponse, Replayability, RequestEntity,
+        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
     };
     pub use crate::media::{
         EventStream, Jpeg, JsonContentType, Mp3, Mp4, OctetStream, Pdf, Png, TextContentType, Zip,

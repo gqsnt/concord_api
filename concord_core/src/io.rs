@@ -1,7 +1,7 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::codec::{BodyCodec, ContentType, DecodeContext, EncodeContext, ResponseCodec};
 use crate::endpoint::{BodyPlan, RequestArgs, RequestPlan, ResponsePlan};
-use crate::error::{ApiClientError, ErrorContext, FxError};
+use crate::error::{ApiClientError, ErrorContext};
 use crate::media::EventStream;
 use crate::multipart::{MultipartBody, MultipartFormat};
 use crate::record::{RecordBody, RecordFormat};
@@ -164,7 +164,6 @@ where
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ResponseEntityCapabilities {
-    pub supports_map: bool,
     pub supports_pagination: bool,
     pub is_streaming: bool,
     pub is_no_content: bool,
@@ -190,58 +189,6 @@ pub trait ResponseEntity {
         T: crate::transport::Transport + 'a;
 }
 
-pub trait ResponseTransform<Input>: Send + Sync + 'static
-where
-    Input: Send + 'static,
-{
-    type Output: Send + 'static;
-
-    fn transform(input: Input) -> Result<Self::Output, FxError>;
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct MappedResponse<Base, M>(PhantomData<fn() -> (Base, M)>);
-
-impl<Base, M> ResponseEntity for MappedResponse<Base, M>
-where
-    Base: ResponseEntity,
-    Base::Output: Send + 'static,
-    M: ResponseTransform<Base::Output>,
-{
-    type Output = M::Output;
-
-    fn plan(ctx: ErrorContext) -> Result<ResponseEntityPlan, ApiClientError> {
-        let base = Base::plan(ctx)?;
-        Ok(ResponseEntityPlan {
-            response_plan: base.response_plan,
-            capabilities: ResponseEntityCapabilities {
-                supports_map: false,
-                supports_pagination: false,
-                is_streaming: false,
-                is_no_content: false,
-            },
-        })
-    }
-
-    fn execute<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
-    where
-        Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
-    {
-        Box::pin(async move {
-            let ctx = ErrorContext {
-                endpoint: plan.endpoint.meta.name,
-                method: plan.endpoint.meta.method.clone(),
-            };
-            let value = Base::execute(client, plan).await?;
-            M::transform(value).map_err(|source| ApiClientError::Transform { ctx, source })
-        })
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct BufferedResponse<C>(PhantomData<fn() -> C>);
 
@@ -255,7 +202,6 @@ where
         Ok(ResponseEntityPlan {
             response_plan: response_plan_from_codec::<C>(ctx)?,
             capabilities: ResponseEntityCapabilities {
-                supports_map: !C::is_no_content(),
                 supports_pagination: !C::is_no_content(),
                 is_streaming: false,
                 is_no_content: C::is_no_content(),
@@ -289,7 +235,6 @@ impl ResponseEntity for BytesResponse {
                 format: crate::codec::Format::Binary,
             },
             capabilities: ResponseEntityCapabilities {
-                supports_map: true,
                 supports_pagination: false,
                 is_streaming: false,
                 is_no_content: false,
@@ -323,7 +268,6 @@ impl ResponseEntity for NoContentResponse {
                 format: crate::codec::Format::Text,
             },
             capabilities: ResponseEntityCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: false,
                 is_no_content: true,
@@ -363,7 +307,6 @@ where
                 format: crate::codec::Format::Binary,
             },
             capabilities: ResponseEntityCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,
@@ -404,7 +347,6 @@ where
                 format: crate::codec::Format::Text,
             },
             capabilities: ResponseEntityCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,
@@ -445,7 +387,6 @@ where
                 format: crate::codec::Format::Text,
             },
             capabilities: ResponseEntityCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,
@@ -486,7 +427,6 @@ where
                 format: crate::codec::Format::Text,
             },
             capabilities: ResponseEntityCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,
@@ -661,26 +601,6 @@ mod tests {
             _ctx: EncodeContext<'_>,
         ) -> Result<EncodedBody, crate::codec::CodecError> {
             Ok(EncodedBody::from_bytes(value.into_bytes()).text())
-        }
-    }
-
-    struct StringLenTransform;
-
-    impl ResponseTransform<String> for StringLenTransform {
-        type Output = usize;
-
-        fn transform(input: String) -> Result<Self::Output, FxError> {
-            Ok(input.len())
-        }
-    }
-
-    struct FailingTransform;
-
-    impl ResponseTransform<String> for FailingTransform {
-        type Output = usize;
-
-        fn transform(_input: String) -> Result<Self::Output, FxError> {
-            Err(Box::new(std::io::Error::other("map failed")))
         }
     }
 
@@ -948,65 +868,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mapped_response_preserves_base_plan_and_applies_transform() {
-        type Mapped = MappedResponse<BufferedResponse<Text<String>>, StringLenTransform>;
-
-        let base_plan = BufferedResponse::<Text<String>>::plan(ctx()).expect("base plan");
-        let mapped_plan = Mapped::plan(ctx()).expect("mapped plan");
-        assert_eq!(
-            mapped_plan.response_plan.accept,
-            base_plan.response_plan.accept
-        );
-        assert_eq!(
-            mapped_plan.response_plan.no_content,
-            base_plan.response_plan.no_content
-        );
-        assert_eq!(
-            mapped_plan.response_plan.format,
-            base_plan.response_plan.format
-        );
-        assert_eq!(
-            mapped_plan.capabilities,
-            ResponseEntityCapabilities {
-                supports_map: false,
-                supports_pagination: false,
-                is_streaming: false,
-                is_no_content: false,
-            }
-        );
-
-        let transport = transport(StaticResponse {
-            status: StatusCode::OK,
-            headers: response_headers(Some("text/plain")),
-            chunks: vec![Bytes::from_static(b"hello")],
-            content_length: None,
-        });
-        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
-        let response = Mapped::execute(&client, request_plan(mapped_plan.response_plan))
-            .await
-            .expect("mapped execute");
-        assert_eq!(response, 5);
-    }
-
-    #[tokio::test]
-    async fn mapped_response_transform_errors_surface_as_transform_errors() {
-        type Mapped = MappedResponse<BufferedResponse<Text<String>>, FailingTransform>;
-
-        let mapped_plan = Mapped::plan(ctx()).expect("mapped plan");
-        let transport = transport(StaticResponse {
-            status: StatusCode::OK,
-            headers: response_headers(Some("text/plain")),
-            chunks: vec![Bytes::from_static(b"hello")],
-            content_length: None,
-        });
-        let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
-        let err = Mapped::execute(&client, request_plan(mapped_plan.response_plan))
-            .await
-            .expect_err("mapped execute fails");
-        assert!(matches!(err, ApiClientError::Transform { .. }));
-    }
-
-    #[tokio::test]
     async fn streaming_response_adapter_executes_through_existing_stream_path() {
         let plan = RawStreamResponse::<OctetStream>::plan(ctx()).expect("stream response");
         let transport = transport(StaticResponse {
@@ -1117,7 +978,6 @@ mod tests {
         assert_eq!(
             plan.capabilities,
             ResponseEntityCapabilities {
-                supports_map: true,
                 supports_pagination: true,
                 is_streaming: false,
                 is_no_content: false,
@@ -1152,7 +1012,6 @@ mod tests {
         assert_eq!(
             plan.capabilities,
             ResponseEntityCapabilities {
-                supports_map: true,
                 supports_pagination: true,
                 is_streaming: false,
                 is_no_content: false,
@@ -1183,7 +1042,6 @@ mod tests {
         assert_eq!(
             plan.capabilities,
             ResponseEntityCapabilities {
-                supports_map: true,
                 supports_pagination: false,
                 is_streaming: false,
                 is_no_content: false,
@@ -1211,7 +1069,6 @@ mod tests {
         assert_eq!(
             plan.capabilities,
             ResponseEntityCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: false,
                 is_no_content: true,
@@ -1239,7 +1096,6 @@ mod tests {
         assert_eq!(
             plan.capabilities,
             ResponseEntityCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,
@@ -1258,7 +1114,6 @@ mod tests {
         assert_eq!(
             plan.capabilities,
             ResponseEntityCapabilities {
-                supports_map: false,
                 supports_pagination: false,
                 is_streaming: true,
                 is_no_content: false,

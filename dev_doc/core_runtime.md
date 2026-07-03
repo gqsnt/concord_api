@@ -20,15 +20,15 @@ The runtime order is:
 11. auth rejection handling
 12. retry decision
 13. decode response
-14. map or transform endpoint value
+14. return decoded response entity output
 15. return
 ```
 
 This order is not user-configurable.
 
-Runtime hooks and rate-limit observation are transport-response metadata observations, not endpoint-success hooks. They may observe HTTP responses that later fail auth handling, retry, or decode and map, but they never receive response body bytes or raw auth material.
+Runtime hooks and rate-limit observation are transport-response metadata observations, not endpoint-success hooks. They may observe HTTP responses that later fail auth handling or retry, but they never receive response body bytes or raw auth material.
 
-Retry is a bounded transport or status decision layer. It runs after transport-response observation and auth rejection handling, and before endpoint decode and mapping. Retry does not handle endpoint decode failures or map failures. `execute_raw()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding.
+Retry is a bounded transport or status decision layer. It runs after transport-response observation and auth rejection handling, and before endpoint decode. Retry does not handle endpoint decode failures. `execute_raw()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding.
 
 Rate-limit acquisition is also transport-metadata only. Requests that cannot be materialized into a valid URL do not acquire a permit. Rate-limit contexts expose only sanitized request metadata and response metadata.
 
@@ -82,12 +82,12 @@ Concurrent-request characterization tests cover the same clone-on-write snapshot
 
 Public runtime failures surface through `ApiClientError`. Tests should match variants or `ErrorCategory` for stable behavior and use string assertions only for safety checks such as proving raw auth, secrets, and body bytes are absent from `Display`, `Debug`, `source()` chains, debug sinks, hooks, rate-limit metadata, and retry metadata.
 
-Pagination follows the same per-page runtime order on each page request. Page advancement happens only after the page response has completed endpoint decode and mapping successfully and the pagination runtime has accepted it. Protected auth rejections retry the same page and do not advance state.
+Pagination follows the same per-page runtime order on each page request. Page advancement happens only after the page response has completed endpoint decode successfully and the pagination runtime has accepted it. Protected auth rejections retry the same page and do not advance state.
 
 Runtime order is covered by characterization tests in `concord_core`.
 
 Endpoint concurrency tests use deterministic gates and explicit arrival counts rather than short sleeps. Timeouts in those tests are deadlock guards, not timing assertions.
 
-Cancellation tests use the same deterministic harness to abort requests after a known phase entry. The supported proofs are phase-local cleanup, no late decode or map, no late page advancement, and no leaked body or auth material in safe metadata.
+Cancellation tests use the same deterministic harness to abort requests after a known phase entry. The supported proofs are phase-local cleanup, no late decode, no late page advancement, and no leaked body or auth material in safe metadata.
 
 

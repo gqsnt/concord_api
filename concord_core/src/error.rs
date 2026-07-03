@@ -72,8 +72,6 @@ pub enum ApiClientError {
     #[error("{ctx}: HEAD response requires NoContentEncoding")]
     HeadRequiresNoContent { ctx: ErrorContext },
 
-    #[error("{ctx}: transform error: {source}")]
-    Transform { ctx: ErrorContext, source: FxError },
     #[error("{ctx}: status {status} has no content; endpoint must use NoContentEncoding")]
     NoContentStatusRequiresNoContent {
         ctx: ErrorContext,
@@ -186,11 +184,6 @@ impl Debug for ApiClientError {
             Self::HeadRequiresNoContent { ctx } => f
                 .debug_struct("HeadRequiresNoContent")
                 .field("ctx", ctx)
-                .finish(),
-            Self::Transform { ctx, source } => f
-                .debug_struct("Transform")
-                .field("ctx", ctx)
-                .field("source", source)
                 .finish(),
             Self::NoContentStatusRequiresNoContent { ctx, status } => f
                 .debug_struct("NoContentStatusRequiresNoContent")
@@ -355,7 +348,6 @@ impl ApiClientError {
             | ApiClientError::HttpStatus { ctx, .. }
             | ApiClientError::Decode { ctx, .. }
             | ApiClientError::HeadRequiresNoContent { ctx }
-            | ApiClientError::Transform { ctx, .. }
             | ApiClientError::NoContentStatusRequiresNoContent { ctx, .. }
             | ApiClientError::Codec { ctx, .. }
             | ApiClientError::RateLimit { ctx, .. }
@@ -389,7 +381,6 @@ impl ApiClientError {
             ApiClientError::HttpStatus { .. } => ErrorCategory::HttpStatus,
             ApiClientError::Decode { .. }
             | ApiClientError::HeadRequiresNoContent { .. }
-            | ApiClientError::Transform { .. }
             | ApiClientError::NoContentStatusRequiresNoContent { .. }
             | ApiClientError::Codec { .. } => ErrorCategory::Decode,
             ApiClientError::RateLimit { .. } => ErrorCategory::RateLimit,

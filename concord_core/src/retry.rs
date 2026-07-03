@@ -11,7 +11,6 @@ pub enum RetryOutcome<'a> {
     Transport(&'a TransportError),
     HttpStatus(StatusCode),
     Decode,
-    Transform,
     Other,
 }
 
@@ -133,7 +132,7 @@ impl RetryConfig {
             RetryOutcome::Transport(err) => {
                 self.transport_errors.iter().any(|kind| *kind == err.kind())
             }
-            RetryOutcome::Decode | RetryOutcome::Transform | RetryOutcome::Other => false,
+            RetryOutcome::Decode | RetryOutcome::Other => false,
         };
         if !retryable {
             return Ok(RetryDecision::Stop);

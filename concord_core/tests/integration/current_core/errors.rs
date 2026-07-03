@@ -1,18 +1,17 @@
 use super::common::{
     CursorItems, CursorItemsEndpoint, MockOutcome, MockResponse, MockTransport,
     ObservationRateLimiter, ObservationRuntimeHooks, PaginationVariant, TestAuthVars, TestCx,
-    TextEndpoint, auth_policy, buffered_endpoint_execute, client, request_plan, retry_policy,
+    TextEndpoint, auth_policy, buffered_endpoint_execute, client, retry_policy,
     retry_policy_for_statuses,
 };
 use bytes::Bytes;
 use concord_core::advanced::{
-    BufferedResponse, DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture,
-    RateLimitKey, RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter, ResponseEntity,
-    ResponseTransform,
+    DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
+    RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter,
 };
 use concord_core::error::ErrorCategory;
-use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy, ResponsePlan};
-use concord_core::prelude::{ApiClientError, CursorPagination, DebugLevel, Endpoint, Text};
+use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
+use concord_core::prelude::{ApiClientError, CursorPagination, DebugLevel, Endpoint};
 use concord_core::transport::TransportErrorKind;
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::error::Error;
@@ -49,18 +48,6 @@ impl Endpoint<TestCx> for InvalidParamEndpoint {
 #[derive(Default)]
 struct CapturingDebugSink {
     events: Arc<Mutex<Vec<String>>>,
-}
-
-struct FailingTransform;
-
-impl ResponseTransform<String> for FailingTransform {
-    type Output = usize;
-
-    fn transform(_input: String) -> Result<Self::Output, concord_core::error::FxError> {
-        Err(Box::new(std::io::Error::other(
-            "transform failed without echoing payload",
-        )))
-    }
 }
 
 impl CapturingDebugSink {
@@ -334,14 +321,6 @@ async fn error_taxonomy_variant_snapshot() {
                 Some("text/plain"),
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "bad payload"),
             ),
-            ErrorCategory::Decode,
-        ),
-        (
-            "transform",
-            ApiClientError::Transform {
-                ctx: ctx.clone(),
-                source: std::io::Error::other("transform failed").into(),
-            },
             ErrorCategory::Decode,
         ),
         (
@@ -712,7 +691,7 @@ async fn body_limit_errors_are_distinguishable_and_safe() {
 }
 
 #[tokio::test]
-async fn decode_and_transform_errors_are_distinct_and_safe() {
+async fn decode_errors_are_distinct_and_safe() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let mut invalid_utf8_payload = RESPONSE_BODY_SENTINEL_PR77.as_bytes().to_vec();
     invalid_utf8_payload.push(0xff);
@@ -741,22 +720,6 @@ async fn decode_and_transform_errors_are_distinct_and_safe() {
     assert_eq!(decode_err.category(), ErrorCategory::Decode);
     assert_error_safe(&decode_err);
 
-    let mut transform_plan =
-        request_plan("Transform", Method::GET, "/transform", rate_policy(), None);
-    transform_plan.endpoint.response = ResponsePlan {
-        accept: Some(HeaderValue::from_static("text/plain")),
-        no_content: false,
-        format: concord_core::internal::Format::Text,
-    };
-    let transform_err = concord_core::advanced::MappedResponse::<
-        BufferedResponse<Text<String>>,
-        FailingTransform,
-    >::execute(&client, transform_plan)
-    .await
-    .expect_err("transform should fail after decode");
-    assert!(matches!(transform_err, ApiClientError::Transform { .. }));
-    assert_eq!(transform_err.category(), ErrorCategory::Decode);
-    assert_error_safe(&transform_err);
     let events = events.lock().await.clone();
     assert_observers_safe(&Arc::new(Mutex::new(events))).await;
 }

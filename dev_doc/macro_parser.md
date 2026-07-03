@@ -9,7 +9,7 @@ Parser code lives under `concord_macros/src/parse/` and is organized by syntax a
 - Policy parsing handles `headers`, `header`, `query`, inline query and header operations, and `fmt[...]` values.
 - Retry and rate-limit parsers own profile declarations and local attachments.
 - Behavior parsing owns behavior declarations and behavior use syntax.
-- Endpoint and item parsing own scopes, endpoint lines, response-last structure, pagination, and map clauses.
+- Endpoint and item parsing own scopes, endpoint lines, response-last structure, and pagination.
 
 ## Client Parsing
 
@@ -33,10 +33,9 @@ Endpoint parsing keeps response-last structure:
 ```text
 METHOD Name(args...)
 -> Codec<T>
-map Type { expr }
 ```
 
-Normal endpoint policy and behavior clauses must appear before `->`. `map` is allowed after response because it transforms the decoded response.
+Normal endpoint policy and behavior clauses must appear before `->`.
 
 Request bodies are endpoint signature arguments named `body`; there is no `body ...` endpoint clause.
 

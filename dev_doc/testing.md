@@ -105,7 +105,7 @@ Harness event logs must remain safe metadata. They may include phase labels, san
 
 The cancellation suite in `concord_core/tests/integration/current_core/cancellation.rs` reuses those helpers to prove that aborted rate-limit, hook, transport, body, and pagination work does not produce late semantic side effects. Timeout handling remains transport-delegated unless a runtime timer is explicitly documented elsewhere.
 
-The concurrency characterization suite in `concord_core/tests/integration/current_core/concurrency.rs` uses the same helpers to prove that concurrent requests keep request-local config, rate-limit state, auth credential generations, pagination state, decode and map results, observer metadata, and cancellation outcomes isolated even when they reuse the same client, limiter, hooks, or debug sink.
+The concurrency characterization suite in `concord_core/tests/integration/current_core/concurrency.rs` uses the same helpers to prove that concurrent requests keep request-local config, rate-limit state, auth credential generations, pagination state, decode results, observer metadata, and cancellation outcomes isolated even when they reuse the same client, limiter, hooks, or debug sink.
 
 ## Examples And Docs Tests
 

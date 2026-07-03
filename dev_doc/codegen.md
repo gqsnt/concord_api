@@ -40,17 +40,13 @@ When a codegen helper encounters an unexpected mismatch in resolved IR, it shoul
 
 Body codec encoding is emitted from the endpoint signature `body: Codec<T>`. Response codec decoding is emitted from `-> Codec<T>`.
 
-## Mapping
-
-`map Type { expr }` is generated after response decode. The decoded response value is available as `r` inside the map expression.
-
 ## Pagination
 
 For endpoints with a resolved `paginate` block, codegen implements the core `PaginatedEndpoint` marker. The runtime request builder exposes `.paginate(PaginationTermination::...)` only for endpoints with that marker and a `PageItems` response. Codegen must not mark non-paginated endpoints just because their response type can expose items.
 
 ## Endpoint-Backed Credentials
 
-Auth endpoints that map to credential material get acquisition helpers such as `.acquire_as_session()`. These helpers execute the endpoint and store material in the credential slot.
+Auth endpoints that return credential material directly get acquisition helpers such as `.acquire_as_session()`. These helpers execute the endpoint and store material in the credential slot.
 
 Endpoint-backed auth-state handles are exposed under `auth_state().credential_name()` with fallible `set`, `clear`, and `is_set` methods. Acquisition helpers are named from the real generated public credential name.
 
