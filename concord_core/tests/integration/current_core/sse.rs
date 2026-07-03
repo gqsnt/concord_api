@@ -292,8 +292,7 @@ async fn sse_response_yields_json_events_incrementally() -> Result<(), ApiClient
         cfg.debug(DebugLevel::VV);
     });
 
-    let mut stream = client
-        .execute_plan_sse::<LogEvent, JsonSse>(sse_response_plan(
+    let mut stream = <concord_core::advanced::SseResponse<LogEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseIncremental",
             "/sse-incremental",
             ResolvedPolicy::default(),
@@ -363,8 +362,7 @@ async fn sse_metadata_fields_are_parsed() -> Result<(), ApiClientError> {
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut stream = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let mut stream = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseMetadata",
             "/sse-metadata",
             ResolvedPolicy::default(),
@@ -393,8 +391,7 @@ async fn sse_multi_line_data_joins_with_newline() -> Result<(), ApiClientError> 
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut stream = client
-        .execute_plan_sse::<LinesEvent, JsonSse>(sse_response_plan(
+    let mut stream = <concord_core::advanced::SseResponse<LinesEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseMultiline",
             "/sse-multiline",
             ResolvedPolicy::default(),
@@ -425,8 +422,7 @@ async fn sse_comments_and_unknown_fields_are_ignored() -> Result<(), ApiClientEr
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut stream = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let mut stream = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseComments",
             "/sse-comments",
             ResolvedPolicy::default(),
@@ -450,8 +446,7 @@ async fn sse_final_event_without_blank_line_dispatches_on_eof() -> Result<(), Ap
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut stream = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let mut stream = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseFinalEvent",
             "/sse-final-event",
             ResolvedPolicy::default(),
@@ -478,8 +473,7 @@ async fn sse_invalid_utf8_fails_body_safely() {
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut stream = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let mut stream = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseInvalidUtf8",
             "/sse-invalid-utf8",
             ResolvedPolicy::default(),
@@ -509,8 +503,7 @@ async fn sse_json_decode_error_is_sanitized() {
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut stream = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let mut stream = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseJsonDecodeError",
             "/sse-json-decode-error",
             ResolvedPolicy::default(),
@@ -545,8 +538,7 @@ async fn sse_wrong_content_type_is_rejected_before_body_exposure() {
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let err = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let err = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseWrongContentType",
             "/sse-wrong-content-type",
             ResolvedPolicy::default(),
@@ -581,8 +573,7 @@ async fn sse_missing_content_type_is_rejected_before_body_exposure() {
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let err = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let err = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseMissingContentType",
             "/sse-missing-content-type",
             ResolvedPolicy::default(),
@@ -620,8 +611,7 @@ async fn sse_content_length_preflight_applies() {
         cfg.max_stream_response_body_bytes(8);
     });
 
-    let err = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let err = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseContentLengthLimit",
             "/sse-content-length-limit",
             ResolvedPolicy::default(),
@@ -660,8 +650,7 @@ async fn sse_unknown_length_limit_applies_while_reading() -> Result<(), ApiClien
         cfg.max_stream_response_body_bytes(20);
     });
 
-    let mut stream = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let mut stream = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseUnknownLengthLimit",
             "/sse-unknown-length-limit",
             ResolvedPolicy::default(),
@@ -702,8 +691,7 @@ async fn sse_pagination_is_rejected_before_transport() {
     );
     plan.endpoint.response.accept = Some(HeaderValue::from_static("text/event-stream"));
 
-    let err = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(plan)
+    let err = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, plan)
         .await
         .expect_err("pagination should fail");
 
@@ -717,8 +705,7 @@ async fn sse_no_content_is_rejected_before_transport() {
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let err = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_no_content_plan(
+    let err = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_no_content_plan(
             "SseNoContent",
             "/sse-no-content",
         ))
@@ -741,8 +728,7 @@ async fn sse_debug_is_body_free() -> Result<(), ApiClientError> {
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let stream = client
-        .execute_plan_sse::<FlagEvent, JsonSse>(sse_response_plan(
+    let stream = <concord_core::advanced::SseResponse<FlagEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
             "SseDebug",
             "/sse-debug",
             ResolvedPolicy::default(),

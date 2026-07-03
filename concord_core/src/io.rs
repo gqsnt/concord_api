@@ -383,7 +383,7 @@ where
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { client.execute_plan_stream::<M>(plan).await })
+        Box::pin(async move { client.execute_stream_response::<M>(plan).await })
     }
 }
 
@@ -425,7 +425,7 @@ where
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { client.execute_plan_records::<Item, F>(plan).await })
+        Box::pin(async move { client.execute_record_response::<Item, F>(plan).await })
     }
 }
 
@@ -467,7 +467,7 @@ where
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { client.execute_plan_multipart::<Part, F>(plan).await })
+        Box::pin(async move { client.execute_multipart_response::<Part, F>(plan).await })
     }
 }
 
@@ -509,7 +509,7 @@ where
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { client.execute_plan_sse::<Event, C>(plan).await })
+        Box::pin(async move { client.execute_sse_response::<Event, C>(plan).await })
     }
 }
 

@@ -508,7 +508,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    pub async fn execute_plan_stream<M>(
+    pub(crate) async fn execute_stream_response<M>(
         &self,
         plan: RequestPlan,
     ) -> Result<crate::stream_response::StreamResponse<M>, ApiClientError>
@@ -703,7 +703,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    pub async fn execute_plan_sse<Item, Codec>(
+    pub(crate) async fn execute_sse_response<Item, Codec>(
         &self,
         plan: RequestPlan,
     ) -> Result<crate::sse::SseStream<Item>, ApiClientError>
@@ -949,7 +949,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    pub async fn execute_plan_records<Item, F>(
+    pub(crate) async fn execute_record_response<Item, F>(
         &self,
         plan: RequestPlan,
     ) -> Result<crate::record::RecordStream<Item>, ApiClientError>
@@ -957,14 +957,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Item: Send + 'static,
         F: crate::record::RecordFormat<Item>,
     {
-        let stream = self.execute_plan_stream::<F>(plan).await?;
+        let stream = self.execute_stream_response::<F>(plan).await?;
         Ok(crate::record::RecordStream::new(
             stream.into_transport_response(),
             F::decoder(),
         ))
     }
 
-    pub async fn execute_plan_multipart<PartT, Fmt>(
+    pub(crate) async fn execute_multipart_response<PartT, Fmt>(
         &self,
         plan: RequestPlan,
     ) -> Result<crate::multipart_response::MultipartStream<PartT>, ApiClientError>

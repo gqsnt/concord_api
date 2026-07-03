@@ -107,8 +107,7 @@ async fn multipart_mixed_response_yields_raw_parts_incrementally() -> Result<(),
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut stream = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
+    let mut stream = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, multipart_response_plan::<Mixed>(
             "MultipartMixedResponse",
             "/multipart-mixed",
         ))
@@ -159,8 +158,7 @@ async fn multipart_response_missing_closing_boundary_is_rejected_body_safely()
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut stream = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
+    let mut stream = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, multipart_response_plan::<Mixed>(
             "MultipartMissingClosingBoundary",
             "/multipart-missing-closing-boundary",
         ))
@@ -195,8 +193,7 @@ async fn multipart_response_invalid_implicit_accept_is_rejected_before_transport
     );
     plan.endpoint.response.accept = None;
 
-    let err = client
-        .execute_plan_multipart::<RawResponsePart, BadMultipartAccept>(plan)
+    let err = <concord_core::advanced::MultipartResponse<RawResponsePart, BadMultipartAccept> as concord_core::advanced::ResponseEntity>::execute(&client, plan)
         .await
         .expect_err("invalid accept should fail");
 
@@ -219,11 +216,12 @@ async fn multipart_form_data_response_content_type_is_accepted() -> Result<(), A
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut stream = client
-        .execute_plan_multipart::<RawResponsePart, FormData>(multipart_response_plan::<FormData>(
-            "MultipartFormDataResponse",
-            "/multipart-form-data",
-        ))
+    let mut stream = <concord_core::advanced::MultipartResponse<RawResponsePart, FormData> as concord_core::advanced::ResponseEntity>::execute(&client,
+            multipart_response_plan::<FormData>(
+                "MultipartFormDataResponse",
+                "/multipart-form-data",
+            ),
+        )
         .await?;
 
     let part = stream.next_part().await?.expect("first part");
@@ -250,8 +248,7 @@ async fn multipart_missing_boundary_is_rejected_before_body_exposure() {
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let err = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
+    let err = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, multipart_response_plan::<Mixed>(
             "MultipartMissingBoundary",
             "/multipart-missing-boundary",
         ))
@@ -280,8 +277,7 @@ async fn multipart_headers_split_across_chunks_are_parsed_incrementally()
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut stream = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
+    let mut stream = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, multipart_response_plan::<Mixed>(
             "MultipartSplitHeaders",
             "/multipart-split-headers",
         ))
@@ -310,8 +306,7 @@ async fn multipart_wrong_content_type_is_rejected_before_body_exposure() {
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let err = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
+    let err = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, multipart_response_plan::<Mixed>(
             "MultipartWrongContentType",
             "/multipart-wrong-content-type",
         ))
@@ -339,8 +334,7 @@ async fn multipart_malformed_boundary_is_rejected_body_safely() -> Result<(), Ap
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut stream = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
+    let mut stream = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, multipart_response_plan::<Mixed>(
             "MultipartMalformedBoundary",
             "/multipart-malformed-boundary",
         ))
@@ -375,8 +369,7 @@ async fn multipart_content_length_limit_applies_before_body_exposure() {
         cfg.max_stream_response_body_bytes((total_len - 1) as usize);
     });
 
-    let err = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
+    let err = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, multipart_response_plan::<Mixed>(
             "MultipartContentLengthLimit",
             "/multipart-content-length-limit",
         ))
@@ -410,8 +403,7 @@ async fn multipart_response_stream_limit_applies_while_reading() -> Result<(), A
         cfg.max_stream_response_body_bytes(first.len());
     });
 
-    let mut stream = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(multipart_response_plan::<Mixed>(
+    let mut stream = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, multipart_response_plan::<Mixed>(
             "MultipartStreamLimit",
             "/multipart-stream-limit",
         ))
@@ -453,8 +445,7 @@ async fn multipart_no_content_and_pagination_plans_are_rejected_before_transport
     let mut paginated =
         multipart_response_plan::<Mixed>("MultipartPagination", "/multipart-pagination");
     paginated.endpoint.pagination = Some(concord_core::internal::PaginationMarker);
-    let err = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(paginated)
+    let err = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, paginated)
         .await
         .expect_err("pagination should be rejected");
     assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
@@ -464,8 +455,7 @@ async fn multipart_no_content_and_pagination_plans_are_rejected_before_transport
     let mut no_content =
         multipart_response_plan::<Mixed>("MultipartNoContent", "/multipart-no-content");
     no_content.endpoint.response.no_content = true;
-    let err = client
-        .execute_plan_multipart::<RawResponsePart, Mixed>(no_content)
+    let err = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, no_content)
         .await
         .expect_err("no-content should be rejected");
     assert!(matches!(err, ApiClientError::PolicyViolation { .. }));

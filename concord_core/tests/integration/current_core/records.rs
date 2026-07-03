@@ -986,8 +986,7 @@ async fn ndjson_record_response_yields_records_incrementally() -> Result<(), Api
         cfg.debug(DebugLevel::VV);
     });
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordResponse",
             Method::GET,
             "/records-response",
@@ -1034,8 +1033,7 @@ async fn ndjson_record_response_next_batch_consumes_in_explicit_batches()
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordResponseBatch",
             Method::GET,
             "/records-response-batch",
@@ -1088,8 +1086,7 @@ async fn record_response_final_line_without_newline_is_accepted() -> Result<(), 
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordFinalLine",
             Method::GET,
             "/record-final-line",
@@ -1115,8 +1112,7 @@ async fn record_response_next_batch_respects_eof_and_zero_size() -> Result<(), A
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordEmptyBatch",
             Method::GET,
             "/record-empty-batch",
@@ -1150,8 +1146,7 @@ async fn record_response_next_batch_zero_size_does_not_consume_pending_error()
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordBatchZeroPending",
             Method::GET,
             "/record-batch-zero-pending",
@@ -1198,8 +1193,7 @@ async fn record_response_next_batch_large_requested_size_is_capped_but_logically
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordBatchHugeRequest",
             Method::GET,
             "/record-batch-huge-request",
@@ -1234,8 +1228,7 @@ async fn record_response_middle_blank_line_is_rejected() -> Result<(), ApiClient
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordBlankLine",
             Method::GET,
             "/record-blank-line",
@@ -1270,8 +1263,7 @@ async fn record_response_next_batch_before_first_error_is_sanitized() -> Result<
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordBatchDecodeError",
             Method::GET,
             "/record-batch-decode-error",
@@ -1309,8 +1301,7 @@ async fn record_response_next_batch_retains_partial_batch_then_pending_error()
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordBatchPartialDecodeError",
             Method::GET,
             "/record-batch-partial-decode-error",
@@ -1353,8 +1344,7 @@ async fn record_response_next_batch_composes_with_next_record() -> Result<(), Ap
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordBatchCompose",
             Method::GET,
             "/record-batch-compose",
@@ -1389,8 +1379,7 @@ async fn record_response_next_batch_works_without_clone_bound() -> Result<(), Ap
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
 
-    let mut response = client
-        .execute_plan_records::<NonCloneRecord, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<NonCloneRecord, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordNoCloneBatch",
             Method::GET,
             "/record-no-clone-batch",
@@ -1426,8 +1415,7 @@ async fn record_response_content_length_exceeds_limit_before_body_exposure() {
         cfg.max_stream_response_body_bytes(8);
     });
 
-    let err = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let err = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordResponseLimit",
             Method::GET,
             "/record-response-limit",
@@ -1465,8 +1453,7 @@ async fn record_response_unknown_length_is_counted_while_reading() -> Result<(),
         cfg.max_stream_response_body_bytes(10);
     });
 
-    let mut response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordUnknownLimit",
             Method::GET,
             "/record-unknown-limit",
@@ -1502,8 +1489,7 @@ async fn record_stream_debug_is_body_free() -> Result<(), ApiClientError> {
     );
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-    let response = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let response = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordDebug",
             Method::GET,
             "/record-debug",
@@ -1631,8 +1617,7 @@ async fn custom_record_response_yields_records_incrementally() -> Result<(), Api
         cfg.debug(DebugLevel::VV);
     });
 
-    let mut stream = client
-        .execute_plan_records::<PipeRecord, PipeText>(record_response_plan_with_accept(
+    let mut stream = <concord_core::advanced::RecordResponse<PipeRecord, PipeText> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan_with_accept(
             "PipeRecordResponse",
             Method::GET,
             "/pipe-records-response",
@@ -1699,8 +1684,7 @@ async fn custom_record_response_decoder_error_is_sanitized() -> Result<(), ApiCl
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut stream = client
-        .execute_plan_records::<PipeRecord, PipeText>(record_response_plan_with_accept(
+    let mut stream = <concord_core::advanced::RecordResponse<PipeRecord, PipeText> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan_with_accept(
             "PipeRecordResponseError",
             Method::GET,
             "/pipe-records-response-error",
@@ -1848,16 +1832,17 @@ async fn csv_record_response_streams_incrementally_across_chunks() -> Result<(),
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut stream = client
-        .execute_plan_records::<PipeRecord, Csv<CsvCommaDelim>>(record_response_plan_with_accept(
-            "CsvRecordResponse",
-            Method::GET,
-            "/csv-record-response",
-            ResolvedPolicy::default(),
-            BodyPlan::None,
-            RequestArgs::default(),
-            Csv::<CsvCommaDelim>::CONTENT_TYPE,
-        ))
+    let mut stream = <concord_core::advanced::RecordResponse<PipeRecord, Csv<CsvCommaDelim>> as concord_core::advanced::ResponseEntity>::execute(&client,
+            record_response_plan_with_accept(
+                "CsvRecordResponse",
+                Method::GET,
+                "/csv-record-response",
+                ResolvedPolicy::default(),
+                BodyPlan::None,
+                RequestArgs::default(),
+                Csv::<CsvCommaDelim>::CONTENT_TYPE,
+            ),
+        )
         .await?;
 
     let events_before = transport.events();
@@ -1916,16 +1901,17 @@ async fn csv_record_response_next_batch_consumes_in_explicit_batches() -> Result
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut stream = client
-        .execute_plan_records::<PipeRecord, Csv<CsvCommaDelim>>(record_response_plan_with_accept(
-            "CsvRecordResponseBatch",
-            Method::GET,
-            "/csv-record-response-batch",
-            ResolvedPolicy::default(),
-            BodyPlan::None,
-            RequestArgs::default(),
-            Csv::<CsvCommaDelim>::CONTENT_TYPE,
-        ))
+    let mut stream = <concord_core::advanced::RecordResponse<PipeRecord, Csv<CsvCommaDelim>> as concord_core::advanced::ResponseEntity>::execute(&client,
+            record_response_plan_with_accept(
+                "CsvRecordResponseBatch",
+                Method::GET,
+                "/csv-record-response-batch",
+                ResolvedPolicy::default(),
+                BodyPlan::None,
+                RequestArgs::default(),
+                Csv::<CsvCommaDelim>::CONTENT_TYPE,
+            ),
+        )
         .await?;
 
     let batch = stream.next_batch(2).await?.expect("csv batch should exist");
@@ -1987,16 +1973,17 @@ async fn csv_record_response_streams_many_records_across_chunks() -> Result<(), 
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut stream = client
-        .execute_plan_records::<PipeRecord, Csv<CsvCommaDelim>>(record_response_plan_with_accept(
-            "CsvRecordResponseMany",
-            Method::GET,
-            "/csv-record-response-many",
-            ResolvedPolicy::default(),
-            BodyPlan::None,
-            RequestArgs::default(),
-            Csv::<CsvCommaDelim>::CONTENT_TYPE,
-        ))
+    let mut stream = <concord_core::advanced::RecordResponse<PipeRecord, Csv<CsvCommaDelim>> as concord_core::advanced::ResponseEntity>::execute(&client,
+            record_response_plan_with_accept(
+                "CsvRecordResponseMany",
+                Method::GET,
+                "/csv-record-response-many",
+                ResolvedPolicy::default(),
+                BodyPlan::None,
+                RequestArgs::default(),
+                Csv::<CsvCommaDelim>::CONTENT_TYPE,
+            ),
+        )
         .await?;
 
     let mut count = 0usize;
@@ -2031,8 +2018,7 @@ async fn ndjson_record_response_next_batch_stops_at_requested_batch_size()
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let mut stream = client
-        .execute_plan_records::<RecordItem, NdJson>(record_response_plan(
+    let mut stream = <concord_core::advanced::RecordResponse<RecordItem, NdJson> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan(
             "RecordBatchBounded",
             Method::GET,
             "/record-batch-bounded",
@@ -2088,8 +2074,7 @@ async fn csv_record_response_headerless_semicolon_and_tab_configs_work()
         TestAuthVars::default(),
         headerless_transport.clone(),
     );
-    let mut stream = client
-        .execute_plan_records::<CsvHeaderless, Csv<CsvHeaderlessPipe>>(
+    let mut stream = <concord_core::advanced::RecordResponse<CsvHeaderless, Csv<CsvHeaderlessPipe>> as concord_core::advanced::ResponseEntity>::execute(&client,
             record_response_plan_with_accept(
                 "CsvHeaderlessResponse",
                 Method::GET,
@@ -2127,8 +2112,7 @@ async fn csv_record_response_headerless_semicolon_and_tab_configs_work()
     );
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), semicolon_transport);
-    let mut stream = client
-        .execute_plan_records::<PipeRecord, Csv<CsvSemicolonDelim>>(
+    let mut stream = <concord_core::advanced::RecordResponse<PipeRecord, Csv<CsvSemicolonDelim>> as concord_core::advanced::ResponseEntity>::execute(&client,
             record_response_plan_with_accept(
                 "CsvSemicolonResponse",
                 Method::GET,
@@ -2158,8 +2142,7 @@ async fn csv_record_response_headerless_semicolon_and_tab_configs_work()
         )],
     );
     let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), tab_transport);
-    let mut stream = client
-        .execute_plan_records::<PipeRecord, Csv<CsvTabDelim>>(record_response_plan_with_accept(
+    let mut stream = <concord_core::advanced::RecordResponse<PipeRecord, Csv<CsvTabDelim>> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan_with_accept(
             "CsvTabResponse",
             Method::GET,
             "/csv-tab-response",
@@ -2285,8 +2268,7 @@ async fn custom_record_response_stream_limit_applies() {
         cfg.max_stream_response_body_bytes(12);
     });
 
-    let mut stream = client
-        .execute_plan_records::<PipeRecord, PipeText>(record_response_plan_with_accept(
+    let mut stream = <concord_core::advanced::RecordResponse<PipeRecord, PipeText> as concord_core::advanced::ResponseEntity>::execute(&client, record_response_plan_with_accept(
             "PipeRecordResponseLimit",
             Method::GET,
             "/pipe-record-response-limit",

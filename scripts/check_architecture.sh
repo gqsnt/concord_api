@@ -185,6 +185,13 @@ if "${RG[@]}" 'execute_plan_stream|execute_plan_records|execute_plan_multipart|e
   fail_with_matches "concord_macros streaming response execution must flow through ResponseEntity adapters." "$macro_response_exec_refs"
 fi
 
+section "specialized response helper public fence"
+specialized_response_helper_refs="$tmpdir/specialized_response_helper.refs"
+if "${RG[@]}" 'execute_plan_stream|execute_plan_records|execute_plan_multipart|execute_plan_sse' \
+  concord_core/src concord_macros/src/codegen docs dev_doc >"$specialized_response_helper_refs" 2>/dev/null; then
+  fail_with_matches "specialized response execution helper names must not appear in public or generated surfaces." "$specialized_response_helper_refs"
+fi
+
 section "macro streaming marker trait fence"
 macro_stream_marker_refs="$tmpdir/macro_stream_marker.refs"
 if "${RG[@]}" 'StreamResponseEndpoint|RecordResponseEndpoint|MultipartResponseEndpoint|SseResponseEndpoint' \

@@ -384,8 +384,7 @@ async fn raw_stream_response_returns_metadata_and_chunks() -> Result<(), ApiClie
         cfg.debug(DebugLevel::VV);
     });
 
-    let mut response = client
-        .execute_plan_stream::<OctetStream>(empty_response_plan(
+    let mut response = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
             "RawStreamResponse",
             "/raw-stream-response",
         ))
@@ -434,8 +433,7 @@ async fn raw_stream_response_is_not_buffered_before_return_and_order_is_preserve
         cfg.debug(DebugLevel::VV);
     });
 
-    let mut response = client
-        .execute_plan_stream::<OctetStream>(empty_response_plan(
+    let mut response = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
             "RawStreamOrdering",
             "/raw-stream-ordering",
         ))
@@ -486,8 +484,7 @@ async fn stream_response_content_type_mismatch_is_rejected_before_body_polling()
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let err = client
-        .execute_plan_stream::<OctetStream>(empty_response_plan(
+    let err = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
             "RawStreamMismatch",
             "/raw-stream-mismatch",
         ))
@@ -518,8 +515,7 @@ async fn stream_response_missing_content_type_is_rejected_before_body_polling() 
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let err = client
-        .execute_plan_stream::<OctetStream>(empty_response_plan(
+    let err = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
             "RawStreamMissingContentType",
             "/raw-stream-missing-content-type",
         ))
@@ -550,8 +546,7 @@ async fn stream_response_invalid_implicit_accept_is_rejected_before_transport() 
     let mut plan = empty_response_plan("RawStreamInvalidAccept", "/raw-stream-invalid-accept");
     plan.endpoint.response.accept = None;
 
-    let err = client
-        .execute_plan_stream::<BadStreamContent>(plan)
+    let err = <concord_core::advanced::RawStreamResponse<BadStreamContent> as concord_core::advanced::ResponseEntity>::execute(&client, plan)
         .await
         .expect_err("invalid accept should fail");
 
@@ -570,8 +565,7 @@ async fn stream_response_pagination_is_rejected_before_transport() {
     let mut plan = empty_response_plan("RawStreamPagination", "/raw-stream-pagination");
     plan.endpoint.pagination = Some(concord_core::internal::PaginationMarker);
 
-    let err = client
-        .execute_plan_stream::<OctetStream>(plan)
+    let err = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, plan)
         .await
         .expect_err("paginated stream responses must be rejected");
 
@@ -593,8 +587,7 @@ async fn stream_response_no_content_plan_is_rejected_before_transport() {
     let mut plan = empty_response_plan("RawStreamNoContent", "/raw-stream-no-content");
     plan.endpoint.response.no_content = true;
 
-    let err = client
-        .execute_plan_stream::<OctetStream>(plan)
+    let err = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, plan)
         .await
         .expect_err("no-content stream responses must be rejected");
 
@@ -627,8 +620,7 @@ async fn stream_response_content_length_exceeds_limit_before_body_polling() {
         cfg.max_stream_response_body_bytes(8);
     });
 
-    let err = client
-        .execute_plan_stream::<OctetStream>(empty_response_plan(
+    let err = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
             "RawStreamResponseLimit",
             "/raw-stream-response-limit",
         ))
@@ -665,8 +657,7 @@ async fn stream_response_unknown_length_is_counted_while_reading() -> Result<(),
         cfg.debug(DebugLevel::VV);
     });
 
-    let mut response = client
-        .execute_plan_stream::<OctetStream>(empty_response_plan(
+    let mut response = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
             "RawStreamUnknownLimit",
             "/raw-stream-unknown-limit",
         ))
@@ -709,8 +700,7 @@ async fn stream_response_write_to_file_enforces_limit() -> Result<(), ApiClientE
         cfg.max_stream_response_body_bytes(5);
     });
 
-    let mut response = client
-        .execute_plan_stream::<OctetStream>(empty_response_plan(
+    let mut response = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
             "RawStreamWriteLimit",
             "/raw-stream-write-limit",
         ))
@@ -762,8 +752,7 @@ async fn stream_response_debug_hooks_and_rate_limit_surfaces_are_body_free()
         cfg.debug(DebugLevel::VV);
     });
 
-    let mut response = client
-        .execute_plan_stream::<OctetStream>(empty_response_plan(
+    let mut response = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
             "RawStreamRedaction",
             "/raw-stream-redaction",
         ))
@@ -831,8 +820,7 @@ async fn stream_response_auth_rejection_is_handled_before_body_exposure()
         cfg.debug(DebugLevel::VV);
     });
 
-    let mut response = client
-        .execute_plan_stream::<OctetStream>(stream_response_plan(
+    let mut response = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, stream_response_plan(
             "RawStreamAuth",
             Method::GET,
             "/raw-stream-auth",
@@ -887,8 +875,7 @@ async fn buffered_request_body_stream_response_retries_before_body_exposure()
         ..Default::default()
     };
 
-    let mut response = client
-        .execute_plan_stream::<OctetStream>(stream_response_plan(
+    let mut response = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, stream_response_plan(
             "RawStreamRetry",
             Method::POST,
             "/raw-stream-retry",
@@ -929,8 +916,7 @@ async fn stream_request_body_stream_response_does_not_retry_or_replay() -> Resul
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
 
-    let err = client
-        .execute_plan_stream::<OctetStream>(stream_response_plan(
+    let err = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, stream_response_plan(
             "RawStreamNoReplay",
             Method::POST,
             "/raw-stream-no-replay",
