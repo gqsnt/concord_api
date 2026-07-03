@@ -8,7 +8,7 @@ use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
     RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
-use concord_core::prelude::{ApiClientError, DebugLevel, Endpoint};
+use concord_core::prelude::{ApiClientError, DebugLevel, Endpoint, ReusableEndpoint};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::future::Future;
 use std::pin::Pin;
@@ -26,6 +26,20 @@ struct ObservationFailureEndpoint {
 impl Endpoint<TestCx> for ObservationFailureEndpoint {
     type Response = String;
 
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        Box::pin(
+            async move { BufferedResponse::<InvalidJsonResponse>::execute(client, plan).await },
+        )
+    }
+}
+
+impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         Ok(RequestPlan {
             endpoint: EndpointPlan {
@@ -56,18 +70,6 @@ impl Endpoint<TestCx> for ObservationFailureEndpoint {
             overrides: RequestOverrides::default(),
         })
     }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        Box::pin(
-            async move { BufferedResponse::<InvalidJsonResponse>::execute(client, plan).await },
-        )
-    }
 }
 
 fn positions(events: &[String], needle: &str) -> Vec<usize> {
@@ -97,6 +99,10 @@ struct UnsafeEndpoint {
 impl Endpoint<TestCx> for UnsafeEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<TestCx> for UnsafeEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         Ok(RequestPlan {
             endpoint: EndpointPlan {
@@ -120,8 +126,6 @@ impl Endpoint<TestCx> for UnsafeEndpoint {
             overrides: RequestOverrides::default(),
         })
     }
-
-    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Clone)]
@@ -133,6 +137,10 @@ struct BodyDebugEndpoint {
 impl Endpoint<TestCx> for BodyDebugEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<TestCx> for BodyDebugEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         Ok(RequestPlan {
             endpoint: EndpointPlan {
@@ -162,8 +170,6 @@ impl Endpoint<TestCx> for BodyDebugEndpoint {
             },
         })
     }
-
-    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
 struct HugeDelayRetryPolicy;

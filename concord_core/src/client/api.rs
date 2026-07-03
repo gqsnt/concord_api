@@ -308,7 +308,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     #[inline]
     pub fn request<E>(&self, ep: E) -> PendingRequest<'_, Cx, E, T>
     where
-        E: Endpoint<Cx>,
+        E: crate::endpoint::IntoEndpointPlan<Cx>,
     {
         PendingRequest::new(self, ep)
     }

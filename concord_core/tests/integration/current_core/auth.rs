@@ -11,7 +11,9 @@ use concord_core::advanced::{
     InvalidateReason,
 };
 use concord_core::internal::{ClientPlanContext, RequestPlan};
-use concord_core::prelude::{AccessToken, ApiClientError, ApiKey, ClientContext, Endpoint};
+use concord_core::prelude::{
+    AccessToken, ApiClientError, ApiKey, ClientContext, Endpoint, ReusableEndpoint,
+};
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -1305,6 +1307,10 @@ struct AuthHttpLimitEndpoint;
 impl Endpoint<AuthHttpLimitCx> for AuthHttpLimitEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(AuthHttpLimitCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<AuthHttpLimitCx> for AuthHttpLimitEndpoint {
     fn plan(
         &self,
         _ctx: &ClientPlanContext<'_, AuthHttpLimitCx>,
@@ -1317,8 +1323,6 @@ impl Endpoint<AuthHttpLimitCx> for AuthHttpLimitEndpoint {
             None,
         ))
     }
-
-    buffered_endpoint_execute!(AuthHttpLimitCx, concord_core::prelude::Text<String>);
 }
 
 fn auth_http_client(
@@ -1427,6 +1431,10 @@ impl ClientContext for RecordingAuthCx {
 impl Endpoint<RecordingAuthCx> for TextEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(RecordingAuthCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<RecordingAuthCx> for TextEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, RecordingAuthCx>,
@@ -1441,8 +1449,6 @@ impl Endpoint<RecordingAuthCx> for TextEndpoint {
                 .map(|_| concord_core::internal::PaginationMarker),
         ))
     }
-
-    buffered_endpoint_execute!(RecordingAuthCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Clone)]
@@ -1530,6 +1536,10 @@ impl ClientContext for PolicyAuthCx {
 impl Endpoint<PolicyAuthCx> for TextEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(PolicyAuthCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<PolicyAuthCx> for TextEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, PolicyAuthCx>,
@@ -1544,8 +1554,6 @@ impl Endpoint<PolicyAuthCx> for TextEndpoint {
                 .map(|_| concord_core::internal::PaginationMarker),
         ))
     }
-
-    buffered_endpoint_execute!(PolicyAuthCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Clone)]
@@ -1645,6 +1653,10 @@ impl ClientContext for RotatingPolicyAuthCx {
 impl Endpoint<RotatingPolicyAuthCx> for TextEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(RotatingPolicyAuthCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<RotatingPolicyAuthCx> for TextEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, RotatingPolicyAuthCx>,
@@ -1659,8 +1671,6 @@ impl Endpoint<RotatingPolicyAuthCx> for TextEndpoint {
                 .map(|_| concord_core::internal::PaginationMarker),
         ))
     }
-
-    buffered_endpoint_execute!(RotatingPolicyAuthCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Clone)]
@@ -1965,6 +1975,10 @@ impl ClientContext for SlotAuthCx {
 impl Endpoint<SlotAuthCx> for TextEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(SlotAuthCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<SlotAuthCx> for TextEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, SlotAuthCx>,
@@ -1979,8 +1993,6 @@ impl Endpoint<SlotAuthCx> for TextEndpoint {
                 .map(|_| concord_core::internal::PaginationMarker),
         ))
     }
-
-    buffered_endpoint_execute!(SlotAuthCx, concord_core::prelude::Text<String>);
 }
 
 #[tokio::test]

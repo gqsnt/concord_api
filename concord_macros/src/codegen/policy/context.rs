@@ -12,7 +12,7 @@ fn emit_policy_apply_fn(policy: &PolicyBlocksResolved, ctx: PolicyEmitCtx) -> To
         #[allow(unused_variables)]
         let cx = vars;
         #[allow(unused_variables)]
-        let ep = ep;
+        let ep = &ep;
     });
 
     ops.extend(emit_policy_ops(policy, PolicyKeyKind::Header, ctx));

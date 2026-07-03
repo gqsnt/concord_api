@@ -36,9 +36,9 @@ pub mod internal {
         Encodes, Format, FormatType, ResponseCodec,
     };
     pub use crate::endpoint::{
-        BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginatedEndpoint,
-        PaginationMarker, RequestArgs, RequestOverrides, RequestPlan, RequestPlanView,
-        ResolvedRoute, ResponsePlan,
+        BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, IntoEndpointPlan,
+        PaginatedEndpoint, PaginationMarker, RequestArgs, RequestOverrides, RequestPlan,
+        RequestPlanView, ResolvedRoute, ResponsePlan, ReusableEndpoint,
     };
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
@@ -73,7 +73,7 @@ pub mod prelude {
     pub use crate::codec::json::Json;
     pub use crate::codec::{ContentType, NoContent, text::Text};
     pub use crate::debug::DebugLevel;
-    pub use crate::endpoint::{Endpoint, PaginatedEndpoint};
+    pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
     pub use crate::error::{ApiClientError, ErrorCategory, PaginationError, PaginationErrorKind};
     pub use crate::pagination::{
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
@@ -108,6 +108,7 @@ pub mod advanced {
         ResponseCodec,
     };
     pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
+    pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
     pub use crate::error::{ErrorContext, FxError, PaginationError, PaginationErrorKind};
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,

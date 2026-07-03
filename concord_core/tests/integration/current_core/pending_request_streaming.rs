@@ -10,7 +10,7 @@ use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
     ResolvedPolicy, ResolvedRoute,
 };
-use concord_core::prelude::{ApiClientError, Endpoint};
+use concord_core::prelude::{ApiClientError, Endpoint, ReusableEndpoint};
 use http::{HeaderValue, Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -63,18 +63,6 @@ struct StreamEndpoint;
 impl Endpoint<TestCx> for StreamEndpoint {
     type Response = StreamResponse<OctetStream>;
 
-    fn plan(
-        &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
-    ) -> Result<RequestPlan, ApiClientError> {
-        let response_plan = RawStreamResponse::<OctetStream>::plan(ErrorContext {
-            endpoint: "StreamEndpoint",
-            method: Method::GET,
-        })?
-        .response_plan;
-        Ok(request_plan(response_plan, "StreamEndpoint"))
-    }
-
     fn execute<'a, T>(
         client: &'a concord_core::prelude::ApiClient<TestCx, T>,
         plan: RequestPlan,
@@ -85,6 +73,20 @@ impl Endpoint<TestCx> for StreamEndpoint {
         T: concord_core::advanced::Transport + 'a,
     {
         Box::pin(async move { RawStreamResponse::<OctetStream>::execute(client, plan).await })
+    }
+}
+
+impl ReusableEndpoint<TestCx> for StreamEndpoint {
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<RequestPlan, ApiClientError> {
+        let response_plan = RawStreamResponse::<OctetStream>::plan(ErrorContext {
+            endpoint: "StreamEndpoint",
+            method: Method::GET,
+        })?
+        .response_plan;
+        Ok(request_plan(response_plan, "StreamEndpoint"))
     }
 }
 
@@ -99,18 +101,6 @@ struct RecordRow {
 impl Endpoint<TestCx> for RecordEndpoint {
     type Response = RecordStream<RecordRow>;
 
-    fn plan(
-        &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
-    ) -> Result<RequestPlan, ApiClientError> {
-        let response_plan = RecordResponse::<RecordRow, NdJson>::plan(ErrorContext {
-            endpoint: "RecordEndpoint",
-            method: Method::GET,
-        })?
-        .response_plan;
-        Ok(request_plan(response_plan, "RecordEndpoint"))
-    }
-
     fn execute<'a, T>(
         client: &'a concord_core::prelude::ApiClient<TestCx, T>,
         plan: RequestPlan,
@@ -122,23 +112,25 @@ impl Endpoint<TestCx> for RecordEndpoint {
     }
 }
 
+impl ReusableEndpoint<TestCx> for RecordEndpoint {
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<RequestPlan, ApiClientError> {
+        let response_plan = RecordResponse::<RecordRow, NdJson>::plan(ErrorContext {
+            endpoint: "RecordEndpoint",
+            method: Method::GET,
+        })?
+        .response_plan;
+        Ok(request_plan(response_plan, "RecordEndpoint"))
+    }
+}
+
 #[derive(Clone, Copy, Default)]
 struct MultipartEndpoint;
 
 impl Endpoint<TestCx> for MultipartEndpoint {
     type Response = MultipartStream<RawResponsePart>;
-
-    fn plan(
-        &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
-    ) -> Result<RequestPlan, ApiClientError> {
-        let response_plan = MultipartResponse::<RawResponsePart, Mixed>::plan(ErrorContext {
-            endpoint: "MultipartEndpoint",
-            method: Method::GET,
-        })?
-        .response_plan;
-        Ok(request_plan(response_plan, "MultipartEndpoint"))
-    }
 
     fn execute<'a, T>(
         client: &'a concord_core::prelude::ApiClient<TestCx, T>,
@@ -159,6 +151,20 @@ impl Endpoint<TestCx> for MultipartEndpoint {
     }
 }
 
+impl ReusableEndpoint<TestCx> for MultipartEndpoint {
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<RequestPlan, ApiClientError> {
+        let response_plan = MultipartResponse::<RawResponsePart, Mixed>::plan(ErrorContext {
+            endpoint: "MultipartEndpoint",
+            method: Method::GET,
+        })?
+        .response_plan;
+        Ok(request_plan(response_plan, "MultipartEndpoint"))
+    }
+}
+
 #[derive(Clone, Copy, Default)]
 struct SseEndpoint;
 
@@ -170,6 +176,18 @@ struct SseEvent {
 impl Endpoint<TestCx> for SseEndpoint {
     type Response = SseStream<SseEvent>;
 
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<SseStream<SseEvent>, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        Box::pin(async move { SseResponse::<SseEvent, JsonSse>::execute(client, plan).await })
+    }
+}
+
+impl ReusableEndpoint<TestCx> for SseEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
@@ -180,16 +198,6 @@ impl Endpoint<TestCx> for SseEndpoint {
         })?
         .response_plan;
         Ok(request_plan(response_plan, "SseEndpoint"))
-    }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<SseStream<SseEvent>, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        Box::pin(async move { SseResponse::<SseEvent, JsonSse>::execute(client, plan).await })
     }
 }
 

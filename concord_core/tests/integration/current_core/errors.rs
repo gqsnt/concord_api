@@ -11,7 +11,9 @@ use concord_core::advanced::{
 };
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
-use concord_core::prelude::{ApiClientError, CursorPagination, DebugLevel, Endpoint};
+use concord_core::prelude::{
+    ApiClientError, CursorPagination, DebugLevel, Endpoint, ReusableEndpoint,
+};
 use concord_core::transport::TransportErrorKind;
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::error::Error;
@@ -32,6 +34,10 @@ struct InvalidParamEndpoint;
 impl Endpoint<TestCx> for InvalidParamEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<TestCx> for InvalidParamEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         Err(ApiClientError::invalid_param(
             concord_core::advanced::ErrorContext {
@@ -41,8 +47,6 @@ impl Endpoint<TestCx> for InvalidParamEndpoint {
             "id",
         ))
     }
-
-    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Default)]

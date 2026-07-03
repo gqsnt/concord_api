@@ -514,7 +514,7 @@ fn emit_client_wrapper(
             #[inline]
             pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E, T>
             where
-                E: ::concord_core::prelude::Endpoint<#cx_ty>,
+                E: ::concord_core::prelude::IntoEndpointPlan<#cx_ty>,
             {
                 self.inner.request(ep)
             }

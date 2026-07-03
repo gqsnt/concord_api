@@ -9,9 +9,6 @@ fn emit_endpoint_def(
     ty_name: &Ident,
     cx_ty: &Ident,
 ) -> TokenStream2 {
-    let method = endpoint_http_method_ident(ep);
-    let endpoint_name_str = endpoint_qualified_name(ep);
-    let endpoint_name = LitStr::new(&endpoint_name_str, ep.name.span());
     let endpoint_docs = facade_endpoint_docs(ep, &resolved_api.client_policy);
 
     let mut fields_ts = Vec::new();
@@ -79,7 +76,7 @@ fn emit_endpoint_def(
     };
     let mut struct_fields: Vec<TokenStream2> = fields_ts;
     if let Some(body_ty) = &body_inner_ty {
-        struct_fields.push(quote! { pub(crate) body: ::std::sync::Mutex<::core::option::Option<#body_ty>> });
+        struct_fields.push(quote! { pub(crate) body: #body_ty });
     }
     let mut fn_args: Vec<TokenStream2> = required_vars
         .iter()
@@ -117,35 +114,20 @@ fn emit_endpoint_def(
     });
     let mut init_parts: Vec<TokenStream2> = init_fields.collect();
     if body_inner_ty.is_some() {
-        init_parts.push(quote! { body: ::std::sync::Mutex::new(::core::option::Option::Some(body)) });
+        init_parts.push(quote! { body });
     }
 
     let final_response_ty = endpoint_response_output_ty(ep);
-    let response_plan_setup = endpoint_response_plan_tokens(ep, ty_name);
-    let response_plan_accept = quote! { __response_accept };
-    let response_plan_no_content = quote! { __response_no_content };
-    let idempotent = matches!(
-        method.to_string().as_str(),
-        "GET" | "HEAD" | "PUT" | "DELETE" | "OPTIONS"
-    );
-
-    let route_policy = emit_endpoint_plan_route_policy(
-        ep,
-        &method,
-        &endpoint_name,
-        cx_ty,
-        &response_plan_accept,
-        &response_plan_no_content,
-    );
-    let auth_plan = emit_endpoint_auth_plan(resolved_api, ep);
-    let body_plan = match endpoint_request_body_plan(ep) {
-        Ok(body_plan) => body_plan,
-        Err(err) => return err,
-    };
     let execute_override = endpoint_execute_override(ep, ty_name, cx_ty);
+    let plan_impl = endpoint_plan_impl(
+        resolved_api,
+        ep,
+        ty_name,
+        cx_ty,
+        body_inner_ty.is_some(),
+    );
 
     let paginate_binding_impl = emit_paginate_binding_impl(ep, ty_name);
-    let pagination_plan = emit_endpoint_pagination_plan(ep);
     let pagination_marker_impl = emit_paginated_endpoint_impl(ep, ty_name, cx_ty);
     let pending_ext_trait = endpoint_pending_ext_trait_ident(ep);
     let pending_setter_decls: Vec<TokenStream2> = facade
@@ -239,40 +221,9 @@ fn emit_endpoint_def(
         impl ::concord_core::prelude::Endpoint<super::#cx_ty> for #ty_name {
             type Response = #final_response_ty;
             #execute_override
-
-            fn plan(
-                &self,
-                plan_ctx: &::concord_core::internal::ClientPlanContext<'_, super::#cx_ty>,
-            ) -> ::core::result::Result<::concord_core::internal::RequestPlan, ::concord_core::prelude::ApiClientError> {
-                let vars = plan_ctx.vars;
-                let __concord_auth_vars = plan_ctx.auth_vars;
-                let ep = self;
-                let ctx_err = ::concord_core::error::ErrorContext { endpoint: #endpoint_name, method: ::http::Method::#method };
-                let __auth_plan = #auth_plan;
-                let ctx = ctx_err.clone();
-                #response_plan_setup
-                #route_policy
-                #body_plan
-                #pagination_plan
-                ::core::result::Result::Ok(::concord_core::internal::RequestPlan {
-                    endpoint: ::concord_core::internal::EndpointPlan {
-                        meta: ::concord_core::internal::EndpointMeta {
-                            name: #endpoint_name,
-                            method: ::http::Method::#method,
-                            idempotent: #idempotent,
-                            facade_path: &[],
-                        },
-                        route: __resolved_route,
-                        policy: __resolved_policy,
-                        body: __body_plan,
-                        response: __response_plan,
-                        pagination: __pagination_plan,
-                    },
-                    args: __request_args,
-                    overrides: ::concord_core::internal::RequestOverrides::default(),
-                })
-            }
         }
+
+        #plan_impl
 
         #pagination_marker_impl
 
@@ -470,12 +421,7 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
         Ok(quote! {
             let __prepared_request_entity = <#request_adapter_ty as ::concord_core::advanced::RequestEntity>::prepare(
                 {
-                    let __body_value = self
-                        .body
-                        .lock()
-                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
-                        .take()
-                        .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+                    let __body_value = ep.body;
                     __body_value
                 },
                 ctx_err.clone(),
@@ -493,6 +439,91 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
             let __body_plan = __prepared_request_entity.body_plan;
             let __request_args = __prepared_request_entity.args;
         })
+    }
+}
+
+fn endpoint_plan_impl(
+    resolved_api: &ResolvedApi,
+    ep: &ResolvedEndpoint,
+    ty_name: &Ident,
+    cx_ty: &Ident,
+    owned: bool,
+) -> TokenStream2 {
+    let method = endpoint_http_method_ident(ep);
+    let endpoint_name_str = endpoint_qualified_name(ep);
+    let endpoint_name = LitStr::new(&endpoint_name_str, ep.name.span());
+    let response_plan_setup = endpoint_response_plan_tokens(ep, ty_name);
+    let response_plan_accept = quote! { __response_accept };
+    let response_plan_no_content = quote! { __response_no_content };
+    let route_policy = emit_endpoint_plan_route_policy(
+        ep,
+        &method,
+        &endpoint_name,
+        cx_ty,
+        &response_plan_accept,
+        &response_plan_no_content,
+    );
+    let auth_plan = emit_endpoint_auth_plan(resolved_api, ep);
+    let pagination_plan = emit_endpoint_pagination_plan(ep);
+    let body_plan = match endpoint_request_body_plan(ep) {
+        Ok(body_plan) => body_plan,
+        Err(err) => return err,
+    };
+    let idempotent = matches!(
+        method.to_string().as_str(),
+        "GET" | "HEAD" | "PUT" | "DELETE" | "OPTIONS"
+    );
+    let plan_body = quote! {
+        let vars = plan_ctx.vars;
+        let __concord_auth_vars = plan_ctx.auth_vars;
+        let ep = self;
+        let ctx_err = ::concord_core::error::ErrorContext { endpoint: #endpoint_name, method: ::http::Method::#method };
+        let __auth_plan = #auth_plan;
+        let ctx = ctx_err.clone();
+        #response_plan_setup
+        #route_policy
+        #pagination_plan
+        #body_plan
+        ::core::result::Result::Ok(::concord_core::internal::RequestPlan {
+            endpoint: ::concord_core::internal::EndpointPlan {
+                meta: ::concord_core::internal::EndpointMeta {
+                    name: #endpoint_name,
+                    method: ::http::Method::#method,
+                    idempotent: #idempotent,
+                    facade_path: &[],
+                },
+                route: __resolved_route,
+                policy: __resolved_policy,
+                body: __body_plan,
+                response: __response_plan,
+                pagination: __pagination_plan,
+            },
+            args: __request_args,
+            overrides: ::concord_core::internal::RequestOverrides::default(),
+        })
+    };
+    if owned {
+        quote! {
+            impl ::concord_core::prelude::IntoEndpointPlan<super::#cx_ty> for #ty_name {
+                fn into_plan(
+                    self,
+                    plan_ctx: &::concord_core::internal::ClientPlanContext<'_, super::#cx_ty>,
+                ) -> ::core::result::Result<::concord_core::internal::RequestPlan, ::concord_core::prelude::ApiClientError> {
+                    #plan_body
+                }
+            }
+        }
+    } else {
+        quote! {
+            impl ::concord_core::prelude::ReusableEndpoint<super::#cx_ty> for #ty_name {
+                fn plan(
+                    &self,
+                    plan_ctx: &::concord_core::internal::ClientPlanContext<'_, super::#cx_ty>,
+                ) -> ::core::result::Result<::concord_core::internal::RequestPlan, ::concord_core::prelude::ApiClientError> {
+                    #plan_body
+                }
+            }
+        }
     }
 }
 

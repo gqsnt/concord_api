@@ -9,7 +9,9 @@ use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
     RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
-use concord_core::prelude::{ApiClientError, Endpoint, RateLimitObservation, RateLimitObserver};
+use concord_core::prelude::{
+    ApiClientError, Endpoint, RateLimitObservation, RateLimitObserver, ReusableEndpoint,
+};
 use http::{HeaderValue, Method, StatusCode};
 use std::future::Future;
 use std::pin::Pin;
@@ -26,6 +28,20 @@ struct ObservationFailureEndpoint {
 impl Endpoint<TestCx> for ObservationFailureEndpoint {
     type Response = String;
 
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        Box::pin(
+            async move { BufferedResponse::<InvalidJsonResponse>::execute(client, plan).await },
+        )
+    }
+}
+
+impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         Ok(RequestPlan {
             endpoint: EndpointPlan {
@@ -56,18 +72,6 @@ impl Endpoint<TestCx> for ObservationFailureEndpoint {
             overrides: RequestOverrides::default(),
         })
     }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<String, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        Box::pin(
-            async move { BufferedResponse::<InvalidJsonResponse>::execute(client, plan).await },
-        )
-    }
 }
 
 #[derive(Clone)]
@@ -78,6 +82,10 @@ struct HostlessEndpoint {
 impl Endpoint<TestCx> for HostlessEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<TestCx> for HostlessEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         Ok(RequestPlan {
             endpoint: EndpointPlan {
@@ -101,8 +109,6 @@ impl Endpoint<TestCx> for HostlessEndpoint {
             overrides: RequestOverrides::default(),
         })
     }
-
-    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Clone)]

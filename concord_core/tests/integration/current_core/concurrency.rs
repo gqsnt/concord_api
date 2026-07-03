@@ -11,7 +11,7 @@ use concord_core::advanced::{
 use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{
     AccessToken, ApiClient, ApiClientError, ClientContext, CursorPagination, Endpoint,
-    PaginationTermination,
+    PaginationTermination, ReusableEndpoint,
 };
 use http::{HeaderMap, HeaderValue, StatusCode};
 use std::collections::{HashMap, VecDeque};
@@ -993,6 +993,10 @@ impl ClientContext for SingleFlightCx {
 impl Endpoint<SingleFlightCx> for TextEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(SingleFlightCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<SingleFlightCx> for TextEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, SingleFlightCx>,
@@ -1007,8 +1011,6 @@ impl Endpoint<SingleFlightCx> for TextEndpoint {
                 .map(|_| concord_core::internal::PaginationMarker),
         ))
     }
-
-    buffered_endpoint_execute!(SingleFlightCx, concord_core::prelude::Text<String>);
 }
 
 #[derive(Clone)]

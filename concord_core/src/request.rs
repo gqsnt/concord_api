@@ -1,6 +1,6 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
-use crate::endpoint::{Endpoint, PaginatedEndpoint};
+use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
 use crate::error::{ApiClientError, ErrorContext, PaginationErrorKind};
 use crate::multipart_response::MultipartStream;
 use crate::pagination::{
@@ -37,13 +37,18 @@ impl Default for RequestOptions {
     }
 }
 
-pub struct PendingRequest<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport> {
+pub struct PendingRequest<
+    'a,
+    Cx: ClientContext,
+    E: IntoEndpointPlan<Cx>,
+    T: crate::transport::Transport,
+> {
     client: &'a ApiClient<Cx, T>,
     ep: E,
     opts: RequestOptions,
 }
 
-impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
+impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>, T: crate::transport::Transport>
     PendingRequest<'a, Cx, E, T>
 {
     #[inline]
@@ -146,14 +151,16 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
     }
 
     fn request_plan(self) -> Result<crate::endpoint::RequestPlan, ApiClientError> {
-        let mut plan = self.ep.plan(&self.client.plan_context())?;
-        plan.overrides.timeout = match self.opts.timeout_override {
+        let Self { client, ep, opts } = self;
+        let plan_ctx = client.plan_context();
+        let mut plan = ep.into_plan(&plan_ctx)?;
+        plan.overrides.timeout = match opts.timeout_override {
             TimeoutOverride::Inherit => plan.overrides.timeout,
             TimeoutOverride::Clear => None,
             TimeoutOverride::Set(d) => Some(d),
         };
-        plan.overrides.debug_level = self.opts.debug_level;
-        plan.overrides.attempt = self.opts.attempt;
+        plan.overrides.debug_level = opts.debug_level;
+        plan.overrides.attempt = opts.attempt;
         plan.overrides.page_index = 0;
         Ok(plan)
     }
@@ -171,7 +178,7 @@ impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
 impl<'a, Cx, E, T, M> PendingRequest<'a, Cx, E, T>
 where
     Cx: ClientContext + 'a,
-    E: Endpoint<Cx, Response = StreamResponse<M>> + 'a,
+    E: IntoEndpointPlan<Cx> + Endpoint<Cx, Response = StreamResponse<M>> + 'a,
     T: crate::transport::Transport + 'a,
     M: 'a,
 {
@@ -186,7 +193,7 @@ where
 impl<'a, Cx, E, T, Item> PendingRequest<'a, Cx, E, T>
 where
     Cx: ClientContext + 'a,
-    E: Endpoint<Cx, Response = RecordStream<Item>> + 'a,
+    E: IntoEndpointPlan<Cx> + Endpoint<Cx, Response = RecordStream<Item>> + 'a,
     T: crate::transport::Transport + 'a,
     Item: 'a,
 {
@@ -201,7 +208,7 @@ where
 impl<'a, Cx, E, T, Part> PendingRequest<'a, Cx, E, T>
 where
     Cx: ClientContext + 'a,
-    E: Endpoint<Cx, Response = MultipartStream<Part>> + 'a,
+    E: IntoEndpointPlan<Cx> + Endpoint<Cx, Response = MultipartStream<Part>> + 'a,
     T: crate::transport::Transport + 'a,
     Part: 'a,
 {
@@ -216,7 +223,7 @@ where
 impl<'a, Cx, E, T, Event> PendingRequest<'a, Cx, E, T>
 where
     Cx: ClientContext + 'a,
-    E: Endpoint<Cx, Response = SseStream<Event>> + 'a,
+    E: IntoEndpointPlan<Cx> + Endpoint<Cx, Response = SseStream<Event>> + 'a,
     T: crate::transport::Transport + 'a,
     Event: 'a,
 {
@@ -231,7 +238,7 @@ where
 impl<'a, Cx, E, T> IntoFuture for PendingRequest<'a, Cx, E, T>
 where
     Cx: ClientContext + 'a,
-    E: Endpoint<Cx> + 'a,
+    E: IntoEndpointPlan<Cx> + 'a,
     T: crate::transport::Transport + 'a,
     E::Response: 'a,
 {
@@ -244,13 +251,17 @@ where
     }
 }
 
-pub struct PaginatedRequest<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
-{
+pub struct PaginatedRequest<
+    'a,
+    Cx: ClientContext,
+    E: ReusableEndpoint<Cx>,
+    T: crate::transport::Transport,
+> {
     pending: PendingRequest<'a, Cx, E, T>,
     caps: PaginationCaps,
 }
 
-impl<'a, Cx: ClientContext, E: Endpoint<Cx>, T: crate::transport::Transport>
+impl<'a, Cx: ClientContext, E: ReusableEndpoint<Cx>, T: crate::transport::Transport>
     PaginatedRequest<'a, Cx, E, T>
 {
     #[inline]

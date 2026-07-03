@@ -20,7 +20,7 @@ mod query_auth_redaction {
     use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
     use concord_core::prelude::{
         AccessToken, ApiClient, ApiClientError, ApiKey, BasicCredential, ClientContext, DebugLevel,
-        Endpoint,
+        Endpoint, ReusableEndpoint,
     };
     use http::{HeaderMap, Method, StatusCode};
     use std::future::Future;
@@ -232,6 +232,10 @@ mod query_auth_redaction {
     impl Endpoint<RedactionCx> for RedactionEndpoint {
         type Response = String;
 
+        buffered_endpoint_execute!(RedactionCx, concord_core::prelude::Text<String>);
+    }
+
+    impl ReusableEndpoint<RedactionCx> for RedactionEndpoint {
         fn plan(
             &self,
             _ctx: &ClientPlanContext<'_, RedactionCx>,
@@ -244,8 +248,6 @@ mod query_auth_redaction {
                 None,
             ))
         }
-
-        buffered_endpoint_execute!(RedactionCx, concord_core::prelude::Text<String>);
     }
 
     #[derive(Default)]
@@ -1064,6 +1066,10 @@ mod query_auth_redaction {
         impl Endpoint<RefreshCx> for RefreshEndpoint {
             type Response = String;
 
+            buffered_endpoint_execute!(RefreshCx, concord_core::prelude::Text<String>);
+        }
+
+        impl ReusableEndpoint<RefreshCx> for RefreshEndpoint {
             fn plan(
                 &self,
                 _ctx: &ClientPlanContext<'_, RefreshCx>,
@@ -1076,8 +1082,6 @@ mod query_auth_redaction {
                     None,
                 ))
             }
-
-            buffered_endpoint_execute!(RefreshCx, concord_core::prelude::Text<String>);
         }
 
         let events = Arc::new(TokioMutex::new(Vec::new()));
@@ -1195,6 +1199,10 @@ mod query_auth_redaction {
         impl Endpoint<CertificateCx> for CertificateEndpoint {
             type Response = String;
 
+            buffered_endpoint_execute!(CertificateCx, concord_core::prelude::Text<String>);
+        }
+
+        impl ReusableEndpoint<CertificateCx> for CertificateEndpoint {
             fn plan(
                 &self,
                 _ctx: &ClientPlanContext<'_, CertificateCx>,
@@ -1207,8 +1215,6 @@ mod query_auth_redaction {
                     None,
                 ))
             }
-
-            buffered_endpoint_execute!(CertificateCx, concord_core::prelude::Text<String>);
         }
 
         let events = Arc::new(TokioMutex::new(Vec::new()));
@@ -1337,6 +1343,10 @@ mod query_auth_redaction {
         impl Endpoint<InternalAuthCx> for InternalEndpoint {
             type Response = String;
 
+            buffered_endpoint_execute!(InternalAuthCx, concord_core::prelude::Text<String>);
+        }
+
+        impl ReusableEndpoint<InternalAuthCx> for InternalEndpoint {
             fn plan(
                 &self,
                 _ctx: &ClientPlanContext<'_, InternalAuthCx>,
@@ -1349,8 +1359,6 @@ mod query_auth_redaction {
                     None,
                 ))
             }
-
-            buffered_endpoint_execute!(InternalAuthCx, concord_core::prelude::Text<String>);
         }
 
         let transport = MockTransport::new(

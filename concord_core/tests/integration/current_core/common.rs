@@ -16,6 +16,7 @@ use concord_core::internal::{
 };
 use concord_core::prelude::{
     ApiClient, ApiClientError, ApiKey, BasicCredential, ClientContext, Endpoint, PaginatedEndpoint,
+    ReusableEndpoint,
 };
 use concord_core::prelude::{HasNextCursor, PageItems};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -242,16 +243,6 @@ impl Default for TextEndpoint {
 impl Endpoint<TestCx> for TextEndpoint {
     type Response = String;
 
-    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
-        Ok(request_plan(
-            self.name,
-            self.method.clone(),
-            self.path,
-            self.policy.clone(),
-            self.pagination.as_ref().map(|_| PaginationMarker),
-        ))
-    }
-
     fn execute<'a, T>(
         client: &'a ApiClient<TestCx, T>,
         plan: RequestPlan,
@@ -260,6 +251,18 @@ impl Endpoint<TestCx> for TextEndpoint {
         T: Transport + 'a,
     {
         execute_buffered::<_, _, concord_core::prelude::Text<String>>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for TextEndpoint {
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            self.name,
+            self.method.clone(),
+            self.path,
+            self.policy.clone(),
+            self.pagination.as_ref().map(|_| PaginationMarker),
+        ))
     }
 }
 
@@ -288,6 +291,18 @@ impl Default for ItemsEndpoint {
 impl Endpoint<TestCx> for ItemsEndpoint {
     type Response = Vec<String>;
 
+    fn execute<'a, T>(
+        client: &'a ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for ItemsEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         let mut plan = request_plan(
             "Items",
@@ -329,16 +344,6 @@ impl Endpoint<TestCx> for ItemsEndpoint {
             }
         }
         Ok(plan)
-    }
-
-    fn execute<'a, T>(
-        client: &'a ApiClient<TestCx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -438,16 +443,6 @@ impl Default for NoHintItemsEndpoint {
 impl Endpoint<TestCx> for NoHintItemsEndpoint {
     type Response = NoHintItems;
 
-    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
-        Ok(request_plan(
-            "NoHintItems",
-            Method::GET,
-            "/no-hint-items",
-            self.policy.clone(),
-            Some(PaginationMarker),
-        ))
-    }
-
     fn execute<'a, T>(
         client: &'a ApiClient<TestCx, T>,
         plan: RequestPlan,
@@ -456,6 +451,18 @@ impl Endpoint<TestCx> for NoHintItemsEndpoint {
         T: Transport + 'a,
     {
         execute_buffered::<_, _, NoHintItemsCodec>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for NoHintItemsEndpoint {
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            "NoHintItems",
+            Method::GET,
+            "/no-hint-items",
+            self.policy.clone(),
+            Some(PaginationMarker),
+        ))
     }
 }
 
@@ -504,6 +511,18 @@ impl Default for PageOnlyItemsEndpoint {
 impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
     type Response = PageOnlyItems;
 
+    fn execute<'a, T>(
+        client: &'a ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        execute_buffered::<_, _, PageOnlyItemsCodec>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for PageOnlyItemsEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         let mut plan = request_plan(
             "PageOnlyItems",
@@ -545,16 +564,6 @@ impl Endpoint<TestCx> for PageOnlyItemsEndpoint {
             }
         }
         Ok(plan)
-    }
-
-    fn execute<'a, T>(
-        client: &'a ApiClient<TestCx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-    {
-        execute_buffered::<_, _, PageOnlyItemsCodec>(client, plan)
     }
 }
 
@@ -748,6 +757,18 @@ impl Default for CursorItemsEndpoint {
 impl Endpoint<TestCx> for CursorItemsEndpoint {
     type Response = CursorItems;
 
+    fn execute<'a, T>(
+        client: &'a ApiClient<TestCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        execute_buffered::<_, _, CursorItemsCodec>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for CursorItemsEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         let mut plan = request_plan(
             "CursorItems",
@@ -795,16 +816,6 @@ impl Endpoint<TestCx> for CursorItemsEndpoint {
             }
         }
         Ok(plan)
-    }
-
-    fn execute<'a, T>(
-        client: &'a ApiClient<TestCx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: Transport + 'a,
-    {
-        execute_buffered::<_, _, CursorItemsCodec>(client, plan)
     }
 }
 
@@ -1079,6 +1090,10 @@ impl ClientContext for ObservationAuthCx {
 impl Endpoint<ObservationAuthCx> for TextEndpoint {
     type Response = String;
 
+    buffered_endpoint_execute!(ObservationAuthCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<ObservationAuthCx> for TextEndpoint {
     fn plan(
         &self,
         _ctx: &ClientPlanContext<'_, ObservationAuthCx>,
@@ -1091,8 +1106,6 @@ impl Endpoint<ObservationAuthCx> for TextEndpoint {
             self.pagination.as_ref().map(|_| PaginationMarker),
         ))
     }
-
-    buffered_endpoint_execute!(ObservationAuthCx, concord_core::prelude::Text<String>);
 }
 
 pub fn auth_policy(placement: AuthPlacement) -> ResolvedPolicy {

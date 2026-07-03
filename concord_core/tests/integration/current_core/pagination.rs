@@ -5,7 +5,7 @@ use concord_core::advanced::{
 };
 use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
-    PaginationTermination,
+    PaginationTermination, ReusableEndpoint,
 };
 use http::{HeaderValue, Method, StatusCode};
 use std::future::Future;
@@ -34,6 +34,18 @@ struct GeneratedHeaderBoundCustomEndpoint {
 impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
     type Response = Vec<String>;
 
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
@@ -54,16 +66,6 @@ impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
             HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
         );
         Ok(plan)
-    }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
-        plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -157,6 +159,18 @@ struct HeaderBoundOffsetLimitEndpoint {
 impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
     type Response = Vec<String>;
 
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
@@ -177,16 +191,6 @@ impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
             HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
         );
         Ok(plan)
-    }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
-        plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -231,6 +235,18 @@ struct HeaderBoundPagedEndpoint {
 impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
     type Response = Vec<String>;
 
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for HeaderBoundPagedEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
@@ -251,16 +267,6 @@ impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
             HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
         );
         Ok(plan)
-    }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
-        plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -305,6 +311,18 @@ struct HeaderBoundCursorEndpoint {
 impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
     type Response = CursorItems;
 
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CursorItemsCodec>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for HeaderBoundCursorEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
@@ -327,16 +345,6 @@ impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
             HeaderValue::from_str(&self.count.to_string()).expect("valid header value"),
         );
         Ok(plan)
-    }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
-        plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CursorItemsCodec>(client, plan)
     }
 }
 
@@ -383,6 +391,18 @@ struct QueryBoundPagedEndpoint {
 impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
     type Response = Vec<String>;
 
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    }
+}
+
+impl ReusableEndpoint<TestCx> for QueryBoundPagedEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
@@ -403,16 +423,6 @@ impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
             .query
             .push(("pageSize".into(), self.count.to_string()));
         Ok(plan)
-    }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<TestCx, T>,
-        plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 
@@ -453,6 +463,18 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::Endpoint<C
 {
     type Response = Vec<String>;
 
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<Cx, T>,
+        plan: concord_core::internal::RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
+    }
+}
+
+impl<Cx: concord_core::prelude::ClientContext> ReusableEndpoint<Cx> for PaginationEndpoint {
     fn plan(
         &self,
         _ctx: &concord_core::internal::ClientPlanContext<'_, Cx>,
@@ -466,16 +488,6 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::Endpoint<C
                 .as_ref()
                 .map(|_| concord_core::internal::PaginationMarker),
         ))
-    }
-
-    fn execute<'a, T>(
-        client: &'a concord_core::prelude::ApiClient<Cx, T>,
-        plan: concord_core::internal::RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
-    where
-        T: concord_core::advanced::Transport + 'a,
-    {
-        execute_buffered::<_, _, CommaSeparatedItems>(client, plan)
     }
 }
 

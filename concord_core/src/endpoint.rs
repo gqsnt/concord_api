@@ -17,10 +17,8 @@ pub struct ClientPlanContext<'a, Cx: ClientContext> {
 }
 
 /// Endpoint model used by generated Concord clients.
-pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
+pub trait Endpoint<Cx: ClientContext>: Send + Sized + 'static {
     type Response: Send + 'static;
-
-    fn plan(&self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError>;
 
     /// Executes a planned endpoint through its typed response path.
     ///
@@ -34,12 +32,35 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sync + Sized + 'static {
         T: Transport + 'a;
 }
 
+/// Endpoint planning for reusable bodyless endpoints.
+///
+/// Implement this for endpoints that may be planned multiple times by shared
+/// reference, such as paginated endpoints.
+pub trait ReusableEndpoint<Cx: ClientContext>: Endpoint<Cx> + Sync {
+    fn plan(&self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError>;
+}
+
+/// Endpoint planning that consumes the endpoint value.
+pub trait IntoEndpointPlan<Cx: ClientContext>: Endpoint<Cx> {
+    fn into_plan(self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError>;
+}
+
+impl<Cx, E> IntoEndpointPlan<Cx> for E
+where
+    Cx: ClientContext,
+    E: ReusableEndpoint<Cx>,
+{
+    fn into_plan(self, ctx: &ClientPlanContext<'_, Cx>) -> Result<RequestPlan, ApiClientError> {
+        self.plan(ctx)
+    }
+}
+
 /// Marker implemented only for endpoints that declare pagination.
 ///
 /// A response type implementing [`crate::pagination::PageItems`] is not enough
 /// to make an endpoint paginated; the endpoint plan must also carry an
 /// explicit pagination controller.
-pub trait PaginatedEndpoint<Cx: ClientContext>: Endpoint<Cx>
+pub trait PaginatedEndpoint<Cx: ClientContext>: ReusableEndpoint<Cx>
 where
     Self: crate::pagination::PaginateBinding<Self::Pagination>,
     Self::Pagination: crate::pagination::EndpointPagination<Self::Response>,

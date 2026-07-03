@@ -1416,7 +1416,6 @@ mod tests {
                 "ResponseEntity",
                 "BufferedResponse",
                 "__response_entity_plan",
-                "::concord_core::prelude::ApiClientError::invalid_param",
             ],
         );
         assert_not_contains_all(
