@@ -3622,6 +3622,7 @@ mod tests {
         assert!(no_body.io.request_entity.public_input_ty.is_none());
         assert!(no_body.io.request_entity.body_field_ty.is_none());
         assert!(no_body.io.request_entity.capabilities.replayable);
+        assert!(no_body.io.request_entity.doc.facade_summary.is_none());
         assert_eq!(
             ty_string(&no_body.io.response_entity.adapter_ty),
             "::concord_core::advanced::BufferedResponse<Json<NoBodyResponse>>"
@@ -3667,6 +3668,10 @@ mod tests {
             "BufferedBody"
         );
         assert!(buffered.io.request_entity.capabilities.replayable);
+        assert_eq!(
+            buffered.io.request_entity.doc.facade_summary.as_deref(),
+            Some("Body: Json<BufferedBody>")
+        );
         assert_eq!(
             ty_string(&buffered.io.response_entity.adapter_ty),
             "::concord_core::advanced::BufferedResponse<Json<BufferedResponse>>"
@@ -3744,6 +3749,10 @@ mod tests {
         assert_eq!(
             ty_string(&streamed.io.response_entity.adapter_ty),
             "::concord_core::advanced::RawStreamResponse<OctetStream>"
+        );
+        assert_eq!(
+            streamed.io.response_entity.doc.facade_summary.as_deref(),
+            Some("Response: Stream<OctetStream>")
         );
         assert!(streamed.io.response_entity.capabilities.is_streaming);
         assert!(!streamed.io.response_entity.capabilities.supports_pagination);

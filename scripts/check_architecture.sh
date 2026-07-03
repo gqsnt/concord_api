@@ -171,6 +171,19 @@ if "${RG[@]}" 'BodyPlan::(Encoded|RawStream|Records|Multipart|None)|RequestArgs:
   fail_with_matches "concord_macros request-body planning must flow through RequestEntity adapters." "$macro_request_body_refs"
 fi
 
+section "codegen I/O entity metadata fence"
+codegen_io_family_refs="$tmpdir/codegen_io_family.refs"
+if "${RG[@]}" 'ResolvedRequestBodyIo|ResolvedResponseBodyIo' \
+  concord_macros/src/codegen >"$codegen_io_family_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros codegen must use entity metadata, not sema syntax-family classifications." "$codegen_io_family_refs"
+fi
+
+macro_endpoint_plan_refs="$tmpdir/macro_endpoint_plan.refs"
+if "${RG[@]}" 'BodyPlan::|RequestArgs::' \
+  concord_macros/src/codegen/endpoints >"$macro_endpoint_plan_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros endpoint codegen must not construct core request plans or arguments directly." "$macro_endpoint_plan_refs"
+fi
+
 section "macro response plan construction fence"
 macro_response_plan_refs="$tmpdir/macro_response_plan.refs"
 if "${RG[@]}" 'ResponsePlan \{|ResponseCodec>::try_accept|ResponseCodec>::decode|decode : __decode_|decode: __decode_|endpoint_response_decode_fn|endpoint_response_accept_tokens|endpoint_response_no_content_tokens|endpoint_response_format_tokens' \

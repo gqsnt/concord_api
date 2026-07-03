@@ -1077,71 +1077,11 @@ fn facade_endpoint_docs(ep: &ResolvedEndpoint, client_policy: &PolicyBlocksResol
             ep.name.span(),
         ));
     }
-    match ep.request_io() {
-        ResolvedRequestBodyIo::BufferedCodec(io) => docs.push(LitStr::new(
-            &format!("Body: {}", doc_codec(&io.codec_path, &io.value_ty)),
-            ep.name.span(),
-        )),
-        ResolvedRequestBodyIo::RawStream { media_ty } => docs.push(LitStr::new(
-            &format!("Body: Stream<{}>", quote::quote!(#media_ty)),
-            ep.name.span(),
-        )),
-        ResolvedRequestBodyIo::Records { item_ty, format_ty } => docs.push(LitStr::new(
-            &format!(
-                "Body: Records<{}, {}>",
-                quote::quote!(#item_ty),
-                quote::quote!(#format_ty)
-            ),
-            ep.name.span(),
-        )),
-        ResolvedRequestBodyIo::Multipart { value_ty, format_ty } => docs.push(LitStr::new(
-            &format!(
-                "Body: Multipart<{}, {}>",
-                quote::quote!(#value_ty),
-                quote::quote!(#format_ty)
-            ),
-            ep.name.span(),
-        )),
-        ResolvedRequestBodyIo::None => {}
+    if let Some(summary) = &ep.io.request_entity.doc.facade_summary {
+        docs.push(LitStr::new(summary, ep.name.span()));
     }
-    match ep.response_io() {
-        ResolvedResponseBodyIo::BufferedCodec(io) => docs.push(LitStr::new(
-            &format!("Response: {}", doc_codec(&io.codec_path, &io.value_ty)),
-            ep.name.span(),
-        )),
-        ResolvedResponseBodyIo::BufferedBytes => docs.push(LitStr::new(
-            "Response: bytes::Bytes",
-            ep.name.span(),
-        )),
-        ResolvedResponseBodyIo::NoContent => docs.push(LitStr::new("Response: ()", ep.name.span())),
-        ResolvedResponseBodyIo::RawStream { media_ty } => docs.push(LitStr::new(
-            &format!("Response: Stream<{}>", quote::quote!(#media_ty)),
-            ep.name.span(),
-        )),
-        ResolvedResponseBodyIo::Records { item_ty, format_ty } => docs.push(LitStr::new(
-            &format!(
-                "Response: Records<{}, {}>",
-                quote::quote!(#item_ty),
-                quote::quote!(#format_ty)
-            ),
-            ep.name.span(),
-        )),
-        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => docs.push(LitStr::new(
-            &format!(
-                "Response: Multipart<{}, {}>",
-                quote::quote!(#part_ty),
-                quote::quote!(#format_ty)
-            ),
-            ep.name.span(),
-        )),
-        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => docs.push(LitStr::new(
-            &format!(
-                "Response: Sse<{}, {}>",
-                quote::quote!(#event_ty),
-                quote::quote!(#codec_ty)
-            ),
-            ep.name.span(),
-        )),
+    if let Some(summary) = &ep.io.response_entity.doc.facade_summary {
+        docs.push(LitStr::new(summary, ep.name.span()));
     }
     docs
 }
@@ -1172,9 +1112,6 @@ fn doc_policy_keys(
     keys.into_iter().collect()
 }
 
-fn doc_codec(enc: &syn::Path, ty: &syn::Type) -> String {
-    format!("{}<{}>", quote::quote!(#enc), quote::quote!(#ty))
-}
 
 fn doc_path(ep: &ResolvedEndpoint) -> String {
     let mut pieces = Vec::new();

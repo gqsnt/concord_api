@@ -48,6 +48,7 @@ PR52 introduces the new core adapter contracts beside the current family-enum sy
 - PR60 removed the legacy streaming response marker traits and the temporary response-kind routing traits. Pending-request streaming helpers are now available through concrete endpoint response-type bounds and still execute through `E::execute(...)`.
 - PR61 made the specialized streaming, records, multipart, and SSE execution helpers internal adapter implementation details. Public and generated execution continues through `ResponseEntity::execute` and pending-request helpers.
 - PR62 removed the decode callback field from `ResponsePlan` and the type-erased buffered response decode path. `ResponsePlan` now carries response metadata only, while buffered, bytes, no-content, mapped, and streaming behavior lives in `ResponseEntity` adapters.
+- PR63 demoted the old resolved request and response body family enums to syntax classification only. Codegen now uses I/O entity metadata as the source of truth for request preparation, response planning, and response execution.
 - `ResponseCodec` remains a codec/adapter contract. Decoded values such as `String`, `Bytes`, `()`, and domain models do not implement it merely because an endpoint returns them; `Text<String>`, `Json<T>`, `BytesResponse`, and `NoContentResponse` own that behavior.
 - Pagination continues to execute each page through `Endpoint::execute`; decoded page value types do not need to implement `ResponseCodec`.
 - Without type-erased default decoding, manual `Endpoint` implementations must provide their typed `execute` method. Generated endpoints already do this through `ResponseEntity`; low-level metadata access uses `execute_decoded_with::<C>()` with an explicit codec type.
@@ -206,7 +207,9 @@ Custom buffered codec extensibility is part of the public contract and must not 
 
 ## Resolved Semantic Model
 
-The current resolved semantic model stores resolved HTTP endpoint I/O directly on each endpoint.
+The resolved semantic model keeps syntax classification beside the entity metadata derived from it.
+The family classification is sema-internal syntax information; generated runtime behavior uses the
+request and response entity plans.
 
 ```rust
 struct ResolvedEndpoint {
@@ -214,17 +217,18 @@ struct ResolvedEndpoint {
 }
 
 struct ResolvedHttpEndpointIo {
-    request: RequestBodyShape,
-    response: ResponseBodyShape,
+    request: ResolvedRequestBodyIo,
+    response: ResolvedResponseBodyIo,
+    request_entity: RequestEntityPlanIr,
+    response_entity: ResponseEntityPlanIr,
 }
 
-enum RequestBodyShape {
+enum ResolvedRequestBodyIo {
     None,
     BufferedCodec {
         codec_ty: TypeRef,
         value_ty: TypeRef,
     },
-    BufferedBytes,
     RawStream {
         media_ty: TypeRef,
     },
@@ -238,7 +242,7 @@ enum RequestBodyShape {
     },
 }
 
-enum ResponseBodyShape {
+enum ResolvedResponseBodyIo {
     NoContent,
     BufferedCodec {
         codec_ty: TypeRef,
@@ -261,7 +265,23 @@ enum ResponseBodyShape {
         codec_ty: TypeRef,
     },
 }
+
+struct RequestEntityPlanIr {
+    adapter_ty: Type,
+    public_input_ty: Option<Type>,
+    body_field_ty: Option<Type>,
+    capabilities: RequestIoCapabilities,
+}
+
+struct ResponseEntityPlanIr {
+    adapter_ty: Type,
+    public_output_ty: Type,
+    capabilities: ResponseIoCapabilities,
+}
 ```
+
+Sema uses the family enums to derive these entity plans. Codegen does not match the family enums to
+construct `BodyPlan`, `RequestArgs`, or `ResponsePlan`, or to select an execution path.
 
 ## Runtime Value Rule
 

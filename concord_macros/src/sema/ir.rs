@@ -79,6 +79,7 @@ pub struct ResolvedHttpEndpointIo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IoDocIr {
     pub summary: String,
+    pub facade_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +127,8 @@ pub struct BufferedCodecIo {
     pub value_ty: Type,
 }
 
+/// Syntax-level request body classification used while deriving entity metadata.
+/// Runtime planning and execution must use [`RequestEntityPlanIr`].
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum ResolvedRequestBodyIo {
@@ -136,6 +139,8 @@ pub enum ResolvedRequestBodyIo {
     Multipart { value_ty: Type, format_ty: Type },
 }
 
+/// Syntax-level response body classification used while deriving entity metadata.
+/// Runtime planning and execution must use [`ResponseEntityPlanIr`].
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum ResolvedResponseBodyIo {

@@ -498,63 +498,18 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
             details: Vec::new(),
         });
     }
-    let body_summary = match ep.request_io() {
-        ResolvedRequestBodyIo::BufferedCodec(io) => {
-            format!("Body: {}", doc_codec(&io.codec_path, &io.value_ty))
-        }
-        ResolvedRequestBodyIo::RawStream { media_ty } => {
-            format!("Body: Stream<{}>", quote::quote!(#media_ty))
-        }
-        ResolvedRequestBodyIo::Records { item_ty, format_ty } => format!(
-            "Body: Records<{}, {}>",
-            quote::quote!(#item_ty),
-            quote::quote!(#format_ty)
-        ),
-        ResolvedRequestBodyIo::Multipart {
-            value_ty,
-            format_ty,
-        } => format!(
-            "Body: Multipart<{}, {}>",
-            quote::quote!(#value_ty),
-            quote::quote!(#format_ty)
-        ),
-        ResolvedRequestBodyIo::None => String::new(),
-    };
-    if !body_summary.is_empty() {
+    if let Some(body_summary) = &ep.io.request_entity.doc.facade_summary {
         docs.push(FacadeDoc {
-            summary: body_summary,
+            summary: body_summary.clone(),
             details: Vec::new(),
         });
     }
-    let response_summary = match ep.response_io() {
-        ResolvedResponseBodyIo::BufferedCodec(io) => {
-            format!("Response: {}", doc_codec(&io.codec_path, &io.value_ty))
-        }
-        ResolvedResponseBodyIo::BufferedBytes => "Response: bytes::Bytes".to_string(),
-        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => format!(
-            "Response: Multipart<{}, {}>",
-            quote::quote!(#part_ty),
-            quote::quote!(#format_ty)
-        ),
-        ResolvedResponseBodyIo::Records { item_ty, format_ty } => format!(
-            "Response: Records<{}, {}>",
-            quote::quote!(#item_ty),
-            quote::quote!(#format_ty)
-        ),
-        ResolvedResponseBodyIo::RawStream { media_ty } => {
-            format!("Response: Stream<{}>", quote::quote!(#media_ty))
-        }
-        ResolvedResponseBodyIo::NoContent => "Response: ()".to_string(),
-        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => format!(
-            "Response: Sse<{}, {}>",
-            quote::quote!(#event_ty),
-            quote::quote!(#codec_ty)
-        ),
-    };
-    docs.push(FacadeDoc {
-        summary: response_summary,
-        details: Vec::new(),
-    });
+    if let Some(response_summary) = &ep.io.response_entity.doc.facade_summary {
+        docs.push(FacadeDoc {
+            summary: response_summary.clone(),
+            details: Vec::new(),
+        });
+    }
     docs
 }
 
@@ -765,10 +720,6 @@ fn pascal_to_snake(raw: &str) -> String {
         }
     }
     out
-}
-
-fn doc_codec(enc: &syn::Path, ty: &syn::Type) -> String {
-    format!("{}<{}>", quote::quote!(#enc), quote::quote!(#ty))
 }
 
 fn doc_path(ep: &ResolvedEndpoint) -> String {
