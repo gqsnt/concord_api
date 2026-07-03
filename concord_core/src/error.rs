@@ -482,31 +482,6 @@ impl ApiClientError {
     }
 
     #[inline]
-    pub fn redacted_url(&self) -> Option<&str> {
-        None
-    }
-
-    #[inline]
-    pub fn phase(&self) -> Option<&'static str> {
-        None
-    }
-
-    #[inline]
-    pub fn page_index(&self) -> Option<u32> {
-        None
-    }
-
-    #[inline]
-    pub fn attempt_index(&self) -> Option<u32> {
-        None
-    }
-
-    #[inline]
-    pub fn attempt_count(&self) -> Option<u32> {
-        None
-    }
-
-    #[inline]
     pub fn http_status(&self) -> Option<StatusCode> {
         match self {
             ApiClientError::HttpStatus { status, .. } => Some(*status),
@@ -638,7 +613,6 @@ mod tests {
         assert_eq!(err.category(), ErrorCategory::Config);
         assert_eq!(err.endpoint(), "Ping");
         assert_eq!(*err.method(), http::Method::GET);
-        assert_eq!(err.redacted_url(), None);
 
         let pagination = ApiClientError::pagination(
             ErrorContext {
