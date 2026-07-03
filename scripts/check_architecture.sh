@@ -164,6 +164,13 @@ if "${RG[@]}" 'SingleObjectPaginationRuntimeAdapter|PaginationRuntimeAdapter|End
   fail_with_matches "concord_macros codegen must not construct pagination runtimes directly." "$macro_pagination_runtime_refs"
 fi
 
+section "macro request body construction fence"
+macro_request_body_refs="$tmpdir/macro_request_body.refs"
+if "${RG[@]}" 'BodyPlan::(Encoded|RawStream|Records|Multipart|None)|RequestArgs::(with_body_bytes|with_stream_body|with_record_body|with_multipart_body|default)|BodyCodec::encode|try_content_type' \
+  concord_macros/src/codegen/endpoints/endpoint.rs >"$macro_request_body_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros request-body planning must flow through RequestEntity adapters." "$macro_request_body_refs"
+fi
+
 section "codegen panic hygiene"
 panic_refs="$tmpdir/panic.refs"
 if "${RG[@]}" 'expect\("validated|expect\("valid|unreachable!|\.unwrap\(\)' concord_macros/src/codegen >"$panic_refs" 2>/dev/null; then

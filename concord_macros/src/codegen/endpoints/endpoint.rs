@@ -506,101 +506,85 @@ fn endpoint_var_for_setter<'a>(
 }
 
 fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenStream2>, TokenStream2> {
-    match ep.request_io() {
-        ResolvedRequestBodyIo::None => Ok(None),
-        ResolvedRequestBodyIo::BufferedCodec(io) => {
-            let ty = &io.value_ty;
-            Ok(Some(quote! { #ty }))
-        }
-        ResolvedRequestBodyIo::RawStream { .. } => Ok(Some(quote! { ::concord_core::advanced::StreamBody })),
-        ResolvedRequestBodyIo::Records { item_ty, .. } => {
-            Ok(Some(quote! { ::concord_core::advanced::RecordBody<#item_ty> }))
-        }
-        ResolvedRequestBodyIo::Multipart { .. } => Ok(Some(quote! { ::concord_core::advanced::MultipartBody })),
-    }
+    Ok(ep.io.request_entity.public_input_ty.clone().map(|ty| quote! { #ty }))
 }
 
 fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, TokenStream2> {
+    let request_adapter_ty = &ep.io.request_entity.adapter_ty;
     match ep.request_io() {
         ResolvedRequestBodyIo::None => Ok(quote! {
-            let __body_plan = ::concord_core::internal::BodyPlan::None;
-            let __request_args = ::concord_core::internal::RequestArgs::default();
+            let __prepared_request_entity =
+                <#request_adapter_ty as ::concord_core::advanced::RequestEntity>::prepare(
+                    (),
+                    ctx_err.clone(),
+                )?;
+            let __body_plan = __prepared_request_entity.body_plan;
+            let __request_args = __prepared_request_entity.args;
         }),
-        ResolvedRequestBodyIo::BufferedCodec(io) => {
-            let enc = &io.marker;
-            Ok(quote! {
-                let __body_value = self
-                    .body
-                    .lock()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
-                    .take()
-                    .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
-                let __encoded_body = <#enc as ::concord_core::advanced::BodyCodec>::encode(
-                    __body_value,
-                    ::concord_core::advanced::EncodeContext::new(ctx_err.endpoint, &ctx_err.method),
-                )
-                    .map_err(|e| ::concord_core::prelude::ApiClientError::codec_error(ctx_err.clone(), e))?;
-                let (__body_bytes, __body_format) = __encoded_body.into_parts();
-                let __body_plan = ::concord_core::internal::BodyPlan::Encoded {
-                    content_type: <#enc as ::concord_core::advanced::BodyCodec>::try_content_type()
-                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
-                    format: __body_format,
-                };
-                let __request_args = ::concord_core::internal::RequestArgs::with_body_bytes(__body_bytes);
-            })
-        }
-        ResolvedRequestBodyIo::RawStream { media_ty } => {
-            Ok(quote! {
-                let __body_value = self
-                    .body
-                    .lock()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
-                    .take()
-                    .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
-                let __body_plan = ::concord_core::internal::BodyPlan::RawStream {
-                    content_type: <#media_ty as ::concord_core::advanced::ContentType>::try_header_value()
-                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
-                };
-                let __request_args = ::concord_core::internal::RequestArgs::with_stream_body(__body_value);
-            })
-        }
-        ResolvedRequestBodyIo::Records { item_ty, format_ty } => {
-            Ok(quote! {
-                let __body_value = self
-                    .body
-                    .lock()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
-                    .take()
-                    .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
-                let __body_plan = ::concord_core::internal::BodyPlan::Records {
-                    content_type: <#format_ty as ::concord_core::advanced::ContentType>::try_header_value()
-                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
-                    format: ::concord_core::internal::Format::Text,
-                };
-                let __request_args = ::concord_core::internal::RequestArgs::with_record_body::<#item_ty, #format_ty>(__body_value);
-            })
-        }
-        ResolvedRequestBodyIo::Multipart { format_ty, .. } => {
-            Ok(quote! {
-                let __body_value = self
-                    .body
-                    .lock()
-                    .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
-                    .take()
-                    .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
-                let __body_plan = ::concord_core::internal::BodyPlan::Multipart {
-                    content_type: __body_value
-                        .try_content_type::<#format_ty>()
-                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "content_type"))?,
-                    format: ::concord_core::internal::Format::Text,
-                };
-                let __request_args = ::concord_core::internal::RequestArgs::with_multipart_body::<#format_ty>(__body_value)
-                    .map_err(|source| ::concord_core::prelude::ApiClientError::codec_error(
-                        ctx_err.clone(),
-                        ::concord_core::advanced::CodecError::new(source.to_string()),
-                    ))?;
-            })
-        }
+        ResolvedRequestBodyIo::BufferedCodec(_) => Ok(quote! {
+            let __prepared_request_entity = <#request_adapter_ty as ::concord_core::advanced::RequestEntity>::prepare(
+                {
+                    let __body_value = self
+                        .body
+                        .lock()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                        .take()
+                        .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+                    __body_value
+                },
+                ctx_err.clone(),
+            )?;
+            let __body_plan = __prepared_request_entity.body_plan;
+            let __request_args = __prepared_request_entity.args;
+        }),
+        ResolvedRequestBodyIo::RawStream { .. } => Ok(quote! {
+            let __prepared_request_entity = <#request_adapter_ty as ::concord_core::advanced::RequestEntity>::prepare(
+                {
+                    let __body_value = self
+                        .body
+                        .lock()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                        .take()
+                        .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+                    __body_value
+                },
+                ctx_err.clone(),
+            )?;
+            let __body_plan = __prepared_request_entity.body_plan;
+            let __request_args = __prepared_request_entity.args;
+        }),
+        ResolvedRequestBodyIo::Records { .. } => Ok(quote! {
+            let __prepared_request_entity = <#request_adapter_ty as ::concord_core::advanced::RequestEntity>::prepare(
+                {
+                    let __body_value = self
+                        .body
+                        .lock()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                        .take()
+                        .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+                    __body_value
+                },
+                ctx_err.clone(),
+            )?;
+            let __body_plan = __prepared_request_entity.body_plan;
+            let __request_args = __prepared_request_entity.args;
+        }),
+        ResolvedRequestBodyIo::Multipart { .. } => Ok(quote! {
+            let __prepared_request_entity = <#request_adapter_ty as ::concord_core::advanced::RequestEntity>::prepare(
+                {
+                    let __body_value = self
+                        .body
+                        .lock()
+                        .map_err(|_| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?
+                        .take()
+                        .ok_or_else(|| ::concord_core::prelude::ApiClientError::invalid_param(ctx_err.clone(), "body"))?;
+                    __body_value
+                },
+                ctx_err.clone(),
+            )?;
+            let __body_plan = __prepared_request_entity.body_plan;
+            let __request_args = __prepared_request_entity.args;
+        }),
     }
 }
 

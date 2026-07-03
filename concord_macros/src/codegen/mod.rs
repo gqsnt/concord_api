@@ -163,6 +163,16 @@ mod tests {
         }
     }
 
+    fn assert_not_contains_all(expanded: &str, snippets: &[&str]) {
+        for snippet in snippets {
+            let compact: String = snippet.chars().filter(|ch| !ch.is_whitespace()).collect();
+            assert!(
+                !expanded.contains(&compact),
+                "expanded code unexpectedly contained `{snippet}`\n\nexpanded:\n{expanded}"
+            );
+        }
+    }
+
     fn legacy_runtime_hook_token() -> String {
         ["endpoint", "_state", "_pagination"].concat()
     }
@@ -185,6 +195,50 @@ mod tests {
 
     fn legacy_cursor_bindings() -> String {
         ["Cursor", "Bindings"].concat()
+    }
+
+    fn legacy_request_body_plan_encoded() -> String {
+        ["BodyPlan", "::", "Encoded"].concat()
+    }
+
+    fn legacy_request_body_plan_raw_stream() -> String {
+        ["BodyPlan", "::", "RawStream"].concat()
+    }
+
+    fn legacy_request_body_plan_records() -> String {
+        ["BodyPlan", "::", "Records"].concat()
+    }
+
+    fn legacy_request_body_plan_multipart() -> String {
+        ["BodyPlan", "::", "Multipart"].concat()
+    }
+
+    fn legacy_request_body_plan_none() -> String {
+        ["BodyPlan", "::", "None"].concat()
+    }
+
+    fn legacy_request_args_with_body_bytes() -> String {
+        ["RequestArgs", "::", "with_body_bytes"].concat()
+    }
+
+    fn legacy_request_args_with_stream_body() -> String {
+        ["RequestArgs", "::", "with_stream_body"].concat()
+    }
+
+    fn legacy_request_args_with_record_body() -> String {
+        ["RequestArgs", "::", "with_record_body"].concat()
+    }
+
+    fn legacy_request_args_with_multipart_body() -> String {
+        ["RequestArgs", "::", "with_multipart_body"].concat()
+    }
+
+    fn legacy_body_codec_encode() -> String {
+        ["BodyCodec", "::", "encode"].concat()
+    }
+
+    fn legacy_content_type_check_name() -> String {
+        ["try_", "content_", "type"].concat()
     }
 
     fn generated_doc_attrs(expanded: &str) -> Vec<&str> {
@@ -439,13 +493,82 @@ mod tests {
             &expanded,
             &[
                 "StreamBody",
-                "BodyPlan::RawStream",
-                "RequestArgs::with_stream_body",
+                "RequestEntity",
+                "RawStreamRequest",
+                "prepare(",
                 "StreamResponse<OctetStream>",
                 "execute_plan_stream::<OctetStream>",
                 "StreamResponseEndpoint",
             ],
         );
+        assert_not_contains_all(
+            &expanded,
+            &[
+                &legacy_request_body_plan_raw_stream(),
+                &legacy_request_args_with_stream_body(),
+            ],
+        );
+    }
+
+    #[test]
+    fn emit_uses_buffered_request_entity_codegen() {
+        let expanded = expanded(quote! {
+            api! {
+                client BufferedCodegen {
+                    base "https://example.com"
+                }
+
+                POST Create(body: Json<CreateBody>)
+                    path ["create"]
+                    -> Json<CreateResponse>
+            }
+        });
+
+        assert_contains_all(
+            &expanded,
+            &[
+                "RequestEntity",
+                "EncodedRequest",
+                "prepare(",
+                "CreateBody",
+                "CreateResponse",
+            ],
+        );
+        assert_not_contains_all(
+            &expanded,
+            &[
+                &legacy_request_body_plan_encoded(),
+                &legacy_request_args_with_body_bytes(),
+                &legacy_body_codec_encode(),
+                &legacy_content_type_check_name(),
+            ],
+        );
+    }
+
+    #[test]
+    fn emit_uses_no_request_body_entity_codegen() {
+        let expanded = expanded(quote! {
+            api! {
+                client NoBodyCodegen {
+                    base "https://example.com"
+                }
+
+                GET Status
+                    path ["status"]
+                    -> Json<StatusResponse>
+            }
+        });
+
+        assert_contains_all(
+            &expanded,
+            &[
+                "NoRequestBody",
+                "RequestEntity",
+                "prepare(",
+                "StatusResponse",
+            ],
+        );
+        assert_not_contains_all(&expanded, &[&legacy_request_body_plan_none()]);
     }
 
     #[test]
@@ -466,11 +589,19 @@ mod tests {
             &expanded,
             &[
                 "RecordBody < LogEntry >",
-                "BodyPlan::Records",
-                "RequestArgs::with_record_body::< LogEntry , NdJson >",
+                "RequestEntity",
+                "RecordRequest",
+                "prepare(",
                 "RecordStream < LogEntry >",
                 "execute_plan_records::< LogEntry , NdJson >",
                 "RecordResponseEndpoint",
+            ],
+        );
+        assert_not_contains_all(
+            &expanded,
+            &[
+                &legacy_request_body_plan_records(),
+                &legacy_request_args_with_record_body(),
             ],
         );
     }
@@ -493,11 +624,20 @@ mod tests {
             &expanded,
             &[
                 "MultipartBody",
-                "BodyPlan::Multipart",
-                "RequestArgs::with_multipart_body::< ::concord_core::advanced::FormData >",
+                "RequestEntity",
+                "MultipartRequest",
+                "prepare(",
                 "MultipartStream < RawResponsePart >",
                 "execute_plan_multipart::< RawResponsePart , Mixed >",
                 "MultipartResponseEndpoint",
+            ],
+        );
+        assert_not_contains_all(
+            &expanded,
+            &[
+                &legacy_request_body_plan_multipart(),
+                &legacy_request_args_with_multipart_body(),
+                &legacy_content_type_check_name(),
             ],
         );
     }
@@ -1196,14 +1336,20 @@ mod tests {
                 "< Json < LoginResponse > as :: concord_core :: advanced :: ResponseCodec > :: decode",
                 "let r : LoginResponse = decoded",
                 "let value : AccessToken = (AccessToken :: new (r . access_token))",
-                "let __body_value = self . body . lock ()",
-                "< Json < LoginRequest > as :: concord_core :: advanced :: BodyCodec > :: encode (__body_value",
-                "BodyPlan :: Encoded",
-                "let (__body_bytes , __body_format) = __encoded_body . into_parts ()",
-                "content_type : < Json < LoginRequest > as :: concord_core :: advanced :: BodyCodec > :: try_content_type ()",
-                "format : __body_format",
+                "RequestEntity",
+                "EncodedRequest",
+                "prepare(",
                 "ResponsePlan",
                 "decode : __decode_",
+            ],
+        );
+        assert_not_contains_all(
+            &out,
+            &[
+                &legacy_request_body_plan_encoded(),
+                &legacy_request_args_with_body_bytes(),
+                &legacy_body_codec_encode(),
+                &legacy_content_type_check_name(),
             ],
         );
     }
@@ -1223,9 +1369,18 @@ mod tests {
         assert_contains_all(
             &out,
             &[
-                "BodyCodec>::try_content_type()",
+                "RequestEntity",
+                "EncodedRequest",
+                "prepare(",
                 "ResponseCodec>::try_accept()",
                 "::concord_core::prelude::ApiClientError::invalid_param",
+            ],
+        );
+        assert_not_contains_all(
+            &out,
+            &[
+                &legacy_content_type_check_name(),
+                &legacy_request_body_plan_encoded(),
             ],
         );
     }

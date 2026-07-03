@@ -39,6 +39,7 @@ PR52 introduces the new core adapter contracts beside the current family-enum sy
 - Core owns request body preparation, response planning, media handling, streaming behavior, and replayability metadata.
 - The current resolved family enums and generated-code branches remain temporarily during migration.
 - This PR does not migrate generated macro output yet.
+- PR54 has now migrated generated request-body planning to `RequestEntity`, but response planning and execution still use the older generated family paths.
 
 ## Endpoint I/O Families
 
