@@ -1,6 +1,9 @@
 use crate::ast::{RawApi, RawItem, RawScope};
 use crate::model::norm::{NormApiTree, NormEndpoint, NormNode, NormScope};
-use crate::sema::{AuthCredentialIr, AuthRequirementIr, ResolvedApi, ResolvedEndpoint};
+use crate::sema::{
+    AuthCredentialIr, AuthRequirementIr, PolicyBlocksResolved, PolicyOp, ResolvedApi,
+    ResolvedEndpoint, ResolvedPolicySpec,
+};
 use syn::Type;
 
 pub(crate) fn parse_raw(source: &str) -> RawApi {
@@ -116,6 +119,34 @@ pub(crate) fn auth_requirement_provenance_labels(auth: &[AuthRequirementIr]) -> 
 }
 
 pub(crate) fn assert_auth_error_contains(source: &str, expected: &str) {
+    let err = analyze_err(source);
+    assert_error_contains(&err, expected);
+}
+
+pub(crate) fn client_policy(api: &ResolvedApi) -> &PolicyBlocksResolved {
+    &api.client_policy
+}
+
+pub(crate) fn endpoint_policy<'a>(api: &'a ResolvedApi, endpoint: &str) -> &'a ResolvedPolicySpec {
+    &endpoint_by_name(api, endpoint).policy
+}
+
+pub(crate) fn scope_policy(policy: &ResolvedPolicySpec, index: usize) -> &PolicyBlocksResolved {
+    policy
+        .scopes
+        .get(index)
+        .unwrap_or_else(|| panic!("missing scope policy at index {index}"))
+}
+
+pub(crate) fn query_ops(policy: &PolicyBlocksResolved) -> &[PolicyOp] {
+    &policy.query
+}
+
+pub(crate) fn header_ops(policy: &PolicyBlocksResolved) -> &[PolicyOp] {
+    &policy.headers
+}
+
+pub(crate) fn assert_policy_error_contains(source: &str, expected: &str) {
     let err = analyze_err(source);
     assert_error_contains(&err, expected);
 }
