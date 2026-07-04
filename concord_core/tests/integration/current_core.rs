@@ -12,6 +12,8 @@ pub(super) mod common;
 mod concurrency;
 #[path = "current_core/entity_errors.rs"]
 mod entity_errors;
+#[path = "current_core/error_taxonomy.rs"]
+mod error_taxonomy;
 #[path = "current_core/errors.rs"]
 mod errors;
 #[path = "current_core/multipart.rs"]
