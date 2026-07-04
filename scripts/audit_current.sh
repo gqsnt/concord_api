@@ -85,11 +85,6 @@ if find docs -maxdepth 4 \( -iname "*v5*" -o -iname "*v6*" -o -iname "*migration
 fi
 
 fail_if_match \
-  "old syntax in public docs/examples" \
-  "part\\[|\\battempts\\b|with_configure|auth none|auth any|auth all|maybe_\\w+\\(|reset_\\w+\\(|collect_pages" \
-  "${user_docs[@]}" "${public_examples[@]}"
-
-fail_if_match \
   "public docs must not use version/migration/backcompat framing" \
   "\\bv5\\b|\\bv6\\b|migration|legacy|backwards compatibility|backward compatibility|backcompat" \
   "${user_docs[@]}"

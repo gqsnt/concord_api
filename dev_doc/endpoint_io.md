@@ -405,15 +405,6 @@ pub enum TransportRequestBody {
 - No automatic SSE reconnect.
 - No nested multipart.
 - No multipart derive macros.
-- No cache reintroduction.
-
-## Cache Is Removed
-
-Cache has been removed from Concord.
-
-- Endpoint I/O expansion must not reintroduce cache directly or indirectly.
-- Do not design around cache admission, stale data paths, cache identity, cache keys, cache body limits, cache interoperability, or cache-like behavior under another name.
-- Any remaining stale cache mention in the repository is cleanup debt, not an active design constraint.
 
 ## Review Checklist For Future PRs
 

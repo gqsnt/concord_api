@@ -41,8 +41,8 @@ This repository keeps test ownership split by layer so new coverage lands in the
 
 - `scripts/check_v1.sh` owns the current v1 surface and ownership gates.
 - `scripts/check_features.sh` owns the supported feature matrix.
-- `scripts/audit_current.sh` owns stale-syntax and stale-language audit checks.
-- `scripts/check_architecture.sh` owns source-boundary and removed-syntax fences.
+- `scripts/audit_current.sh` owns public docs/examples audit checks and release hygiene checks.
+- `scripts/check_architecture.sh` owns source-boundary and current architecture boundary checks.
 
 ## Where to add new tests
 

@@ -1,5 +1,5 @@
 error: unsupported endpoint method
- --> tests/trybuild/fail/codegen/unsupported_ws_endpoint.rs:8:5
+ --> tests/trybuild/fail/codegen/unsupported_ws_method.rs:8:5
   |
 8 |     WS Connect
   |     ^^

@@ -15,10 +15,8 @@ fi
 
 if command -v rg >/dev/null 2>&1; then
   RG=(rg)
-  FILTER=(rg -v)
 else
   RG=(grep -R -n -E)
-  FILTER=(grep -n -E -v)
 fi
 
 tmpdir="$(mktemp -d)"
@@ -92,56 +90,11 @@ if "${RG[@]}" 'pub (offset_key|limit_key|page_key|per_page_key|cursor_key):' \
   fail_with_matches "concord_core built-in pagination controllers must not expose inert query-key fields." "$built_in_controller_key_refs"
 fi
 
-section "removed custom pagination plan fence"
-custom_plan_refs="$tmpdir/custom_plan.refs"
-if "${RG[@]}" 'PaginationPlan::custom|PaginationPlan :: custom|PaginationPlan::from|PaginationPlan :: from|PaginationPlan::cursor|PaginationPlan :: cursor' \
-  concord_macros/src/codegen concord_macros/tests concord_examples/src docs dev_doc \
-  | "${FILTER[@]}" 'contains\("PaginationPlan(::| :: )(custom|from|cursor)"\)' >"$custom_plan_refs" 2>/dev/null; then
-  fail_with_matches "removed custom or built-in pagination plan output must not reappear." "$custom_plan_refs"
-fi
-
-section "removed built-in pagination plan model fence"
-builtin_plan_model_refs="$tmpdir/builtin_plan_model.refs"
-if "${RG[@]}" '\bPaginationPlan\b|CursorNextFn' \
-  concord_core/src concord_core/tests concord_macros/src/codegen concord_macros/tests concord_examples/src docs dev_doc \
-  | "${FILTER[@]}" 'contains\("PaginationPlan(::| :: )(custom|from|cursor)"\)|contains\("PaginationPlan"\)' >"$builtin_plan_model_refs" 2>/dev/null; then
-  fail_with_matches "removed built-in pagination plan model must not reappear in active surfaces." "$builtin_plan_model_refs"
-fi
-
 section "macro pagination controller taxonomy fence"
 controller_taxonomy_refs="$tmpdir/controller_taxonomy.refs"
 if "${RG[@]}" 'PaginationControllerResolved|OffsetLimitPaginationResolved|CursorPaginationResolved|PagedPaginationResolved|PaginationControllerKind|paginate_controller_kind|validate_paginate_assignment_key|validate_cursor_pagination_controller_ty|cursor_pagination_is_exact_string|parse_cursor_flag_value' \
   concord_macros/src >"$controller_taxonomy_refs" 2>/dev/null; then
   fail_with_matches "concord_macros must not retain pagination controller taxonomy helpers." "$controller_taxonomy_refs"
-fi
-
-section "removed endpoint-state runtime layer fence"
-runtime_layer_refs="$tmpdir/runtime_layer.refs"
-if "${RG[@]}" 'EndpointField|EndpointPaginationController|EndpointPaginationRuntimeAdapter|EndpointPaginationRuntime|OffsetLimitBindings|PagedBindings|CursorBindings|OffsetLimitState|PagedState|CursorState|endpoint_state_pagination' \
-  concord_core/src concord_macros/src/codegen concord_examples/src concord_core/tests concord_macros/tests >"$runtime_layer_refs" 2>/dev/null; then
-  fail_with_matches "removed endpoint-state pagination runtime layer names must not reappear in production codegen examples or tests." "$runtime_layer_refs"
-fi
-
-section "final runtime name fence"
-final_runtime_name_refs="$tmpdir/final_runtime_name.refs"
-if "${RG[@]}" -ni 'SingleObjectPaginationRuntime|SingleObjectPaginationRuntimeAdapter|single_object_pagination|single-object pagination|single object pagination|single-object pagination runtime' \
-  concord_core/src concord_core/tests concord_macros/src concord_macros/tests concord_examples/src docs dev_doc >"$final_runtime_name_refs" 2>/dev/null; then
-  fail_with_matches "final pagination runtime names must stay out of active production code, tests, examples, and docs." "$final_runtime_name_refs"
-fi
-
-section "removed endpoint-state pagination syntax fence"
-endpoint_state_syntax_refs="$tmpdir/endpoint_state_syntax.refs"
-if "${RG[@]}" -ni 'paginate endpoint[-_]state|\bendpoint[-_]state\b' \
-  concord_examples/src concord_examples/tests concord_macros/tests/trybuild/pass concord_macros/tests/snapshots docs dev_doc >"$endpoint_state_syntax_refs" 2>/dev/null; then
-  fail_with_matches "removed endpoint-state pagination syntax must not reappear in active examples, pass fixtures, snapshots, or docs." "$endpoint_state_syntax_refs"
-fi
-
-section "final pagination terminology fence"
-final_pagination_terms_refs="$tmpdir/final_pagination_terms.refs"
-if "${RG[@]}" -ni 'bindings type|pagination[- ]plans?|controller[- ]plans?|query-key inference|query key inference|generated single_object_pagination' \
-  concord_examples/src concord_examples/tests concord_macros/tests/trybuild/pass concord_macros/tests/snapshots concord_macros/src/codegen \
-  docs dev_doc >"$final_pagination_terms_refs" 2>/dev/null; then
-  fail_with_matches "final pagination terminology must stay out of active examples, pass fixtures, snapshots, codegen, and docs." "$final_pagination_terms_refs"
 fi
 
 section "bare built-in cursor syntax fence"

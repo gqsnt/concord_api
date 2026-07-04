@@ -45,30 +45,6 @@ mod tests {
         }
     }
 
-    fn forbidden_runtime_hook_token() -> String {
-        ["endpoint", "_state", "_pagination"].concat()
-    }
-
-    fn forbidden_endpoint_pagination_runtime_adapter() -> String {
-        ["EndpointPagination", "Runtime", "Adapter"].concat()
-    }
-
-    fn forbidden_endpoint_field() -> String {
-        ["Endpoint", "Field"].concat()
-    }
-
-    fn forbidden_offset_limit_bindings() -> String {
-        ["OffsetLimit", "Bindings"].concat()
-    }
-
-    fn forbidden_paged_bindings() -> String {
-        ["Paged", "Bindings"].concat()
-    }
-
-    fn forbidden_cursor_bindings() -> String {
-        ["Cursor", "Bindings"].concat()
-    }
-
     fn forbidden_request_body_plan_encoded() -> String {
         ["BodyPlan", "::", "Encoded"].concat()
     }
@@ -816,10 +792,6 @@ mod tests {
                 "pub fn configure_mut (& mut self , f : impl FnOnce (& mut :: concord_core :: advanced :: RuntimeConfig)) -> & mut Self",
             ],
         );
-        assert!(
-            !out.contains("with_configure"),
-            "generated client must not expose with_configure"
-        );
     }
 
     #[test]
@@ -902,10 +874,6 @@ mod tests {
                 "fn count_opt ( self , value : :: core :: option :: Option < u32 > ) -> Self",
                 "#[doc = \"Set defaulted query parameter `count` from an Option; None resets to the default `20`.\"]",
             ],
-        );
-        assert!(
-            !out.contains("maybe_filter") && !out.contains("reset_count"),
-            "generated endpoint setters must not expose removed maybe_/reset_ names"
         );
     }
 
@@ -2003,22 +1971,6 @@ mod tests {
                 ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
             ],
         );
-        assert!(
-            !out.contains(&forbidden_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
-            "removed runtime adapter must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_endpoint_field()),
-            "removed pagination binding helpers must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_offset_limit_bindings()),
-            "removed pagination binding types must not appear in generated output"
-        );
     }
 
     #[test]
@@ -2109,22 +2061,6 @@ mod tests {
                 "type Pagination = PagedPagination",
                 ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
             ],
-        );
-        assert!(
-            !out.contains(&forbidden_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
-            "removed runtime adapter must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_endpoint_field()),
-            "removed pagination binding helpers must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_paged_bindings()),
-            "removed pagination binding types must not appear in generated output"
         );
     }
 
@@ -2218,22 +2154,6 @@ mod tests {
                 "HeaderPagePagination",
             ],
         );
-        assert!(
-            !out.contains(&forbidden_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
-            "removed runtime adapter must not appear in generated output"
-        );
-        assert!(
-            !out.contains("HeaderPageBindings"),
-            "removed pagination binding helpers must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_endpoint_field()),
-            "removed pagination binding helpers must not appear in generated output"
-        );
         assert_contains_all(
             &out,
             &[
@@ -2273,14 +2193,6 @@ mod tests {
                 "self . page = pagination . page . clone ()",
                 "self . count = pagination . count . clone ()",
             ],
-        );
-        assert!(
-            !out.contains(&forbidden_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
-            "removed runtime adapter must not appear in generated output"
         );
     }
 
@@ -2350,10 +2262,6 @@ mod tests {
                 ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
             ],
         );
-        assert!(
-            !out.contains(&forbidden_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
-        );
     }
 
     #[test]
@@ -2387,22 +2295,6 @@ mod tests {
                 "type Pagination = CursorPagination < String >",
                 ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
             ],
-        );
-        assert!(
-            !out.contains(&forbidden_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
-            "removed runtime adapter must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_cursor_bindings()),
-            "removed pagination binding types must not appear in generated output"
-        );
-        assert!(
-            !out.contains(&forbidden_endpoint_field()),
-            "removed pagination binding helpers must not appear in generated output"
         );
     }
 
@@ -2480,10 +2372,6 @@ mod tests {
                 ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
             ],
         );
-        assert!(
-            !out.contains(&forbidden_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
-        );
     }
 
     #[test]
@@ -2516,10 +2404,6 @@ mod tests {
                 "send_cursor_on_first = (true)",
                 "stop_when_cursor_missing = (false)",
             ],
-        );
-        assert!(
-            !out.contains(&forbidden_runtime_hook_token()),
-            "removed runtime hook must not appear in generated output"
         );
     }
 

@@ -753,7 +753,7 @@ GET ListItems(page: u64 = 0, count: u64 = 100)
 
 Built-in pagination controllers use assignment blocks for their configured fields. Custom pagination uses the same assignment blocks, and endpoint planning renders query, header, path, and body output.
 
-Built-in pagination controller fields are sema-validated against the actual semantic model. Removed short-page stop fields such as `stop` and `stop_on_short_page` are rejected rather than reintroduced as controller-owned syntax.
+Built-in pagination controller fields are sema-validated against the actual semantic model.
 
 Response page types can implement `PageItems`; cursor page types also implement `HasNextCursor`. Implementing `PageItems` alone does not make every endpoint paginated. The endpoint must declare `paginate ...` before generated request builders expose `.paginate(PaginationTermination::...)`.
 

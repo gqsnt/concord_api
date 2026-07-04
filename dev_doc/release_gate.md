@@ -208,9 +208,3 @@ Batched record consumption is a `RecordStream<T>` consumer API, not a DSL featur
 ## Adding Future Release Checks
 
 Add checks to the narrowest owner first. Use compile-only public surface tests for API availability, trybuild for macro-facing diagnostics, integration tests for runtime behavior, and `scripts/check_features.sh` for feature and dependency surface drift. Then add the command or proof file to this document and make sure `scripts/check_v1.sh` invokes it directly or through an existing gate.
-
-Repository search checks are part of the contract for removed or reserved features:
-
-- The removed media-type trait name should have zero repository hits; `ContentType` is the only supported wire-content contract.
-- `WebSocket` and `execute_websocket` should only appear in deliberate removal-proof negative fixtures, if any remain.
-- `Cache` should only appear in the intentional removed-feature maintainer note.

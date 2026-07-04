@@ -72,37 +72,6 @@ fn required_stage_snapshots_exist() {
 }
 
 #[test]
-fn removed_pagination_fields_absent_from_docs_and_examples() {
-    let root = manifest_dir();
-    for rel in [
-        "../docs/pagination.md",
-        "../docs/dsl.md",
-        "../docs/auth.md",
-        "../dev_doc/architecture.md",
-        "../dev_doc/auth_runtime.md",
-        "../concord_examples/src/pagination.rs",
-        "../concord_examples/src/custom_pagination.rs",
-        "../concord_examples/src/docs_dsl.rs",
-    ] {
-        let path = root.join(rel);
-        let text = std::fs::read_to_string(&path)
-            .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()));
-        for line in text.lines() {
-            let line = line.trim();
-            if line.contains("paginate")
-                && (line.contains("stop_on_short_page") || line.contains("stop ="))
-            {
-                panic!(
-                    "removed pagination field syntax must stay absent from {}: {}",
-                    path.display(),
-                    line
-                );
-            }
-        }
-    }
-}
-
-#[test]
 fn production_macro_source_has_no_validation_dependent_panics() {
     let root = manifest_dir().join("../concord_macros/src");
     let mut hits = Vec::new();

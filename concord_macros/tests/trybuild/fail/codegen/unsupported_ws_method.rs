@@ -1,7 +1,7 @@
 use concord_macros::api;
 
 api! {
-    client WsRemovedApi {
+    client UnsupportedWsMethodApi {
         base "https://example.com"
     }
 

@@ -19,8 +19,6 @@ Common page-content stop rules are runtime invariants, not controller-specific b
 
 The current page is included before stopping. `PageItems::item_count()` returns the exact number of items, and the runtime uses it before calling controller advance. Built-in offset, cursor, and page-number pagination provide the expected page size automatically from `limit` or `per_page`. Built-in controllers are just core-provided Rust types: `OffsetLimitPagination`, `CursorPagination<String>`, and `PagedPagination`. Custom pagination controllers expose their expected page size through `EndpointPagination::expected_items_per_page()`. With both an exact item count and an expected page size, the runtime also owns generic short-page stop before `advance()`.
 
-Removed controller-local short-page stop fields such as `stop` and `stop_on_short_page` remain unsupported. Runtime-owned short-page stopping is controlled by `PageItems::item_count()` and `EndpointPagination::expected_items_per_page()`.
-
 If a later page request would reuse any previously seen logical request identity, the runtime returns a typed pagination error instead of silently looping. That guard is separate from the explicit termination policy and remains active even when controller loop-key checking is disabled.
 
 ## Offset Pagination
