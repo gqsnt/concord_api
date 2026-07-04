@@ -1002,86 +1002,6 @@ mod tests {
     }
 
     #[test]
-    fn explicit_default_retry_overrides_default_behavior() {
-        let resolved_api = analyze_source(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    retry behavior_retry {
-                        max_attempts 5
-                        methods [GET]
-                    }
-
-                    retry explicit_retry {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
-                    behavior read_behavior {
-                        retry behavior_retry
-                    }
-
-                    defaults {
-                        behavior read_behavior
-                        retry explicit_retry
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    -> Json<()>
-            }
-            "#,
-        );
-
-        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
-            panic!("expected explicit default retry");
-        };
-        assert_eq!(client_retry.max_attempts, 2);
-    }
-
-    #[test]
-    fn endpoint_explicit_retry_overrides_endpoint_behavior() {
-        let resolved_api = analyze_source(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    retry behavior_retry {
-                        max_attempts 5
-                        methods [GET]
-                    }
-
-                    retry explicit_retry {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
-                    behavior read_behavior {
-                        retry behavior_retry
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    behavior read_behavior
-                    retry explicit_retry
-                    -> Json<()>
-            }
-            "#,
-        );
-        let endpoint = endpoint_by_name(&resolved_api, "Me");
-
-        let Some(RetryResolved::Set(endpoint_retry)) = &endpoint.policy.endpoint.retry else {
-            panic!("expected explicit endpoint retry");
-        };
-        assert_eq!(endpoint_retry.max_attempts, 2);
-    }
-
-    #[test]
     fn endpoint_behavior_rate_limit_combines_with_explicit_rate_limit() {
         let resolved_api = analyze_source(
             r#"
@@ -1326,7 +1246,7 @@ mod tests {
     }
 
     #[test]
-    fn behavior_merge_order_retry_and_rate_limit_snapshot_remains_for_later_prs() {
+    fn behavior_merge_order_rate_limit_snapshot_remains_for_later_prs() {
         let resolved_api = analyze_source(
             r#"
             api! {
@@ -1336,38 +1256,11 @@ mod tests {
                     secret outer_token: String
                     secret inner_token: String
                     secret endpoint_token: String
-                    secret direct_token: String
 
                     credential client_auth = bearer(secret.client_token)
                     credential outer_auth = api_key(secret.outer_token)
                     credential inner_auth = api_key(secret.inner_token)
                     credential endpoint_auth = api_key(secret.endpoint_token)
-                    credential direct_auth = api_key(secret.direct_token)
-
-                    retry client_retry {
-                        max_attempts 2
-                        methods [GET]
-                        on [401, 403]
-                        retry_after
-                    }
-
-                    retry outer_retry {
-                        max_attempts 3
-                        methods [GET]
-                        on [429]
-                    }
-
-                    retry inner_retry {
-                        max_attempts 4
-                        methods [GET]
-                        on [500]
-                    }
-
-                    retry endpoint_retry {
-                        max_attempts 5
-                        methods [GET]
-                        on [502]
-                    }
 
                     rate_limit client_limit {
                         bucket client by [host] {
@@ -1396,25 +1289,21 @@ mod tests {
                     behaviors {
                         behavior client_behavior {
                             auth bearer client_auth
-                            retry client_retry
                             rate_limit client_limit
                         }
 
                         behavior outer_behavior {
                             auth header "X-Outer" = outer_auth
-                            retry outer_retry
                             rate_limit outer_limit
                         }
 
                         behavior inner_behavior {
                             auth query "inner" = inner_auth
-                            retry inner_retry
                             rate_limit inner_limit
                         }
 
                         behavior endpoint_behavior {
                             auth header "X-Endpoint" = endpoint_auth
-                            retry off
                         }
                     }
 
@@ -1434,8 +1323,6 @@ mod tests {
                         GET Show
                             path ["show"]
                             behavior endpoint_behavior
-                            auth query "direct" = direct_auth
-                            retry endpoint_retry
                             rate_limit endpoint_limit
                             -> Json<()>
                     }
@@ -1458,7 +1345,6 @@ mod tests {
                 "outer_auth".to_string(),
                 "inner_auth".to_string(),
                 "endpoint_auth".to_string(),
-                "direct_auth".to_string(),
             ]
         );
         assert_eq!(
@@ -1470,13 +1356,6 @@ mod tests {
                 "endpoint_behavior".to_string(),
             ]
         );
-        assert!(matches!(
-            resolved_api.client_policy.retry,
-            Some(RetryResolved::Set(RetryConfigResolved {
-                max_attempts: 2,
-                ..
-            }))
-        ));
         assert!(matches!(
             resolved_api.client_policy.rate_limit,
             Some(RateLimitResolved::Add(_))
@@ -1510,35 +1389,14 @@ mod tests {
         let outer_scope = &endpoint.policy.scopes[0];
         let inner_scope = &endpoint.policy.scopes[1];
         assert!(matches!(
-            outer_scope.retry,
-            Some(RetryResolved::Set(RetryConfigResolved {
-                max_attempts: 3,
-                ..
-            }))
-        ));
-        assert!(matches!(
             outer_scope.rate_limit,
             Some(RateLimitResolved::Add(_))
-        ));
-        assert!(matches!(
-            inner_scope.retry,
-            Some(RetryResolved::Set(RetryConfigResolved {
-                max_attempts: 4,
-                ..
-            }))
         ));
         assert!(matches!(
             inner_scope.rate_limit,
             Some(RateLimitResolved::Add(_))
         ));
 
-        assert!(matches!(
-            endpoint.policy.endpoint.retry,
-            Some(RetryResolved::Set(RetryConfigResolved {
-                max_attempts: 5,
-                ..
-            }))
-        ));
         assert!(matches!(
             endpoint.policy.endpoint.rate_limit,
             Some(RateLimitResolved::Add(_))
@@ -1552,260 +1410,6 @@ mod tests {
                 "endpoint_limit_0".to_string(),
             ]
         );
-    }
-
-    #[test]
-    fn explicit_default_retry_still_overrides_default_behavior() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    retry from_behavior {
-                        max_attempts 5
-                        methods [GET]
-                    }
-
-                    retry explicit {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
-                    behavior read_behavior {
-                        retry from_behavior
-                    }
-
-                    default {
-                        behavior read_behavior
-                        retry explicit
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-
-        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
-            panic!("expected explicit default retry");
-        };
-        assert_eq!(client_retry.max_attempts, 2);
-    }
-
-    #[test]
-    fn retry_replace_snapshot() {
-        let resolved_api = analyze_source(
-            r#"
-            api! {
-                client RetrySnapshotApi {
-                    base "https://example.com"
-
-                    retry retry_a {
-                        max_attempts 2
-                        methods [GET]
-                        on [429]
-                    }
-
-                    retry retry_b {
-                        max_attempts 3
-                        methods [GET]
-                        on [500]
-                    }
-
-                    retry retry_c {
-                        max_attempts 4
-                        methods [GET]
-                        on [502]
-                    }
-
-                    behaviors {
-                        behavior client_retry {
-                            retry retry_a
-                        }
-
-                        behavior scope_retry {
-                            retry retry_b
-                        }
-
-                        behavior clear_retry {
-                            retry off
-                        }
-
-                        behavior replace_retry {
-                            retry retry_c
-                        }
-                    }
-
-                    defaults {
-                        behavior client_retry
-                    }
-                }
-
-                scope protected {
-                    path ["protected"]
-                    behavior scope_retry
-
-                    GET Clear
-                        path ["clear"]
-                        behavior clear_retry
-                        -> Json<()>
-
-                    GET Replace
-                        path ["replace"]
-                        behavior replace_retry
-                        -> Json<()>
-                }
-            }
-            "#,
-        );
-        assert!(matches!(
-            resolved_api.client_policy.retry,
-            Some(RetryResolved::Set(RetryConfigResolved {
-                max_attempts: 2,
-                ..
-            }))
-        ));
-
-        let clear_endpoint = endpoint_by_name(&resolved_api, "Clear");
-        assert!(matches!(
-            clear_endpoint.policy.scopes[0].retry,
-            Some(RetryResolved::Set(RetryConfigResolved {
-                max_attempts: 3,
-                ..
-            }))
-        ));
-        assert!(matches!(
-            clear_endpoint.policy.endpoint.retry,
-            Some(RetryResolved::Clear)
-        ));
-
-        let replace_endpoint = endpoint_by_name(&resolved_api, "Replace");
-        assert!(matches!(
-            replace_endpoint.policy.scopes[0].retry,
-            Some(RetryResolved::Set(RetryConfigResolved {
-                max_attempts: 3,
-                ..
-            }))
-        ));
-        assert!(matches!(
-            replace_endpoint.policy.endpoint.retry,
-            Some(RetryResolved::Set(RetryConfigResolved {
-                max_attempts: 4,
-                ..
-            }))
-        ));
-    }
-
-    #[test]
-    fn retry_patches_materialize_inherited_and_after_clear() {
-        let resolved_api = analyze_source(
-            r#"
-            api! {
-                client RetryPatchApi {
-                    base "https://example.com"
-
-                    retry base {
-                        max_attempts 2
-                        methods [GET]
-                        on [429]
-                    }
-
-                    behaviors {
-                        behavior client_base {
-                            retry base
-                        }
-
-                        behavior patch_methods {
-                            retry {
-                                methods [POST]
-                            }
-                        }
-
-                        behavior clear_retry {
-                            retry off
-                        }
-
-                        behavior patch_after_clear {
-                            retry {
-                                max_attempts 7
-                            }
-                        }
-                    }
-
-                    defaults {
-                        behavior client_base
-                    }
-                }
-
-                scope inherited {
-                    path ["inherited"]
-                    behavior patch_methods
-
-                    GET Patched
-                        path ["patched"]
-                        -> Json<()>
-                }
-
-                scope cleared {
-                    path ["cleared"]
-                    behavior clear_retry
-
-                    GET Reenabled
-                        path ["reenabled"]
-                        behavior patch_after_clear
-                        -> Json<()>
-                }
-            }
-            "#,
-        );
-
-        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
-            panic!("expected client retry to materialize as set");
-        };
-        assert_eq!(client_retry.max_attempts, 2);
-        assert_eq!(
-            client_retry
-                .methods
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>(),
-            vec!["GET".to_string()]
-        );
-        assert_eq!(client_retry.statuses, [429]);
-
-        let patched_endpoint = endpoint_by_name(&resolved_api, "Patched");
-        let Some(RetryResolved::Set(scope_retry)) = &patched_endpoint.policy.scopes[0].retry else {
-            panic!("expected inherited patch to materialize as set");
-        };
-        assert_eq!(scope_retry.max_attempts, 2);
-        assert_eq!(
-            scope_retry
-                .methods
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>(),
-            vec!["POST".to_string()]
-        );
-        assert_eq!(scope_retry.statuses, [429]);
-        assert!(patched_endpoint.policy.endpoint.retry.is_none());
-
-        let reenabled_endpoint = endpoint_by_name(&resolved_api, "Reenabled");
-        assert!(matches!(
-            reenabled_endpoint.policy.scopes[0].retry,
-            Some(RetryResolved::Clear)
-        ));
-        let Some(RetryResolved::Set(endpoint_retry)) = &reenabled_endpoint.policy.endpoint.retry
-        else {
-            panic!("expected patch after clear to re-enable retry");
-        };
-        assert_eq!(endpoint_retry.max_attempts, 7);
-        assert!(endpoint_retry.methods.is_empty());
-        assert!(endpoint_retry.statuses.is_empty());
     }
 
     #[test]
@@ -1945,28 +1549,6 @@ mod tests {
         assert!(
             effective_endpoint_rate_limit_bucket_names(&resolved_api, clear_endpoint).is_empty()
         );
-    }
-
-    #[test]
-    fn unknown_policy_profile_fails_during_resolution() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-                }
-
-                GET Ping
-                    path ["ping"]
-                    retry missing
-                    -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let err = analyze(ast).expect_err("unknown retry profile must fail");
-
-        assert!(err.to_string().contains("unknown retry profile"));
     }
 
     #[test]
