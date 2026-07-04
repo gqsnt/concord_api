@@ -1,5 +1,0 @@
-error: reserved endpoint I/O family `Stream` expects exactly one type argument
- --> tests/trybuild/fail/codegen/reserved_stream_wrong_arity.rs:8:12
-  |
-8 |         -> Stream
-  |            ^^^^^^

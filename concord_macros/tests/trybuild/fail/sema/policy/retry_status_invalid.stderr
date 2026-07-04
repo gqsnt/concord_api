@@ -1,0 +1,13 @@
+error: retry status must be an HTTP status code in 100..=599
+  --> tests/trybuild/fail/sema/policy/retry_status_invalid.rs:11:17
+   |
+11 |             on [99]
+   |                 ^^
+
+warning: unused import: `concord_core::prelude::*`
+ --> tests/trybuild/fail/sema/policy/retry_status_invalid.rs:1:5
+  |
+1 | use concord_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

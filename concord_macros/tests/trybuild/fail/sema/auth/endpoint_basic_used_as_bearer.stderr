@@ -1,0 +1,5 @@
+error: BearerAuth requires an access-token credential; `session` does not fit
+  --> tests/trybuild/fail/sema/auth/endpoint_basic_used_as_bearer.rs:27:21
+   |
+27 |         auth bearer session
+   |                     ^^^^^^^

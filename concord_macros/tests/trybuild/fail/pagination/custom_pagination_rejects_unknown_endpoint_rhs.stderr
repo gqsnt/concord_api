@@ -1,6 +1,0 @@
-error: unknown endpoint var `ep.does_not_exist`
-       available endpoint vars: `ep.count`, `ep.page`
-  --> tests/trybuild/fail/pagination/custom_pagination_rejects_unknown_endpoint_rhs.rs:16:20
-   |
-16 |             page = does_not_exist,
-   |                    ^^^^^^^^^^^^^^

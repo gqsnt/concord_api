@@ -1,26 +1,29 @@
 mod support;
 
 #[test]
-fn trybuild_auth_and_secret_diagnostics() {
-    support::run_trybuild_fail(&["tests/trybuild/fail/auth/*.rs"]);
+fn trybuild_parser_diagnostics() {
+    support::run_trybuild_fail(&[
+        "tests/trybuild/fail/parser/route/*.rs",
+        "tests/trybuild/fail/parser/fmt/*.rs",
+    ]);
 }
 
 #[test]
-fn trybuild_route_and_fmt_diagnostics() {
-    support::run_trybuild_fail(&[
-        "tests/trybuild/fail/route/*.rs",
-        "tests/trybuild/fail/fmt/*.rs",
-    ]);
+fn trybuild_route_diagnostics() {
+    support::run_trybuild_fail(&["tests/trybuild/fail/sema/route/*.rs"]);
+}
+
+#[test]
+fn trybuild_auth_diagnostics() {
+    support::run_trybuild_fail(&["tests/trybuild/fail/sema/auth/*.rs"]);
 }
 
 #[test]
 fn trybuild_policy_diagnostics() {
-    support::run_trybuild_fail(&["tests/trybuild/fail/policy/*.rs"]);
+    support::run_trybuild_fail(&["tests/trybuild/fail/sema/policy/*.rs"]);
 }
 
 #[test]
 fn trybuild_pagination_diagnostics() {
-    support::run_trybuild_fail(&[
-        "tests/trybuild/fail/pagination/custom_pagination_rejects_unknown_endpoint_rhs.rs",
-    ]);
+    support::run_trybuild_fail(&["tests/trybuild/fail/sema/pagination/*.rs"]);
 }

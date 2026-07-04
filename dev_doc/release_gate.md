@@ -120,7 +120,7 @@ Page and custom request mutation happens before final auth collision validation,
 
 ### url-host-path-hardening
 
-Proof owners: `concord_examples/src/url_host_path.rs`, `concord_macros/tests/trybuild/fail/route/`, and `concord_core/src/types.rs` unit tests.
+Proof owners: `concord_examples/src/url_host_path.rs`, `concord_macros/tests/trybuild/fail/parser/route/`, `concord_macros/tests/trybuild/fail/sema/route/`, and `concord_core/src/types.rs` unit tests.
 
 Base URLs reject dangerous forms, dynamic path segments reject `.`, `..`, `/`, and `\`, dynamic hosts are label-only, and static path strings remain trusted raw route fragments.
 

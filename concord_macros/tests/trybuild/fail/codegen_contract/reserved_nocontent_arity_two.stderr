@@ -1,0 +1,5 @@
+error: reserved endpoint I/O family `NoContent` does not take type arguments
+  --> tests/trybuild/fail/codegen_contract/reserved_nocontent_arity_two.rs:10:12
+   |
+10 |         -> NoContent<A, B>
+   |            ^^^^^^^^^^^^^^^

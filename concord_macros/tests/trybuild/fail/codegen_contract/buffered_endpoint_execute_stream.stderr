@@ -1,0 +1,15 @@
+error[E0599]: the method `execute_stream` exists for struct `PendingRequest<'_, BufferedEndpointExecuteStreamApiCx, EpUserHa48f81f001b893d2, ReqwestTransport>`, but its trait bounds were not satisfied
+  --> tests/trybuild/fail/codegen_contract/buffered_endpoint_execute_stream.rs:16:24
+   |
+ 5 | / api! {
+ 6 | |     client BufferedEndpointExecuteStreamApi {
+ 7 | |         base "https://example.com"
+...  |
+10 | |     GET User
+   | |____________- doesn't satisfy `<_ as Endpoint<BufferedEndpointExecuteStreamApiCx>>::Response = StreamResponse<_>`
+...
+16 |       let _ = api.user().execute_stream().await.unwrap();
+   |                          ^^^^^^^^^^^^^^
+   |
+   = note: the following trait bounds were not satisfied:
+           `<EpUserHa48f81f001b893d2 as concord_core::prelude::Endpoint<BufferedEndpointExecuteStreamApiCx>>::Response = StreamResponse<_>`

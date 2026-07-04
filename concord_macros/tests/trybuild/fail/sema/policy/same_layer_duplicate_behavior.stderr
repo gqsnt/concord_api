@@ -1,0 +1,5 @@
+error: duplicate behavior `read` at this attachment site
+  --> tests/trybuild/fail/sema/policy/same_layer_duplicate_behavior.rs:15:22
+   |
+15 |             behavior read
+   |                      ^^^^

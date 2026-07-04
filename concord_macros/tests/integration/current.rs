@@ -8,13 +8,20 @@ fn manifest_dir() -> PathBuf {
 fn current_fixture_directories_exist() {
     let root = manifest_dir();
     for rel in [
-        "tests/trybuild/pass",
-        "tests/trybuild/fail/auth",
-        "tests/trybuild/fail/route",
-        "tests/trybuild/fail/fmt",
-        "tests/trybuild/fail/policy",
-        "tests/trybuild/fail/pagination",
-        "tests/trybuild/fail/codegen",
+        "tests/trybuild/pass/facade",
+        "tests/trybuild/pass/endpoint_io",
+        "tests/trybuild/pass/pagination",
+        "tests/trybuild/pass/auth",
+        "tests/trybuild/pass/retry",
+        "tests/trybuild/pass/route",
+        "tests/trybuild/fail/parser/route",
+        "tests/trybuild/fail/parser/fmt",
+        "tests/trybuild/fail/sema/route",
+        "tests/trybuild/fail/sema/auth",
+        "tests/trybuild/fail/sema/policy",
+        "tests/trybuild/fail/sema/pagination",
+        "tests/trybuild/fail/codegen_contract",
+        "tests/trybuild/fail/rust_type_errors",
     ] {
         let path = root.join(rel);
         assert!(

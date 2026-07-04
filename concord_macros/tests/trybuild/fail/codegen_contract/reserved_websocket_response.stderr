@@ -1,0 +1,5 @@
+error: codec spec expects exactly one type argument: `Enc<T>`
+  --> tests/trybuild/fail/codegen_contract/reserved_websocket_response.rs:12:12
+   |
+12 |         -> WebSocket<String, String>
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^

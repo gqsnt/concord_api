@@ -1,5 +1,0 @@
-error: unsupported endpoint method
- --> tests/trybuild/fail/codegen/unsupported_trace_method.rs:8:5
-  |
-8 |     TRACE Ping
-  |     ^^^^^

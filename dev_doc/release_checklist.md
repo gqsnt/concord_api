@@ -38,12 +38,19 @@ Trybuild fixtures are split by public UI-contract category under `concord_macros
 
 The current trybuild test functions are:
 
-- `trybuild_pass_contract_fixtures`
-- `trybuild_auth_and_secret_diagnostics`
-- `trybuild_route_and_fmt_diagnostics`
+- `trybuild_facade_contract_fixtures`
+- `trybuild_endpoint_io_contract_fixtures`
+- `trybuild_pagination_contract_fixtures`
+- `trybuild_auth_contract_fixtures`
+- `trybuild_retry_contract_fixtures`
+- `trybuild_route_contract_fixtures`
+- `trybuild_parser_diagnostics`
+- `trybuild_auth_diagnostics`
 - `trybuild_policy_diagnostics`
 - `trybuild_pagination_diagnostics`
+- `trybuild_route_diagnostics`
 - `trybuild_codegen_contract_diagnostics`
+- `trybuild_rust_type_errors`
 
 Run the full trybuild suite with:
 
@@ -60,14 +67,19 @@ TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current -- --tes
 Category-specific refresh examples:
 
 ```bash
-TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_auth_and_secret_diagnostics -- --test-threads=1
-TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_route_and_fmt_diagnostics -- --test-threads=1
-TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_policy_diagnostics -- --test-threads=1
-TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_pagination_diagnostics -- --test-threads=1
-TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_codegen_contract_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_current trybuild_facade_contract_fixtures -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_sema trybuild_parser_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_sema trybuild_auth_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_sema trybuild_policy_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_sema trybuild_pagination_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_sema trybuild_route_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_codegen trybuild_codegen_contract_diagnostics -- --test-threads=1
+TRYBUILD=overwrite cargo test -p concord_macros --test trybuild_codegen trybuild_rust_type_errors -- --test-threads=1
 ```
 
 Only use `TRYBUILD=overwrite` when diagnostics intentionally change. Inspect the git diff of `.stderr` files before accepting updates. Path-only changes from fixture moves are acceptable; changed wording and spans must be reviewed.
+
+The current-pass example above is representative; the other current-pass wrapper names (`trybuild_endpoint_io_contract_fixtures`, `trybuild_pagination_contract_fixtures`, `trybuild_auth_contract_fixtures`, `trybuild_retry_contract_fixtures`, and `trybuild_route_contract_fixtures`) use the same `--test trybuild_current` binary.
 
 Trybuild remains part of the full gate through `cargo nextest run --workspace --all-targets`. It is serialized in `.config/nextest.toml` with the `trybuild` test group because it drives many rustc fixture compilations.
 

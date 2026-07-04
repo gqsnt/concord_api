@@ -1,5 +1,0 @@
-error: empty rate_limit block has no effect
-  --> tests/trybuild/fail/policy/rate_limit_empty_inline.rs:11:9
-   |
-11 |         }
-   |         ^

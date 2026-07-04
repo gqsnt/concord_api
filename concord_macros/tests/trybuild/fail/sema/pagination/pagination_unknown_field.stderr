@@ -1,0 +1,15 @@
+error[E0609]: no field `cursor` on type `concord_core::internal::OffsetLimitPagination`
+  --> tests/trybuild/fail/sema/pagination/pagination_unknown_field.rs:16:9
+   |
+16 |         cursor = start,
+   |         ^^^^^^ unknown field
+   |
+   = note: available fields are: `offset`, `limit`
+
+error[E0609]: no field `cursor` on type `&concord_core::internal::OffsetLimitPagination`
+  --> tests/trybuild/fail/sema/pagination/pagination_unknown_field.rs:16:9
+   |
+16 |         cursor = start,
+   |         ^^^^^^ unknown field
+   |
+   = note: available fields are: `offset`, `limit`

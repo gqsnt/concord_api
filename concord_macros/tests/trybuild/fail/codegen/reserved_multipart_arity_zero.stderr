@@ -1,5 +1,0 @@
-error: reserved endpoint I/O family `Multipart` expects one or two type arguments
- --> tests/trybuild/fail/codegen/reserved_multipart_arity_zero.rs:9:23
-  |
-9 |     POST Upload(body: Multipart<>)
-  |                       ^^^^^^^^^^^

@@ -23,9 +23,9 @@ This repository keeps test ownership split by layer so new coverage lands in the
 
 ## Trybuild
 
-- `concord_macros/tests/trybuild_current.rs` covers current pass fixtures.
-- `concord_macros/tests/trybuild_sema.rs` covers parser/sema-facing failures.
-- `concord_macros/tests/trybuild_codegen.rs` covers codegen-facing failures.
+- `concord_macros/tests/trybuild_current.rs` covers current pass fixtures grouped by public surface area.
+- `concord_macros/tests/trybuild_sema.rs` covers parser and sema-facing failures grouped by diagnostic owner, including a separate route diagnostics wrapper for route/reference failures.
+- `concord_macros/tests/trybuild_codegen.rs` covers codegen-contract and Rust type failures.
 
 ## Runtime
 

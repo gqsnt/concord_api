@@ -1,0 +1,5 @@
+error: `Bytes` responses do not support pagination
+ --> tests/trybuild/fail/codegen_contract/reserved_bytes_paginate.rs:8:9
+  |
+8 |     GET Download
+  |         ^^^^^^^^

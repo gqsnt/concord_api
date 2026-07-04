@@ -1,0 +1,15 @@
+error[E0609]: no field `cursor` on type `concord_core::internal::PagedPagination`
+  --> tests/trybuild/fail/sema/pagination/pagination_unknown_field_paged.rs:16:13
+   |
+16 |             cursor = page,
+   |             ^^^^^^ unknown field
+   |
+   = note: available fields are: `page`, `per_page`
+
+error[E0609]: no field `cursor` on type `&concord_core::internal::PagedPagination`
+  --> tests/trybuild/fail/sema/pagination/pagination_unknown_field_paged.rs:16:13
+   |
+16 |             cursor = page,
+   |             ^^^^^^ unknown field
+   |
+   = note: available fields are: `page`, `per_page`

@@ -1,0 +1,5 @@
+error: `NoContent` is only valid as an endpoint response
+ --> tests/trybuild/fail/codegen_contract/reserved_nocontent_request_invalid.rs:6:23
+  |
+6 |     POST Create(body: NoContent)
+  |                       ^^^^^^^^^
