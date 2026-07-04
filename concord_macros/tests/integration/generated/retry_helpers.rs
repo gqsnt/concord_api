@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 mod retry_helper_contract {
     #![allow(unused_imports)]
     use super::*;
+    use concord_core::prelude::Json;
 
     api! {
         client RetryHelperApi {
@@ -97,10 +98,13 @@ impl Transport for RecordingTransport {
         let requests = self.requests.clone();
         let responses = self.responses.clone();
         Box::pin(async move {
-            requests.lock().expect("requests lock").push(RecordedRequest {
-                meta: req.meta.clone(),
-                url: req.url.clone(),
-            });
+            requests
+                .lock()
+                .expect("requests lock")
+                .push(RecordedRequest {
+                    meta: req.meta.clone(),
+                    url: req.url.clone(),
+                });
             let response = responses.lock().expect("responses lock").pop_front();
             let response = response.expect("expected retry response fixture");
             Ok(TransportResponse {

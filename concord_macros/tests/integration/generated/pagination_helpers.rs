@@ -260,9 +260,7 @@ impl ResponseFixture {
 
     fn json_status(status: StatusCode, body: &'static str) -> Self {
         let mut fixture = Self::json(body);
-        if let Self::Buffered { status: s, .. } = &mut fixture {
-            *s = status;
-        }
+        fixture.status = status;
         fixture
     }
 }

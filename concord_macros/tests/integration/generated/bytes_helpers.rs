@@ -39,7 +39,7 @@ struct RecordingBytesTransport {
     send_count: Arc<AtomicUsize>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 struct CapturedRequest {
     meta: RequestMeta,
     method: Method,
