@@ -43,6 +43,14 @@ pub(crate) fn endpoint_by_name<'a>(api: &'a ResolvedApi, name: &str) -> &'a Reso
         .unwrap_or_else(|| panic!("missing endpoint `{name}`"))
 }
 
+pub(crate) fn scope_module_path(endpoint: &ResolvedEndpoint) -> Vec<String> {
+    endpoint
+        .scope_modules
+        .iter()
+        .map(ToString::to_string)
+        .collect()
+}
+
 pub(crate) fn single_endpoint(api: &ResolvedApi) -> &ResolvedEndpoint {
     match api.endpoints.as_slice() {
         [endpoint] => endpoint,
@@ -156,6 +164,11 @@ pub(crate) fn behavior_names(endpoint: &ResolvedEndpoint) -> &[String] {
 }
 
 pub(crate) fn assert_behavior_error_contains(source: &str, expected: &str) {
+    let err = analyze_err(source);
+    assert_error_contains(&err, expected);
+}
+
+pub(crate) fn assert_route_error_contains(source: &str, expected: &str) {
     let err = analyze_err(source);
     assert_error_contains(&err, expected);
 }

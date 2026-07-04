@@ -16,4 +16,8 @@ mod policy_inheritance;
 mod policy_resolution;
 mod public_expressions;
 mod resolved_ir;
+mod route_diagnostics;
+mod route_inheritance;
+mod route_params;
+mod route_resolution;
 mod timeout_resolution;
