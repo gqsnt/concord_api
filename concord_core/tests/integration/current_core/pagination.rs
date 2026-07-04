@@ -1,13 +1,18 @@
 use super::common::*;
+use crate::support::{RedactionSentinels, assert_error_chain_does_not_contain_any};
+use bytes::Bytes;
 use concord_core::advanced::{
     AuthPlacement, EndpointPagination, PageAdvance, PageApply, PageDecision, PaginateBinding,
     PaginationRuntime, PaginationRuntimeAdapter, ProgressKey,
 };
+use concord_core::error::ErrorCategory;
+use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
     PaginationTermination, ReusableEndpoint,
 };
-use http::{HeaderValue, Method, StatusCode};
+use concord_core::transport::TransportErrorKind;
+use http::{HeaderName, HeaderValue, Method, StatusCode};
 use std::future::Future;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
@@ -851,6 +856,47 @@ async fn paged_pagination_runtime_advances_page() -> Result<(), ApiClientError> 
     );
     assert_eq!(query_value(&requests[0].url, "pageNo"), None);
     assert_eq!(query_value(&requests[1].url, "pageNo"), None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "raw-page-1"),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: Default::default(),
+        start: 7,
+        count: 11,
+        pagination: PaginationVariant::OffsetLimit {
+            offset: 7,
+            limit: 11,
+        },
+        ..Default::default()
+    };
+
+    let raw = client.request(endpoint).execute_raw().await?;
+
+    assert_eq!(raw.body, Bytes::from_static(b"raw-page-1"));
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].meta.page_index, 0);
+    assert_eq!(
+        query_value(&requests[0].url, "offset"),
+        Some("7".to_string())
+    );
+    assert_eq!(
+        query_value(&requests[0].url, "limit"),
+        Some("11".to_string())
+    );
     Ok(())
 }
 
@@ -1894,6 +1940,153 @@ async fn loop_detection_still_default_enabled() {
     );
     assert!(err.to_string().contains("loop detected"));
     assert_eq!(sent.sent_count().await, 2);
+}
+
+fn pagination_sentinels() -> RedactionSentinels {
+    RedactionSentinels::new(
+        "PAGINATION_AUTH_SENTINEL_PR16",
+        "PAGINATION_BODY_SENTINEL_PR16",
+        "PAGINATION_RESPONSE_SENTINEL_PR16",
+    )
+}
+
+fn policy_with_request_sentinel(sentinel: &'static str) -> ResolvedPolicy {
+    let mut policy = ResolvedPolicy::default();
+    policy.headers.insert(
+        HeaderName::from_static("x-pagination-sentinel"),
+        HeaderValue::from_static(sentinel),
+    );
+    policy
+}
+
+#[tokio::test]
+async fn later_page_http_status_failure_is_typed_and_redacted() -> Result<(), ApiClientError> {
+    let sentinels = pagination_sentinels();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, sentinels.response),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: policy_with_request_sentinel(sentinels.auth),
+        start: 0,
+        count: 2,
+        pagination: PaginationVariant::OffsetLimit {
+            offset: 0,
+            limit: 2,
+        },
+        ..Default::default()
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await
+        .expect_err("later HTTP status should surface as a typed pagination response error");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(err.category(), ErrorCategory::HttpStatus);
+    assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
+    assert_eq!(err.context().endpoint, "Items");
+    assert_eq!(err.context().method, Method::GET);
+    assert_eq!(sent.sent_count().await, 2);
+    let sentinel_values = [sentinels.auth, sentinels.response];
+    assert_error_chain_does_not_contain_any(&err, &sentinel_values);
+    Ok(())
+}
+
+#[tokio::test]
+async fn later_page_transport_failure_is_typed_and_redacted() -> Result<(), ApiClientError> {
+    let sentinels = pagination_sentinels();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::with_outcomes(
+        events,
+        vec![
+            MockOutcome::Response(MockResponse::text(
+                StatusCode::OK,
+                format!("{},{}", sentinels.response, sentinels.body),
+            )),
+            MockOutcome::TransportError(TransportErrorKind::Connect),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: policy_with_request_sentinel(sentinels.auth),
+        start: 0,
+        count: 2,
+        pagination: PaginationVariant::OffsetLimit {
+            offset: 0,
+            limit: 2,
+        },
+        ..Default::default()
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await
+        .expect_err("later transport failure should surface as a typed pagination transport error");
+
+    assert!(matches!(err, ApiClientError::Transport { .. }));
+    assert_eq!(err.category(), ErrorCategory::Transport);
+    assert_eq!(err.context().endpoint, "Items");
+    assert_eq!(err.context().method, Method::GET);
+    assert_eq!(sent.sent_count().await, 2);
+    let sentinel_values = [sentinels.auth];
+    assert_error_chain_does_not_contain_any(&err, &sentinel_values);
+    Ok(())
+}
+
+#[tokio::test]
+async fn later_page_decode_failure_is_typed_and_redacted() -> Result<(), ApiClientError> {
+    let sentinels = pagination_sentinels();
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "a,b"),
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xff\xfe")),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let endpoint = ItemsEndpoint {
+        policy: policy_with_request_sentinel(sentinels.auth),
+        start: 0,
+        count: 2,
+        pagination: PaginationVariant::OffsetLimit {
+            offset: 0,
+            limit: 2,
+        },
+        ..Default::default()
+    };
+
+    let err = client
+        .request(endpoint)
+        .paginate(PaginationTermination::hard_page_cap(100))
+        .collect()
+        .await
+        .expect_err("later decode failure should surface as a typed pagination decode error");
+
+    assert!(matches!(err, ApiClientError::Decode { .. }));
+    assert_eq!(err.category(), ErrorCategory::Decode);
+    assert_eq!(err.context().endpoint, "Items");
+    assert_eq!(err.context().method, Method::GET);
+    assert_eq!(sent.sent_count().await, 2);
+    let sentinel_values = [sentinels.auth];
+    assert_error_chain_does_not_contain_any(&err, &sentinel_values);
+    Ok(())
 }
 
 #[tokio::test]
