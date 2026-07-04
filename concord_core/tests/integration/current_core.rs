@@ -54,3 +54,5 @@ mod sse;
 mod stream_response;
 #[path = "current_core/stream_runtime.rs"]
 mod stream_runtime;
+#[path = "current_core/transport_contract.rs"]
+mod transport_contract;
