@@ -114,23 +114,23 @@ impl ReusableEndpoint<TestCx> for AttemptEndpoint {
 }
 
 fn finalized_attempt_policy() -> ResolvedPolicy {
-    let mut policy = ResolvedPolicy::default();
-    policy.timeout = Some(Duration::from_millis(250));
-    policy
-        .headers
-        .insert("x-client", HeaderValue::from_static("client"));
-    policy
-        .headers
-        .insert("x-scope", HeaderValue::from_static("scope"));
-    policy
-        .headers
-        .insert("x-endpoint", HeaderValue::from_static("endpoint"));
-    policy.query = vec![
-        ("client".to_string(), "1".to_string()),
-        ("scope".to_string(), "2".to_string()),
-        ("endpoint".to_string(), "3".to_string()),
-    ];
-    policy
+    ResolvedPolicy {
+        timeout: Some(Duration::from_millis(250)),
+        headers: [
+            ("x-client", HeaderValue::from_static("client")),
+            ("x-scope", HeaderValue::from_static("scope")),
+            ("x-endpoint", HeaderValue::from_static("endpoint")),
+        ]
+        .into_iter()
+        .map(|(name, value)| (http::header::HeaderName::from_static(name), value))
+        .collect(),
+        query: vec![
+            ("client".to_string(), "1".to_string()),
+            ("scope".to_string(), "2".to_string()),
+            ("endpoint".to_string(), "3".to_string()),
+        ],
+        ..Default::default()
+    }
 }
 
 fn replayable_policy() -> ResolvedPolicy {

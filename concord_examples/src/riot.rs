@@ -921,7 +921,7 @@ pub async fn riot_test() -> Result<(), ApiClientError> {
         summoner.puuid, summoner.summoner_level, summoner.profile_icon_id, summoner.revision_date
     );
     println!(
-        "Summoner legacy ids: id={:?} account_id={:?}",
+        "Summoner ids: id={:?} account_id={:?}",
         summoner.id, summoner.account_id
     );
 

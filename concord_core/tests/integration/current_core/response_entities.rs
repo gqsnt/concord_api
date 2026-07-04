@@ -99,7 +99,7 @@ async fn buffered_response_accepts_text_body_and_exposes_plan() -> Result<(), Ap
         .and_then(|value| value.to_str().ok())
         .expect("text accept header");
     assert!(accept.starts_with("text/plain"));
-    assert_eq!(entity_plan.response_plan.no_content, false);
+    assert!(!entity_plan.response_plan.no_content);
     assert_eq!(
         entity_plan.response_plan.format,
         concord_core::internal::Format::Text
@@ -129,7 +129,7 @@ async fn buffered_response_accepts_text_body_and_exposes_plan() -> Result<(), Ap
 async fn bytes_response_returns_raw_bytes() -> Result<(), ApiClientError> {
     let entity_plan = concord_core::advanced::BytesResponse::plan(ctx("BytesResponse"))?;
     assert_eq!(entity_plan.response_plan.accept, None);
-    assert_eq!(entity_plan.response_plan.no_content, false);
+    assert!(!entity_plan.response_plan.no_content);
     assert_eq!(
         entity_plan.response_plan.format,
         concord_core::internal::Format::Binary
@@ -158,7 +158,7 @@ async fn bytes_response_returns_raw_bytes() -> Result<(), ApiClientError> {
 async fn no_content_response_accepts_204_without_body() -> Result<(), ApiClientError> {
     let entity_plan = NoContentResponse::plan(ctx("NoContentResponse"))?;
     assert_eq!(entity_plan.response_plan.accept, None);
-    assert_eq!(entity_plan.response_plan.no_content, true);
+    assert!(entity_plan.response_plan.no_content);
     assert_eq!(
         entity_plan.response_plan.format,
         concord_core::internal::Format::Text

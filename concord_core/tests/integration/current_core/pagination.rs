@@ -1208,7 +1208,7 @@ async fn cursor_string_pagination_runtime_preserves_empty_cursor() -> Result<(),
             ctx: &ctx,
         },
     )?;
-    let _ = <Runtime as PaginationRuntime<CursorItemsEndpoint, CursorItems>>::apply(
+    <Runtime as PaginationRuntime<CursorItemsEndpoint, CursorItems>>::apply(
         &mut runtime,
         &mut endpoint,
         PageApply {
