@@ -3,6 +3,7 @@ use super::common::{
     SafeRecordingDebugSink, TestAuthVars, TestCx, TextEndpoint, assert_events_do_not_contain,
     assert_still_pending, auth_policy, rate_limit_policy, wait_bounded,
 };
+use crate::support::RedactionSentinels;
 use bytes::Bytes;
 use concord_core::advanced::AuthPlacement;
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
@@ -10,11 +11,14 @@ use http::StatusCode;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-const RAW_AUTH_SENTINEL_PR78: &str = "RAW_AUTH_SENTINEL_PR78";
-const RESPONSE_BODY_SENTINEL_PR78: &str = "RESPONSE_BODY_SENTINEL_PR78";
+const REDACTION_SENTINELS_PR78: RedactionSentinels = RedactionSentinels::new(
+    "RAW_AUTH_SENTINEL_PR78",
+    "RESPONSE_BODY_SENTINEL_PR78",
+    "RESPONSE_OBSERVER_SENTINEL_PR78",
+);
 
 fn sentinels() -> [&'static str; 2] {
-    [RAW_AUTH_SENTINEL_PR78, RESPONSE_BODY_SENTINEL_PR78]
+    REDACTION_SENTINELS_PR78.auth_body()
 }
 
 #[tokio::test]
@@ -511,12 +515,12 @@ async fn harness_observer_surfaces_remain_body_auth_free() {
         events.clone(),
         vec![MockResponse::text(
             StatusCode::OK,
-            RESPONSE_BODY_SENTINEL_PR78,
+            REDACTION_SENTINELS_PR78.body,
         )],
     );
     let mut client = super::common::client(
         TestAuthVars {
-            token: Some(RAW_AUTH_SENTINEL_PR78.to_string()),
+            token: Some(REDACTION_SENTINELS_PR78.auth.to_string()),
             identity: "auth",
         },
         transport,
@@ -544,7 +548,7 @@ async fn harness_observer_surfaces_remain_body_auth_free() {
         .await
         .expect("request should succeed");
 
-    assert_eq!(decoded.value(), RESPONSE_BODY_SENTINEL_PR78);
+    assert_eq!(decoded.value(), REDACTION_SENTINELS_PR78.body);
     assert_events_do_not_contain(&events, &sentinels()).await;
 }
 

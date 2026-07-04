@@ -3,6 +3,7 @@ use super::common::{
     PhaseGate, SafeRecordingDebugSink, TestAuthVars, TestCx, TextEndpoint,
     assert_events_do_not_contain, auth_policy, client, rate_limit_policy,
 };
+use crate::support::{RedactionSentinels, assert_error_chain_does_not_contain_any};
 use concord_core::advanced::AuthPlacement;
 use concord_core::advanced::{Transport, TransportErrorKind};
 use concord_core::prelude::{ApiClient, ApiClientError};
@@ -12,11 +13,14 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering as AtomicOrdering;
 use tokio::sync::Mutex;
 
-const RAW_AUTH_SENTINEL_PR79: &str = "RAW_AUTH_SENTINEL_PR79";
-const RESPONSE_BODY_SENTINEL_PR79: &str = "RESPONSE_BODY_SENTINEL_PR79";
+const REDACTION_SENTINELS_PR79: RedactionSentinels = RedactionSentinels::new(
+    "RAW_AUTH_SENTINEL_PR79",
+    "RESPONSE_BODY_SENTINEL_PR79",
+    "RESPONSE_OBSERVER_SENTINEL_PR79",
+);
 
 fn body_sentinels() -> [&'static str; 2] {
-    [RAW_AUTH_SENTINEL_PR79, RESPONSE_BODY_SENTINEL_PR79]
+    REDACTION_SENTINELS_PR79.auth_body()
 }
 
 fn transport_client<T: Transport + Clone>(transport: T) -> ApiClient<TestCx, T> {
@@ -28,42 +32,6 @@ fn transport_client_with_auth<T: Transport + Clone>(
     transport: T,
 ) -> ApiClient<TestCx, T> {
     ApiClient::with_transport((), auth, transport)
-}
-
-fn assert_error_diagnostics_safe(err: &ApiClientError, sentinels: &[&str]) {
-    let display = err.to_string();
-    let debug = format!("{err:?}");
-    let pretty_debug = format!("{err:#?}");
-    for sentinel in sentinels {
-        assert!(!display.contains(sentinel), "display leaked {sentinel}");
-        assert!(!debug.contains(sentinel), "debug leaked {sentinel}");
-        assert!(
-            !pretty_debug.contains(sentinel),
-            "pretty debug leaked {sentinel}"
-        );
-    }
-
-    let mut current: Option<&(dyn Error + 'static)> = Some(err);
-    while let Some(source) = current {
-        let source_display = source.to_string();
-        let source_debug = format!("{source:?}");
-        let source_pretty = format!("{source:#?}");
-        for sentinel in sentinels {
-            assert!(
-                !source_display.contains(sentinel),
-                "source display leaked {sentinel}"
-            );
-            assert!(
-                !source_debug.contains(sentinel),
-                "source debug leaked {sentinel}"
-            );
-            assert!(
-                !source_pretty.contains(sentinel),
-                "source pretty debug leaked {sentinel}"
-            );
-        }
-        current = source.source();
-    }
 }
 
 #[tokio::test]
@@ -210,7 +178,7 @@ async fn transport_timeout_error_is_typed_and_safe() {
         vec![MockOutcome::TransportError(TransportErrorKind::Timeout)],
     );
     let raw_auth = TestAuthVars {
-        token: Some(RAW_AUTH_SENTINEL_PR79.to_string()),
+        token: Some(REDACTION_SENTINELS_PR79.auth.to_string()),
         identity: "transport-timeout",
     };
     let mut client = transport_client_with_auth(raw_auth, transport.clone());
@@ -245,7 +213,7 @@ async fn transport_timeout_error_is_typed_and_safe() {
         rate_limiter.response_observed.load(AtomicOrdering::SeqCst),
         0
     );
-    assert_error_diagnostics_safe(&err, &[RAW_AUTH_SENTINEL_PR79]);
+    assert_error_chain_does_not_contain_any(&err, &REDACTION_SENTINELS_PR79.auth_body());
     assert_events_do_not_contain(&events, &body_sentinels()).await;
 }
 
@@ -381,7 +349,7 @@ async fn cancellation_observer_surfaces_are_body_auth_free() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let gate = PhaseGate::new();
     let raw_auth = TestAuthVars {
-        token: Some(RAW_AUTH_SENTINEL_PR79.to_string()),
+        token: Some(REDACTION_SENTINELS_PR79.auth.to_string()),
         identity: "observer",
     };
     let rate_limiter = Arc::new(
@@ -393,7 +361,7 @@ async fn cancellation_observer_surfaces_are_body_auth_free() {
         gate.clone(),
         events.clone(),
         vec![
-            MockResponse::text(StatusCode::OK, RESPONSE_BODY_SENTINEL_PR79),
+            MockResponse::text(StatusCode::OK, REDACTION_SENTINELS_PR79.body),
             MockResponse::text(StatusCode::OK, "ok-2"),
         ],
     )
