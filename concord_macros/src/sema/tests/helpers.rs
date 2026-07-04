@@ -1,8 +1,8 @@
 use crate::ast::{RawApi, RawItem, RawScope};
 use crate::model::norm::{NormApiTree, NormEndpoint, NormNode, NormScope};
 use crate::sema::{
-    AuthCredentialIr, AuthRequirementIr, PolicyBlocksResolved, PolicyOp, ResolvedApi,
-    ResolvedEndpoint, ResolvedPolicySpec,
+    AuthCredentialIr, AuthRequirementIr, PolicyBlocksResolved, PolicyOp, RateLimitPlanResolved,
+    RateLimitResolved, ResolvedApi, ResolvedEndpoint, ResolvedPolicySpec,
 };
 use syn::Type;
 
@@ -171,4 +171,33 @@ pub(crate) fn assert_behavior_error_contains(source: &str, expected: &str) {
 pub(crate) fn assert_route_error_contains(source: &str, expected: &str) {
     let err = analyze_err(source);
     assert_error_contains(&err, expected);
+}
+
+pub(crate) fn rate_limit_plan(rate_limit: &RateLimitResolved) -> &RateLimitPlanResolved {
+    match rate_limit {
+        RateLimitResolved::Add(plan) | RateLimitResolved::Replace(plan) => plan,
+        RateLimitResolved::Clear => panic!("expected resolved rate limit"),
+    }
+}
+
+pub(crate) fn effective_endpoint_rate_limit_bucket_names(
+    api: &ResolvedApi,
+    endpoint: &ResolvedEndpoint,
+) -> Vec<String> {
+    let mut bucket_names = Vec::new();
+    let mut apply = |layer: &Option<RateLimitResolved>| match layer {
+        Some(RateLimitResolved::Add(plan)) | Some(RateLimitResolved::Replace(plan)) => {
+            bucket_names.extend(plan.buckets.iter().map(|bucket| bucket.name.clone()))
+        }
+        Some(RateLimitResolved::Clear) => bucket_names.clear(),
+        None => {}
+    };
+
+    apply(&api.client_policy.rate_limit);
+    for scope in &endpoint.policy.scopes {
+        apply(&scope.rate_limit);
+    }
+    apply(&endpoint.policy.endpoint.rate_limit);
+
+    bucket_names
 }
