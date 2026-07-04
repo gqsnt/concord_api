@@ -1,6 +1,6 @@
 use crate::ast::{RawApi, RawItem, RawScope};
 use crate::model::norm::{NormApiTree, NormEndpoint, NormNode, NormScope};
-use crate::sema::{ResolvedApi, ResolvedEndpoint};
+use crate::sema::{AuthCredentialIr, AuthRequirementIr, ResolvedApi, ResolvedEndpoint};
 use syn::Type;
 
 pub(crate) fn parse_raw(source: &str) -> RawApi {
@@ -85,4 +85,37 @@ pub(crate) fn assert_error_contains(err: &syn::Error, expected: &str) {
         err.to_string().contains(expected),
         "expected error to contain `{expected}`, got `{err}`"
     );
+}
+
+pub(crate) fn credential_by_name<'a>(api: &'a ResolvedApi, name: &str) -> &'a AuthCredentialIr {
+    api.client_auth_credentials
+        .iter()
+        .find(|credential| credential.name == name)
+        .unwrap_or_else(|| panic!("missing credential `{name}`"))
+}
+
+pub(crate) fn auth_for_endpoint<'a>(
+    api: &'a ResolvedApi,
+    endpoint: &str,
+) -> &'a [AuthRequirementIr] {
+    &endpoint_by_name(api, endpoint).policy.auth
+}
+
+pub(crate) fn auth_requirement_names(auth: &[AuthRequirementIr]) -> Vec<String> {
+    auth.iter().map(|req| req.credential.to_string()).collect()
+}
+
+pub(crate) fn auth_requirement_step_ids(auth: &[AuthRequirementIr]) -> Vec<String> {
+    auth.iter().map(|req| req.step_id.clone()).collect()
+}
+
+pub(crate) fn auth_requirement_provenance_labels(auth: &[AuthRequirementIr]) -> Vec<String> {
+    auth.iter()
+        .map(|req| req.provenance.label.clone())
+        .collect()
+}
+
+pub(crate) fn assert_auth_error_contains(source: &str, expected: &str) {
+    let err = analyze_err(source);
+    assert_error_contains(&err, expected);
 }

@@ -1,3 +1,8 @@
+mod auth_credentials;
+mod auth_endpoint_backed;
+mod auth_inheritance;
+mod auth_materialization;
+mod auth_uses;
 mod diagnostics;
 mod helpers;
 mod normalize_routes;
