@@ -760,61 +760,6 @@ fn auth_requirement_step_ids(auth: &[AuthRequirementIr]) -> Vec<String> {
 }
 
 #[cfg(test)]
-fn debug_norm_tree(norm: &NormApiTree) -> String {
-    fn walk(items: &[NormNode], depth: usize, out: &mut String) {
-        for item in items {
-            let indent = "  ".repeat(depth);
-            match item {
-                NormNode::Layer(scope) => {
-                    out.push_str(&format!(
-                        "{indent}scope {:?} kind={:?} params={} auth={} headers={} query={} retry={} rate_limit={}\n",
-                        scope.scope_name.as_ref().map(ToString::to_string),
-                        scope.kind,
-                        scope.params.len(),
-                        scope.auth_uses.len(),
-                        scope.policy.headers.as_ref().map_or(0, |h| h.stmts.len()),
-                        scope.policy.query.as_ref().map_or(0, |q| q.stmts.len()),
-                        scope.retry.is_some(),
-                        scope.rate_limit.is_some(),
-                    ));
-                    walk(&scope.items, depth + 1, out);
-                }
-                NormNode::Endpoint(endpoint) => {
-                    out.push_str(&format!(
-                        "{indent}endpoint {} method={} alias={:?} params={} body={} query={} paginate={}\n",
-                        endpoint.name,
-                        endpoint.method,
-                        endpoint.alias.as_ref().map(ToString::to_string),
-                        endpoint.params.len(),
-                        endpoint.body.is_some(),
-                        endpoint.policy.query.as_ref().map_or(0, |q| q.stmts.len()),
-                        endpoint.paginate.is_some(),
-                    ));
-                }
-            }
-        }
-    }
-
-    let mut out = format!(
-        "client {} vars={} secrets={} auth={} retry_profiles={} rate_profiles={}\n",
-        norm.client.name,
-        norm.client.vars.as_ref().map_or(0, |v| v.decls.len()),
-        norm.client.auth_vars.as_ref().map_or(0, |v| v.decls.len()),
-        norm.client.auth_uses.len(),
-        norm.client
-            .retry_profiles
-            .as_ref()
-            .map_or(0, |v| v.profiles.len()),
-        norm.client
-            .rate_limit
-            .as_ref()
-            .map_or(0, |v| v.profiles.len()),
-    );
-    walk(&norm.items, 0, &mut out);
-    out
-}
-
-#[cfg(test)]
 fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
     let mut out = String::new();
     for ep in &resolved_api.endpoints {
@@ -869,121 +814,6 @@ fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn normalized_tree_snapshot_contains_current_shape_without_raw_auth_groups() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            client NormApi {
-                base "https://example.com"
-                var tenant: String
-                secret token: String
-                credential key = api_key(secret.token)
-
-                retry read {
-                    max_attempts 2
-                    methods [GET]
-                }
-            }
-
-            scope protected(user_id: u64) {
-                path ["users", user_id]
-                auth header "X-Token" = key
-
-                GET Show(count: u64 = 20)
-                    as show
-                    path ["profile"]
-                    query {
-                        count
-                    }
-                    -> Json<String>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let norm = normalize_api(ast).expect("normalization succeeds");
-        let snapshot = debug_norm_tree(&norm);
-
-        assert!(snapshot.contains("client NormApi"));
-        assert!(snapshot.contains("scope Some(\"protected\")"));
-        assert!(snapshot.contains("endpoint Show method=GET"));
-        assert!(snapshot.contains("alias=Some(\"show\")"));
-        assert!(snapshot.contains("query=1"));
-    }
-
-    #[test]
-    fn normalized_tree_contains_only_canonical_endpoint_constructs() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client NormCanonical {
-                    base "https://example.com"
-                    var trace_id: String
-                }
-
-                POST Create(q: String, tag?: String, body: Json<CreateBody>)
-                    as create
-                    path [fmt["items-", q]]
-                    query {
-                        q
-                        "tag" += tag
-                    }
-                    headers {
-                        "x-trace" = vars.trace_id
-                    }
-                    -> Json<CreateResponse>
-            }
-            "#,
-        )
-        .expect("valid current api syntax");
-        let norm = normalize_api(ast).expect("normalization succeeds");
-        let NormNode::Endpoint(endpoint) = &norm.items[0] else {
-            panic!("expected endpoint");
-        };
-
-        assert!(matches!(
-            endpoint.route.atoms.as_slice(),
-            [RouteAtom::Fmt(_)]
-        ));
-        assert!(
-            endpoint.body.is_some(),
-            "body is normalized from signature only"
-        );
-        assert_eq!(endpoint.params.len(), 2);
-
-        let query = endpoint.policy.query.as_ref().expect("query policy");
-        assert_eq!(query.stmts.len(), 2);
-        match &query.stmts[0] {
-            PolicyStmt::Set {
-                key: KeySpec::Ident(key),
-                value: PolicyValue::Expr(Expr::Path(path)),
-                op: SetOp::Set,
-            } => {
-                assert_eq!(key.to_string(), "q");
-                assert_eq!(path.path.segments.len(), 1);
-                assert_eq!(path.path.segments[0].ident, "q");
-            }
-            other => panic!("query shorthand should remain raw in normalized tree: {other:?}"),
-        }
-        assert!(matches!(
-            &query.stmts[1],
-            PolicyStmt::Set {
-                key: KeySpec::Str(_),
-                op: SetOp::Push,
-                ..
-            }
-        ));
-
-        let headers = endpoint.policy.headers.as_ref().expect("headers policy");
-        assert!(matches!(
-            &headers.stmts[0],
-            PolicyStmt::Set {
-                key: KeySpec::Str(_),
-                op: SetOp::Set,
-                ..
-            }
-        ));
-    }
 
     #[test]
     fn generated_public_name_collisions_are_rejected() {
@@ -1139,65 +969,6 @@ mod tests {
                 "{label} should be rejected by sema: {err}"
             );
         }
-    }
-
-    #[test]
-    fn normalized_tree_splits_raw_scope_host_and_path_into_canonical_layers() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client NormSplitApi {
-                    base "https://example.com"
-                    secret token: String
-                    credential key = api_key(secret.token)
-                }
-
-                scope tenant(tenant_id: String) {
-                    host [fmt["tenant-", tenant_id], "api"]
-                    path ["v1"]
-                    auth header "X-Token" = key
-
-                    GET Show
-                        path ["profile"]
-                        -> Json<String>
-                }
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let norm = normalize_api(ast).expect("normalization succeeds");
-
-        assert_eq!(norm.items.len(), 1);
-        let NormNode::Layer(outer) = &norm.items[0] else {
-            panic!("expected outer scope layer");
-        };
-        assert_eq!(
-            outer
-                .scope_name
-                .as_ref()
-                .map(ToString::to_string)
-                .as_deref(),
-            Some("tenant")
-        );
-        assert!(matches!(outer.kind, RouteLayerKind::Prefix));
-        assert_eq!(outer.auth_uses.len(), 1);
-        assert_eq!(outer.items.len(), 1);
-        let NormNode::Layer(inner) = &outer.items[0] else {
-            panic!("expected inner path layer");
-        };
-        assert!(inner.scope_name.is_none());
-        assert!(matches!(inner.kind, RouteLayerKind::Path));
-        assert!(inner.auth_uses.is_empty());
-        assert!(inner.policy.headers.is_none());
-        assert!(inner.policy.query.is_none());
-        assert!(inner.retry.is_none());
-        assert!(inner.rate_limit.is_none());
-        assert!(inner.rate_limit_keys.is_empty());
-        assert_eq!(inner.items.len(), 1);
-        let NormNode::Endpoint(endpoint) = &inner.items[0] else {
-            panic!("expected endpoint under inner path layer");
-        };
-        assert_eq!(endpoint.name, "Show");
     }
 
     #[test]
@@ -4597,3 +4368,7 @@ mod tests {
         assert!(snapshot.contains("scopes=1"));
     }
 }
+
+#[cfg(test)]
+#[path = "tests/mod.rs"]
+mod normalize_tests;
