@@ -1,23 +1,35 @@
 use super::common::*;
+use crate::support::assert_error_chain_does_not_contain_any;
+use base64::Engine as _;
+use bytes::Bytes;
 #[cfg(feature = "json")]
 use concord_core::advanced::OAuth2ClientCredentialsProvider;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthChallengePolicy, AuthDecision, AuthError,
     AuthErrorKind, AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
-    AuthStepPolicy, PreparedAuthCredential, RequestMeta, RetryDecision, auth_decision_for_status,
+    AuthStepPolicy, BufferedResponse, CodecError, DecodeContext, PreparedAuthCredential,
+    RequestMeta, ResponseCodec, RetryDecision, TextContentType, auth_decision_for_status,
 };
 use concord_core::advanced::{
     CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason, CredentialSlot,
     InvalidateReason,
 };
-use concord_core::internal::{ClientPlanContext, RequestPlan};
+use concord_core::error::ErrorCategory;
+use concord_core::internal::{ClientPlanContext, RequestPlan, ResponseEntity};
 use concord_core::prelude::{
     AccessToken, ApiClientError, ApiKey, ClientContext, Endpoint, ReusableEndpoint,
 };
+use concord_core::transport::TransportErrorKind;
 use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use std::collections::VecDeque;
+use std::fmt;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+const AUTH_TRANSPORT_SENTINEL: &str = "PR17_AUTH_TRANSPORT_SENTINEL";
+const AUTH_DECODE_SENTINEL: &str = "PR17_AUTH_DECODE_SENTINEL";
+const AUTH_RETRY_SENTINEL: &str = "PR17_AUTH_RETRY_SENTINEL";
+const AUTH_RESPONSE_SENTINEL: &str = "PR17_AUTH_RESPONSE_SENTINEL";
 
 #[tokio::test]
 async fn missing_credential_error_is_actionable() {
@@ -38,10 +50,48 @@ async fn missing_credential_error_is_actionable() {
         .await
         .expect_err("missing token must fail before transport");
 
+    assert_eq!(err.category(), ErrorCategory::MissingCredential);
+    assert_eq!(err.context().endpoint, "Text");
+    assert_eq!(err.context().method, Method::GET);
     let msg = err.to_string();
     assert!(msg.contains("missing credential"));
     assert!(msg.contains("test.token"));
     assert!(msg.contains("acquire or configure"));
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+struct SentinelError(&'static str);
+
+impl fmt::Debug for SentinelError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let _ = self.0;
+        f.write_str("<redacted>")
+    }
+}
+
+impl fmt::Display for SentinelError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let _ = self.0;
+        f.write_str("<redacted>")
+    }
+}
+
+impl std::error::Error for SentinelError {}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct FailingAuthDecodeCodec;
+
+impl ResponseCodec for FailingAuthDecodeCodec {
+    type Value = String;
+    type Content = TextContentType;
+
+    fn decode(_bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        Err(CodecError::with_source(
+            "auth response decode failed",
+            SentinelError(AUTH_DECODE_SENTINEL),
+        ))
+    }
 }
 
 #[tokio::test]
@@ -360,6 +410,280 @@ async fn bearer_header_and_query_auth_are_applied() -> Result<(), ApiClientError
         Some("token-1".to_string())
     );
     Ok(())
+}
+
+#[tokio::test]
+async fn header_auth_is_applied_to_the_configured_header() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "header-auth-ok")],
+    );
+    let sent = transport.clone();
+    let client = client(
+        TestAuthVars {
+            token: Some(AUTH_TRANSPORT_SENTINEL.to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Header("X-Api-Key")),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "header-auth-ok");
+    assert_eq!(sent.sent_count().await, 1);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(HeaderName::from_static("x-api-key"))
+            .and_then(|value| value.to_str().ok()),
+        Some(AUTH_TRANSPORT_SENTINEL)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn basic_auth_is_applied_as_an_authorization_header() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "basic-auth-ok")],
+    );
+    let sent = transport.clone();
+    let client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        ObservationAuthVars::basic(
+            "PR17_BASIC_USERNAME_SENTINEL",
+            "PR17_BASIC_PASSWORD_SENTINEL",
+            "basic",
+            events.clone(),
+        ),
+        transport,
+    );
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Basic),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "basic-auth-ok");
+    assert_eq!(sent.sent_count().await, 1);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    let expected = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD
+            .encode("PR17_BASIC_USERNAME_SENTINEL:PR17_BASIC_PASSWORD_SENTINEL")
+    );
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some(expected.as_str())
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn auth_transport_failure_redacts_the_request_auth_sentinel() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::with_outcomes(
+        events,
+        vec![MockOutcome::TransportError(TransportErrorKind::Connect)],
+    );
+    let sent = transport.clone();
+    let client = client(
+        TestAuthVars {
+            token: Some(AUTH_TRANSPORT_SENTINEL.to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+
+    let err = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Header("X-Api-Key")),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("transport failure should surface");
+
+    assert!(matches!(err, ApiClientError::Transport { .. }));
+    assert_eq!(err.category(), ErrorCategory::Transport);
+    assert_eq!(err.context().endpoint, "Text");
+    assert_eq!(err.context().method, Method::GET);
+    assert_error_chain_does_not_contain_any(&err, &[AUTH_TRANSPORT_SENTINEL]);
+    assert_eq!(sent.sent_count().await, 1);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(HeaderName::from_static("x-api-key"))
+            .and_then(|value| value.to_str().ok()),
+        Some(AUTH_TRANSPORT_SENTINEL)
+    );
+}
+
+#[tokio::test]
+async fn auth_decode_failure_redacts_request_and_decode_sentinels() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "unused")]);
+    let sent = transport.clone();
+    let client = client(
+        TestAuthVars {
+            token: Some(AUTH_TRANSPORT_SENTINEL.to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    let plan = request_plan(
+        "AuthDecode",
+        Method::GET,
+        "/auth/decode",
+        auth_policy(AuthPlacement::Bearer),
+        None,
+    );
+
+    let err = BufferedResponse::<FailingAuthDecodeCodec>::execute(&client, plan)
+        .await
+        .expect_err("decode failure should surface");
+
+    assert!(matches!(err, ApiClientError::Decode { .. }));
+    assert_eq!(err.category(), ErrorCategory::Decode);
+    assert_eq!(err.context().endpoint, "AuthDecode");
+    assert_eq!(err.context().method, Method::GET);
+    assert_error_chain_does_not_contain_any(&err, &[AUTH_TRANSPORT_SENTINEL, AUTH_DECODE_SENTINEL]);
+    assert_eq!(sent.sent_count().await, 1);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    let expected = format!("Bearer {AUTH_TRANSPORT_SENTINEL}");
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some(expected.as_str())
+    );
+}
+
+#[tokio::test]
+async fn auth_retry_reuses_bearer_material_across_attempts() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-one"),
+            MockResponse::text(StatusCode::OK, "retry-ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(
+        TestAuthVars {
+            token: Some(AUTH_RETRY_SENTINEL.to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Bearer);
+            policy.retry =
+                retry_policy_for_statuses(2, vec![StatusCode::INTERNAL_SERVER_ERROR]).retry;
+            policy
+        },
+        ..Default::default()
+    };
+
+    let decoded = client
+        .request(endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "retry-ok");
+    assert_eq!(sent.sent_count().await, 2);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let expected = format!("Bearer {AUTH_RETRY_SENTINEL}");
+    for request in &requests {
+        assert_eq!(
+            request
+                .headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some(expected.as_str())
+        );
+    }
+    assert_eq!(requests[0].meta.attempt, 0);
+    assert_eq!(requests[1].meta.attempt, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn auth_retry_exhaustion_redacts_request_and_response_sentinels() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, AUTH_RESPONSE_SENTINEL),
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, AUTH_RESPONSE_SENTINEL),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(
+        TestAuthVars {
+            token: Some(AUTH_RETRY_SENTINEL.to_string()),
+            identity: "user-a",
+        },
+        transport,
+    );
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Bearer);
+            policy.retry =
+                retry_policy_for_statuses(2, vec![StatusCode::INTERNAL_SERVER_ERROR]).retry;
+            policy
+        },
+        ..Default::default()
+    };
+
+    let err = client
+        .request(endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("retry exhaustion should surface as status error");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(err.category(), ErrorCategory::HttpStatus);
+    assert_eq!(err.context().endpoint, "Text");
+    assert_eq!(err.context().method, Method::GET);
+    assert_error_chain_does_not_contain_any(&err, &[AUTH_RETRY_SENTINEL, AUTH_RESPONSE_SENTINEL]);
+    assert_eq!(sent.sent_count().await, 2);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let expected = format!("Bearer {AUTH_RETRY_SENTINEL}");
+    for request in &requests {
+        assert_eq!(
+            request
+                .headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some(expected.as_str())
+        );
+    }
 }
 
 #[tokio::test]
@@ -1820,6 +2144,7 @@ struct SlotAuthCx;
 #[derive(Clone)]
 struct SlotTokenProvider {
     events: Arc<Mutex<Vec<String>>>,
+    fail_acquire: bool,
 }
 
 impl CredentialProvider<SlotAuthCx> for SlotTokenProvider {
@@ -1834,11 +2159,18 @@ impl CredentialProvider<SlotAuthCx> for SlotTokenProvider {
         ctx: CredentialContext<'a, SlotAuthCx>,
     ) -> concord_core::advanced::AuthFuture<'a, Result<Self::Credential, AuthError>> {
         let events = self.events.clone();
+        let fail_acquire = self.fail_acquire;
         Box::pin(async move {
             events
                 .lock()
                 .await
                 .push(format!("slot_acquire:{:?}", ctx.reason));
+            if fail_acquire {
+                return Err(AuthError::new(
+                    AuthErrorKind::AcquireFailed,
+                    "slot acquire failed",
+                ));
+            }
             Ok(AccessToken::new("token-1".to_string()))
         })
     }
@@ -1996,12 +2328,106 @@ impl ReusableEndpoint<SlotAuthCx> for TextEndpoint {
 }
 
 #[tokio::test]
+async fn endpoint_backed_auth_slot_acquires_and_applies_the_credential()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let slot = Arc::new(CredentialSlot::new(SlotTokenProvider {
+        events: events.clone(),
+        fail_acquire: false,
+    }));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "slot-ok")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+        (),
+        SlotAuthVars {
+            slot: slot.clone(),
+            events: events.clone(),
+        },
+        transport,
+    );
+    client.set_max_auth_retries(8);
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "slot-ok");
+    assert_eq!(sent_transport.sent_count().await, 1);
+    let requests = sent_transport.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer token-1")
+    );
+    let events = events.lock().await.clone();
+    assert!(events.iter().any(|event| event == "slot_acquire:Missing"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn endpoint_backed_auth_slot_acquire_failure_is_typed_and_contextual() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let slot = Arc::new(CredentialSlot::new(SlotTokenProvider {
+        events: events.clone(),
+        fail_acquire: true,
+    }));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "unused")],
+    );
+    let sent_transport = transport.clone();
+    let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+        (),
+        SlotAuthVars {
+            slot: slot.clone(),
+            events: events.clone(),
+        },
+        transport,
+    );
+    client.set_max_auth_retries(8);
+
+    let err = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("slot acquisition failure should surface as auth error");
+
+    match &err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::AcquireFailed);
+            assert!(source.to_string().contains("slot acquire failed"));
+        }
+        other => panic!("expected auth error, got {other:?}"),
+    }
+    assert_eq!(err.category(), ErrorCategory::AuthRejected);
+    assert_eq!(err.context().endpoint, "Text");
+    assert_eq!(err.context().method, Method::GET);
+    assert_eq!(sent_transport.sent_count().await, 0);
+    let events = events.lock().await.clone();
+    assert!(events.iter().any(|event| event == "slot_acquire:Missing"));
+}
+
+#[tokio::test]
 async fn auth_rejection_stale_invalidation_cannot_clear_newer_generation()
 -> Result<(), ApiClientError> {
     for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
         let events = Arc::new(Mutex::new(Vec::new()));
         let slot = Arc::new(CredentialSlot::new(SlotTokenProvider {
             events: events.clone(),
+            fail_acquire: false,
         }));
         let transport = GateTransport::new(
             events.clone(),
