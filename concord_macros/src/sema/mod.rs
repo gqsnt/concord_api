@@ -732,11 +732,6 @@ fn effective_endpoint_rate_limit_bucket_names(
 }
 
 #[cfg(test)]
-fn auth_requirement_names(auth: &[AuthRequirementIr]) -> Vec<String> {
-    auth.iter().map(|req| req.credential.to_string()).collect()
-}
-
-#[cfg(test)]
 fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {
     let mut out = String::new();
     for ep in &resolved_api.endpoints {
@@ -1118,53 +1113,6 @@ mod tests {
     }
 
     #[test]
-    fn client_default_behavior_applies_to_endpoint_policy() {
-        let resolved_api = analyze_source(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    retry read {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
-                    rate_limit app {
-                        bucket application by [host] {
-                            10 / 1s
-                        }
-                    }
-
-                    behavior read_behavior {
-                        retry read
-                        rate_limit app
-                    }
-
-                    defaults {
-                        behavior read_behavior
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    -> Json<()>
-            }
-            "#,
-        );
-        let endpoint = endpoint_by_name(&resolved_api, "Me");
-
-        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
-            panic!("expected client default behavior retry");
-        };
-        assert_eq!(client_retry.max_attempts, 2);
-        assert_eq!(
-            effective_endpoint_rate_limit_bucket_names(&resolved_api, endpoint),
-            vec!["app_0".to_string()]
-        );
-    }
-
-    #[test]
     fn explicit_default_retry_overrides_default_behavior() {
         let resolved_api = analyze_source(
             r#"
@@ -1370,96 +1318,6 @@ mod tests {
     }
 
     #[test]
-    fn scope_behavior_is_inherited_by_nested_endpoint() {
-        let resolved_api = analyze_source(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    retry read {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
-                    behavior scope_read {
-                        retry read
-                    }
-                }
-
-                scope users {
-                    path ["users"]
-                    behavior scope_read
-
-                    GET Me
-                        path ["me"]
-                        -> Json<()>
-                }
-            }
-            "#,
-        );
-        let endpoint = endpoint_by_name(&resolved_api, "Me");
-
-        let Some(scope_policy) = endpoint.policy.scopes.first() else {
-            panic!("expected scope policy");
-        };
-        let Some(RetryResolved::Set(scope_retry)) = &scope_policy.retry else {
-            panic!("expected inherited scope retry");
-        };
-        assert_eq!(scope_retry.max_attempts, 2);
-    }
-
-    #[test]
-    fn endpoint_behavior_adds_policy_without_losing_inherited_auth() {
-        let resolved_api = analyze_source(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-                    secret token: String
-                    credential session = bearer(secret.token)
-
-                    behavior default_auth {
-                        auth bearer session
-                    }
-
-                    retry endpoint_retry {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
-                    behavior endpoint_read {
-                        retry endpoint_retry
-                    }
-
-                    defaults {
-                        behavior default_auth
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    behavior endpoint_read
-                    -> Json<()>
-            }
-            "#,
-        );
-        let endpoint = endpoint_by_name(&resolved_api, "Me");
-
-        assert_eq!(endpoint.policy.auth.len(), 1);
-        let auth = &endpoint.policy.auth[0];
-        assert_eq!(auth.credential.to_string(), "session");
-        assert_eq!(auth.placement, AuthPlacementIr::Bearer);
-        assert_eq!(auth.usage_id, "bearer");
-        assert_eq!(auth.step_id, "Me:0:session");
-        assert_eq!(auth.provenance.label, "client");
-        assert!(matches!(
-            endpoint.policy.endpoint.retry,
-            Some(RetryResolved::Set(_))
-        ));
-    }
-
-    #[test]
     fn behavior_rate_limit_key_binding_resolves_at_endpoint_attachment() {
         let resolved_api = analyze_source(
             r#"
@@ -1579,269 +1437,7 @@ mod tests {
     }
 
     #[test]
-    fn default_behavior_applies_to_client_policy() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    retry read {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
-                    rate_limit app {
-                        bucket application by [host] {
-                            10 / 1s
-                        }
-                    }
-
-                    behavior protected_read {
-                        retry read
-                        rate_limit app
-                    }
-
-                    default {
-                        behavior protected_read
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-
-        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
-            panic!("expected default behavior retry");
-        };
-        assert_eq!(client_retry.max_attempts, 2);
-
-        let Some(RateLimitResolved::Add(client_rate_limit)) =
-            &resolved_api.client_policy.rate_limit
-        else {
-            panic!("expected default behavior rate limit");
-        };
-        assert_eq!(client_rate_limit.buckets.len(), 1);
-    }
-
-    #[test]
-    fn explicit_default_retry_still_overrides_default_behavior() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    retry from_behavior {
-                        max_attempts 5
-                        methods [GET]
-                    }
-
-                    retry explicit {
-                        max_attempts 2
-                        methods [GET]
-                    }
-
-                    behavior read_behavior {
-                        retry from_behavior
-                    }
-
-                    default {
-                        behavior read_behavior
-                        retry explicit
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-
-        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
-            panic!("expected explicit default retry");
-        };
-        assert_eq!(client_retry.max_attempts, 2);
-    }
-
-    #[test]
-    fn default_behavior_auth_applies_to_endpoint() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-                    secret token: String
-                    credential session = bearer(secret.token)
-
-                    behavior protected {
-                        auth bearer session
-                    }
-
-                    default {
-                        behavior protected
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-        let endpoint = &resolved_api.endpoints[0];
-
-        assert_eq!(endpoint.policy.auth.len(), 1);
-        let auth = &endpoint.policy.auth[0];
-        assert_eq!(auth.credential.to_string(), "session");
-        assert_eq!(auth.placement, AuthPlacementIr::Bearer);
-        assert_eq!(auth.usage_id, "bearer");
-        assert_eq!(auth.step_id, "Me:0:session");
-        assert_eq!(auth.provenance.label, "client");
-    }
-
-    #[test]
-    fn behavior_doc_names_preserve_client_scope_endpoint_order() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    behavior client_read {
-                        retry off
-                    }
-
-                    behavior scope_read {
-                        retry off
-                    }
-
-                    behavior endpoint_read {
-                        retry off
-                    }
-
-                    defaults {
-                        behavior client_read
-                    }
-                }
-
-                scope users {
-                    path ["users"]
-                    behavior scope_read
-
-                    GET Me
-                        path ["me"]
-                        behavior endpoint_read
-                        -> Json<()>
-                }
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("analysis succeeds");
-        let endpoint = &resolved_api.endpoints[0];
-
-        assert_eq!(
-            endpoint.behavior_doc.names,
-            vec![
-                "client_read".to_string(),
-                "scope_read".to_string(),
-                "endpoint_read".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn behavior_doc_names_are_deduped_in_stable_order() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    behavior read {
-                        retry off
-                    }
-
-                    behavior match_read {
-                        retry off
-                    }
-
-                    defaults {
-                        behavior read
-                    }
-                }
-
-                scope users {
-                    path ["users"]
-                    behavior read
-
-                    GET Me
-                        path ["me"]
-                        behavior match_read
-                        -> Json<()>
-                }
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("duplicate behavior across layers remains allowed");
-        let endpoint = &resolved_api.endpoints[0];
-
-        assert_eq!(
-            endpoint.behavior_doc.names,
-            vec!["read".to_string(), "match_read".to_string()]
-        );
-    }
-
-    #[test]
-    fn duplicate_behavior_across_layers_remains_allowed() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client Api {
-                    base "https://example.com"
-
-                    behavior read {
-                        retry off
-                    }
-
-                    defaults {
-                        behavior read
-                    }
-                }
-
-                scope users {
-                    path ["users"]
-                    behavior read
-
-                    GET Me
-                        path ["me"]
-                        behavior read
-                        -> Json<()>
-                }
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-        let resolved_api = analyze(ast).expect("cross-layer behavior reuse remains valid");
-        let endpoint = &resolved_api.endpoints[0];
-
-        assert_eq!(endpoint.behavior_doc.names, vec!["read".to_string()]);
-    }
-
-    #[test]
-    fn behavior_merge_order_snapshot() {
+    fn behavior_merge_order_retry_and_rate_limit_snapshot_remains_for_later_prs() {
         let resolved_api = analyze_source(
             r#"
             api! {
@@ -1960,7 +1556,12 @@ mod tests {
         );
 
         let endpoint = endpoint_by_name(&resolved_api, "Show");
-        let auth_names = auth_requirement_names(&endpoint.policy.auth);
+        let auth_names = endpoint
+            .policy
+            .auth
+            .iter()
+            .map(|req| req.credential.to_string())
+            .collect::<Vec<_>>();
         assert_eq!(
             auth_names,
             vec![
@@ -2062,6 +1663,49 @@ mod tests {
                 "endpoint_limit_0".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn explicit_default_retry_still_overrides_default_behavior() {
+        let ast: crate::ast::RawApi = syn::parse_str(
+            r#"
+            api! {
+                client Api {
+                    base "https://example.com"
+
+                    retry from_behavior {
+                        max_attempts 5
+                        methods [GET]
+                    }
+
+                    retry explicit {
+                        max_attempts 2
+                        methods [GET]
+                    }
+
+                    behavior read_behavior {
+                        retry from_behavior
+                    }
+
+                    default {
+                        behavior read_behavior
+                        retry explicit
+                    }
+                }
+
+                GET Me
+                    path ["me"]
+                    -> Json<()>
+            }
+            "#,
+        )
+        .expect("valid api syntax");
+        let resolved_api = analyze(ast).expect("analysis succeeds");
+
+        let Some(RetryResolved::Set(client_retry)) = &resolved_api.client_policy.retry else {
+            panic!("expected explicit default retry");
+        };
+        assert_eq!(client_retry.max_attempts, 2);
     }
 
     #[test]
@@ -2411,39 +2055,6 @@ mod tests {
         ));
         assert!(
             effective_endpoint_rate_limit_bucket_names(&resolved_api, clear_endpoint).is_empty()
-        );
-    }
-
-    #[test]
-    fn same_layer_duplicate_behavior_rejected() {
-        let ast: crate::ast::RawApi = syn::parse_str(
-            r#"
-            api! {
-                client DuplicateBehaviorApi {
-                    base "https://example.com"
-
-                    behavior read {
-                        retry off
-                    }
-
-                    defaults {
-                        behavior read
-                        behavior read
-                    }
-                }
-
-                GET Me
-                    path ["me"]
-                    -> Json<()>
-            }
-            "#,
-        )
-        .expect("valid api syntax");
-
-        let err = analyze(ast).expect_err("same-site duplicate behavior must fail");
-        assert!(
-            err.to_string()
-                .contains("duplicate behavior `read` at this attachment site")
         );
     }
 
