@@ -2,7 +2,9 @@ use bytes::Bytes;
 use concord_core::advanced::{
     Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
 };
+use concord_core::error::ErrorCategory;
 use concord_core::prelude::ApiClientError;
+use concord_core::transport::RequestMeta;
 use concord_macros::api;
 use http::{HeaderMap, Method, StatusCode};
 use std::collections::VecDeque;
@@ -39,6 +41,7 @@ struct RecordingBytesTransport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CapturedRequest {
+    meta: RequestMeta,
     method: Method,
     accept: Option<String>,
 }
@@ -87,6 +90,7 @@ impl Transport for RecordingBytesTransport {
             .lock()
             .expect("request lock")
             .push(CapturedRequest {
+                meta: req.meta.clone(),
                 method: req.meta.method.clone(),
                 accept,
             });
@@ -219,6 +223,10 @@ async fn generated_bytes_status_failure_is_body_free() {
         .await
         .expect_err("status failure should not decode bytes");
     assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(err.category(), ErrorCategory::HttpStatus);
+    assert_eq!(err.context().endpoint, "Download");
+    assert_eq!(err.context().method, Method::GET);
+    assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
     assert_eq!(transport.send_count(), 1);
     assert_eq!(polls.load(Ordering::SeqCst), 0);
     let rendered = format!("{err:?}");

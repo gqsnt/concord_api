@@ -3,6 +3,7 @@ use concord_core::advanced::{
     JsonSse, SseStream, Transport, TransportBody, TransportError, TransportRequest,
     TransportRequestBody, TransportResponse,
 };
+use concord_core::error::ErrorCategory;
 use concord_core::prelude::ApiClientError;
 use concord_macros::api;
 use futures_core::Stream;
@@ -369,7 +370,8 @@ async fn generated_sse_response_wrong_content_type_is_rejected_before_body_expos
         .execute_sse()
         .await
         .expect_err("wrong content type must fail");
-    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    assert!(matches!(err, ApiClientError::ResponseContract { .. }));
+    assert_eq!(err.category(), ErrorCategory::ResponseContract);
     assert_eq!(transport.send_count(), 1);
     assert!(!poll_flag.load(Ordering::SeqCst));
 }
