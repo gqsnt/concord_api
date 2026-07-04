@@ -63,6 +63,13 @@ impl fmt::Debug for CapturedTransportRequest {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct CapturedTransportRequestSnapshot {
+    pub meta: RequestMeta,
+    pub url: url::Url,
+    pub headers: HeaderMap,
+}
+
 struct EmptyDebugStream;
 
 impl futures_core::Stream for EmptyDebugStream {
@@ -2002,6 +2009,19 @@ impl GateableTransport {
     pub async fn sent_count(&self) -> usize {
         self.requests.lock().await.len()
     }
+
+    pub async fn requests(&self) -> Vec<CapturedTransportRequestSnapshot> {
+        self.requests
+            .lock()
+            .await
+            .iter()
+            .map(|request| CapturedTransportRequestSnapshot {
+                meta: request.meta.clone(),
+                url: request.url.clone(),
+                headers: request.headers.clone(),
+            })
+            .collect()
+    }
 }
 
 impl Transport for GateableTransport {
@@ -2085,6 +2105,7 @@ pub struct GateableBodyTransport {
     gate: PhaseGate,
     events: Arc<Mutex<Vec<String>>>,
     chunks: Arc<Mutex<VecDeque<VecDeque<Bytes>>>>,
+    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
     read_count: Arc<AtomicUsize>,
     drop_probe: Option<DropProbe>,
 }
@@ -2095,6 +2116,7 @@ impl GateableBodyTransport {
             gate,
             events,
             chunks: Arc::new(Mutex::new(vec![chunks.into()].into())),
+            requests: Arc::new(Mutex::new(Vec::new())),
             read_count: Arc::new(AtomicUsize::new(0)),
             drop_probe: None,
         }
@@ -2108,6 +2130,19 @@ impl GateableBodyTransport {
     pub fn read_count(&self) -> usize {
         self.read_count.load(AtomicOrdering::SeqCst)
     }
+
+    pub async fn requests(&self) -> Vec<CapturedTransportRequestSnapshot> {
+        self.requests
+            .lock()
+            .await
+            .iter()
+            .map(|request| CapturedTransportRequestSnapshot {
+                meta: request.meta.clone(),
+                url: request.url.clone(),
+                headers: request.headers.clone(),
+            })
+            .collect()
+    }
 }
 
 impl Transport for GateableBodyTransport {
@@ -2118,18 +2153,39 @@ impl Transport for GateableBodyTransport {
         let gate = self.gate.clone();
         let events = self.events.clone();
         let chunks = self.chunks.clone();
+        let requests = self.requests.clone();
         let read_count = self.read_count.clone();
         let drop_probe = self.drop_probe.clone();
         Box::pin(async move {
+            let TransportRequest {
+                meta,
+                url,
+                headers,
+                body,
+                timeout,
+                rate_limit,
+                transport_auth,
+                extensions,
+            } = req;
             events.lock().await.push("transport_send_start".to_string());
+            requests.lock().await.push(CapturedTransportRequest {
+                meta: meta.clone(),
+                url: url.clone(),
+                headers: headers.clone(),
+                body,
+                timeout,
+                rate_limit: rate_limit.clone(),
+                transport_auth: transport_auth.clone(),
+                extensions: extensions.clone(),
+            });
             let body_chunks = chunks
                 .lock()
                 .await
                 .pop_front()
                 .expect("gateable body response should be available");
             Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
+                meta,
+                url,
                 status: StatusCode::OK,
                 headers: {
                     let mut h = HeaderMap::new();
@@ -2140,7 +2196,7 @@ impl Transport for GateableBodyTransport {
                     h
                 },
                 content_length: None,
-                rate_limit: req.rate_limit,
+                rate_limit,
                 body: Box::new(GateableBody {
                     gate,
                     chunks: body_chunks,

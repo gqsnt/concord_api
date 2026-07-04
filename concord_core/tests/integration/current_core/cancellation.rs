@@ -1,14 +1,19 @@
 use super::common::{
-    GateableHooks, GateableTransport, MockOutcome, MockResponse, ObservationRuntimeHooks,
-    PhaseGate, SafeRecordingDebugSink, TestAuthVars, TestCx, TextEndpoint,
-    assert_events_do_not_contain, auth_policy, client, rate_limit_policy,
+    CapturedTransportRequestSnapshot, GateableBodyTransport, GateableHooks, GateableTransport,
+    ItemsEndpoint, MockOutcome, MockResponse, MockTransport, ObservationRuntimeHooks,
+    PaginationVariant, PhaseGate, SafeRecordingDebugSink, TestAuthVars, TestCx, TextEndpoint,
+    assert_events_do_not_contain, auth_policy, client, rate_limit_policy, retry_policy,
 };
 use crate::support::{RedactionSentinels, assert_error_chain_does_not_contain_any};
-use concord_core::advanced::AuthPlacement;
-use concord_core::advanced::{Transport, TransportErrorKind};
-use concord_core::prelude::{ApiClient, ApiClientError};
-use http::StatusCode;
+use bytes::Bytes;
+use concord_core::advanced::{
+    AuthPlacement, PostResponseHookContext, RuntimeHooks, Transport, TransportErrorKind,
+};
+use concord_core::prelude::{ApiClient, ApiClientError, PaginationTermination};
+use http::{HeaderMap, Method, StatusCode};
 use std::error::Error;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering as AtomicOrdering;
 use tokio::sync::Mutex;
@@ -21,6 +26,63 @@ const REDACTION_SENTINELS_PR79: RedactionSentinels = RedactionSentinels::new(
 
 fn body_sentinels() -> [&'static str; 2] {
     REDACTION_SENTINELS_PR79.auth_body()
+}
+
+const CANCEL_SENTINELS: RedactionSentinels = RedactionSentinels::new(
+    "CANCEL_AUTH_SENTINEL",
+    "CANCEL_BODY_SENTINEL",
+    "CANCEL_RESPONSE_SENTINEL",
+);
+
+trait HeaderLookup {
+    fn headers(&self) -> &HeaderMap;
+}
+
+impl HeaderLookup for CapturedTransportRequestSnapshot {
+    fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+}
+
+impl HeaderLookup for super::common::CapturedTransportRequest {
+    fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
+}
+
+fn assert_bearer_auth_header_contains<R: HeaderLookup>(request: &R, sentinel: &str) {
+    let header = request
+        .headers()
+        .get(http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_else(|| panic!("authorization header missing or invalid"));
+    assert!(
+        header.contains(sentinel),
+        "authorization header did not contain the expected sentinel"
+    );
+}
+
+#[derive(Clone)]
+struct PostResponseGateHooks {
+    gate: PhaseGate,
+}
+
+impl PostResponseGateHooks {
+    fn new(gate: PhaseGate) -> Self {
+        Self { gate }
+    }
+}
+
+impl RuntimeHooks for PostResponseGateHooks {
+    fn post_response<'a>(
+        &'a self,
+        _ctx: PostResponseHookContext<'a>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let gate = self.gate.clone();
+        Box::pin(async move {
+            gate.enter("hook_post_response").await;
+        })
+    }
 }
 
 fn transport_client<T: Transport + Clone>(transport: T) -> ApiClient<TestCx, T> {
@@ -167,6 +229,246 @@ async fn cancel_during_pre_send_hook_does_not_send_transport() {
     assert_eq!(second.value(), "ok-1");
     assert_eq!(transport.sent_count().await, 1);
     assert_events_do_not_contain(&events, &body_sentinels()).await;
+}
+
+#[tokio::test]
+async fn cancel_while_transport_is_pending_preserves_request_context_and_redacts_auth_sentinel() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let gate = PhaseGate::new();
+    let transport_probe = super::common::DropProbe::new("transport_send", events.clone());
+    let transport = GateableTransport::new(
+        gate.clone(),
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    )
+    .with_drop_probe(transport_probe.clone());
+    let client = transport_client_with_auth(
+        TestAuthVars {
+            token: Some(CANCEL_SENTINELS.auth.to_string()),
+            identity: "transport-cancel",
+        },
+        transport.clone(),
+    );
+    let endpoint = TextEndpoint {
+        policy: auth_policy(AuthPlacement::Bearer),
+        ..Default::default()
+    };
+
+    gate.block("transport_send").await;
+    let task = tokio::spawn({
+        let client = client.clone();
+        async move {
+            client
+                .request(endpoint)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
+    });
+
+    gate.wait_for("transport_send", 1).await;
+    task.abort();
+    let join = task.await;
+    assert!(join.is_err());
+    let join_err = join.expect_err("task should report cancellation");
+    assert!(join_err.is_cancelled());
+    transport_probe.wait_for(1).await;
+    gate.release_one("transport_send").await;
+
+    let requests = transport.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].meta.endpoint, "Text");
+    assert_eq!(requests[0].meta.method, Method::GET);
+    assert_eq!(requests[0].meta.attempt, 0);
+    assert_eq!(requests[0].meta.page_index, 0);
+    assert_eq!(requests[0].url.path(), "/text");
+    assert_bearer_auth_header_contains(&requests[0], CANCEL_SENTINELS.auth);
+    assert_error_chain_does_not_contain_any(&join_err, &[CANCEL_SENTINELS.auth]);
+}
+
+#[tokio::test]
+async fn cancel_while_response_body_is_pending_drops_body_stream_and_redacts_sentinels() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let gate = PhaseGate::new();
+    let body_probe = super::common::DropProbe::new("body_chunk", events.clone());
+    let transport = GateableBodyTransport::new(
+        gate.clone(),
+        events.clone(),
+        vec![Bytes::from_static(CANCEL_SENTINELS.body.as_bytes())],
+    )
+    .with_drop_probe(body_probe.clone());
+    let client = transport_client_with_auth(
+        TestAuthVars {
+            token: Some(CANCEL_SENTINELS.auth.to_string()),
+            identity: "body-cancel",
+        },
+        transport.clone(),
+    );
+    let endpoint = TextEndpoint {
+        policy: auth_policy(AuthPlacement::Bearer),
+        ..Default::default()
+    };
+
+    gate.block("body_chunk").await;
+    let task = tokio::spawn({
+        let client = client.clone();
+        async move {
+            client
+                .request(endpoint)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
+    });
+
+    gate.wait_for("body_chunk", 1).await;
+    task.abort();
+    let join = task.await;
+    assert!(join.is_err());
+    let join_err = join.expect_err("task should report cancellation");
+    assert!(join_err.is_cancelled());
+    body_probe.wait_for(1).await;
+    gate.release_one("body_chunk").await;
+
+    let requests = transport.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].meta.endpoint, "Text");
+    assert_eq!(requests[0].meta.method, Method::GET);
+    assert_eq!(requests[0].meta.attempt, 0);
+    assert_eq!(requests[0].meta.page_index, 0);
+    assert_eq!(requests[0].url.path(), "/text");
+    assert_bearer_auth_header_contains(&requests[0], CANCEL_SENTINELS.auth);
+    assert_eq!(transport.read_count(), 0);
+    assert_error_chain_does_not_contain_any(
+        &join_err,
+        &[CANCEL_SENTINELS.auth, CANCEL_SENTINELS.body],
+    );
+}
+
+#[tokio::test]
+async fn cancel_before_retry_progression_stops_the_second_attempt() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let gate = PhaseGate::new();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, CANCEL_SENTINELS.response),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = transport_client_with_auth(
+        TestAuthVars {
+            token: Some(CANCEL_SENTINELS.auth.to_string()),
+            identity: "retry-cancel",
+        },
+        transport,
+    );
+    client.set_runtime_hooks(Arc::new(PostResponseGateHooks::new(gate.clone())));
+
+    let mut policy = rate_limit_policy();
+    policy.auth = auth_policy(AuthPlacement::Bearer).auth;
+    policy.retry = retry_policy(2).retry;
+
+    gate.block("hook_post_response").await;
+    let task = tokio::spawn({
+        let client = client.clone();
+        async move {
+            client
+                .request(TextEndpoint {
+                    policy,
+                    ..Default::default()
+                })
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
+    });
+
+    gate.wait_for("hook_post_response", 1).await;
+    task.abort();
+    let join = task.await;
+    assert!(join.is_err());
+    let join_err = join.expect_err("task should report cancellation");
+    assert!(join_err.is_cancelled());
+    gate.release_one("hook_post_response").await;
+
+    let requests = sent_transport.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].meta.endpoint, "Text");
+    assert_eq!(requests[0].meta.method, Method::GET);
+    assert_eq!(requests[0].meta.attempt, 0);
+    assert_eq!(requests[0].meta.page_index, 0);
+    assert_eq!(requests[0].url.path(), "/text");
+    assert_bearer_auth_header_contains(&requests[0], CANCEL_SENTINELS.auth);
+    assert_error_chain_does_not_contain_any(
+        &join_err,
+        &[CANCEL_SENTINELS.auth, CANCEL_SENTINELS.response],
+    );
+}
+
+#[tokio::test]
+async fn cancel_during_pagination_stops_later_page_requests() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let gate = PhaseGate::new();
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, CANCEL_SENTINELS.response),
+            MockResponse::text(StatusCode::OK, "c,d"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = transport_client_with_auth(
+        TestAuthVars {
+            token: Some(CANCEL_SENTINELS.auth.to_string()),
+            identity: "pagination-cancel",
+        },
+        transport,
+    );
+    client.set_runtime_hooks(Arc::new(PostResponseGateHooks::new(gate.clone())));
+
+    let mut policy = rate_limit_policy();
+    policy.auth = auth_policy(AuthPlacement::Bearer).auth;
+
+    gate.block("hook_post_response").await;
+    let task = tokio::spawn({
+        let client = client.clone();
+        async move {
+            client
+                .request(ItemsEndpoint {
+                    policy,
+                    start: 0,
+                    count: 2,
+                    pagination: PaginationVariant::OffsetLimit {
+                        offset: 0,
+                        limit: 2,
+                    },
+                    ..Default::default()
+                })
+                .paginate(PaginationTermination::hard_page_cap(100))
+                .collect()
+                .await
+        }
+    });
+
+    gate.wait_for("hook_post_response", 1).await;
+    task.abort();
+    let join = task.await;
+    assert!(join.is_err());
+    let join_err = join.expect_err("task should report cancellation");
+    assert!(join_err.is_cancelled());
+    gate.release_one("hook_post_response").await;
+
+    let requests = sent_transport.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].meta.endpoint, "Items");
+    assert_eq!(requests[0].meta.method, Method::GET);
+    assert_eq!(requests[0].meta.page_index, 0);
+    assert_eq!(requests[0].meta.attempt, 0);
+    assert_eq!(requests[0].url.path(), "/items");
+    assert_bearer_auth_header_contains(&requests[0], CANCEL_SENTINELS.auth);
+    assert_error_chain_does_not_contain_any(
+        &join_err,
+        &[CANCEL_SENTINELS.auth, CANCEL_SENTINELS.response],
+    );
 }
 
 #[tokio::test]
