@@ -1,9 +1,0 @@
-pagination.generated
-pagination-types:
-- OffsetLimitPagination -> PaginateBinding + PaginatedEndpoint::Pagination + PaginationMarker
-- CursorPagination<String> -> PaginateBinding + PaginatedEndpoint::Pagination + PaginationMarker
-- PagedPagination -> PaginateBinding + PaginatedEndpoint::Pagination + PaginationMarker
-helpers:
-- paginate
-- collect
-

@@ -1,5 +1,0 @@
-ResolvedApi
-client: SmallApi
-base: https://example.com
-endpoints:
-  - ping

@@ -1,4 +1,0 @@
-riot_fixture_summary:
-client: RiotClient
-features: platform_routing, regional_routing, auth, app_rate_limit, method_rate_limits, live_game_rate_limit, offset_pagination
-facade_paths: platform(...).summoner_v4().by_puuid, regional(...).match_v5_matches().ids_by_puuid().paginate, platform(...).spectator_v5().active_game_by_puuid

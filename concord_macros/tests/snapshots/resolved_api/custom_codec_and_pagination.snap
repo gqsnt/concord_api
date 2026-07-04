@@ -1,9 +1,0 @@
-custom extensibility resolved API snapshot
-
-- request body marker: Compact<CreateUser>
-- response marker: Compact<User>
-- response value: User
-- custom pagination controller: HeaderCursorPagination
-- custom pagination config: no assignment block
-- page value: HeaderCursorPage
-- codegen source boundary: resolved semantic model only

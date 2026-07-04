@@ -1,7 +1,0 @@
-route.generated
-plan-shape:
-- ClientContext::base_route(vars, auth)
-- resolved prefix/path/endpoint route fragments emitted directly
-- dynamic segments validate slash/backslash before push_segment_encoded
-- host.validate(ctx)
-- ResolvedRoute { scheme, host, path }

@@ -1,3 +1,0 @@
-rustdoc.generated
-client: Generated API client.
-endpoint: GET /ping

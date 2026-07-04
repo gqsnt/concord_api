@@ -30,6 +30,5 @@ The core runtime is syntax-neutral. It executes request plans with fixed orderin
 
 ## Test Artifacts
 
-Stage and generated-output snapshots live under `concord_macros/tests/snapshots/`.
-
 Runtime behavior is covered by focused `concord_core` tests and end-to-end generated-client tests in `concord_examples/tests/`.
+Parser, sema, and codegen behavior are covered by structural assertions in the owner-layer test modules rather than broad snapshot files.
