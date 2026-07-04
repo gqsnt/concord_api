@@ -1,7 +1,0 @@
-error[E0609]: no field `stop` on type `concord_core::internal::CursorPagination`
-  --> tests/trybuild/fail/pagination/removed_stop_field.rs:16:13
-   |
-16 |             stop = true
-   |             ^^^^ unknown field
-   |
-   = note: available fields are: `cursor`, `per_page`, `send_cursor_on_first`, `stop_when_cursor_missing`

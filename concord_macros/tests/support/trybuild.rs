@@ -8,6 +8,24 @@ pub fn run_trybuild(run: impl FnOnce(&trybuild::TestCases)) {
     run(&t);
 }
 
+#[allow(dead_code)]
+pub fn run_trybuild_pass(paths: &[&str]) {
+    run_trybuild(|t| {
+        for path in paths {
+            t.pass(path);
+        }
+    });
+}
+
+#[allow(dead_code)]
+pub fn run_trybuild_fail(paths: &[&str]) {
+    run_trybuild(|t| {
+        for path in paths {
+            t.compile_fail(path);
+        }
+    });
+}
+
 fn set_trybuild_target() {
     let target_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
