@@ -1,8 +1,8 @@
 use crate::ast::{RawApi, RawItem, RawScope};
 use crate::model::norm::{NormApiTree, NormEndpoint, NormNode, NormScope};
 use crate::sema::{
-    AuthCredentialIr, AuthRequirementIr, PolicyBlocksResolved, PolicyOp, RateLimitPlanResolved,
-    RateLimitResolved, ResolvedApi, ResolvedEndpoint, ResolvedPolicySpec,
+    AuthCredentialIr, AuthRequirementIr, PaginateResolved, PolicyBlocksResolved, PolicyOp,
+    RateLimitPlanResolved, RateLimitResolved, ResolvedApi, ResolvedEndpoint, ResolvedPolicySpec,
 };
 use syn::Type;
 
@@ -56,6 +56,10 @@ pub(crate) fn single_endpoint(api: &ResolvedApi) -> &ResolvedEndpoint {
         [endpoint] => endpoint,
         other => panic!("expected a single endpoint, got {other:?}"),
     }
+}
+
+pub(crate) fn endpoint_pagination(endpoint: &ResolvedEndpoint) -> &PaginateResolved {
+    endpoint.paginate.as_ref().expect("pagination resolved")
 }
 
 pub(crate) fn single_child_scope(scope: &NormScope) -> &NormScope {
