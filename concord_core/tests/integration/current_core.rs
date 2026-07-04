@@ -28,6 +28,8 @@ mod pending_request_streaming;
 mod public_api;
 #[path = "current_core/rate_limit.rs"]
 mod rate_limit;
+#[path = "current_core/rate_limit_runtime.rs"]
+mod rate_limit_runtime;
 #[path = "current_core/records.rs"]
 mod records;
 #[path = "current_core/release_gate.rs"]
