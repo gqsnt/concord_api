@@ -1,14 +1,17 @@
 use super::common::*;
+use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthAppliedCredential, AuthDecision, AuthError, AuthFuture, AuthPlacement, AuthRequirement,
     AuthStepPolicy, CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason,
-    CredentialSlot, PreparedAuthCredential, RateLimitBucketUse, RateLimitContext, RateLimitKeyPart,
-    RateLimitPermit, RateLimitPlan, RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
-    RequestMeta, Transport, TransportBody, TransportError, TransportErrorKind, TransportRequest,
-    TransportResponse, apply_secret_credential,
+    CredentialSlot, OctetStream, PreparedAuthCredential, RateLimitBucketUse, RateLimitContext,
+    RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter, RawStreamResponse, RequestMeta, ResponseEntity,
+    StreamBody, Transport, TransportBody, TransportError, TransportErrorKind, TransportRequest,
+    TransportRequestBody, TransportResponse, apply_secret_credential,
 };
-use concord_core::internal::ResolvedPolicy;
+use concord_core::error::ErrorContext;
+use concord_core::internal::{BodyPlan, Format, Replayability, RequestArgs, ResolvedPolicy};
 use concord_core::prelude::{
     AccessToken, ApiClient, ApiClientError, ClientContext, CursorPagination, Endpoint,
     PaginationTermination, ReusableEndpoint,
@@ -25,6 +28,64 @@ const RAW_AUTH_SENTINEL_PR80_A: &str = "RAW_AUTH_SENTINEL_PR80_A";
 const RAW_AUTH_SENTINEL_PR80_B: &str = "RAW_AUTH_SENTINEL_PR80_B";
 const RESPONSE_BODY_SENTINEL_PR80_A: &str = "RESPONSE_BODY_SENTINEL_PR80_A";
 const RESPONSE_BODY_SENTINEL_PR80_B: &str = "RESPONSE_BODY_SENTINEL_PR80_B";
+
+fn assert_bearer_auth_header_contains(request: &CapturedTransportRequest, sentinel: &str) {
+    let header = request
+        .headers
+        .get(http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok());
+    assert!(
+        header.is_some_and(|value| value.contains(sentinel)),
+        "authorization header did not contain the expected sentinel"
+    );
+}
+
+fn assert_bearer_auth_header_not_contains(request: &CapturedTransportRequest, sentinel: &str) {
+    let header = request
+        .headers
+        .get(http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    assert!(
+        !header.contains(sentinel),
+        "authorization header unexpectedly contained a sentinel"
+    );
+}
+
+fn assert_bytes_body(request: &CapturedTransportRequest, expected: &[u8]) {
+    match &request.body {
+        TransportRequestBody::Bytes(bytes) => {
+            assert!(
+                bytes.as_ref() == expected,
+                "request body bytes did not match the expected value"
+            );
+        }
+        _ => panic!("expected bytes request body"),
+    }
+}
+
+fn assert_stream_body(request: &CapturedTransportRequest) {
+    assert!(
+        matches!(request.body, TransportRequestBody::Stream(_)),
+        "expected stream request body"
+    );
+}
+
+fn request_with_path<'a>(
+    requests: &'a [CapturedTransportRequest],
+    path: &str,
+) -> &'a CapturedTransportRequest {
+    requests
+        .iter()
+        .find(|request| request.url.path() == path)
+        .expect("expected request with the requested path")
+}
+
+fn query_value(url: &url::Url, name: &str) -> Option<String> {
+    url.query_pairs()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.into_owned())
+}
 
 #[tokio::test]
 async fn identical_concurrent_get_requests_are_not_coalesced() -> Result<(), ApiClientError> {
@@ -179,6 +240,103 @@ async fn retry_still_applies_per_non_coalesced_request() -> Result<(), ApiClient
     values.sort();
     assert_eq!(values, vec!["first".to_string(), "second".to_string()]);
     assert_eq!(sent.sent_count().await, 4);
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_retry_attempt_indexes_remain_request_local() -> Result<(), ApiClientError> {
+    let retry_events = Arc::new(Mutex::new(Vec::new()));
+    let sibling_events = Arc::new(Mutex::new(Vec::new()));
+    let retry_transport = GateTransport::new(
+        retry_events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-a"),
+            MockResponse::text(StatusCode::OK, "retry-b"),
+        ],
+    );
+    let sibling_transport = GateTransport::new(
+        sibling_events,
+        vec![MockResponse::text(StatusCode::OK, "sibling")],
+    );
+    let retry_sent = retry_transport.clone();
+    let sibling_sent = sibling_transport.clone();
+    let retry_client = Arc::new(ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        retry_transport,
+    ));
+    let sibling_client = Arc::new(ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        sibling_transport,
+    ));
+
+    let retry = TextEndpoint {
+        name: "Retry",
+        path: "/retry",
+        policy: retry_policy(2),
+        ..Default::default()
+    };
+    let sibling = TextEndpoint {
+        name: "Sibling",
+        path: "/sibling",
+        ..Default::default()
+    };
+
+    let retry_task = tokio::spawn({
+        let retry = retry.clone();
+        async move {
+            retry_client
+                .request(retry)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+                .map(|response| response.into_value())
+        }
+    });
+    let sibling_task = tokio::spawn({
+        async move {
+            sibling_client
+                .request(sibling)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+                .map(|response| response.into_value())
+        }
+    });
+
+    retry_sent.wait_for_sends(1).await;
+    sibling_sent.wait_for_sends(1).await;
+    retry_sent.release_all();
+    sibling_sent.release_all();
+
+    let retry_value = retry_task
+        .await
+        .expect("retry task should join")
+        .expect("retry request should succeed");
+    let sibling_value = sibling_task
+        .await
+        .expect("sibling task should join")
+        .expect("sibling request should succeed");
+    assert_eq!(retry_value, "retry-b");
+    assert_eq!(sibling_value, "sibling");
+
+    let mut retry_requests = retry_sent.requests().await;
+    assert_eq!(retry_requests.len(), 2);
+    retry_requests.sort_by_key(|request| request.meta.attempt);
+    assert_eq!(retry_requests[0].meta.endpoint, "Retry");
+    assert_eq!(retry_requests[0].meta.method, http::Method::GET);
+    assert_eq!(retry_requests[0].meta.attempt, 0);
+    assert_eq!(retry_requests[0].meta.page_index, 0);
+    assert_eq!(retry_requests[1].meta.endpoint, "Retry");
+    assert_eq!(retry_requests[1].meta.method, http::Method::GET);
+    assert_eq!(retry_requests[1].meta.attempt, 1);
+    assert_eq!(retry_requests[1].meta.page_index, 0);
+
+    let sibling_requests = sibling_sent.requests().await;
+    assert_eq!(sibling_requests.len(), 1);
+    assert_eq!(sibling_requests[0].meta.endpoint, "Sibling");
+    assert_eq!(sibling_requests[0].meta.method, http::Method::GET);
+    assert_eq!(sibling_requests[0].meta.attempt, 0);
+    assert_eq!(sibling_requests[0].meta.page_index, 0);
     Ok(())
 }
 
@@ -550,6 +708,129 @@ async fn concurrent_rate_limit_keys_are_isolated() -> Result<(), ApiClientError>
 }
 
 #[tokio::test]
+async fn concurrent_rate_limit_acquisitions_remain_request_local() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let gate = PhaseGate::new();
+    let limiter_policy_a = rate_limit_policy_with_bucket("bucket-a", "route", "a");
+    let limiter_policy_b = rate_limit_policy_with_bucket("bucket-b", "route", "b");
+    let blocked_label = rate_limit_plan_label(&limiter_policy_a.rate_limit);
+    let limiter = Arc::new(KeyBlockingRateLimiter::new(
+        events.clone(),
+        gate.clone(),
+        blocked_label,
+        "rate_acquire_a",
+    ));
+    let transport = RoutedTransport::new(gate.clone(), events.clone());
+    transport
+        .insert(
+            "/a",
+            MockOutcome::Response(MockResponse::text(StatusCode::OK, "a")),
+        )
+        .await;
+    transport
+        .insert(
+            "/b",
+            MockOutcome::Response(MockResponse::text(StatusCode::OK, "b")),
+        )
+        .await;
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.rate_limiter(limiter.clone());
+    });
+    let a = TextEndpoint {
+        name: "RateA",
+        path: "/a",
+        policy: limiter_policy_a,
+        ..Default::default()
+    };
+    let b = TextEndpoint {
+        name: "RateB",
+        path: "/b",
+        policy: limiter_policy_b,
+        ..Default::default()
+    };
+
+    gate.block("rate_acquire_a").await;
+    let task_a = tokio::spawn({
+        let client = client.clone();
+        let a = a.clone();
+        async move {
+            client
+                .request(a)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+                .map(|response| response.into_value())
+        }
+    });
+    let task_b = tokio::spawn({
+        let client = client.clone();
+        async move {
+            client
+                .request(b)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+                .map(|response| response.into_value())
+        }
+    });
+
+    gate.wait_for("rate_acquire_a", 1).await;
+    assert!(!task_a.is_finished());
+    let b_value = task_b
+        .await
+        .expect("task B should join")
+        .expect("task B should complete independently");
+    assert_eq!(b_value, "b");
+    assert_eq!(limiter.acquire_started.load(AtomicOrdering::SeqCst), 2);
+    let events = limiter.events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.contains("rate_acquire:RateA:GET:https://example.com/a:"))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.contains("rate_acquire:RateB:GET:https://example.com/b:"))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.contains("route=Static(\"a\")"))
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event.contains("route=Static(\"b\")"))
+    );
+    assert!(!task_a.is_finished());
+
+    gate.release_all("rate_acquire_a").await;
+    let a_value = task_a
+        .await
+        .expect("task A should join")
+        .expect("task A should complete after release");
+    assert_eq!(a_value, "a");
+    assert_eq!(transport.sent_count().await, 2);
+    assert_eq!(limiter.response_observed.load(AtomicOrdering::SeqCst), 2);
+    assert_eq!(limiter.acquire_started.load(AtomicOrdering::SeqCst), 2);
+
+    let requests = transport.requests().await;
+    assert_eq!(requests.len(), 2);
+    let a_request = request_with_path(&requests, "/a");
+    assert_eq!(a_request.meta.endpoint, "RateA");
+    assert_eq!(a_request.meta.method, http::Method::GET);
+    assert_eq!(a_request.meta.attempt, 0);
+    assert_eq!(a_request.meta.page_index, 0);
+    let b_request = request_with_path(&requests, "/b");
+    assert_eq!(b_request.meta.endpoint, "RateB");
+    assert_eq!(b_request.meta.method, http::Method::GET);
+    assert_eq!(b_request.meta.attempt, 0);
+    assert_eq!(b_request.meta.page_index, 0);
+    Ok(())
+}
+
+#[tokio::test]
 async fn concurrent_transport_error_and_success_are_isolated() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let gate = PhaseGate::new();
@@ -739,12 +1020,44 @@ async fn concurrent_pagination_runs_keep_independent_state() -> Result<(), ApiCl
         .filter(|request| request.url.path() == "/page-only-items")
         .collect();
     assert_eq!(page_requests.len(), 2);
+    assert_eq!(
+        query_value(&page_requests[0].url, "page"),
+        Some("1".to_string())
+    );
+    assert_eq!(
+        query_value(&page_requests[0].url, "per_page"),
+        Some("2".to_string())
+    );
+    assert_eq!(
+        query_value(&page_requests[1].url, "page"),
+        Some("2".to_string())
+    );
+    assert_eq!(
+        query_value(&page_requests[1].url, "per_page"),
+        Some("2".to_string())
+    );
 
     let cursor_requests: Vec<_> = cursor_requests
         .iter()
         .filter(|request| request.url.path() == "/cursor-items")
         .collect();
     assert_eq!(cursor_requests.len(), 2);
+    assert_eq!(
+        query_value(&cursor_requests[0].url, "cursor"),
+        Some("start".to_string())
+    );
+    assert_eq!(
+        query_value(&cursor_requests[0].url, "per_page"),
+        Some("2".to_string())
+    );
+    assert_eq!(
+        query_value(&cursor_requests[1].url, "cursor"),
+        Some("next-b".to_string())
+    );
+    assert_eq!(
+        query_value(&cursor_requests[1].url, "per_page"),
+        Some("2".to_string())
+    );
     Ok(())
 }
 
@@ -881,6 +1194,452 @@ async fn concurrent_observer_surfaces_are_body_auth_free() -> Result<(), ApiClie
                 .any(|event| event.contains(RESPONSE_BODY_SENTINEL_PR80_B))
     );
     Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_auth_material_does_not_cross_contaminate() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = GateTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "left"),
+            MockResponse::text(StatusCode::OK, "right"),
+        ],
+    );
+    let sent = transport.clone();
+    let client_a = Arc::new(ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars {
+            token: Some(RAW_AUTH_SENTINEL_PR80_A.to_string()),
+            identity: "left",
+        },
+        transport.clone(),
+    ));
+    let client_b = Arc::new(ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars {
+            token: Some(RAW_AUTH_SENTINEL_PR80_B.to_string()),
+            identity: "right",
+        },
+        transport,
+    ));
+    let left = TextEndpoint {
+        name: "LeftAuth",
+        path: "/left-auth",
+        policy: auth_policy(AuthPlacement::Bearer),
+        ..Default::default()
+    };
+    let right = TextEndpoint {
+        name: "RightAuth",
+        path: "/right-auth",
+        policy: auth_policy(AuthPlacement::Bearer),
+        ..Default::default()
+    };
+
+    let left_task = tokio::spawn({
+        let client = client_a.clone();
+        let left = left.clone();
+        async move {
+            client
+                .request(left)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
+    });
+    let right_task = tokio::spawn({
+        let client = client_b.clone();
+        let right = right.clone();
+        async move {
+            client
+                .request(right)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
+    });
+
+    sent.wait_for_sends(2).await;
+    sent.release_all();
+
+    let left_value = left_task
+        .await
+        .expect("left task should join")
+        .expect("left request should succeed");
+    let right_value = right_task
+        .await
+        .expect("right task should join")
+        .expect("right request should succeed");
+    let mut values = vec![left_value.value().clone(), right_value.value().clone()];
+    values.sort();
+    assert_eq!(values, vec!["left".to_string(), "right".to_string()]);
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let left_request = request_with_path(&requests, "/left-auth");
+    assert_eq!(left_request.meta.endpoint, "LeftAuth");
+    assert_eq!(left_request.meta.method, http::Method::GET);
+    assert_bearer_auth_header_contains(left_request, RAW_AUTH_SENTINEL_PR80_A);
+    assert_bearer_auth_header_not_contains(left_request, RAW_AUTH_SENTINEL_PR80_B);
+
+    let right_request = request_with_path(&requests, "/right-auth");
+    assert_eq!(right_request.meta.endpoint, "RightAuth");
+    assert_eq!(right_request.meta.method, http::Method::GET);
+    assert_bearer_auth_header_contains(right_request, RAW_AUTH_SENTINEL_PR80_B);
+    assert_bearer_auth_header_not_contains(right_request, RAW_AUTH_SENTINEL_PR80_A);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_request_bodies_remain_isolated() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "bytes-ok"),
+            MockResponse::text(StatusCode::OK, "stream-ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = Arc::new(ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        transport,
+    ));
+
+    let bytes_endpoint = BodyEndpoint {
+        name: "BytesBody",
+        path: "/bytes-body",
+        body: BodyKind::Bytes(Bytes::from_static(b"bytes-sentinel")),
+    };
+    let stream_endpoint = BodyEndpoint {
+        name: "StreamBody",
+        path: "/stream-body",
+        body: BodyKind::Stream(Bytes::from_static(b"stream-sentinel")),
+    };
+
+    let bytes_task = tokio::spawn({
+        let client = client.clone();
+        let endpoint = bytes_endpoint.clone();
+        async move {
+            client
+                .request(endpoint)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
+    });
+    let stream_task = tokio::spawn({
+        let client = client.clone();
+        let endpoint = stream_endpoint.clone();
+        async move {
+            client
+                .request(endpoint)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
+    });
+
+    let bytes_value = bytes_task
+        .await
+        .expect("bytes task should join")
+        .expect("bytes request should succeed");
+    let stream_value = stream_task
+        .await
+        .expect("stream task should join")
+        .expect("stream request should succeed");
+    let mut values = vec![bytes_value.value().clone(), stream_value.value().clone()];
+    values.sort();
+    assert_eq!(
+        values,
+        vec!["bytes-ok".to_string(), "stream-ok".to_string()]
+    );
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let bytes_request = request_with_path(&requests, "/bytes-body");
+    assert_eq!(bytes_request.meta.endpoint, "BytesBody");
+    assert_eq!(bytes_request.meta.method, http::Method::POST);
+    assert_bytes_body(bytes_request, b"bytes-sentinel");
+
+    let stream_request = request_with_path(&requests, "/stream-body");
+    assert_eq!(stream_request.meta.endpoint, "StreamBody");
+    assert_eq!(stream_request.meta.method, http::Method::POST);
+    assert_stream_body(stream_request);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_cancellation_does_not_affect_sibling_request() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = GateTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::OK, "ok"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let client_a = Arc::new(ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars {
+            token: Some(RAW_AUTH_SENTINEL_PR80_A.to_string()),
+            identity: "cancelled",
+        },
+        transport.clone(),
+    ));
+    let client_b = Arc::new(ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars {
+            token: Some(RAW_AUTH_SENTINEL_PR80_B.to_string()),
+            identity: "sibling",
+        },
+        transport,
+    ));
+    let cancelled = TextEndpoint {
+        name: "Cancelled",
+        path: "/cancelled",
+        policy: auth_policy(AuthPlacement::Bearer),
+        ..Default::default()
+    };
+    let sibling = TextEndpoint {
+        name: "Sibling",
+        path: "/sibling",
+        policy: auth_policy(AuthPlacement::Bearer),
+        ..Default::default()
+    };
+
+    let cancelled_task = tokio::spawn({
+        let client = client_a.clone();
+        let cancelled = cancelled.clone();
+        async move {
+            client
+                .request(cancelled)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
+    });
+    let sibling_task = tokio::spawn({
+        let client = client_b.clone();
+        let sibling = sibling.clone();
+        async move {
+            client
+                .request(sibling)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+        }
+    });
+
+    sent.wait_for_sends(2).await;
+    cancelled_task.abort();
+    sent.release_all();
+
+    let cancelled_join = cancelled_task
+        .await
+        .expect_err("cancelled task should be aborted");
+    assert!(cancelled_join.is_cancelled());
+    assert_error_chain_does_not_contain_any(
+        &cancelled_join,
+        &[RAW_AUTH_SENTINEL_PR80_A, RAW_AUTH_SENTINEL_PR80_B],
+    );
+
+    let sibling_value = sibling_task
+        .await
+        .expect("sibling task should join")
+        .expect("sibling request should succeed");
+    assert_eq!(sibling_value.value(), "ok");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let cancelled_request = request_with_path(&requests, "/cancelled");
+    assert_eq!(cancelled_request.meta.endpoint, "Cancelled");
+    assert_eq!(cancelled_request.meta.method, http::Method::GET);
+    assert_bearer_auth_header_contains(cancelled_request, RAW_AUTH_SENTINEL_PR80_A);
+    assert_bearer_auth_header_not_contains(cancelled_request, RAW_AUTH_SENTINEL_PR80_B);
+
+    let sibling_request = request_with_path(&requests, "/sibling");
+    assert_eq!(sibling_request.meta.endpoint, "Sibling");
+    assert_eq!(sibling_request.meta.method, http::Method::GET);
+    assert_bearer_auth_header_contains(sibling_request, RAW_AUTH_SENTINEL_PR80_B);
+    assert_bearer_auth_header_not_contains(sibling_request, RAW_AUTH_SENTINEL_PR80_A);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_stream_response_bodies_do_not_share_chunks_or_counters()
+-> Result<(), ApiClientError> {
+    let left_reads = Arc::new(AtomicUsize::new(0));
+    let right_reads = Arc::new(AtomicUsize::new(0));
+    let left_transport = GateTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![octet_stream_response(
+            vec![Bytes::from_static(b"left-"), Bytes::from_static(b"one")],
+            left_reads.clone(),
+        )],
+    );
+    let right_transport = GateTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![octet_stream_response(
+            vec![Bytes::from_static(b"right-"), Bytes::from_static(b"two")],
+            right_reads.clone(),
+        )],
+    );
+    let left_sent = left_transport.clone();
+    let right_sent = right_transport.clone();
+    let left_client = Arc::new(ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        left_transport,
+    ));
+    let right_client = Arc::new(ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        right_transport,
+    ));
+
+    let left_plan = stream_response_plan("LeftStream", "/left-stream")?;
+    let right_plan = stream_response_plan("RightStream", "/right-stream")?;
+
+    let left_task = tokio::spawn({
+        let client = left_client.clone();
+        async move {
+            let mut response =
+                RawStreamResponse::<OctetStream>::execute(&client, left_plan).await?;
+            collect_stream_response(&mut response).await
+        }
+    });
+    let right_task = tokio::spawn({
+        let client = right_client.clone();
+        async move {
+            let mut response =
+                RawStreamResponse::<OctetStream>::execute(&client, right_plan).await?;
+            collect_stream_response(&mut response).await
+        }
+    });
+
+    left_sent.wait_for_sends(1).await;
+    right_sent.wait_for_sends(1).await;
+    left_sent.release_all();
+    right_sent.release_all();
+
+    let left_value = left_task
+        .await
+        .expect("left stream task should join")
+        .expect("left stream request should succeed");
+    let right_value = right_task
+        .await
+        .expect("right stream task should join")
+        .expect("right stream request should succeed");
+    assert_eq!(left_value, "left-one");
+    assert_eq!(right_value, "right-two");
+    assert_eq!(left_reads.load(AtomicOrdering::SeqCst), 2);
+    assert_eq!(right_reads.load(AtomicOrdering::SeqCst), 2);
+    assert_eq!(left_sent.sent_count().await, 1);
+    assert_eq!(right_sent.sent_count().await, 1);
+
+    Ok(())
+}
+
+#[derive(Clone)]
+struct BodyEndpoint {
+    name: &'static str,
+    path: &'static str,
+    body: BodyKind,
+}
+
+#[derive(Clone)]
+enum BodyKind {
+    Bytes(Bytes),
+    Stream(Bytes),
+}
+
+impl Endpoint<TestCx> for BodyEndpoint {
+    type Response = String;
+
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<TestCx> for BodyEndpoint {
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        let mut plan = request_plan(
+            self.name,
+            http::Method::POST,
+            self.path,
+            ResolvedPolicy::default(),
+            None,
+        );
+        plan.args = match &self.body {
+            BodyKind::Bytes(bytes) => {
+                plan.endpoint.body = BodyPlan::Encoded {
+                    content_type: Some(HeaderValue::from_static("application/json")),
+                    format: Format::Text,
+                };
+                plan.replayability = Replayability::Replayable;
+                RequestArgs::with_body_bytes(bytes.clone())
+            }
+            BodyKind::Stream(bytes) => {
+                plan.endpoint.body = BodyPlan::RawStream {
+                    content_type: HeaderValue::from_static("application/octet-stream"),
+                };
+                plan.replayability = Replayability::NonReplayable;
+                RequestArgs::with_stream_body(StreamBody::from_bytes(bytes.clone()))
+            }
+        };
+        Ok(plan)
+    }
+}
+
+fn stream_response_plan(
+    name: &'static str,
+    path: &'static str,
+) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+    let mut plan = request_plan(
+        name,
+        http::Method::GET,
+        path,
+        ResolvedPolicy::default(),
+        None,
+    );
+    plan.endpoint.response =
+        <RawStreamResponse<OctetStream> as ResponseEntity>::plan(ErrorContext {
+            endpoint: name,
+            method: http::Method::GET,
+        })?
+        .response_plan;
+    Ok(plan)
+}
+
+async fn collect_stream_response(
+    response: &mut concord_core::advanced::StreamResponse<OctetStream>,
+) -> Result<String, ApiClientError> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.next_chunk().await? {
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(String::from_utf8(bytes).expect("stream chunks should be valid utf-8"))
+}
+
+fn octet_stream_response(chunks: Vec<Bytes>, read_count: Arc<AtomicUsize>) -> MockResponse {
+    let content_length = chunks
+        .iter()
+        .try_fold(0u64, |len, chunk| len.checked_add(chunk.len() as u64))
+        .expect("stream response content length should fit in u64");
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    MockResponse {
+        status: StatusCode::OK,
+        headers,
+        body: Bytes::new(),
+        content_length: Some(content_length),
+        chunks: Some(chunks),
+        read_count: Some(read_count),
+    }
 }
 
 fn spawn_text_request<T>(
@@ -1126,6 +1885,11 @@ impl RoutedTransport {
     async fn sent_count(&self) -> usize {
         self.requests.lock().await.len()
     }
+
+    async fn requests(&self) -> Vec<CapturedTransportRequest> {
+        let mut requests = self.requests.lock().await;
+        std::mem::take(&mut *requests)
+    }
 }
 
 impl Transport for RoutedTransport {
@@ -1275,10 +2039,10 @@ impl RateLimiter for KeyBlockingRateLimiter {
         Box::pin(async move {
             let label = Self::label_for(ctx.plan);
             self.acquire_started.fetch_add(1, AtomicOrdering::SeqCst);
-            self.events
-                .lock()
-                .await
-                .push(format!("rate_acquire:{label}"));
+            self.events.lock().await.push(format!(
+                "rate_acquire:{}:{}:{}:{label}",
+                ctx.endpoint, ctx.method, ctx.url
+            ));
             if label == self.blocked_label {
                 self.gate.enter(self.blocked_phase).await;
             }
@@ -1294,10 +2058,10 @@ impl RateLimiter for KeyBlockingRateLimiter {
         Box::pin(async move {
             let label = Self::label_for(ctx.meta.plan);
             self.response_observed.fetch_add(1, AtomicOrdering::SeqCst);
-            self.events
-                .lock()
-                .await
-                .push(format!("rate_response:{label}:{}", ctx.status));
+            self.events.lock().await.push(format!(
+                "rate_response:{}:{}:{}:{label}:{}",
+                ctx.meta.endpoint, ctx.meta.method, ctx.meta.url, ctx.status
+            ));
             Ok(RateLimitResponseAction::Continue)
         })
     }
