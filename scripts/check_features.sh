@@ -112,10 +112,13 @@ expect_check_failure_contains() {
 
 run_check check -p concord_core --no-default-features
 run_check check -p concord_core --no-default-features --features json
+run_check check -p concord_core --all-features
 
 run_check check -p concord_macros
+run_check check -p concord_macros --all-features
 
 run_check check -p concord_examples --all-targets
+run_check check -p concord_examples --all-targets --all-features
 
 
 manifest_contains "concord_core Cargo.toml" "concord_core/Cargo.toml" 'default = ["rate-limit-governor"]'

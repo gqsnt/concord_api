@@ -180,6 +180,8 @@ async fn generated_bytes_response_reads_body_without_accept_header() {
     assert_eq!(transport.send_count(), 1);
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].meta.endpoint, "Download");
+    assert_eq!(requests[0].meta.method, Method::GET);
     assert_eq!(requests[0].method, Method::GET);
     assert_eq!(requests[0].accept, None);
     assert!(polls.load(Ordering::SeqCst) > 0);

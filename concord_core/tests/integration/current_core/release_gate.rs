@@ -6,10 +6,16 @@ fn check_v1_invokes_feature_matrix() {
     let script = read_repo_file("scripts/check_v1.sh");
     assert!(script.contains("set -euo pipefail"));
     assert!(script.contains("bash ./scripts/check_features.sh"));
+    assert!(script.contains("nextest run -p concord_macros integration"));
+    assert!(script.contains("nextest run -p concord_macros generated"));
     assert!(script.contains("nextest run -p concord_macros --test trybuild_current"));
-    assert!(script.contains("nextest run -p concord_macros --test main"));
+    assert!(script.contains("nextest run -p concord_macros --test trybuild_sema"));
+    assert!(script.contains("nextest run -p concord_macros --test trybuild_codegen"));
     assert!(script.contains("nextest run -p concord_core"));
     assert!(script.contains("nextest run -p concord_examples"));
+    assert!(script.contains("nextest run -p concord_examples --all-features"));
+    assert!(script.contains("nextest run --workspace"));
+    assert!(script.contains("nextest run --workspace --all-features"));
     assert!(script.contains("nextest run --workspace --all-targets"));
     assert!(script.contains("RUSTDOCFLAGS=\"-D warnings\""));
 }
