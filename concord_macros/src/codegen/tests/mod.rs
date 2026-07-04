@@ -1,0 +1,2845 @@
+
+use super::*;
+use crate::model::facade::{FacadeArgKind, FacadeConstructorArg, SetterForm};
+use quote::quote;
+
+fn expanded(input: TokenStream2) -> String {
+    let resolved = crate::sema::analyze_tokens_for_test(input);
+    emit(resolved)
+        .to_string()
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect()
+}
+
+fn ident_text(ident: &syn::Ident) -> String {
+    ident.to_string()
+}
+
+fn ident_vec_text(idents: &[syn::Ident]) -> Vec<String> {
+    idents.iter().map(ToString::to_string).collect()
+}
+
+fn type_text(ty: &syn::Type) -> String {
+    quote::quote!(#ty).to_string()
+}
+
+fn assert_contains_all(expanded: &str, snippets: &[&str]) {
+    for snippet in snippets {
+        let compact: String = snippet.chars().filter(|ch| !ch.is_whitespace()).collect();
+        assert!(
+            expanded.contains(&compact),
+            "expanded code did not contain `{snippet}`\n\nexpanded:\n{expanded}"
+        );
+    }
+}
+
+fn assert_not_contains_all(expanded: &str, snippets: &[&str]) {
+    for snippet in snippets {
+        let compact: String = snippet.chars().filter(|ch| !ch.is_whitespace()).collect();
+        assert!(
+            !expanded.contains(&compact),
+            "expanded code unexpectedly contained `{snippet}`\n\nexpanded:\n{expanded}"
+        );
+    }
+}
+
+fn forbidden_runtime_hook_token() -> String {
+    ["endpoint", "_state", "_pagination"].concat()
+}
+
+fn forbidden_endpoint_pagination_runtime_adapter() -> String {
+    ["EndpointPagination", "Runtime", "Adapter"].concat()
+}
+
+fn forbidden_endpoint_field() -> String {
+    ["Endpoint", "Field"].concat()
+}
+
+fn forbidden_offset_limit_bindings() -> String {
+    ["OffsetLimit", "Bindings"].concat()
+}
+
+fn forbidden_paged_bindings() -> String {
+    ["Paged", "Bindings"].concat()
+}
+
+fn forbidden_cursor_bindings() -> String {
+    ["Cursor", "Bindings"].concat()
+}
+
+fn forbidden_request_body_plan_encoded() -> String {
+    ["BodyPlan", "::", "Encoded"].concat()
+}
+
+fn forbidden_request_body_plan_raw_stream() -> String {
+    ["BodyPlan", "::", "RawStream"].concat()
+}
+
+fn forbidden_request_body_plan_records() -> String {
+    ["BodyPlan", "::", "Records"].concat()
+}
+
+fn forbidden_request_body_plan_multipart() -> String {
+    ["BodyPlan", "::", "Multipart"].concat()
+}
+
+fn forbidden_request_body_plan_none() -> String {
+    ["BodyPlan", "::", "None"].concat()
+}
+
+fn forbidden_request_args_with_body_bytes() -> String {
+    ["RequestArgs", "::", "with_body_bytes"].concat()
+}
+
+fn forbidden_request_args_with_stream_body() -> String {
+    ["RequestArgs", "::", "with_stream_body"].concat()
+}
+
+fn forbidden_request_args_with_record_body() -> String {
+    ["RequestArgs", "::", "with_record_body"].concat()
+}
+
+fn forbidden_request_args_with_multipart_body() -> String {
+    ["RequestArgs", "::", "with_multipart_body"].concat()
+}
+
+fn forbidden_body_codec_encode() -> String {
+    ["BodyCodec", "::", "encode"].concat()
+}
+
+fn forbidden_content_type_check_name() -> String {
+    ["try_", "content_", "type"].concat()
+}
+
+fn forbidden_stream_exec_call() -> String {
+    ["execute_plan_", "stream::<", "OctetStream", ">"].concat()
+}
+
+fn forbidden_records_exec_call() -> String {
+    ["execute_plan_", "records::<", " LogEntry , NdJson ", ">"].concat()
+}
+
+fn forbidden_multipart_exec_call() -> String {
+    [
+        "execute_plan_",
+        "multipart::<",
+        " RawResponsePart , Mixed ",
+        ">",
+    ]
+    .concat()
+}
+
+fn forbidden_response_plan_struct() -> String {
+    ["ResponsePlan", " {"].concat()
+}
+
+fn forbidden_response_codec_try_accept() -> String {
+    ["ResponseCodec", ">::try_accept()"].concat()
+}
+
+fn forbidden_response_codec_decode() -> String {
+    ["ResponseCodec", ">::decode"].concat()
+}
+
+fn forbidden_generated_decode_binding() -> String {
+    ["decode", " : __decode_"].concat()
+}
+
+fn generated_doc_attrs(expanded: &str) -> Vec<&str> {
+    let mut docs = Vec::new();
+    let mut rest = expanded;
+    while let Some(start) = rest.find("#[doc=\"") {
+        let after_start = &rest[start + "#[doc=\"".len()..];
+        let Some(end) = after_start.find("\"]") else {
+            break;
+        };
+        docs.push(&after_start[..end]);
+        rest = &after_start[end + 2..];
+    }
+    docs
+}
+
+fn assert_generated_doc_attrs_do_not_contain(expanded: &str, needle: &str) {
+    for doc in generated_doc_attrs(expanded) {
+        assert!(
+            !doc.contains(needle),
+            "generated rustdoc `{doc}` must not contain `{needle}`"
+        );
+    }
+}
+
+fn assert_generated_doc_attrs_do_not_expose_hidden_names(expanded: &str) {
+    for needle in ["__", "EpSearch", "EpCreate"] {
+        assert_generated_doc_attrs_do_not_contain(expanded, needle);
+    }
+}
+
+fn without_doc_attrs(expanded: &str) -> String {
+    let mut out = String::new();
+    let mut rest = expanded;
+    while let Some(start) = rest.find("#[doc=\"") {
+        out.push_str(&rest[..start]);
+        let after_start = &rest[start + "#[doc=\"".len()..];
+        let Some(end) = after_start.find("\"]") else {
+            break;
+        };
+        rest = &after_start[end + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
+#[test]
+fn facade_ir_contains_endpoint_target_metadata() {
+    let resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client FacadeMeta {
+            base "https://example.com"
+        }
+
+        scope teams(team_id: u64, locale?: String) {
+            path ["teams", team_id]
+
+            POST Create(name: String, tag?: String, body: Json<CreateBody>)
+                as create_team
+                path ["items", name]
+                query {
+                    tag
+                }
+                -> Json<CreateResponse>
+        }
+    });
+    let ir = build_facade_ir(&resolved);
+
+    assert_eq!(ident_text(&ir.client_name), "FacadeMeta");
+    assert_eq!(ir.endpoints.len(), 1);
+
+    let endpoint = &ir.endpoints[0];
+    assert_eq!(ident_text(&endpoint.target.endpoint), "Create");
+    assert_eq!(
+        ident_vec_text(&endpoint.target.scope_path),
+        vec!["teams".to_string()]
+    );
+    assert_eq!(ident_text(&endpoint.public_method), "create_team");
+    assert_eq!(
+        ident_vec_text(&endpoint.scope_path),
+        vec!["teams".to_string()]
+    );
+    assert_eq!(
+        endpoint
+            .required_args
+            .iter()
+            .map(|arg| {
+                let ty = &arg.ty;
+                (arg.name.to_string(), type_text(ty), arg.kind)
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "name".to_string(),
+                "String".to_string(),
+                FacadeArgKind::Value
+            ),
+            (
+                "body".to_string(),
+                "CreateBody".to_string(),
+                FacadeArgKind::Body
+            ),
+        ]
+    );
+    assert_eq!(
+        endpoint
+            .constructor
+            .args
+            .iter()
+            .map(|arg| match arg {
+                FacadeConstructorArg::PublicArg { name } => name.to_string(),
+                FacadeConstructorArg::CapturedScopeField { name } => {
+                    format!("captured:{name}")
+                }
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            "captured:team_id".to_string(),
+            "name".to_string(),
+            "body".to_string(),
+        ]
+    );
+    assert_eq!(
+        endpoint
+            .captured_setters
+            .iter()
+            .map(|setter| (setter.field.to_string(), setter.optional))
+            .collect::<Vec<_>>(),
+        vec![("locale".to_string(), true)]
+    );
+    assert!(
+        !endpoint
+            .required_args
+            .iter()
+            .any(|arg| arg.name == quote::format_ident!("team_id")),
+        "captured scope params must not appear in endpoint facade args"
+    );
+
+    let tag = endpoint
+        .setters
+        .iter()
+        .find(|setter| setter.field == quote::format_ident!("tag"))
+        .expect("tag setter metadata");
+    assert_eq!(type_text(&tag.ty), "String");
+    assert_eq!(
+        tag.forms,
+        vec![SetterForm::Set, SetterForm::SetOptional, SetterForm::Clear]
+    );
+}
+
+#[test]
+fn facade_ir_uses_stream_body_for_stream_request_endpoints() {
+    let resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client StreamMeta {
+            base "https://example.com"
+        }
+
+        POST Upload(body: Stream<OctetStream>)
+            path ["upload"]
+            -> Json<String>
+    });
+    let ir = build_facade_ir(&resolved);
+
+    let endpoint = &ir.endpoints[0];
+    assert_eq!(
+        endpoint
+            .required_args
+            .iter()
+            .map(|arg| {
+                let ty = &arg.ty;
+                (arg.name.to_string(), type_text(ty))
+            })
+            .collect::<Vec<_>>(),
+        vec![("body".to_string(), "StreamBody".to_string())]
+    );
+}
+
+#[test]
+fn facade_ir_uses_record_body_for_record_request_endpoints() {
+    let resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client RecordMeta {
+            base "https://example.com"
+        }
+
+        POST Upload(body: Records<LogEntry, NdJson>)
+            path ["upload"]
+            -> Json<String>
+    });
+    let ir = build_facade_ir(&resolved);
+
+    let endpoint = &ir.endpoints[0];
+    assert_eq!(
+        endpoint
+            .required_args
+            .iter()
+            .map(|arg| {
+                let ty = &arg.ty;
+                (arg.name.to_string(), type_text(ty))
+            })
+            .collect::<Vec<_>>(),
+        vec![(
+            "body".to_string(),
+            ":: concord_core :: advanced :: RecordBody < LogEntry >".to_string()
+        )]
+    );
+}
+
+#[test]
+fn facade_ir_uses_multipart_body_for_multipart_request_endpoints() {
+    let resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client MultipartMeta {
+            base "https://example.com"
+        }
+
+        POST Upload(body: Multipart<RawResponsePart>)
+            path ["upload"]
+            -> Json<String>
+    });
+    let ir = build_facade_ir(&resolved);
+
+    let endpoint = &ir.endpoints[0];
+    assert_eq!(
+        endpoint
+            .required_args
+            .iter()
+            .map(|arg| {
+                let ty = &arg.ty;
+                (arg.name.to_string(), type_text(ty))
+            })
+            .collect::<Vec<_>>(),
+        vec![(
+            "body".to_string(),
+            ":: concord_core :: advanced :: MultipartBody".to_string()
+        )]
+    );
+}
+
+#[test]
+fn emit_uses_stream_request_and_response_codegen() {
+    let expanded = expanded(quote! {
+        api! {
+            client StreamCodegen {
+                base "https://example.com"
+            }
+
+            POST Upload(body: Stream<OctetStream>)
+                path ["upload"]
+                -> Stream<OctetStream>
+        }
+    });
+
+    assert_contains_all(
+        &expanded,
+        &[
+            "StreamBody",
+            "RequestEntity",
+            "RawStreamRequest",
+            "prepare(",
+            "StreamResponse<OctetStream>",
+            "ResponseEntity",
+            "RawStreamResponse",
+            "ResponseEntity>::execute",
+        ],
+    );
+    assert_not_contains_all(
+        &expanded,
+        &[
+            &forbidden_request_body_plan_raw_stream(),
+            &forbidden_request_args_with_stream_body(),
+            &forbidden_stream_exec_call(),
+            &["Stream", "ResponseEndpoint"].concat(),
+        ],
+    );
+}
+
+#[test]
+fn emit_uses_buffered_request_entity_codegen() {
+    let expanded = expanded(quote! {
+        api! {
+            client BufferedCodegen {
+                base "https://example.com"
+            }
+
+            POST Create(body: Json<CreateBody>)
+                path ["create"]
+                -> Json<CreateResponse>
+        }
+    });
+
+    assert_contains_all(
+        &expanded,
+        &[
+            "RequestEntity",
+            "EncodedRequest",
+            "prepare(",
+            "CreateBody",
+            "CreateResponse",
+        ],
+    );
+    assert_not_contains_all(
+        &expanded,
+        &[
+            &forbidden_request_body_plan_encoded(),
+            &forbidden_request_args_with_body_bytes(),
+            &forbidden_body_codec_encode(),
+            &forbidden_content_type_check_name(),
+        ],
+    );
+}
+
+#[test]
+fn emit_uses_no_request_body_entity_codegen() {
+    let expanded = expanded(quote! {
+        api! {
+            client NoBodyCodegen {
+                base "https://example.com"
+            }
+
+            GET Status
+                path ["status"]
+                -> Json<StatusResponse>
+        }
+    });
+
+    assert_contains_all(
+        &expanded,
+        &[
+            "NoRequestBody",
+            "RequestEntity",
+            "prepare(",
+            "StatusResponse",
+        ],
+    );
+    assert_not_contains_all(&expanded, &[&forbidden_request_body_plan_none()]);
+}
+
+#[test]
+fn emit_uses_record_request_and_response_codegen() {
+    let expanded = expanded(quote! {
+        api! {
+            client RecordCodegen {
+                base "https://example.com"
+            }
+
+            POST Upload(body: Records<LogEntry, NdJson>)
+                path ["upload"]
+                -> Records<LogEntry, NdJson>
+        }
+    });
+
+    assert_contains_all(
+        &expanded,
+        &[
+            "RecordBody < LogEntry >",
+            "RequestEntity",
+            "RecordRequest",
+            "prepare(",
+            "RecordStream < LogEntry >",
+            "ResponseEntity",
+            "RecordResponse",
+            "ResponseEntity>::execute",
+        ],
+    );
+    assert_not_contains_all(
+        &expanded,
+        &[
+            &forbidden_request_body_plan_records(),
+            &forbidden_request_args_with_record_body(),
+            &forbidden_records_exec_call(),
+            &["Record", "ResponseEndpoint"].concat(),
+        ],
+    );
+}
+
+#[test]
+fn emit_uses_multipart_request_and_response_codegen() {
+    let expanded = expanded(quote! {
+        api! {
+            client MultipartCodegen {
+                base "https://example.com"
+            }
+
+            POST Upload(body: Multipart<RawResponsePart>)
+                path ["upload"]
+                -> Multipart<RawResponsePart, Mixed>
+        }
+    });
+
+    assert_contains_all(
+        &expanded,
+        &[
+            "MultipartBody",
+            "RequestEntity",
+            "MultipartRequest",
+            "prepare(",
+            "MultipartStream < RawResponsePart >",
+            "ResponseEntity",
+            "MultipartResponse",
+            "ResponseEntity>::execute",
+        ],
+    );
+    assert_not_contains_all(
+        &expanded,
+        &[
+            &forbidden_request_body_plan_multipart(),
+            &forbidden_request_args_with_multipart_body(),
+            &forbidden_content_type_check_name(),
+            &forbidden_multipart_exec_call(),
+            &["Multipart", "ResponseEndpoint"].concat(),
+        ],
+    );
+}
+
+#[test]
+fn emit_uses_sse_response_codegen() {
+    let expanded = expanded(quote! {
+        api! {
+            client SseCodegen {
+                base "https://example.com"
+            }
+
+            GET Events
+                path ["events"]
+                -> Sse<MyEvent>
+        }
+    });
+
+    assert_contains_all(
+        &expanded,
+        &[
+            "SseStream < MyEvent >",
+            "ResponseEntity",
+            "SseResponse",
+            "ResponseEntity>::execute",
+        ],
+    );
+    assert_not_contains_all(&expanded, &[&["Sse", "ResponseEndpoint"].concat()]);
+}
+
+#[test]
+fn emit_uses_explicit_sse_codec_codegen() {
+    let expanded = expanded(quote! {
+        api! {
+            client ExplicitSseCodegen {
+                base "https://example.com"
+            }
+
+            GET Events
+                path ["events"]
+                -> Sse<MyEvent, MyCodec>
+        }
+    });
+
+    assert_contains_all(
+        &expanded,
+        &[
+            "SseStream < MyEvent >",
+            "ResponseEntity",
+            "SseResponse",
+            "ResponseEntity>::execute",
+        ],
+    );
+    assert_not_contains_all(&expanded, &[&["Sse", "ResponseEndpoint"].concat()]);
+}
+
+#[test]
+fn facade_ir_contains_scope_method_metadata() {
+    let resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client ScopeMeta {
+            base "https://example.com"
+        }
+
+        scope regional(region: String, locale?: String) {
+            path ["regional", region]
+
+            scope teams(team_id: u64) {
+                path ["teams", team_id]
+
+                GET Show
+                    as show
+                    path ["show"]
+                    -> Json<String>
+            }
+        }
+    });
+    let ir = build_facade_ir(&resolved);
+    let regional = ir
+        .scopes
+        .iter()
+        .find(|scope| ident_vec_text(&scope.path) == vec!["regional".to_string()])
+        .expect("regional scope metadata");
+    assert_eq!(ident_text(&regional.public_method), "regional");
+    assert_eq!(
+        ident_text(&regional.rust_type_name),
+        "ScopeMetaRegionalScope"
+    );
+    assert_eq!(ident_vec_text(&regional.parent_path), Vec::<String>::new());
+    assert_eq!(
+        regional
+            .decls
+            .iter()
+            .map(|var| var.rust.to_string())
+            .collect::<Vec<_>>(),
+        vec!["region", "locale"]
+    );
+    let locale = regional
+        .setters
+        .iter()
+        .find(|setter| setter.field == quote::format_ident!("locale"))
+        .expect("scope setter metadata");
+    assert_eq!(ident_text(&locale.set_name), "locale");
+    assert_eq!(ident_text(&locale.clear_name), "clear_locale");
+    assert!(locale.set_doc.contains("scope parameter"));
+    assert_eq!(regional.methods.len(), 1);
+    assert_eq!(ident_text(&regional.methods[0].public_name), "teams");
+    assert_eq!(
+        ident_vec_text(&regional.methods[0].target_scope_path),
+        vec!["regional".to_string(), "teams".to_string()]
+    );
+    assert_eq!(
+        ident_text(&regional.methods[0].target_scope_type_name),
+        "ScopeMetaRegionalTeamsScope"
+    );
+    assert!(
+        regional.methods[0].docs[0]
+            .summary
+            .contains("regional::teams")
+    );
+}
+
+#[test]
+fn facade_ir_contains_endpoint_setter_metadata() {
+    let resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client SetterMeta {
+            base "https://example.com"
+        }
+
+        GET Search(filter?: String, count: u64 = 20)
+            as search
+            path ["search"]
+            query { filter, count }
+            -> Json<Vec<String>>
+    });
+    let ir = build_facade_ir(&resolved);
+    let endpoint = ir
+        .endpoints
+        .iter()
+        .find(|endpoint| ident_text(&endpoint.target.endpoint) == "Search")
+        .expect("search endpoint metadata");
+    let filter = endpoint
+        .setters
+        .iter()
+        .find(|setter| setter.field == quote::format_ident!("filter"))
+        .expect("filter setter metadata");
+    assert_eq!(ident_text(&filter.set_name), "filter");
+    assert_eq!(ident_text(&filter.set_optional_name), "filter_opt");
+    assert_eq!(ident_text(&filter.clear_name), "clear_filter");
+    assert!(filter.set_doc.contains("optional query parameter"));
+
+    let count = endpoint
+        .setters
+        .iter()
+        .find(|setter| setter.field == quote::format_ident!("count"))
+        .expect("count setter metadata");
+    assert_eq!(ident_text(&count.set_optional_name), "count_opt");
+    assert_eq!(ident_text(&count.clear_name), "clear_count");
+    assert!(count.clear_doc.contains("default `20`"));
+}
+
+#[test]
+fn generated_setter_names_and_docs_come_from_facade_ir() {
+    let resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client SetterSource {
+            base "https://example.com"
+        }
+
+        GET Search(filter?: String)
+            as search
+            path ["search"]
+            query { filter }
+            -> Json<Vec<String>>
+    });
+    let mut ir = build_facade_ir(&resolved);
+    let setter = ir.endpoints[0]
+        .setters
+        .iter_mut()
+        .find(|setter| setter.field == quote::format_ident!("filter"))
+        .expect("filter setter metadata");
+    setter.set_name = quote::format_ident!("with_filter_from_ir");
+    setter.set_optional_name = quote::format_ident!("with_filter_opt_from_ir");
+    setter.clear_name = quote::format_ident!("without_filter_from_ir");
+    setter.set_doc = "IR supplied set doc.".to_string();
+
+    let out = emit_resolved(resolved, &ir)
+        .to_string()
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>();
+    assert_contains_all(
+        &out,
+        &[
+            "pub fn with_filter_from_ir ( mut self , v : String ) -> Self",
+            "fn with_filter_opt_from_ir ( self , value : :: core :: option :: Option < String > ) -> Self",
+            "fn without_filter_from_ir ( self ) -> Self",
+            "#[doc = \"IR supplied set doc.\"]",
+        ],
+    );
+    assert!(!out.contains("filter_opt(self"));
+    assert!(!out.contains("clear_filter(self"));
+}
+
+#[test]
+fn generated_scope_default_capture_is_applied_without_public_endpoint_setter() {
+    let out = expanded(quote! {
+        client ScopeDefaultCapture {
+            base "https://example.com"
+        }
+
+        scope localized(locale: String = "en_US".to_string()) {
+            path ["data", locale]
+
+            GET List
+                as list
+                path ["list.json"]
+                -> Json<Vec<String>>
+        }
+    })
+    .to_string();
+
+    assert!(
+        out.contains("__ep . locale = self . locale") || out.contains("__ep.locale=self.locale"),
+        "captured defaulted scope params must be assigned internally"
+    );
+    assert!(
+        !out.contains("__ep = __ep . locale") && !out.contains("__ep=__ep.locale"),
+        "captured defaulted scope params must not call public endpoint setters"
+    );
+}
+
+#[test]
+fn generated_client_construction_snapshot_contains_current_api_only() {
+    let out = expanded(quote! {
+        client ConstructApi {
+            base "https://example.com"
+            var tenant: String
+            secret api_key: String
+            credential key = api_key(secret.api_key)
+        }
+
+        GET Ping
+            path ["ping"]
+            auth header "X-Api-Key" = key
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "pub struct ConstructApi < T : :: concord_core :: advanced :: Transport = :: concord_core :: advanced :: ReqwestTransport >",
+            "pub fn new ( tenant : String , api_key : String ) -> Self",
+            "pub fn builder () -> ConstructApiBuilder",
+            "pub struct ConstructApiBuilder",
+            "tenant : :: core :: option :: Option < String >",
+            "api_key : :: core :: option :: Option < String >",
+            "pub fn build ( self ) -> :: core :: result :: Result < ConstructApi < :: concord_core :: advanced :: ReqwestTransport > , :: concord_core :: prelude :: ApiClientError >",
+            "ApiClientError :: invalid_param (__ctx . clone () , \"builder.tenant\")",
+            "ApiClientError :: invalid_param (__ctx . clone () , \"builder.api_key\")",
+            "pub fn configure ( mut self , f : impl FnOnce (& mut :: concord_core :: advanced :: RuntimeConfig)) -> Self",
+            "pub fn configure_mut (& mut self , f : impl FnOnce (& mut :: concord_core :: advanced :: RuntimeConfig)) -> & mut Self",
+        ],
+    );
+    assert!(
+        !out.contains("with_configure"),
+        "generated client must not expose with_configure"
+    );
+}
+
+#[test]
+fn generated_facade_scopes_use_clean_public_names_and_rustdoc() {
+    let out = expanded(quote! {
+        client CleanFacadeApi {
+            base "https://example.com"
+        }
+
+        scope regional(region: String) {
+            host [region, "api"]
+
+            scope match_api_matches {
+                path ["lol", "match", "api", "matches"]
+
+                GET GetMatchIdsByPuuid(puuid: String)
+                    as ids_by_puuid
+                    path ["by-puuid", puuid, "ids"]
+                    -> Json<Vec<String>>
+            }
+        }
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "#[doc = \"Enter the `regional` facade scope.\"]",
+            "pub fn regional (& self , region : String) -> CleanFacadeApiRegionalScope",
+            "#[doc = \"Facade handle for the `regional` scope.\"]",
+            "pub struct CleanFacadeApiRegionalScope",
+            "#[doc = \"Enter the `regional::match_api_matches` facade scope.\"]",
+            "pub fn match_api_matches ( self",
+            "CleanFacadeApiRegionalMatchApiMatchesScope",
+            "#[doc = \"Facade handle for the `regional::match_api_matches` scope.\"]",
+            "pub fn ids_by_puuid ( self , puuid : String )",
+        ],
+    );
+    let hidden_facade = out.contains("__Facade");
+    let hidden_scope = out.contains("__Scope");
+    let hidden_context = out
+        .find("__Facade")
+        .map(|idx| &out[idx.saturating_sub(80)..out.len().min(idx + 160)])
+        .unwrap_or("");
+    assert!(
+        !hidden_facade && !hidden_scope,
+        "generated facade scope surface must not expose hidden facade/scope names: __Facade={hidden_facade}, __Scope={hidden_scope}; context={hidden_context}"
+    );
+}
+
+#[test]
+fn generated_endpoint_setters_use_field_opt_and_clear_names() {
+    let out = expanded(quote! {
+        client SetterApi {
+            base "https://example.com"
+        }
+
+        GET Search(q: String, filter?: String, count: u32 = 20)
+            as search
+            path ["search"]
+            query {
+                q
+                filter
+                count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "pub fn search (& self , q : String)",
+            "pub fn filter ( mut self , v : String ) -> Self",
+            "pub fn filter_opt ( mut self , v : :: core :: option :: Option < String > ) -> Self",
+            "pub fn clear_filter ( mut self ) -> Self",
+            "pub fn count ( mut self , v : u32 ) -> Self",
+            "pub fn count_opt ( mut self , v : :: core :: option :: Option < u32 > ) -> Self",
+            "v . unwrap_or_else (|| 20)",
+            "pub fn clear_count ( mut self ) -> Self",
+            "fn filter_opt ( self , value : :: core :: option :: Option < String > ) -> Self",
+            "fn count_opt ( self , value : :: core :: option :: Option < u32 > ) -> Self",
+            "#[doc = \"Set defaulted query parameter `count` from an Option; None resets to the default `20`.\"]",
+        ],
+    );
+    assert!(
+        !out.contains("maybe_filter") && !out.contains("reset_count"),
+        "generated endpoint setters must not expose removed maybe_/reset_ names"
+    );
+}
+
+#[test]
+fn generated_explicit_endpoint_api_is_clean_and_matches_facade_target() {
+    let out = expanded(quote! {
+        client ExplicitApi {
+            base "https://example.com"
+        }
+
+        GET Get(id: u64, filter?: String, count: u32 = 20)
+            as get
+            path ["items", id]
+            query {
+                filter
+                count
+            }
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "pub mod endpoints",
+            "as Get",
+            "#[doc = \"Advanced explicit endpoint request. Prefer facade methods for normal use.\"]",
+            "pub fn new ( id : u64 ) -> Self",
+            "pub fn filter ( mut self , v : String ) -> Self",
+            "pub fn filter_opt ( mut self , v : :: core :: option :: Option < String > ) -> Self",
+            "pub fn clear_filter ( mut self ) -> Self",
+            "pub fn count ( mut self , v : u32 ) -> Self",
+            "pub fn count_opt ( mut self , v : :: core :: option :: Option < u32 > ) -> Self",
+            "pub fn clear_count ( mut self ) -> Self",
+            "pub fn get (& self , id : u64)",
+            "let mut __ep = endpoints :: Get :: new (id)",
+            "self . request (__ep)",
+        ],
+    );
+    assert!(
+        !out.contains("pubfnid(mutself"),
+        "explicit endpoints must not expose setters for required direct args"
+    );
+}
+
+#[test]
+fn generated_facade_methods_return_core_pending_request_surface() {
+    let out = expanded(quote! {
+        client PendingApi {
+            base "https://example.com"
+        }
+
+        GET Ping
+            as ping
+            path ["ping"]
+            -> Json<String>
+
+        GET List(count: u64 = 20)
+            as list
+            path ["items"]
+            query {
+                count
+            }
+            paginate OffsetLimitPagination {
+                offset = 0,
+                limit = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "pub fn ping (& self ,) -> :: concord_core :: prelude :: PendingRequest",
+            "pub fn list (& self ,) -> :: concord_core :: prelude :: PendingRequest",
+            "self . request (__ep)",
+            "pub mod endpoints",
+            "as Ping",
+            "as List",
+            "pub use pending_api :: ListRequestExt",
+        ],
+    );
+    assert!(
+        !out.contains("pub use pending_api :: PingRequestExt"),
+        "empty request-extension traits should not be reexported"
+    );
+}
+
+#[test]
+fn generated_minimal_api_snapshot_contains_facade_and_endpoint_plan() {
+    let out = expanded(quote! {
+        client SnapshotMinimal {
+            base "https://example.com"
+        }
+
+        GET Ping
+            as ping
+            path ["ping"]
+            -> Json<String>;
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "pub fn ping (& self",
+            "-> :: concord_core :: prelude :: PendingRequest",
+            "impl :: concord_core :: prelude :: Endpoint < super :: SnapshotMinimalCx > for EpPing",
+            "type Response = String",
+            "fn plan (& self, plan_ctx : & :: concord_core :: internal :: ClientPlanContext",
+            ":: concord_core :: internal :: RequestPlan",
+            ":: concord_core :: internal :: EndpointPlan",
+            "ResponseEntity",
+            "BufferedResponse",
+            "__response_entity_plan",
+            "response: __response_plan",
+        ],
+    );
+}
+
+#[test]
+fn generated_endpoint_plan_snapshot_contains_plan_based_core_contract() {
+    let out = expanded(quote! {
+        client PlanApi {
+            base "https://example.com"
+            var tenant: String
+            secret token: String
+            credential key = api_key(secret.token)
+        }
+
+        GET Create(id: String, limit: u64 = 20)
+            as create
+            path ["items", id]
+            headers {
+                "X-Tenant" = vars.tenant
+            }
+            query {
+                limit
+            }
+            auth header "X-Api-Key" = key
+            paginate OffsetLimitPagination {
+                offset = 0,
+                limit = limit
+            }
+            -> Json<CreateResponse>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: Endpoint < super :: PlanApiCx >",
+            "fn plan (& self , plan_ctx : & :: concord_core :: internal :: ClientPlanContext",
+            ":: concord_core :: internal :: RequestPlan",
+            ":: concord_core :: internal :: EndpointPlan",
+            ":: concord_core :: internal :: EndpointMeta",
+            ":: concord_core :: internal :: ResolvedRoute",
+            ":: concord_core :: internal :: ResolvedPolicy",
+            "ResponseEntity",
+            "BufferedResponse",
+            "__response_entity_plan",
+            "response: __response_plan",
+            "let __pagination_plan = :: core :: option :: Option :: Some",
+            "PaginationMarker",
+        ],
+    );
+}
+
+#[test]
+fn generated_route_snapshot_builds_resolved_route_from_semantic_pieces() {
+    let out = expanded(quote! {
+        client RoutePlanApi {
+            base "https://example.com"
+            var region: String
+        }
+
+        scope regional {
+            host [vars.region, "api"]
+            path ["v1"]
+
+            GET Show(id: String)
+                path ["items", id]
+                -> Json<String>
+        }
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "let mut route = < super :: RoutePlanApiCx as :: concord_core :: prelude :: ClientContext > :: base_route (vars , __concord_auth_vars)",
+            "route.host_mut().push",
+            "route.path_mut().push_raw(\"v1\")",
+            "route.path_mut().push_raw(\"items\")",
+            "route.path_mut().push_segment_encoded(&__segment)",
+            "route.host().validate(ctx_err.clone())",
+            "scheme : < super :: RoutePlanApiCx as :: concord_core :: prelude :: ClientContext > :: SCHEME",
+            "host : route.host().join",
+            "path : route.path().as_str().to_string()",
+        ],
+    );
+}
+
+#[test]
+fn static_path_slash_behavior_characterized() {
+    let out = expanded(quote! {
+        client StaticPathSlashApi {
+            base "https://example.com"
+        }
+
+        GET Show
+            path ["a/b"]
+            -> Json<String>
+    });
+
+    assert_contains_all(&out, &["route.path_mut().push_raw(\"a/b\")"]);
+}
+
+#[test]
+fn generated_policy_snapshot_materializes_resolved_policy() {
+    let out = expanded(quote! {
+        client PolicyPlanApi {
+            base "https://example.com"
+            var tenant: String
+            secret token: String
+            credential key = api_key(secret.token)
+
+            headers {
+                "X-Client" = vars.tenant
+            }
+        }
+
+        GET Search(q: String)
+            path ["search"]
+            query {
+                q
+            }
+            headers {
+                "X-Endpoint" = "search"
+            }
+            auth header "X-Api-Key" = key
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "let mut policy = < super :: PolicyPlanApiCx as :: concord_core :: prelude :: ClientContext > :: base_policy",
+            "policy . set_layer (:: concord_core :: internal :: PolicyLayer :: Endpoint)",
+            "policy.set_query(\"q\"",
+            "policy.insert_header",
+            "HeaderName :: from_bytes (\"X-Endpoint\" . as_bytes ())",
+            "HeaderValue :: from_static (\"search\")",
+            ":: concord_core :: advanced :: AuthRequirement",
+            "policy.ensure_accept",
+            "let (headers , query , timeout , retry , mut rate_limit) = policy.into_parts()",
+            "rate_limit.canonicalize()",
+            "let __resolved_policy = :: concord_core :: internal :: ResolvedPolicy",
+            "auth : __auth_plan",
+        ],
+    );
+}
+
+#[test]
+fn generated_auth_plan_uses_resolved_requirements() {
+    let out = expanded(quote! {
+        client AuthPlanApi {
+            base "https://example.com"
+            secret token: String
+            credential key = api_key(secret.token)
+        }
+
+        GET Search
+            path ["search"]
+            auth header "X-Api-Key" = key
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "::concord_core::advanced::AuthRequirement",
+            "::concord_core::advanced::AuthPlacement::Header",
+            "::concord_core::advanced::AuthUsageId::new(\"header\")",
+            "AuthProvenance::new(\"endpoint\")",
+            "step_id: ::core::option::Option::Some(\"Search:0:key\")",
+        ],
+    );
+    assert!(
+        !out.contains("emit_auth_usage_id"),
+        "generated code should not call old auth-use helpers"
+    );
+    assert!(
+        !out.contains("endpoint_qualified_name(ep)"),
+        "generated code should not reconstruct endpoint names"
+    );
+}
+
+#[test]
+fn generated_inherited_auth_step_ids_use_final_endpoint_target() {
+    let out = expanded(quote! {
+        client InheritedAuthStepsApi {
+            base "https://example.com"
+            secret client_token: String
+            secret scope_token: String
+            secret endpoint_token: String
+            credential client_auth = api_key(secret.client_token)
+            credential scope_auth = api_key(secret.scope_token)
+            credential endpoint_auth = api_key(secret.endpoint_token)
+            auth header "X-Read-Token" = client_auth
+        }
+
+        scope users {
+            path ["users"]
+            auth query "read_key" = scope_auth
+
+            GET Me
+                path ["me"]
+                auth header "X-Endpoint-Token" = endpoint_auth
+                -> Json<()>
+        }
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "users::Me:0:client_auth",
+            "users::Me:1:scope_auth",
+            "users::Me:2:endpoint_auth",
+        ],
+    );
+}
+
+#[test]
+fn generated_oauth2_client_credentials_provider_is_typed() {
+    let out = expanded(quote! {
+        client OAuthProviderApi {
+            base "https://example.com"
+            secret client_id: String
+            secret client_secret: String
+
+            credential oauth = oauth2_client {
+                token_url: "https://auth.example.com/oauth/token",
+                client_id: secret.client_id,
+                client_secret: secret.client_secret,
+                scope: "read:me",
+            }
+        }
+
+        GET OAuthMe
+            path ["oauth-me"]
+            auth bearer oauth
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "::concord_core::advanced::OAuth2ClientCredentialsProvider::from_validated_token_url",
+            ".scope(\"read:me\")",
+            "CredentialId::new(\"OAuthProviderApi\",\"oauth\")",
+        ],
+    );
+}
+
+#[test]
+fn generated_invalid_codec_headers_return_typed_errors() {
+    let out = expanded(quote! {
+        client CodecErrorApi {
+            base "https://example.com"
+        }
+
+        POST Upload(body: Json<UploadBody>)
+            path ["upload"]
+            -> Json<UploadResponse>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "RequestEntity",
+            "EncodedRequest",
+            "prepare(",
+            "ResponseEntity",
+            "BufferedResponse",
+            "__response_entity_plan",
+        ],
+    );
+    assert_not_contains_all(
+        &out,
+        &[
+            &forbidden_content_type_check_name(),
+            &forbidden_request_body_plan_encoded(),
+            &forbidden_response_codec_try_accept(),
+            &forbidden_response_codec_decode(),
+            &forbidden_generated_decode_binding(),
+        ],
+    );
+}
+
+#[test]
+fn generated_bytes_response_uses_response_entity_plan() {
+    let out = expanded(quote! {
+        client BytesEntityApi {
+            base "https://example.com"
+        }
+
+        GET Download
+            path ["download"]
+            -> Bytes
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "ResponseEntity",
+            "BytesResponse",
+            "__response_entity_plan",
+            "response: __response_plan",
+            "ResponseEntity>::execute",
+            "NoRequestBody",
+        ],
+    );
+    assert_not_contains_all(
+        &out,
+        &[
+            &forbidden_response_plan_struct(),
+            &forbidden_response_codec_try_accept(),
+            &forbidden_response_codec_decode(),
+            &forbidden_generated_decode_binding(),
+            "no_content :",
+            "format :",
+        ],
+    );
+}
+
+#[test]
+fn generated_no_content_response_uses_response_entity_plan() {
+    let out = expanded(quote! {
+        client NoContentEntityApi {
+            base "https://example.com"
+        }
+
+        DELETE Remove
+            path ["remove"]
+            -> NoContent
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "ResponseEntity",
+            "NoContentResponse",
+            "__response_entity_plan",
+            "response: __response_plan",
+            "ResponseEntity>::execute",
+            "NoRequestBody",
+        ],
+    );
+    assert_not_contains_all(
+        &out,
+        &[
+            &forbidden_response_plan_struct(),
+            &forbidden_response_codec_try_accept(),
+            &forbidden_response_codec_decode(),
+            &forbidden_generated_decode_binding(),
+            "no_content :",
+            "format :",
+        ],
+    );
+}
+
+#[test]
+fn generated_pagination_marker_snapshot_covers_controller_types() {
+    let out = expanded(quote! {
+        client PaginationModelApi {
+            base "https://example.com"
+        }
+
+        GET Offset(start: u64 = 0, count: u64 = 20)
+            path ["offset"]
+            query {
+                start
+                count
+            }
+            paginate OffsetLimitPagination {
+                offset = start,
+                limit = count
+            }
+            -> Json<Vec<String>>
+
+        GET Cursor(cursor?: String, count: u64 = 20)
+            path ["cursor"]
+            query {
+                cursor
+                count
+            }
+            paginate CursorPagination<String> {
+                cursor = cursor,
+                per_page = count
+            }
+            -> Json<Vec<String>>
+
+        GET Paged(page: u64 = 1, count: u64 = 20)
+            path ["paged"]
+            query {
+                page
+                count
+            }
+            paginate PagedPagination {
+                page = page,
+                per_page = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = OffsetLimitPagination",
+            ":: concord_core :: advanced :: PaginateBinding",
+            "let __pagination_plan = :: core :: option :: Option :: Some",
+            "PaginationMarker",
+        ],
+    );
+}
+
+#[test]
+fn generated_rustdoc_snapshot_covers_client_endpoint_and_request_builder() {
+    let out = expanded(quote! {
+        client SnapshotDocs {
+            base "https://example.com"
+        }
+
+        GET Search(count?: u64)
+            as search
+            path ["search"]
+            query {
+                count
+            }
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "#[doc=\"Generated API client.\"]",
+            "#[doc=\"Create a client with the default reqwest transport.\"]",
+            "#[doc=\"Builder for required client configuration.\"]",
+            "#[doc=\"GET / search\"]",
+            "#[doc=\"Query params: `count`\"]",
+            "#[doc=\"Response: Json<String>\"]",
+            "#[doc=\"Advanced explicit endpoint request. Prefer facade methods for normal use.\"]",
+            "#[doc=\"Create this advanced explicit endpoint request.\"]",
+            "#[doc=\"Set optional query parameter `count`.\"]",
+            "#[doc=\"Set or clear optional query parameter `count` from an Option; None clears it.\"]",
+            "#[doc=\"Clear optional query parameter `count`.\"]",
+            "#[doc=\"Request-builder extension methods for this endpoint.\"]",
+        ],
+    );
+    assert_generated_doc_attrs_do_not_expose_hidden_names(&out);
+}
+
+#[test]
+fn behavior_doc_line_formats_labels_in_order() {
+    assert_eq!(
+        behavior_doc_line(&["client_read".to_string(), "endpoint_read".to_string()]),
+        Some("Behavior: `client_read`, `endpoint_read`".to_string())
+    );
+    assert_eq!(behavior_doc_line(&[]), None);
+}
+
+#[test]
+fn generated_rustdoc_snapshot_includes_behavior_names() {
+    let out = expanded(quote! {
+        client BehaviorDocs {
+            base "https://example.com"
+
+            behavior client_read {
+                retry off
+            }
+
+            behavior scope_read {
+                retry off
+            }
+
+            behavior endpoint_read {
+                retry off
+            }
+
+            defaults {
+                behavior client_read
+            }
+        }
+
+        scope users {
+            path ["users"]
+            behavior scope_read
+
+            GET Me
+                path ["me"]
+                behavior endpoint_read
+                -> Json<()>
+        }
+    });
+
+    assert_contains_all(
+        &out,
+        &["#[doc=\"Behavior: `client_read`, `scope_read`, `endpoint_read`\"]"],
+    );
+}
+
+#[test]
+fn rustdoc_behavior_label_dedup_does_not_affect_policy() {
+    let out = expanded(quote! {
+        client LabelDedup {
+            base "https://example.com"
+
+            retry read {
+                max_attempts 2
+                methods [GET]
+            }
+
+            rate_limit read_limit {
+                bucket read by [host] {
+                    1 / 1s
+                }
+            }
+
+            behaviors {
+                behavior read {
+                    retry read
+                    rate_limit read_limit
+                }
+            }
+
+            defaults {
+                behavior read
+            }
+        }
+
+        scope users {
+            path ["users"]
+            behavior read
+
+            GET Me
+                path ["me"]
+                behavior read
+                -> Json<()>
+        }
+    });
+
+    assert_contains_all(&out, &["#[doc=\"Behavior: `read`\"]", "policy.set_retry"]);
+    assert_contains_all(&out, &["policy.add_rate_limit"]);
+    let behavior_doc_lines = generated_doc_attrs(&out)
+        .into_iter()
+        .filter(|doc| doc.contains("Behavior:`"))
+        .collect::<Vec<_>>();
+    assert_eq!(behavior_doc_lines.len(), 1);
+    assert_eq!(
+        out.match_indices("RateLimitBucketUse::new(\"read\",\"read_limit_0\"")
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn behavior_profiles_do_not_reach_runtime_codegen() {
+    let alpha = expanded(quote! {
+        client BehaviorCodegen {
+            base "https://example.com"
+            secret token: String
+            credential session = api_key(secret.token)
+
+            retry read {
+                max_attempts 2
+                methods [GET]
+                on [401, 403]
+                retry_after
+            }
+
+            rate_limit app {
+                bucket application by [host] {
+                    1 / 1s
+                }
+            }
+
+            behaviors {
+                    behavior alpha {
+                        auth header "X-Behavior-Token" = session
+                        retry read
+                        rate_limit app
+                    }
+            }
+
+            defaults {
+                behavior alpha
+            }
+        }
+
+            GET Ping
+                path ["ping"]
+                -> Json<()>
+    });
+    let beta = expanded(quote! {
+        client BehaviorCodegen {
+            base "https://example.com"
+            secret token: String
+            credential session = api_key(secret.token)
+
+            retry read {
+                max_attempts 2
+                methods [GET]
+                on [401, 403]
+                retry_after
+            }
+
+            rate_limit app {
+                bucket application by [host] {
+                    1 / 1s
+                }
+            }
+
+            behaviors {
+                    behavior beta {
+                        auth header "X-Behavior-Token" = session
+                        retry read
+                        rate_limit app
+                    }
+            }
+
+            defaults {
+                behavior beta
+            }
+        }
+
+            GET Ping
+                path ["ping"]
+                -> Json<()>
+    });
+
+    assert_contains_all(
+        &alpha,
+        &[
+            "#[doc=\"Behavior: `alpha`\"]",
+            "policy.set_retry",
+            "policy.add_rate_limit",
+        ],
+    );
+    assert_contains_all(
+        &beta,
+        &[
+            "#[doc=\"Behavior: `beta`\"]",
+            "policy.set_retry",
+            "policy.add_rate_limit",
+        ],
+    );
+    assert_eq!(without_doc_attrs(&alpha), without_doc_attrs(&beta));
+}
+
+#[test]
+fn generated_rustdoc_snapshot_includes_endpoint_contract_without_secret_values() {
+    let out = expanded(quote! {
+        client SnapshotRichDocs {
+            base "https://example.com"
+            var tenant: String
+            secret api_key: String
+            credential key = api_key(secret.api_key)
+
+            default {
+                retry read
+                rate_limit app
+            }
+
+            retry read {
+                max_attempts 2
+                methods [GET, POST]
+            }
+
+            rate_limit app {
+                bucket application by [host] {
+                    10 / 1s
+                }
+            }
+        }
+
+        POST Create(id: String, filter?: String, count: u64 = 20, body: Json<CreateBody>)
+            path ["items", id]
+            query {
+                filter
+                count
+            }
+            headers {
+                "X-Tenant" = vars.tenant
+            }
+            auth header "X-Api-Key" = key
+            -> Json<CreateResponse>
+
+        GET List(id: String, count: u64 = 20)
+            path ["items", id]
+            query {
+                count
+            }
+            paginate OffsetLimitPagination {
+                offset = 0,
+                limit = count
+            }
+            -> Json<Vec<CreateResponse>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "#[doc=\"POST / items / {id}\"]",
+            "#[doc=\"Required params: `id`\"]",
+            "#[doc=\"Query params: `count`, `filter`\"]",
+            "#[doc=\"Headers: `X-Tenant`\"]",
+            "#[doc=\"Auth:\"]",
+            "#[doc=\"- header `X-Api-Key` = `key`\"]",
+            "#[doc=\"Retry: configured\"]",
+            "#[doc=\"Rate limit: configured\"]",
+            "#[doc=\"Pagination: OffsetLimitPagination\"]",
+            "#[doc=\"Body: Json<CreateBody>\"]",
+            "#[doc=\"Response: Json<CreateResponse>\"]",
+            "#[doc=\"Set optional query parameter `filter`.\"]",
+            "#[doc=\"Set defaulted query parameter `count` (default: `20`).\"]",
+            "#[doc=\"Reset defaulted query parameter `count` to its default `20`.\"]",
+        ],
+    );
+    assert_generated_doc_attrs_do_not_expose_hidden_names(&out);
+    assert_generated_doc_attrs_do_not_contain(&out, "api_key");
+}
+
+#[test]
+fn generated_rustdoc_redaction_does_not_render_secret_literals() {
+    let out = expanded(quote! {
+        client SnapshotSecretDocs {
+            base "https://example.com"
+
+            auth {
+                secret api_key: String
+                secret bearer_token: String
+                secret username: String
+                secret password: String
+                secret client_id: String
+                secret client_secret: String
+
+                credential upstream = api_key(secret.api_key)
+                credential session = bearer(secret.bearer_token)
+                credential login = basic(secret.username, secret.password)
+                credential oauth = oauth2_client {
+                    token_url: "https://auth.example.com/token",
+                    client_id: secret.client_id,
+                    client_secret: secret.client_secret,
+                }
+            }
+
+            behaviors {
+                behavior protected_read {
+                    auth bearer session
+                }
+            }
+        }
+
+        GET GetBearerDoc
+            path ["bearer"]
+            behavior protected_read
+            -> Json<()>
+
+        GET GetHeaderDoc
+            path ["header"]
+            auth header "X-Api-Key" = upstream
+            -> Json<()>
+
+        GET GetBasicDoc
+            path ["basic"]
+            auth basic login
+            -> Json<()>
+
+        GET GetOAuthDoc
+            path ["oauth"]
+            auth bearer oauth
+            -> Json<()>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "#[doc=\"Behavior: `protected_read`\"]",
+            "#[doc=\"- bearer `session`\"]",
+            "#[doc=\"- header `X-Api-Key` = `upstream`\"]",
+            "#[doc=\"- basic `login`\"]",
+            "#[doc=\"- bearer `oauth`\"]",
+        ],
+    );
+    for secret in [
+        "LEAK_SENTINEL_API_KEY_123",
+        "LEAK_SENTINEL_BEARER_456",
+        "LEAK_SENTINEL_PASSWORD_789",
+        "LEAK_SENTINEL_CLIENT_SECRET_ABC",
+    ] {
+        assert_generated_doc_attrs_do_not_contain(&out, secret);
+    }
+    assert_generated_doc_attrs_do_not_contain(&out, "client_secret value");
+    assert_generated_doc_attrs_do_not_contain(&out, "password value");
+}
+
+#[test]
+fn generated_auth_session_snapshot_contains_auth_state_and_acquire_sugar() {
+    let out = expanded(quote! {
+        client SnapshotAuth {
+            base "https://example.com"
+            secret upstream_key: String
+
+            credential upstream = api_key(secret.upstream_key)
+            credential session = endpoint auth_api::LoginForSession
+        }
+
+        scope auth_api {
+            POST LoginForSession(body: Json<LoginRequest>)
+                path ["login"]
+                auth header "X-Upstream-Key" = upstream
+                -> Json<AccessToken>
+        }
+
+        scope protected {
+            auth bearer session
+
+            GET Me
+                as me
+                path ["me"]
+                -> Json<User>
+        }
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "pub struct SnapshotAuthAuthState",
+            "pub fn session (& self) -> SnapshotAuthSessionAuth",
+            "pub fn auth_state (& self) -> SnapshotAuthAuth",
+            "pub async fn acquire < R >",
+            "pub async fn set (& self , value : AccessToken ,) -> :: core :: result :: Result < () , :: concord_core :: advanced :: AuthError >",
+            "pub async fn clear (& self) -> :: core :: result :: Result < () , :: concord_core :: advanced :: AuthError >",
+            "pub async fn is_set (& self) -> :: core :: result :: Result < bool , :: concord_core :: advanced :: AuthError >",
+            "pub async fn acquire_auth_session",
+            "pub async fn set_auth_session_value (& self , value : AccessToken ,) -> :: core :: result :: Result < () , :: concord_core :: advanced :: AuthError >",
+            "pub async fn clear_auth_session (& self) -> :: core :: result :: Result < () , :: concord_core :: advanced :: AuthError >",
+            "pub async fn has_auth_session (& self) -> :: core :: result :: Result < bool , :: concord_core :: advanced :: AuthError >",
+            "pub trait SnapshotAuthAcquireAsSessionExt",
+            "fn acquire_as_session (self,) -> :: core :: pin :: Pin",
+            ". with_missing_hint (\"client.acquire_auth_session(...)\")",
+            ":: concord_core :: advanced :: AuthPlacement :: Bearer",
+            ":: concord_core :: advanced :: AuthPlacement :: Header (\"X-Upstream-Key\")",
+        ],
+    );
+}
+
+#[test]
+fn generated_endpoint_backed_auth_helpers_use_structured_endpoint_target() {
+    let out = expanded(quote! {
+        client EndpointAuthTarget {
+            base "https://example.com"
+            secret upstream_key: String
+            credential upstream = api_key(secret.upstream_key)
+
+            credential session = endpoint auth_api::LoginForSession
+        }
+
+        scope auth_api {
+            POST LoginForSession(body: Json<LoginRequest>)
+                path ["login"]
+                auth header "X-Upstream-Key" = upstream
+                -> Json<AccessToken>
+        }
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "pub async fn acquire_auth_session",
+            "pub trait EndpointAuthTargetAcquireAsSessionExt",
+            "fn acquire_as_session (self,) -> :: core :: pin :: Pin",
+            "endpoints :: auth_api :: LoginForSession",
+            ". with_missing_hint (\"client.acquire_auth_session(...)\")",
+        ],
+    );
+}
+
+#[test]
+fn generated_pagination_snapshot_contains_pagination_marker() {
+    let out = expanded(quote! {
+        client SnapshotPagination {
+            base "https://example.com"
+        }
+
+        GET List(start: u64 = 0, count: u64 = 20)
+            as list
+            path ["items"]
+            query {
+                start
+                count
+            }
+            paginate OffsetLimitPagination {
+                offset = start,
+                limit = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "let __pagination_plan = :: core :: option :: Option :: Some",
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "PaginateBinding",
+            "PaginationMarker",
+        ],
+    );
+}
+
+#[test]
+fn generated_non_paginated_endpoint_sets_pagination_marker_none() {
+    let out = expanded(quote! {
+        client SnapshotNoPagination {
+            base "https://example.com"
+        }
+
+        GET Ping()
+            path ["ping"]
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &["let __pagination_plan = :: core :: option :: Option :: None"],
+    );
+    assert!(!out.contains("PaginationMarker"));
+}
+
+#[test]
+fn generated_pagination_bindings_for_offset_limit() {
+    let out = expanded(quote! {
+        client SnapshotPaginationBindings {
+            base "https://example.com"
+        }
+
+        GET List(start: u64 = 0, count: u64 = 20)
+            query {
+                "from" = start
+                "pageSize" = count
+            }
+            paginate OffsetLimitPagination {
+                offset = start,
+                limit = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
+            "fn load_pagination",
+            "fn store_pagination",
+            "pagination . offset = self . start . clone ()",
+            "pagination . limit = self . count . clone ()",
+            "self . start = pagination . offset . clone ()",
+            "self . count = pagination . limit . clone ()",
+        ],
+    );
+}
+
+#[test]
+fn generated_offset_limit_uses_type_driven_pagination_only() {
+    let out = expanded(quote! {
+        client SnapshotOffsetLimitRuntime {
+            base "https://example.com"
+        }
+
+        GET List(start: u64 = 0, count: u64 = 20)
+            headers {
+                "X-Start" = start,
+                "X-Count" = count,
+            }
+            paginate OffsetLimitPagination {
+                offset = start,
+                limit = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = OffsetLimitPagination",
+            ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
+        ],
+    );
+    assert!(
+        !out.contains(&forbidden_runtime_hook_token()),
+        "removed runtime hook must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
+        "removed runtime adapter must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_endpoint_field()),
+        "removed pagination binding helpers must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_offset_limit_bindings()),
+        "removed pagination binding types must not appear in generated output"
+    );
+}
+
+#[test]
+fn generated_offset_limit_exposes_pagination_binding_and_type() {
+    let out = expanded(quote! {
+        client SnapshotOffsetLimitSingleObjectRuntime {
+            base "https://example.com"
+        }
+
+        GET List(start: u64 = 0, count: u64 = 20)
+            headers {
+                "X-Start" = start,
+                "X-Count" = count,
+            }
+            paginate OffsetLimitPagination {
+                offset = start,
+                limit = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = OffsetLimitPagination",
+            ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
+        ],
+    );
+}
+
+#[test]
+fn generated_offset_limit_emits_paginate_binding_impl() {
+    let out = expanded(quote! {
+        client SnapshotOffsetLimitBinding {
+            base "https://example.com"
+        }
+
+        GET List(start: u64 = 0, count: u64 = 20)
+            headers {
+                "X-Start" = start,
+                "X-Count" = count,
+            }
+            paginate OffsetLimitPagination {
+                offset = start,
+                limit = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
+            "fn load_pagination",
+            "fn store_pagination",
+            "pagination . offset = self . start . clone ()",
+            "pagination . limit = self . count . clone ()",
+            "self . start = pagination . offset . clone ()",
+            "self . count = pagination . limit . clone ()",
+        ],
+    );
+}
+
+#[test]
+fn generated_paged_uses_type_driven_pagination_only() {
+    let out = expanded(quote! {
+        client SnapshotPagedRuntime {
+            base "https://example.com"
+        }
+
+        GET List(page: u64 = 1, count: u64 = 2)
+            headers {
+                "X-Page" = page,
+                "X-Count" = count,
+            }
+            paginate PagedPagination {
+                page = page,
+                per_page = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = PagedPagination",
+            ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
+        ],
+    );
+    assert!(
+        !out.contains(&forbidden_runtime_hook_token()),
+        "removed runtime hook must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
+        "removed runtime adapter must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_endpoint_field()),
+        "removed pagination binding helpers must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_paged_bindings()),
+        "removed pagination binding types must not appear in generated output"
+    );
+}
+
+#[test]
+fn generated_paged_emits_paginate_binding_impl() {
+    let out = expanded(quote! {
+        client SnapshotPagedBinding {
+            base "https://example.com"
+        }
+
+        GET List(page: u64 = 1, count: u64 = 20)
+            headers {
+                "X-Page" = page,
+                "X-Count" = count,
+            }
+            paginate PagedPagination {
+                page = page,
+                per_page = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
+            "fn load_pagination",
+            "fn store_pagination",
+            "pagination . page = self . page . clone ()",
+            "pagination . per_page = self . count . clone ()",
+            "self . page = pagination . page . clone ()",
+            "self . count = pagination . per_page . clone ()",
+        ],
+    );
+}
+
+#[test]
+fn generated_paged_exposes_pagination_binding_and_type() {
+    let out = expanded(quote! {
+        client SnapshotPagedSingleObjectRuntime {
+            base "https://example.com"
+        }
+
+        GET List(page: u64 = 1, count: u64 = 20)
+            headers {
+                "X-Page" = page,
+                "X-Count" = count,
+            }
+            paginate PagedPagination {
+                page = page,
+                per_page = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = PagedPagination",
+            ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
+        ],
+    );
+}
+
+#[test]
+fn generated_custom_uses_type_driven_pagination_only() {
+    let out = expanded(quote! {
+        client SnapshotCustomPagination {
+            base "https://example.com"
+        }
+
+        GET List(page: u64 = 1, count: u64 = 2)
+            headers {
+                "X-Page" = page,
+                "X-Count" = count,
+            }
+            paginate HeaderPagePagination {
+                page = page,
+                count = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = HeaderPagePagination",
+            ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+            "HeaderPagePagination",
+        ],
+    );
+    assert!(
+        !out.contains(&forbidden_runtime_hook_token()),
+        "removed runtime hook must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
+        "removed runtime adapter must not appear in generated output"
+    );
+    assert!(
+        !out.contains("HeaderPageBindings"),
+        "removed pagination binding helpers must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_endpoint_field()),
+        "removed pagination binding helpers must not appear in generated output"
+    );
+    assert_contains_all(
+        &out,
+        &[
+            "let __pagination_plan = :: core :: option :: Option :: Some",
+            "PaginationMarker",
+        ],
+    );
+}
+
+#[test]
+fn generated_custom_emits_paginate_binding_impl() {
+    let out = expanded(quote! {
+        client SnapshotCustomPaginationBinding {
+            base "https://example.com"
+        }
+
+        GET List(page: u64 = 1, count: u64 = 2)
+            headers {
+                "X-Page" = page,
+                "X-Count" = count,
+            }
+            paginate HeaderPagePagination {
+                page = page,
+                count = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+            "fn load_pagination",
+            "fn store_pagination",
+            "pagination . page = self . page . clone ()",
+            "pagination . count = self . count . clone ()",
+            "self . page = pagination . page . clone ()",
+            "self . count = pagination . count . clone ()",
+        ],
+    );
+    assert!(
+        !out.contains(&forbidden_runtime_hook_token()),
+        "removed runtime hook must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
+        "removed runtime adapter must not appear in generated output"
+    );
+}
+
+#[test]
+fn generated_custom_literal_assignment_is_load_only() {
+    let out = expanded(quote! {
+        client SnapshotCustomPaginationLiteralBinding {
+            base "https://example.com"
+        }
+
+        GET List(page: u64 = 1, count: u64 = 2)
+            headers {
+                "X-Page" = page,
+                "X-Count" = count,
+            }
+            paginate HeaderPagePagination {
+                page = page,
+                count = count,
+                max_pages = 3
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+            "fn load_pagination",
+            "fn store_pagination",
+            "pagination . page = self . page . clone ()",
+            "pagination . count = self . count . clone ()",
+            "pagination . max_pages =",
+            "self . page = pagination . page . clone ()",
+            "self . count = pagination . count . clone ()",
+        ],
+    );
+    assert!(
+        !out.contains("self . max_pages"),
+        "literal config fields must not be stored back to endpoint state"
+    );
+}
+
+#[test]
+fn generated_custom_exposes_pagination_binding_and_type() {
+    let out = expanded(quote! {
+        client SnapshotCustomPaginationSingleObjectRuntime {
+            base "https://example.com"
+        }
+
+        GET List(page: u64 = 1, count: u64 = 2)
+            headers {
+                "X-Page" = page,
+                "X-Count" = count,
+            }
+            paginate HeaderPagePagination {
+                page = page,
+                count = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = HeaderPagePagination",
+            ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+        ],
+    );
+    assert!(
+        !out.contains(&forbidden_runtime_hook_token()),
+        "removed runtime hook must not appear in generated output"
+    );
+}
+
+#[test]
+fn generated_custom_pagination_uses_type_driven_pagination_only() {
+    generated_custom_uses_type_driven_pagination_only();
+}
+
+#[test]
+fn generated_cursor_uses_type_driven_pagination_only() {
+    let out = expanded(quote! {
+        client SnapshotCursorRuntime {
+            base "https://example.com"
+        }
+
+        GET List(cursor?: String, count: u64 = 2)
+            headers {
+                "X-Cursor" = cursor,
+                "X-Count" = count,
+            }
+            paginate CursorPagination<String> {
+                cursor = cursor,
+                per_page = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = CursorPagination < String >",
+            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+        ],
+    );
+    assert!(
+        !out.contains(&forbidden_runtime_hook_token()),
+        "removed runtime hook must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_endpoint_pagination_runtime_adapter()),
+        "removed runtime adapter must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_cursor_bindings()),
+        "removed pagination binding types must not appear in generated output"
+    );
+    assert!(
+        !out.contains(&forbidden_endpoint_field()),
+        "removed pagination binding helpers must not appear in generated output"
+    );
+}
+
+#[test]
+fn generated_cursor_emits_paginate_binding_impl() {
+    let out = expanded(quote! {
+        client SnapshotCursorBinding {
+            base "https://example.com"
+        }
+
+        GET List(cursor?: String, count: u64 = 2)
+            headers {
+                "X-Cursor" = cursor,
+                "X-Count" = count,
+            }
+            paginate CursorPagination<String> {
+                cursor = cursor,
+                per_page = count,
+                send_cursor_on_first = true,
+                stop_when_cursor_missing = false
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+            "fn load_pagination",
+            "fn store_pagination",
+            "pagination . cursor = self . cursor . clone ()",
+            "pagination . per_page = self . count . clone ()",
+            "pagination . send_cursor_on_first = (true)",
+            "pagination . stop_when_cursor_missing = (false)",
+            "self . cursor = pagination . cursor . clone ()",
+            "self . count = pagination . per_page . clone ()",
+        ],
+    );
+    assert!(
+        !out.contains("self.send_cursor_on_first=pagination.send_cursor_on_first"),
+        "cursor flags must not be stored back to endpoint state"
+    );
+    assert!(
+        !out.contains("self.stop_when_cursor_missing=pagination.stop_when_cursor_missing"),
+        "cursor flags must not be stored back to endpoint state"
+    );
+}
+
+#[test]
+fn generated_cursor_exposes_pagination_binding_and_type() {
+    let out = expanded(quote! {
+        client SnapshotCursorSingleObjectRuntime {
+            base "https://example.com"
+        }
+
+        GET List(cursor?: String, count: u64 = 2)
+            headers {
+                "X-Cursor" = cursor,
+                "X-Count" = count,
+            }
+            paginate CursorPagination<String> {
+                cursor = cursor,
+                per_page = count,
+                send_cursor_on_first = true,
+                stop_when_cursor_missing = false
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = CursorPagination < String >",
+            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+        ],
+    );
+    assert!(
+        !out.contains(&forbidden_runtime_hook_token()),
+        "removed runtime hook must not appear in generated output"
+    );
+}
+
+#[test]
+fn generated_cursor_pagination_preserves_controller_flags() {
+    let out = expanded(quote! {
+        client SnapshotCursorFlags {
+            base "https://example.com"
+        }
+
+        GET List(cursor?: String, count: u64 = 2)
+            headers {
+                "X-Cursor" = cursor,
+                "X-Count" = count,
+            }
+            paginate CursorPagination<String> {
+                cursor = cursor,
+                per_page = count,
+                send_cursor_on_first = true,
+                stop_when_cursor_missing = false
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "impl :: concord_core :: prelude :: PaginatedEndpoint",
+            "type Pagination = CursorPagination < String >",
+            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+            "send_cursor_on_first = (true)",
+            "stop_when_cursor_missing = (false)",
+        ],
+    );
+    assert!(
+        !out.contains(&forbidden_runtime_hook_token()),
+        "removed runtime hook must not appear in generated output"
+    );
+}
+
+#[test]
+fn generated_pagination_binding_clones_non_copy_cursor() {
+    let out = expanded(quote! {
+        client SnapshotPaginationCursorFlow {
+            base "https://example.com"
+        }
+
+        GET List(cursor?: String, count: u64 = 20)
+            query {
+                cursor
+                count
+            }
+            paginate CursorPagination<String> {
+                cursor = cursor,
+                per_page = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+            "pagination . cursor = self . cursor . clone ()",
+            "self . cursor = pagination . cursor . clone ()",
+        ],
+    );
+}
+
+#[test]
+fn generated_pagination_public_surface_exposes_collect_only() {
+    let out = expanded(quote! {
+        client SnapshotPaginationSurface {
+            base "https://example.com"
+        }
+
+        GET List(start: u64 = 0, count: u64 = 20)
+            path ["items"]
+            query {
+                start
+                count
+            }
+            paginate OffsetLimitPagination {
+                offset = start,
+                limit = count
+            }
+            -> Json<Vec<String>>
+    });
+
+    assert_contains_all(&out, &["#[doc=\"Pagination: OffsetLimitPagination\"]"]);
+}
+
+#[test]
+fn generated_request_surface_has_no_behaviorless_extension_traits() {
+    let out = expanded(quote! {
+        client RequestSurfaceApi {
+            base "https://example.com"
+        }
+
+        GET Ping
+            as ping
+            path ["ping"]
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &["pub fn ping (& self ,) -> :: concord_core :: prelude :: PendingRequest"],
+    );
+    assert!(
+        !out.contains("pub trait PingRequestExt"),
+        "endpoints without request setters must not generate empty request-extension traits"
+    );
+    assert!(
+        !out.contains("pub use pending_api :: PingRequestExt"),
+        "endpoints without request setters must not reexport empty request-extension traits"
+    );
+}
+
+#[test]
+fn generated_route_snapshot_rejects_dynamic_slash_segments() {
+    let out = expanded(quote! {
+        client SnapshotRouteGuard {
+            base "https://example.com"
+        }
+
+        GET Show(id: String, prefix?: String)
+            as show
+            path ["users", id, fmt["p-", prefix]]
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "__segment.contains('/')",
+            "__segment.contains('\\\\')",
+            "ApiClientError::invalid_param(ctx.clone()",
+            "route.path_mut().push_segment_encoded(&__segment)",
+        ],
+    );
+}
+
+#[test]
+fn generated_query_snapshot_contains_optional_and_empty_string_semantics() {
+    let out = expanded(quote! {
+        client SnapshotQueryPolicy {
+            base "https://example.com"
+        }
+
+        GET Search(maybe?: String)
+            as search
+            path ["search"]
+            query {
+                "maybe" = maybe,
+                "empty" = ""
+            }
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "if let ::core::option::Option::Some(__v) = ep.maybe.as_ref()",
+            "policy.remove_query(\"maybe\")",
+            "policy.set_query(\"empty\",(\"\").to_string())",
+        ],
+    );
+}
+
+#[test]
+fn generated_rate_limit_snapshot_contains_runtime_plan() {
+    let out = expanded(quote! {
+        client SnapshotRateLimit {
+            base "https://example.com"
+
+            default {
+                rate_limit app
+            }
+
+            rate_limit app {
+                bucket application by [host] {
+                    10 / 1s
+                }
+            }
+        }
+
+        GET Ping
+            as ping
+            path ["ping"]
+            -> Json<()>;
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "policy . add_rate_limit (:: concord_core :: advanced :: RateLimitPlan :: from_buckets",
+            "RateLimitBucketUse :: new (\"application\" , \"app_0\"",
+            "RateLimitBucketUse :: new",
+            "ApiClientError :: rate_limit",
+            "RateLimitErrorKind :: InvalidConfiguration",
+        ],
+    );
+    assert!(!out.contains("compile_error!(concat!(\"unresolvedrate_limitkey"));
+    assert!(!out.contains("endpoint/scoperate_limitkeycannotbeusedinclientbasepolicy"));
+}
+
+#[test]
+fn generated_retry_and_rate_limit_snapshot_contains_resolved_policy() {
+    let out = expanded(quote! {
+        client SnapshotPolicy {
+            base "https://example.com"
+
+            retry read {
+                max_attempts 2
+                methods [GET]
+                on [401, 403]
+                retry_after
+            }
+
+            rate_limit app {
+                bucket application by [host] {
+                    10 / 1s
+                }
+            }
+
+            default {
+                retry read
+                rate_limit app
+            }
+        }
+
+        GET Ping
+            as ping
+            path ["ping"]
+            -> Json<String>;
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "::http::StatusCode::from_u16(401u16)",
+            "::http::StatusCode::from_u16(403u16)",
+            "RateLimitWindow::new(::std::num::NonZeroU32::new(10u32).ok_or_else",
+            "RateLimitBucketUse::new(\"application\",\"app_0\"",
+            "policy.set_retry(::concord_core::advanced::RetryConfig",
+            "policy.add_rate_limit(::concord_core::advanced::RateLimitPlan::from_buckets",
+            "ApiClientError :: rate_limit",
+        ],
+    );
+}
+
+#[test]
+fn codegen_snapshot_uses_resolved_ir() {
+    let resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client ResolvedIrApi {
+            base "https://example.com"
+            secret token: String
+            credential session = bearer(secret.token)
+
+            policies {
+                retry read {
+                    max_attempts 2
+                    methods [GET]
+                    on [401, 403]
+                    retry_after
+                }
+
+                rate_limit app {
+                    bucket application by [host] {
+                        10 / 1s
+                    }
+                }
+            }
+
+            behaviors {
+                behavior shared {
+                    auth bearer session
+                    retry read
+                    rate_limit app
+                }
+
+                behavior endpoint_override {
+                    retry off
+                }
+            }
+
+            defaults {
+                behavior shared
+            }
+        }
+
+        GET Ping(page?: u64 = 0)
+            path ["ping"]
+            behavior endpoint_override
+            -> Json<String>
+    });
+
+    match &resolved.client_policy.retry {
+        Some(RetryResolved::Set(config)) => {
+            let expected_methods: Vec<syn::Ident> = vec![syn::parse_quote!(GET)];
+            assert_eq!(config.max_attempts, 2);
+            assert_eq!(config.methods, expected_methods);
+            assert_eq!(config.statuses, vec![401, 403]);
+            assert!(config.respect_retry_after);
+        }
+        other => {
+            panic!("expected resolved client retry from behavior/default lowering, got {other:?}")
+        }
+    }
+    match &resolved.client_policy.rate_limit {
+        Some(RateLimitResolved::Add(plan)) => {
+            assert_eq!(plan.buckets.len(), 1);
+            let bucket = &plan.buckets[0];
+            assert_eq!(bucket.kind, "application");
+            assert_eq!(bucket.name, "app_0");
+            assert_eq!(bucket.cost, 1);
+            assert_eq!(bucket.key.len(), 1);
+        }
+        other => panic!(
+            "expected resolved client rate limit from behavior/default lowering, got {other:?}"
+        ),
+    }
+
+    let endpoint = resolved
+        .endpoints
+        .iter()
+        .find(|ep| ep.name == "Ping")
+        .expect("resolved ping endpoint");
+    assert_eq!(
+        endpoint.behavior_doc.names,
+        vec!["shared".to_string(), "endpoint_override".to_string()]
+    );
+    match &endpoint.policy.endpoint.retry {
+        Some(RetryResolved::Clear) => {}
+        other => {
+            panic!("expected endpoint retry override to clear inherited retry, got {other:?}")
+        }
+    }
+
+    let out = emit(resolved)
+        .to_string()
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>();
+
+    assert_contains_all(
+        &out,
+        &[
+            "policy.set_retry(::concord_core::advanced::RetryConfig{max_attempts:2u32",
+            "::http::Method::GET",
+            "::http::StatusCode::from_u16(401u16)",
+            "::http::StatusCode::from_u16(403u16)",
+            "policy.clear_retry();",
+            "policy.add_rate_limit(::concord_core::advanced::RateLimitPlan::from_buckets",
+            "RateLimitBucketUse::new(\"application\",\"app_0\"",
+        ],
+    );
+    assert!(!out.contains("policy.retry().cloned().unwrap_or_default()"));
+    assert!(!out.contains("__retry.max_attempts"));
+    assert!(!out.contains("__retry.methods"));
+}
