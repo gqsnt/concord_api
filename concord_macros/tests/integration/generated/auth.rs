@@ -233,7 +233,7 @@ mod policy_merge_helper_contract {
 }
 
 #[tokio::test]
-async fn endpoint_backed_auth_helpers_acquire_clear_and_gate_protected_requests() {
+async fn endpoint_backed_auth_acquire_clear_and_gate_protected_requests() {
     let transport = RecordingTransport::new(vec![
         ResponseFixture::json(r#"{"access_token":"session-token"}"#),
         ResponseFixture::json(r#"{"name":"Ada"}"#),

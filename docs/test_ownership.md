@@ -34,7 +34,7 @@ This repository keeps test ownership split by layer so new coverage lands in the
 
 ## Generated integration and examples
 
-- `concord_macros/tests/integration/generated/` owns generated-client integration against the mock runtime.
+- `concord_macros/tests/integration/generated/` owns feature-owned generated-client integration against the mock runtime.
 - `concord_examples/tests/` owns deterministic example checks. Live smoke paths stay opt-in behind environment variables.
 
 ## Feature and CI scripts
@@ -50,5 +50,5 @@ This repository keeps test ownership split by layer so new coverage lands in the
 - Put semantic facts in the matching `concord_macros/src/sema/tests/` module for that feature area.
 - Put generated-token shape checks in `concord_macros/src/codegen/tests/`.
 - Put runtime behavior in `concord_core/tests/integration/current_core/`.
-- Put end-to-end generated-client checks in `concord_macros/tests/integration/generated/`.
+- Put feature-owned end-to-end generated-client checks in `concord_macros/tests/integration/generated/`.
 - Put example behavior in `concord_examples/tests/`.
