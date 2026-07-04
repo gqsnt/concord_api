@@ -32,6 +32,8 @@ mod rate_limit;
 mod rate_limit_runtime;
 #[path = "current_core/records.rs"]
 mod records;
+#[path = "current_core/redaction_matrix.rs"]
+mod redaction_matrix;
 #[path = "current_core/release_gate.rs"]
 mod release_gate;
 #[path = "current_core/request_entities.rs"]

@@ -37,10 +37,10 @@ impl fmt::Debug for RedactionSentinels {
 }
 
 pub fn assert_text_does_not_contain_any(text: &str, sentinels: &[&str]) {
-    for sentinel in sentinels {
+    for (idx, sentinel) in sentinels.iter().enumerate() {
         assert!(
             !text.contains(sentinel),
-            "text leaked sentinel {sentinel}: {text}"
+            "text leaked redaction sentinel at index {idx}"
         );
     }
 }
