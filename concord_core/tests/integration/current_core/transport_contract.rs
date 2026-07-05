@@ -12,11 +12,27 @@ use concord_core::internal::{
 use concord_core::prelude::{ApiClient, ApiClientError, Endpoint, ReusableEndpoint, Text};
 use concord_core::transport::{TransportErrorKind, TransportRequestBody};
 use http::{HeaderValue, Method, StatusCode, header::CONTENT_TYPE};
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::sync::Arc;
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use tokio::sync::Mutex;
 
 const REQUEST_SENTINEL: &str = "PR22_TRANSPORT_REQUEST_SENTINEL";
+const REDIRECT_DEFAULT_PORT: u16 = 38180;
+const REDIRECT_CUSTOM_PORT: u16 = 38181;
+const REDIRECT_TARGET_PORT: u16 = 38182;
+const REDIRECT_CUSTOM_TARGET_PORT: u16 = 38183;
+const REDIRECT_DEFAULT_HOST: &str = "127.0.0.1:38180";
+const REDIRECT_CUSTOM_HOST: &str = "127.0.0.1:38181";
+
+static REDIRECT_TEST_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+fn redirect_test_lock() -> &'static tokio::sync::Mutex<()> {
+    REDIRECT_TEST_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
 
 #[derive(Clone)]
 enum TransportBody {
@@ -222,6 +238,160 @@ fn assert_bytes_body(body: &TransportRequestBody, expected: &[u8]) {
     }
 }
 
+fn http_response(status: StatusCode, headers: &[(&str, String)], body: &str) -> String {
+    let reason = status.canonical_reason().unwrap_or("OK");
+    let mut response = format!("HTTP/1.1 {} {reason}\r\n", status.as_u16());
+    for (name, value) in headers {
+        response.push_str(name);
+        response.push_str(": ");
+        response.push_str(value);
+        response.push_str("\r\n");
+    }
+    response.push_str(&format!(
+        "Content-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    ));
+    response
+}
+
+fn spawn_http_server(
+    port: u16,
+    requests: Arc<Mutex<Vec<String>>>,
+    hits: Arc<AtomicUsize>,
+    shutdown: Arc<AtomicBool>,
+    response: String,
+    one_shot: bool,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let listener = TcpListener::bind(("127.0.0.1", port)).expect("bind local test port");
+        listener
+            .set_nonblocking(true)
+            .expect("set local test listener nonblocking");
+
+        let mut scratch = [0u8; 1024];
+        while !shutdown.load(Ordering::SeqCst) {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    let mut request = Vec::new();
+                    loop {
+                        match stream.read(&mut scratch) {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                request.extend_from_slice(&scratch[..n]);
+                                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                                    break;
+                                }
+                            }
+                            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                                std::thread::sleep(Duration::from_millis(5));
+                            }
+                            Err(err) => panic!("read local test request: {err}"),
+                        }
+                    }
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    requests
+                        .blocking_lock()
+                        .push(String::from_utf8_lossy(&request).into_owned());
+                    stream
+                        .write_all(response.as_bytes())
+                        .expect("write local test response");
+                    let _ = stream.flush();
+                    if one_shot {
+                        break;
+                    }
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(err) => panic!("accept local test request: {err}"),
+            }
+        }
+    })
+}
+
+#[derive(Clone)]
+struct RedirectCx;
+
+impl concord_core::prelude::ClientContext for RedirectCx {
+    type Vars = ();
+    type AuthVars = TestAuthVars;
+    type AuthState = ();
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
+    const DOMAIN: &'static str = "127.0.0.1:38180";
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+    fn prepare_auth_requirement<'a>(
+        requirement: &'a concord_core::advanced::AuthRequirement,
+        request: &'a mut concord_core::advanced::AuthApplicationRequest<'_>,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a concord_core::advanced::RequestMeta,
+    ) -> concord_core::advanced::AuthFuture<
+        'a,
+        Result<concord_core::advanced::PreparedAuthCredential, concord_core::advanced::AuthError>,
+    > {
+        Box::pin(async move {
+            let token = auth.token.as_ref().ok_or_else(|| {
+                concord_core::advanced::AuthError::new(
+                    concord_core::advanced::AuthErrorKind::MissingCredential,
+                    "missing redirect test bearer token",
+                )
+            })?;
+            let material = concord_core::prelude::ApiKey::new(token.clone());
+            let application =
+                concord_core::advanced::apply_secret_credential(request, requirement, &material)?;
+            let applied = concord_core::advanced::AuthAppliedCredential {
+                credential_id: requirement.credential.id.clone(),
+                usage_id: requirement.usage_id.clone(),
+                step_id: requirement.step_id,
+                generation: Some(1),
+                provenance: requirement.provenance.clone(),
+            };
+            Ok(concord_core::advanced::PreparedAuthCredential::new(
+                applied,
+                application,
+            ))
+        })
+    }
+}
+
+#[derive(Clone)]
+struct RedirectEndpoint {
+    name: &'static str,
+    path: &'static str,
+    policy: ResolvedPolicy,
+    host: &'static str,
+}
+
+impl Endpoint<RedirectCx> for RedirectEndpoint {
+    type Response = String;
+
+    buffered_endpoint_execute!(RedirectCx, Text<String>);
+}
+
+impl ReusableEndpoint<RedirectCx> for RedirectEndpoint {
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, RedirectCx>,
+    ) -> Result<RequestPlan, ApiClientError> {
+        let mut plan = request_plan(self.name, Method::GET, self.path, self.policy.clone(), None);
+        plan.endpoint.route = concord_core::internal::ResolvedRoute::new(
+            http::uri::Scheme::HTTP,
+            self.host,
+            self.path,
+        );
+        Ok(plan)
+    }
+}
+
+fn redirect_policy() -> ResolvedPolicy {
+    super::common::auth_policy(concord_core::advanced::AuthPlacement::Bearer)
+}
+
 #[tokio::test]
 async fn finalized_request_metadata_and_materialization_are_preserved_through_a_custom_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -270,6 +440,169 @@ async fn finalized_request_metadata_and_materialization_are_preserved_through_a_
         raw.expect("transport request should succeed").status,
         StatusCode::OK
     );
+}
+
+#[tokio::test]
+async fn default_reqwest_transport_does_not_follow_redirects_or_forward_auth_material() {
+    let _guard = redirect_test_lock().lock().await;
+    let first_requests = Arc::new(Mutex::new(Vec::new()));
+    let second_requests = Arc::new(Mutex::new(Vec::new()));
+    let first_hits = Arc::new(AtomicUsize::new(0));
+    let second_hits = Arc::new(AtomicUsize::new(0));
+    let first_shutdown = Arc::new(AtomicBool::new(false));
+    let second_shutdown = Arc::new(AtomicBool::new(false));
+    let redirect_location = format!("http://127.0.0.1:{REDIRECT_CUSTOM_TARGET_PORT}/final");
+
+    let first_server = spawn_http_server(
+        REDIRECT_DEFAULT_PORT,
+        first_requests.clone(),
+        first_hits.clone(),
+        first_shutdown.clone(),
+        http_response(
+            StatusCode::FOUND,
+            &[("Location", redirect_location.clone())],
+            "",
+        ),
+        true,
+    );
+    let second_server = spawn_http_server(
+        REDIRECT_CUSTOM_TARGET_PORT,
+        second_requests.clone(),
+        second_hits.clone(),
+        second_shutdown.clone(),
+        http_response(StatusCode::OK, &[], "redirected"),
+        false,
+    );
+
+    std::thread::sleep(Duration::from_millis(50));
+
+    let client = ApiClient::<RedirectCx, _>::new(
+        (),
+        TestAuthVars {
+            token: Some("redirect-secret".to_string()),
+            identity: "anon",
+        },
+    );
+    let endpoint = RedirectEndpoint {
+        name: "RedirectSafety",
+        path: "/protected",
+        policy: redirect_policy(),
+        host: REDIRECT_DEFAULT_HOST,
+    };
+
+    let err = client
+        .request(endpoint)
+        .execute_raw()
+        .await
+        .expect_err("redirect response should stop at the first response");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(err.http_status(), Some(StatusCode::FOUND));
+    assert_eq!(
+        err.http_headers()
+            .and_then(|headers| headers.get("location"))
+            .and_then(|value| value.to_str().ok()),
+        Some(redirect_location.as_str())
+    );
+    assert_eq!(first_hits.load(Ordering::SeqCst), 1);
+    assert_eq!(second_hits.load(Ordering::SeqCst), 0);
+    let first_request = first_requests.lock().await;
+    assert_eq!(first_request.len(), 1);
+    let first_request = &first_request[0];
+    assert!(first_request.contains("GET /protected HTTP/1.1"));
+    assert!(
+        first_request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer redirect-secret"),
+        "default reqwest transport should carry auth on the original request"
+    );
+
+    first_shutdown.store(true, Ordering::SeqCst);
+    second_shutdown.store(true, Ordering::SeqCst);
+    first_server
+        .join()
+        .expect("first redirect server should stop");
+    second_server
+        .join()
+        .expect("second redirect server should stop");
+
+    assert!(second_requests.lock().await.is_empty());
+}
+
+#[tokio::test]
+async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
+    let _guard = redirect_test_lock().lock().await;
+    let first_requests = Arc::new(Mutex::new(Vec::new()));
+    let second_requests = Arc::new(Mutex::new(Vec::new()));
+    let first_hits = Arc::new(AtomicUsize::new(0));
+    let second_hits = Arc::new(AtomicUsize::new(0));
+    let first_shutdown = Arc::new(AtomicBool::new(false));
+    let second_shutdown = Arc::new(AtomicBool::new(false));
+    let redirect_location = format!("http://127.0.0.1:{REDIRECT_TARGET_PORT}/final");
+
+    let first_server = spawn_http_server(
+        REDIRECT_CUSTOM_PORT,
+        first_requests.clone(),
+        first_hits.clone(),
+        first_shutdown.clone(),
+        http_response(
+            StatusCode::FOUND,
+            &[("Location", redirect_location.clone())],
+            "",
+        ),
+        true,
+    );
+    let second_server = spawn_http_server(
+        REDIRECT_TARGET_PORT,
+        second_requests.clone(),
+        second_hits.clone(),
+        second_shutdown.clone(),
+        http_response(StatusCode::OK, &[], "redirected"),
+        true,
+    );
+
+    std::thread::sleep(Duration::from_millis(50));
+
+    let reqwest_client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .expect("caller-owned client should build");
+    let client = ApiClient::<RedirectCx, _>::with_reqwest_client(
+        (),
+        TestAuthVars {
+            token: Some("redirect-secret".to_string()),
+            identity: "anon",
+        },
+        reqwest_client,
+    );
+    let endpoint = RedirectEndpoint {
+        name: "RedirectCallerOwned",
+        path: "/protected",
+        policy: redirect_policy(),
+        host: REDIRECT_CUSTOM_HOST,
+    };
+
+    let response = client
+        .request(endpoint)
+        .execute_raw()
+        .await
+        .expect("caller-owned reqwest client should follow redirects");
+
+    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(response.body.as_ref(), b"redirected");
+    assert_eq!(first_hits.load(Ordering::SeqCst), 1);
+    assert_eq!(second_hits.load(Ordering::SeqCst), 1);
+    assert_eq!(first_requests.lock().await.len(), 1);
+    assert_eq!(second_requests.lock().await.len(), 1);
+
+    first_shutdown.store(true, Ordering::SeqCst);
+    second_shutdown.store(true, Ordering::SeqCst);
+    first_server
+        .join()
+        .expect("first redirect server should stop");
+    second_server
+        .join()
+        .expect("second redirect server should stop");
 }
 
 #[tokio::test]

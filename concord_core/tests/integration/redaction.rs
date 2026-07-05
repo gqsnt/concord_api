@@ -594,9 +594,13 @@ mod query_auth_redaction {
             transport_auth: None,
             extensions: RequestExtensions::default(),
         };
-        let err = match ReqwestTransport::new(reqwest::Client::new())
-            .send(req)
-            .await
+        let err = match ReqwestTransport::new(
+            reqwest::Client::builder()
+                .build()
+                .expect("reqwest client should build"),
+        )
+        .send(req)
+        .await
         {
             Ok(_) => panic!("closed local port should fail"),
             Err(err) => err,

@@ -156,3 +156,5 @@ If a public query parameter already uses the same key as a query-auth credential
 Header-auth placements reserve their header name as well. A public header that collides with a bearer, Basic, or custom header-auth header is rejected after auth inheritance has been applied to the final endpoint and before transport, and header-name matching is case-insensitive.
 
 The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug output, diagnostics, and generated documentation, not to the request sent over transport.
+
+Concord's default reqwest transport disables redirects, so bearer, basic, header, and query auth material stays on the original request instead of being forwarded to a remote-selected redirect target. Advanced callers who supply their own reqwest client own that redirect policy themselves.
