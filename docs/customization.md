@@ -79,6 +79,8 @@ api! {
 }
 ```
 
+Dynamic path segments are validated before transport. Required dynamic path values must stringify to a non-empty segment, and optional dynamic path values reject `Some("")` while preserving the existing `None`-omits-segment behavior where supported. The empty-string rule does not apply to query parameter values.
+
 Codec rules:
 
 - `ContentType` provides the wire content identity for buffered codecs and format markers.

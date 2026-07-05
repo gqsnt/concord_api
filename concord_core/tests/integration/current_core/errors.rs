@@ -8,12 +8,12 @@ use crate::support::assert_text_does_not_contain_any;
 use bytes::Bytes;
 use concord_core::advanced::{
     DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
-    RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter, Transport, TransportBody,
-    TransportError, TransportErrorKind, TransportRequest, TransportResponse,
+    RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter, RouteBuilder, Transport,
+    TransportBody, TransportError, TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, Format, RequestArgs, RequestPlan, ResolvedPolicy,
+    BodyPlan, ClientPlanContext, Format, RequestArgs, RequestPlan, ResolvedPolicy, ResolvedRoute,
 };
 use concord_core::prelude::{
     ApiClient, ApiClientError, CursorPagination, DebugLevel, Endpoint, ReusableEndpoint,
@@ -50,6 +50,31 @@ impl ReusableEndpoint<TestCx> for InvalidParamEndpoint {
             },
             "id",
         ))
+    }
+}
+
+#[derive(Clone)]
+struct DynamicPathEndpoint {
+    required: String,
+    optional: Option<String>,
+    formatted: String,
+}
+
+impl Endpoint<TestCx> for DynamicPathEndpoint {
+    type Response = String;
+
+    buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
+}
+
+impl ReusableEndpoint<TestCx> for DynamicPathEndpoint {
+    fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
+        build_dynamic_path_request_plan(
+            "DynamicPath",
+            Method::GET,
+            &self.required,
+            self.optional.as_deref(),
+            &self.formatted,
+        )
     }
 }
 
@@ -336,6 +361,54 @@ fn body_read_failure_policy() -> ResolvedPolicy {
     policy
 }
 
+fn validate_dynamic_path_segment(
+    ctx: concord_core::advanced::ErrorContext,
+    label: &'static str,
+    segment: &str,
+    path: &mut concord_core::advanced::UrlPath,
+) -> Result<(), ApiClientError> {
+    if segment.is_empty()
+        || segment == "."
+        || segment == ".."
+        || segment.contains('/')
+        || segment.contains('\\')
+    {
+        return Err(ApiClientError::invalid_param(ctx, label));
+    }
+
+    path.push_segment_encoded(segment);
+    Ok(())
+}
+
+fn build_dynamic_path_request_plan(
+    name: &'static str,
+    method: Method,
+    required: &str,
+    optional: Option<&str>,
+    formatted: &str,
+) -> Result<RequestPlan, ApiClientError> {
+    let ctx = concord_core::advanced::ErrorContext {
+        endpoint: name,
+        method: method.clone(),
+    };
+    let mut route = RouteBuilder::new();
+    route.path_mut().push_raw("users");
+    validate_dynamic_path_segment(ctx.clone(), "vars.id", required, route.path_mut())?;
+    if let Some(optional) = optional {
+        validate_dynamic_path_segment(ctx.clone(), "ep.id", optional, route.path_mut())?;
+    }
+    validate_dynamic_path_segment(ctx, "fmt", formatted, route.path_mut())?;
+    route.path_mut().push_raw("posts");
+
+    let mut plan = request_plan(name, method, "/users", ResolvedPolicy::default(), None);
+    plan.endpoint.route = ResolvedRoute::new(
+        http::uri::Scheme::HTTPS,
+        "example.com",
+        route.path().as_str().to_string(),
+    );
+    Ok(plan)
+}
+
 fn rate_policy() -> ResolvedPolicy {
     ResolvedPolicy {
         rate_limit: {
@@ -545,6 +618,140 @@ async fn request_construction_errors_are_typed_and_pre_transport() {
     assert!(!events.iter().any(|event| event == "transport"));
     assert_error_safe(&err);
     assert_observers_safe(&Arc::new(Mutex::new(events))).await;
+}
+
+#[tokio::test]
+async fn required_dynamic_path_segments_reject_empty_and_reserved_values_before_transport() {
+    for (value, label) in [
+        ("", "vars.id"),
+        (".", "vars.id"),
+        ("..", "vars.id"),
+        ("a/b", "vars.id"),
+        ("a\\b", "vars.id"),
+    ] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let transport = MockTransport::new(
+            events.clone(),
+            vec![MockResponse::text(StatusCode::OK, "ok")],
+        );
+        let client = client(
+            TestAuthVars {
+                token: Some(RAW_AUTH_SENTINEL_PR77.to_string()),
+                identity: "auth",
+            },
+            transport.clone(),
+        );
+        let endpoint = DynamicPathEndpoint {
+            required: value.to_string(),
+            optional: None,
+            formatted: "tail".to_string(),
+        };
+
+        let err = client
+            .request(endpoint)
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .await
+            .expect_err("invalid dynamic path segment should fail before transport");
+
+        assert!(matches!(err, ApiClientError::InvalidParam { .. }));
+        assert_eq!(err.category(), ErrorCategory::Config);
+        assert_eq!(err.context().endpoint, "DynamicPath");
+        assert_eq!(err.context().method, Method::GET);
+        assert_eq!(transport.sent_count().await, 0);
+        assert!(err.to_string().contains(label));
+        assert_error_safe(&err);
+        assert_observers_safe(&events).await;
+    }
+}
+
+#[tokio::test]
+async fn optional_empty_dynamic_path_segments_fail_while_none_still_omits_the_segment() {
+    let invalid_transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let invalid_client = client(
+        TestAuthVars {
+            token: Some(RAW_AUTH_SENTINEL_PR77.to_string()),
+            identity: "auth",
+        },
+        invalid_transport.clone(),
+    );
+    let invalid_endpoint = DynamicPathEndpoint {
+        required: "alpha".to_string(),
+        optional: Some(String::new()),
+        formatted: "tail".to_string(),
+    };
+
+    let invalid_err = invalid_client
+        .request(invalid_endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("empty optional segment should fail before transport");
+
+    assert!(matches!(invalid_err, ApiClientError::InvalidParam { .. }));
+    assert_eq!(invalid_err.context().endpoint, "DynamicPath");
+    assert_eq!(invalid_transport.sent_count().await, 0);
+    assert!(invalid_err.to_string().contains("ep.id"));
+    assert_error_safe(&invalid_err);
+
+    let valid_transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let valid_client = client(TestAuthVars::default(), valid_transport.clone());
+    let valid_endpoint = DynamicPathEndpoint {
+        required: "alpha beta".to_string(),
+        optional: None,
+        formatted: "tail".to_string(),
+    };
+
+    let response = valid_client
+        .request(valid_endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect("dynamic path should be percent-encoded and sent");
+
+    assert_eq!(response.value(), "ok");
+    assert_eq!(valid_transport.sent_count().await, 1);
+    let requests = valid_transport.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].url.path(), "/users/alpha%20beta/tail/posts");
+}
+
+#[tokio::test]
+async fn formatted_empty_dynamic_path_segments_fail_before_transport() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "ok")],
+    );
+    let client = client(
+        TestAuthVars {
+            token: Some(RAW_AUTH_SENTINEL_PR77.to_string()),
+            identity: "auth",
+        },
+        transport.clone(),
+    );
+    let endpoint = DynamicPathEndpoint {
+        required: "alpha".to_string(),
+        optional: Some("beta".to_string()),
+        formatted: String::new(),
+    };
+
+    let err = client
+        .request(endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("empty formatted segment should fail before transport");
+
+    assert!(matches!(err, ApiClientError::InvalidParam { .. }));
+    assert_eq!(err.context().endpoint, "DynamicPath");
+    assert_eq!(err.context().method, Method::GET);
+    assert_eq!(transport.sent_count().await, 0);
+    assert!(err.to_string().contains("fmt"));
+    assert_error_safe(&err);
+    assert_observers_safe(&events).await;
 }
 
 #[tokio::test]

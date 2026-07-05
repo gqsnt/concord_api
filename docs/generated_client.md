@@ -65,6 +65,8 @@ Required scope and endpoint parameters are direct method arguments.
 api.users().get_user(user_id)
 ```
 
+Dynamic path parameters are part of that rule too: required dynamic path values must stringify to a non-empty segment, optional dynamic path values reject `Some("")`, and optional `None` still omits the segment where supported. The empty-string rule does not apply to query parameters.
+
 A request body is also a direct endpoint method argument.
 
 ```rust

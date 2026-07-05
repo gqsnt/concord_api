@@ -114,7 +114,9 @@ fn emit_dynamic_path_segment_push(value: TokenStream2, label: LitStr) -> TokenSt
         quote! {
             {
                 let __segment = (#value).to_string();
-                if __segment == "." || __segment == ".."
+                if __segment.is_empty()
+                    || __segment == "."
+                    || __segment == ".."
                     || __segment.contains('/')
                     || __segment.contains('\\')
                 {

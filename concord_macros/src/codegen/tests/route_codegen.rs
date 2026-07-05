@@ -66,6 +66,7 @@ fn generated_route_rejects_dynamic_slash_segments() {
     assert_contains_all(
         &out,
         &[
+            "__segment.is_empty()",
             "__segment.contains('/')",
             "__segment.contains('\\\\')",
             "ApiClientError::invalid_param(ctx.clone()",
