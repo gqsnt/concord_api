@@ -2,12 +2,16 @@ use super::common::{
     CapturedTransportRequestSnapshot, GateableBodyTransport, GateableHooks, GateableTransport,
     ItemsEndpoint, MockOutcome, MockResponse, MockTransport, ObservationRuntimeHooks,
     PaginationVariant, PhaseGate, SafeRecordingDebugSink, TestAuthVars, TestCx, TextEndpoint,
-    assert_events_do_not_contain, auth_policy, client, rate_limit_policy, retry_policy,
+    assert_events_do_not_contain, auth_policy, buffered_endpoint_execute, client,
+    rate_limit_policy, request_plan, retry_policy,
 };
 use crate::support::{RedactionSentinels, assert_error_chain_does_not_contain_any};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, PostResponseHookContext, RuntimeHooks, Transport, TransportErrorKind,
+    AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthErrorKind, AuthHttpRequest,
+    AuthInternalPolicy, AuthMode, AuthPlacement, AuthProvenance, AuthRequirement,
+    AuthRequirementId, AuthUsageId, CredentialId, PostResponseHookContext, PreparedAuthCredential,
+    PreparedInternalAuth, RuntimeHooks, Transport, TransportErrorKind, apply_secret_credential,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, PaginationTermination};
 use http::{HeaderMap, Method, StatusCode};
@@ -15,8 +19,9 @@ use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::Ordering as AtomicOrdering;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use tokio::sync::Mutex;
+use tokio::sync::Notify;
 
 const REDACTION_SENTINELS_PR79: RedactionSentinels = RedactionSentinels::new(
     "RAW_AUTH_SENTINEL_PR79",
@@ -32,6 +37,12 @@ const CANCEL_SENTINELS: RedactionSentinels = RedactionSentinels::new(
     "CANCEL_AUTH_SENTINEL",
     "CANCEL_BODY_SENTINEL",
     "CANCEL_RESPONSE_SENTINEL",
+);
+
+const INTERNAL_AUTH_SENTINELS: RedactionSentinels = RedactionSentinels::new(
+    "INTERNAL_AUTH_SENTINEL",
+    "INTERNAL_AUTH_BODY_SENTINEL",
+    "INTERNAL_AUTH_RESPONSE_SENTINEL",
 );
 
 trait HeaderLookup {
@@ -94,6 +105,138 @@ fn transport_client_with_auth<T: Transport + Clone>(
     transport: T,
 ) -> ApiClient<TestCx, T> {
     ApiClient::with_transport((), auth, transport)
+}
+
+#[derive(Clone)]
+struct InternalAuthVars {
+    entered: Arc<Notify>,
+    pending: Arc<Notify>,
+    block_once: Arc<AtomicBool>,
+    internal_secret: &'static str,
+    external_secret: &'static str,
+    recurse: bool,
+}
+
+#[derive(Clone)]
+struct InternalAuthCx;
+
+impl concord_core::prelude::ClientContext for InternalAuthCx {
+    type Vars = ();
+    type AuthVars = InternalAuthVars;
+    type AuthState = ();
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+    fn apply_internal_auth<'a>(
+        requirement: &'a AuthRequirementId,
+        request: &'a mut AuthApplicationRequest<'_>,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedInternalAuth, AuthError>> {
+        Box::pin(async move {
+            assert_eq!(requirement.name(), "internal");
+            if auth.recurse {
+                let err = executor
+                    .send(AuthHttpRequest {
+                        method: Method::GET,
+                        url: "https://auth.example.com/internal"
+                            .parse()
+                            .expect("auth url"),
+                        headers: HeaderMap::new(),
+                        body: concord_core::advanced::TransportRequestBody::Empty,
+                        mode: AuthMode::UseAuth(AuthRequirementId::new("test", "internal")),
+                        policy: AuthInternalPolicy::default(),
+                    })
+                    .await
+                    .expect_err("recursive internal auth should fail");
+                assert_eq!(err.kind, AuthErrorKind::RecursionDetected);
+                assert_error_chain_does_not_contain_any(&err, &INTERNAL_AUTH_SENTINELS.all());
+                return Err(err);
+            }
+
+            if auth.block_once.swap(false, AtomicOrdering::SeqCst) {
+                auth.entered.notify_waiters();
+                auth.pending.notified().await;
+            }
+            let requirement = AuthRequirement {
+                credential: concord_core::advanced::CredentialRef {
+                    id: CredentialId::new("test", "internal"),
+                },
+                placement: AuthPlacement::Header("X-Internal-Custom"),
+                usage_id: AuthUsageId::new("internal-use"),
+                step_id: Some("internal"),
+                provenance: AuthProvenance::new("internal"),
+                challenge: Default::default(),
+            };
+            let material = concord_core::prelude::ApiKey::new(auth.internal_secret.to_string());
+            let application = apply_secret_credential(request, &requirement, &material)?;
+            Ok(PreparedInternalAuth::from_application(application))
+        })
+    }
+
+    fn prepare_auth_requirement<'a>(
+        requirement: &'a AuthRequirement,
+        request: &'a mut AuthApplicationRequest<'_>,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a concord_core::advanced::RequestMeta,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>> {
+        Box::pin(async move {
+            let auth_resp = executor
+                .send(AuthHttpRequest {
+                    method: Method::GET,
+                    url: "https://auth.example.com/internal"
+                        .parse()
+                        .expect("auth url"),
+                    headers: HeaderMap::new(),
+                    body: concord_core::advanced::TransportRequestBody::Empty,
+                    mode: AuthMode::UseAuth(AuthRequirementId::new("test", "internal")),
+                    policy: AuthInternalPolicy::default(),
+                })
+                .await?;
+            assert_eq!(auth_resp.status, StatusCode::OK);
+
+            let material = concord_core::prelude::ApiKey::new(auth.external_secret.to_string());
+            let application = apply_secret_credential(request, requirement, &material)?;
+            let applied = AuthAppliedCredential {
+                credential_id: requirement.credential.id.clone(),
+                usage_id: requirement.usage_id.clone(),
+                step_id: requirement.step_id,
+                generation: Some(1),
+                provenance: requirement.provenance.clone(),
+            };
+            Ok(PreparedAuthCredential::new(applied, application))
+        })
+    }
+}
+
+struct InternalAuthEndpoint;
+
+impl concord_core::prelude::Endpoint<InternalAuthCx> for InternalAuthEndpoint {
+    type Response = String;
+
+    buffered_endpoint_execute!(InternalAuthCx, concord_core::prelude::Text<String>);
+}
+
+impl concord_core::prelude::ReusableEndpoint<InternalAuthCx> for InternalAuthEndpoint {
+    fn plan(
+        &self,
+        _ctx: &concord_core::internal::ClientPlanContext<'_, InternalAuthCx>,
+    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        Ok(request_plan(
+            "InternalAuth",
+            Method::GET,
+            "/protected",
+            auth_policy(AuthPlacement::Bearer),
+            None,
+        ))
+    }
 }
 
 #[tokio::test]
@@ -283,6 +426,92 @@ async fn cancel_while_transport_is_pending_preserves_request_context_and_redacts
     assert_eq!(requests[0].url.path(), "/text");
     assert_bearer_auth_header_contains(&requests[0], CANCEL_SENTINELS.auth);
     assert_error_chain_does_not_contain_any(&join_err, &[CANCEL_SENTINELS.auth]);
+}
+
+#[tokio::test]
+async fn cancel_during_internal_auth_does_not_poison_recursion_stack() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, "internal-ok"),
+            MockResponse::text(StatusCode::OK, "protected-ok"),
+        ],
+    );
+    let client = ApiClient::<InternalAuthCx, _>::with_transport(
+        (),
+        InternalAuthVars {
+            entered: Arc::new(Notify::new()),
+            pending: Arc::new(Notify::new()),
+            block_once: Arc::new(AtomicBool::new(true)),
+            internal_secret: INTERNAL_AUTH_SENTINELS.auth,
+            external_secret: INTERNAL_AUTH_SENTINELS.response,
+            recurse: false,
+        },
+        transport.clone(),
+    );
+
+    let mut first = Box::pin(
+        client
+            .request(InternalAuthEndpoint)
+            .execute_decoded_with::<concord_core::prelude::Text<String>>(),
+    );
+    let mut entered = Box::pin(client.auth_vars().entered.notified());
+
+    tokio::select! {
+        biased;
+        _ = entered.as_mut() => {}
+        result = first.as_mut() => panic!("internal auth request completed unexpectedly: {result:?}"),
+    }
+    drop(first);
+
+    assert_eq!(transport.sent_count().await, 0);
+
+    let value = client
+        .request(InternalAuthEndpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect("second request should complete after cancellation")
+        .into_value();
+    assert_eq!(value, "protected-ok");
+    assert_eq!(transport.sent_count().await, 2);
+    assert_events_do_not_contain(&events, &INTERNAL_AUTH_SENTINELS.all()).await;
+}
+
+#[tokio::test]
+async fn real_internal_auth_recursion_is_still_rejected() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(StatusCode::OK, "unused")],
+    );
+    let client = ApiClient::<InternalAuthCx, _>::with_transport(
+        (),
+        InternalAuthVars {
+            entered: Arc::new(Notify::new()),
+            pending: Arc::new(Notify::new()),
+            block_once: Arc::new(AtomicBool::new(false)),
+            internal_secret: INTERNAL_AUTH_SENTINELS.auth,
+            external_secret: INTERNAL_AUTH_SENTINELS.response,
+            recurse: true,
+        },
+        transport.clone(),
+    );
+
+    let err = client
+        .request(InternalAuthEndpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("recursive internal auth should fail");
+
+    match &err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::RecursionDetected);
+        }
+        other => panic!("expected auth recursion error, got {other:?}"),
+    }
+    assert_error_chain_does_not_contain_any(&err, &INTERNAL_AUTH_SENTINELS.all());
+    assert_eq!(transport.sent_count().await, 0);
 }
 
 #[tokio::test]

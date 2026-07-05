@@ -3,7 +3,7 @@ struct ClientAuthHttpExecutor<'a, Cx: ClientContext, T: Transport> {
 }
 
 tokio::task_local! {
-    static AUTH_INTERNAL_STACK: RefCell<Vec<String>>;
+    static AUTH_INTERNAL_STACK: std::cell::RefCell<Vec<String>>;
 }
 
 async fn with_auth_internal_stack<T>(fut: impl std::future::Future<Output = T>) -> T {
@@ -11,8 +11,37 @@ async fn with_auth_internal_stack<T>(fut: impl std::future::Future<Output = T>) 
         fut.await
     } else {
         AUTH_INTERNAL_STACK
-            .scope(RefCell::new(Vec::new()), fut)
+            .scope(std::cell::RefCell::new(Vec::new()), fut)
             .await
+    }
+}
+
+struct AuthInternalStackGuard {
+    requirement_key: String,
+}
+
+impl AuthInternalStackGuard {
+    fn push(requirement_key: String) -> Self {
+        AUTH_INTERNAL_STACK.with(|stack| {
+            stack.borrow_mut().push(requirement_key.clone());
+        });
+        Self { requirement_key }
+    }
+}
+
+impl Drop for AuthInternalStackGuard {
+    fn drop(&mut self) {
+        let _ = AUTH_INTERNAL_STACK.try_with(|stack| {
+            let mut stack = stack.borrow_mut();
+            if stack.last().is_some_and(|item| item == &self.requirement_key) {
+                stack.pop();
+                return;
+            }
+
+            if let Some(index) = stack.iter().rposition(|item| item == &self.requirement_key) {
+                stack.remove(index);
+            }
+        });
     }
 }
 
@@ -98,13 +127,13 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                             return Err(AuthError::new(
                                 AuthErrorKind::RecursionDetected,
                                 format!(
-                                    "internal auth recursion detected for requirement `{requirement}`"
-                                ),
-                            ));
-                        }
+                                "internal auth recursion detected for requirement `{requirement}`"
+                            ),
+                        ));
+                    }
 
-                        AUTH_INTERNAL_STACK.with(|stack| stack.borrow_mut().push(requirement_key));
                         let auth_state_snapshot = self.client.try_auth_state()?;
+                        let _stack_guard = AuthInternalStackGuard::push(requirement_key);
                         let applied = {
                             let mut auth_request =
                                 crate::auth::AuthApplicationRequest::new(&mut base_request.extensions);
@@ -118,9 +147,6 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                             )
                             .await
                         };
-                        AUTH_INTERNAL_STACK.with(|stack| {
-                            let _ = stack.borrow_mut().pop();
-                        });
                         auth_materials = applied?.materials;
                     }
                 }
