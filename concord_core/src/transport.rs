@@ -236,7 +236,10 @@ impl fmt::Debug for BuiltRequest {
         f.debug_struct("BuiltRequest")
             .field("meta", &self.meta)
             .field("url", &self.debug_url())
-            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field(
+                "headers",
+                &crate::debug::SanitizedHeaders::new(&self.headers),
+            )
             .field("body", &self.body)
             .field("stream_size_hint", &self.stream_size_hint)
             .field("timeout", &self.timeout)
@@ -291,7 +294,10 @@ impl fmt::Debug for BuiltResponse {
                 &crate::redaction::sanitize_url_for_debug(&self.url, [] as [&str; 0]),
             )
             .field("status", &self.status)
-            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field(
+                "headers",
+                &crate::debug::SanitizedHeaders::new(&self.headers),
+            )
             .field("body", &format!("<{} bytes>", self.body.len()))
             .field("rate_limit", &self.rate_limit)
             .finish()
@@ -316,7 +322,10 @@ impl<T: fmt::Debug> fmt::Debug for DecodedResponse<T> {
                 &crate::redaction::sanitize_url_for_debug(&self.url, [] as [&str; 0]),
             )
             .field("status", &self.status)
-            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field(
+                "headers",
+                &crate::debug::SanitizedHeaders::new(&self.headers),
+            )
             .field("value", &self.value)
             .finish()
     }
@@ -359,7 +368,7 @@ impl fmt::Debug for TransportRequest {
                     self.extensions.sensitive_query_keys.iter(),
                 ),
             )
-            .field("headers", &crate::debug::RedactedHeaders(&headers))
+            .field("headers", &crate::debug::SanitizedHeaders::new(&headers))
             .field("body", &self.body)
             .field("timeout", &self.timeout)
             .field("rate_limit", &self.rate_limit)

@@ -171,7 +171,7 @@ impl<M: ContentType> fmt::Debug for StreamResponse<M> {
             .field("status", &self.resp.status)
             .field(
                 "headers",
-                &crate::debug::RedactedHeaders(&self.resp.headers),
+                &crate::debug::SanitizedHeaders::new(&self.resp.headers),
             )
             .field("content_length", &self.resp.content_length)
             .field("rate_limit", &self.resp.rate_limit)

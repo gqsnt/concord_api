@@ -178,7 +178,10 @@ impl Debug for ApiClientError {
                 .debug_struct("HttpStatus")
                 .field("ctx", ctx)
                 .field("status", status)
-                .field("headers", &crate::debug::RedactedHeaders(headers.as_ref()))
+                .field(
+                    "headers",
+                    &crate::debug::SanitizedHeaders::new(headers.as_ref()),
+                )
                 .field("rate_limit", rate_limit)
                 .finish(),
             Self::Decode { ctx, source } => f

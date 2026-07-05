@@ -10,7 +10,7 @@ use concord_core::advanced::{
 };
 use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
-use http::{HeaderMap, Method, StatusCode};
+use http::{Method, StatusCode};
 use std::num::NonZeroU32;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -499,7 +499,11 @@ impl DebugSink for RecordingDebugSink {
         ));
     }
 
-    fn request_headers(&self, dbg: DebugLevel, headers: &HeaderMap) {
+    fn request_headers(
+        &self,
+        dbg: DebugLevel,
+        headers: concord_core::advanced::SanitizedHeaders<'_>,
+    ) {
         self.record(format!("request_headers:{dbg}:{headers:?}"));
     }
 
@@ -507,7 +511,11 @@ impl DebugSink for RecordingDebugSink {
         self.record(format!("response:{dbg}:{status}:{url}:{ok}"));
     }
 
-    fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap) {
+    fn response_headers(
+        &self,
+        dbg: DebugLevel,
+        headers: concord_core::advanced::SanitizedHeaders<'_>,
+    ) {
         self.record(format!("response_headers:{dbg}:{headers:?}"));
     }
 }

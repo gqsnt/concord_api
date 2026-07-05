@@ -6,6 +6,8 @@ Use these extension points when the protocol is part of your API contract. Do no
 
 Custom transports are an advanced caller-owned security boundary. Concord's default reqwest transport disables redirects, but `with_reqwest_client(...)` hands redirect, proxy, TLS, cookie, and other reqwest client policies to the caller.
 
+Runtime hooks and debug sinks also sit on a security boundary. They receive sanitized metadata views, not raw header maps, and they never receive request or response body bytes. Sensitive header names and sensitive query values are redacted before callback invocation.
+
 ## Custom Codecs
 
 A request body codec implements `BodyCodec`. A response codec implements `ResponseCodec`. The shared wire-content trait is `ContentType`; codec markers carry their wire content identity through an associated `Content` type.

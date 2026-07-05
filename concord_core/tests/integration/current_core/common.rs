@@ -2431,7 +2431,11 @@ impl concord_core::advanced::DebugSink for SafeRecordingDebugSink {
             ));
     }
 
-    fn request_headers(&self, _dbg: concord_core::prelude::DebugLevel, headers: &HeaderMap) {
+    fn request_headers(
+        &self,
+        _dbg: concord_core::prelude::DebugLevel,
+        headers: concord_core::advanced::SanitizedHeaders<'_>,
+    ) {
         self.events
             .try_lock()
             .expect("debug events lock")
@@ -2451,7 +2455,11 @@ impl concord_core::advanced::DebugSink for SafeRecordingDebugSink {
             .push(format!("debug_response:{dbg}:{status}:{url}:{ok}"));
     }
 
-    fn response_headers(&self, _dbg: concord_core::prelude::DebugLevel, headers: &HeaderMap) {
+    fn response_headers(
+        &self,
+        _dbg: concord_core::prelude::DebugLevel,
+        headers: concord_core::advanced::SanitizedHeaders<'_>,
+    ) {
         self.events
             .try_lock()
             .expect("debug events lock")

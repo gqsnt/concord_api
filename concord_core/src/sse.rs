@@ -225,7 +225,7 @@ impl<T> fmt::Debug for SseStream<T> {
             .field("status", &self.meta.status)
             .field(
                 "headers",
-                &crate::debug::RedactedHeaders(&self.meta.headers),
+                &crate::debug::SanitizedHeaders::new(&self.meta.headers),
             )
             .field("content_length", &self.meta.content_length)
             .field("rate_limit", &self.meta.rate_limit)

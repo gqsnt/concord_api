@@ -1977,7 +1977,11 @@ impl DebugSink for RecordingDebugSink {
             .push(format!("request_start:{dbg}:{endpoint}:{page_index}"));
     }
 
-    fn request_headers(&self, dbg: DebugLevel, _headers: &HeaderMap) {
+    fn request_headers(
+        &self,
+        dbg: DebugLevel,
+        _headers: concord_core::advanced::SanitizedHeaders<'_>,
+    ) {
         self.events
             .lock()
             .expect("debug events lock")
@@ -1991,7 +1995,11 @@ impl DebugSink for RecordingDebugSink {
             .push(format!("response_status:{dbg}:{status}:{ok}"));
     }
 
-    fn response_headers(&self, dbg: DebugLevel, _headers: &HeaderMap) {
+    fn response_headers(
+        &self,
+        dbg: DebugLevel,
+        _headers: concord_core::advanced::SanitizedHeaders<'_>,
+    ) {
         self.events
             .lock()
             .expect("debug events lock")

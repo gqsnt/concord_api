@@ -26,6 +26,8 @@ let api = minimal_api::MinimalApi::new_with_transport(transport);
 
 Concord's default reqwest transport disables redirects. That keeps auth material on the original request instead of letting reqwest forward it to a redirected location. If you pass a caller-owned reqwest client through `with_reqwest_client(...)` or `new_with_transport(...)`, redirect, proxy, TLS, cookie, and similar reqwest policies stay under caller control.
 
+When you configure runtime hooks or debug sinks, those callbacks receive sanitized metadata views. Sensitive request and response headers and sensitive query values are redacted before callback invocation, and neither surface receives request or response body bytes.
+
 Generated clients inherit Concord's runtime response-body limit. Endpoint responses are read under a finite 16 MiB default before decode. Advanced callers can adjust this with `configure(|cfg| cfg.max_response_body_bytes(bytes))`; `no_response_body_limit()` disables the endpoint read limit explicitly.
 
 Use `builder()` when constructing a client is clearer with named setters.

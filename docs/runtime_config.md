@@ -64,7 +64,9 @@ Rust borrowing prevents mutating one client instance while a request borrowed fr
 
 Pagination page and item termination is chosen per request with `PaginationTermination`; there is no runtime-wide implicit page or item cap. `pagination_detect_loops(...)` changes the default controller loop-key detection setting for paginated calls. The runtime still enforces non-progress detection for repeated logical page identities regardless of this setting.
 
-Debug sinks and runtime hooks are metadata-only. They may observe redacted URLs, redacted headers, statuses, retry events, rate-limit events, and endpoint metadata. They never receive request or response body bytes.
+Debug sinks and runtime hooks are metadata-only. They receive sanitized metadata views: URLs are redacted before callback invocation, request and response headers are wrapped in a redacted header view, and they may observe statuses, retry events, rate-limit events, and endpoint metadata. They never receive request or response body bytes, and they cannot observe raw auth material.
+
+The transport boundary is unchanged. The runtime still materializes raw request headers, query auth, and bodies only when building the `TransportRequest` that goes to the transport implementation.
 
 Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run after response classification, hook observation, rate-limit observation, and auth rejection handling, and before endpoint response decoding. They do not see body bytes or raw auth material.
 

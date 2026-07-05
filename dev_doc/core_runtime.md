@@ -26,7 +26,7 @@ The runtime order is:
 
 This order is not user-configurable.
 
-Runtime hooks and rate-limit observation are transport-response metadata observations, not endpoint-success hooks. They may observe HTTP responses that later fail auth handling or retry, but they never receive response body bytes or raw auth material.
+Runtime hooks and rate-limit observation are transport-response metadata observations, not endpoint-success hooks. They may observe HTTP responses that later fail auth handling or retry, but they never receive response body bytes or raw auth material. Hook and debug callback metadata is sanitized before invocation: sensitive request and response headers, sensitive query values in URLs, and other redacted names are not exposed as raw header maps.
 
 Retry is a bounded transport or status decision layer. It runs after transport-response observation and auth rejection handling, and before endpoint decode. Retry does not handle endpoint decode failures. `execute_raw()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding.
 
@@ -50,7 +50,7 @@ Controller loop-key checking is an additional pagination defense, not the only n
 
 Public query parameters and public headers cannot silently collide with reserved auth names. Query-auth keys are rejected before transport if they already exist as public query parameters, and bearer, Basic, and custom header-auth names are rejected before rate-limit acquisition and transport if they already exist as public headers.
 
-Debug sinks and runtime hooks are body-free. They may observe safe metadata and redacted headers or URLs, but they must not receive live request or response body bytes.
+Debug sinks and runtime hooks are body-free. They may observe safe metadata and redacted headers or URLs, but they must not receive live request or response body bytes. The transport still receives the raw request material it needs at the send boundary.
 
 Debug output must not include request or response body snippets, previews, or formatted excerpts. Body bytes belong only to transport send or bounded response read paths.
 

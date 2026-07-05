@@ -1,5 +1,6 @@
-use http::header::{HeaderName, HeaderValue};
-use http::{HeaderMap, Method, StatusCode};
+use http::header::HeaderName;
+use http::{HeaderMap, HeaderValue as HttpHeaderValue, Method, StatusCode};
+use std::borrow::Cow;
 use std::fmt;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -48,10 +49,10 @@ pub trait DebugSink: Send + Sync + 'static {
         endpoint: &'static str,
         page_index: u32,
     );
-    fn request_headers(&self, dbg: DebugLevel, headers: &HeaderMap);
+    fn request_headers(&self, dbg: DebugLevel, headers: SanitizedHeaders<'_>);
 
     fn response_status(&self, dbg: DebugLevel, status: StatusCode, url: &str, ok: bool);
-    fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap);
+    fn response_headers(&self, dbg: DebugLevel, headers: SanitizedHeaders<'_>);
 }
 
 #[derive(Default)]
@@ -60,11 +61,11 @@ impl DebugSink for NoopDebugSink {
     #[inline]
     fn request_start(&self, _: DebugLevel, _: &Method, _: &str, _: &'static str, _: u32) {}
     #[inline]
-    fn request_headers(&self, _: DebugLevel, _: &HeaderMap) {}
+    fn request_headers(&self, _: DebugLevel, _: SanitizedHeaders<'_>) {}
     #[inline]
     fn response_status(&self, _: DebugLevel, _: StatusCode, _: &str, _: bool) {}
     #[inline]
-    fn response_headers(&self, _: DebugLevel, _: &HeaderMap) {}
+    fn response_headers(&self, _: DebugLevel, _: SanitizedHeaders<'_>) {}
 }
 
 /// Reproduit le comportement actuel (stderr).
@@ -87,10 +88,10 @@ impl DebugSink for StderrDebugSink {
             );
         }
     }
-    fn request_headers(&self, dbg: DebugLevel, headers: &HeaderMap) {
+    fn request_headers(&self, dbg: DebugLevel, headers: SanitizedHeaders<'_>) {
         eprintln!("[client_api:{}] request headers:", dbg);
         for (k, v) in headers.iter() {
-            let vs = header_value_for_debug(k, v);
+            let vs = v.as_str();
             eprintln!("  {}: {}", k, vs);
         }
     }
@@ -106,10 +107,10 @@ impl DebugSink for StderrDebugSink {
             );
         }
     }
-    fn response_headers(&self, dbg: DebugLevel, headers: &HeaderMap) {
+    fn response_headers(&self, dbg: DebugLevel, headers: SanitizedHeaders<'_>) {
         eprintln!("[client_api:{}] response headers:", dbg);
         for (k, v) in headers.iter() {
-            let vs = header_value_for_debug(k, v);
+            let vs = v.as_str();
             eprintln!("  {}: {}", k, vs);
         }
     }
@@ -120,21 +121,98 @@ fn is_sensitive_header_name(name: &HeaderName) -> bool {
     crate::redaction::should_redact_header_name(name)
 }
 
-fn header_value_for_debug(name: &HeaderName, value: &HeaderValue) -> String {
-    if is_sensitive_header_name(name) {
-        "<redacted>".to_string()
+fn sanitized_header_value(name: &str, value: &HttpHeaderValue) -> SanitizedHeaderValue {
+    if crate::redaction::is_sensitive_name(name) {
+        SanitizedHeaderValue::redacted()
     } else {
-        value.to_str().unwrap_or("<non-utf8>").to_string()
+        SanitizedHeaderValue::from_header_value(value)
     }
 }
 
-pub(crate) struct RedactedHeaders<'a>(pub(crate) &'a HeaderMap);
+#[derive(Clone)]
+pub struct SanitizedHeaderValue {
+    value: Cow<'static, str>,
+    redacted: bool,
+}
 
-impl fmt::Debug for RedactedHeaders<'_> {
+impl SanitizedHeaderValue {
+    fn from_header_value(value: &HttpHeaderValue) -> Self {
+        Self {
+            value: match value.to_str() {
+                Ok(value) => Cow::Owned(value.to_owned()),
+                Err(_) => Cow::Borrowed("<non-utf8>"),
+            },
+            redacted: false,
+        }
+    }
+
+    fn redacted() -> Self {
+        Self {
+            value: Cow::Borrowed("<redacted>"),
+            redacted: true,
+        }
+    }
+
+    pub fn is_redacted(&self) -> bool {
+        self.redacted
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.value
+    }
+}
+
+impl fmt::Debug for SanitizedHeaderValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl fmt::Display for SanitizedHeaderValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Clone)]
+pub struct SanitizedHeaders<'a> {
+    headers: &'a HeaderMap,
+}
+
+impl<'a> SanitizedHeaders<'a> {
+    pub fn new(headers: &'a HeaderMap) -> Self {
+        Self { headers }
+    }
+
+    pub fn len(&self) -> usize {
+        self.headers.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.headers.is_empty()
+    }
+
+    pub fn get(&self, name: &HeaderName) -> Option<SanitizedHeaderValue> {
+        let value = self.headers.get(name)?;
+        Some(sanitized_header_value(name.as_str(), value))
+    }
+
+    pub fn contains_key(&self, name: &HeaderName) -> bool {
+        self.headers.contains_key(name)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (HeaderName, SanitizedHeaderValue)> + '_ {
+        self.headers
+            .iter()
+            .map(|(name, value)| (name.clone(), sanitized_header_value(name.as_str(), value)))
+    }
+}
+
+impl fmt::Debug for SanitizedHeaders<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut map = f.debug_map();
-        for (name, value) in self.0 {
-            map.entry(name, &header_value_for_debug(name, value));
+        for (name, value) in self.headers {
+            map.entry(name, &sanitized_header_value(name.as_str(), value));
         }
         map.finish()
     }
@@ -143,6 +221,7 @@ impl fmt::Debug for RedactedHeaders<'_> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use http::HeaderValue;
     use http::header::{ACCEPT, AUTHORIZATION, COOKIE};
 
     #[test]
@@ -159,11 +238,15 @@ mod test {
 
         let secret = HeaderValue::from_static("s3cr3t");
         assert_eq!(
-            header_value_for_debug(&AUTHORIZATION, &secret),
+            sanitized_header_value(AUTHORIZATION.as_str(), &secret).as_str(),
             "<redacted>"
         );
         assert_eq!(
-            header_value_for_debug(&ACCEPT, &HeaderValue::from_static("application/json")),
+            sanitized_header_value(
+                ACCEPT.as_str(),
+                &HeaderValue::from_static("application/json")
+            )
+            .as_str(),
             "application/json"
         );
     }
@@ -184,9 +267,9 @@ mod test {
                 HeaderValue::from_static("LEAK_SENTINEL_API_KEY_123"),
             ),
         ] {
-            let rendered = header_value_for_debug(&name, &value);
-            assert_eq!(rendered, "<redacted>");
-            assert!(!rendered.contains("LEAK_SENTINEL"));
+            let rendered = sanitized_header_value(name.as_str(), &value);
+            assert_eq!(rendered.as_str(), "<redacted>");
+            assert!(!rendered.as_str().contains("LEAK_SENTINEL"));
         }
     }
 }

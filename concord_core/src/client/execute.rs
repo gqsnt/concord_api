@@ -787,7 +787,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             );
         }
         if dbg.is_very_verbose() {
-            self.debug_sink.request_headers(dbg, &built.headers);
+            self.debug_sink
+                .request_headers(dbg, crate::debug::SanitizedHeaders::new(&built.headers));
         }
     }
 
@@ -796,7 +797,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             self.debug_sink.response_status(dbg, resp.status, url_str, true);
         }
         if dbg.is_very_verbose() {
-            self.debug_sink.response_headers(dbg, &resp.headers);
+            self.debug_sink
+                .response_headers(dbg, crate::debug::SanitizedHeaders::new(&resp.headers));
         }
     }
 

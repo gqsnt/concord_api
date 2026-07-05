@@ -192,7 +192,7 @@ impl<T> fmt::Debug for MultipartStream<T> {
             .field("status", &self.meta.status)
             .field(
                 "headers",
-                &crate::debug::RedactedHeaders(&self.meta.headers),
+                &crate::debug::SanitizedHeaders::new(&self.meta.headers),
             )
             .field("content_length", &self.meta.content_length)
             .field("rate_limit", &self.meta.rate_limit)
@@ -307,7 +307,10 @@ impl fmt::Debug for RawResponsePart {
         f.debug_struct("RawResponsePart")
             .field("ctx", &self.ctx)
             .field("status", &self.status)
-            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field(
+                "headers",
+                &crate::debug::SanitizedHeaders::new(&self.headers),
+            )
             .field("body", &"<stream>")
             .finish()
     }

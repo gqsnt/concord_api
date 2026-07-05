@@ -107,7 +107,9 @@ pub mod advanced {
         BodyCodec, CodecError, ContentType, DecodeContext, EncodeContext, EncodedBody,
         ResponseCodec,
     };
-    pub use crate::debug::{DebugSink, NoopDebugSink, StderrDebugSink};
+    pub use crate::debug::{
+        DebugSink, NoopDebugSink, SanitizedHeaderValue, SanitizedHeaders, StderrDebugSink,
+    };
     pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
     pub use crate::error::{ErrorContext, FxError, PaginationError, PaginationErrorKind};
     pub use crate::io::{

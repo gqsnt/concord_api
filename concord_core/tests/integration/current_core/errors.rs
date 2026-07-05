@@ -77,7 +77,11 @@ impl DebugSink for CapturingDebugSink {
             ));
     }
 
-    fn request_headers(&self, _dbg: DebugLevel, headers: &HeaderMap) {
+    fn request_headers(
+        &self,
+        _dbg: DebugLevel,
+        headers: concord_core::advanced::SanitizedHeaders<'_>,
+    ) {
         self.events
             .try_lock()
             .expect("debug events lock")
@@ -91,7 +95,11 @@ impl DebugSink for CapturingDebugSink {
             .push(format!("debug_response:{dbg}:{status}:{url}:{ok}"));
     }
 
-    fn response_headers(&self, _dbg: DebugLevel, headers: &HeaderMap) {
+    fn response_headers(
+        &self,
+        _dbg: DebugLevel,
+        headers: concord_core::advanced::SanitizedHeaders<'_>,
+    ) {
         self.events
             .try_lock()
             .expect("debug events lock")

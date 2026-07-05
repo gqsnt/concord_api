@@ -24,7 +24,10 @@ impl fmt::Debug for AuthHttpRequest {
                 "url",
                 &crate::redaction::sanitize_url_for_debug(&self.url, [] as [&str; 0]),
             )
-            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field(
+                "headers",
+                &crate::debug::SanitizedHeaders::new(&self.headers),
+            )
             .field("body", &self.body)
             .field("mode", &self.mode)
             .field("policy", &self.policy)
@@ -43,7 +46,10 @@ impl fmt::Debug for AuthHttpResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AuthHttpResponse")
             .field("status", &self.status)
-            .field("headers", &crate::debug::RedactedHeaders(&self.headers))
+            .field(
+                "headers",
+                &crate::debug::SanitizedHeaders::new(&self.headers),
+            )
             .field("body", &format!("<{} bytes>", self.body.len()))
             .finish()
     }

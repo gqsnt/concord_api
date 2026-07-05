@@ -6,7 +6,7 @@ Auth is declared by the macro and executed by `concord_core`.
 
 Auth vars and secrets are generated client inputs. Secret values are wrapped and redacted. Errors and diagnostics should identify credentials, headers, or fields by name without rendering raw secret values.
 
-Runtime debug and display output must not render header auth values, bearer tokens, Basic auth usernames or passwords declared as secrets, OAuth client secrets, or query-auth values. Debug sinks and hooks also do not receive live request or response body bytes, so auth and token endpoint bodies cannot be previewed through diagnostics. The materialized transport request still carries the real credential material required by the remote API; redaction is only for diagnostics, debug output, and generated docs.
+Runtime debug and display output must not render header auth values, bearer tokens, Basic auth usernames or passwords declared as secrets, OAuth client secrets, or query-auth values. Debug sinks and hooks receive sanitized metadata views, not raw header maps, and they do not receive live request or response body bytes, so auth and token endpoint bodies cannot be previewed through diagnostics. The materialized transport request still carries the real credential material required by the remote API; redaction is only for diagnostics, debug output, and generated docs.
 
 ## Credentials
 
@@ -28,7 +28,7 @@ Before rate-limit acquisition, the runtime resolves required credentials and att
 
 A pending slot records the placement, credential id, usage id, generation, and provenance. It does not store raw credential material.
 
-Raw credential material is kept in a short-lived per-attempt sidecar and is inserted only when the runtime materializes a `TransportRequest` immediately before `Transport::send`. `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, runtime hooks, and debug sinks must never store raw auth material.
+Raw credential material is kept in a short-lived per-attempt sidecar and is inserted only when the runtime materializes a `TransportRequest` immediately before `Transport::send`. `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, runtime hooks, and debug sinks must never store raw auth material. Hook and debug metadata redaction applies before callback invocation, so sensitive headers and query values are not exposed through those surfaces.
 
 Page and custom pagination mutation happens before auth-collision validation, rate-limit acquisition, and transport materialization. The runtime uses the final mutated logical request as the input to safe metadata construction, then materializes raw auth only into `TransportRequest`.
 

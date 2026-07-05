@@ -1,6 +1,7 @@
+use crate::debug::SanitizedHeaders;
 use crate::error::ApiClientError;
 use crate::transport::TransportError;
-use http::{HeaderMap, Method, StatusCode};
+use http::{Method, StatusCode};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -20,14 +21,14 @@ pub struct HookMeta<'a> {
 #[derive(Clone)]
 pub struct PreSendHookContext<'a> {
     pub meta: HookMeta<'a>,
-    pub headers: &'a HeaderMap,
+    pub headers: SanitizedHeaders<'a>,
 }
 
 impl fmt::Debug for PreSendHookContext<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PreSendHookContext")
             .field("meta", &self.meta)
-            .field("headers", &crate::debug::RedactedHeaders(self.headers))
+            .field("headers", &self.headers)
             .finish()
     }
 }
@@ -36,7 +37,7 @@ impl fmt::Debug for PreSendHookContext<'_> {
 pub struct PostResponseHookContext<'a> {
     pub meta: HookMeta<'a>,
     pub status: StatusCode,
-    pub headers: &'a HeaderMap,
+    pub headers: SanitizedHeaders<'a>,
 }
 
 impl fmt::Debug for PostResponseHookContext<'_> {
@@ -44,7 +45,7 @@ impl fmt::Debug for PostResponseHookContext<'_> {
         f.debug_struct("PostResponseHookContext")
             .field("meta", &self.meta)
             .field("status", &self.status)
-            .field("headers", &crate::debug::RedactedHeaders(self.headers))
+            .field("headers", &self.headers)
             .finish()
     }
 }

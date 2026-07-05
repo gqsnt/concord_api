@@ -16,7 +16,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .post_response(PostResponseHookContext {
                 meta: hook_meta,
                 status: ctx.status,
-                headers: ctx.headers,
+                headers: crate::debug::SanitizedHeaders::new(ctx.headers),
             })
             .await;
     }
@@ -27,6 +27,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         send_ctx: SendClassifyCtx<'_>,
         stream_request_limit: Option<usize>,
     ) -> Result<TransportResponse, ApiClientError> {
+        let url = built.debug_url();
         let rate_limit_meta = RateLimitContext {
             endpoint: built.meta.endpoint,
             method: &built.meta.method,
@@ -64,7 +65,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let pre_send_meta = HookMeta {
             endpoint: built.meta.endpoint,
             method: &built.meta.method,
-            url: built.url.as_str(),
+            url: &url,
             attempt: built.meta.attempt,
             page_index: built.meta.page_index,
             idempotent: built.meta.idempotent,
@@ -73,7 +74,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .hooks()
             .pre_send(PreSendHookContext {
                 meta: pre_send_meta,
-                headers: &built.headers,
+                headers: crate::debug::SanitizedHeaders::new(&built.headers),
             })
             .await?;
         self.send_built_request(
@@ -218,7 +219,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 if dbg_verbose {
                     self.debug_sink
                         .response_status(dbg, resp.status, url_str, false);
-                    self.debug_sink.response_headers(dbg, &resp.headers);
+                    self.debug_sink.response_headers(
+                        dbg,
+                        crate::debug::SanitizedHeaders::new(&resp.headers),
+                    );
                 }
                 Err(ApiClientError::HttpStatus {
                     ctx: ctx.clone(),
@@ -340,7 +344,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 if dbg_verbose {
                     self.debug_sink
                         .response_status(dbg, resp.status, url_str, false);
-                    self.debug_sink.response_headers(dbg, &resp.headers);
+                    self.debug_sink.response_headers(
+                        dbg,
+                        crate::debug::SanitizedHeaders::new(&resp.headers),
+                    );
                 }
                 Err(ApiClientError::HttpStatus {
                     ctx: ctx.clone(),
@@ -354,7 +361,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 if dbg_verbose {
                     self.debug_sink
                         .response_status(dbg, resp.status, url_str, true);
-                    self.debug_sink.response_headers(dbg, &resp.headers);
+                    self.debug_sink.response_headers(
+                        dbg,
+                        crate::debug::SanitizedHeaders::new(&resp.headers),
+                    );
                 }
                 if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
                     if actual > limit as u64 {

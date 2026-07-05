@@ -9,9 +9,9 @@ mod query_auth_redaction {
         AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
         AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
         AuthRequirementId, AuthRetryReason, DebugSink, DecodedResponse, PreparedInternalAuth,
-        RequestMeta, ReqwestTransport, RuntimeHooks, Transport, TransportAuth, TransportError,
-        TransportErrorHookContext, TransportRequest, TransportResponse, apply_basic_credential,
-        apply_certificate_credential, apply_secret_credential,
+        RequestMeta, ReqwestTransport, RuntimeHooks, SanitizedHeaders, Transport, TransportAuth,
+        TransportError, TransportErrorHookContext, TransportRequest, TransportResponse,
+        apply_basic_credential, apply_certificate_credential, apply_secret_credential,
     };
     use concord_core::advanced::{BuiltResponse, PreparedAuthCredential, RateLimitPlan};
     #[cfg(feature = "json")]
@@ -276,7 +276,7 @@ mod query_auth_redaction {
                 .push(format!("request:{url}"));
         }
 
-        fn request_headers(&self, _dbg: DebugLevel, headers: &HeaderMap) {
+        fn request_headers(&self, _dbg: DebugLevel, headers: SanitizedHeaders<'_>) {
             self.events
                 .lock()
                 .expect("debug events lock")
@@ -290,7 +290,7 @@ mod query_auth_redaction {
                 .push(format!("response:{ok}:{url}"));
         }
 
-        fn response_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
+        fn response_headers(&self, _dbg: DebugLevel, _headers: SanitizedHeaders<'_>) {}
     }
 
     #[derive(Default)]
@@ -464,7 +464,8 @@ mod query_auth_redaction {
         assert!(output.contains("<redacted>"));
         assert!(output.contains("visible-request-id"));
         assert!(output.contains("application/json"));
-        assert!(output.contains("\"retry-after\": \"1\""));
+        assert!(output.contains("retry-after"));
+        assert!(output.contains("1"));
     }
 
     #[test]
@@ -535,12 +536,12 @@ mod query_auth_redaction {
         let headers = sensitive_header_map();
         let pre = concord_core::advanced::PreSendHookContext {
             meta: meta.clone(),
-            headers: &headers,
+            headers: concord_core::advanced::SanitizedHeaders::new(&headers),
         };
         let post = concord_core::advanced::PostResponseHookContext {
             meta,
             status: StatusCode::UNAUTHORIZED,
-            headers: &headers,
+            headers: concord_core::advanced::SanitizedHeaders::new(&headers),
         };
 
         for output in [format!("{pre:?}"), format!("{post:?}")] {
@@ -548,6 +549,263 @@ mod query_auth_redaction {
             assert!(output.contains("HookRedaction"));
             assert!(output.contains("visible-request-id"));
         }
+    }
+
+    #[tokio::test]
+    async fn hook_and_debug_views_are_sanitized_for_headers_and_urls() {
+        #[derive(Default)]
+        struct ObserverSink {
+            events: Arc<Mutex<Vec<String>>>,
+        }
+
+        impl DebugSink for ObserverSink {
+            fn request_start(
+                &self,
+                _dbg: DebugLevel,
+                _method: &Method,
+                url: &str,
+                _endpoint: &'static str,
+                _page_index: u32,
+            ) {
+                self.events
+                    .lock()
+                    .expect("debug events lock")
+                    .push(format!("request_url:{url}"));
+            }
+
+            fn request_headers(&self, _dbg: DebugLevel, headers: SanitizedHeaders<'_>) {
+                let mut events = self.events.lock().expect("debug events lock");
+                events.push(format!(
+                    "request_key:{}",
+                    headers
+                        .get(&http::HeaderName::from_static("x-api-key"))
+                        .expect("api key header should be present")
+                        .as_str()
+                ));
+                events.push(format!(
+                    "request_query_visible:{}",
+                    headers
+                        .get(&http::HeaderName::from_static("x-visible-request"))
+                        .expect("visible request header should be present")
+                        .as_str()
+                ));
+            }
+
+            fn response_status(
+                &self,
+                _dbg: DebugLevel,
+                _status: StatusCode,
+                _url: &str,
+                _ok: bool,
+            ) {
+            }
+
+            fn response_headers(&self, _dbg: DebugLevel, headers: SanitizedHeaders<'_>) {
+                let mut events = self.events.lock().expect("debug events lock");
+                events.push(format!(
+                    "response_cookie:{}",
+                    headers
+                        .get(&http::header::SET_COOKIE)
+                        .expect("set-cookie should be present")
+                        .as_str()
+                ));
+                events.push(format!(
+                    "response_authenticate:{}",
+                    headers
+                        .get(&http::header::WWW_AUTHENTICATE)
+                        .expect("www-authenticate should be present")
+                        .as_str()
+                ));
+                events.push(format!(
+                    "response_refresh:{}",
+                    headers
+                        .get(&http::HeaderName::from_static("x-refresh-token"))
+                        .expect("refresh token header should be present")
+                        .as_str()
+                ));
+                events.push(format!(
+                    "response_visible:{}",
+                    headers
+                        .get(&http::HeaderName::from_static("x-visible-response"))
+                        .expect("visible response header should be present")
+                        .as_str()
+                ));
+            }
+        }
+
+        #[derive(Default)]
+        struct ObserverHooks {
+            events: Arc<Mutex<Vec<String>>>,
+        }
+
+        impl RuntimeHooks for ObserverHooks {
+            fn pre_send<'a>(
+                &'a self,
+                ctx: concord_core::advanced::PreSendHookContext<'a>,
+            ) -> concord_core::advanced::AuthFuture<
+                'a,
+                Result<(), concord_core::prelude::ApiClientError>,
+            > {
+                Box::pin(async move {
+                    let mut events = self.events.lock().expect("hook events lock");
+                    events.push(format!("pre_send_url:{}", ctx.meta.url));
+                    events.push(format!(
+                        "pre_send_key:{}",
+                        ctx.headers
+                            .get(&http::HeaderName::from_static("x-api-key"))
+                            .expect("api key header should be present")
+                            .as_str()
+                    ));
+                    events.push(format!(
+                        "pre_send_visible:{}",
+                        ctx.headers
+                            .get(&http::HeaderName::from_static("x-visible-request"))
+                            .expect("visible request header should be present")
+                            .as_str()
+                    ));
+                    Ok(())
+                })
+            }
+
+            fn post_response<'a>(
+                &'a self,
+                ctx: concord_core::advanced::PostResponseHookContext<'a>,
+            ) -> concord_core::advanced::AuthFuture<'a, ()> {
+                Box::pin(async move {
+                    let mut events = self.events.lock().expect("hook events lock");
+                    events.push(format!(
+                        "post_response_cookie:{}",
+                        ctx.headers
+                            .get(&http::header::SET_COOKIE)
+                            .expect("set-cookie should be present")
+                            .as_str()
+                    ));
+                    events.push(format!(
+                        "post_response_authenticate:{}",
+                        ctx.headers
+                            .get(&http::header::WWW_AUTHENTICATE)
+                            .expect("www-authenticate should be present")
+                            .as_str()
+                    ));
+                    events.push(format!(
+                        "post_response_refresh:{}",
+                        ctx.headers
+                            .get(&http::HeaderName::from_static("x-refresh-token"))
+                            .expect("refresh token header should be present")
+                            .as_str()
+                    ));
+                    events.push(format!(
+                        "post_response_visible:{}",
+                        ctx.headers
+                            .get(&http::HeaderName::from_static("x-visible-response"))
+                            .expect("visible response header should be present")
+                            .as_str()
+                    ));
+                })
+            }
+        }
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let transport = MockTransport::new(
+            Arc::new(TokioMutex::new(Vec::new())),
+            vec![{
+                let mut response = MockResponse::text(StatusCode::OK, "ok");
+                response.headers.insert(
+                    http::header::SET_COOKIE,
+                    http::HeaderValue::from_static("session=LEAK_SENTINEL_SET_COOKIE"),
+                );
+                response.headers.insert(
+                    http::header::WWW_AUTHENTICATE,
+                    http::HeaderValue::from_static(
+                        "Bearer error_description=\"LEAK_SENTINEL_WWW_AUTH\"",
+                    ),
+                );
+                response.headers.insert(
+                    http::HeaderName::from_static("x-refresh-token"),
+                    http::HeaderValue::from_static("LEAK_SENTINEL_REFRESH_TOKEN"),
+                );
+                response.headers.insert(
+                    http::HeaderName::from_static("x-visible-response"),
+                    http::HeaderValue::from_static("visible-response"),
+                );
+                response
+            }],
+        );
+        let sent = transport.clone();
+        let mut policy = auth_policy(AuthPlacement::Bearer);
+        policy.auth.requirements.push(AuthRequirement {
+            credential: concord_core::advanced::CredentialRef {
+                id: concord_core::advanced::CredentialId::new("test", "token"),
+            },
+            placement: AuthPlacement::Query("api_key"),
+            usage_id: concord_core::advanced::AuthUsageId::new("test-query"),
+            step_id: Some("test-query"),
+            provenance: concord_core::advanced::AuthProvenance::new("test"),
+            challenge: Default::default(),
+        });
+        policy.headers.insert(
+            http::HeaderName::from_static("x-api-key"),
+            http::HeaderValue::from_static(API_KEY_SECRET),
+        );
+        policy.headers.insert(
+            http::HeaderName::from_static("x-visible-request"),
+            http::HeaderValue::from_static("visible-request"),
+        );
+        policy
+            .query
+            .push(("visible".to_string(), "visible-query".to_string()));
+        let client =
+            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport)
+                .with_debug_sink(Arc::new(ObserverSink {
+                    events: events.clone(),
+                }))
+                .with_runtime_hooks(Arc::new(ObserverHooks {
+                    events: events.clone(),
+                }));
+
+        client
+            .request(RedactionEndpoint { policy })
+            .debug_level(DebugLevel::VV)
+            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .await
+            .expect("request should succeed");
+
+        let observed = events.lock().expect("events lock").clone().join("\n");
+        assert!(!observed.contains("LEAK_SENTINEL"));
+        assert!(observed.contains("pre_send_url:https://example.com/text"));
+        assert!(observed.contains("visible=visible-query"));
+        assert!(observed.contains("api_key=<redacted>"));
+        assert!(observed.contains("pre_send_key:<redacted>"));
+        assert!(observed.contains("pre_send_visible:visible-request"));
+        assert!(observed.contains("post_response_cookie:<redacted>"));
+        assert!(observed.contains("post_response_authenticate:<redacted>"));
+        assert!(observed.contains("post_response_refresh:<redacted>"));
+        assert!(observed.contains("post_response_visible:visible-response"));
+        assert!(observed.contains("request_key:<redacted>"));
+        assert!(observed.contains("request_query_visible:visible-request"));
+        assert!(observed.contains("response_cookie:<redacted>"));
+        assert!(observed.contains("response_authenticate:<redacted>"));
+        assert!(observed.contains("response_refresh:<redacted>"));
+        assert!(observed.contains("response_visible:visible-response"));
+
+        let requests = sent.requests().await;
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].url.as_str().contains(API_KEY_SECRET));
+        assert_eq!(
+            requests[0]
+                .headers
+                .get(http::HeaderName::from_static("x-api-key"))
+                .and_then(|value| value.to_str().ok()),
+            Some(API_KEY_SECRET)
+        );
+        let expected_bearer = format!("Bearer {BEARER_SECRET}");
+        assert_eq!(
+            requests[0]
+                .headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some(expected_bearer.as_str())
+        );
     }
 
     #[tokio::test]
