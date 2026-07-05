@@ -1,7 +1,10 @@
 // concord_macros/src/emit_helpers.rs
 use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
 use quote::quote;
+use syn::spanned::Spanned;
 use syn::{Ident, LitStr};
+
+use crate::limits::{MAX_PUBLIC_EXPR_TOKEN_GROUP_DEPTH, public_expr_token_group_depth_error};
 
 pub fn to_snake(name: &str) -> String {
     let mut out = String::new();
@@ -131,38 +134,38 @@ pub struct PublicExprForbidden {
     pub kind: PublicExprForbiddenKind,
 }
 
-pub fn public_expr_forbidden(expr: &syn::Expr) -> Option<PublicExprForbidden> {
+pub fn public_expr_forbidden(expr: &syn::Expr) -> syn::Result<Option<PublicExprForbidden>> {
     struct Finder {
-        found: Option<PublicExprForbidden>,
+        found: Result<Option<PublicExprForbidden>, syn::Error>,
     }
 
     impl Finder {
         fn record_ident(&mut self, ident: &Ident) {
-            if self.found.is_none()
+            if matches!(&self.found, Ok(None))
                 && let Some(kind) = public_expr_reserved_root_kind(ident)
             {
-                self.found = Some(PublicExprForbidden {
+                self.found = Ok(Some(PublicExprForbidden {
                     ident: unraw_ident_text(ident),
                     span: ident.span(),
                     kind,
-                });
+                }));
             }
         }
 
         fn record_secret_exposure(&mut self, ident: &Ident) {
             let text = unraw_ident_text(ident);
-            if self.found.is_none() && is_secret_exposure_method(&text) {
-                self.found = Some(PublicExprForbidden {
+            if matches!(&self.found, Ok(None)) && is_secret_exposure_method(&text) {
+                self.found = Ok(Some(PublicExprForbidden {
                     ident: text,
                     span: ident.span(),
                     kind: PublicExprForbiddenKind::SecretExposure,
-                });
+                }));
             }
         }
 
         fn scan_tokens(&mut self, tokens: &TokenStream2) {
-            if self.found.is_none() {
-                self.found = public_token_stream_forbidden(tokens);
+            if matches!(&self.found, Ok(None)) {
+                self.found = public_token_stream_forbidden(tokens, 0);
             }
         }
     }
@@ -171,7 +174,7 @@ pub fn public_expr_forbidden(expr: &syn::Expr) -> Option<PublicExprForbidden> {
         fn visit_expr_path(&mut self, node: &'ast syn::ExprPath) {
             if let Some(first) = node.path.segments.first() {
                 self.record_ident(&first.ident);
-                if self.found.is_some() {
+                if matches!(&self.found, Ok(Some(_))) {
                     return;
                 }
             }
@@ -180,7 +183,7 @@ pub fn public_expr_forbidden(expr: &syn::Expr) -> Option<PublicExprForbidden> {
 
         fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
             self.record_secret_exposure(&node.method);
-            if self.found.is_some() {
+            if matches!(&self.found, Ok(Some(_))) {
                 return;
             }
             syn::visit::visit_expr_method_call(self, node);
@@ -189,48 +192,54 @@ pub fn public_expr_forbidden(expr: &syn::Expr) -> Option<PublicExprForbidden> {
         fn visit_macro(&mut self, node: &'ast syn::Macro) {
             if let Some(first) = node.path.segments.first() {
                 self.record_ident(&first.ident);
-                if self.found.is_some() {
+                if matches!(&self.found, Ok(Some(_))) {
                     return;
                 }
             }
             self.scan_tokens(&node.tokens);
-            if self.found.is_some() {
+            if matches!(&self.found, Ok(Some(_))) {
                 return;
             }
             syn::visit::visit_macro(self, node);
         }
     }
 
-    let mut finder = Finder { found: None };
+    let mut finder = Finder { found: Ok(None) };
     syn::visit::Visit::visit_expr(&mut finder, expr);
     finder.found
 }
 
-pub fn public_token_stream_forbidden(tokens: &TokenStream2) -> Option<PublicExprForbidden> {
+pub fn public_token_stream_forbidden(
+    tokens: &TokenStream2,
+    depth: usize,
+) -> syn::Result<Option<PublicExprForbidden>> {
+    if depth > MAX_PUBLIC_EXPR_TOKEN_GROUP_DEPTH {
+        return Err(public_expr_token_group_depth_error(tokens.span()));
+    }
     let mut prev_was_dot = false;
     for token in tokens.clone() {
         match token {
             TokenTree::Ident(ident) => {
                 let text = unraw_ident_text(&ident);
                 if prev_was_dot && is_secret_exposure_method(&text) {
-                    return Some(PublicExprForbidden {
+                    return Ok(Some(PublicExprForbidden {
                         ident: text,
                         span: ident.span(),
                         kind: PublicExprForbiddenKind::SecretExposure,
-                    });
+                    }));
                 }
                 if let Some(kind) = public_expr_forbidden_ident_kind(&text) {
-                    return Some(PublicExprForbidden {
+                    return Ok(Some(PublicExprForbidden {
                         ident: text,
                         span: ident.span(),
                         kind,
-                    });
+                    }));
                 }
                 prev_was_dot = false;
             }
             TokenTree::Group(group) => {
-                if let Some(found) = public_token_stream_forbidden(&group.stream()) {
-                    return Some(found);
+                if let Some(found) = public_token_stream_forbidden(&group.stream(), depth + 1)? {
+                    return Ok(Some(found));
                 }
                 prev_was_dot = false;
             }
@@ -242,7 +251,7 @@ pub fn public_token_stream_forbidden(tokens: &TokenStream2) -> Option<PublicExpr
             }
         }
     }
-    None
+    Ok(None)
 }
 
 fn public_expr_forbidden_ident_kind(ident: &str) -> Option<PublicExprForbiddenKind> {
@@ -267,6 +276,20 @@ fn is_secret_exposure_method(ident: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proc_macro2::{Delimiter, Group, TokenStream as TokenStream2, TokenTree};
+    use quote::quote;
+
+    fn wrap_in_paren_groups(tokens: TokenStream2, depth: usize) -> TokenStream2 {
+        let mut out = tokens;
+        for _ in 0..depth {
+            let mut group = Group::new(Delimiter::Parenthesis, out);
+            group.set_span(Span::call_site());
+            let mut next = TokenStream2::new();
+            next.extend([TokenTree::Group(group)]);
+            out = next;
+        }
+        out
+    }
 
     #[test]
     fn compile_error_expr_is_a_valid_expression_block() {
@@ -283,5 +306,29 @@ mod tests {
         assert!(rendered.contains("field_name"));
         assert!(rendered.contains("compile_error"));
         assert!(rendered.contains("loop"));
+    }
+
+    #[test]
+    fn public_token_stream_forbidden_detects_secret_exposure_inside_nested_groups() {
+        let tokens = wrap_in_paren_groups(quote!(value.expose()), 2);
+        let found = public_token_stream_forbidden(&tokens, 0)
+            .expect("scanner should succeed")
+            .expect("secret exposure should be detected");
+        assert_eq!(found.kind, PublicExprForbiddenKind::SecretExposure);
+    }
+
+    #[test]
+    fn public_token_stream_forbidden_rejects_excessive_group_nesting() {
+        let tokens = wrap_in_paren_groups(
+            quote!(LEAK_SENTINEL_PUBLIC_EXPR_TOKEN),
+            MAX_PUBLIC_EXPR_TOKEN_GROUP_DEPTH + 1,
+        );
+        let err = public_token_stream_forbidden(&tokens, 0).expect_err("scanner should fail");
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("public expression token nesting exceeds maximum supported depth")
+        );
+        assert!(rendered.contains(&MAX_PUBLIC_EXPR_TOKEN_GROUP_DEPTH.to_string()));
+        assert!(!rendered.contains("LEAK_SENTINEL_PUBLIC_EXPR_TOKEN"));
     }
 }

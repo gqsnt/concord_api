@@ -18,6 +18,7 @@ TokenStream
 The parser turns tokens into a raw AST and emits syntax diagnostics. It should reject malformed syntax, unsupported stanzas, duplicate clauses inside one syntactic block, and bad list shapes such as empty or duplicate bracket lists.
 
 The parser should not resolve profile names, merge inherited policy, or inspect runtime behavior.
+It also enforces a maximum DSL scope nesting depth of 64 so deeply nested `scope` trees fail closed with a diagnostic instead of triggering uncontrolled recursive work.
 
 ## Raw AST
 
@@ -36,6 +37,8 @@ Sema resolves names and turns raw declarations into the semantic model. Responsi
 - policy inheritance and merge order
 - behavior expansion
 - behavior rustdoc metadata
+
+The sema layer also applies the same 64-level scope nesting limit defensively during normalization and item walks, so synthetic ASTs that bypass parser validation still fail closed. Public expression token scanning in sema fails closed at 64 nested token groups.
 
 Unknown profile diagnostics should generally be emitted here because sema has the profile maps and use sites.
 

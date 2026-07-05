@@ -644,7 +644,7 @@ fn pagination_value_from_value_kind(value: ValueKind, span: Span) -> Result<Pagi
 }
 
 fn validate_public_expr(expr: &Expr) -> Result<()> {
-    if let Some(found) = emit_helpers::public_expr_forbidden(expr) {
+    if let Some(found) = emit_helpers::public_expr_forbidden(expr)? {
         return Err(public_expr_forbidden_error(found));
     }
     Ok(())

@@ -188,3 +188,31 @@ fn codegen_uses_resolved_ir() {
     assert!(!out.contains("__retry.max_attempts"));
     assert!(!out.contains("__retry.methods"));
 }
+
+#[test]
+fn codegen_rejects_over_deep_scope_modules_with_a_controlled_diagnostic() {
+    let mut resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client DeepCodegenApi {
+            base "https://example.com"
+        }
+
+        GET Ping
+            path ["ping"]
+            -> Json<String>
+    });
+
+    resolved.endpoints[0].scope_modules = (0..=crate::limits::MAX_DSL_SCOPE_DEPTH)
+        .map(|idx| quote::format_ident!("scope_{idx}"))
+        .collect();
+
+    let out = emit(resolved)
+        .to_string()
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect::<String>();
+
+    assert!(
+        out.contains("DSLscopenestingexceedsmaximumsupporteddepthof64"),
+        "{out}"
+    );
+}

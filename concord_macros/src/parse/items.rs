@@ -1,3 +1,5 @@
+use crate::limits::DslScopeDepthGuard;
+
 impl Parse for RawItem {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         if input.peek(kw::prefix) || input.peek(kw::path) {
@@ -21,6 +23,7 @@ impl Parse for RawScopeTaggedScope {
         let scope_kw: kw::scope = input.parse()?;
         let scope_span = scope_kw.span;
         let name: Ident = input.parse()?;
+        let _depth_guard = DslScopeDepthGuard::enter(scope_span)?;
         let params: Vec<VarDeclNoWire> = if input.peek(token::Paren) {
             parse_inline_var_decls(input, "scope param")?
         } else {

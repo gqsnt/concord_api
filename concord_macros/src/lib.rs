@@ -14,6 +14,7 @@ mod ast;
 mod codegen;
 mod emit_helpers;
 mod kw;
+mod limits;
 mod model;
 mod parse;
 mod sema;

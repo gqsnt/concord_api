@@ -1,3 +1,5 @@
+use crate::limits::check_dsl_scope_depth;
+
 fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
     let client_auth_uses = normalize_auth_uses(raw.client.auth_uses)?;
 
@@ -21,26 +23,32 @@ fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
             rate_limit: raw.client.rate_limit,
             behavior_profiles: raw.client.behavior_profiles,
         },
-        items: normalize_items(raw.items)?,
+        items: normalize_items(raw.items, 0)?,
     })
 }
 
-fn normalize_items(items: Vec<crate::ast::RawItem>) -> Result<Vec<NormNode>> {
-    items.into_iter().map(normalize_item).collect()
+fn normalize_items(items: Vec<crate::ast::RawItem>, scope_depth: usize) -> Result<Vec<NormNode>> {
+    items
+        .into_iter()
+        .map(|item| normalize_item(item, scope_depth))
+        .collect()
 }
 
-fn normalize_item(item: crate::ast::RawItem) -> Result<NormNode> {
+fn normalize_item(item: crate::ast::RawItem, scope_depth: usize) -> Result<NormNode> {
     match item {
-        crate::ast::RawItem::Layer(scope) => Ok(NormNode::Layer(Box::new(normalize_scope(*scope)?))),
+        crate::ast::RawItem::Layer(scope) => {
+            Ok(NormNode::Layer(Box::new(normalize_scope(*scope, scope_depth + 1)?)))
+        }
         crate::ast::RawItem::Endpoint(endpoint) => {
             Ok(NormNode::Endpoint(Box::new(normalize_endpoint(*endpoint)?)))
         }
     }
 }
 
-fn normalize_scope(raw: crate::ast::RawScope) -> Result<NormScope> {
+fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> Result<NormScope> {
+    check_dsl_scope_depth(scope_depth, raw.span)?;
     let auth_uses = normalize_auth_uses(raw.auth_uses)?;
-    let items = normalize_items(raw.items)?;
+    let items = normalize_items(raw.items, scope_depth)?;
 
     let scope_name = raw.scope_name;
     let params = raw.params;

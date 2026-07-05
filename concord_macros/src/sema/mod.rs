@@ -178,7 +178,13 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         layers: &mut layers,
         endpoints: &mut endpoints,
     };
-    walk_items(&norm.items, &mut ancestry, &mut walk_ctx, inherited_retry)?;
+    walk_items(
+        &norm.items,
+        &mut ancestry,
+        &mut walk_ctx,
+        inherited_retry,
+        0,
+    )?;
 
     let resolved_api = ResolvedApi {
         mod_name,

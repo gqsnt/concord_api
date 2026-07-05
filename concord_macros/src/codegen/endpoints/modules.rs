@@ -120,9 +120,18 @@ fn insert_endpoint_scope_module(
     path: &[Ident],
     public: &Ident,
     internal: &Ident,
-) {
+) -> syn::Result<()> {
+    if path.len() > crate::limits::MAX_DSL_SCOPE_DEPTH {
+        return Err(syn::Error::new(
+            public.span(),
+            format!(
+                "DSL scope nesting exceeds maximum supported depth of {}",
+                crate::limits::MAX_DSL_SCOPE_DEPTH
+            ),
+        ));
+    }
     let Some((head, tail)) = path.split_first() else {
-        return;
+        return Ok(());
     };
 
     let index = if let Some(index) = modules.iter().position(|module| module.name == *head) {
@@ -142,8 +151,9 @@ fn insert_endpoint_scope_module(
             internal: internal.clone(),
         });
     } else {
-        insert_endpoint_scope_module(&mut modules[index].children, tail, public, internal);
+        insert_endpoint_scope_module(&mut modules[index].children, tail, public, internal)?;
     }
+    Ok(())
 }
 
 fn emit_endpoint_scope_modules(resolved_api: &ResolvedApi) -> TokenStream2 {
@@ -153,12 +163,14 @@ fn emit_endpoint_scope_modules(resolved_api: &ResolvedApi) -> TokenStream2 {
             continue;
         }
         let internal = endpoint_internal_ident(endpoint);
-        insert_endpoint_scope_module(
+        if let Err(err) = insert_endpoint_scope_module(
             &mut modules,
             &endpoint.scope_modules,
             &endpoint.name,
             &internal,
-        );
+        ) {
+            return err.to_compile_error();
+        }
     }
 
     let tokens = modules
@@ -168,6 +180,15 @@ fn emit_endpoint_scope_modules(resolved_api: &ResolvedApi) -> TokenStream2 {
 }
 
 fn emit_endpoint_scope_module(module: &EndpointScopeModule, depth: usize) -> TokenStream2 {
+    if depth > crate::limits::MAX_DSL_SCOPE_DEPTH {
+        return emit_helpers::compile_error_tokens(
+            &format!(
+                "DSL scope nesting exceeds maximum supported depth of {}",
+                crate::limits::MAX_DSL_SCOPE_DEPTH
+            ),
+            module.name.span(),
+        );
+    }
     let name = &module.name;
     let endpoint_reexports = module.endpoints.iter().map(|alias| {
         let public = &alias.public;

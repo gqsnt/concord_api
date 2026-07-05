@@ -26,6 +26,9 @@ Route atoms split into trusted string literals and dynamic data: static path str
 The parser may keep raw Rust expressions so diagnostics can point at the user token, but sema must reject forbidden roots before resolved IR reaches codegen. Forbidden roots include `auth`, `secret`, `secrets`, `ctx`, `cx`, `ep`, `vars`, `client`, `runtime`, `policy`, `req`, `request`, `headers`, `url`, `transport`, and `self` when they appear inside arbitrary public expressions. Raw identifiers are normalized for this check, so `r#auth` and `r#secret` are equivalent to `auth` and `secret`.
 
 The validator also scans macro token streams recursively because `syn::Visit` does not interpret every token inside a macro body. Secret exposure methods such as `.expose()` and `.expose_secret()` are rejected in these public contexts. Auth credential declarations remain the only DSL surface that may refer to `secret.*`.
+That scanner enforces a maximum public-expression token-group nesting depth of 64 and fails closed on over-depth input.
+
+Sema also enforces the supported maximum DSL scope nesting depth of 64 while normalizing and walking scope trees. That keeps synthetic or malformed ASTs from turning into unbounded recursion during analysis or code generation.
 
 ## Profiles And Inheritance
 

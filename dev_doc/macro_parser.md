@@ -10,6 +10,7 @@ Parser code lives under `concord_macros/src/parse/` and is organized by syntax a
 - Retry and rate-limit parsers own profile declarations and local attachments.
 - Behavior parsing owns behavior declarations and behavior use syntax.
 - Endpoint and item parsing own scopes, endpoint lines, response-last structure, and pagination.
+- The parser enforces a supported maximum DSL scope nesting depth of 64. Over-depth scope trees fail with a controlled diagnostic instead of recursing indefinitely.
 
 ## Client Parsing
 

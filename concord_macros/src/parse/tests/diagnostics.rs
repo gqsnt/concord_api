@@ -1,4 +1,26 @@
-use super::helpers::parse_err;
+use super::helpers::{parse_err, parse_ok};
+
+fn nested_scope_source(depth: usize, leaf: &str) -> String {
+    let mut source = String::from(
+        r#"
+        api! {
+            client Api {
+                base "https://example.com"
+            }
+        "#,
+    );
+    for idx in 0..depth {
+        source.push_str(&format!("\n            scope scope_{idx} {{"));
+    }
+    source.push_str(&format!(
+        "\n                GET {leaf}\n                    path [\"ping\"]\n                    -> Json<String>\n"
+    ));
+    for _ in 0..depth {
+        source.push_str("\n            }");
+    }
+    source.push_str("\n        }\n        ");
+    source
+}
 
 #[test]
 fn malformed_current_client_fails() {
@@ -215,4 +237,39 @@ fn boolean_query_flag_fails() {
         err.to_string()
             .contains("boolean query flags are not supported")
     );
+}
+
+#[test]
+fn nested_scope_depth_limit_is_enforced_at_parse_time() {
+    let source = nested_scope_source(64, "LimitPing");
+    let ast = parse_ok(&source);
+    let mut current = &ast.items[0];
+    for _ in 0..64 {
+        let scope = match current {
+            crate::ast::RawItem::Layer(scope) => scope,
+            other => panic!("expected nested scope, got {other:?}"),
+        };
+        if scope.items.is_empty() {
+            break;
+        }
+        current = &scope.items[0];
+    }
+    match current {
+        crate::ast::RawItem::Endpoint(endpoint) => {
+            assert_eq!(endpoint.name, "LimitPing");
+        }
+        other => panic!("expected terminal endpoint, got {other:?}"),
+    }
+}
+
+#[test]
+fn nested_scope_depth_over_limit_fails_closed_without_panic() {
+    let source = nested_scope_source(65, "LEAK_SENTINEL_DEPTH_PING");
+    let err = parse_err(&source);
+    assert!(
+        err.to_string()
+            .contains("DSL scope nesting exceeds maximum supported depth of 64"),
+        "{err}"
+    );
+    assert!(!err.to_string().contains("LEAK_SENTINEL_DEPTH_PING"));
 }

@@ -41,10 +41,17 @@ fn walk_items(
     ancestry: &mut Vec<usize>,
     ctx: &mut WalkItemsCtx<'_>,
     inherited_retry: Option<RetryConfigResolved>,
+    scope_depth: usize,
 ) -> Result<()> {
     for it in items {
         match it {
             NormNode::Layer(ld) => {
+                let next_scope_depth = if ld.scope_name.is_some() {
+                    scope_depth + 1
+                } else {
+                    scope_depth
+                };
+                crate::limits::check_dsl_scope_depth(next_scope_depth, ld.span)?;
                 let id = ctx.layers.len();
                 let (prefix_pieces, path_pieces, decls) =
                     analyze_layer_route_and_decls(ld, ancestry, ctx.layers, ctx.client_vars)?;
@@ -107,7 +114,7 @@ fn walk_items(
                 });
 
                 ancestry.push(id);
-                walk_items(&ld.items, ancestry, ctx, next_retry)?;
+                walk_items(&ld.items, ancestry, ctx, next_retry, next_scope_depth)?;
                 ancestry.pop();
             }
             NormNode::Endpoint(ed) => {
@@ -147,7 +154,7 @@ fn reject_formatted_lit(lit: &LitStr, ctx: &'static str) -> Result<()> {
 fn collect_endpoint_output_types(items: &[NormNode]) -> Result<BTreeMap<EndpointTargetKey, Type>> {
     let mut out = BTreeMap::new();
     let mut scope_stack: Vec<Ident> = Vec::new();
-    collect_endpoint_output_types_into(items, &mut out, &mut scope_stack)?;
+    collect_endpoint_output_types_into(items, &mut out, &mut scope_stack, 0)?;
     Ok(out)
 }
 
@@ -155,16 +162,29 @@ fn collect_endpoint_output_types_into(
     items: &[NormNode],
     out: &mut BTreeMap<EndpointTargetKey, Type>,
     scope_stack: &mut Vec<Ident>,
+    scope_depth: usize,
 ) -> Result<()> {
     for item in items {
         match item {
             NormNode::Layer(layer) => {
                 if let Some(name) = &layer.scope_name {
+                    let next_depth = scope_depth + 1;
+                    crate::limits::check_dsl_scope_depth(next_depth, layer.span)?;
                     scope_stack.push(name.clone());
-                    collect_endpoint_output_types_into(&layer.items, out, scope_stack)?;
+                    collect_endpoint_output_types_into(
+                        &layer.items,
+                        out,
+                        scope_stack,
+                        next_depth,
+                    )?;
                     let _ = scope_stack.pop();
                 } else {
-                    collect_endpoint_output_types_into(&layer.items, out, scope_stack)?;
+                    collect_endpoint_output_types_into(
+                        &layer.items,
+                        out,
+                        scope_stack,
+                        scope_depth,
+                    )?;
                 }
             }
             NormNode::Endpoint(endpoint) => {
