@@ -1,4 +1,5 @@
 use super::common::*;
+use crate::support::assert_error_chain_does_not_contain_any;
 
 use bytes::Bytes;
 use concord_core::advanced::{
@@ -283,6 +284,19 @@ fn first_position(events: &[String], needle: &str) -> usize {
         .iter()
         .position(|event| event == needle)
         .unwrap_or_else(|| panic!("missing event `{needle}` in {events:?}"))
+}
+
+fn response_with_retry_after(
+    status: StatusCode,
+    body: &'static str,
+    retry_after: &'static str,
+) -> MockResponse {
+    let mut response = MockResponse::text(status, body);
+    response.headers.insert(
+        http::header::RETRY_AFTER,
+        HeaderValue::from_static(retry_after),
+    );
+    response
 }
 
 #[tokio::test]
@@ -743,20 +757,30 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
     ));
     let rate_limiter =
         Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::TOO_MANY_REQUESTS, "limited")],
-    );
-    let sent_transport = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    configure_runtime(&mut client, Some(rate_limiter));
+    static METHOD: Method = Method::GET;
+    static URL: &str = "https://example.com/text";
+    static ENDPOINT: &str = "Text";
+    let plan = Box::leak(Box::new(concord_core::advanced::RateLimitPlan::default()));
+    let headers = http::HeaderMap::new();
+    let ctx = RateLimitResponseContext {
+        meta: RateLimitContext {
+            endpoint: ENDPOINT,
+            method: &METHOD,
+            url: URL,
+            url_host: Some("example.com"),
+            attempt: 0,
+            page_index: 0,
+            idempotent: true,
+            max_cooldown: Duration::from_secs(1),
+            plan,
+        },
+        status: StatusCode::TOO_MANY_REQUESTS,
+        headers: &headers,
+        max_cooldown: Duration::from_secs(1),
+    };
 
-    let err = client
-        .request(TextEndpoint {
-            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
-            ..Default::default()
-        })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+    let err = rate_limiter
+        .on_response(ctx)
         .await
         .expect_err("overflowing rate-limit delay should return a typed error");
 
@@ -768,14 +792,140 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
         err.rate_limit_error().map(|err| err.kind()),
         Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
     );
-    assert!(err.to_string().contains("cooldown duration overflowed"));
-    assert_eq!(sent_transport.sent_count().await, 1);
+    assert!(err.to_string().contains("configured maximum"));
     let events = events.lock().await.clone();
     assert!(
         events
             .iter()
             .any(|event| event.starts_with("rate_observe_status:429"))
     );
+}
+
+#[tokio::test]
+async fn rate_limit_response_above_cap_returns_typed_error_before_cooldown_storage() {
+    const RESPONSE_SENTINEL: &str = "PRSEC7_RATE_LIMIT_RESPONSE_SENTINEL";
+
+    let transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            response_with_retry_after(StatusCode::TOO_MANY_REQUESTS, RESPONSE_SENTINEL, "2"),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_rate_limit_cooldown(Duration::from_secs(1));
+    });
+
+    let err = client
+        .request(TextEndpoint {
+            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("over-cap cooldown should fail closed");
+
+    assert_eq!(
+        err.category(),
+        concord_core::error::ErrorCategory::RateLimit
+    );
+    assert_eq!(
+        err.rate_limit_error().map(|err| err.kind()),
+        Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
+    );
+    assert!(err.to_string().contains("configured maximum"));
+    assert_eq!(sent_transport.sent_count().await, 1);
+    assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
+}
+
+#[tokio::test]
+async fn rate_limit_response_above_cap_does_not_poison_followup_request()
+-> Result<(), ApiClientError> {
+    const RESPONSE_SENTINEL: &str = "PRSEC7_RATE_LIMIT_POISON_SENTINEL";
+
+    let transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            response_with_retry_after(StatusCode::TOO_MANY_REQUESTS, RESPONSE_SENTINEL, "2"),
+            MockResponse::text(StatusCode::OK, "ok"),
+            MockResponse::text(StatusCode::OK, "later"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_rate_limit_cooldown(Duration::from_secs(1));
+    });
+
+    let err = client
+        .request(TextEndpoint {
+            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("over-cap cooldown should fail closed");
+    assert_eq!(
+        err.rate_limit_error().map(|err| err.kind()),
+        Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
+    );
+    assert_eq!(sent_transport.sent_count().await, 1);
+
+    let later = tokio::time::timeout(
+        Duration::from_millis(250),
+        client
+            .request(TextEndpoint {
+                policy: retry_policy(2),
+                ..Default::default()
+            })
+            .execute_decoded_with::<concord_core::prelude::Text<String>>(),
+    )
+    .await
+    .expect("follow-up request should not sleep on poisoned cooldown")
+    .expect("follow-up request should succeed");
+
+    assert_eq!(later.value(), "ok");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn short_rate_limit_cooldown_still_allows_followup_requests() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let observer = Arc::new(RecordingRateLimitObserver::fixed(
+        events.clone(),
+        RateLimitObservation::limited().with_delay(Duration::from_millis(1)),
+    ));
+    let rate_limiter =
+        Arc::new(concord_core::advanced::GovernorRateLimiter::new().with_response_policy(observer));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::TOO_MANY_REQUESTS, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_rate_limit_cooldown(Duration::from_secs(1));
+    });
+    configure_runtime(&mut client, Some(rate_limiter));
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent_transport.sent_count().await, 2);
+    Ok(())
 }
 
 #[tokio::test]

@@ -38,7 +38,7 @@ Flat `retry` and `rate_limit` profile declarations remain valid. `policies { ...
 
 Retry is a bounded transport/status decision layer. Retry decisions happen after transport-response metadata observation and auth rejection handling, and before endpoint decode. Retry does not handle decode failures.
 
-Invalid or overflowing retry delays return a typed configuration error rather than panicking or sleeping.
+Retry delays are capped. The default maximum retry delay is finite and configured through runtime settings. Invalid, overflowing, or over-cap retry delays return a typed configuration error rather than panicking or sleeping. Remote `Retry-After` values, fixed backoff, exponential backoff, and custom retry policies all fail closed if they request a delay above the configured cap.
 
 ```rust
 retry read {
@@ -78,6 +78,8 @@ GET Search
 A response observer can translate provider headers into rate-limit observations.
 
 Rate-limit acquisition happens after request planning, auth preparation, and auth collision validation, and before transport send. It is transport-metadata only. Rate-limit response observation is also metadata only and does not expose request body bytes, response body bytes, or raw auth material.
+
+Rate-limit response cooldowns are capped as well. The default maximum cooldown is finite and configured through runtime settings. Remote `Retry-After` values above the configured cap fail closed before Concord stores or sleeps on the cooldown. Custom rate-limit observers and response policies cannot force a cooldown above the cap through the default governor runtime.
 
 Rate-limit configuration, acquire, and response-action failures now surface as structured `ApiClientError::RateLimit` values with an inspectable `RateLimitErrorKind`. The execution order and retry behavior are unchanged.
 Pure transport errors do not produce response observation.

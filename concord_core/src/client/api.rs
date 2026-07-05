@@ -289,7 +289,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             retry_policy: self.runtime_state.retry_policy().clone(),
             auth: crate::runtime::AuthRuntimeConfig {
                 max_retries: self.runtime_state.max_auth_retries(),
+                max_retry_delay: self.runtime_state.max_retry_delay(),
             },
+            max_rate_limit_cooldown: self.runtime_state.max_rate_limit_cooldown(),
             pagination_detect_loops: self.pagination_detect_loops,
             debug: crate::runtime::DebugConfig {
                 level: self.debug_level,

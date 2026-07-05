@@ -12,7 +12,8 @@ use crate::rate_limit::{
 use crate::request::PendingRequest;
 use crate::response_classify::{ResponseClass, classify_status};
 use crate::retry::{
-    RetryContext, RetryDecision, RetryOutcome, RetryPolicy, RetrySetting, validate_retry_delay,
+    RetryContext, RetryDecision, RetryOutcome, RetryPolicy, RetrySetting,
+    validate_capped_retry_delay,
 };
 use crate::runtime_hooks::{
     HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
@@ -28,7 +29,6 @@ use bytes::Bytes;
 use http::StatusCode;
 use http::header::CONTENT_TYPE;
 use http::uri::Scheme;
-use std::cell::RefCell;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::RwLock;

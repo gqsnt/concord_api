@@ -3,6 +3,7 @@ use crate::retry::{NoRetryPolicy, RetryPolicy};
 use crate::runtime::RuntimeConfig;
 use crate::runtime_hooks::{NoopRuntimeHooks, RuntimeHooks};
 use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Clone)]
 pub struct ClientRuntimeState {
@@ -10,6 +11,8 @@ pub struct ClientRuntimeState {
     rate_limiter: Arc<dyn RateLimiter>,
     retry_policy: Arc<dyn RetryPolicy>,
     max_auth_retries: u32,
+    max_retry_delay: Duration,
+    max_rate_limit_cooldown: Duration,
     max_response_body_bytes: Option<usize>,
     max_stream_request_body_bytes: Option<usize>,
     max_stream_response_body_bytes: Option<usize>,
@@ -24,6 +27,8 @@ impl Default for ClientRuntimeState {
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
             max_auth_retries: 8,
+            max_retry_delay: Duration::from_secs(60),
+            max_rate_limit_cooldown: Duration::from_secs(60),
             max_response_body_bytes: Some(16 * 1024 * 1024),
             max_stream_request_body_bytes: Some(16 * 1024 * 1024),
             max_stream_response_body_bytes: Some(16 * 1024 * 1024),
@@ -40,6 +45,8 @@ impl ClientRuntimeState {
             rate_limiter: config.rate_limiter,
             retry_policy: config.retry_policy,
             max_auth_retries: config.auth.max_retries,
+            max_retry_delay: config.auth.max_retry_delay,
+            max_rate_limit_cooldown: config.max_rate_limit_cooldown,
             max_response_body_bytes: config.max_response_body_bytes,
             max_stream_request_body_bytes: config.max_stream_request_body_bytes,
             max_stream_response_body_bytes: config.max_stream_response_body_bytes,
@@ -80,6 +87,26 @@ impl ClientRuntimeState {
     #[inline]
     pub fn set_max_auth_retries(&mut self, max_auth_retries: u32) {
         self.max_auth_retries = max_auth_retries;
+    }
+
+    #[inline]
+    pub fn max_retry_delay(&self) -> Duration {
+        self.max_retry_delay
+    }
+
+    #[inline]
+    pub fn set_max_retry_delay(&mut self, max_retry_delay: Duration) {
+        self.max_retry_delay = max_retry_delay;
+    }
+
+    #[inline]
+    pub fn max_rate_limit_cooldown(&self) -> Duration {
+        self.max_rate_limit_cooldown
+    }
+
+    #[inline]
+    pub fn set_max_rate_limit_cooldown(&mut self, max_rate_limit_cooldown: Duration) {
+        self.max_rate_limit_cooldown = max_rate_limit_cooldown;
     }
 
     #[inline]

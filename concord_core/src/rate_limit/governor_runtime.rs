@@ -165,6 +165,12 @@ impl GovernorRateLimiter {
             if delay.is_zero() {
                 return Ok(());
             }
+            if delay > ctx.max_cooldown {
+                return Err(rate_limit_configuration_error(
+                    ctx,
+                    "rate-limit cooldown exceeds configured maximum",
+                ));
+            }
             tokio::time::sleep(delay).await;
         }
     }
@@ -182,7 +188,8 @@ impl GovernorRateLimiter {
         if let Some(delay) = observation.delay
             && !delay.is_zero()
         {
-            cooldown_stored = self.store_cooldown(&ctx.meta, &observation.target, delay)?;
+            cooldown_stored =
+                self.store_cooldown(&ctx.meta, &observation.target, delay, ctx.max_cooldown)?;
         }
 
         Ok(RateLimitResponseAction::Limited {
@@ -197,12 +204,19 @@ impl GovernorRateLimiter {
         ctx: &RateLimitContext<'_>,
         target: &RateLimitTarget,
         delay: std::time::Duration,
+        max_cooldown: Duration,
     ) -> Result<bool, ApiClientError> {
         let keys = cooldown_keys_for_target(ctx, target)?;
         if keys.is_empty() {
             return Ok(false);
         }
 
+        if delay > max_cooldown {
+            return Err(rate_limit_configuration_error(
+                ctx,
+                "rate-limit cooldown exceeds configured maximum",
+            ));
+        }
         let until = Instant::now().checked_add(delay).ok_or_else(|| {
             rate_limit_configuration_error(ctx, "rate-limit cooldown duration overflowed")
         })?;
@@ -507,6 +521,7 @@ mod tests {
             attempt: 0,
             page_index: 0,
             idempotent: true,
+            max_cooldown: Duration::from_secs(60),
             plan: Box::leak(Box::new(plan)),
         }
     }
@@ -524,6 +539,7 @@ mod tests {
             attempt: 0,
             page_index: 0,
             idempotent: true,
+            max_cooldown: Duration::from_secs(60),
             plan: Box::leak(Box::new(plan)),
         }
     }
@@ -578,7 +594,12 @@ mod tests {
         let limiter = GovernorRateLimiter::new();
         let ctx = test_context();
         let err = limiter
-            .store_cooldown(&ctx, &RateLimitTarget::Endpoint, Duration::MAX)
+            .store_cooldown(
+                &ctx,
+                &RateLimitTarget::Endpoint,
+                Duration::MAX,
+                Duration::MAX,
+            )
             .expect_err("overflowing cooldown should fail");
 
         assert!(matches!(err, ApiClientError::RateLimit { .. }));
@@ -587,6 +608,27 @@ mod tests {
             Some(crate::rate_limit::RateLimitErrorKind::InvalidConfiguration)
         ));
         assert!(err.to_string().contains("cooldown duration overflowed"));
+    }
+
+    #[test]
+    fn rate_limit_cooldown_cap_returns_typed_error() {
+        let limiter = GovernorRateLimiter::new();
+        let ctx = test_context();
+        let err = limiter
+            .store_cooldown(
+                &ctx,
+                &RateLimitTarget::Endpoint,
+                Duration::from_secs(61),
+                Duration::from_secs(60),
+            )
+            .expect_err("over-cap cooldown should fail");
+
+        assert!(matches!(err, ApiClientError::RateLimit { .. }));
+        assert!(matches!(
+            err.rate_limit_error().map(|err| err.kind()),
+            Some(crate::rate_limit::RateLimitErrorKind::InvalidConfiguration)
+        ));
+        assert!(err.to_string().contains("configured maximum"));
     }
 
     #[test]

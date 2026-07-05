@@ -282,7 +282,7 @@ async fn custom_retry_policy_huge_retry_after_returns_typed_error() {
         .expect_err("huge custom retry delay should be rejected before sleeping");
 
     assert_eq!(err.category(), concord_core::error::ErrorCategory::Config);
-    assert!(err.to_string().contains("retry policy duration overflowed"));
+    assert!(err.to_string().contains("configured maximum"));
     assert_eq!(sent.sent_count().await, 1);
 }
 
@@ -336,7 +336,7 @@ async fn custom_retry_policy_huge_delay_returns_typed_error() {
         .expect_err("huge custom retry delay should be rejected before sleeping");
 
     assert_eq!(err.category(), concord_core::error::ErrorCategory::Config);
-    assert!(err.to_string().contains("retry policy duration overflowed"));
+    assert!(err.to_string().contains("configured maximum"));
     assert_eq!(sent.sent_count().await, 1);
     let retry_events = retry_events.lock().await.clone();
     assert_eq!(retry_events.len(), 5);

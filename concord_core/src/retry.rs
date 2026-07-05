@@ -23,6 +23,7 @@ pub struct RetryContext<'a> {
     pub retry_count: u32,
     pub page_index: u32,
     pub idempotent: bool,
+    pub max_delay: Duration,
     pub request_headers: &'a HeaderMap,
     pub response_headers: Option<&'a HeaderMap>,
     pub outcome: RetryOutcome<'a>,
@@ -142,7 +143,12 @@ impl RetryConfig {
             && let Some(headers) = ctx.response_headers
             && let Some(delay) = crate::rate_limit::parse_retry_after(headers)
         {
-            validate_retry_delay(ctx, delay, "retry Retry-After duration overflowed")?;
+            validate_capped_retry_delay(
+                ctx,
+                delay,
+                ctx.max_delay,
+                "retry Retry-After duration exceeds configured maximum",
+            )?;
             return Ok(RetryDecision::RetryAfter(delay));
         }
 
@@ -205,7 +211,12 @@ impl RetryBackoff {
         match self {
             Self::None => Ok(Some(Duration::ZERO)),
             Self::Fixed(delay) => {
-                validate_retry_delay(ctx, *delay, "retry fixed backoff duration overflowed")?;
+                validate_capped_retry_delay(
+                    ctx,
+                    *delay,
+                    ctx.max_delay,
+                    "retry fixed backoff duration exceeds configured maximum",
+                )?;
                 Ok(Some(*delay))
             }
             Self::Exponential { base, factor, max } => {
@@ -227,7 +238,12 @@ impl RetryBackoff {
                     retry_config_error(ctx, "retry exponential backoff duration overflowed")
                 })?;
                 let delay = delay.min(*max);
-                validate_retry_delay(ctx, delay, "retry exponential backoff duration overflowed")?;
+                validate_capped_retry_delay(
+                    ctx,
+                    delay,
+                    ctx.max_delay,
+                    "retry exponential backoff duration exceeds configured maximum",
+                )?;
                 Ok(Some(delay))
             }
         }
@@ -279,6 +295,18 @@ pub(crate) fn validate_retry_delay(
         .ok_or_else(|| retry_config_error(ctx, msg))
 }
 
+pub(crate) fn validate_capped_retry_delay(
+    ctx: &RetryContext<'_>,
+    delay: Duration,
+    max_delay: Duration,
+    msg: &'static str,
+) -> Result<(), crate::error::ApiClientError> {
+    if delay > max_delay {
+        return Err(retry_config_error(ctx, msg));
+    }
+    validate_retry_delay(ctx, delay, msg)
+}
+
 fn retry_config_error(ctx: &RetryContext<'_>, msg: &'static str) -> crate::error::ApiClientError {
     crate::error::ApiClientError::invalid_param(
         crate::error::ErrorContext {
@@ -307,6 +335,7 @@ mod tests {
             retry_count,
             page_index: 0,
             idempotent: true,
+            max_delay: Duration::from_secs(60),
             request_headers: headers,
             response_headers,
             outcome: RetryOutcome::HttpStatus(StatusCode::TOO_MANY_REQUESTS),
@@ -422,6 +451,33 @@ mod tests {
     }
 
     #[test]
+    fn capped_retry_after_returns_typed_error() {
+        let mut response_headers = HeaderMap::new();
+        response_headers.insert(
+            http::header::RETRY_AFTER,
+            http::HeaderValue::from_static("61"),
+        );
+        let request_headers = HeaderMap::new();
+        let config = RetryConfig {
+            max_attempts: 2,
+            statuses: vec![StatusCode::TOO_MANY_REQUESTS],
+            methods: vec![Method::GET],
+            respect_retry_after: true,
+            ..RetryConfig::default()
+        };
+
+        let ctx = RetryContext {
+            max_delay: Duration::from_secs(60),
+            ..ctx(&Method::GET, &request_headers, Some(&response_headers), 0)
+        };
+        let err = config
+            .try_decide(&ctx)
+            .expect_err("over-cap retry-after should fail");
+        assert_eq!(err.category(), crate::error::ErrorCategory::Config);
+        assert!(err.to_string().contains("configured maximum"));
+    }
+
+    #[test]
     fn exponential_backoff_overflow_returns_typed_error() {
         let request_headers = HeaderMap::new();
         let config = RetryConfig {
@@ -441,6 +497,46 @@ mod tests {
             .expect_err("invalid exponential backoff should fail");
         assert_eq!(err.category(), crate::error::ErrorCategory::Config);
         assert!(err.to_string().contains("backoff"));
+    }
+
+    #[test]
+    fn fixed_backoff_over_cap_returns_typed_error() {
+        let request_headers = HeaderMap::new();
+        let config = RetryConfig {
+            max_attempts: 2,
+            statuses: vec![StatusCode::TOO_MANY_REQUESTS],
+            methods: vec![Method::GET],
+            backoff: RetryBackoff::Fixed(Duration::from_secs(61)),
+            ..RetryConfig::default()
+        };
+
+        let err = config
+            .try_decide(&ctx(&Method::GET, &request_headers, None, 1))
+            .expect_err("over-cap fixed backoff should fail");
+        assert_eq!(err.category(), crate::error::ErrorCategory::Config);
+        assert!(err.to_string().contains("configured maximum"));
+    }
+
+    #[test]
+    fn exponential_backoff_over_cap_returns_typed_error() {
+        let request_headers = HeaderMap::new();
+        let config = RetryConfig {
+            max_attempts: 2,
+            statuses: vec![StatusCode::TOO_MANY_REQUESTS],
+            methods: vec![Method::GET],
+            backoff: RetryBackoff::Exponential {
+                base: Duration::from_secs(61),
+                factor: 1.0,
+                max: Duration::from_secs(61),
+            },
+            ..RetryConfig::default()
+        };
+
+        let err = config
+            .try_decide(&ctx(&Method::GET, &request_headers, None, 1))
+            .expect_err("over-cap exponential backoff should fail");
+        assert_eq!(err.category(), crate::error::ErrorCategory::Config);
+        assert!(err.to_string().contains("configured maximum"));
     }
 
     #[test]

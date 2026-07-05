@@ -320,6 +320,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         retry_count: transport_retry_index,
                         page_index: plan.overrides.page_index,
                         idempotent: plan.endpoint.meta.idempotent,
+                        max_delay: self.runtime_state.max_retry_delay(),
                         request_headers: &retry_request_headers,
                         response_headers,
                         outcome,

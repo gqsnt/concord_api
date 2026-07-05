@@ -169,6 +169,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                                 attempt,
                                 page_index: 0,
                                 idempotent: built.meta.idempotent,
+                                max_cooldown: self.client.runtime_state.max_rate_limit_cooldown(),
                                 plan: &built.rate_limit,
                             })
                             .await

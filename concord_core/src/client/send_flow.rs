@@ -36,6 +36,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             attempt: built.meta.attempt,
             page_index: built.meta.page_index,
             idempotent: built.meta.idempotent,
+            max_cooldown: self.runtime_state.max_rate_limit_cooldown(),
             plan: &built.rate_limit,
         };
         let _permit = self
@@ -99,6 +100,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             attempt: ctx.attempt,
             page_index: ctx.page_index,
             idempotent: ctx.idempotent,
+            max_cooldown: self.runtime_state.max_rate_limit_cooldown(),
             plan: ctx.plan,
         };
         self.runtime_state
@@ -107,6 +109,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 meta: rate_limit_meta,
                 status: ctx.status,
                 headers: ctx.headers,
+                max_cooldown: self.runtime_state.max_rate_limit_cooldown(),
             })
             .await
             .map_err(|err| {

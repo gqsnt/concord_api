@@ -30,6 +30,8 @@ Common configuration methods include:
 - `runtime_hooks(...)`
 - `pagination_detect_loops(...)`
 - `max_auth_retries(...)`
+- `max_retry_delay(...)`
+- `max_rate_limit_cooldown(...)`
 - `max_response_body_bytes(...)`
 - `no_response_body_limit()`
 
@@ -46,6 +48,8 @@ Common configuration methods include:
 | `retry_policy` | no retry |
 | `max_auth_retries` | `8` |
 | `pagination_detect_loops` | `true` |
+| `max_retry_delay` | `Duration::from_secs(60)` |
+| `max_rate_limit_cooldown` | `Duration::from_secs(60)` |
 | `max_response_body_bytes` | `Some(16 * 1024 * 1024)` |
 | `dev_body_capture` | disabled |
 
@@ -69,6 +73,8 @@ Debug sinks and runtime hooks are metadata-only. They receive sanitized metadata
 The transport boundary is unchanged. The runtime still materializes raw request headers, query auth, and bodies only when building the `TransportRequest` that goes to the transport implementation.
 
 Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run after response classification, hook observation, rate-limit observation, and auth rejection handling, and before endpoint response decoding. They do not see body bytes or raw auth material.
+
+Retry delays are capped by `max_retry_delay(...)`, and rate-limit response cooldowns are capped by `max_rate_limit_cooldown(...)`. The defaults are finite, and over-cap remote or custom delays fail closed instead of sleeping or storing a cooldown.
 
 Reserved auth names are structural, not best-effort. Query-auth names are rejected if a public query parameter already uses the same key, and header-auth names are rejected case-insensitively if a public header already uses the same name. Those collisions are rejected before rate-limit acquisition and transport.
 

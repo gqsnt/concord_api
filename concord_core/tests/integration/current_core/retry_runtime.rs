@@ -4,7 +4,9 @@ use super::common::{
 };
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
-use concord_core::advanced::{RetryIdempotency, StreamBody};
+use concord_core::advanced::{
+    RetryBackoff, RetryContext, RetryDecision, RetryIdempotency, RetryPolicy, StreamBody,
+};
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{
     BodyPlan, Format, Replayability, RequestArgs, ResolvedPolicy, RetrySetting,
@@ -12,6 +14,7 @@ use concord_core::internal::{
 use concord_core::prelude::ApiClientError;
 use http::{HeaderValue, Method, StatusCode};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 fn retry_plan(
@@ -72,6 +75,29 @@ fn response_with_retry_after(
         HeaderValue::from_static(retry_after),
     );
     response
+}
+
+#[derive(Clone)]
+struct RetryAfterPolicy(Duration);
+
+impl RetryPolicy for RetryAfterPolicy {
+    fn max_retries(&self) -> u32 {
+        2
+    }
+
+    fn should_retry_checked(
+        &self,
+        ctx: &RetryContext<'_>,
+    ) -> Result<RetryDecision, concord_core::prelude::ApiClientError> {
+        if matches!(
+            &ctx.outcome,
+            concord_core::advanced::RetryOutcome::HttpStatus(StatusCode::INTERNAL_SERVER_ERROR)
+        ) {
+            Ok(RetryDecision::RetryAfter(self.0))
+        } else {
+            Ok(RetryDecision::Stop)
+        }
+    }
 }
 
 #[tokio::test]
@@ -440,6 +466,227 @@ async fn retry_after_header_zero_is_honored_without_sleeping() -> Result<(), Api
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].meta.attempt, 0);
     assert_eq!(requests[1].meta.attempt, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn retry_after_above_cap_returns_typed_error_before_followup_send() {
+    const RESPONSE_SENTINEL: &str = "PRSEC7_RETRY_RESPONSE_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![response_with_retry_after(
+            StatusCode::TOO_MANY_REQUESTS,
+            RESPONSE_SENTINEL,
+            "2",
+        )],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_retry_delay(Duration::from_secs(1));
+    });
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "RetryAfterCap",
+            Method::GET,
+            "/retry/capped-after",
+            retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            true,
+        ))
+        .await
+        .expect_err("over-cap retry-after should fail closed");
+
+    assert_eq!(err.category(), ErrorCategory::Config);
+    assert!(err.to_string().contains("configured maximum"));
+    assert_eq!(sent.sent_count().await, 1);
+    assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
+}
+
+#[tokio::test]
+async fn custom_retry_policy_delay_above_cap_returns_typed_error_before_followup_send() {
+    const RESPONSE_SENTINEL: &str = "PRSEC7_RETRY_POLICY_RESPONSE_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_SENTINEL),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_retry_delay(Duration::from_secs(1))
+            .retry_policy(Arc::new(RetryAfterPolicy(Duration::from_secs(2))));
+    });
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "RetryPolicyCap",
+            Method::GET,
+            "/retry/policy-cap",
+            ResolvedPolicy::default(),
+            true,
+        ))
+        .await
+        .expect_err("over-cap custom retry policy should fail closed");
+
+    assert_eq!(err.category(), ErrorCategory::Config);
+    assert!(err.to_string().contains("configured maximum"));
+    assert_eq!(sent.sent_count().await, 1);
+    assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
+}
+
+#[tokio::test]
+async fn fixed_backoff_above_cap_returns_typed_error_before_followup_send() {
+    const RESPONSE_SENTINEL: &str = "PRSEC7_RETRY_FIXED_RESPONSE_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_SENTINEL),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut policy = retry_policy(2);
+    if let RetrySetting::Config(config) = &mut policy.retry {
+        config.backoff = RetryBackoff::Fixed(Duration::from_secs(2));
+    }
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_retry_delay(Duration::from_secs(1));
+    });
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "RetryFixedCap",
+            Method::GET,
+            "/retry/fixed-cap",
+            policy,
+            true,
+        ))
+        .await
+        .expect_err("over-cap fixed backoff should fail closed");
+
+    assert_eq!(err.category(), ErrorCategory::Config);
+    assert!(err.to_string().contains("configured maximum"));
+    assert_eq!(sent.sent_count().await, 1);
+    assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
+}
+
+#[tokio::test]
+async fn exponential_backoff_above_cap_returns_typed_error_before_followup_send() {
+    const RESPONSE_SENTINEL: &str = "PRSEC7_RETRY_EXP_RESPONSE_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_SENTINEL),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut policy = retry_policy(2);
+    if let RetrySetting::Config(config) = &mut policy.retry {
+        config.backoff = RetryBackoff::Exponential {
+            base: Duration::from_secs(2),
+            factor: 1.0,
+            max: Duration::from_secs(2),
+        };
+    }
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_retry_delay(Duration::from_secs(1));
+    });
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "RetryExpCap",
+            Method::GET,
+            "/retry/exp-cap",
+            policy,
+            true,
+        ))
+        .await
+        .expect_err("over-cap exponential backoff should fail closed");
+
+    assert_eq!(err.category(), ErrorCategory::Config);
+    assert!(err.to_string().contains("configured maximum"));
+    assert_eq!(sent.sent_count().await, 1);
+    assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
+}
+
+#[tokio::test]
+async fn short_fixed_backoff_still_retries() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut policy = retry_policy(2);
+    if let RetrySetting::Config(config) = &mut policy.retry {
+        config.backoff = RetryBackoff::Fixed(Duration::from_millis(1));
+    }
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_retry_delay(Duration::from_secs(1));
+    });
+
+    let decoded = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "RetryFixedShort",
+            Method::GET,
+            "/retry/fixed-short",
+            policy,
+            true,
+        ))
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn short_custom_retry_policy_delay_still_retries() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_retry_delay(Duration::from_secs(1))
+            .retry_policy(Arc::new(RetryAfterPolicy(Duration::from_millis(1))));
+    });
+
+    let decoded = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "RetryPolicyShort",
+            Method::GET,
+            "/retry/policy-short",
+            ResolvedPolicy::default(),
+            true,
+        ))
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent.sent_count().await, 2);
     Ok(())
 }
 

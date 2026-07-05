@@ -9,17 +9,22 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 static DEV_BODY_CAPTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
 pub struct AuthRuntimeConfig {
     pub(crate) max_retries: u32,
+    pub(crate) max_retry_delay: Duration,
 }
 
 impl Default for AuthRuntimeConfig {
     fn default() -> Self {
-        Self { max_retries: 8 }
+        Self {
+            max_retries: 8,
+            max_retry_delay: Duration::from_secs(60),
+        }
     }
 }
 
@@ -123,6 +128,7 @@ pub struct RuntimeConfig {
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) retry_policy: Arc<dyn RetryPolicy>,
     pub(crate) auth: AuthRuntimeConfig,
+    pub(crate) max_rate_limit_cooldown: Duration,
     pub(crate) pagination_detect_loops: bool,
     pub(crate) debug: DebugConfig,
     pub(crate) max_response_body_bytes: Option<usize>,
@@ -139,6 +145,7 @@ impl Default for RuntimeConfig {
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
             auth: AuthRuntimeConfig::default(),
+            max_rate_limit_cooldown: Duration::from_secs(60),
             pagination_detect_loops: true,
             debug: DebugConfig::default(),
             max_response_body_bytes: Some(16 * 1024 * 1024),
@@ -198,6 +205,18 @@ impl RuntimeConfig {
     #[inline]
     pub fn max_auth_retries(&mut self, max: u32) -> &mut Self {
         self.auth.max_retries = max;
+        self
+    }
+
+    #[inline]
+    pub fn max_retry_delay(&mut self, max_delay: Duration) -> &mut Self {
+        self.auth.max_retry_delay = max_delay;
+        self
+    }
+
+    #[inline]
+    pub fn max_rate_limit_cooldown(&mut self, max_delay: Duration) -> &mut Self {
+        self.max_rate_limit_cooldown = max_delay;
         self
     }
 
@@ -263,6 +282,8 @@ mod tests {
         assert_eq!(cfg.max_response_body_bytes, Some(16 * 1024 * 1024));
         assert_eq!(cfg.max_stream_request_body_bytes, Some(16 * 1024 * 1024));
         assert_eq!(cfg.max_stream_response_body_bytes, Some(16 * 1024 * 1024));
+        assert_eq!(cfg.auth.max_retry_delay, Duration::from_secs(60));
+        assert_eq!(cfg.max_rate_limit_cooldown, Duration::from_secs(60));
         assert!(cfg.dev_body_capture.is_none());
 
         assert_eq!(Arc::strong_count(&cfg.hooks), 1);

@@ -1,16 +1,18 @@
 use super::common::{
     GateTransport, MockResponse, MockTransport, ObservationRateLimiter, RecordingRateLimiter,
-    TestAuthVars, TestCx, TextEndpoint, auth_policy, client,
+    TestAuthVars, TestCx, TextEndpoint, auth_policy, client, retry_policy,
+    retry_policy_for_statuses,
 };
+use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
 use concord_core::advanced::{
     DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
     RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimitWindow, RateLimiter, RuntimeHooks,
+    RateLimitResponseContext, RateLimitWindow, RateLimiter, RetryBackoff, RuntimeHooks,
 };
 use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
-use http::{Method, StatusCode};
+use http::{HeaderValue, Method, StatusCode};
 use std::num::NonZeroU32;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -48,6 +50,90 @@ async fn client_config_applies_to_requests() {
     assert_response_too_large(&err);
     assert_eq!(body_reads(&read_count), 0);
     assert_eq!(transport_events(&events).await, vec!["transport"]);
+}
+
+#[tokio::test]
+async fn client_config_overrides_retry_delay_cap() {
+    const RESPONSE_SENTINEL: &str = "PRSEC7_RUNTIME_CONFIG_RETRY_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_SENTINEL),
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.max_retry_delay(Duration::from_secs(1));
+    });
+
+    let mut policy = retry_policy(2);
+    if let concord_core::internal::RetrySetting::Config(config) = &mut policy.retry {
+        config.backoff = RetryBackoff::Fixed(Duration::from_secs(2));
+    }
+
+    let err = client
+        .request(TextEndpoint {
+            policy,
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("retry delay cap override should fail closed");
+
+    assert_eq!(err.category(), concord_core::error::ErrorCategory::Config);
+    assert!(err.to_string().contains("configured maximum"));
+    assert_eq!(sent.sent_count().await, 1);
+    assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
+}
+
+#[tokio::test]
+async fn client_config_overrides_rate_limit_cooldown_cap() {
+    const RESPONSE_SENTINEL: &str = "PRSEC7_RUNTIME_CONFIG_RATE_LIMIT_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut response = MockResponse::text(StatusCode::TOO_MANY_REQUESTS, RESPONSE_SENTINEL);
+    response
+        .headers
+        .insert(http::header::RETRY_AFTER, HeaderValue::from_static("2"));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            response,
+            MockResponse::text(StatusCode::OK, "should-not-send"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    let limiter = Arc::new(concord_core::advanced::GovernorRateLimiter::new());
+    client.configure(|cfg| {
+        cfg.max_rate_limit_cooldown(Duration::from_secs(1))
+            .rate_limiter(limiter.clone());
+    });
+
+    let err = client
+        .request(TextEndpoint {
+            policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("rate-limit cooldown cap override should fail closed");
+
+    assert_eq!(
+        err.category(),
+        concord_core::error::ErrorCategory::RateLimit
+    );
+    assert_eq!(
+        err.rate_limit_error().map(|err| err.kind()),
+        Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
+    );
+    assert!(err.to_string().contains("configured maximum"));
+    assert_eq!(sent.sent_count().await, 1);
+    assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
 }
 
 #[tokio::test]
