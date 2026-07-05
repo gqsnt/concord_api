@@ -154,7 +154,7 @@ fn codegen_uses_resolved_ir() {
 
     let endpoint = resolved.endpoints.iter().find(|ep| ep.name == "Ping");
     assert!(endpoint.is_some(), "resolved ping endpoint missing");
-    let endpoint = endpoint.unwrap();
+    let endpoint = endpoint.expect("ping endpoint missing");
     assert_eq!(
         endpoint.behavior_doc.names,
         vec!["shared".to_string(), "endpoint_override".to_string()]

@@ -12,20 +12,27 @@ Concord keeps feature surfaces explicit and minimal. This document records the s
 
 ## Supported Commands
 
-The following combinations are intentionally supported and are checked in CI or the local gate:
+The following commands are intentionally supported and are checked by `scripts/check_features.sh`:
 
 ```bash
 cargo check -p concord_core --no-default-features
 cargo check -p concord_core --no-default-features --features json
+cargo check -p concord_core --all-features
 
-cargo check -p concord_macros --no-default-features
 cargo check -p concord_macros
+cargo check -p concord_macros --all-features
 
 cargo check -p concord_examples --all-targets
-cargo nextest run -p concord_examples
+cargo check -p concord_examples --all-targets --all-features
 ```
 
 `concord_examples --no-default-features` is intentionally unsupported.
+
+`scripts/check_features.sh` also checks dependency-tree invariants:
+
+- the `concord_core` default tree contains `rate-limit-governor` and omits optional HTTP codecs that are not enabled by default;
+- the `concord_core --no-default-features` tree omits the default `governor` feature edge;
+- the `concord_macros` default and `--no-default-features` trees are identical and omit runtime-only crates such as `serde_json`.
 
 ## Dependency Ownership
 

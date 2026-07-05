@@ -39,10 +39,10 @@ This repository keeps test ownership split by layer so new coverage lands in the
 
 ## Feature and CI scripts
 
-- `scripts/check_v1.sh` owns the current v1 surface and ownership gates.
-- `scripts/check_features.sh` owns the supported feature matrix.
-- `scripts/audit_current.sh` owns public docs/examples audit checks and release hygiene checks.
-- `scripts/check_architecture.sh` owns source-boundary and current architecture boundary checks.
+- `scripts/check_features.sh` owns the supported Cargo feature matrix and dependency-tree expectations.
+- `scripts/check_v1.sh` owns the full local release gate that composes feature checks, formatting, clippy, tests, and docs.
+- `scripts/audit_current.sh` owns public docs/examples hygiene and release consistency checks.
+- `scripts/check_architecture.sh` owns source-boundary and current architecture invariants.
 
 ## Where to add new tests
 

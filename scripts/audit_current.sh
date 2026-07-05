@@ -97,7 +97,7 @@ fail_if_match \
 require_match \
   "malformed base URL has compile-fail fixture" \
   "base +\"https://example\\.com/v1\"" \
-  concord_macros/tests/trybuild/fail/route
+  concord_macros/tests/trybuild/fail/parser/route
 
 echo "== secret namespace restricted to credential declarations =="
 secret_hits="$(mktemp)"
@@ -194,6 +194,6 @@ require_match \
 require_match \
   "endpoint-state custom pagination requirement compile-fail fixture" \
   "struct HeaderPagePagination" \
-  concord_macros/tests/trybuild/fail/pagination/custom_pagination_rejects_unknown_endpoint_rhs.rs
+  concord_macros/tests/trybuild/fail/sema/pagination/custom_pagination_rejects_unknown_endpoint_rhs.rs
 
 echo "current audit passed"
