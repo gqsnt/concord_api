@@ -3,8 +3,8 @@
 use concord_core::advanced::{
     DebugSink, PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
     RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks,
-    Transport, TransportBody, TransportError, TransportRequest, TransportRequestBody,
-    TransportResponse,
+    SanitizedHeaders, Transport, TransportBody, TransportError, TransportRequest,
+    TransportRequestBody, TransportResponse,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -250,13 +250,13 @@ impl DebugSink for RecordingDebugSink {
         self.records.push(format!("debug_start:{url}"));
     }
 
-    fn request_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
+    fn request_headers(&self, _dbg: DebugLevel, _headers: SanitizedHeaders<'_>) {}
 
     fn response_status(&self, _dbg: DebugLevel, _status: StatusCode, url: &str, _ok: bool) {
         self.records.push(format!("debug_status:{url}"));
     }
 
-    fn response_headers(&self, _dbg: DebugLevel, _headers: &HeaderMap) {}
+    fn response_headers(&self, _dbg: DebugLevel, _headers: SanitizedHeaders<'_>) {}
 }
 
 struct StaticBody(Option<bytes::Bytes>);

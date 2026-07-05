@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use concord_core::advanced::{
     DebugSink, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, Transport, TransportBody, TransportError,
-    TransportRequest, TransportRequestBody, TransportResponse,
+    RateLimitResponseContext, RateLimiter, SanitizedHeaders, Transport, TransportBody,
+    TransportError, TransportRequest, TransportRequestBody, TransportResponse,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use concord_macros::api;
@@ -63,7 +63,7 @@ impl DebugSink for RecordingDebugSink {
             .push(format!("debug_request:{dbg}:{endpoint}:{page_index}"));
     }
 
-    fn request_headers(&self, dbg: DebugLevel, _headers: &HeaderMap) {
+    fn request_headers(&self, dbg: DebugLevel, _headers: SanitizedHeaders<'_>) {
         self.events
             .lock()
             .expect("debug lock")
@@ -77,7 +77,7 @@ impl DebugSink for RecordingDebugSink {
             .push(format!("debug_response:{dbg}:{status}:{ok}"));
     }
 
-    fn response_headers(&self, dbg: DebugLevel, _headers: &HeaderMap) {
+    fn response_headers(&self, dbg: DebugLevel, _headers: SanitizedHeaders<'_>) {
         self.events
             .lock()
             .expect("debug lock")
