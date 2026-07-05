@@ -81,6 +81,8 @@ Rate-limit acquisition happens after request planning, auth preparation, and aut
 
 Rate-limit response cooldowns are capped as well. The default maximum cooldown is finite and configured through runtime settings. Remote `Retry-After` values above the configured cap fail closed before Concord stores or sleeps on the cooldown. Custom rate-limit observers and response policies cannot force a cooldown above the cap through the default governor runtime.
 
+With `rate-limit-governor` enabled, the default rate limiter enforces declared plans. With `default-features = false`, the default rate limiter fails closed for non-empty declared plans so they do not vanish silently. Empty plans still succeed. `NoopRateLimiter` remains the explicit opt-out when a caller intentionally wants no enforcement.
+
 Rate-limit configuration, acquire, and response-action failures now surface as structured `ApiClientError::RateLimit` values with an inspectable `RateLimitErrorKind`. The execution order and retry behavior are unchanged.
 Pure transport errors do not produce response observation.
 

@@ -6,7 +6,7 @@ Concord keeps feature surfaces explicit and minimal. This document records the s
 
 | Crate | Default features | Optional features | Supported no-default build | Notes |
 | --- | --- | --- | --- | --- |
-| `concord_core` | `rate-limit-governor` | `json`, `gzip`, `brotli`, `deflate`, `cookies`, `multipart` | yes | `json` owns `serde`, `serde_json`, and `reqwest/json`. |
+| `concord_core` | `rate-limit-governor` | `json`, `gzip`, `brotli`, `deflate`, `cookies`, `multipart` | yes | `json` owns `serde`, `serde_json`, and `reqwest/json`. When `rate-limit-governor` is off, the default limiter fails closed for non-empty declared plans and `NoopRateLimiter` is the explicit opt-out. |
 | `concord_macros` | none | none | yes | Proc-macro crate. |
 | `concord_examples` | none | none | no | Compile-checked examples depend on `concord_core` with `json` enabled. |
 
@@ -18,6 +18,8 @@ The following commands are intentionally supported and are checked by `scripts/c
 cargo check -p concord_core --no-default-features
 cargo check -p concord_core --no-default-features --features json
 cargo check -p concord_core --all-features
+cargo test -p concord_core --no-default-features no_default_rate_limit
+cargo test -p concord_core --no-default-features --features json no_default_rate_limit
 
 cargo check -p concord_macros
 cargo check -p concord_macros --all-features

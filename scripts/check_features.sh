@@ -113,6 +113,8 @@ expect_check_failure_contains() {
 run_check check -p concord_core --no-default-features
 run_check check -p concord_core --no-default-features --features json
 run_check check -p concord_core --all-features
+run_check test -p concord_core --no-default-features no_default_rate_limit
+run_check test -p concord_core --no-default-features --features json no_default_rate_limit
 
 run_check check -p concord_macros
 run_check check -p concord_macros --all-features

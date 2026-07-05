@@ -53,6 +53,8 @@ Common configuration methods include:
 | `max_response_body_bytes` | `Some(16 * 1024 * 1024)` |
 | `dev_body_capture` | disabled |
 
+With `rate-limit-governor` enabled, the default rate limiter enforces declared plans. With `default-features = false`, the default rate limiter fails closed for non-empty declared plans so they do not disappear silently. Empty plans still succeed. `NoopRateLimiter` remains an explicit opt-out for callers that intentionally want no enforcement.
+
 Configuration precedence is:
 
 ```text

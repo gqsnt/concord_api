@@ -1062,3 +1062,94 @@ async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
     assert!(first < second);
     Ok(())
 }
+
+#[cfg(not(feature = "rate-limit-governor"))]
+#[tokio::test]
+async fn no_default_rate_limit_empty_plan_succeeds() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}
+
+#[cfg(not(feature = "rate-limit-governor"))]
+#[tokio::test]
+async fn no_default_rate_limit_non_empty_plan_fails_closed() {
+    const AUTH_SENTINEL: &str = "PRSEC8_NO_DEFAULT_AUTH_SENTINEL";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+    );
+    let sent = transport.clone();
+    let client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars {
+            token: Some(AUTH_SENTINEL.to_string()),
+            identity: "bearer",
+        },
+        transport,
+    );
+    let mut policy = rate_limit_policy();
+    policy.auth = auth_policy(concord_core::advanced::AuthPlacement::Bearer).auth;
+
+    let err = client
+        .request(TextEndpoint {
+            policy,
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("non-empty rate-limit plans should fail closed without governor support");
+
+    assert_eq!(
+        err.category(),
+        concord_core::error::ErrorCategory::RateLimit
+    );
+    assert_eq!(
+        err.rate_limit_error().map(|err| err.kind()),
+        Some(concord_core::advanced::RateLimitErrorKind::InvalidConfiguration)
+    );
+    assert!(err.to_string().contains("explicit opt-out"));
+    assert_eq!(sent.sent_count().await, 0);
+    assert_error_chain_does_not_contain_any(&err, &[AUTH_SENTINEL]);
+}
+
+#[cfg(not(feature = "rate-limit-governor"))]
+#[tokio::test]
+async fn no_default_rate_limit_explicit_noop_limiter_opt_out_succeeds() -> Result<(), ApiClientError>
+{
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
+    let sent = transport.clone();
+    let mut client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        transport,
+    );
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(concord_core::advanced::NoopRateLimiter::new()));
+    });
+
+    let decoded = client
+        .request(TextEndpoint {
+            policy: rate_limit_policy(),
+            ..Default::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    assert_eq!(sent.sent_count().await, 1);
+    Ok(())
+}

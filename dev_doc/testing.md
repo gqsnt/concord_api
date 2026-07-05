@@ -69,6 +69,13 @@ Feature-surface drift is gated separately by `scripts/check_features.sh`. That s
 
 The runtime nextest matrix is separate from the compile/check feature matrix. The checked-in local gate currently runs `cargo nextest run -p concord_core`, `cargo nextest run -p concord_core --all-features`, `cargo nextest run -p concord_examples`, `cargo nextest run -p concord_examples --all-features`, `cargo nextest run --workspace`, `cargo nextest run --workspace --all-features`, and `cargo nextest run --workspace --all-targets`. Feature-flavored core nextest runs such as `cargo nextest run -p concord_core --no-default-features` and `cargo nextest run -p concord_core --no-default-features --features json` are intentionally omitted for now because the core runtime suite is not feature-parametric and those runs fail in rate-limit characterization tests.
 
+The no-default rate-limit regression is exercised separately with a focused cargo test filter instead of the full runtime suite:
+
+```bash
+cargo test -p concord_core --no-default-features no_default_rate_limit
+cargo test -p concord_core --no-default-features --features json no_default_rate_limit
+```
+
 ## Architecture Boundary Checks
 
 Run:
