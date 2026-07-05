@@ -192,6 +192,8 @@ if api.auth_state().session().is_set().await? {
 
 Generated auth-state helpers are fallible when they observe runtime auth state. Lock and state failures return `AuthError` instead of panicking.
 
+Cloned clients share auth state. Runtime configuration uses clone-on-write, but auth-state accessors, `set`, `clear`, `is_set`, and endpoint-backed acquisition operate on the shared auth-state handle. Clearing or replacing auth state on one clone affects other clones that share that handle. If credential isolation matters, create a separate client instance or install separate auth state instead of relying on `clone()`.
+
 ## Advanced Endpoints
 
 The facade is the normal API. Advanced callers can construct endpoint values from `endpoints::*` and pass them to `request(...)`.

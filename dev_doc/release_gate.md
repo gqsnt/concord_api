@@ -124,6 +124,7 @@ Proof owners: `concord_core/tests/integration/redaction.rs`, `errors.rs`, `cance
 
 Request bodies, response bodies, raw auth, and secrets remain absent from `Display`, `Debug`, source chains, debug sinks, hooks, rate-limit metadata, and retry metadata.
 Runtime hook order is fixed and not user-configurable. `pre_send` runs after rate-limit acquisition and before raw auth transport materialization, `post_response` runs after an HTTP response is received and before body read and endpoint decode, and `transport_error` only observes initial transport-send failures.
+The deprecated dev body capture path is local-file-only, disabled by default, and writes raw selected response bytes without redaction; it never captures request bodies and is separate from debug sinks, hooks, stderr debug output, public errors, retry metadata, and rate-limit metadata.
 
 ### page-mutation-before-auth-collision-rate-transport
 
@@ -153,7 +154,7 @@ Feature defaults and optional feature ownership remain explicit. Examples may us
 
 Proof owners: `concord_core/tests/integration/current_core/runtime_config.rs` and `docs/runtime_config.md`.
 
-Runtime defaults, client configuration, endpoint policy, pending overrides, and clone-on-write isolation are characterized.
+Runtime defaults, client configuration, endpoint policy, pending overrides, clone-on-write isolation, and shared auth-state behavior are characterized.
 
 ### public-error-taxonomy-diagnostics
 

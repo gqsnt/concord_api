@@ -22,6 +22,8 @@ Protected calls that depend on endpoint-backed credentials fail before transport
 
 Generated helpers that observe or mutate auth state are fallible when they touch runtime auth locks. Endpoint-backed `set`, `clear`, and `is_set` helpers return `AuthError` on state-unavailable failures instead of panicking. Request execution maps auth-state lock failure into `ApiClientError::Auth`.
 
+Cloned clients share auth state. Runtime configuration uses clone-on-write, but auth-state accessors, `set`, `clear`, `is_set`, and endpoint-backed acquisition operate on a shared auth-state handle. Clearing or replacing auth state on one clone affects the other clones that share that handle. Code that needs credential isolation should build a separate client instance or install separate auth state explicitly; `vars` and `auth_vars` cloning do not isolate credentials.
+
 ## Request Auth Application
 
 Before rate-limit acquisition, the runtime resolves required credentials and attaches typed pending auth slots to the logical `BuiltRequest`. No auth application hook receives `BuiltRequest`: endpoint auth preparation and auth-internal preparation both receive an auth-only application request. That request can attach pending auth slots and mark auth query keys as sensitive, but it cannot mutate the logical URL, headers, body, timeout, retry, rate-limit, or metadata. Custom `ClientContext` implementations must use the core `apply_*_credential` helpers instead of writing auth values into request headers or query strings.

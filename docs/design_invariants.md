@@ -56,6 +56,8 @@ Raw parser syntax may represent rejected forms so diagnostics can point at the r
 
 Runtime diagnostics are metadata-only for bodies. Debug sinks, stderr debug logs, runtime hooks, and callback-style diagnostics must not receive live request or response body bytes, even truncated or formatted previews.
 
+The deprecated dev body capture path is separate from debug sinks, hooks, stderr debug output, public errors, retry metadata, and rate-limit metadata. It is local-file-only, disabled by default, and writes raw selected response bytes without redaction. It never captures request bodies and is intended only for controlled local debugging.
+
 Protected auth material is applied only when the runtime materializes `TransportRequest`. Logical request state, debug surfaces, hooks, retry contexts, rate-limit contexts, and error contexts must remain free of raw auth material.
 
 Pagination is a typed runtime state machine. Page loops must either make deterministic progress, stop explicitly, or return a typed pagination error. Repeated logical page identities are treated as non-progress and fail instead of silently looping.
@@ -75,6 +77,8 @@ DSL improvements should compile to existing semantic concepts such as auth requi
 Changing runtime order requires dedicated tests and a dedicated PR.
 
 The only body-oriented developer aid is the deprecated, explicit, disabled-by-default local response-file capture path; it is not connected to debug sinks, hooks, or logging.
+
+Runtime configuration uses clone-on-write, but auth state is shared across cloned clients. Changing runtime configuration on one clone does not retroactively change another clone, while auth-state mutation on one clone can be observed by other clones that share the same auth-state handle. Credential isolation requires a separate client instance or separate auth state, not just `clone()`.
 
 ## Simple Path Preservation
 

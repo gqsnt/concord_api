@@ -121,6 +121,8 @@ Auth-state helpers that observe runtime state are fallible. A poisoned auth-stat
 
 Credential slots track monotonic generations, including when a slot is empty. If an older response tries to invalidate an earlier generation after newer material was acquired, the newer material is kept. An older credential acquisition completion is ignored, and a cancelled acquisition wakes waiters instead of leaving the slot permanently in flight.
 
+Cloned clients share auth state. Runtime configuration uses clone-on-write, but `set`, `clear`, `is_set`, and endpoint-backed acquisition operate on the shared auth-state handle. Clearing or replacing auth state on one clone affects other clones that share the same handle. Code that needs credential isolation should create a separate client instance or explicitly install separate auth state instead of relying on `clone()`. `vars` and `auth_vars` cloning are not credential-state isolation.
+
 ## Rejection And Refresh
 
 By default, protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized` or `403 Forbidden`.

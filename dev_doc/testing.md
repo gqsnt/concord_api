@@ -124,6 +124,8 @@ The common helpers are:
 - `CountingRateLimiter`: records acquire start and completion, permit creation, response observation, and deterministic lifecycle completion. The public runtime permit type is currently a unit value, so this helper records the observable lifecycle boundary rather than instrumenting the production permit destructor.
 - `GateableHooks` and `SafeRecordingDebugSink`: block or record hook and debug phases using URL, status, and header metadata only.
 
+`DevBodyCaptureConfig` is a separate, deprecated, disabled-by-default local-file capture path. It persists raw selected response bytes to disk with no redaction, never captures request bodies, and skips protected auth-bearing requests and auth endpoint traffic by default. It is not a substitute for debug sinks or hooks, and tests should not use it to inspect secrets or production-like payloads.
+
 Every harness wait is bounded through `wait_bounded`, `PhaseGate::wait_for`, or `PhaseGate::try_wait_for`. Tests that assert a task is still blocked may use a short bounded negative wait such as `assert_still_pending`, but the phase event must be the synchronization point. Do not make correctness depend on arbitrary wall-clock sleeps.
 
 Harness event logs must remain safe metadata. They may include phase labels, sanitized URLs, statuses, and headers, but not request body bytes, response body bytes, raw auth material, or secret values. The harness self-tests live in `concord_core/tests/integration/current_core/async_harness.rs`; they prove blocking, release, drop observation, rate-limit, transport, body, hook ordering, bounded missing-phase waits, and safe observer surfaces.

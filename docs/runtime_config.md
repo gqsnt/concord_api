@@ -66,7 +66,7 @@ RuntimeConfig defaults
 
 Pending-request overrides exist for request options such as debug level, timeout, and attempt. There is no per-request response-body-limit, hook, rate-limiter, retry-policy, or auth-retry override in v1.
 
-Rust borrowing prevents mutating one client instance while a request borrowed from that same instance is executing. Cloned clients use clone-on-write runtime state: configuring one clone does not change an already-cloned client or an in-flight request running on that clone. Later requests on the reconfigured clone use the new configuration.
+Rust borrowing prevents mutating one client instance while a request borrowed from that same instance is executing. Cloned clients use clone-on-write runtime state for configuration, but auth state is shared across clones. Configuring one clone does not change an already-cloned client or an in-flight request running on that clone, while auth-state mutations on one clone can be observed by other clones that share the same auth-state handle. Later requests on the reconfigured clone use the new runtime configuration.
 
 Pagination page and item termination is chosen per request with `PaginationTermination`; there is no runtime-wide implicit page or item cap. `pagination_detect_loops(...)` changes the default controller loop-key detection setting for paginated calls. The runtime still enforces non-progress detection for repeated logical page identities regardless of this setting, and the resulting diagnostics only expose safe pagination metadata rather than raw cursor or progress-key contents.
 
@@ -84,7 +84,9 @@ Reserved auth names are structural, not best-effort. Query-auth names are reject
 
 Live request and response body debug is not supported. `DebugSink`, stderr debug output, and runtime hooks never receive body bytes.
 
-For local generated-client debugging only, Concord exposes deprecated `DevBodyCaptureConfig` through `RuntimeConfig::dev_body_capture(...)`. It is disabled by default, may persist ordinary response bytes to local disk, and is separate from debug sinks, runtime hooks, and errors. It writes selected response bodies to local files under the configured directory using generated safe filenames. It does not capture request bodies, and it skips protected auth-bearing requests and auth endpoint traffic by default.
+For local generated-client debugging only, Concord exposes deprecated `DevBodyCaptureConfig` through `RuntimeConfig::dev_body_capture(...)`. It is deprecated, disabled by default, dev-only, and local-file-only. It writes raw selected response bytes to local disk with no redaction. It never captures request bodies, and it skips protected auth-bearing requests and auth endpoint traffic by default. `max_bytes` is a capture-size filter, not redaction and not a truncation guarantee.
+
+Dev body capture is separate from debug sinks, runtime hooks, stderr debug output, public errors, retry metadata, and rate-limit metadata. Do not enable it in production, CI logs, CI artifacts, shared directories, user-visible support bundles, or any environment without controlled local filesystem permissions. Callers are responsible for local directory permissions, retention, cleanup, and artifact exclusion.
 
 Do not use dev body capture in production. Release checks treat deprecated use outside explicit tests as a failure.
 

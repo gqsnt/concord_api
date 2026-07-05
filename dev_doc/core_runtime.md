@@ -81,6 +81,8 @@ Endpoint response bodies are read into memory only through the bounded body read
 
 Runtime configuration is client-owned. `RuntimeConfig::default()` starts with no debug output, no-op hooks, no retry policy, the feature-selected default rate limiter, `max_auth_retries = 8`, pagination loop detection enabled, a 16 MiB endpoint response-body limit, and disabled dev body capture. Client configuration is applied before endpoint policy and pending-request overrides. Pending-request overrides cover request options such as debug level, timeout, and attempt; v1 has no per-request override for body limit, hooks, rate limiter, retry policy, or auth retry budget.
 
+Runtime configuration is clone-on-write, but auth state is shared across cloned clients. Changing runtime config on one clone does not retroactively change another clone, while auth-state mutation on one clone can be observed by other clones that share the same auth-state handle. Credential isolation requires a separate client instance or separate auth state, not just `clone()`.
+
 Concurrent-request characterization tests cover the same clone-on-write snapshot model under overlap: request-local config and pagination state stay isolated, auth and observer metadata remain request-scoped, and cancelled work does not poison later requests.
 
 Public runtime failures surface through `ApiClientError`. Tests should match variants or `ErrorCategory` for stable behavior and use string assertions only for safety checks such as proving raw auth, secrets, and body bytes are absent from `Display`, `Debug`, `source()` chains, debug sinks, hooks, rate-limit metadata, and retry metadata.

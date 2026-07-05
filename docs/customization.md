@@ -12,6 +12,8 @@ Generated Rustdoc for defaulted setters describes the declared default/reset beh
 
 Buffered response body-read transport failures are sanitized before they become public `ApiClientError::Transport` values. The public error keeps the endpoint, method, and transport kind, but it does not render the raw body-read source chain. Response body-size limit errors remain structured as their own typed errors, and buffered response decode failures are sanitized separately.
 
+Dev body capture is not part of the debug, hook, or error surface. The deprecated `DevBodyCaptureConfig` is disabled by default, dev-only, and local-file-only. It writes raw selected response bytes to disk with no redaction, never captures request bodies, skips protected auth-bearing requests and auth endpoint traffic by default, and treats `max_bytes` as a capture-size filter rather than redaction or a truncation guarantee. Do not enable it in production, CI logs, CI artifacts, shared directories, user-visible support bundles, or any environment without controlled local filesystem permissions.
+
 ## Custom Codecs
 
 A request body codec implements `BodyCodec`. A response codec implements `ResponseCodec`. The shared wire-content trait is `ContentType`; codec markers carry their wire content identity through an associated `Content` type.
