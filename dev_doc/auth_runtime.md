@@ -10,7 +10,7 @@ Runtime debug and display output must not render header auth values, bearer toke
 
 ## Credentials
 
-Credential declarations create providers and credential slots. Static providers include API key, bearer token, Basic credentials, and OAuth2 client credentials. Endpoint-backed credentials are populated by executing an auth endpoint and mapping its decoded response into credential material.
+Credential declarations create providers and credential slots. Static providers include API key, bearer token, Basic credentials, and OAuth2 client credentials. Endpoint-backed credentials are populated by executing an auth endpoint and extracting credential material from its decoded response.
 
 Credential slots store material and monotonic generation counters. Every slot state, including empty and failed states, preserves a generation so the same slot never reuses an older epoch during a client auth-state lifetime.
 

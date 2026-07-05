@@ -26,6 +26,8 @@ Run the full trybuild suite with:
 
 ```bash
 cargo nextest run -p concord_macros --test trybuild_current
+cargo nextest run -p concord_macros --test trybuild_sema
+cargo nextest run -p concord_macros --test trybuild_codegen
 ```
 
 Refresh trybuild stderr output only when macro diagnostics intentionally change:
@@ -64,6 +66,8 @@ Codegen tests should prefer generated API compile checks, type checks, trybuild 
 Macro strictness belongs primarily in semantic unit tests and trybuild pass/fail fixtures. Add trybuild fail fixtures when a rejected form needs a stable public diagnostic. Source-level keyword audits can be useful during review, but they should not be normal `cargo test` checks.
 
 Feature-surface drift is gated separately by `scripts/check_features.sh`. That script uses normal dependency trees for the crate-surface proof so dev-dependencies do not widen the default feature story. `scripts/check_v1.sh` calls it before the rest of the local gate.
+
+The runtime nextest matrix is separate from the compile/check feature matrix. The checked-in local gate currently runs `cargo nextest run -p concord_core`, `cargo nextest run -p concord_core --all-features`, `cargo nextest run -p concord_examples`, `cargo nextest run -p concord_examples --all-features`, `cargo nextest run --workspace`, `cargo nextest run --workspace --all-features`, and `cargo nextest run --workspace --all-targets`. Feature-flavored core nextest runs such as `cargo nextest run -p concord_core --no-default-features` and `cargo nextest run -p concord_core --no-default-features --features json` are intentionally omitted for now because the core runtime suite is not feature-parametric and those runs fail in rate-limit characterization tests.
 
 ## Architecture Boundary Checks
 
@@ -140,12 +144,26 @@ bash ./scripts/check_v1.sh
 `scripts/check_v1.sh` requires `cargo-nextest` and performs:
 
 ```bash
+bash ./scripts/check_architecture.sh
 bash ./scripts/check_features.sh
 cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets
+cargo nextest run -p concord_macros integration
+cargo nextest run -p concord_macros generated
+cargo nextest run -p concord_macros --test trybuild_current
+cargo nextest run -p concord_macros --test trybuild_sema
+cargo nextest run -p concord_macros --test trybuild_codegen
+cargo nextest run -p concord_core
+cargo nextest run -p concord_core --all-features
+cargo nextest run -p concord_examples
+cargo nextest run -p concord_examples --all-features
+cargo nextest run --workspace
+cargo nextest run --workspace --all-features
 cargo nextest run --workspace --all-targets
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
+
+The checked-in clippy step is non-strict (`cargo clippy --workspace --all-targets`). `-D warnings` is not enabled yet because the tree still carries known warnings in core and macros.
 
 ## New DSL Feature Checklist
 

@@ -66,7 +66,7 @@ Pagination page and item termination is chosen per request with `PaginationTermi
 
 Debug sinks and runtime hooks are metadata-only. They may observe redacted URLs, redacted headers, statuses, retry events, rate-limit events, and endpoint metadata. They never receive request or response body bytes.
 
-Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run after response classification, hook observation, rate-limit observation, and auth rejection handling, and before endpoint decode and mapping. They do not see body bytes or raw auth material.
+Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run after response classification, hook observation, rate-limit observation, and auth rejection handling, and before endpoint response decoding. They do not see body bytes or raw auth material.
 
 Reserved auth names are structural, not best-effort. Query-auth names are rejected if a public query parameter already uses the same key, and header-auth names are rejected case-insensitively if a public header already uses the same name. Those collisions are rejected before rate-limit acquisition and transport.
 
@@ -96,7 +96,7 @@ api.configure_mut(|cfg| {
 });
 ```
 
-Auth-internal HTTP and token responses use their own read limit. When a response includes `Content-Length`, Concord rejects bodies above the configured limit before reading any body chunks. Chunked or unknown-length responses are still bounded: Concord reads them cumulatively and fails as soon as the buffered body would exceed the limit. Body-limit failures are typed and remain body-free in debug sinks, hooks, rate-limit metadata, and retry metadata. `execute_raw()` follows the same response-body limit; it only bypasses endpoint decode and mapping.
+Auth-internal HTTP and token responses use their own read limit. When a response includes `Content-Length`, Concord rejects bodies above the configured limit before reading any body chunks. Chunked or unknown-length responses are still bounded: Concord reads them cumulatively and fails as soon as the buffered body would exceed the limit. Body-limit failures are typed and remain body-free in debug sinks, hooks, rate-limit metadata, and retry metadata. `execute_raw()` follows the same response-body limit; it only bypasses endpoint response decoding.
 
 Per-request overrides stay on the pending request.
 

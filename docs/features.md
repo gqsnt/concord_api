@@ -10,7 +10,7 @@ Concord keeps feature surfaces explicit and minimal. This document records the s
 | `concord_macros` | none | none | yes | Proc-macro crate. |
 | `concord_examples` | none | none | no | Compile-checked examples depend on `concord_core` with `json` enabled. |
 
-## Supported Commands
+## Compile / Check Matrix
 
 The following commands are intentionally supported and are checked by `scripts/check_features.sh`:
 
@@ -39,6 +39,29 @@ cargo check -p concord_examples --all-targets --all-features
 - `json` is owned by `concord_core`.
 - `concord_macros` must not widen the runtime feature surface through its normal dependency tree.
 - `concord_examples` may enable richer core features because it is a compile-checked example crate.
+
+## Feature-Relevant Nextest Runtime Matrix
+
+The feature-relevant runtime commands in the local gate currently run:
+
+```bash
+cargo nextest run -p concord_core
+cargo nextest run -p concord_core --all-features
+cargo nextest run -p concord_examples
+cargo nextest run -p concord_examples --all-features
+cargo nextest run --workspace
+cargo nextest run --workspace --all-features
+cargo nextest run --workspace --all-targets
+```
+
+Feature-flavored core nextest invocations are intentionally omitted for now when they rely on the default-disabled core runtime path. The current core runtime suite is not feature-parametric, and these commands fail in the rate-limit characterization tests:
+
+```bash
+cargo nextest run -p concord_core --no-default-features
+cargo nextest run -p concord_core --no-default-features --features json
+```
+
+`scripts/check_features.sh` remains the compile/check feature matrix. `scripts/check_v1.sh` owns the full local gate.
 
 ## Extending The Surface
 

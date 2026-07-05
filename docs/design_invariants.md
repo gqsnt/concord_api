@@ -34,7 +34,7 @@ Endpoint leaves should primarily describe endpoint contracts:
 - request body codec
 - pagination declaration
 - response codec
-- optional response mapping
+- response entity output
 
 Cross-cutting behavior should be inherited from scopes or named profiles whenever possible.
 

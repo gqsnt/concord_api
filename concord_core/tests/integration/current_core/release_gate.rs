@@ -12,6 +12,7 @@ fn check_v1_invokes_feature_matrix() {
     assert!(script.contains("nextest run -p concord_macros --test trybuild_sema"));
     assert!(script.contains("nextest run -p concord_macros --test trybuild_codegen"));
     assert!(script.contains("nextest run -p concord_core"));
+    assert!(script.contains("nextest run -p concord_core --all-features"));
     assert!(script.contains("nextest run -p concord_examples"));
     assert!(script.contains("nextest run -p concord_examples --all-features"));
     assert!(script.contains("nextest run --workspace"));
@@ -34,7 +35,7 @@ fn release_gate_documents_all_required_invariants() {
         "timeout-cancellation-drop-semantics",
         "concurrency-shared-state-isolation",
         "execute-raw-bypass-contract",
-        "pagination-loop-snapshot-behavior",
+        "pagination-loop-determinism",
         "semantic-ir-codegen-diagnostics",
         "behavior-profile-semantic-only-sugar",
         "endpoint-io-contract-current",
