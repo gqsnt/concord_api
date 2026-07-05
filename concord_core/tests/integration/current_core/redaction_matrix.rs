@@ -314,12 +314,20 @@ async fn response_decoding_failure_redacts_response_and_request_sentinels() {
         vec![MockResponse::text(StatusCode::OK, RESPONSE_BODY_SENTINEL)],
     );
     let sent = transport.clone();
-    let client = client(TestAuthVars::default(), transport);
+    let client = client(
+        TestAuthVars {
+            token: Some(AUTH_SENTINEL.to_string()),
+            identity: "sentinel",
+        },
+        transport,
+    );
+    let mut policy = policy_with_request_markers(Some(REQUEST_HEADER_SENTINEL), None);
+    policy.auth = auth_policy(AuthPlacement::Bearer).auth;
     let plan = plan_with_body(
         "ResponseDecodeMatrix",
         Method::GET,
         "/redaction/response-decode",
-        policy_with_request_markers(Some(REQUEST_HEADER_SENTINEL), None),
+        policy,
         None,
     );
 
@@ -331,6 +339,8 @@ async fn response_decoding_failure_redacts_response_and_request_sentinels() {
     assert_eq!(err.category(), ErrorCategory::Decode);
     assert_eq!(err.context().endpoint, "ResponseDecodeMatrix");
     assert_eq!(err.context().method, Method::GET);
+    assert_eq!(err.decode_status(), Some(StatusCode::OK));
+    assert_eq!(err.decode_content_type(), Some("text/plain"));
     assert_eq!(sent.sent_count().await, 1);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
@@ -339,6 +349,7 @@ async fn response_decoding_failure_redacts_response_and_request_sentinels() {
         HeaderName::from_static("x-redaction-matrix"),
         REQUEST_HEADER_SENTINEL,
     );
+    assert_authorization_matches_bearer_sentinel(&requests[0], AUTH_SENTINEL);
     match &err {
         ApiClientError::Decode { source, .. } => {
             assert_source_surfaces_are_redacted(
@@ -352,10 +363,21 @@ async fn response_decoding_failure_redacts_response_and_request_sentinels() {
         }
         _ => panic!("expected decode error"),
     }
+    let rendered = format!("{err}\n{err:?}\n{err:#?}");
+    assert!(rendered.contains("response body decode failed"));
+    assert!(!rendered.contains(AUTH_SENTINEL));
+    assert!(!rendered.contains(REQUEST_HEADER_SENTINEL));
+    assert!(!rendered.contains(REQUEST_QUERY_SENTINEL));
+    assert!(!rendered.contains(REQUEST_BODY_SENTINEL));
+    assert!(!rendered.contains(RESPONSE_BODY_SENTINEL));
+    assert!(!rendered.contains(RESPONSE_CODEC_SENTINEL));
     assert_error_chain_does_not_contain_any(
         &err,
         &[
+            AUTH_SENTINEL,
             REQUEST_HEADER_SENTINEL,
+            REQUEST_QUERY_SENTINEL,
+            REQUEST_BODY_SENTINEL,
             RESPONSE_BODY_SENTINEL,
             RESPONSE_CODEC_SENTINEL,
         ],

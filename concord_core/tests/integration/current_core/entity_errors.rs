@@ -40,9 +40,16 @@ impl ContentType for ErrorRequestContentType {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-struct ErrorResponseContentType;
+struct ResponseBodyMessageSentinelContentType;
 
-impl ContentType for ErrorResponseContentType {
+impl ContentType for ResponseBodyMessageSentinelContentType {
+    const CONTENT_TYPE: &'static str = "text/plain";
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ResponseBodySourceSentinelContentType;
+
+impl ContentType for ResponseBodySourceSentinelContentType {
     const CONTENT_TYPE: &'static str = "text/plain";
 }
 
@@ -122,16 +129,28 @@ impl BodyCodec for RequestBodySourceSentinelCodec {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-struct FailingResponseCodec;
+struct ResponseBodyMessageSentinelCodec;
 
-impl ResponseCodec for FailingResponseCodec {
+impl ResponseCodec for ResponseBodyMessageSentinelCodec {
     type Value = String;
-    type Content = ErrorResponseContentType;
+    type Content = ResponseBodyMessageSentinelContentType;
+
+    fn decode(_bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
+        Err(CodecError::new("LEAK_SENTINEL_RESPONSE_BODY"))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ResponseBodySourceSentinelCodec;
+
+impl ResponseCodec for ResponseBodySourceSentinelCodec {
+    type Value = String;
+    type Content = ResponseBodySourceSentinelContentType;
 
     fn decode(_bytes: Bytes, _ctx: DecodeContext<'_>) -> Result<Self::Value, CodecError> {
         Err(CodecError::with_source(
             "response body decoding failed",
-            SentinelError("RESPONSE_ERROR_SENTINEL"),
+            SentinelError("LEAK_SENTINEL_DECODE_SOURCE"),
         ))
     }
 }
@@ -315,6 +334,7 @@ async fn response_entity_decode_error_hides_sentinels() {
         events,
         vec![MockResponse::text(http::StatusCode::OK, "ignored")],
     );
+    let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
     let plan = super::common::request_plan(
         "ResponseEntity",
@@ -324,14 +344,70 @@ async fn response_entity_decode_error_hides_sentinels() {
         None,
     );
 
-    let err =
-        concord_core::advanced::BufferedResponse::<FailingResponseCodec>::execute(&client, plan)
-            .await
-            .expect_err("response codec failure should surface");
+    let err = concord_core::advanced::BufferedResponse::<ResponseBodySourceSentinelCodec>::execute(
+        &client, plan,
+    )
+    .await
+    .expect_err("response codec failure should surface");
 
     assert!(matches!(err, ApiClientError::Decode { .. }));
     assert_eq!(err.category(), ErrorCategory::Decode);
-    crate::support::assert_error_chain_does_not_contain_any(&err, &["RESPONSE_ERROR_SENTINEL"]);
+    assert_eq!(err.context().endpoint, "ResponseEntity");
+    assert_eq!(err.context().method, Method::GET);
+    assert_eq!(err.decode_status(), Some(http::StatusCode::OK));
+    assert_eq!(err.decode_content_type(), Some("text/plain"));
+    assert_eq!(sent.sent_count().await, 1);
+    let rendered = format!("{err}\n{err:?}\n{err:#?}");
+    assert!(rendered.contains("response body decode failed"));
+    assert!(!rendered.contains("LEAK_SENTINEL_DECODE_SOURCE"));
+    crate::support::assert_error_chain_does_not_contain_any(&err, &["LEAK_SENTINEL_DECODE_SOURCE"]);
+}
+
+#[tokio::test]
+async fn buffered_response_decode_message_sentinel_is_sanitized() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(http::StatusCode::OK, "ignored")],
+    );
+    let sent = transport.clone();
+    let client = client(
+        TestAuthVars {
+            token: Some("LEAK_SENTINEL_AUTH".to_string()),
+            identity: "sentinel",
+        },
+        transport,
+    );
+    let plan = super::common::request_plan(
+        "ResponseMessage",
+        Method::GET,
+        "/response-message",
+        concord_core::internal::ResolvedPolicy::default(),
+        None,
+    );
+
+    let err =
+        concord_core::advanced::BufferedResponse::<ResponseBodyMessageSentinelCodec>::execute(
+            &client, plan,
+        )
+        .await
+        .expect_err("response codec failure should surface");
+
+    assert!(matches!(err, ApiClientError::Decode { .. }));
+    assert_eq!(err.category(), ErrorCategory::Decode);
+    assert_eq!(err.context().endpoint, "ResponseMessage");
+    assert_eq!(err.context().method, Method::GET);
+    assert_eq!(err.decode_status(), Some(http::StatusCode::OK));
+    assert_eq!(err.decode_content_type(), Some("text/plain"));
+    assert_eq!(sent.sent_count().await, 1);
+    let rendered = format!("{err}\n{err:?}\n{err:#?}");
+    assert!(rendered.contains("response body decode failed"));
+    assert!(!rendered.contains("LEAK_SENTINEL_RESPONSE_BODY"));
+    assert!(!rendered.contains("LEAK_SENTINEL_AUTH"));
+    crate::support::assert_error_chain_does_not_contain_any(
+        &err,
+        &["LEAK_SENTINEL_RESPONSE_BODY", "LEAK_SENTINEL_AUTH"],
+    );
 }
 
 #[tokio::test]

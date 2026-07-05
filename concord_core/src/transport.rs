@@ -636,6 +636,17 @@ pub struct TransportError {
     source: crate::error::FxError,
 }
 
+#[derive(Debug)]
+struct ResponseBodyReadError;
+
+impl fmt::Display for ResponseBodyReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("response body read failed")
+    }
+}
+
+impl Error for ResponseBodyReadError {}
+
 impl TransportError {
     #[inline]
     pub fn new(e: impl Error + Send + Sync + 'static) -> Self {
@@ -657,6 +668,14 @@ impl TransportError {
     }
 
     #[inline]
+    pub(crate) fn response_body_read(kind: TransportErrorKind) -> Self {
+        Self {
+            kind,
+            source: Box::new(ResponseBodyReadError),
+        }
+    }
+
+    #[inline]
     pub fn kind(&self) -> TransportErrorKind {
         self.kind
     }
@@ -669,6 +688,13 @@ impl TransportError {
 
 impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self
+            .source
+            .downcast_ref::<ResponseBodyReadError>()
+            .is_some()
+        {
+            return write!(f, "transport error: response body read failed");
+        }
         write!(f, "transport error: {:?}", self.kind)
     }
 }

@@ -1,20 +1,23 @@
 use super::common::{
-    CursorItems, CursorItemsEndpoint, MockOutcome, MockResponse, MockTransport,
-    ObservationRateLimiter, ObservationRuntimeHooks, PaginationVariant, TestAuthVars, TestCx,
-    TextEndpoint, auth_policy, buffered_endpoint_execute, client, retry_policy,
-    retry_policy_for_statuses,
+    CapturedTransportRequest, CursorItems, CursorItemsEndpoint, MockOutcome, MockResponse,
+    MockTransport, ObservationRateLimiter, ObservationRuntimeHooks, PaginationVariant,
+    TestAuthVars, TestCx, TextEndpoint, auth_policy, buffered_endpoint_execute, client,
+    request_plan, retry_policy, retry_policy_for_statuses,
 };
+use crate::support::assert_text_does_not_contain_any;
 use bytes::Bytes;
 use concord_core::advanced::{
     DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
-    RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter,
+    RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter, Transport, TransportBody,
+    TransportError, TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::error::ErrorCategory;
-use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
-use concord_core::prelude::{
-    ApiClientError, CursorPagination, DebugLevel, Endpoint, ReusableEndpoint,
+use concord_core::internal::{
+    BodyPlan, ClientPlanContext, Format, RequestArgs, RequestPlan, ResolvedPolicy,
 };
-use concord_core::transport::TransportErrorKind;
+use concord_core::prelude::{
+    ApiClient, ApiClientError, CursorPagination, DebugLevel, Endpoint, ReusableEndpoint,
+};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::error::Error;
 use std::num::NonZeroU32;
@@ -25,6 +28,7 @@ use tokio::sync::Mutex;
 const RAW_AUTH_SENTINEL_PR77: &str = "RAW_AUTH_SENTINEL_PR77";
 const REQUEST_BODY_SENTINEL_PR77: &str = "REQUEST_BODY_SENTINEL_PR77";
 const RESPONSE_BODY_SENTINEL_PR77: &str = "RESPONSE_BODY_SENTINEL_PR77";
+const RESPONSE_BODY_READ_SENTINEL_PR77: &str = "LEAK_SENTINEL_RESPONSE_BODY_READ";
 const QUERY_SECRET_SENTINEL_PR77: &str = "QUERY_SECRET_SENTINEL_PR77";
 const HEADER_SECRET_SENTINEL_PR77: &str = "HEADER_SECRET_SENTINEL_PR77";
 
@@ -188,6 +192,7 @@ fn assert_error_safe(err: &ApiClientError) {
         RAW_AUTH_SENTINEL_PR77,
         REQUEST_BODY_SENTINEL_PR77,
         RESPONSE_BODY_SENTINEL_PR77,
+        RESPONSE_BODY_READ_SENTINEL_PR77,
         QUERY_SECRET_SENTINEL_PR77,
         HEADER_SECRET_SENTINEL_PR77,
     ] {
@@ -204,6 +209,7 @@ async fn assert_observers_safe(events: &Arc<Mutex<Vec<String>>>) {
         RAW_AUTH_SENTINEL_PR77,
         REQUEST_BODY_SENTINEL_PR77,
         RESPONSE_BODY_SENTINEL_PR77,
+        RESPONSE_BODY_READ_SENTINEL_PR77,
         QUERY_SECRET_SENTINEL_PR77,
         HEADER_SECRET_SENTINEL_PR77,
     ] {
@@ -214,8 +220,120 @@ async fn assert_observers_safe(events: &Arc<Mutex<Vec<String>>>) {
     }
 }
 
+#[derive(Clone, Copy)]
+struct LeakyResponseBodyReadError(&'static str);
+
+impl std::fmt::Debug for LeakyResponseBodyReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::fmt::Display for LeakyResponseBodyReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for LeakyResponseBodyReadError {}
+
+struct FailingResponseBody;
+
+impl TransportBody for FailingResponseBody {
+    fn next_chunk<'a>(
+        &'a mut self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            Err(TransportError::with_kind(
+                TransportErrorKind::Request,
+                LeakyResponseBodyReadError(RESPONSE_BODY_READ_SENTINEL_PR77),
+            ))
+        })
+    }
+}
+
+#[derive(Clone)]
+struct BodyReadFailingTransport {
+    requests: Arc<Mutex<Vec<CapturedTransportRequest>>>,
+}
+
+impl BodyReadFailingTransport {
+    fn new() -> Self {
+        Self {
+            requests: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    async fn sent_count(&self) -> usize {
+        self.requests.lock().await.len()
+    }
+
+    async fn requests(&self) -> Vec<CapturedTransportRequest> {
+        let mut requests = self.requests.lock().await;
+        std::mem::take(&mut *requests)
+    }
+}
+
+impl Transport for BodyReadFailingTransport {
+    fn send(
+        &self,
+        req: TransportRequest,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<TransportResponse, TransportError>> + Send>,
+    > {
+        let requests = self.requests.clone();
+        Box::pin(async move {
+            let TransportRequest {
+                meta,
+                url,
+                headers,
+                body,
+                timeout,
+                rate_limit,
+                transport_auth,
+                extensions,
+            } = req;
+            requests.lock().await.push(CapturedTransportRequest {
+                meta: meta.clone(),
+                url: url.clone(),
+                headers: headers.clone(),
+                body,
+                timeout,
+                rate_limit: rate_limit.clone(),
+                transport_auth: transport_auth.clone(),
+                extensions: extensions.clone(),
+            });
+            let mut response_headers = HeaderMap::new();
+            response_headers.insert(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_static("text/plain"),
+            );
+            Ok(TransportResponse {
+                meta,
+                url,
+                status: StatusCode::OK,
+                headers: response_headers,
+                content_length: None,
+                rate_limit,
+                body: Box::new(FailingResponseBody),
+            })
+        })
+    }
+}
+
 fn body_read_count(counter: &Arc<AtomicUsize>) -> usize {
     counter.load(Ordering::Relaxed)
+}
+
+fn body_read_failure_policy() -> ResolvedPolicy {
+    let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+    policy.headers.insert(
+        http::HeaderName::from_static("x-response-body-read"),
+        HeaderValue::from_static(HEADER_SECRET_SENTINEL_PR77),
+    );
+    policy
 }
 
 fn rate_policy() -> ResolvedPolicy {
@@ -541,6 +659,89 @@ async fn transport_error_is_distinct_from_http_status_error() {
     assert!(!rendered.contains("rate_status"));
     assert_error_safe(&err);
     assert_observers_safe(&events).await;
+}
+
+#[tokio::test]
+async fn response_body_read_transport_error_is_sanitized() {
+    let transport = BodyReadFailingTransport::new();
+    let sent = transport.clone();
+    let client: ApiClient<TestCx, BodyReadFailingTransport> = ApiClient::with_transport(
+        (),
+        TestAuthVars {
+            token: Some(RAW_AUTH_SENTINEL_PR77.to_string()),
+            identity: "auth",
+        },
+        transport,
+    );
+
+    let mut plan = request_plan(
+        "ResponseBodyRead",
+        Method::POST,
+        "/response-body-read",
+        body_read_failure_policy(),
+        None,
+    );
+    plan.endpoint.body = BodyPlan::Encoded {
+        content_type: Some(HeaderValue::from_static("application/json")),
+        format: Format::Text,
+    };
+    plan.args =
+        RequestArgs::with_body_bytes(Bytes::from_static(REQUEST_BODY_SENTINEL_PR77.as_bytes()));
+
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await
+        .expect_err("response body read failure should surface");
+
+    assert!(matches!(err, ApiClientError::Transport { .. }));
+    assert_eq!(err.category(), ErrorCategory::Transport);
+    assert_eq!(err.context().endpoint, "ResponseBodyRead");
+    assert_eq!(err.context().method, Method::POST);
+    assert_eq!(sent.sent_count().await, 1);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(
+        request
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer RAW_AUTH_SENTINEL_PR77")
+    );
+    assert_eq!(
+        request
+            .headers
+            .get(http::HeaderName::from_static("x-response-body-read"))
+            .and_then(|value| value.to_str().ok()),
+        Some(HEADER_SECRET_SENTINEL_PR77)
+    );
+    assert_eq!(
+        request.body.as_bytes().map(Bytes::as_ref),
+        Some(REQUEST_BODY_SENTINEL_PR77.as_bytes())
+    );
+    let rendered = diagnostics(&err);
+    assert!(rendered.contains("response body read failed"));
+    assert!(!rendered.contains(RAW_AUTH_SENTINEL_PR77));
+    assert!(!rendered.contains(REQUEST_BODY_SENTINEL_PR77));
+    assert!(!rendered.contains(HEADER_SECRET_SENTINEL_PR77));
+    assert!(!rendered.contains(RESPONSE_BODY_READ_SENTINEL_PR77));
+    match &err {
+        ApiClientError::Transport { source, .. } => {
+            assert_eq!(source.kind(), TransportErrorKind::Request);
+            assert!(source.to_string().contains("response body read failed"));
+            assert!(
+                !source
+                    .to_string()
+                    .contains(RESPONSE_BODY_READ_SENTINEL_PR77)
+            );
+            assert_text_does_not_contain_any(
+                &format!("{source:?}\n{source:#?}"),
+                &[RESPONSE_BODY_READ_SENTINEL_PR77],
+            );
+        }
+        _ => panic!("expected transport error"),
+    }
+    assert_error_safe(&err);
 }
 
 #[tokio::test]

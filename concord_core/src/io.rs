@@ -529,16 +529,16 @@ where
             Bytes::new(),
             DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
         )
-        .map_err(|source| {
-            ApiClientError::decode_error(ctx.clone(), resp.status, content_type, source)
+        .map_err(|_| {
+            ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
         });
     }
     let decoded = C::decode(
         resp.body.clone(),
         DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
     )
-    .map_err(|source| {
-        ApiClientError::decode_error(ctx.clone(), resp.status, content_type, source)
+    .map_err(|_| {
+        ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
     })?;
     Ok(decoded)
 }

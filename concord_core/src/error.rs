@@ -371,6 +371,31 @@ impl ApiClientError {
     }
 
     #[inline]
+    pub(crate) fn response_body_decode_error(
+        ctx: ErrorContext,
+        status: StatusCode,
+        content_type: Option<&str>,
+    ) -> ApiClientError {
+        ApiClientError::decode_error(
+            ctx,
+            status,
+            content_type,
+            crate::codec::CodecError::new("response body decode failed"),
+        )
+    }
+
+    #[inline]
+    pub(crate) fn response_body_read_transport_error(
+        ctx: ErrorContext,
+        source: crate::transport::TransportError,
+    ) -> ApiClientError {
+        ApiClientError::Transport {
+            ctx,
+            source: crate::transport::TransportError::response_body_read(source.kind()),
+        }
+    }
+
+    #[inline]
     pub fn rate_limit(
         ctx: ErrorContext,
         kind: crate::rate_limit::RateLimitErrorKind,

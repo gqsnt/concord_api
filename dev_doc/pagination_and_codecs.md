@@ -40,7 +40,7 @@ Codec helpers use the fallible header conversion path:
 
 The convenience `content_type()` and `accept()` methods remain available for trusted built-in markers and established call sites. Generated planning uses the fallible helpers so invalid user-defined markers return typed errors instead of panicking.
 
-Buffered request-body encode failures are sanitized at the client boundary before they become public `ApiClientError::Codec` values. Public diagnostics keep the generic request-body encoding message and do not render raw codec messages or nested codec source chains. Response decode errors remain a separate path.
+Buffered request-body encode failures are sanitized at the client boundary before they become public `ApiClientError::Codec` values. Public diagnostics keep the generic request-body encoding message and do not render raw codec messages or nested codec source chains. Buffered response body-read transport failures are sanitized before becoming public `ApiClientError::Transport` values, and buffered response decode failures are also sanitized before becoming public `ApiClientError::Decode` values. Body-size limit errors remain separate structured errors. Streaming decode paths remain a separate, individually sanitized path.
 
 ## Pagination traits
 

@@ -765,8 +765,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 content_type,
             ),
         )
-        .map_err(|source| {
-            ApiClientError::decode_error(ctx.clone(), resp.status, content_type, source)
+        .map_err(|_| {
+            ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
         })?;
         Ok(DecodedResponse {
             meta: resp.meta,

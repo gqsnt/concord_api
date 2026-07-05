@@ -246,10 +246,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     )
                     .await
                     .map_err(|e| match e {
-                        BodyReadError::Transport(source) => ApiClientError::Transport {
-                            ctx: ctx.clone(),
-                            source,
-                        },
+                        BodyReadError::Transport(source) => {
+                            ApiClientError::response_body_read_transport_error(
+                                ctx.clone(),
+                                source,
+                            )
+                        }
                         BodyReadError::ContentLengthTooLarge { limit, actual } => {
                             ApiClientError::ResponseTooLarge {
                                 ctx: ctx.clone(),

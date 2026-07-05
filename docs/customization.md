@@ -8,6 +8,8 @@ Custom transports are an advanced caller-owned security boundary. Concord's defa
 
 Runtime hooks and debug sinks also sit on a security boundary. They receive sanitized metadata views, not raw header maps, and they never receive request or response body bytes. Sensitive header names and sensitive query values are redacted before callback invocation.
 
+Buffered response body-read transport failures are sanitized before they become public `ApiClientError::Transport` values. The public error keeps the endpoint, method, and transport kind, but it does not render the raw body-read source chain. Response body-size limit errors remain structured as their own typed errors, and buffered response decode failures are sanitized separately.
+
 ## Custom Codecs
 
 A request body codec implements `BodyCodec`. A response codec implements `ResponseCodec`. The shared wire-content trait is `ContentType`; codec markers carry their wire content identity through an associated `Content` type.
@@ -84,6 +86,7 @@ Codec rules:
 - `EncodeContext` and `DecodeContext` provide endpoint metadata for contextual errors.
 - `CodecError` messages must be safe to display. Never include secrets or raw credentials.
 - Buffered request-body encode failures are sanitized again at the client boundary. Public `ApiClientError::Codec` values for buffered request preparation use a generic request-body encoding message and do not expose raw codec messages or nested codec sources.
+- Buffered response decode failures are also sanitized at the client boundary. Public `ApiClientError::Decode` values for buffered response handling use a generic response-body decode message and do not expose raw codec messages or nested codec source chains. Streaming decode paths remain separately sanitized by their own response-specific wrappers.
 - Built-in `Json<T>` and `Text<String>` use `JsonContentType` and `TextContentType`. The core `NoContent` codec intentionally omits request and response content headers. The DSL spelling `-> NoContent` is response-only, returns `()`, and remains distinct from the buffered codec; request-side `NoContent` remains invalid. The DSL spelling `-> Bytes` is response-only, returns `bytes::Bytes`, uses the ordinary bounded buffered response path, and is distinct from custom binary codecs and `execute_raw()`. Request-side `Bytes` remains unsupported.
 
 ## CSV Record Formats
