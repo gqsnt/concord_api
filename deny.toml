@@ -1,7 +1,8 @@
 [advisories]
+# `cargo deny check advisories` fails closed on advisories and yanked crates.
+# Keep ignores empty unless a specific, documented exception is required.
 version = 2
 yanked = "deny"
-vulnerability = "deny"
 ignore = []
 
 [bans]
@@ -10,13 +11,14 @@ ignore = []
 multiple-versions = "allow"
 wildcards = "deny"
 highlight = "all"
+allow-workspace = true
 deny = []
 skip = []
 skip-tree = []
 
 [licenses]
+# Explicit allow list for the workspace dependency set.
 version = 2
-unlicensed = "deny"
 allow = [
     "Apache-2.0",
     "BSD-2-Clause",
