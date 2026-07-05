@@ -123,9 +123,18 @@ fn emit_client_auth_state_init(resolved_api: &ResolvedApi, auth_state_ty: &Ident
     let client_ns = LitStr::new(&resolved_api.client_name.to_string(), resolved_api.client_name.span());
     let init_fields = resolved_api.client_auth_credentials.iter().map(|c| {
         let name = &c.name;
+        let name_lit = LitStr::new(&name.to_string(), name.span());
         let provider = emit_auth_provider_init(&client_ns, c);
-        quote! {
-            #name: ::std::sync::Arc::new(::concord_core::internal::CredentialSlot::new(#provider))
+        match &c.kind {
+            AuthCredentialKindIr::OAuth2ClientCredentials { .. } => quote! {
+                #name: ::std::sync::Arc::new(::concord_core::internal::CredentialSlot::new_result(
+                    ::concord_core::advanced::CredentialId::new(#client_ns, #name_lit),
+                    #provider,
+                ))
+            },
+            _ => quote! {
+                #name: ::std::sync::Arc::new(::concord_core::internal::CredentialSlot::new(#provider))
+            },
         }
     });
     let auth_bind = if resolved_api.client_auth_vars.is_empty() {
@@ -214,15 +223,14 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
                         #token_url,
                         auth.#client_id.clone(),
                         auth.#client_secret.clone(),
-                    )
-                    .expect("validated OAuth2 token URL");
+                    );
                     provider
                 }
             };
             if let Some(scope) = scope {
                 quote! {{
                     let provider = #provider;
-                    provider.scope(#scope)
+                    provider.map(|provider| provider.scope(#scope))
                 }}
             } else {
                 provider

@@ -202,6 +202,7 @@ impl OAuth2ClientCredentialsProvider {
         client_id: impl Into<SecretString>,
         client_secret: impl Into<SecretString>,
     ) -> Result<Self, AuthError> {
+        validate_oauth2_token_url_raw(token_url)?;
         let token_url = token_url.parse::<Url>().map_err(|err| {
             AuthError::new(
                 AuthErrorKind::InvalidConfiguration,
@@ -320,9 +321,30 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
 }
 
 #[cfg(feature = "json")]
+fn validate_oauth2_token_url_raw(token_url: &str) -> Result<(), AuthError> {
+    let Some(rest) = token_url.strip_prefix("https://") else {
+        return Err(AuthError::new(
+            AuthErrorKind::InvalidConfiguration,
+            "invalid oauth2 token URL: must be https with a host, no userinfo, and no fragment",
+        ));
+    };
+    let authority = rest
+        .split_once(['/', '?', '#'])
+        .map(|(authority, _)| authority)
+        .unwrap_or(rest);
+    if authority.is_empty() || authority.contains('@') || authority.starts_with('/') {
+        return Err(AuthError::new(
+            AuthErrorKind::InvalidConfiguration,
+            "invalid oauth2 token URL: must be https with a host, no userinfo, and no fragment",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(feature = "json")]
 fn validate_oauth2_token_url(token_url: &Url) -> Result<(), AuthError> {
     if token_url.scheme() != "https"
-        || token_url.host_str().is_none()
+        || token_url.host_str().is_none_or(|host| host.is_empty())
         || !token_url.username().is_empty()
         || token_url.password().is_some()
         || token_url.fragment().is_some()

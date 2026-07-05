@@ -142,6 +142,14 @@ fn auth_credentials_reject_unsafe_oauth2_token_urls() {
             "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
         ),
         (
+            "https://@auth.example.com/token",
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ),
+        (
+            "https://:pass@auth.example.com/token",
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ),
+        (
             "https://auth.example.com/token#fragment",
             "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
         ),
@@ -151,6 +159,10 @@ fn auth_credentials_reject_unsafe_oauth2_token_urls() {
         ),
         (
             "https:///token",
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ),
+        (
+            "/token",
             "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
         ),
     ] {

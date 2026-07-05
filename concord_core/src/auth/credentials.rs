@@ -155,7 +155,9 @@ enum RefreshPrevious<T> {
 }
 
 pub struct CredentialSlot<Cx: ClientContext, P: CredentialProvider<Cx>> {
-    provider: P,
+    id: CredentialId,
+    provider: Option<P>,
+    init_error: Option<AuthError>,
     inner: Arc<Mutex<CredentialSlotInner<P::Credential>>>,
     _cx: PhantomData<Cx>,
 }
@@ -252,10 +254,22 @@ where
     Cx: ClientContext,
     P: CredentialProvider<Cx>,
 {
+    fn provider_ref(&self) -> Result<&P, AuthError> {
+        if let Some(error) = &self.init_error {
+            return Err(error.clone());
+        }
+
+        self.provider
+            .as_ref()
+            .ok_or_else(|| AuthError::state_unavailable("credential slot provider missing"))
+    }
+
     #[inline]
     pub fn new(provider: P) -> Self {
         Self {
-            provider,
+            id: provider.id(),
+            provider: Some(provider),
+            init_error: None,
             inner: Arc::new(Mutex::new(CredentialSlotInner {
                 state: CredentialSlotState::Empty { generation: 0 },
                 next_owner: 1,
@@ -265,13 +279,31 @@ where
     }
 
     #[inline]
-    pub fn provider(&self) -> &P {
-        &self.provider
+    pub fn new_result(id: CredentialId, provider: Result<P, AuthError>) -> Self {
+        let (provider, init_error) = match provider {
+            Ok(provider) => (Some(provider), None),
+            Err(error) => (None, Some(error)),
+        };
+        Self {
+            id,
+            provider,
+            init_error,
+            inner: Arc::new(Mutex::new(CredentialSlotInner {
+                state: CredentialSlotState::Empty { generation: 0 },
+                next_owner: 1,
+            })),
+            _cx: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn provider(&self) -> Option<&P> {
+        self.provider.as_ref()
     }
 
     #[inline]
     pub fn id(&self) -> CredentialId {
-        self.provider.id()
+        self.id.clone()
     }
 
     pub async fn get_or_refresh<'a>(
@@ -279,6 +311,8 @@ where
         ctx: CredentialContext<'a, Cx>,
         policy: AuthStepPolicy,
     ) -> Result<CredentialLease<P::Credential>, AuthError> {
+        let provider = self.provider_ref()?;
+
         loop {
             let action = {
                 let mut inner = lock_slot_inner(&self.inner);
@@ -398,7 +432,7 @@ where
                     generation,
                     mut guard,
                 } => {
-                    let result = self.provider.acquire(ctx.clone()).await;
+                    let result = provider.acquire(ctx.clone()).await;
                     match self.commit_slot_result(generation, &mut guard, result)? {
                         CommitOutcome::Stored(lease) => return Ok(lease),
                         CommitOutcome::Failed(error) => return Err(error),
@@ -411,10 +445,7 @@ where
                     mut guard,
                     reason,
                 } => {
-                    let result = self
-                        .provider
-                        .refresh(ctx.with_reason(reason), &current)
-                        .await;
+                    let result = provider.refresh(ctx.with_reason(reason), &current).await;
                     match self.commit_slot_result(generation, &mut guard, result)? {
                         CommitOutcome::Stored(lease) => return Ok(lease),
                         CommitOutcome::Failed(error) => return Err(error),
@@ -431,6 +462,8 @@ where
         generation: Option<u64>,
         reason: InvalidateReason,
     ) -> Result<(), AuthError> {
+        let provider = self.provider_ref()?;
+
         let current = {
             let mut inner = lock_slot_inner(&self.inner);
             match &mut inner.state {
@@ -472,12 +505,14 @@ where
                 _ => None,
             }
         };
-        self.provider
-            .invalidate(ctx, current.as_ref(), reason)
-            .await
+        provider.invalidate(ctx, current.as_ref(), reason).await
     }
 
     pub async fn set_manual(&self, value: P::Credential) -> Result<(), AuthError> {
+        if let Some(error) = &self.init_error {
+            return Err(error.clone());
+        }
+
         let notify = {
             let mut inner = lock_slot_inner(&self.inner);
             let generation = next_generation(&inner.state)?;
@@ -495,6 +530,10 @@ where
     }
 
     pub async fn clear_manual(&self) -> Result<(), AuthError> {
+        if let Some(error) = &self.init_error {
+            return Err(error.clone());
+        }
+
         let notify = {
             let mut inner = lock_slot_inner(&self.inner);
             let generation = next_generation(&inner.state)?;
@@ -512,11 +551,17 @@ where
     }
 
     pub async fn has_value(&self) -> bool {
+        if self.init_error.is_some() {
+            return false;
+        }
         let inner = lock_slot_inner(&self.inner);
         matches!(inner.state, CredentialSlotState::Valid { .. })
     }
 
     pub async fn get_cached(&self) -> Option<CredentialLease<P::Credential>> {
+        if self.init_error.is_some() {
+            return None;
+        }
         let inner = lock_slot_inner(&self.inner);
         match &inner.state {
             CredentialSlotState::Valid { value, generation } => Some(CredentialLease {

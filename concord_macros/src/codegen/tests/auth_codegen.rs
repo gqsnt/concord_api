@@ -97,7 +97,7 @@ fn generated_oauth2_client_credentials_provider_is_typed() {
         &out,
         &[
             "::concord_core::advanced::OAuth2ClientCredentialsProvider::from_validated_token_url",
-            ".expect(\"validated OAuth2 token URL\")",
+            "CredentialSlot::new_result",
             ".scope(\"read:me\")",
             "CredentialId::new(\"OAuthProviderApi\",\"oauth\")",
         ],

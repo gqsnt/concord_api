@@ -304,6 +304,7 @@ pub(crate) fn validate_final_auth_materialization_targets(
 }
 
 fn validate_oauth2_token_url(token_url: &syn::LitStr) -> Result<()> {
+    validate_oauth2_token_url_raw(&token_url.value(), token_url.span())?;
     let url = token_url.value().parse::<url::Url>().map_err(|err| {
         syn::Error::new(
             token_url.span(),
@@ -311,13 +312,33 @@ fn validate_oauth2_token_url(token_url: &syn::LitStr) -> Result<()> {
         )
     })?;
     if url.scheme() != "https"
-        || url.host_str().is_none()
+        || url.host_str().is_none_or(|host| host.is_empty())
         || !url.username().is_empty()
         || url.password().is_some()
         || url.fragment().is_some()
     {
         return Err(syn::Error::new(
             token_url.span(),
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_oauth2_token_url_raw(token_url: &str, span: Span) -> Result<()> {
+    let Some(rest) = token_url.strip_prefix("https://") else {
+        return Err(syn::Error::new(
+            span,
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ));
+    };
+    let authority = rest
+        .split_once(['/', '?', '#'])
+        .map(|(authority, _)| authority)
+        .unwrap_or(rest);
+    if authority.is_empty() || authority.contains('@') || authority.starts_with('/') {
+        return Err(syn::Error::new(
+            span,
             "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
         ));
     }

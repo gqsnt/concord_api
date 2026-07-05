@@ -1493,9 +1493,64 @@ async fn oauth_client_credentials_invalid_token_url_returns_typed_error() {
 
 #[cfg(feature = "json")]
 #[tokio::test]
-async fn oauth_client_credentials_reject_unsupported_token_type_without_leaking_body() {
-    use std::error::Error as _;
+async fn oauth_client_credentials_reject_unsafe_malformed_authority_token_url_before_transport() {
+    let err = OAuth2ClientCredentialsProvider::from_validated_token_url(
+        CredentialId::new("test", "oauth"),
+        "https:///token",
+        "client-id",
+        "client-secret",
+    )
+    .expect_err("unsafe OAuth token URL should be rejected");
 
+    assert_eq!(err.kind, AuthErrorKind::InvalidConfiguration);
+    let rendered = format!("{err}\n{err:?}\n{err:#?}");
+    assert!(rendered.contains("invalid oauth2 token URL"));
+    assert!(!rendered.contains("client-id"));
+    assert!(!rendered.contains("client-secret"));
+    assert!(std::error::Error::source(&err).is_none());
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn oauth_client_credentials_reject_empty_userinfo_token_url_before_transport() {
+    let err = OAuth2ClientCredentialsProvider::from_validated_token_url(
+        CredentialId::new("test", "oauth"),
+        "https://@auth.example.com/token",
+        "client-id",
+        "client-secret",
+    )
+    .expect_err("empty-userinfo OAuth token URL should be rejected");
+
+    assert_eq!(err.kind, AuthErrorKind::InvalidConfiguration);
+    let rendered = format!("{err}\n{err:?}\n{err:#?}");
+    assert!(rendered.contains("invalid oauth2 token URL"));
+    assert!(!rendered.contains("client-id"));
+    assert!(!rendered.contains("client-secret"));
+    assert!(std::error::Error::source(&err).is_none());
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn oauth_client_credentials_reject_password_only_userinfo_token_url_before_transport() {
+    let err = OAuth2ClientCredentialsProvider::from_validated_token_url(
+        CredentialId::new("test", "oauth"),
+        "https://:pass@auth.example.com/token",
+        "client-id",
+        "client-secret",
+    )
+    .expect_err("password-only OAuth token URL should be rejected");
+
+    assert_eq!(err.kind, AuthErrorKind::InvalidConfiguration);
+    let rendered = format!("{err}\n{err:?}\n{err:#?}");
+    assert!(rendered.contains("invalid oauth2 token URL"));
+    assert!(!rendered.contains("client-id"));
+    assert!(!rendered.contains("client-secret"));
+    assert!(std::error::Error::source(&err).is_none());
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn oauth_client_credentials_reject_unsupported_token_type_without_leaking_body() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -1541,14 +1596,11 @@ async fn oauth_client_credentials_reject_unsupported_token_type_without_leaking_
 #[cfg(feature = "json")]
 #[tokio::test]
 async fn oauth_client_credentials_reject_unsafe_token_urls_before_transport() {
-    use std::error::Error as _;
-
     for token_url in [
         "http://auth.example.com/token",
         "https://user:pass@auth.example.com/token",
         "https://auth.example.com/token#fragment",
         "file:///tmp/token",
-        "https:///token",
     ] {
         let err = OAuth2ClientCredentialsProvider::new(
             CredentialId::new("test", "oauth"),
@@ -1563,7 +1615,7 @@ async fn oauth_client_credentials_reject_unsafe_token_urls_before_transport() {
         assert!(rendered.contains("invalid oauth2 token URL"));
         assert!(!rendered.contains("client-id"));
         assert!(!rendered.contains("client-secret"));
-        assert!(err.source().is_none());
+        assert!(std::error::Error::source(&err).is_none());
     }
 }
 
@@ -1741,7 +1793,7 @@ impl ClientContext for AuthHttpLimitCx {
                 #[cfg(feature = "json")]
                 {
                     let token_url = if auth.invalid_oauth_token_url {
-                        "https://[invalid"
+                        "https:///token"
                     } else {
                         "https://auth.example.com/token"
                     };
