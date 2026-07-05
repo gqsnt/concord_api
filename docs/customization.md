@@ -6,7 +6,7 @@ Use these extension points when the protocol is part of your API contract. Do no
 
 Custom transports are an advanced caller-owned security boundary. Concord's default reqwest transport disables redirects, but `with_reqwest_client(...)` hands redirect, proxy, TLS, cookie, and other reqwest client policies to the caller.
 
-Runtime hooks and debug sinks also sit on a security boundary. They receive sanitized metadata views, not raw header maps, and they never receive request or response body bytes. Sensitive header names and sensitive query values are redacted before callback invocation.
+Runtime hooks and debug sinks also sit on a security boundary. They receive sanitized metadata views, not raw header maps, and they never receive request or response body bytes or raw auth material. `pre_send` runs after rate-limit acquisition and before raw auth transport materialization, `post_response` runs after an HTTP response is received and before response body read and endpoint decode, and `transport_error` only observes initial transport-send failures. Sensitive header names and sensitive query values are redacted before callback invocation.
 
 Generated Rustdoc for defaulted setters describes the declared default/reset behavior without rendering the source default expression value. Runtime defaults and `Option` reset semantics are unchanged.
 

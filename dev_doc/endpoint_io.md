@@ -20,6 +20,7 @@ Endpoint I/O distinguishes buffered codecs from reserved endpoint I/O families t
 - Response-only `Bytes` is implemented and returns `bytes::Bytes` through the bytes response adapter.
 - `.execute_raw()` remains bounded-buffered.
 - Custom buffered codecs are already open-ended and must stay that way.
+- Runtime hooks are observability boundaries, not endpoint-success hooks: `pre_send` runs after rate-limit acquisition and before raw auth transport materialization, `post_response` runs after an HTTP response is received and before body read and endpoint decode, and `transport_error` only observes initial transport-send failures.
 
 ## Architectural Boundaries
 

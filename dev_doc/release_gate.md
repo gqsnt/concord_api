@@ -123,6 +123,7 @@ Each invariant below has a stable anchor for lightweight documentation checks.
 Proof owners: `concord_core/tests/integration/redaction.rs`, `errors.rs`, `cancellation.rs`, and `concurrency.rs`.
 
 Request bodies, response bodies, raw auth, and secrets remain absent from `Display`, `Debug`, source chains, debug sinks, hooks, rate-limit metadata, and retry metadata.
+Runtime hook order is fixed and not user-configurable. `pre_send` runs after rate-limit acquisition and before raw auth transport materialization, `post_response` runs after an HTTP response is received and before body read and endpoint decode, and `transport_error` only observes initial transport-send failures.
 
 ### page-mutation-before-auth-collision-rate-transport
 

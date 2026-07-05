@@ -7,26 +7,29 @@
 The runtime order is:
 
 ```text
-1. build request plan
+1. build and validate the logical request
 2. resolve credentials and attach pending auth slots
 3. validate auth collisions against public query and header policy
 4. rate-limit acquire
-5. materialize a send-only `TransportRequest`
-6. transport send
-7. drop the materialized transport request
-8. classify response or transport failure
-9. post-response hook
+5. run pre_send hook
+6. materialize a send-only `TransportRequest`
+7. transport send
+8. on initial transport failure, run transport_error hook
+9. on HTTP response, run post_response hook
 10. rate-limit observation
-11. auth rejection handling
-12. retry decision
-13. decode response
-14. return decoded response entity output
-15. return
+11. classify HTTP status
+12. handle auth rejection or retry decision where applicable
+13. read bounded response body for buffered responses
+14. decode endpoint response
+15. return decoded response entity output
+16. return
 ```
 
 This order is not user-configurable.
 
-Runtime hooks and rate-limit observation are transport-response metadata observations, not endpoint-success hooks. They may observe HTTP responses that later fail auth handling or retry, but they never receive response body bytes or raw auth material. Hook and debug callback metadata is sanitized before invocation: sensitive request and response headers, sensitive query values in URLs, and other redacted names are not exposed as raw header maps.
+`pre_send` runs after rate-limit acquisition and before raw auth transport materialization. It may abort before transport. `post_response` runs after an HTTP response is received and before response body read and endpoint decode. It is not an endpoint-success hook: it may observe responses that later retry, fail auth handling, fail rate-limit response observation, fail body-size limits, fail HTTP-status classification, or fail decode. `transport_error` observes initial transport-send failures only; it is not called for HTTP status errors or for body-read failures after a response has been received.
+
+Runtime hooks are sanitized metadata observers, not body-capture or policy hooks. They never receive request body bytes, response body bytes, or raw auth material. Hook and debug callback metadata is sanitized before invocation: sensitive request and response headers, sensitive query values in URLs, and other redacted names are not exposed as raw header maps.
 
 Retry is a bounded transport or status decision layer. It runs after transport-response observation and auth rejection handling, and before endpoint decode. Retry does not handle endpoint decode failures. `execute_raw()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding.
 
