@@ -80,7 +80,7 @@ where
         ctx: ErrorContext,
     ) -> Result<PreparedRequestEntity, ApiClientError> {
         let encoded = C::encode(input, EncodeContext::new(ctx.endpoint, &ctx.method))
-            .map_err(|source| ApiClientError::codec_error(ctx.clone(), source))?;
+            .map_err(|_| ApiClientError::request_body_codec_error(ctx.clone()))?;
         let (bytes, format) = encoded.into_parts();
         let content_type = C::try_content_type()
             .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?;

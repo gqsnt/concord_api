@@ -208,7 +208,10 @@ fn request_entity_codec_errors_hide_sentinels() {
         concord_core::prelude::ApiClientError::Codec { .. }
     ));
     assert_eq!(err.category(), concord_core::prelude::ErrorCategory::Decode);
+    assert_eq!(err.context().endpoint, "Example");
+    assert_eq!(err.context().method, Method::POST);
     let rendered = format!("{err}");
+    assert!(rendered.contains("request body encoding failed"));
     assert!(!rendered.contains("REQUEST_ENTITY_SENTINEL"));
     crate::support::assert_error_chain_does_not_contain_any(&err, &["REQUEST_ENTITY_SENTINEL"]);
 }

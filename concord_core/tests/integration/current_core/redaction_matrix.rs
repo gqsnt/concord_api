@@ -30,6 +30,8 @@ use tokio::sync::Mutex;
 const REQUEST_HEADER_SENTINEL: &str = "PR20_REQUEST_HEADER_SENTINEL";
 const REQUEST_QUERY_SENTINEL: &str = "PR20_REQUEST_QUERY_SENTINEL";
 const REQUEST_BODY_SENTINEL: &str = "PR20_REQUEST_BODY_SENTINEL";
+const REQUEST_CODEC_BODY_SENTINEL: &str = "LEAK_SENTINEL_REQUEST_BODY";
+const REQUEST_CODEC_SOURCE_SENTINEL: &str = "LEAK_SENTINEL_CODEC_SOURCE";
 const RESPONSE_BODY_SENTINEL: &str = "PR20_RESPONSE_BODY_SENTINEL";
 const RESPONSE_CODEC_SENTINEL: &str = "PR20_RESPONSE_CODEC_SENTINEL";
 const AUTH_SENTINEL: &str = "PR20_AUTH_SENTINEL";
@@ -67,8 +69,8 @@ impl BodyCodec for FailingRequestCodec {
 
     fn encode(_value: Self::Value, _ctx: EncodeContext<'_>) -> Result<EncodedBody, CodecError> {
         Err(CodecError::with_source(
-            "request encoding failed",
-            MatrixSentinelError(REQUEST_BODY_SENTINEL),
+            REQUEST_CODEC_BODY_SENTINEL,
+            MatrixSentinelError(REQUEST_CODEC_SOURCE_SENTINEL),
         ))
     }
 }
@@ -285,13 +287,23 @@ async fn request_encoding_failure_redacts_request_body_sentinel() {
     assert_eq!(err.category(), ErrorCategory::Decode);
     assert_eq!(err.context().endpoint, "RequestEncodeMatrix");
     assert_eq!(err.context().method, Method::POST);
+    let rendered = format!("{err}\n{err:?}\n{err:#?}");
+    assert!(rendered.contains("request body encoding failed"));
+    assert!(!rendered.contains(REQUEST_CODEC_BODY_SENTINEL));
+    assert!(!rendered.contains(REQUEST_CODEC_SOURCE_SENTINEL));
     match &err {
         ApiClientError::Codec { source, .. } => {
-            assert_source_surfaces_are_redacted(source.as_ref(), &[REQUEST_BODY_SENTINEL]);
+            assert_source_surfaces_are_redacted(
+                source.as_ref(),
+                &[REQUEST_CODEC_BODY_SENTINEL, REQUEST_CODEC_SOURCE_SENTINEL],
+            );
         }
         _ => panic!("expected codec error"),
     }
-    assert_error_chain_does_not_contain_any(&err, &[REQUEST_BODY_SENTINEL]);
+    assert_error_chain_does_not_contain_any(
+        &err,
+        &[REQUEST_CODEC_BODY_SENTINEL, REQUEST_CODEC_SOURCE_SENTINEL],
+    );
 }
 
 #[tokio::test]

@@ -83,6 +83,7 @@ Codec rules:
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` default from the associated `Content` marker. Override them when a codec intentionally omits the header or needs to surface a typed validation error.
 - `EncodeContext` and `DecodeContext` provide endpoint metadata for contextual errors.
 - `CodecError` messages must be safe to display. Never include secrets or raw credentials.
+- Buffered request-body encode failures are sanitized again at the client boundary. Public `ApiClientError::Codec` values for buffered request preparation use a generic request-body encoding message and do not expose raw codec messages or nested codec sources.
 - Built-in `Json<T>` and `Text<String>` use `JsonContentType` and `TextContentType`. The core `NoContent` codec intentionally omits request and response content headers. The DSL spelling `-> NoContent` is response-only, returns `()`, and remains distinct from the buffered codec; request-side `NoContent` remains invalid. The DSL spelling `-> Bytes` is response-only, returns `bytes::Bytes`, uses the ordinary bounded buffered response path, and is distinct from custom binary codecs and `execute_raw()`. Request-side `Bytes` remains unsupported.
 
 ## CSV Record Formats

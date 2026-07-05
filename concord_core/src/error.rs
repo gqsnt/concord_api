@@ -361,6 +361,16 @@ impl ApiClientError {
     }
 
     #[inline]
+    pub fn request_body_codec_error(ctx: ErrorContext) -> ApiClientError {
+        ApiClientError::Codec {
+            ctx,
+            source: Box::new(crate::codec::CodecError::new(
+                "request body encoding failed",
+            )),
+        }
+    }
+
+    #[inline]
     pub fn rate_limit(
         ctx: ErrorContext,
         kind: crate::rate_limit::RateLimitErrorKind,
