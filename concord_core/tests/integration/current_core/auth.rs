@@ -1493,6 +1493,53 @@ async fn oauth_client_credentials_invalid_token_url_returns_typed_error() {
 
 #[cfg(feature = "json")]
 #[tokio::test]
+async fn oauth_client_credentials_reject_unsupported_token_type_without_leaking_body() {
+    use std::error::Error as _;
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![MockResponse::text(
+            StatusCode::OK,
+            r#"{"access_token":"LEAK_SENTINEL_ACCESS","refresh_token":"LEAK_SENTINEL_REFRESH","scope":"LEAK_SENTINEL_SCOPE","token_type":"LEAK_SENTINEL_TOKEN_TYPE"}"#,
+        )],
+    );
+    let sent = transport.clone();
+    let client = auth_http_client(transport, AuthHttpLimitVars::oauth());
+
+    let err = client
+        .request(AuthHttpLimitEndpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("unsupported OAuth token type should fail before protected request");
+
+    match &err {
+        ApiClientError::Auth { source, .. } => {
+            assert_eq!(source.kind, AuthErrorKind::UnsupportedScheme);
+            assert_eq!(
+                source.message,
+                "oauth2 token response used an unsupported token_type"
+            );
+        }
+        other => panic!("expected auth error, got {other:?}"),
+    }
+    assert_error_chain_does_not_contain_any(
+        &err,
+        &[
+            "LEAK_SENTINEL_ACCESS",
+            "LEAK_SENTINEL_REFRESH",
+            "LEAK_SENTINEL_SCOPE",
+            "LEAK_SENTINEL_TOKEN_TYPE",
+        ],
+    );
+    assert_eq!(sent.sent_count().await, 1);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].url.as_str(), "https://auth.example.com/token");
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
 async fn oauth_client_credentials_reject_unsafe_token_urls_before_transport() {
     use std::error::Error as _;
 
@@ -1566,6 +1613,56 @@ async fn oauth_client_credentials_valid_https_token_url_still_succeeds() {
         })
         .await
         .expect("valid HTTPS token URL should succeed");
+
+    assert_eq!(token.token.expose(), "token-1");
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn oauth_client_credentials_accepts_mixed_case_bearer_token_type() {
+    struct SuccessAuthExecutor;
+
+    impl concord_core::advanced::AuthHttpExecutor for SuccessAuthExecutor {
+        fn send<'a>(
+            &'a self,
+            request: AuthHttpRequest,
+        ) -> concord_core::advanced::AuthFuture<
+            'a,
+            Result<concord_core::advanced::AuthHttpResponse, AuthError>,
+        > {
+            Box::pin(async move {
+                assert_eq!(request.url.as_str(), "https://auth.example.com/token");
+                Ok(concord_core::advanced::AuthHttpResponse {
+                    status: StatusCode::OK,
+                    headers: HeaderMap::new(),
+                    body: Bytes::from_static(
+                        br#"{"access_token":"token-1","token_type":"bEaReR"}"#,
+                    ),
+                })
+            })
+        }
+    }
+
+    let provider = OAuth2ClientCredentialsProvider::new(
+        CredentialId::new("test", "oauth"),
+        "https://auth.example.com/token".parse().expect("token url"),
+        "client-id",
+        "client-secret",
+    )
+    .expect("valid OAuth2 token URL should be accepted");
+    let auth = AuthHttpLimitVars::oauth();
+
+    let token = provider
+        .acquire(CredentialContext::<AuthHttpLimitCx> {
+            vars: &(),
+            auth: &auth,
+            auth_state: &(),
+            executor: &SuccessAuthExecutor,
+            credential_id: CredentialId::new("test", "oauth"),
+            reason: CredentialRefreshReason::Missing,
+        })
+        .await
+        .expect("mixed-case bearer token type should succeed");
 
     assert_eq!(token.token.expose(), "token-1");
 }

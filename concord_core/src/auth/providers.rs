@@ -289,7 +289,7 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
             {
                 return Err(AuthError::new(
                     AuthErrorKind::UnsupportedScheme,
-                    format!("unsupported oauth2 token_type {token_type}"),
+                    "oauth2 token response used an unsupported token_type",
                 ));
             }
 

@@ -50,6 +50,8 @@ Before the first protected request, Concord sends a token request to `token_url`
 
 Valid OAuth tokens are reused through the credential slot. A protected `401` invalidates the applied token generation and reacquires a token within the runtime auth retry budget before retrying the protected request. Token endpoint failures stop the protected request before it is sent. OAuth client secrets, access tokens, and refresh tokens are redacted from debug output and errors.
 
+Unsupported OAuth token-type failures are reported with a sanitized message. Public diagnostics do not render the raw remote `token_type`, access token, refresh token, or response body contents from the token endpoint.
+
 ## Endpoint-Backed Credentials
 
 An endpoint can produce credential material for later requests. Declare the credential as an endpoint path and return the credential material directly.
