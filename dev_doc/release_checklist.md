@@ -36,6 +36,22 @@ The checked-in clippy step is non-strict (`cargo clippy --workspace --all-target
 
 It explicitly requires `cargo-nextest`.
 
+## Supply Chain Gate
+
+Run the supply-chain policy gate as a separate pre-release command:
+
+```bash
+bash ./scripts/check_supply_chain.sh
+```
+
+It requires `cargo-deny`; install it with:
+
+```bash
+cargo install cargo-deny --locked
+```
+
+The check covers advisories, yanked crates, licenses, sources and registries, and configured banned or duplicate crate policy. It may require a cached advisory database or network access to refresh advisory data, but it does not use live credentials.
+
 ## Individual Commands
 
 Run:

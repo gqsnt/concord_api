@@ -67,6 +67,8 @@ Macro strictness belongs primarily in semantic unit tests and trybuild pass/fail
 
 Feature-surface drift is gated separately by `scripts/check_features.sh`. That script uses normal dependency trees for the crate-surface proof so dev-dependencies do not widen the default feature story. `scripts/check_v1.sh` calls it before the rest of the local gate.
 
+Supply-chain policy is gated separately by `scripts/check_supply_chain.sh`. It requires `cargo-deny`, checks advisories, yanked crates, licenses, dependency sources and registries, and configured ban policy, and it may require a cached advisory database or network access to refresh advisory data. It does not use live credentials.
+
 The runtime nextest matrix is separate from the compile/check feature matrix. The checked-in local gate currently runs `cargo nextest run -p concord_core`, `cargo nextest run -p concord_core --all-features`, `cargo nextest run -p concord_examples`, `cargo nextest run -p concord_examples --all-features`, `cargo nextest run --workspace`, `cargo nextest run --workspace --all-features`, and `cargo nextest run --workspace --all-targets`. Feature-flavored core nextest runs such as `cargo nextest run -p concord_core --no-default-features` and `cargo nextest run -p concord_core --no-default-features --features json` are intentionally omitted for now because the core runtime suite is not feature-parametric and those runs fail in rate-limit characterization tests.
 
 The no-default rate-limit regression is exercised separately with a focused cargo test filter instead of the full runtime suite:

@@ -1,0 +1,41 @@
+[advisories]
+version = 2
+yanked = "deny"
+vulnerability = "deny"
+ignore = []
+
+[bans]
+# The workspace currently has legitimate transitive duplicate versions from upstream crates.
+# We keep the duplicate policy explicit, but we do not fail the gate on those expected duplicates.
+multiple-versions = "allow"
+wildcards = "deny"
+highlight = "all"
+deny = []
+skip = []
+skip-tree = []
+
+[licenses]
+version = 2
+unlicensed = "deny"
+allow = [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "LGPL-2.1-or-later",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -51,6 +51,22 @@ Clippy is currently run non-strictly as `cargo clippy --workspace --all-targets`
 
 The feature script checks normal dependency trees, not dev-dependency trees, for the default feature story.
 
+## Supply Chain Gate
+
+Run the supply-chain policy gate separately:
+
+```bash
+bash ./scripts/check_supply_chain.sh
+```
+
+This script requires `cargo-deny`. Install it with:
+
+```bash
+cargo install cargo-deny --locked
+```
+
+The gate checks advisories, yanked crates, license policy, dependency sources and registries, and the configured ban policy. It may require a cached advisory database or network access to refresh advisory data. It does not use live credentials.
+
 The runtime nextest gate is separate from the compile/check feature matrix. It currently runs `cargo nextest run -p concord_core`, `cargo nextest run -p concord_core --all-features`, `cargo nextest run -p concord_examples`, and `cargo nextest run --workspace --all-targets`. Feature-flavored core nextest runs such as `cargo nextest run -p concord_core --no-default-features` and `cargo nextest run -p concord_core --no-default-features --features json` are intentionally omitted for now because the core runtime suite is not feature-parametric and those runs fail in rate-limit characterization tests.
 
 ## Public V1 Surface
