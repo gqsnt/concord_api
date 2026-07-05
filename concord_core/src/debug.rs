@@ -192,12 +192,19 @@ impl<'a> SanitizedHeaders<'a> {
         self.headers.is_empty()
     }
 
-    pub fn get(&self, name: &HeaderName) -> Option<SanitizedHeaderValue> {
-        let value = self.headers.get(name)?;
-        Some(sanitized_header_value(name.as_str(), value))
+    pub fn get<N>(&self, name: N) -> Option<SanitizedHeaderValue>
+    where
+        N: http::header::AsHeaderName + Clone,
+    {
+        let name_str = name.as_str().to_owned();
+        let value = self.headers.get(name.clone())?;
+        Some(sanitized_header_value(&name_str, value))
     }
 
-    pub fn contains_key(&self, name: &HeaderName) -> bool {
+    pub fn contains_key<N>(&self, name: N) -> bool
+    where
+        N: http::header::AsHeaderName,
+    {
         self.headers.contains_key(name)
     }
 

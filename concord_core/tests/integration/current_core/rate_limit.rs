@@ -6,6 +6,7 @@ use concord_core::advanced::{
     BufferedResponse, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
     RateLimitResponseContext, RateLimiter, ResponseEntity,
 };
+use concord_core::error::ErrorCategory;
 use concord_core::internal::{
     BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
     RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
@@ -228,6 +229,69 @@ impl RateLimitObserver for RecordingRateLimitObserver {
             ObserverMode::Fixed(observation) => observation.clone(),
             ObserverMode::RetryAfter429 => ctx.on_429().retry_after(),
         }
+    }
+}
+
+#[derive(Clone)]
+struct SanitizedResponseHeaderRateLimiter {
+    events: Arc<Mutex<Vec<String>>>,
+}
+
+impl SanitizedResponseHeaderRateLimiter {
+    fn new(events: Arc<Mutex<Vec<String>>>) -> Self {
+        Self { events }
+    }
+}
+
+impl RateLimiter for SanitizedResponseHeaderRateLimiter {
+    fn acquire<'a>(
+        &'a self,
+        _ctx: RateLimitContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
+        Box::pin(async move { Ok(RateLimitPermit) })
+    }
+
+    fn on_response<'a>(
+        &'a self,
+        ctx: RateLimitResponseContext<'a>,
+    ) -> RateLimitFuture<'a, Result<RateLimitResponseAction, ApiClientError>> {
+        let events = self.events.clone();
+        Box::pin(async move {
+            let set_cookie = ctx
+                .headers
+                .get(http::header::SET_COOKIE)
+                .map(|value| value.as_str().to_owned());
+            let www_authenticate = ctx
+                .headers
+                .get(http::header::WWW_AUTHENTICATE)
+                .map(|value| value.as_str().to_owned());
+            let refresh_token = ctx
+                .headers
+                .get(http::HeaderName::from_static("x-refresh-token"))
+                .map(|value| value.as_str().to_owned());
+            let retry_after = ctx
+                .headers
+                .get(http::header::RETRY_AFTER)
+                .map(|value| value.as_str().to_owned());
+            let rate_limit_remaining = ctx
+                .headers
+                .get(http::HeaderName::from_static("x-rate-limit-remaining"))
+                .map(|value| value.as_str().to_owned());
+            let mut events = events.lock().await;
+            events.push(format!(
+                "sanitized_cookie:{:?}:contains:{}",
+                set_cookie,
+                ctx.headers.contains_key(http::header::SET_COOKIE)
+            ));
+            events.push(format!("sanitized_authenticate:{:?}", www_authenticate));
+            events.push(format!("sanitized_refresh:{:?}", refresh_token));
+            events.push(format!("sanitized_retry_after:{:?}", retry_after));
+            events.push(format!(
+                "sanitized_rate_limit_remaining:{:?}",
+                rate_limit_remaining
+            ));
+            Ok(RateLimitResponseAction::Continue)
+        })
     }
 }
 
@@ -775,7 +839,7 @@ async fn rate_limit_response_huge_delay_returns_typed_error() {
             plan,
         },
         status: StatusCode::TOO_MANY_REQUESTS,
-        headers: &headers,
+        headers: concord_core::advanced::SanitizedHeaders::new(&headers),
         max_cooldown: Duration::from_secs(1),
     };
 
@@ -1008,6 +1072,91 @@ async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(),
     let observe = first_event_with_prefix(&events, "rate_observe_status:403 Forbidden");
     let auth = first_position(&events, "auth_rejection:403 Forbidden");
     assert!(observe < auth);
+    Ok(())
+}
+
+#[tokio::test]
+async fn rate_limit_response_context_sanitizes_sensitive_response_headers()
+-> Result<(), ApiClientError> {
+    const SET_COOKIE_SENTINEL: &str = "LEAK_SENTINEL_SET_COOKIE";
+    const WWW_AUTHENTICATE_SENTINEL: &str = "LEAK_SENTINEL_WWW_AUTH";
+    const REFRESH_TOKEN_SENTINEL: &str = "LEAK_SENTINEL_REFRESH_TOKEN";
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let limiter = Arc::new(SanitizedResponseHeaderRateLimiter::new(events.clone()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![{
+            let mut response = MockResponse::text(StatusCode::TOO_MANY_REQUESTS, "retry-me");
+            response.headers.insert(
+                http::header::SET_COOKIE,
+                HeaderValue::from_static(SET_COOKIE_SENTINEL),
+            );
+            response.headers.insert(
+                http::header::WWW_AUTHENTICATE,
+                HeaderValue::from_static(WWW_AUTHENTICATE_SENTINEL),
+            );
+            response.headers.insert(
+                http::HeaderName::from_static("x-refresh-token"),
+                HeaderValue::from_static(REFRESH_TOKEN_SENTINEL),
+            );
+            response
+                .headers
+                .insert(http::header::RETRY_AFTER, HeaderValue::from_static("3"));
+            response.headers.insert(
+                http::HeaderName::from_static("x-rate-limit-remaining"),
+                HeaderValue::from_static("7"),
+            );
+            response
+        }],
+    );
+    let sent_transport = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    configure_runtime(&mut client, Some(limiter));
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("429 should surface as a typed status error");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(err.category(), ErrorCategory::HttpStatus);
+    assert_eq!(sent_transport.sent_count().await, 1);
+    let events = events.lock().await.clone();
+    assert!(
+        events
+            .iter()
+            .any(|event| event == "sanitized_cookie:Some(\"<redacted>\"):contains:true")
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event == "sanitized_authenticate:Some(\"<redacted>\")")
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event == "sanitized_refresh:Some(\"<redacted>\")")
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event == "sanitized_retry_after:Some(\"3\")")
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event == "sanitized_rate_limit_remaining:Some(\"7\")")
+    );
+    assert_error_chain_does_not_contain_any(
+        &err,
+        &[
+            SET_COOKIE_SENTINEL,
+            WWW_AUTHENTICATE_SENTINEL,
+            REFRESH_TOKEN_SENTINEL,
+        ],
+    );
     Ok(())
 }
 

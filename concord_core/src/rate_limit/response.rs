@@ -1,4 +1,5 @@
 use super::{RateLimitBucketId, RateLimitResponseContext};
+use crate::debug::SanitizedHeaders;
 use http::StatusCode;
 use http::header::RETRY_AFTER;
 use std::borrow::Cow;
@@ -102,7 +103,7 @@ impl RateLimitObservation {
 
     #[inline]
     pub fn scope_header(mut self, ctx: &RateLimitResponseContext<'_>, name: &str) -> Self {
-        if let Some(value) = ctx.headers.get(name).and_then(|v| v.to_str().ok()) {
+        if let Some(value) = ctx.headers.get(name).map(|v| v.as_str().to_owned()) {
             let kind = value.trim();
             if !kind.is_empty() {
                 self.scope = Some(RateLimitScopeHint::BucketKind(kind.to_string()));
@@ -117,7 +118,7 @@ impl RateLimitObservation {
 
     #[inline]
     pub fn retry_after_header(mut self, ctx: &RateLimitResponseContext<'_>) -> Self {
-        if let Some(delay) = parse_retry_after(ctx.headers) {
+        if let Some(delay) = parse_retry_after_headers(&ctx.headers) {
             self.delay = Some(delay);
             self.retry_after = Some(delay);
         }
@@ -222,7 +223,7 @@ impl<'a> RateLimitResponseContext<'a> {
 
     #[inline]
     pub fn retry_after(&self) -> Option<Duration> {
-        parse_retry_after(self.headers)
+        parse_retry_after_headers(&self.headers)
     }
 
     #[inline]
@@ -265,6 +266,16 @@ impl RateLimitResponsePolicy for DefaultRateLimitResponsePolicy {
 
 pub fn parse_retry_after(headers: &http::HeaderMap) -> Option<Duration> {
     let raw = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
+    parse_retry_after_value(raw)
+}
+
+fn parse_retry_after_headers(headers: &SanitizedHeaders<'_>) -> Option<Duration> {
+    let raw = headers.get(RETRY_AFTER)?.as_str().trim().to_owned();
+    parse_retry_after_value(&raw)
+}
+
+fn parse_retry_after_value(raw: &str) -> Option<Duration> {
+    let raw = raw.trim();
     if let Ok(seconds) = raw.parse::<u64>() {
         return Some(Duration::from_secs(seconds));
     }

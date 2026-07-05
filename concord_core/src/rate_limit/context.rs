@@ -1,5 +1,7 @@
 use super::RateLimitPlan;
-use http::{HeaderMap, Method, StatusCode};
+use crate::debug::SanitizedHeaders;
+use http::Method;
+use http::StatusCode;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -22,6 +24,6 @@ pub struct RateLimitPermit;
 pub struct RateLimitResponseContext<'a> {
     pub meta: RateLimitContext<'a>,
     pub status: StatusCode,
-    pub headers: &'a HeaderMap,
+    pub headers: SanitizedHeaders<'a>,
     pub max_cooldown: Duration,
 }

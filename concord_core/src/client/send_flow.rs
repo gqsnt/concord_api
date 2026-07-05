@@ -108,7 +108,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .on_response(RateLimitResponseContext {
                 meta: rate_limit_meta,
                 status: ctx.status,
-                headers: ctx.headers,
+                headers: crate::debug::SanitizedHeaders::new(ctx.headers),
                 max_cooldown: self.runtime_state.max_rate_limit_cooldown(),
             })
             .await

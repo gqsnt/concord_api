@@ -75,9 +75,9 @@ GET Search
     -> Json<SearchResponse>
 ```
 
-A response observer can translate provider headers into rate-limit observations.
+A response observer can translate provider headers into rate-limit observations. The callback sees a sanitized header view: sensitive names such as `Set-Cookie`, `WWW-Authenticate`, and token-like headers are redacted before callback access, while `Retry-After` and non-sensitive rate-limit headers remain available.
 
-Rate-limit acquisition happens after request planning, auth preparation, and auth collision validation, and before transport send. It is transport-metadata only. Rate-limit response observation is also metadata only and does not expose request body bytes, response body bytes, or raw auth material.
+Rate-limit acquisition happens after request planning, auth preparation, and auth collision validation, and before transport send. It is transport-metadata only. Rate-limit response observation is also metadata only and does not expose request body bytes, response body bytes, raw auth material, or raw sensitive response headers.
 
 Rate-limit response cooldowns are capped as well. The default maximum cooldown is finite and configured through runtime settings. Remote `Retry-After` values above the configured cap fail closed before Concord stores or sleeps on the cooldown. Custom rate-limit observers and response policies cannot force a cooldown above the cap through the default governor runtime.
 
