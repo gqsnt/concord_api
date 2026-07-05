@@ -68,7 +68,7 @@ Pending-request overrides exist for request options such as debug level, timeout
 
 Rust borrowing prevents mutating one client instance while a request borrowed from that same instance is executing. Cloned clients use clone-on-write runtime state: configuring one clone does not change an already-cloned client or an in-flight request running on that clone. Later requests on the reconfigured clone use the new configuration.
 
-Pagination page and item termination is chosen per request with `PaginationTermination`; there is no runtime-wide implicit page or item cap. `pagination_detect_loops(...)` changes the default controller loop-key detection setting for paginated calls. The runtime still enforces non-progress detection for repeated logical page identities regardless of this setting.
+Pagination page and item termination is chosen per request with `PaginationTermination`; there is no runtime-wide implicit page or item cap. `pagination_detect_loops(...)` changes the default controller loop-key detection setting for paginated calls. The runtime still enforces non-progress detection for repeated logical page identities regardless of this setting, and the resulting diagnostics only expose safe pagination metadata rather than raw cursor or progress-key contents.
 
 Debug sinks and runtime hooks are metadata-only. They receive sanitized metadata views: URLs are redacted before callback invocation, request and response headers are wrapped in a redacted header view, and they may observe statuses, retry events, rate-limit events, and endpoint metadata. They never receive request or response body bytes, and they cannot observe raw auth material.
 

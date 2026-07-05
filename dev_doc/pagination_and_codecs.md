@@ -68,7 +68,9 @@ Pagination also keeps an always-on logical-request progress guard: each page
 builds a request identity from the safe page-shaping state, and a repeated
 identity returns a typed pagination error instead of silently reissuing the
 same page. The optional controller `ProgressKey` check remains available as an
-additional guard.
+additional guard. Public loop diagnostics do not render raw progress-key
+contents; they only report safe metadata such as page index and key kind or
+length.
 
 The macro `paginate` block resolves controller field assignments. Built-in pagination and custom pagination both use assignment blocks for endpoint fields, and codegen connects those assignments to the pagination runtime path before the endpoint response codec decodes each page.
 

@@ -1900,25 +1900,32 @@ async fn hard_item_cap_errors_without_truncating() {
 }
 
 #[tokio::test]
-
 async fn loop_detection_still_default_enabled() {
+    let sentinels = RedactionSentinels::new(
+        "LEAK_SENTINEL_AUTH",
+        "LEAK_SENTINEL_BODY",
+        "LEAK_SENTINEL_CURSOR_TOKEN",
+    );
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
         vec![
-            MockResponse::text(StatusCode::OK, "a,b|next=next-1"),
-            MockResponse::text(StatusCode::OK, "c,d|next=next-1"),
+            MockResponse::text(
+                StatusCode::OK,
+                format!("a,{}|next={}", sentinels.body, sentinels.response),
+            ),
+            MockResponse::text(StatusCode::OK, format!("c,d|next={}", sentinels.response)),
         ],
     );
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
     let endpoint = CursorItemsEndpoint {
-        policy: Default::default(),
-        cursor: Some("start".to_string()),
+        policy: policy_with_request_sentinel(sentinels.auth),
+        cursor: Some(sentinels.response.to_string()),
         count: 2,
         pagination: PaginationVariant::cursor::<CursorItems>(CursorPagination {
-            cursor: Some("start".to_string()),
+            cursor: Some(sentinels.response.to_string()),
             per_page: 2,
             send_cursor_on_first: true,
             stop_when_cursor_missing: true,
@@ -1938,8 +1945,10 @@ async fn loop_detection_still_default_enabled() {
         err.pagination_error_kind(),
         Some(concord_core::error::PaginationErrorKind::NonProgress)
     );
-    assert!(err.to_string().contains("loop detected"));
-    assert_eq!(sent.sent_count().await, 2);
+    assert!(err.to_string().contains("string progress key"));
+    assert!(err.to_string().contains("page_index=1"));
+    assert_error_chain_does_not_contain_any(&err, &sentinels.all());
+    assert_eq!(sent.sent_count().await, 1);
 }
 
 fn pagination_sentinels() -> RedactionSentinels {

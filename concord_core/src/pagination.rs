@@ -77,6 +77,16 @@ pub enum ProgressKey {
     Bytes(Vec<u8>),
 }
 
+impl ProgressKey {
+    pub(crate) fn diagnostic_summary(&self) -> String {
+        match self {
+            Self::U64(_) => "u64 progress key".to_string(),
+            Self::Str(value) => format!("string progress key (len={} bytes)", value.len()),
+            Self::Bytes(value) => format!("bytes progress key (len={} bytes)", value.len()),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum PageDecision {
     Continue,
@@ -262,5 +272,28 @@ impl<T: Send + 'static> PageItems for Vec<T> {
 
     fn into_items(self) -> Vec<Self::Item> {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProgressKey;
+
+    #[test]
+    fn progress_key_diagnostic_summary_redacts_string_payloads() {
+        let key = ProgressKey::Str("LEAK_SENTINEL_CURSOR_TOKEN".to_string());
+        let summary = key.diagnostic_summary();
+        assert!(summary.contains("string progress key"));
+        assert!(summary.contains("len="));
+        assert!(!summary.contains("LEAK_SENTINEL_CURSOR_TOKEN"));
+    }
+
+    #[test]
+    fn progress_key_diagnostic_summary_redacts_bytes_payloads() {
+        let key = ProgressKey::Bytes(b"LEAK_SENTINEL_CURSOR_BYTES".to_vec());
+        let summary = key.diagnostic_summary();
+        assert!(summary.contains("bytes progress key"));
+        assert!(summary.contains("len="));
+        assert!(!summary.contains("LEAK_SENTINEL_CURSOR_BYTES"));
     }
 }

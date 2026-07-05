@@ -359,7 +359,11 @@ where
             return Err(ApiClientError::pagination(
                 ctx.clone(),
                 PaginationErrorKind::NonProgress,
-                format!("loop detected (page_index={} key={:?})", page_index, k),
+                format!(
+                    "loop detected (page_index={} {})",
+                    page_index,
+                    k.diagnostic_summary()
+                ),
             ));
         }
 
