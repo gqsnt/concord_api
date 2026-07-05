@@ -13,7 +13,7 @@ Concord runtime failures surface as `ApiClientError`. The enum is `non_exhaustiv
 | Auth rejection (`401` or `403` on protected request) | `ApiClientError::Auth`; category `AuthRejected` | After transport metadata hooks and rate-limit observation | No | Auth refresh may happen under the configured policy and budget | Distinct from ordinary `HttpStatus`; response body is not read. |
 | Rate-limit acquire or response-action failure | `ApiClientError::RateLimit`; category `RateLimit` with a structured `RateLimitErrorKind` | Before transport for acquire, after response metadata for response-action observation | No | No | Acquire/response contexts are request metadata only. |
 | Transport send failure | `ApiClientError::Transport`; category `Transport` or `Timeout` | Transport attempted but no response metadata was classified | No response body | Retry only if retry policy covers the transport error | No rate-limit response observation for pure transport errors. |
-| HTTP status failure | `ApiClientError::HttpStatus`; category `HttpStatus` | After transport response classification and hooks or rate-limit observation | No endpoint body read in the status-error path | Retry if policy covers the status | Headers are redacted in `Debug`. Protected `401` and `403` responses are handled as auth rejection first. |
+| HTTP status failure | `ApiClientError::HttpStatus`; category `HttpStatus` | After transport response classification and hooks or rate-limit observation | No endpoint body read in the status-error path | Retry if policy covers the status | Public stored headers are sanitized before exposure through `http_headers()` or enum pattern matching. Sensitive response headers are redacted; safe headers such as `retry-after` and `content-type` remain available. Protected `401` and `403` responses are handled as auth rejection first. |
 | Retry exhaustion | No wrapper in v1; the final transport or status error is returned | After bounded retry attempts | Depends on final error class | Budgeted and bounded | Count attempts via policy or transport, not a retry-exhausted variant. |
 | Content-Length body limit | `ApiClientError::ResponseTooLarge`; category `Decode` | After transport metadata classification, before body chunks are read | No | No ordinary retry | Reports limit and content length only. |
 | Streaming body limit | `ApiClientError::ResponseBodyLimitExceeded`; category `Decode` | During bounded body read | Reads only enough chunks to detect overflow | No ordinary retry | Does not include partial body bytes. |
@@ -30,6 +30,8 @@ Consequences:
 - it can return validation, auth, rate-limit, transport, HTTP status, retry final-error, and body-limit errors;
 - it does not produce endpoint decode or pagination collection errors;
 - diagnostics follow the same body-free and raw-auth-free rules as decoded execution.
+
+HTTP status errors keep the same public shape, but their stored response headers are sanitized before they are exposed. Internal auth, retry, and rate-limit handling may still inspect raw transport headers before the public error is built.
 
 ## Testing Guidance
 

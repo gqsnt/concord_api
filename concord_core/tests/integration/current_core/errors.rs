@@ -580,6 +580,129 @@ async fn http_status_error_is_distinct_from_transport_and_auth() {
 }
 
 #[tokio::test]
+async fn http_status_error_sanitizes_public_headers_before_storage() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut response = MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "status-body");
+    response.headers.insert(
+        http::header::SET_COOKIE,
+        HeaderValue::from_static("session=LEAK_SENTINEL_COOKIE"),
+    );
+    response.headers.insert(
+        http::header::WWW_AUTHENTICATE,
+        HeaderValue::from_static("Bearer error_description=\"LEAK_SENTINEL_WWW_AUTH\""),
+    );
+    response.headers.insert(
+        http::HeaderName::from_static("x-refresh-token"),
+        HeaderValue::from_static("LEAK_SENTINEL_REFRESH"),
+    );
+    response.headers.insert(
+        http::HeaderName::from_static("x-custom-session-token"),
+        HeaderValue::from_static("LEAK_SENTINEL_CUSTOM"),
+    );
+    response.headers.insert(
+        http::HeaderName::from_static("x-public"),
+        HeaderValue::from_static("public-value"),
+    );
+    response
+        .headers
+        .insert(http::header::RETRY_AFTER, HeaderValue::from_static("1"));
+    let transport = MockTransport::new(events.clone(), vec![response]);
+    let mut client = client(TestAuthVars::default(), transport.clone());
+    with_runtime_observers(&mut client, events.clone());
+
+    let err = client
+        .request(TextEndpoint {
+            policy: rate_policy(),
+            ..TextEndpoint::default()
+        })
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("status error should surface");
+
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(err.category(), ErrorCategory::HttpStatus);
+    assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
+    assert_eq!(
+        err.http_headers()
+            .and_then(|headers| headers.get(http::header::SET_COOKIE))
+            .and_then(|value| value.to_str().ok()),
+        Some("<redacted>")
+    );
+    assert_eq!(
+        err.http_headers()
+            .and_then(|headers| headers.get(http::header::WWW_AUTHENTICATE))
+            .and_then(|value| value.to_str().ok()),
+        Some("<redacted>")
+    );
+    assert_eq!(
+        err.http_headers()
+            .and_then(|headers| headers.get(http::HeaderName::from_static("x-refresh-token")))
+            .and_then(|value| value.to_str().ok()),
+        Some("<redacted>")
+    );
+    assert_eq!(
+        err.http_headers()
+            .and_then(|headers| headers.get(http::HeaderName::from_static("x-custom-session-token")))
+            .and_then(|value| value.to_str().ok()),
+        Some("<redacted>")
+    );
+    assert_eq!(
+        err.http_headers()
+            .and_then(|headers| headers.get(http::HeaderName::from_static("x-public")))
+            .and_then(|value| value.to_str().ok()),
+        Some("public-value")
+    );
+    assert_eq!(
+        err.http_headers()
+            .and_then(|headers| headers.get(http::header::RETRY_AFTER))
+            .and_then(|value| value.to_str().ok()),
+        Some("1")
+    );
+    match &err {
+        ApiClientError::HttpStatus { headers, .. } => {
+            assert_eq!(
+                headers
+                    .get(http::header::SET_COOKIE)
+                    .and_then(|value| value.to_str().ok()),
+                Some("<redacted>")
+            );
+            assert_eq!(
+                headers
+                    .get(http::header::WWW_AUTHENTICATE)
+                    .and_then(|value| value.to_str().ok()),
+                Some("<redacted>")
+            );
+            assert_eq!(
+                headers
+                    .get(http::HeaderName::from_static("x-refresh-token"))
+                    .and_then(|value| value.to_str().ok()),
+                Some("<redacted>")
+            );
+            assert_eq!(
+                headers
+                    .get(http::HeaderName::from_static("x-custom-session-token"))
+                    .and_then(|value| value.to_str().ok()),
+                Some("<redacted>")
+            );
+            assert_eq!(
+                headers
+                    .get(http::HeaderName::from_static("x-public"))
+                    .and_then(|value| value.to_str().ok()),
+                Some("public-value")
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    let rendered = format!("{err}\n{err:?}\n{err:#?}");
+    assert!(!rendered.contains("LEAK_SENTINEL_COOKIE"));
+    assert!(!rendered.contains("LEAK_SENTINEL_WWW_AUTH"));
+    assert!(!rendered.contains("LEAK_SENTINEL_REFRESH"));
+    assert!(!rendered.contains("LEAK_SENTINEL_CUSTOM"));
+    assert_error_safe(&err);
+}
+
+#[tokio::test]
 async fn retry_exhaustion_returns_documented_final_error_and_safe_diagnostics() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(

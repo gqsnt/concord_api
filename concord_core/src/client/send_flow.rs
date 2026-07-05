@@ -227,7 +227,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Err(ApiClientError::HttpStatus {
                     ctx: ctx.clone(),
                     status: resp.status,
-                    headers: Box::new(resp.headers),
+                    headers: Box::new(crate::redaction::sanitize_header_map(&resp.headers)),
                     rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
                         .then_some(Box::new(rate_limit_action)),
                 })
@@ -352,7 +352,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Err(ApiClientError::HttpStatus {
                     ctx: ctx.clone(),
                     status: resp.status,
-                    headers: Box::new(resp.headers),
+                    headers: Box::new(crate::redaction::sanitize_header_map(&resp.headers)),
                     rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
                         .then_some(Box::new(rate_limit_action)),
                 })

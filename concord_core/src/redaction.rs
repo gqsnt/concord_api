@@ -1,3 +1,5 @@
+use http::{HeaderMap, HeaderValue};
+
 pub(crate) fn is_sensitive_name(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
     matches!(
@@ -35,6 +37,18 @@ pub(crate) fn is_sensitive_name(name: &str) -> bool {
 
 pub(crate) fn should_redact_header_name(name: &http::HeaderName) -> bool {
     is_sensitive_name(name.as_str())
+}
+
+pub(crate) fn sanitize_header_map(headers: &HeaderMap) -> HeaderMap {
+    let mut sanitized = HeaderMap::new();
+    for (name, value) in headers {
+        if should_redact_header_name(name) {
+            sanitized.append(name.clone(), HeaderValue::from_static("<redacted>"));
+        } else {
+            sanitized.append(name.clone(), value.clone());
+        }
+    }
+    sanitized
 }
 
 pub(crate) fn sanitize_url_for_debug<I, S>(url: &url::Url, sensitive_query_keys: I) -> String

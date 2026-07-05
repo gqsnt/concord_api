@@ -602,7 +602,12 @@ mod tests {
     #[test]
     fn http_status_accessors_hide_boxing_details() {
         let mut headers = HeaderMap::new();
+        headers.insert(
+            "set-cookie",
+            http::HeaderValue::from_static("session=LEAK_SENTINEL"),
+        );
         headers.insert("retry-after", http::HeaderValue::from_static("1"));
+        headers.insert("x-public", http::HeaderValue::from_static("public-value"));
         let ctx = ErrorContext {
             endpoint: "Ping",
             method: http::Method::GET,
@@ -610,7 +615,7 @@ mod tests {
         let err = ApiClientError::HttpStatus {
             ctx,
             status: StatusCode::TOO_MANY_REQUESTS,
-            headers: Box::new(headers),
+            headers: Box::new(crate::redaction::sanitize_header_map(&headers)),
             rate_limit: Some(Box::new(RateLimitResponseAction::Limited {
                 retry_after: Some(std::time::Duration::from_secs(1)),
                 target: RateLimitTarget::Request,
@@ -625,6 +630,29 @@ mod tests {
                 .and_then(|headers| headers.get("retry-after")),
             Some(&http::HeaderValue::from_static("1"))
         );
+        assert_eq!(
+            err.http_headers()
+                .and_then(|headers| headers.get("set-cookie")),
+            Some(&http::HeaderValue::from_static("<redacted>"))
+        );
+        assert_eq!(
+            err.http_headers()
+                .and_then(|headers| headers.get("x-public")),
+            Some(&http::HeaderValue::from_static("public-value"))
+        );
+        match &err {
+            ApiClientError::HttpStatus { headers, .. } => {
+                assert_eq!(
+                    headers.get("set-cookie"),
+                    Some(&http::HeaderValue::from_static("<redacted>"))
+                );
+                assert_eq!(
+                    headers.get("x-public"),
+                    Some(&http::HeaderValue::from_static("public-value"))
+                );
+            }
+            _ => unreachable!(),
+        }
         assert!(err.rate_limit_response_action().is_some());
     }
 
