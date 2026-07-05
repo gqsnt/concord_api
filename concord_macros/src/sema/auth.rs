@@ -46,9 +46,7 @@ fn analyze_auth_credentials(
                 client_secret,
                 scope,
             } => {
-                token_url.value().parse::<url::Url>().map_err(|err| {
-                    syn::Error::new(token_url.span(), format!("invalid OAuth2 token URL: {err}"))
-                })?;
+                validate_oauth2_token_url(token_url)?;
                 validate_required_secret(client_id, auth_vars)?;
                 validate_required_secret(client_secret, auth_vars)?;
                 AuthCredentialKindIr::OAuth2ClientCredentials {
@@ -301,6 +299,27 @@ pub(crate) fn validate_final_auth_materialization_targets(
                 ),
             ));
         }
+    }
+    Ok(())
+}
+
+fn validate_oauth2_token_url(token_url: &syn::LitStr) -> Result<()> {
+    let url = token_url.value().parse::<url::Url>().map_err(|err| {
+        syn::Error::new(
+            token_url.span(),
+            format!("invalid OAuth2 token URL: {err}"),
+        )
+    })?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(syn::Error::new(
+            token_url.span(),
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ));
     }
     Ok(())
 }

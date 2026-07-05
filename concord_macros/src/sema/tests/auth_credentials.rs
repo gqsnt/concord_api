@@ -129,3 +129,48 @@ fn auth_credentials_reject_optional_secret_material() {
         "auth credential secret `secret.token` must be required; optional secrets are not supported yet",
     );
 }
+
+#[test]
+fn auth_credentials_reject_unsafe_oauth2_token_urls() {
+    for (token_url, expected) in [
+        (
+            "http://auth.example.com/token",
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ),
+        (
+            "https://user:pass@auth.example.com/token",
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ),
+        (
+            "https://auth.example.com/token#fragment",
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ),
+        (
+            "file:///tmp/token",
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ),
+        (
+            "https:///token",
+            "OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment",
+        ),
+    ] {
+        let err = analyze_err(&format!(
+            r#"
+            api! {{
+                client Api {{
+                    base "https://example.com"
+                    secret client_id: String
+                    secret client_secret: String
+                    credential oauth = oauth2_client {{
+                        token_url: "{token_url}",
+                        client_id: secret.client_id,
+                        client_secret: secret.client_secret,
+                    }}
+                }}
+            }}
+            "#
+        ));
+        assert_error_contains(&err, expected);
+        assert!(!err.to_string().contains("client_secret"));
+    }
+}

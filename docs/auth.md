@@ -44,6 +44,8 @@ OAuth2 client-credentials auth uses the `oauth2_client { ... }` credential decla
 
 Declare an OAuth2 client-credentials provider as a named credential, then attach that credential with `auth bearer oauth` at the default, scope, or endpoint layer. The credential declaration owns the token URL, client id, client secret, and optional scope; those inputs stay inside the credential declaration and are not available to public request-shaping expressions.
 
+OAuth2 client-credentials token URLs must be HTTPS URLs with a host. Userinfo and fragments are rejected, and non-HTTPS schemes are rejected. Validation happens before Concord sends any token request.
+
 Before the first protected request, Concord sends a token request to `token_url` using `POST`, `Authorization: Basic base64(client_id:client_secret)`, `Content-Type: application/x-www-form-urlencoded`, and a body containing `grant_type=client_credentials` plus `scope` when configured. A successful token response becomes `AccessToken` material. Protected requests then materialize `Authorization: Bearer <access_token>` only at the transport boundary.
 
 Valid OAuth tokens are reused through the credential slot. A protected `401` invalidates the applied token generation and reacquires a token within the runtime auth retry budget before retrying the protected request. Token endpoint failures stop the protected request before it is sent. OAuth client secrets, access tokens, and refresh tokens are redacted from debug output and errors.

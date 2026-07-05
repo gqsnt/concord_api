@@ -1775,7 +1775,8 @@ mod query_auth_redaction {
             "https://auth.example.com/token".parse().expect("token url"),
             "visible-client-id",
             CLIENT_SECRET,
-        );
+        )
+        .expect("valid oauth2 token URL");
         let ctx = concord_core::advanced::CredentialContext::<OAuthCx> {
             vars: &(),
             auth: &(),
@@ -1833,7 +1834,8 @@ mod query_auth_redaction {
             "https://auth.example.com/token".parse().expect("token url"),
             "visible-client-id",
             CLIENT_SECRET,
-        );
+        )
+        .expect("valid oauth2 token URL");
         let ctx = concord_core::advanced::CredentialContext::<OAuthCx> {
             vars: &(),
             auth: &(),

@@ -1491,6 +1491,85 @@ async fn oauth_client_credentials_invalid_token_url_returns_typed_error() {
     assert_eq!(sent.sent_count().await, 0);
 }
 
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn oauth_client_credentials_reject_unsafe_token_urls_before_transport() {
+    use std::error::Error as _;
+
+    for token_url in [
+        "http://auth.example.com/token",
+        "https://user:pass@auth.example.com/token",
+        "https://auth.example.com/token#fragment",
+        "file:///tmp/token",
+        "https:///token",
+    ] {
+        let err = OAuth2ClientCredentialsProvider::new(
+            CredentialId::new("test", "oauth"),
+            token_url.parse().expect("token url should parse"),
+            "client-id",
+            "client-secret",
+        )
+        .expect_err("unsafe OAuth token URL should be rejected");
+
+        assert_eq!(err.kind, AuthErrorKind::InvalidConfiguration);
+        let rendered = format!("{err}\n{err:?}\n{err:#?}");
+        assert!(rendered.contains("invalid oauth2 token URL"));
+        assert!(!rendered.contains("client-id"));
+        assert!(!rendered.contains("client-secret"));
+        assert!(err.source().is_none());
+    }
+}
+
+#[cfg(feature = "json")]
+#[tokio::test]
+async fn oauth_client_credentials_valid_https_token_url_still_succeeds() {
+    struct SuccessAuthExecutor;
+
+    impl concord_core::advanced::AuthHttpExecutor for SuccessAuthExecutor {
+        fn send<'a>(
+            &'a self,
+            request: AuthHttpRequest,
+        ) -> concord_core::advanced::AuthFuture<
+            'a,
+            Result<concord_core::advanced::AuthHttpResponse, AuthError>,
+        > {
+            Box::pin(async move {
+                assert_eq!(request.url.as_str(), "https://auth.example.com/token");
+                Ok(concord_core::advanced::AuthHttpResponse {
+                    status: StatusCode::OK,
+                    headers: HeaderMap::new(),
+                    body: Bytes::from_static(
+                        br#"{"access_token":"token-1","token_type":"Bearer"}"#,
+                    ),
+                })
+            })
+        }
+    }
+
+    let provider = OAuth2ClientCredentialsProvider::new(
+        CredentialId::new("test", "oauth"),
+        "https://auth.example.com/token".parse().expect("token url"),
+        "client-id",
+        "client-secret",
+    )
+    .expect("valid OAuth2 token URL should be accepted");
+    let auth = AuthHttpLimitVars::oauth();
+
+    let token = provider
+        .acquire(CredentialContext::<AuthHttpLimitCx> {
+            vars: &(),
+            auth: &auth,
+            auth_state: &(),
+            executor: &SuccessAuthExecutor,
+            credential_id: CredentialId::new("test", "oauth"),
+            reason: CredentialRefreshReason::Missing,
+        })
+        .await
+        .expect("valid HTTPS token URL should succeed");
+
+    assert_eq!(token.token.expose(), "token-1");
+}
+
 fn assert_auth_response_too_large(err: ApiClientError, limit: usize) {
     match err {
         ApiClientError::Auth { source, .. } => {
@@ -1574,7 +1653,7 @@ impl ClientContext for AuthHttpLimitCx {
                         token_url,
                         "client-id",
                         "client-secret",
-                    );
+                    )?;
                     provider
                         .acquire(CredentialContext::<AuthHttpLimitCx> {
                             vars: _vars,

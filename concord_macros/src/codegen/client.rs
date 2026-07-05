@@ -208,15 +208,22 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
             scope,
         } => {
             let provider = quote! {
-                ::concord_core::advanced::OAuth2ClientCredentialsProvider::from_validated_token_url(
-                    #credential_id,
-                    #token_url,
-                    auth.#client_id.clone(),
-                    auth.#client_secret.clone(),
-                )
+                {
+                    let provider = ::concord_core::advanced::OAuth2ClientCredentialsProvider::from_validated_token_url(
+                        #credential_id,
+                        #token_url,
+                        auth.#client_id.clone(),
+                        auth.#client_secret.clone(),
+                    )
+                    .expect("validated OAuth2 token URL");
+                    provider
+                }
             };
             if let Some(scope) = scope {
-                quote! { #provider.scope(#scope) }
+                quote! {{
+                    let provider = #provider;
+                    provider.scope(#scope)
+                }}
             } else {
                 provider
             }

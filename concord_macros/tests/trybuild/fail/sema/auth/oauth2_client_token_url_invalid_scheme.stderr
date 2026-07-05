@@ -1,0 +1,5 @@
+error: OAuth2 token URL must be an https URL with a host, no userinfo, and no fragment
+  --> tests/trybuild/fail/sema/auth/oauth2_client_token_url_invalid_scheme.rs:10:24
+   |
+10 |             token_url: "http://auth.example.com/token",
+   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

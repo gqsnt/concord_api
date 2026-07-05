@@ -170,7 +170,7 @@ where
 #[derive(Clone, Debug)]
 pub struct OAuth2ClientCredentialsProvider {
     id: CredentialId,
-    token_url: Result<Url, String>,
+    token_url: Url,
     client_id: SecretString,
     client_secret: SecretString,
     scope: Option<String>,
@@ -184,14 +184,15 @@ impl OAuth2ClientCredentialsProvider {
         token_url: Url,
         client_id: impl Into<SecretString>,
         client_secret: impl Into<SecretString>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, AuthError> {
+        validate_oauth2_token_url(&token_url)?;
+        Ok(Self {
             id,
-            token_url: Ok(token_url),
+            token_url,
             client_id: client_id.into(),
             client_secret: client_secret.into(),
             scope: None,
-        }
+        })
     }
 
     #[inline]
@@ -200,14 +201,14 @@ impl OAuth2ClientCredentialsProvider {
         token_url: &'static str,
         client_id: impl Into<SecretString>,
         client_secret: impl Into<SecretString>,
-    ) -> Self {
-        Self {
-            id,
-            token_url: token_url.parse::<Url>().map_err(|err| err.to_string()),
-            client_id: client_id.into(),
-            client_secret: client_secret.into(),
-            scope: None,
-        }
+    ) -> Result<Self, AuthError> {
+        let token_url = token_url.parse::<Url>().map_err(|err| {
+            AuthError::new(
+                AuthErrorKind::InvalidConfiguration,
+                format!("invalid oauth2 token URL: {err}"),
+            )
+        })?;
+        Self::new(id, token_url, client_id, client_secret)
     }
 
     #[inline]
@@ -261,12 +262,7 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
                 .executor
                 .send(AuthHttpRequest {
                     method: http::Method::POST,
-                    url: self.token_url.clone().map_err(|err| {
-                        AuthError::new(
-                            AuthErrorKind::InvalidConfiguration,
-                            format!("invalid oauth2 token URL: {err}"),
-                        )
-                    })?,
+                    url: self.token_url.clone(),
                     headers,
                     body: TransportRequestBody::from_bytes(Bytes::from(body.into_bytes())),
                     mode: AuthMode::SkipAuth,
@@ -321,6 +317,22 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
             Ok(out)
         })
     }
+}
+
+#[cfg(feature = "json")]
+fn validate_oauth2_token_url(token_url: &Url) -> Result<(), AuthError> {
+    if token_url.scheme() != "https"
+        || token_url.host_str().is_none()
+        || !token_url.username().is_empty()
+        || token_url.password().is_some()
+        || token_url.fragment().is_some()
+    {
+        return Err(AuthError::new(
+            AuthErrorKind::InvalidConfiguration,
+            "invalid oauth2 token URL: must be https with a host, no userinfo, and no fragment",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(feature = "json")]
