@@ -103,7 +103,12 @@ fn generated_rustdoc_includes_endpoint_contract_without_secret_values() {
             }
         }
 
-        POST Create(id: String, filter?: String, count: u64 = 20, body: Json<CreateBody>)
+        POST Create(
+            id: String,
+            filter?: String,
+            count: u64 = { let _ = "LEAK_SENTINEL_DEFAULT"; 20 },
+            body: Json<CreateBody>
+        )
             path ["items", id]
             query {
                 filter
@@ -142,12 +147,15 @@ fn generated_rustdoc_includes_endpoint_contract_without_secret_values() {
             "#[doc=\"Body: Json<CreateBody>\"]",
             "#[doc=\"Response: Json<CreateResponse>\"]",
             "#[doc=\"Set optional query parameter `filter`.\"]",
-            "#[doc=\"Set defaulted query parameter `count` (default: `20`).\"]",
-            "#[doc=\"Reset defaulted query parameter `count` to its default `20`.\"]",
+            "#[doc=\"Set defaulted query parameter `count`.\"]",
+            "#[doc=\"Set defaulted query parameter `count` from an Option; None resets to the declared default.\"]",
+            "#[doc=\"Reset defaulted query parameter `count` to its declared default.\"]",
         ],
     );
     assert_generated_doc_attrs_do_not_expose_hidden_names(&out);
     assert_generated_doc_attrs_do_not_contain(&out, "api_key");
+    assert_generated_doc_attrs_do_not_contain(&out, "LEAK_SENTINEL_DEFAULT");
+    assert_generated_doc_attrs_do_not_contain(&out, "default: `20`");
 }
 
 #[test]

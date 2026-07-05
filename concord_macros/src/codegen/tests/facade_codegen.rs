@@ -259,13 +259,55 @@ fn facade_ir_contains_scope_method_metadata() {
 }
 
 #[test]
+fn facade_ir_contains_defaulted_scope_setter_metadata_without_rendering_default_values() {
+    let resolved = crate::sema::analyze_tokens_for_test(quote! {
+        client ScopeDefaultDocs {
+            base "https://example.com"
+        }
+
+        scope localized(locale: String = { let _ = "LEAK_SENTINEL_DEFAULT"; "en_US".to_string() }) {
+            path ["data", locale]
+
+            GET List
+                as list
+                path ["list.json"]
+                -> Json<Vec<String>>
+        }
+    });
+    let ir = build_facade_ir(&resolved);
+    let localized = ir
+        .scopes
+        .iter()
+        .find(|scope| ident_vec_text(&scope.path) == vec!["localized".to_string()])
+        .expect("localized scope metadata");
+    let locale = localized
+        .setters
+        .iter()
+        .find(|setter| setter.field == quote::format_ident!("locale"))
+        .expect("locale scope setter metadata");
+    assert_eq!(locale.set_doc, "Set defaulted scope parameter `locale`.");
+    assert_eq!(
+        locale.set_optional_doc,
+        "Set defaulted scope parameter `locale` from an Option; None resets to the declared default."
+    );
+    assert_eq!(
+        locale.clear_doc,
+        "Reset defaulted scope parameter `locale` to its declared default."
+    );
+    assert!(!locale.set_doc.contains("LEAK_SENTINEL_DEFAULT"));
+    assert!(!locale.set_optional_doc.contains("LEAK_SENTINEL_DEFAULT"));
+    assert!(!locale.clear_doc.contains("LEAK_SENTINEL_DEFAULT"));
+    assert!(!locale.set_doc.contains("en_US"));
+}
+
+#[test]
 fn facade_ir_contains_endpoint_setter_metadata() {
     let resolved = crate::sema::analyze_tokens_for_test(quote! {
         client SetterMeta {
             base "https://example.com"
         }
 
-        GET Search(filter?: String, count: u64 = 20)
+        GET Search(filter?: String, count: u64 = { let _ = "LEAK_SENTINEL_DEFAULT"; 20 })
             as search
             path ["search"]
             query { filter, count }
@@ -294,7 +336,18 @@ fn facade_ir_contains_endpoint_setter_metadata() {
         .expect("count setter metadata");
     assert_eq!(ident_text(&count.set_optional_name), "count_opt");
     assert_eq!(ident_text(&count.clear_name), "clear_count");
-    assert!(count.clear_doc.contains("default `20`"));
+    assert_eq!(count.set_doc, "Set defaulted query parameter `count`.");
+    assert_eq!(
+        count.set_optional_doc,
+        "Set defaulted query parameter `count` from an Option; None resets to the declared default."
+    );
+    assert_eq!(
+        count.clear_doc,
+        "Reset defaulted query parameter `count` to its declared default."
+    );
+    assert!(!count.set_doc.contains("20"));
+    assert!(!count.set_optional_doc.contains("20"));
+    assert!(!count.clear_doc.contains("20"));
 }
 
 #[test]
@@ -346,7 +399,7 @@ fn generated_scope_default_capture_is_applied_without_public_endpoint_setter() {
             base "https://example.com"
         }
 
-        scope localized(locale: String = "en_US".to_string()) {
+        scope localized(locale: String = { let _ = "LEAK_SENTINEL_DEFAULT"; "en_US".to_string() }) {
             path ["data", locale]
 
             GET List
@@ -365,6 +418,8 @@ fn generated_scope_default_capture_is_applied_without_public_endpoint_setter() {
         !out.contains("__ep = __ep . locale") && !out.contains("__ep=__ep.locale"),
         "captured defaulted scope params must not call public endpoint setters"
     );
+    assert_generated_doc_attrs_do_not_contain(&out, "LEAK_SENTINEL_DEFAULT");
+    assert_generated_doc_attrs_do_not_contain(&out, "`en_US`");
 }
 
 #[test]
@@ -479,7 +534,7 @@ fn generated_endpoint_setters_use_field_opt_and_clear_names() {
             "pub fn clear_count ( mut self ) -> Self",
             "fn filter_opt ( self , value : :: core :: option :: Option < String > ) -> Self",
             "fn count_opt ( self , value : :: core :: option :: Option < u32 > ) -> Self",
-            "#[doc = \"Set defaulted query parameter `count` from an Option; None resets to the default `20`.\"]",
+            "#[doc = \"Set defaulted query parameter `count` from an Option; None resets to the declared default.\"]",
         ],
     );
 }

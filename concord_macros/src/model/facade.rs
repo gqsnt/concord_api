@@ -330,10 +330,6 @@ fn facade_scope_from_info(
 
 fn facade_scope_setter_docs(var: &VarInfo) -> (String, String, String) {
     let field = var.rust.to_string();
-    let default = var
-        .default
-        .as_ref()
-        .map(|expr| quote::quote!(#expr).to_string());
     if var.optional {
         (
             format!("Set optional scope parameter `{field}`."),
@@ -344,27 +340,11 @@ fn facade_scope_setter_docs(var: &VarInfo) -> (String, String, String) {
         )
     } else {
         (
+            format!("Set defaulted scope parameter `{field}`."),
             format!(
-                "Set defaulted scope parameter `{field}`{}.",
-                default
-                    .as_ref()
-                    .map(|value| format!(" (default: `{value}`)"))
-                    .unwrap_or_default()
+                "Set defaulted scope parameter `{field}` from an Option; None resets to the declared default."
             ),
-            format!(
-                "Set defaulted scope parameter `{field}` from an Option; None resets to the default{}.",
-                default
-                    .as_ref()
-                    .map(|value| format!(" `{value}`"))
-                    .unwrap_or_default()
-            ),
-            format!(
-                "Reset defaulted scope parameter `{field}` to its default{}.",
-                default
-                    .as_ref()
-                    .map(|value| format!(" `{value}`"))
-                    .unwrap_or_default()
-            ),
+            format!("Reset defaulted scope parameter `{field}` to its declared default."),
         )
     }
 }
@@ -516,10 +496,6 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
 fn facade_setter_docs(ep: &ResolvedEndpoint, var: &VarInfo) -> (String, String, String) {
     let field = var.rust.to_string();
     let role = endpoint_var_role(ep, &var.rust);
-    let default = var
-        .default
-        .as_ref()
-        .map(|expr| quote::quote!(#expr).to_string());
     if var.optional {
         (
             format!("Set optional {role} parameter `{field}`."),
@@ -530,27 +506,11 @@ fn facade_setter_docs(ep: &ResolvedEndpoint, var: &VarInfo) -> (String, String, 
         )
     } else {
         (
+            format!("Set defaulted {role} parameter `{field}`."),
             format!(
-                "Set defaulted {role} parameter `{field}`{}.",
-                default
-                    .as_ref()
-                    .map(|value| format!(" (default: `{value}`)"))
-                    .unwrap_or_default()
+                "Set defaulted {role} parameter `{field}` from an Option; None resets to the declared default."
             ),
-            format!(
-                "Set defaulted {role} parameter `{field}` from an Option; None resets to the default{}.",
-                default
-                    .as_ref()
-                    .map(|value| format!(" `{value}`"))
-                    .unwrap_or_default()
-            ),
-            format!(
-                "Reset defaulted {role} parameter `{field}` to its default{}.",
-                default
-                    .as_ref()
-                    .map(|value| format!(" `{value}`"))
-                    .unwrap_or_default()
-            ),
+            format!("Reset defaulted {role} parameter `{field}` to its declared default."),
         )
     }
 }

@@ -8,6 +8,8 @@ Custom transports are an advanced caller-owned security boundary. Concord's defa
 
 Runtime hooks and debug sinks also sit on a security boundary. They receive sanitized metadata views, not raw header maps, and they never receive request or response body bytes. Sensitive header names and sensitive query values are redacted before callback invocation.
 
+Generated Rustdoc for defaulted setters describes the declared default/reset behavior without rendering the source default expression value. Runtime defaults and `Option` reset semantics are unchanged.
+
 Buffered response body-read transport failures are sanitized before they become public `ApiClientError::Transport` values. The public error keeps the endpoint, method, and transport kind, but it does not render the raw body-read source chain. Response body-size limit errors remain structured as their own typed errors, and buffered response decode failures are sanitized separately.
 
 ## Custom Codecs

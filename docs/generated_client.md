@@ -30,6 +30,8 @@ When you configure runtime hooks or debug sinks, those callbacks receive sanitiz
 
 Generated clients inherit Concord's runtime response-body limit. Endpoint responses are read under a finite 16 MiB default before decode. Advanced callers can adjust this with `configure(|cfg| cfg.max_response_body_bytes(bytes))`; `no_response_body_limit()` disables the endpoint read limit explicitly.
 
+Generated Rustdoc describes defaulted setters as declared-default controls without rendering the source default expression value. The runtime behavior is unchanged: defaulted values still apply, and `Option` setters still reset to the declared default.
+
 Use `builder()` when constructing a client is clearer with named setters.
 
 ```rust
