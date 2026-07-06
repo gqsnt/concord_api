@@ -192,10 +192,18 @@ impl GovernorRateLimiter {
             return Ok(RateLimitResponseAction::Continue);
         }
 
-        let mut cooldown_stored = false;
-        if let Some(delay) = observation.delay
-            && !delay.is_zero()
+        if observation.delay.is_none_or(|delay| delay.is_zero())
+            || matches!(observation.target, RateLimitTarget::None)
         {
+            return Ok(RateLimitResponseAction::Limited {
+                retry_after: observation.delay,
+                target: observation.target,
+                cooldown_stored: false,
+            });
+        }
+
+        let mut cooldown_stored = false;
+        if let Some(delay) = observation.delay {
             cooldown_stored =
                 self.store_cooldown(&ctx.meta, &observation.target, delay, ctx.max_cooldown)?;
         }
@@ -266,6 +274,10 @@ impl RateLimiter for GovernorRateLimiter {
     ) -> RateLimitFuture<'a, Result<RateLimitPermit, ApiClientError>> {
         Box::pin(async move {
             self.wait_cooldown(&ctx).await?;
+
+            if ctx.plan.is_empty() {
+                return Ok(RateLimitPermit);
+            }
 
             for bucket in ctx.plan.buckets() {
                 let key = resolve_key(&ctx, &bucket.key)?;
@@ -609,6 +621,98 @@ mod tests {
             max_cooldown: Duration::from_secs(60),
             plan,
         }
+    }
+
+    #[derive(Clone)]
+    struct FixedResponsePolicy {
+        observation: RateLimitObservation,
+    }
+
+    impl RateLimitResponsePolicy for FixedResponsePolicy {
+        fn observe(&self, _ctx: &RateLimitResponseContext<'_>) -> RateLimitObservation {
+            self.observation.clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_plan_acquire_succeeds_without_creating_governor_state() {
+        let limiter = GovernorRateLimiter::new();
+        limiter
+            .acquire(request_context_with_url(
+                "https://example.com/empty".to_string(),
+            ))
+            .await
+            .expect("empty plan should acquire");
+
+        let windows = limiter.windows.lock().expect("window lock");
+        let cooldowns = limiter.cooldowns.lock().expect("cooldown lock");
+        assert!(windows.is_empty());
+        assert!(cooldowns.is_empty());
+    }
+
+    #[tokio::test]
+    async fn empty_plan_acquire_does_not_touch_poisoned_window_state() {
+        let limiter = GovernorRateLimiter::new();
+        poison_mutex(&limiter.windows);
+
+        limiter
+            .acquire(request_context_with_url(
+                "https://example.com/empty".to_string(),
+            ))
+            .await
+            .expect("empty plan should bypass window enforcement");
+    }
+
+    #[tokio::test]
+    async fn empty_plan_acquire_still_respects_active_cooldown() {
+        let limiter = GovernorRateLimiter::new();
+        let ctx = request_context_with_url("https://example.com/cooling".to_string());
+        {
+            let mut guard = limiter.cooldowns.lock().expect("cooldown lock");
+            guard.insert(
+                request_cooldown_key(&ctx),
+                Instant::now() + Duration::from_secs(120),
+            );
+        }
+
+        let err = limiter
+            .acquire(ctx)
+            .await
+            .expect_err("active cooldown should still apply to empty plans");
+
+        assert!(matches!(err, ApiClientError::RateLimit { .. }));
+        assert!(matches!(
+            err.rate_limit_error().map(|err| err.kind()),
+            Some(crate::rate_limit::RateLimitErrorKind::InvalidConfiguration)
+        ));
+        assert!(err.to_string().contains("configured maximum"));
+    }
+
+    #[tokio::test]
+    async fn no_cooldown_target_observation_does_not_touch_cooldown_storage() {
+        let limiter =
+            GovernorRateLimiter::new().with_response_policy(Arc::new(FixedResponsePolicy {
+                observation: RateLimitObservation::limited()
+                    .with_delay(Duration::from_secs(1))
+                    .with_target(RateLimitTarget::None),
+            }));
+        poison_mutex(&limiter.cooldowns);
+        let headers = http::HeaderMap::new();
+        let meta = test_context();
+        let ctx = RateLimitResponseContext {
+            meta,
+            status: http::StatusCode::TOO_MANY_REQUESTS,
+            headers: crate::debug::SanitizedHeaders::new(&headers),
+            max_cooldown: Duration::from_secs(60),
+        };
+
+        let action = limiter
+            .on_response(ctx)
+            .await
+            .expect("no-target cooldown observation should bypass storage");
+
+        assert!(action.is_limited());
+        assert!(!action.cooldown_stored());
     }
 
     #[test]

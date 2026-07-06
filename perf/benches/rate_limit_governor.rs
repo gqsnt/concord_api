@@ -116,6 +116,27 @@ fn bench_concurrent_acquire(
 
 fn bench_cooldown_store(c: &mut Criterion) {
     let runtime = runtime();
+    c.bench_function("cooldown/no_action_observation_fast_path", |b| {
+        b.to_async(&runtime).iter_batched(
+            move || {
+                let limiter = GovernorRateLimiter::new();
+                let plan = concord_core::advanced::RateLimitPlan::new();
+                let headers = response_headers();
+                (limiter, plan, headers)
+            },
+            move |(limiter, plan, headers)| async move {
+                let ctx = response_context(
+                    acquire_context("rate_limit_no_cooldown", &plan),
+                    StatusCode::OK,
+                    &headers,
+                );
+                let action = limiter.on_response(ctx).await.expect("response action");
+                black_box(action.cooldown_stored());
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
     c.bench_function("cooldown/on_response_store", |b| {
         b.to_async(&runtime).iter_batched(
             move || {
