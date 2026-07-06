@@ -65,3 +65,21 @@ CONCORD_PERF_OUT=target/perf-footprint.txt ./scripts/perf_footprint.sh
 ```
 
 Set `CONCORD_PERF_CLEAN=1` for an opt-in clean run before the report. The report is machine-local, report-only, and not part of the release gates.
+
+## Macro Scale Report
+
+Generate temporary macro-scale fixtures under `target/perf-macro-scale/` and measure `cargo check` time with:
+
+```bash
+./scripts/perf_macro_scale.sh
+```
+
+Optional variants:
+
+```bash
+CONCORD_PERF_OUT=target/perf-macro-scale.txt ./scripts/perf_macro_scale.sh
+CONCORD_PERF_FULL=1 ./scripts/perf_macro_scale.sh
+CONCORD_PERF_CLEAN=1 ./scripts/perf_macro_scale.sh
+```
+
+The generated fixtures are local and report-only. By default they remain under `target/perf-macro-scale/` for inspection. `CONCORD_PERF_CLEAN=1` removes old generated fixtures before regenerating the current run. The report is not a release-gate threshold.
