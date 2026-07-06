@@ -1041,6 +1041,7 @@ dependencies = [
  "concord_core",
  "criterion",
  "futures-core",
+ "futures-util",
  "http",
  "tokio",
  "url",

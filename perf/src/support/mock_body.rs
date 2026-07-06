@@ -51,7 +51,9 @@ pub struct FixedBody {
 
 impl FixedBody {
     pub fn new(body: Bytes) -> Self {
-        Self { body: Some(body) }
+        Self {
+            body: (!body.is_empty()).then_some(body),
+        }
     }
 
     pub fn len(&self) -> usize {
