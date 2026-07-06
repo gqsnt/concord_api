@@ -5,6 +5,7 @@ members = [
     "concord_examples",
     "concord_test_support",
 ]
+exclude = ["perf"]
 default-members = ["concord_core", "concord_macros"]
 resolver = "3"
 
