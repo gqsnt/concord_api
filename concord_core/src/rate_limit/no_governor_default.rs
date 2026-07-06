@@ -10,6 +10,8 @@ pub struct DefaultRateLimiter;
 pub struct GovernorRateLimiter;
 
 impl DefaultRateLimiter {
+    pub const DEFAULT_MAX_COOLDOWN_ENTRIES: usize = 4096;
+
     #[inline]
     pub fn new() -> Self {
         Self
@@ -19,9 +21,17 @@ impl DefaultRateLimiter {
     pub fn with_response_policy(self, _policy: Arc<dyn super::RateLimitResponsePolicy>) -> Self {
         self
     }
+
+    #[inline]
+    pub fn with_max_cooldown_entries(self, _max_cooldown_entries: usize) -> Self {
+        self
+    }
 }
 
 impl GovernorRateLimiter {
+    pub const DEFAULT_MAX_COOLDOWN_ENTRIES: usize =
+        DefaultRateLimiter::DEFAULT_MAX_COOLDOWN_ENTRIES;
+
     #[inline]
     pub fn new() -> Self {
         Self
@@ -30,6 +40,11 @@ impl GovernorRateLimiter {
     #[inline]
     pub fn with_response_policy(self, _policy: Arc<dyn super::RateLimitResponsePolicy>) -> Self {
         Self
+    }
+
+    #[inline]
+    pub fn with_max_cooldown_entries(self, _max_cooldown_entries: usize) -> Self {
+        self
     }
 }
 

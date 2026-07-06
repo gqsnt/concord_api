@@ -1,21 +1,13 @@
 # Runtime Config
 
-Generated clients expose advanced runtime configuration through `configure` and `configure_mut`.
+Generated clients expose advanced runtime configuration through `configure`.
 
-Use `configure` when chaining from an owned client.
-
-```rust
-let api = PolicyApi::new()
-    .configure(|cfg| {
-        cfg.pagination_detect_loops(true);
-    });
-```
-
-Use `configure_mut` when the client already exists.
+Use `configure` on a mutable client.
 
 ```rust
 let mut api = PolicyApi::new();
-api.configure_mut(|cfg| {
+api.configure(|cfg| {
+    cfg.pagination_detect_loops(true);
     cfg.debug_level(DebugLevel::V);
     cfg.rate_limiter(rate_limiter.clone());
 });
@@ -59,7 +51,7 @@ Configuration precedence is:
 
 ```text
 RuntimeConfig defaults
--> client configuration through configure/configure_mut or setter methods
+-> client configuration through configure or setter methods
 -> endpoint policy emitted by the DSL or advanced endpoint
 -> pending-request overrides where that API exists
 ```
@@ -76,7 +68,20 @@ The transport boundary is unchanged. The runtime still materializes raw request 
 
 Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run after response classification, hook observation, rate-limit observation, and auth rejection handling, and before endpoint response decoding. They do not see body bytes or raw auth material.
 
-Retry delays are capped by `max_retry_delay(...)`, and rate-limit response cooldowns are capped by `max_rate_limit_cooldown(...)`. The defaults are finite, and over-cap remote or custom delays fail closed instead of sleeping or storing a cooldown.
+Retry delays are capped by `max_retry_delay(...)`, and rate-limit response cooldown durations are capped by `max_rate_limit_cooldown(...)`. The default governor runtime also bounds the number of stored cooldown entries and fails closed if storing a new distinct cooldown would exceed that entry cap after expired entries are pruned. Advanced callers that need a different fixed cooldown-entry cap can install an explicitly configured governor limiter through `rate_limiter(...)`:
+
+```rust
+use concord_core::advanced::GovernorRateLimiter;
+use std::sync::Arc;
+
+api.configure(|cfg| {
+    cfg.rate_limiter(Arc::new(
+        GovernorRateLimiter::new().with_max_cooldown_entries(1024),
+    ));
+});
+```
+
+The defaults are finite, and over-cap remote or custom delays fail closed instead of sleeping or storing a cooldown.
 
 Reserved auth names are structural, not best-effort. Query-auth names are rejected if a public query parameter already uses the same key, and header-auth names are rejected case-insensitively if a public header already uses the same name. Those collisions are rejected before rate-limit acquisition and transport.
 
@@ -95,7 +100,7 @@ Do not use dev body capture in production. Release checks treat deprecated use o
 Endpoint response bodies use a finite runtime read limit before endpoint decode. The default is 16 MiB. Configure it with:
 
 ```rust
-api.configure_mut(|cfg| {
+api.configure(|cfg| {
     cfg.max_response_body_bytes(32 * 1024 * 1024);
 });
 ```
@@ -103,7 +108,7 @@ api.configure_mut(|cfg| {
 `no_response_body_limit()` is the explicit advanced opt-out for unbounded endpoint response reads:
 
 ```rust
-api.configure_mut(|cfg| {
+api.configure(|cfg| {
     cfg.no_response_body_limit();
 });
 ```

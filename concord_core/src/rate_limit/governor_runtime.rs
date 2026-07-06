@@ -7,7 +7,7 @@ use super::{
 };
 use crate::error::{ApiClientError, ErrorContext};
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter as Governor};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::time::Instant;
@@ -32,6 +32,7 @@ pub struct GovernorRateLimiter {
     cooldowns: Mutex<HashMap<RateLimitCooldownKey, Instant>>,
     response_policy: Arc<dyn RateLimitResponsePolicy>,
     max_window_entries: usize,
+    max_cooldown_entries: usize,
     window_idle_ttl: Duration,
 }
 
@@ -49,6 +50,7 @@ impl Default for GovernorRateLimiter {
 
 impl GovernorRateLimiter {
     const DEFAULT_MAX_WINDOW_ENTRIES: usize = 4096;
+    pub const DEFAULT_MAX_COOLDOWN_ENTRIES: usize = 4096;
     const DEFAULT_WINDOW_IDLE_TTL: Duration = Duration::from_secs(15 * 60);
 
     pub fn new() -> Self {
@@ -57,6 +59,7 @@ impl GovernorRateLimiter {
             cooldowns: Mutex::new(HashMap::new()),
             response_policy: Arc::new(DefaultRateLimitResponsePolicy),
             max_window_entries: Self::DEFAULT_MAX_WINDOW_ENTRIES,
+            max_cooldown_entries: Self::DEFAULT_MAX_COOLDOWN_ENTRIES,
             window_idle_ttl: Self::DEFAULT_WINDOW_IDLE_TTL,
         }
     }
@@ -68,6 +71,11 @@ impl GovernorRateLimiter {
 
     pub fn with_max_window_entries(mut self, max_window_entries: usize) -> Self {
         self.max_window_entries = max_window_entries.max(1);
+        self
+    }
+
+    pub fn with_max_cooldown_entries(mut self, max_cooldown_entries: usize) -> Self {
+        self.max_cooldown_entries = max_cooldown_entries.max(1);
         self
     }
 
@@ -152,7 +160,7 @@ impl GovernorRateLimiter {
                 let mut guard = self.cooldowns.lock().map_err(|_| {
                     rate_limit_internal_error(ctx, "rate limit cooldown lock poisoned")
                 })?;
-                guard.retain(|_, until| *until > now);
+                prune_cooldowns(&mut guard, now);
                 keys.into_iter()
                     .filter_map(|key| guard.get(&key).copied())
                     .filter_map(|until| until.checked_duration_since(now))
@@ -217,13 +225,26 @@ impl GovernorRateLimiter {
                 "rate-limit cooldown exceeds configured maximum",
             ));
         }
-        let until = Instant::now().checked_add(delay).ok_or_else(|| {
+        let now = Instant::now();
+        let until = now.checked_add(delay).ok_or_else(|| {
             rate_limit_configuration_error(ctx, "rate-limit cooldown duration overflowed")
         })?;
         let mut guard = self
             .cooldowns
             .lock()
             .map_err(|_| rate_limit_internal_error(ctx, "rate limit cooldown lock poisoned"))?;
+        prune_cooldowns(&mut guard, now);
+        let new_entries = keys
+            .iter()
+            .filter(|key| !guard.contains_key(*key))
+            .collect::<HashSet<_>>()
+            .len();
+        if guard.len().saturating_add(new_entries) > self.max_cooldown_entries {
+            return Err(rate_limit_configuration_error(
+                ctx,
+                "rate-limit cooldown entry cap exceeded",
+            ));
+        }
         for key in keys {
             let entry = guard.entry(key).or_insert(until);
             if *entry < until {
@@ -232,6 +253,10 @@ impl GovernorRateLimiter {
         }
         Ok(true)
     }
+}
+
+fn prune_cooldowns(cooldowns: &mut HashMap<RateLimitCooldownKey, Instant>, now: Instant) {
+    cooldowns.retain(|_, until| *until > now);
 }
 
 impl RateLimiter for GovernorRateLimiter {
@@ -558,6 +583,34 @@ mod tests {
         }));
     }
 
+    fn error_chain_contains(error: &(dyn std::error::Error + 'static), needle: &str) -> bool {
+        let mut current = Some(error);
+        while let Some(err) = current {
+            if err.to_string().contains(needle) || format!("{err:?}").contains(needle) {
+                return true;
+            }
+            current = err.source();
+        }
+        false
+    }
+
+    fn request_context_with_url(url: String) -> RateLimitContext<'static> {
+        static METHOD: http::Method = http::Method::GET;
+        static ENDPOINT: &str = "RequestCooldownEndpoint";
+        let plan = Box::leak(Box::new(RateLimitPlan::default()));
+        RateLimitContext {
+            endpoint: ENDPOINT,
+            method: &METHOD,
+            url: Box::leak(url.into_boxed_str()),
+            url_host: Some("example.com"),
+            attempt: 0,
+            page_index: 0,
+            idempotent: true,
+            max_cooldown: Duration::from_secs(60),
+            plan,
+        }
+    }
+
     #[test]
     fn rate_limit_host_key_requires_host() {
         let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
@@ -629,6 +682,170 @@ mod tests {
             Some(crate::rate_limit::RateLimitErrorKind::InvalidConfiguration)
         ));
         assert!(err.to_string().contains("configured maximum"));
+    }
+
+    #[test]
+    fn default_cooldown_entry_cap_is_finite() {
+        assert!(GovernorRateLimiter::DEFAULT_MAX_COOLDOWN_ENTRIES > 0);
+    }
+
+    #[test]
+    fn cooldown_entry_cap_allows_entries_up_to_cap() {
+        let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(2);
+
+        for idx in 0..2 {
+            let ctx = request_context_with_url(format!("https://example.com/request-{idx}"));
+            let stored = limiter
+                .store_cooldown(
+                    &ctx,
+                    &RateLimitTarget::Request,
+                    Duration::from_secs(1),
+                    Duration::from_secs(60),
+                )
+                .expect("cooldown below cap should store");
+            assert!(stored);
+        }
+
+        let guard = limiter.cooldowns.lock().expect("cooldown lock");
+        assert_eq!(guard.len(), 2);
+    }
+
+    #[test]
+    fn cooldown_entry_cap_fails_closed_for_new_distinct_key() {
+        let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(2);
+
+        for idx in 0..2 {
+            let ctx = request_context_with_url(format!("https://example.com/request-{idx}"));
+            limiter
+                .store_cooldown(
+                    &ctx,
+                    &RateLimitTarget::Request,
+                    Duration::from_secs(1),
+                    Duration::from_secs(60),
+                )
+                .expect("cooldown below cap should store");
+        }
+
+        let secret_key_material = "SECRET_RATE_LIMIT_COOLDOWN_KEY_MUST_NOT_APPEAR";
+        let ctx = request_context_with_url(format!("https://example.com/{secret_key_material}"));
+        let err = limiter
+            .store_cooldown(
+                &ctx,
+                &RateLimitTarget::Request,
+                Duration::from_secs(1),
+                Duration::from_secs(60),
+            )
+            .expect_err("new cooldown above cap should fail closed");
+
+        assert!(matches!(err, ApiClientError::RateLimit { .. }));
+        assert!(matches!(
+            err.rate_limit_error().map(|err| err.kind()),
+            Some(crate::rate_limit::RateLimitErrorKind::InvalidConfiguration)
+        ));
+        assert!(err.to_string().contains("cooldown entry cap exceeded"));
+        assert!(!err.to_string().contains(secret_key_material));
+        assert!(!format!("{err:?}").contains(secret_key_material));
+        assert!(!error_chain_contains(&err, secret_key_material));
+        let guard = limiter.cooldowns.lock().expect("cooldown lock");
+        assert_eq!(guard.len(), 2);
+    }
+
+    #[test]
+    fn expired_cooldown_entries_are_pruned_before_cap_enforcement() {
+        let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(1);
+        let old_ctx = request_context_with_url("https://example.com/old".to_string());
+        {
+            let mut guard = limiter.cooldowns.lock().expect("cooldown lock");
+            guard.insert(
+                request_cooldown_key(&old_ctx),
+                Instant::now() - Duration::from_secs(1),
+            );
+        }
+
+        let new_ctx = request_context_with_url("https://example.com/new".to_string());
+        limiter
+            .store_cooldown(
+                &new_ctx,
+                &RateLimitTarget::Request,
+                Duration::from_secs(1),
+                Duration::from_secs(60),
+            )
+            .expect("expired cooldown should be pruned before cap check");
+
+        let guard = limiter.cooldowns.lock().expect("cooldown lock");
+        assert_eq!(guard.len(), 1);
+        assert!(guard.contains_key(&request_cooldown_key(&new_ctx)));
+    }
+
+    #[test]
+    fn updating_existing_cooldown_key_does_not_consume_new_capacity() {
+        let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(1);
+        let ctx = request_context_with_url("https://example.com/repeated".to_string());
+
+        limiter
+            .store_cooldown(
+                &ctx,
+                &RateLimitTarget::Request,
+                Duration::from_millis(1),
+                Duration::from_secs(60),
+            )
+            .expect("initial cooldown should store");
+        limiter
+            .store_cooldown(
+                &ctx,
+                &RateLimitTarget::Request,
+                Duration::from_secs(1),
+                Duration::from_secs(60),
+            )
+            .expect("same cooldown key should update even at cap");
+
+        let guard = limiter.cooldowns.lock().expect("cooldown lock");
+        assert_eq!(guard.len(), 1);
+    }
+
+    #[test]
+    fn duplicate_new_cooldown_keys_count_as_one_new_entry() {
+        let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(1);
+        let key = RateLimitKey::new(vec![RateLimitKeyPart::static_value("tenant", "same")]);
+        let plan = RateLimitPlan::from_buckets(vec![
+            one_window_bucket(key.clone()),
+            one_window_bucket(key),
+        ]);
+        let ctx = hostless_context(plan);
+
+        let stored = limiter
+            .store_cooldown(
+                &ctx,
+                &RateLimitTarget::current_plan_or_endpoint(),
+                Duration::from_secs(1),
+                Duration::from_secs(60),
+            )
+            .expect("duplicate new cooldown keys should consume one entry");
+
+        assert!(stored);
+        let guard = limiter.cooldowns.lock().expect("cooldown lock");
+        assert_eq!(guard.len(), 1);
+        assert!(
+            guard.contains_key(&bucket_cooldown_key(&ctx, &ctx.plan.buckets()[0]).expect("key"))
+        );
+    }
+
+    #[test]
+    fn no_cooldown_observation_path_is_unaffected_by_entry_cap() {
+        let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(1);
+        let ctx = test_context();
+        let stored = limiter
+            .store_cooldown(
+                &ctx,
+                &RateLimitTarget::None,
+                Duration::from_secs(1),
+                Duration::from_secs(60),
+            )
+            .expect("no-target cooldown observation should not fail");
+
+        assert!(!stored);
+        let guard = limiter.cooldowns.lock().expect("cooldown lock");
+        assert!(guard.is_empty());
     }
 
     #[test]

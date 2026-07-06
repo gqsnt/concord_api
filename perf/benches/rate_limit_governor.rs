@@ -1,5 +1,5 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use futures_util::future::join_all;
+use futures_util::{FutureExt, future::join_all};
 use http::Method;
 use perf::support::{
     context, multi_bucket_plan, response_context, response_headers, runtime, single_bucket_plan,
@@ -146,6 +146,146 @@ fn bench_cooldown_store(c: &mut Criterion) {
     });
 }
 
+fn bench_cooldown_cardinality(c: &mut Criterion) {
+    const BELOW_CAP_ENTRIES: usize = 32;
+    const HIGH_CARDINALITY_CAP: usize = 128;
+    const CAP_REACHED_ENTRIES: usize = 8;
+
+    let runtime = runtime();
+    c.bench_function("cooldown/cardinality_below_cap_32", |b| {
+        b.to_async(&runtime).iter_batched(
+            move || {
+                let limiter = GovernorRateLimiter::new()
+                    .with_max_cooldown_entries(BELOW_CAP_ENTRIES + 1)
+                    .with_response_policy(Arc::new(LimitedResponsePolicy {
+                        delay: Duration::from_secs(1),
+                    }));
+                let plans = (0..BELOW_CAP_ENTRIES)
+                    .map(|idx| {
+                        single_bucket_plan(
+                            "cooldown",
+                            format!("below-cap-{idx}"),
+                            vec![RateLimitKeyPart::static_value("tenant", format!("tenant-{idx}"))],
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let headers = response_headers();
+                let urls = (0..BELOW_CAP_ENTRIES)
+                    .map(|idx| format!("https://example.com/perf/cooldown/{idx}"))
+                    .collect::<Vec<_>>();
+                (limiter, plans, headers, urls)
+            },
+            move |(limiter, plans, headers, urls)| async move {
+                for (plan, url) in plans.iter().zip(urls.iter()) {
+                    let ctx = response_context(
+                        context("rate_limit_cooldown_cardinality", &METHOD, url, HOST, &plan),
+                        StatusCode::TOO_MANY_REQUESTS,
+                        &headers,
+                    );
+                    let action = limiter.on_response(ctx).await.expect("cooldown stored");
+                    black_box(action.cooldown_stored());
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
+    c.bench_function("cooldown/high_cardinality_to_cap_128", |b| {
+        b.to_async(&runtime).iter_batched(
+            move || {
+                let limiter = GovernorRateLimiter::new()
+                    .with_max_cooldown_entries(HIGH_CARDINALITY_CAP)
+                    .with_response_policy(Arc::new(LimitedResponsePolicy {
+                        delay: Duration::from_secs(1),
+                    }));
+                let plans = (0..HIGH_CARDINALITY_CAP)
+                    .map(|idx| {
+                        single_bucket_plan(
+                            "cooldown",
+                            format!("high-cardinality-{idx}"),
+                            vec![RateLimitKeyPart::static_value("tenant", format!("tenant-{idx}"))],
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let headers = response_headers();
+                let urls = (0..HIGH_CARDINALITY_CAP)
+                    .map(|idx| format!("https://example.com/perf/high-cardinality/{idx}"))
+                    .collect::<Vec<_>>();
+                (limiter, plans, headers, urls)
+            },
+            move |(limiter, plans, headers, urls)| async move {
+                for (plan, url) in plans.iter().zip(urls.iter()) {
+                    let ctx = response_context(
+                        context("rate_limit_cooldown_high_cardinality", &METHOD, url, HOST, &plan),
+                        StatusCode::TOO_MANY_REQUESTS,
+                        &headers,
+                    );
+                    let action = limiter.on_response(ctx).await.expect("cooldown stored");
+                    black_box(action.cooldown_stored());
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
+    c.bench_function("cooldown/cap_reached_error_path", |b| {
+        b.to_async(&runtime).iter_batched(
+            move || {
+                let limiter = GovernorRateLimiter::new()
+                    .with_max_cooldown_entries(CAP_REACHED_ENTRIES)
+                    .with_response_policy(Arc::new(LimitedResponsePolicy {
+                        delay: Duration::from_secs(1),
+                    }));
+                let plans = (0..CAP_REACHED_ENTRIES)
+                    .map(|idx| {
+                        single_bucket_plan(
+                            "cooldown",
+                            format!("cap-fill-{idx}"),
+                            vec![RateLimitKeyPart::static_value("tenant", format!("tenant-{idx}"))],
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                let overflow_plan = single_bucket_plan(
+                    "cooldown",
+                    "cap-overflow",
+                    vec![RateLimitKeyPart::static_value("tenant", "tenant-overflow")],
+                );
+                let headers = response_headers();
+                for (idx, plan) in plans.iter().enumerate() {
+                    let url = format!("https://example.com/perf/cap-fill/{idx}");
+                    let ctx = response_context(
+                        context("rate_limit_cooldown_cap_fill", &METHOD, &url, HOST, plan),
+                        StatusCode::TOO_MANY_REQUESTS,
+                        &headers,
+                    );
+                    limiter
+                        .on_response(ctx)
+                        .now_or_never()
+                        .expect("governor response future is ready")
+                        .expect("prefill cooldown");
+                }
+                (limiter, overflow_plan, headers)
+            },
+            move |(limiter, plan, headers)| async move {
+                let ctx = response_context(
+                    context(
+                        "rate_limit_cooldown_cap_error",
+                        &METHOD,
+                        "https://example.com/perf/cap-overflow",
+                        HOST,
+                        &plan,
+                    ),
+                    StatusCode::TOO_MANY_REQUESTS,
+                    &headers,
+                );
+                let result = limiter.on_response(ctx).await;
+                black_box(result.is_err());
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 fn rate_limit_governor(c: &mut Criterion) {
     bench_acquire(c, "empty_plan/acquire", concord_core::advanced::RateLimitPlan::new());
     bench_acquire(
@@ -166,6 +306,7 @@ fn rate_limit_governor(c: &mut Criterion) {
         CONCURRENT_TASKS,
     );
     bench_cooldown_store(c);
+    bench_cooldown_cardinality(c);
 
     if full_fixture_enabled() {
         bench_concurrent_acquire(
