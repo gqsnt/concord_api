@@ -8,7 +8,7 @@ use crate::emit_helpers;
 use crate::model::SetOp;
 use crate::model::facade::{
     FacadeConstructorArg, FacadeCredentialMethods, FacadeDoc, FacadeEndpoint, FacadeEndpointTarget,
-    FacadeIr, FacadeMethod, FacadeScope, FacadeSetter, build_facade_ir, client_prefixed_type_name,
+    FacadeIr, FacadeMethod, FacadeScope, FacadeSetter, client_prefixed_type_name,
     generated_acquire_as_trait_type_name,
 };
 use crate::sema::*;
@@ -36,10 +36,18 @@ fn ep_optionals(ep: &ResolvedEndpoint) -> std::collections::BTreeMap<String, boo
         .collect()
 }
 
+#[allow(dead_code)]
 pub fn emit(resolved_api: ResolvedApi) -> TokenStream2 {
-    let facade_ir = build_facade_ir(&resolved_api);
-    emit_resolved(resolved_api, &facade_ir)
+    let facade_ir = crate::model::facade::build_facade_ir(&resolved_api);
+    emit_with_facade(resolved_api, &facade_ir)
 }
+
+pub(crate) fn emit_with_facade(resolved_api: ResolvedApi, facade_ir: &FacadeIr) -> TokenStream2 {
+    emit_resolved(resolved_api, facade_ir)
+}
+
+#[cfg(test)]
+pub(crate) use crate::model::facade::build_facade_ir;
 
 fn emit_resolved(resolved_api: ResolvedApi, facade_ir: &FacadeIr) -> TokenStream2 {
     let mod_name = resolved_api.mod_name.clone();

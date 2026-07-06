@@ -27,10 +27,10 @@ pub fn api(input: TokenStream) -> TokenStream {
         Err(e) => return e.to_compile_error().into(),
     };
 
-    let resolved_api = match sema::analyze(ast) {
+    let resolved = match sema::analyze_pipeline(ast) {
         Ok(v) => v,
         Err(e) => return e.to_compile_error().into(),
     };
 
-    codegen::emit(resolved_api).into()
+    codegen::emit_with_facade(resolved.api, &resolved.facade_ir).into()
 }

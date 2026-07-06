@@ -36,12 +36,22 @@ pub(crate) fn analyze_tokens_for_test(input: proc_macro2::TokenStream) -> Resolv
     analyze(ast).expect("resolve api")
 }
 
+pub(crate) struct ResolvedApiPipeline {
+    pub api: ResolvedApi,
+    pub facade_ir: crate::model::facade::FacadeIr,
+}
+
+#[allow(dead_code)]
 pub fn analyze(ast: crate::ast::RawApi) -> Result<ResolvedApi> {
+    analyze_pipeline(ast).map(|pipeline| pipeline.api)
+}
+
+pub(crate) fn analyze_pipeline(ast: crate::ast::RawApi) -> Result<ResolvedApiPipeline> {
     let norm = normalize_api(ast)?;
     resolve(norm)
 }
 
-fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
+fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
     let client_name = norm.client.name.clone();
     let mod_name_str = emit_helpers::to_snake(&client_name.to_string());
     let mod_name = Ident::new(&mod_name_str, client_name.span());
@@ -203,14 +213,20 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApi> {
         endpoints,
     };
 
-    validate_generated_public_api(&resolved_api)?;
+    let facade_ir = build_facade_ir(&resolved_api);
+    validate_generated_public_api(&resolved_api, &facade_ir)?;
 
-    Ok(resolved_api)
+    Ok(ResolvedApiPipeline {
+        api: resolved_api,
+        facade_ir,
+    })
 }
 
-fn validate_generated_public_api(api: &ResolvedApi) -> Result<()> {
+fn validate_generated_public_api(
+    api: &ResolvedApi,
+    facade_ir: &crate::model::facade::FacadeIr,
+) -> Result<()> {
     let mut errors = None;
-    let facade_ir = build_facade_ir(api);
 
     reject_raw_ident(&mut errors, &api.client_name, "client type");
     for var in api.client_vars.iter().chain(api.client_auth_vars.iter()) {
