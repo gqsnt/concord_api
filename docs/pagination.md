@@ -1,6 +1,6 @@
 # Pagination
 
-Pagination is opt-in at the endpoint and call site. A paginated endpoint declares a pagination controller type in the DSL, then callers use `.paginate(PaginationTermination::...)` to choose paginated execution and an explicit termination policy. Response types such as `Vec<T>` can implement `PageItems`, but `.paginate(...)` is available only for endpoints that declare pagination. No page or item cap is implicit; loop detection is enabled by default.
+Pagination is opt-in at the endpoint and call site. A paginated endpoint declares a pagination controller type in the DSL, then callers use `.paginate(PaginationTermination::...)` to choose paginated execution and an explicit termination policy. Response types such as `Vec<T>` can implement `PageItems`, but `.paginate(...)` is available only for endpoints that declare pagination. Pagination is collect-only: callers drive it through `.paginate(...).collect().await`, and `collect()` materializes the accumulated results in memory. No page or item cap is implicit; loop detection is enabled by default.
 
 The runtime treats pagination as a deterministic page loop:
 
@@ -17,7 +17,7 @@ Common page-content stop rules are runtime invariants, not controller-specific b
 - an empty page stops pagination
 - a short page stops pagination when Concord knows the expected page size
 
-The current page is included before stopping. `PageItems::item_count()` returns the exact number of items, and the runtime uses it before calling controller advance. Built-in offset, cursor, and page-number pagination provide the expected page size automatically from `limit` or `per_page`. Built-in controllers are just core-provided Rust types: `OffsetLimitPagination`, `CursorPagination<String>`, and `PagedPagination`. Custom pagination controllers expose their expected page size through `EndpointPagination::expected_items_per_page()`. With both an exact item count and an expected page size, the runtime also owns generic short-page stop before `advance()`.
+Pagination state is per request. The current page is included before stopping. `PageItems::item_count()` returns the exact number of items, and the runtime uses it before calling controller advance. Built-in offset, cursor, and page-number pagination provide the expected page size automatically from `limit` or `per_page`. Built-in controllers are just core-provided Rust types: `OffsetLimitPagination`, `CursorPagination<String>`, and `PagedPagination`. Custom pagination controllers expose their expected page size through `EndpointPagination::expected_items_per_page()`. With both an exact item count and an expected page size, the runtime also owns generic short-page stop before `advance()`.
 
 If a later page request would reuse any previously seen logical request identity, the runtime returns a typed pagination error instead of silently looping. That guard is separate from the explicit termination policy and remains active even when controller loop-key checking is disabled.
 

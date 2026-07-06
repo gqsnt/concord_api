@@ -77,7 +77,7 @@ GET Search
 
 A response observer can translate provider headers into rate-limit observations. The callback sees a sanitized header view: sensitive names such as `Set-Cookie`, `WWW-Authenticate`, and token-like headers are redacted before callback access, while `Retry-After` and non-sensitive rate-limit headers remain available.
 
-Rate-limit acquisition happens after request planning, auth preparation, and auth collision validation, and before transport send. It is transport-metadata only. Rate-limit response observation is also metadata only and does not expose request body bytes, response body bytes, raw auth material, or raw sensitive response headers.
+Rate-limit acquisition happens after request planning, auth preparation, and auth collision validation, and before transport send. It is transport-metadata only. Rate-limit response observation is also metadata only and does not expose request body bytes, response body bytes, raw auth material, or raw sensitive response headers. Auth collision checks happen before rate-limit acquisition, hooks, debug, and transport side effects.
 
 Rate-limit response cooldowns are capped as well. The default maximum cooldown is finite and configured through runtime settings. Remote `Retry-After` values above the configured cap fail closed before Concord stores or sleeps on the cooldown. Custom rate-limit observers and response policies cannot force a cooldown above the cap through the default governor runtime.
 
@@ -160,6 +160,6 @@ The execution order is fixed:
 12. Decode the endpoint response and return the decoded response entity output.
 13. Return the final value.
 
-`execute_raw()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding.
+`execute_raw()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding. It still obeys the configured response-body limit.
 
 Raw execution still traverses the transport scheduling layer, so rate-limit acquire and response observation behavior remain in effect for `execute_raw()`.
