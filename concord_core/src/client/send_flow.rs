@@ -23,7 +23,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     async fn acquire_rate_limit_and_send(
         &self,
-        built: BuiltRequest,
+        built: crate::transport::AuthCollisionValidatedBuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
         stream_request_limit: Option<usize>,
     ) -> Result<TransportResponse, ApiClientError> {
@@ -124,7 +124,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     async fn send_built_request(
         &self,
-        built: BuiltRequest,
+        built: crate::transport::AuthCollisionValidatedBuiltRequest,
         safe_url: &str,
         auth_materials: &[crate::auth::AuthTransportMaterial],
         ctx: &ErrorContext,
@@ -136,13 +136,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let page_index = built.meta.page_index;
         let idempotent = built.meta.idempotent;
         let request_url = built.url.clone();
-        let transport_req =
-            crate::transport::materialize_transport_request(
-                built,
-                auth_materials,
-                stream_request_limit,
-            )
-            .map_err(|source| ApiClientError::Auth {
+        let transport_req = crate::transport::materialize_transport_request_validated(
+            built.into_inner(),
+            auth_materials,
+            stream_request_limit,
+        )
+        .map_err(|source| ApiClientError::Auth {
                 ctx: ctx.clone(),
                 source,
             })?;
@@ -281,7 +280,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     async fn send_and_classify_once(
         &self,
-        built: BuiltRequest,
+        built: crate::transport::AuthCollisionValidatedBuiltRequest,
         skip_body: bool,
         send_ctx: SendClassifyCtx<'_>,
     ) -> Result<BuiltResponse, ApiClientError> {
@@ -306,7 +305,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     async fn send_and_classify_transport_once(
         &self,
-        built: BuiltRequest,
+        built: crate::transport::AuthCollisionValidatedBuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
         response_limit: Option<usize>,
     ) -> Result<TransportResponse, ApiClientError> {

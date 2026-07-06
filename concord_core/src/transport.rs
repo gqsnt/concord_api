@@ -397,7 +397,29 @@ impl fmt::Debug for TransportAuth {
     }
 }
 
-pub(crate) fn validate_transport_auth_collisions(
+pub(crate) struct AuthCollisionValidatedBuiltRequest(BuiltRequest);
+
+impl AuthCollisionValidatedBuiltRequest {
+    pub(crate) fn into_inner(self) -> BuiltRequest {
+        self.0
+    }
+}
+
+impl std::ops::Deref for AuthCollisionValidatedBuiltRequest {
+    type Target = BuiltRequest;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for AuthCollisionValidatedBuiltRequest {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+fn validate_transport_auth_collisions_impl(
     built: &BuiltRequest,
 ) -> Result<(), crate::auth::AuthError> {
     use http::header::AUTHORIZATION;
@@ -449,7 +471,14 @@ pub(crate) fn validate_transport_auth_collisions(
     Ok(())
 }
 
-pub(crate) fn materialize_transport_request(
+pub(crate) fn validate_transport_auth_collisions(
+    built: BuiltRequest,
+) -> Result<AuthCollisionValidatedBuiltRequest, crate::auth::AuthError> {
+    validate_transport_auth_collisions_impl(&built)?;
+    Ok(AuthCollisionValidatedBuiltRequest(built))
+}
+
+pub(crate) fn materialize_transport_request_validated(
     built: BuiltRequest,
     materials: &[crate::auth::AuthTransportMaterial],
     stream_request_limit: Option<usize>,
@@ -467,8 +496,6 @@ pub(crate) fn materialize_transport_request(
         };
         by_slot.insert(slot_id, material);
     }
-
-    validate_transport_auth_collisions(&built)?;
 
     let extensions = built.extensions;
     let mut req = TransportRequest {
@@ -572,6 +599,15 @@ pub(crate) fn materialize_transport_request(
     }
 
     Ok(req)
+}
+
+pub(crate) fn materialize_transport_request(
+    built: BuiltRequest,
+    materials: &[crate::auth::AuthTransportMaterial],
+    stream_request_limit: Option<usize>,
+) -> Result<TransportRequest, crate::auth::AuthError> {
+    let validated = validate_transport_auth_collisions(built)?;
+    materialize_transport_request_validated(validated.into_inner(), materials, stream_request_limit)
 }
 
 #[derive(Default)]

@@ -145,7 +145,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let auth_attempt = self
                 .prepare_auth(plan, &auth_state_snapshot, &auth_http, &mut built)
                 .await?;
-            crate::transport::validate_transport_auth_collisions(&built).map_err(|source| {
+            let mut built = crate::transport::validate_transport_auth_collisions(built).map_err(|source| {
                 ApiClientError::Auth {
                     ctx: ctx.clone(),
                     source,
