@@ -249,7 +249,7 @@ impl Stream for OnceBytesStream {
 
 struct AsyncReadByteStream<R> {
     reader: Pin<Box<R>>,
-    chunk_size: usize,
+    buffer: Vec<u8>,
     eof: bool,
 }
 
@@ -263,7 +263,7 @@ where
         }
         Ok(Self {
             reader: Box::pin(reader),
-            chunk_size,
+            buffer: vec![0u8; chunk_size],
             eof: false,
         })
     }
@@ -280,8 +280,7 @@ where
         if this.eof {
             return Poll::Ready(None);
         }
-        let mut buffer = vec![0u8; this.chunk_size];
-        let mut read_buf = ReadBuf::new(&mut buffer);
+        let mut read_buf = ReadBuf::new(&mut this.buffer);
         match this.reader.as_mut().poll_read(cx, &mut read_buf) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Ok(())) => {
@@ -306,6 +305,7 @@ mod tests {
     use super::*;
     use crate::transport::TransportError;
     use std::cell::Cell;
+    use std::io;
     use std::sync::Arc;
     use std::task::{Context, Poll, Wake, Waker};
 
@@ -420,6 +420,102 @@ mod tests {
         assert!(!error_chain_contains(&error, sentinel));
     }
 
+    fn patterned_vec(len: usize) -> Vec<u8> {
+        (0..len).map(|idx| (idx % 251) as u8).collect()
+    }
+
+    async fn drain_stream_body(
+        body: StreamBody,
+    ) -> Result<(usize, usize, Vec<u8>), TransportError> {
+        let mut stream = body.into_transport_stream();
+        let mut total_bytes = 0usize;
+        let mut total_chunks = 0usize;
+        let mut collected = Vec::new();
+        loop {
+            match poll_next(&mut stream) {
+                Poll::Ready(Some(Ok(bytes))) => {
+                    total_bytes += bytes.len();
+                    total_chunks += 1;
+                    collected.extend_from_slice(bytes.as_ref());
+                }
+                Poll::Ready(Some(Err(error))) => return Err(error),
+                Poll::Ready(None) => return Ok((total_bytes, total_chunks, collected)),
+                Poll::Pending => tokio::task::yield_now().await,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn async_read_empty_reader_yields_no_chunks() {
+        let body = StreamBody::from_async_read_with_chunk_size(tokio::io::empty(), 4)
+            .expect("valid chunk size");
+        let (bytes, chunks, collected) = drain_stream_body(body).await.expect("empty reader");
+
+        assert_eq!(bytes, 0);
+        assert_eq!(chunks, 0);
+        assert!(collected.is_empty());
+    }
+
+    #[tokio::test]
+    async fn async_read_exact_multiple_yields_expected_chunks_and_bytes() {
+        let payload = patterned_vec(16);
+        let body = StreamBody::from_async_read_with_chunk_size(io::Cursor::new(payload.clone()), 4)
+            .expect("valid chunk size");
+        let (bytes, chunks, collected) = drain_stream_body(body).await.expect("drain body");
+
+        assert_eq!(bytes, payload.len());
+        assert_eq!(chunks, 4);
+        assert!(
+            collected == payload,
+            "async-read exact multiple payload changed"
+        );
+    }
+
+    #[tokio::test]
+    async fn async_read_partial_final_chunk_yields_expected_bytes() {
+        let payload = patterned_vec(10);
+        let body = StreamBody::from_async_read_with_chunk_size(io::Cursor::new(payload.clone()), 4)
+            .expect("valid chunk size");
+        let (bytes, chunks, collected) = drain_stream_body(body).await.expect("drain body");
+
+        assert_eq!(bytes, payload.len());
+        assert_eq!(chunks, 3);
+        assert!(
+            collected == payload,
+            "async-read partial final chunk payload changed"
+        );
+    }
+
+    #[tokio::test]
+    async fn async_read_larger_payload_drains_exactly() {
+        let payload = patterned_vec(128 * 1024);
+        let body =
+            StreamBody::from_async_read_with_chunk_size(io::Cursor::new(payload.clone()), 8 * 1024)
+                .expect("valid chunk size");
+        let (bytes, chunks, collected) = drain_stream_body(body).await.expect("drain body");
+
+        assert_eq!(bytes, payload.len());
+        assert_eq!(chunks, 16);
+        assert!(collected == payload, "async-read larger payload changed");
+    }
+
+    #[tokio::test]
+    async fn async_read_error_propagates_without_exposing_body_bytes() {
+        let sentinel = "SECRET_STREAM_BODY_SENTINEL_MUST_NOT_APPEAR";
+        let body = StreamBody::from_async_read_with_chunk_size(ErrorReader::new(sentinel), 8)
+            .expect("valid chunk size");
+        let error = drain_stream_body(body)
+            .await
+            .expect_err("reader error should propagate");
+
+        let display = error.to_string();
+        let debug = format!("{error:?}");
+        assert!(display.contains("transport error"));
+        assert!(!display.contains(sentinel));
+        assert!(!debug.contains(sentinel));
+        assert!(!error_chain_contains(&error, sentinel));
+    }
+
     #[tokio::test]
     async fn stream_body_from_file_streams_contents_and_reports_known_size() {
         let unique = format!(
@@ -490,6 +586,28 @@ mod tests {
 
         fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             Poll::Ready(self.chunk.take())
+        }
+    }
+
+    struct ErrorReader {
+        message: String,
+    }
+
+    impl ErrorReader {
+        fn new(message: &str) -> Self {
+            Self {
+                message: message.to_owned(),
+            }
+        }
+    }
+
+    impl AsyncRead for ErrorReader {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            Poll::Ready(Err(io::Error::other(self.message.clone())))
         }
     }
 }
