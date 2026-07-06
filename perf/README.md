@@ -91,3 +91,21 @@ CONCORD_PERF_CLEAN=1 ./scripts/perf_macro_scale.sh
 ```
 
 The generated fixtures are local and report-only. By default they remain under `target/perf-macro-scale/` for inspection. `CONCORD_PERF_CLEAN=1` removes old generated fixtures before regenerating the current run. The report is not a release-gate threshold.
+
+## Release-Gate Timing Report
+
+Time the existing local release/check commands with:
+
+```bash
+./scripts/perf_gate_timing.sh
+```
+
+To write the same report to a file as well:
+
+```bash
+CONCORD_PERF_OUT=target/perf-gate-timing.txt ./scripts/perf_gate_timing.sh
+```
+
+Set `CONCORD_PERF_STRICT=1` to treat missing optional external tools such as `cargo-nextest` or `cargo-deny` as failures instead of report skips.
+
+This report is machine-local, report-only, and not a release-gate threshold. It does not run benchmarks and should not produce committed timing output.
