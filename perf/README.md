@@ -49,3 +49,19 @@ Benchmark helpers must stay in-memory and deterministic:
 - no live network access
 - no real credentials
 - no filesystem timing dependencies
+
+## Footprint Report
+
+Run the local dependency and build-footprint report with:
+
+```bash
+./scripts/perf_footprint.sh
+```
+
+To write the same report to a file as well:
+
+```bash
+CONCORD_PERF_OUT=target/perf-footprint.txt ./scripts/perf_footprint.sh
+```
+
+Set `CONCORD_PERF_CLEAN=1` for an opt-in clean run before the report. The report is machine-local, report-only, and not part of the release gates.
