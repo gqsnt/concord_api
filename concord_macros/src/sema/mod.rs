@@ -254,6 +254,8 @@ fn validate_client_method_namespace(
     facade_ir: &crate::model::facade::FacadeIr,
     errors: &mut Option<syn::Error>,
 ) {
+    let scope_public_name_spans = index_scope_public_name_spans(api);
+    let endpoint_public_name_spans = index_endpoint_public_name_spans(api);
     let mut ns = PublicNameNamespace::new("generated client");
     for name in [
         "new",
@@ -333,8 +335,10 @@ fn validate_client_method_namespace(
         .iter()
         .filter(|scope| scope.path.len() == 1)
     {
-        let span =
-            scope_public_name_span(api, &scope.path).unwrap_or_else(|| scope.public_method.span());
+        let span = scope_public_name_spans
+            .get(&scope_path_key(&scope.path))
+            .copied()
+            .unwrap_or_else(|| scope.public_method.span());
         ns.add(
             errors,
             scope.public_method.to_string(),
@@ -348,8 +352,9 @@ fn validate_client_method_namespace(
         .iter()
         .filter(|endpoint| endpoint.scope_path.is_empty())
     {
-        let span = resolved_endpoint_for_facade(api, endpoint)
-            .map(endpoint_public_name_span)
+        let span = endpoint_public_name_spans
+            .get(&endpoint.target.key())
+            .copied()
             .unwrap_or_else(|| endpoint.public_method.span());
         ns.add(
             errors,
@@ -399,6 +404,7 @@ fn validate_scope_method_namespaces(
     facade_ir: &crate::model::facade::FacadeIr,
     errors: &mut Option<syn::Error>,
 ) {
+    let endpoint_public_name_spans = index_endpoint_public_name_spans(api);
     let mut namespaces: BTreeMap<Vec<String>, PublicNameNamespace> = BTreeMap::new();
 
     for scope in &facade_ir.scopes {
@@ -434,8 +440,9 @@ fn validate_scope_method_namespaces(
 
     for endpoint in &facade_ir.endpoints {
         if !endpoint.scope_path.is_empty() {
-            let span = resolved_endpoint_for_facade(api, endpoint)
-                .map(endpoint_public_name_span)
+            let span = endpoint_public_name_spans
+                .get(&endpoint.target.key())
+                .copied()
                 .unwrap_or_else(|| endpoint.public_method.span());
             scope_namespace(&mut namespaces, &endpoint.scope_path).add(
                 errors,
@@ -447,35 +454,52 @@ fn validate_scope_method_namespaces(
     }
 }
 
-fn resolved_endpoint_for_facade<'a>(
-    api: &'a ResolvedApi,
-    facade_endpoint: &crate::model::facade::FacadeEndpoint,
-) -> Option<&'a ResolvedEndpoint> {
-    api.endpoints.iter().find(|endpoint| {
-        endpoint.scope_modules == facade_endpoint.target.scope_path
-            && endpoint.name == facade_endpoint.target.endpoint
-    })
+fn index_endpoint_public_name_spans(api: &ResolvedApi) -> BTreeMap<EndpointTargetKey, Span> {
+    api.endpoints
+        .iter()
+        .map(|endpoint| {
+            (
+                resolved_endpoint_key(endpoint),
+                endpoint_public_name_span(endpoint),
+            )
+        })
+        .collect()
 }
 
 fn endpoint_public_name_span(endpoint: &ResolvedEndpoint) -> Span {
     endpoint.alias.as_ref().unwrap_or(&endpoint.name).span()
 }
 
-fn scope_public_name_span(api: &ResolvedApi, path: &[Ident]) -> Option<Span> {
-    if path.is_empty() {
-        return None;
-    }
-    api.endpoints.iter().find_map(|endpoint| {
-        if endpoint.scope_modules.len() < path.len() {
-            return None;
+fn index_scope_public_name_spans(api: &ResolvedApi) -> BTreeMap<Vec<String>, Span> {
+    let mut spans = BTreeMap::new();
+    for endpoint in &api.endpoints {
+        for len in 1..=endpoint.scope_modules.len() {
+            spans
+                .entry(
+                    endpoint.scope_modules[..len]
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
+                )
+                .or_insert_with(|| endpoint.scope_modules[len - 1].span());
         }
-        let matches_path = endpoint
+    }
+    spans
+}
+
+fn scope_path_key(path: &[Ident]) -> Vec<String> {
+    path.iter().map(ToString::to_string).collect()
+}
+
+fn resolved_endpoint_key(endpoint: &ResolvedEndpoint) -> EndpointTargetKey {
+    EndpointTargetKey {
+        scope_modules: endpoint
             .scope_modules
             .iter()
-            .zip(path.iter())
-            .all(|(actual, expected)| actual == expected);
-        matches_path.then(|| endpoint.scope_modules[path.len() - 1].span())
-    })
+            .map(ToString::to_string)
+            .collect(),
+        endpoint: endpoint.name.to_string(),
+    }
 }
 
 fn validate_generated_type_namespace(

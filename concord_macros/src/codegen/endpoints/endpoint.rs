@@ -10,6 +10,18 @@ fn emit_endpoint_def(
     cx_ty: &Ident,
 ) -> TokenStream2 {
     let endpoint_docs = facade_endpoint_docs(ep, &resolved_api.client_policy);
+    let facade_setters_by_field: std::collections::BTreeMap<String, usize> = facade
+        .setters
+        .iter()
+        .enumerate()
+        .map(|(idx, setter)| (setter.field.to_string(), idx))
+        .collect();
+    let endpoint_vars_by_field: std::collections::BTreeMap<String, usize> = ep
+        .vars
+        .iter()
+        .enumerate()
+        .map(|(idx, var)| (var.rust.to_string(), idx))
+        .collect();
 
     let mut fields_ts = Vec::new();
     let mut setters_ts = Vec::new();
@@ -18,7 +30,7 @@ fn emit_endpoint_def(
         let ty = &v.ty;
         if v.optional {
             fields_ts.push(quote! { pub(crate) #f: ::core::option::Option<#ty> });
-            if let Some(setter) = facade_setter_for_var(facade, f) {
+            if let Some(setter) = facade_setter_for_var(facade, &facade_setters_by_field, f) {
                 let set = setter.set_name.clone();
                 let opt = setter.set_optional_name.clone();
                 let clear = setter.clear_name.clone();
@@ -40,7 +52,7 @@ fn emit_endpoint_def(
         } else {
             fields_ts.push(quote! { pub(crate) #f: #ty });
             if let Some(default) = &v.default {
-                if let Some(setter) = facade_setter_for_var(facade, f) {
+                if let Some(setter) = facade_setter_for_var(facade, &facade_setters_by_field, f) {
                     let set = setter.set_name.clone();
                     let opt = setter.set_optional_name.clone();
                     let clear = setter.clear_name.clone();
@@ -134,7 +146,7 @@ fn emit_endpoint_def(
         .setters
         .iter()
         .filter_map(|setter| {
-            let v = endpoint_var_for_setter(ep, setter)?;
+            let v = endpoint_var_for_setter(ep, &endpoint_vars_by_field, setter)?;
             let f = &v.rust;
             let ty = &v.ty;
             let set = setter.set_name.clone();
@@ -157,7 +169,7 @@ fn emit_endpoint_def(
         .setters
         .iter()
         .filter_map(|setter| {
-            let v = endpoint_var_for_setter(ep, setter)?;
+            let v = endpoint_var_for_setter(ep, &endpoint_vars_by_field, setter)?;
             let ty = &v.ty;
             let set = setter.set_name.clone();
             let opt = setter.set_optional_name.clone();
@@ -395,20 +407,27 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
     }
 }
 
-fn facade_setter_for_var<'a>(facade: &'a FacadeEndpoint, field: &Ident) -> Option<&'a FacadeSetter> {
-    facade
-        .setters
-        .iter()
-        .find(|setter| field == &setter.field)
+fn facade_setter_for_var<'a>(
+    facade: &'a FacadeEndpoint,
+    setters_by_field: &std::collections::BTreeMap<String, usize>,
+    field: &Ident,
+) -> Option<&'a FacadeSetter> {
+    let index = setters_by_field.get(&field.to_string())?;
+    facade.setters.get(*index)
 }
 
 fn endpoint_var_for_setter<'a>(
     ep: &'a ResolvedEndpoint,
+    vars_by_field: &std::collections::BTreeMap<String, usize>,
     setter: &FacadeSetter,
 ) -> Option<&'a VarInfo> {
-    ep.vars
-        .iter()
-        .find(|var| var.rust == setter.field && (var.optional || var.default.is_some()))
+    let index = vars_by_field.get(&setter.field.to_string())?;
+    let var = &ep.vars[*index];
+    if var.optional || var.default.is_some() {
+        Some(var)
+    } else {
+        None
+    }
 }
 
 fn endpoint_request_body_inner_ty(ep: &ResolvedEndpoint) -> Result<Option<TokenStream2>, TokenStream2> {

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 fn endpoint_internal_ident(ep: &ResolvedEndpoint) -> Ident {
     let mut name = String::from("Ep");
     for scope in &ep.scope_modules {
@@ -113,10 +115,12 @@ struct EndpointScopeModule {
     name: Ident,
     endpoints: Vec<EndpointScopeAlias>,
     children: Vec<EndpointScopeModule>,
+    child_index: BTreeMap<String, usize>,
 }
 
 fn insert_endpoint_scope_module(
     modules: &mut Vec<EndpointScopeModule>,
+    index: &mut BTreeMap<String, usize>,
     path: &[Ident],
     public: &Ident,
     internal: &Ident,
@@ -134,30 +138,41 @@ fn insert_endpoint_scope_module(
         return Ok(());
     };
 
-    let index = if let Some(index) = modules.iter().position(|module| module.name == *head) {
-        index
+    let module_index = if let Some(existing) = index.get(&head.to_string()).copied() {
+        existing
     } else {
         modules.push(EndpointScopeModule {
             name: head.clone(),
             endpoints: Vec::new(),
             children: Vec::new(),
+            child_index: BTreeMap::new(),
         });
-        modules.len() - 1
+        let next_index = modules.len() - 1;
+        index.insert(head.to_string(), next_index);
+        next_index
     };
 
     if tail.is_empty() {
-        modules[index].endpoints.push(EndpointScopeAlias {
+        modules[module_index].endpoints.push(EndpointScopeAlias {
             public: public.clone(),
             internal: internal.clone(),
         });
     } else {
-        insert_endpoint_scope_module(&mut modules[index].children, tail, public, internal)?;
+        let module = &mut modules[module_index];
+        insert_endpoint_scope_module(
+            &mut module.children,
+            &mut module.child_index,
+            tail,
+            public,
+            internal,
+        )?;
     }
     Ok(())
 }
 
 fn emit_endpoint_scope_modules(resolved_api: &ResolvedApi) -> TokenStream2 {
     let mut modules = Vec::new();
+    let mut module_index = BTreeMap::new();
     for endpoint in &resolved_api.endpoints {
         if endpoint.scope_modules.is_empty() {
             continue;
@@ -165,6 +180,7 @@ fn emit_endpoint_scope_modules(resolved_api: &ResolvedApi) -> TokenStream2 {
         let internal = endpoint_internal_ident(endpoint);
         if let Err(err) = insert_endpoint_scope_module(
             &mut modules,
+            &mut module_index,
             &endpoint.scope_modules,
             &endpoint.name,
             &internal,
@@ -208,6 +224,3 @@ fn emit_endpoint_scope_module(module: &EndpointScopeModule, depth: usize) -> Tok
         }
     }
 }
-
-
-

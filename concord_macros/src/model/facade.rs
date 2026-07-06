@@ -1,6 +1,7 @@
 use crate::emit_helpers;
 use crate::sema::*;
 use proc_macro2::Span;
+use std::collections::{BTreeMap, BTreeSet};
 use syn::{Ident, Type};
 
 #[derive(Debug)]
@@ -13,6 +14,9 @@ pub(crate) struct FacadeIr {
     pub scopes: Vec<FacadeScope>,
     pub endpoints: Vec<FacadeEndpoint>,
     pub docs: Vec<FacadeDoc>,
+    scope_index: BTreeMap<Vec<String>, usize>,
+    endpoint_index: BTreeMap<EndpointTargetKey, usize>,
+    credential_methods_index: BTreeMap<String, usize>,
 }
 
 #[derive(Debug)]
@@ -85,6 +89,15 @@ pub(crate) struct FacadeEndpointTarget {
     pub endpoint: Ident,
 }
 
+impl FacadeEndpointTarget {
+    pub(crate) fn key(&self) -> EndpointTargetKey {
+        EndpointTargetKey {
+            scope_modules: self.scope_path.iter().map(ToString::to_string).collect(),
+            endpoint: self.endpoint.to_string(),
+        }
+    }
+}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub(crate) struct FacadeEndpointConstructorPlan {
@@ -134,23 +147,52 @@ pub(crate) struct FacadeDoc {
     pub details: Vec<String>,
 }
 
+impl FacadeIr {
+    pub(crate) fn scope_for_path(&self, path: &[Ident]) -> Option<&FacadeScope> {
+        self.scope_index
+            .get(&scope_path_key(path))
+            .map(|index| &self.scopes[*index])
+    }
+
+    pub(crate) fn endpoint_for_resolved(&self, ep: &ResolvedEndpoint) -> Option<&FacadeEndpoint> {
+        self.endpoint_index
+            .get(&resolved_endpoint_key(ep))
+            .map(|index| &self.endpoints[*index])
+    }
+
+    pub(crate) fn credential_methods_for(&self, name: &Ident) -> Option<&FacadeCredentialMethods> {
+        self.credential_methods_index
+            .get(&name.to_string())
+            .map(|index| &self.credential_methods[*index])
+    }
+}
+
 pub(crate) fn build_facade_ir(resolved_api: &ResolvedApi) -> FacadeIr {
     let scope_infos = collect_facade_scopes(resolved_api);
+    let scope_children = index_facade_scope_children(&scope_infos);
+    let scopes = scope_infos
+        .iter()
+        .enumerate()
+        .map(|(index, scope)| {
+            facade_scope_from_info(resolved_api, &scope_infos, &scope_children, index, scope)
+        })
+        .collect();
+    let endpoints = resolved_api
+        .endpoints
+        .iter()
+        .map(facade_endpoint_from_resolved)
+        .collect();
     FacadeIr {
         client_name: resolved_api.client_name.clone(),
         client_setters: facade_client_setters(&resolved_api.client_vars),
         auth_setters: facade_client_setters(&resolved_api.client_auth_vars),
         credential_methods: facade_credential_methods(&resolved_api.client_auth_credentials),
-        scopes: scope_infos
-            .iter()
-            .map(|scope| facade_scope_from_info(resolved_api, &scope_infos, scope))
-            .collect(),
-        endpoints: resolved_api
-            .endpoints
-            .iter()
-            .map(facade_endpoint_from_resolved)
-            .collect(),
+        scopes,
+        endpoints,
         docs: Vec::new(),
+        scope_index: index_facade_scopes(&scope_infos),
+        endpoint_index: index_facade_endpoints(resolved_api),
+        credential_methods_index: index_facade_credential_methods(resolved_api),
     }
 }
 
@@ -208,10 +250,11 @@ struct FacadeScopeInfo {
 
 fn collect_facade_scopes(resolved_api: &ResolvedApi) -> Vec<FacadeScopeInfo> {
     let mut scopes: Vec<FacadeScopeInfo> = Vec::new();
+    let mut seen = BTreeSet::new();
     for ep in &resolved_api.endpoints {
         for idx in 0..ep.scope_modules.len() {
             let path = ep.scope_modules[..=idx].to_vec();
-            if scopes.iter().any(|scope| scope.path == path) {
+            if !seen.insert(scope_path_key(&path)) {
                 continue;
             }
             let decls = ep
@@ -226,9 +269,55 @@ fn collect_facade_scopes(resolved_api: &ResolvedApi) -> Vec<FacadeScopeInfo> {
     scopes
 }
 
+fn index_facade_scopes(scope_infos: &[FacadeScopeInfo]) -> BTreeMap<Vec<String>, usize> {
+    scope_infos
+        .iter()
+        .enumerate()
+        .map(|(idx, scope)| (scope_path_key(&scope.path), idx))
+        .collect()
+}
+
+fn index_facade_scope_children(
+    scope_infos: &[FacadeScopeInfo],
+) -> BTreeMap<Vec<String>, Vec<usize>> {
+    let mut children: BTreeMap<Vec<String>, Vec<usize>> = BTreeMap::new();
+    for (idx, scope) in scope_infos.iter().enumerate() {
+        if scope.path.len() <= 1 {
+            continue;
+        }
+        let parent = scope.path[..scope.path.len() - 1].to_vec();
+        children
+            .entry(scope_path_key(&parent))
+            .or_default()
+            .push(idx);
+    }
+    children
+}
+
+fn index_facade_endpoints(resolved_api: &ResolvedApi) -> BTreeMap<EndpointTargetKey, usize> {
+    resolved_api
+        .endpoints
+        .iter()
+        .enumerate()
+        .map(|(idx, ep)| (resolved_endpoint_key(ep), idx))
+        .collect()
+}
+
+fn index_facade_credential_methods(resolved_api: &ResolvedApi) -> BTreeMap<String, usize> {
+    resolved_api
+        .client_auth_credentials
+        .iter()
+        .filter(|credential| matches!(credential.kind, AuthCredentialKindIr::Endpoint { .. }))
+        .enumerate()
+        .map(|(idx, credential)| (credential.name.to_string(), idx))
+        .collect()
+}
+
 fn facade_scope_from_info(
     resolved_api: &ResolvedApi,
     scope_infos: &[FacadeScopeInfo],
+    scope_children: &BTreeMap<Vec<String>, Vec<usize>>,
+    _scope_index: usize,
     scope: &FacadeScopeInfo,
 ) -> FacadeScope {
     let path = scope.path.clone();
@@ -236,12 +325,12 @@ fn facade_scope_from_info(
         .last()
         .cloned()
         .expect("facade scope path must be non-empty");
-    let methods = scope_infos
-        .iter()
-        .filter(|child| {
-            child.path.len() == scope.path.len() + 1 && child.path.starts_with(&scope.path)
-        })
-        .map(|child| {
+    let methods = scope_children
+        .get(&scope_path_key(&scope.path))
+        .into_iter()
+        .flat_map(|indices| indices.iter().copied())
+        .map(|child_index| {
+            let child = &scope_infos[child_index];
             let target_scope_path = child.path.clone();
             let public_name = target_scope_path
                 .last()
@@ -325,6 +414,17 @@ fn facade_scope_from_info(
             ),
             details: Vec::new(),
         }],
+    }
+}
+
+fn scope_path_key(path: &[Ident]) -> Vec<String> {
+    path.iter().map(ToString::to_string).collect()
+}
+
+fn resolved_endpoint_key(ep: &ResolvedEndpoint) -> EndpointTargetKey {
+    EndpointTargetKey {
+        scope_modules: ep.scope_modules.iter().map(ToString::to_string).collect(),
+        endpoint: ep.name.to_string(),
     }
 }
 

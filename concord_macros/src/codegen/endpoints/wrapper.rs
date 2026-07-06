@@ -33,6 +33,12 @@ fn emit_client_wrapper(
         })
         .collect();
     let new_pass = new_pass.as_slice();
+    let client_vars_by_name: std::collections::BTreeMap<String, &VarInfo> =
+        resolved_api
+            .client_vars
+            .iter()
+            .map(|var| (var.rust.to_string(), var))
+            .collect();
 
     let required_auth: Vec<&VarInfo> = resolved_api
         .client_auth_vars
@@ -54,6 +60,12 @@ fn emit_client_wrapper(
             quote! { #f }
         })
         .collect();
+    let client_auth_vars_by_name: std::collections::BTreeMap<String, &VarInfo> =
+        resolved_api
+            .client_auth_vars
+            .iter()
+            .map(|var| (var.rust.to_string(), var))
+            .collect();
 
     let mut ctor_args: Vec<TokenStream2> = Vec::new();
     ctor_args.extend(new_args.iter().cloned());
@@ -129,11 +141,7 @@ fn emit_client_wrapper(
     });
 
     let var_setters = facade_ir.client_setters.iter().map(|setter| {
-        let Some(v) = resolved_api
-            .client_vars
-            .iter()
-            .find(|var| var.rust == setter.field)
-        else {
+        let Some(v) = client_vars_by_name.get(&setter.field.to_string()).copied() else {
             return emit_helpers::compile_error_tokens(
                 "FacadeIr client setter must target a resolved client var",
                 Span::call_site(),
@@ -208,11 +216,9 @@ fn emit_client_wrapper(
         quote! {}
     };
     let auth_setters = facade_ir.auth_setters.iter().map(|setter| {
-        let Some(v) = resolved_api
-            .client_auth_vars
-            .iter()
-            .find(|var| var.rust == setter.field)
-        else {
+        let Some(v) = client_auth_vars_by_name
+            .get(&setter.field.to_string())
+            .copied() else {
             return emit_helpers::compile_error_tokens(
                 "FacadeIr auth setter must target a resolved auth var",
                 Span::call_site(),
@@ -804,6 +810,8 @@ fn emit_facade_scope_struct(
     let span = scope_ir.rust_type_name.span();
     let struct_name = scope_ir.rust_type_name.clone();
     let docs = facade_docs_to_lit(&scope_ir.docs, span);
+    let decls_by_name: std::collections::BTreeMap<String, &VarInfo> =
+        scope_ir.decls.iter().map(|var| (var.rust.to_string(), var)).collect();
     let fields = scope_ir.decls.iter().map(|v| {
         let name = &v.rust;
         let ty = &v.ty;
@@ -814,14 +822,11 @@ fn emit_facade_scope_struct(
         }
     });
     let setters = scope_ir.setters.iter().filter_map(|setter| {
-        let var = scope_ir
-            .decls
-            .iter()
-            .find(|var| var.rust == setter.field)?;
+        let var = decls_by_name.get(&setter.field.to_string()).copied()?;
         Some(emit_scope_setter(setter, var))
     });
     let child_methods = scope_ir.methods.iter().map(|method| {
-        let Some(child_ir) = facade_scope_ir_for_path(facade_ir, &method.target_scope_path) else {
+        let Some(child_ir) = facade_ir.scope_for_path(&method.target_scope_path) else {
             return emit_helpers::compile_error_tokens(
                 "FacadeIr must contain one scope entry per resolved facade scope",
                 Span::call_site(),
@@ -833,7 +838,7 @@ fn emit_facade_scope_struct(
         .endpoints
         .iter()
         .filter_map(|ep| {
-            let Some(facade) = facade_ir_for_endpoint(facade_ir, ep) else {
+            let Some(facade) = facade_ir.endpoint_for_resolved(ep) else {
                 return Some(emit_helpers::compile_error_tokens(
                     "FacadeIr must contain one public endpoint entry per resolved endpoint",
                     ep.name.span(),
@@ -964,20 +969,14 @@ fn emit_scope_setter(setter: &FacadeSetter, var: &VarInfo) -> TokenStream2 {
 }
 
 fn facade_ir_for_endpoint<'a>(facade_ir: &'a FacadeIr, ep: &ResolvedEndpoint) -> Option<&'a FacadeEndpoint> {
-    facade_ir
-        .endpoints
-        .iter()
-        .find(|candidate| candidate.target.scope_path == ep.scope_modules && candidate.target.endpoint == ep.name)
+    facade_ir.endpoint_for_resolved(ep)
 }
 
 fn facade_credential_methods_for<'a>(
     facade_ir: &'a FacadeIr,
     name: &Ident,
 ) -> Option<&'a FacadeCredentialMethods> {
-    facade_ir
-        .credential_methods
-        .iter()
-        .find(|methods| name == &methods.credential)
+    facade_ir.credential_methods_for(name)
 }
 
 fn facade_ir_endpoint_docs(facade: &FacadeEndpoint, span: Span) -> Vec<LitStr> {
@@ -992,16 +991,6 @@ fn facade_docs_to_lit(docs: &[FacadeDoc], span: Span) -> Vec<LitStr> {
         })
         .map(|line| LitStr::new(line, span))
         .collect()
-}
-
-fn facade_scope_ir_for_path<'a>(
-    facade_ir: &'a FacadeIr,
-    path: &[Ident],
-) -> Option<&'a FacadeScope> {
-    facade_ir
-        .scopes
-        .iter()
-        .find(|scope| scope.path.as_slice() == path)
 }
 
 fn behavior_doc_line(names: &[String]) -> Option<String> {
