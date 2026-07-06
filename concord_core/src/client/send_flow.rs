@@ -27,7 +27,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         send_ctx: SendClassifyCtx<'_>,
         stream_request_limit: Option<usize>,
     ) -> Result<TransportResponse, ApiClientError> {
-        let url = built.debug_url();
         let rate_limit_meta = RateLimitContext {
             endpoint: built.meta.endpoint,
             method: &built.meta.method,
@@ -66,7 +65,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let pre_send_meta = HookMeta {
             endpoint: built.meta.endpoint,
             method: &built.meta.method,
-            url: &url,
+            url: send_ctx.url_str,
             attempt: built.meta.attempt,
             page_index: built.meta.page_index,
             idempotent: built.meta.idempotent,
@@ -80,6 +79,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .await?;
         self.send_built_request(
             built,
+            send_ctx.url_str,
             send_ctx.auth_materials,
             send_ctx.error_ctx,
             stream_request_limit,
@@ -125,6 +125,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn send_built_request(
         &self,
         built: BuiltRequest,
+        safe_url: &str,
         auth_materials: &[crate::auth::AuthTransportMaterial],
         ctx: &ErrorContext,
         stream_request_limit: Option<usize>,
@@ -134,7 +135,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let attempt = built.meta.attempt;
         let page_index = built.meta.page_index;
         let idempotent = built.meta.idempotent;
-        let url = built.debug_url();
         let request_url = built.url.clone();
         let transport_req =
             crate::transport::materialize_transport_request(
@@ -182,7 +182,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 let hook_meta = HookMeta {
                     endpoint,
                     method: &method,
-                    url: &url,
+                    url: safe_url,
                     attempt,
                     page_index,
                     idempotent,

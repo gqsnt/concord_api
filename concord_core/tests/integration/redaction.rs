@@ -591,13 +591,11 @@ mod query_auth_redaction {
                 ));
             }
 
-            fn response_status(
-                &self,
-                _dbg: DebugLevel,
-                _status: StatusCode,
-                _url: &str,
-                _ok: bool,
-            ) {
+            fn response_status(&self, _dbg: DebugLevel, _status: StatusCode, url: &str, ok: bool) {
+                self.events
+                    .lock()
+                    .expect("debug events lock")
+                    .push(format!("response_url:{ok}:{url}"));
             }
 
             fn response_headers(&self, _dbg: DebugLevel, headers: SanitizedHeaders<'_>) {
@@ -673,6 +671,7 @@ mod query_auth_redaction {
             ) -> concord_core::advanced::AuthFuture<'a, ()> {
                 Box::pin(async move {
                     let mut events = self.events.lock().expect("hook events lock");
+                    events.push(format!("post_response_url:{}", ctx.meta.url));
                     events.push(format!(
                         "post_response_cookie:{}",
                         ctx.headers
@@ -772,7 +771,10 @@ mod query_auth_redaction {
 
         let observed = events.lock().expect("events lock").clone().join("\n");
         assert!(!observed.contains("LEAK_SENTINEL"));
+        assert!(observed.contains("request_url:https://example.com/text"));
+        assert!(observed.contains("response_url:true:https://example.com/text"));
         assert!(observed.contains("pre_send_url:https://example.com/text"));
+        assert!(observed.contains("post_response_url:https://example.com/text"));
         assert!(observed.contains("visible=visible-query"));
         assert!(observed.contains("api_key=<redacted>"));
         assert!(observed.contains("pre_send_key:<redacted>"));
