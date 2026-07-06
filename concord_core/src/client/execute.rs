@@ -77,6 +77,39 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(Some(delay))
     }
 
+    fn retry_may_run(&self, retry_config: &RetrySetting, retry_count: u32) -> bool {
+        match retry_config {
+            RetrySetting::Config(config) => retry_count < config.max_retries(),
+            RetrySetting::Inherit => retry_count < self.runtime_state.retry_policy().max_retries(),
+            RetrySetting::Off => false,
+        }
+    }
+
+    fn retry_request_headers_snapshot(
+        &self,
+        retry_config: &RetrySetting,
+        retry_count: u32,
+        built: &BuiltRequest,
+    ) -> Option<http::HeaderMap> {
+        match retry_config {
+            RetrySetting::Config(config)
+                if retry_count < config.max_retries()
+                    && matches!(
+                        &config.idempotency,
+                        crate::retry::RetryIdempotency::Header(_)
+                    ) =>
+            {
+                Some(built.headers.clone())
+            }
+            RetrySetting::Inherit
+                if retry_count < self.runtime_state.retry_policy().max_retries() =>
+            {
+                Some(built.headers.clone())
+            }
+            _ => None,
+        }
+    }
+
     async fn drive_attempts(
         &self,
         plan: &crate::endpoint::RequestPlanView,
@@ -132,8 +165,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let url_str = built.debug_url();
 
             self.debug_planned_request(dbg, plan, &built, &url_str);
-            let retry_config = built.retry.clone();
-            let retry_request_headers = built.headers.clone();
+            let retry_config = std::mem::take(&mut built.retry);
+            let retry_request_headers =
+                self.retry_request_headers_snapshot(&retry_config, transport_retry_index, &built);
             let send_result = match family {
                 AttemptFamily::Buffered { skip_body } => self
                     .send_and_classify_once(
@@ -310,8 +344,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     if !is_replayable {
                         return Err(err);
                     }
+                    if !self.retry_may_run(&retry_config, transport_retry_index) {
+                        return Err(err);
+                    }
                     let outcome = Self::retry_outcome_from_error(&err);
                     let response_headers = Self::retry_response_headers_from_error(&err);
+                    let empty_request_headers = http::HeaderMap::new();
+                    let request_headers = retry_request_headers
+                        .as_ref()
+                        .unwrap_or(&empty_request_headers);
                     let retry_ctx = RetryContext {
                         endpoint: plan.endpoint.meta.name,
                         method: &plan.endpoint.meta.method,
@@ -321,7 +362,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         page_index: plan.overrides.page_index,
                         idempotent: plan.endpoint.meta.idempotent,
                         max_delay: self.runtime_state.max_retry_delay(),
-                        request_headers: &retry_request_headers,
+                        request_headers,
                         response_headers,
                         outcome,
                     };
