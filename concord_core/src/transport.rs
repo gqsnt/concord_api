@@ -479,7 +479,7 @@ pub(crate) fn validate_transport_auth_collisions(
 }
 
 pub(crate) fn materialize_transport_request_validated(
-    built: BuiltRequest,
+    built: AuthCollisionValidatedBuiltRequest,
     materials: &[crate::auth::AuthTransportMaterial],
     stream_request_limit: Option<usize>,
 ) -> Result<TransportRequest, crate::auth::AuthError> {
@@ -497,6 +497,7 @@ pub(crate) fn materialize_transport_request_validated(
         by_slot.insert(slot_id, material);
     }
 
+    let built = built.into_inner();
     let extensions = built.extensions;
     let mut req = TransportRequest {
         meta: built.meta,
@@ -607,7 +608,7 @@ pub(crate) fn materialize_transport_request(
     stream_request_limit: Option<usize>,
 ) -> Result<TransportRequest, crate::auth::AuthError> {
     let validated = validate_transport_auth_collisions(built)?;
-    materialize_transport_request_validated(validated.into_inner(), materials, stream_request_limit)
+    materialize_transport_request_validated(validated, materials, stream_request_limit)
 }
 
 #[derive(Default)]

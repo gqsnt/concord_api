@@ -137,7 +137,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let idempotent = built.meta.idempotent;
         let request_url = built.url.clone();
         let transport_req = crate::transport::materialize_transport_request_validated(
-            built.into_inner(),
+            built,
             auth_materials,
             stream_request_limit,
         )
