@@ -7,6 +7,7 @@ use super::{
 };
 use crate::error::{ApiClientError, ErrorContext};
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter as Governor};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -22,10 +23,32 @@ struct GovernorWindowSpec {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct ResolvedRateLimitKey(Vec<(String, String)>);
+struct ResolvedRateLimitKey(Vec<(Cow<'static, str>, Cow<'static, str>)>);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct RateLimitCooldownKey(String);
+enum RateLimitCooldownKey {
+    Client,
+    Request {
+        method: http::Method,
+        endpoint: &'static str,
+        url: String,
+    },
+    Endpoint {
+        method: http::Method,
+        endpoint: &'static str,
+    },
+    Host {
+        host: String,
+    },
+    BucketKind {
+        kind: Cow<'static, str>,
+        key: ResolvedRateLimitKey,
+    },
+    Bucket {
+        id: RateLimitBucketId,
+        key: ResolvedRateLimitKey,
+    },
+}
 
 pub struct GovernorRateLimiter {
     windows: Mutex<GovernorWindowState>,
@@ -428,10 +451,7 @@ fn resolve_key(
 ) -> Result<ResolvedRateLimitKey, ApiClientError> {
     let mut parts = Vec::with_capacity(key.parts().len());
     for part in key.parts() {
-        parts.push((
-            part.name.to_string(),
-            resolve_key_part_value(ctx, part)?.into_owned(),
-        ));
+        parts.push((part.name.clone(), resolve_key_part_value(ctx, part)?));
     }
     Ok(ResolvedRateLimitKey(parts))
 }
@@ -439,61 +459,65 @@ fn resolve_key(
 fn resolve_key_part_value<'a>(
     ctx: &'a RateLimitContext<'_>,
     part: &'a RateLimitKeyPart,
-) -> Result<std::borrow::Cow<'a, str>, ApiClientError> {
+) -> Result<Cow<'static, str>, ApiClientError> {
     match &part.value {
-        RateLimitKeyValue::Static(value) => Ok(std::borrow::Cow::Borrowed(value.as_ref())),
-        RateLimitKeyValue::Endpoint => Ok(std::borrow::Cow::Borrowed(ctx.endpoint)),
-        RateLimitKeyValue::Method => Ok(std::borrow::Cow::Owned(ctx.method.as_str().to_string())),
+        RateLimitKeyValue::Static(value) => Ok(match value {
+            Cow::Borrowed(value) => Cow::Borrowed(*value),
+            Cow::Owned(value) => Cow::Owned(value.clone()),
+        }),
+        RateLimitKeyValue::Endpoint => Ok(Cow::Borrowed(ctx.endpoint)),
+        RateLimitKeyValue::Method => Ok(Cow::Owned(ctx.method.as_str().to_string())),
         RateLimitKeyValue::UrlHost => ctx
             .url_host
-            .map(std::borrow::Cow::Borrowed)
+            .map(|host| Cow::Owned(host.to_owned()))
             .ok_or_else(|| missing_host_key_error(ctx)),
     }
 }
 
 fn request_cooldown_key(ctx: &RateLimitContext<'_>) -> RateLimitCooldownKey {
-    RateLimitCooldownKey(format!(
-        "request:{}:{}:{}",
-        ctx.method, ctx.endpoint, ctx.url
-    ))
+    RateLimitCooldownKey::Request {
+        method: ctx.method.clone(),
+        endpoint: ctx.endpoint,
+        url: ctx.url.to_owned(),
+    }
 }
 
 fn client_cooldown_key() -> RateLimitCooldownKey {
-    RateLimitCooldownKey("client".to_string())
+    RateLimitCooldownKey::Client
 }
 
 fn host_cooldown_key(ctx: &RateLimitContext<'_>) -> Result<RateLimitCooldownKey, ApiClientError> {
     let host = ctx.url_host.ok_or_else(|| missing_host_key_error(ctx))?;
-    Ok(RateLimitCooldownKey(format!("host:{host}")))
+    Ok(RateLimitCooldownKey::Host {
+        host: host.to_owned(),
+    })
 }
 
 fn endpoint_cooldown_key(ctx: &RateLimitContext<'_>) -> RateLimitCooldownKey {
-    RateLimitCooldownKey(format!("endpoint:{}:{}", ctx.method, ctx.endpoint))
+    RateLimitCooldownKey::Endpoint {
+        method: ctx.method.clone(),
+        endpoint: ctx.endpoint,
+    }
 }
 
 fn bucket_kind_cooldown_key(
     ctx: &RateLimitContext<'_>,
     bucket: &RateLimitBucketUse,
 ) -> Result<RateLimitCooldownKey, ApiClientError> {
-    let key = resolve_key(ctx, &bucket.key)?;
-    Ok(RateLimitCooldownKey(format!(
-        "bucket-kind:{}:{:?}",
-        bucket.id.kind.as_ref(),
-        key
-    )))
+    Ok(RateLimitCooldownKey::BucketKind {
+        kind: bucket.id.kind.clone(),
+        key: resolve_key(ctx, &bucket.key)?,
+    })
 }
 
 fn bucket_cooldown_key(
     ctx: &RateLimitContext<'_>,
     bucket: &RateLimitBucketUse,
 ) -> Result<RateLimitCooldownKey, ApiClientError> {
-    let key = resolve_key(ctx, &bucket.key)?;
-    Ok(RateLimitCooldownKey(format!(
-        "bucket:{}:{}:{:?}",
-        bucket.id.kind.as_ref(),
-        bucket.id.name.as_ref(),
-        key
-    )))
+    Ok(RateLimitCooldownKey::Bucket {
+        id: bucket.id.clone(),
+        key: resolve_key(ctx, &bucket.key)?,
+    })
 }
 
 fn cooldown_keys_for_acquire(
@@ -1003,6 +1027,33 @@ mod tests {
     }
 
     #[test]
+    fn cooldown_targets_remain_distinct_for_request_endpoint_client_and_host() {
+        let limiter = GovernorRateLimiter::new().with_max_cooldown_entries(8);
+        let ctx = request_context_with_url("https://example.com/distinct".to_string());
+        let targets = [
+            RateLimitTarget::Request,
+            RateLimitTarget::Endpoint,
+            RateLimitTarget::Client,
+            RateLimitTarget::Host,
+        ];
+
+        for target in targets {
+            let stored = limiter
+                .store_cooldown(
+                    &ctx,
+                    &target,
+                    Duration::from_secs(1),
+                    Duration::from_secs(60),
+                )
+                .expect("distinct cooldown target should store");
+            assert!(stored);
+        }
+
+        let guard = limiter.cooldowns.lock().expect("cooldown lock");
+        assert_eq!(guard.len(), 4);
+    }
+
+    #[test]
     fn rate_limit_endpoint_key_allows_hostless_url() {
         let plan = RateLimitPlan::from_buckets(vec![one_window_bucket(RateLimitKey::new(vec![
             RateLimitKeyPart::endpoint(),
@@ -1012,10 +1063,7 @@ mod tests {
             .expect("endpoint key should not require host");
         assert_eq!(
             key,
-            ResolvedRateLimitKey(vec![(
-                "endpoint".to_string(),
-                "HostlessEndpoint".to_string()
-            )])
+            ResolvedRateLimitKey(vec![("endpoint".into(), "HostlessEndpoint".into())])
         );
     }
 
@@ -1029,7 +1077,7 @@ mod tests {
             .expect("static key should not require host");
         assert_eq!(
             key,
-            ResolvedRateLimitKey(vec![("tenant".to_string(), "public".to_string())])
+            ResolvedRateLimitKey(vec![("tenant".into(), "public".into())])
         );
     }
 
@@ -1043,7 +1091,7 @@ mod tests {
             .expect("method key should not require host");
         assert_eq!(
             key,
-            ResolvedRateLimitKey(vec![("method".to_string(), "GET".to_string())])
+            ResolvedRateLimitKey(vec![("method".into(), "GET".into())])
         );
     }
 
@@ -1093,7 +1141,7 @@ mod tests {
 
         let spec_a = GovernorWindowSpec {
             id: RateLimitBucketId::new("method", "a"),
-            key: ResolvedRateLimitKey(vec![("k".to_string(), "a".to_string())]),
+            key: ResolvedRateLimitKey(vec![("k".into(), "a".into())]),
             window: RateLimitWindow::new(
                 NonZeroU32::new(10).expect("non-zero"),
                 Duration::from_secs(10),
@@ -1101,7 +1149,7 @@ mod tests {
         };
         let spec_b = GovernorWindowSpec {
             id: RateLimitBucketId::new("method", "b"),
-            key: ResolvedRateLimitKey(vec![("k".to_string(), "b".to_string())]),
+            key: ResolvedRateLimitKey(vec![("k".into(), "b".into())]),
             window: RateLimitWindow::new(
                 NonZeroU32::new(10).expect("non-zero"),
                 Duration::from_secs(10),
@@ -1124,7 +1172,7 @@ mod tests {
 
         let spec_a = GovernorWindowSpec {
             id: RateLimitBucketId::new("method", "a"),
-            key: ResolvedRateLimitKey(vec![("k".to_string(), "a".to_string())]),
+            key: ResolvedRateLimitKey(vec![("k".into(), "a".into())]),
             window: RateLimitWindow::new(
                 NonZeroU32::new(10).expect("non-zero"),
                 Duration::from_secs(10),
@@ -1132,7 +1180,7 @@ mod tests {
         };
         let spec_b = GovernorWindowSpec {
             id: RateLimitBucketId::new("method", "b"),
-            key: ResolvedRateLimitKey(vec![("k".to_string(), "b".to_string())]),
+            key: ResolvedRateLimitKey(vec![("k".into(), "b".into())]),
             window: RateLimitWindow::new(
                 NonZeroU32::new(10).expect("non-zero"),
                 Duration::from_secs(10),
