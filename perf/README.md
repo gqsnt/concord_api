@@ -8,6 +8,8 @@ Reasons:
 - Benchmarks are not part of the normal correctness release gate.
 - Keeping perf in its own excluded package prevents workspace-wide checks from pulling benchmark-only dependencies into the standard gate.
 
+The consolidated post-optimization summary lives in [`../docs/perf_post_optimization_report.md`](../docs/perf_post_optimization_report.md).
+
 Run the smoke benchmark with:
 
 ```bash
