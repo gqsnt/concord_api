@@ -28,7 +28,7 @@ struct ResolvedRateLimitKey(Vec<(String, String)>);
 struct RateLimitCooldownKey(String);
 
 pub struct GovernorRateLimiter {
-    windows: Mutex<HashMap<GovernorWindowSpec, GovernorWindowEntry>>,
+    windows: Mutex<GovernorWindowState>,
     cooldowns: Mutex<HashMap<RateLimitCooldownKey, Instant>>,
     response_policy: Arc<dyn RateLimitResponsePolicy>,
     max_window_entries: usize,
@@ -40,6 +40,12 @@ pub struct GovernorRateLimiter {
 struct GovernorWindowEntry {
     limiter: Arc<DefaultDirectRateLimiter>,
     last_used: Instant,
+}
+
+#[derive(Default)]
+struct GovernorWindowState {
+    windows: HashMap<GovernorWindowSpec, GovernorWindowEntry>,
+    next_prune_at: Option<Instant>,
 }
 
 impl Default for GovernorRateLimiter {
@@ -55,7 +61,7 @@ impl GovernorRateLimiter {
 
     pub fn new() -> Self {
         Self {
-            windows: Mutex::new(HashMap::new()),
+            windows: Mutex::new(GovernorWindowState::default()),
             cooldowns: Mutex::new(HashMap::new()),
             response_policy: Arc::new(DefaultRateLimitResponsePolicy),
             max_window_entries: Self::DEFAULT_MAX_WINDOW_ENTRIES,
@@ -94,43 +100,57 @@ impl GovernorRateLimiter {
             .lock()
             .map_err(|_| rate_limit_internal_error(ctx, "rate limit window lock poisoned"))?;
         let now = Instant::now();
-        self.prune_windows(&mut guard, now);
-        if let Some(existing) = guard.get_mut(&spec) {
-            existing.last_used = now;
-            return Ok(existing.limiter.clone());
+        self.prune_windows_if_needed(&mut guard, now);
+        if let Some(limiter) = {
+            guard.windows.get_mut(&spec).map(|existing| {
+                existing.last_used = now;
+                existing.limiter.clone()
+            })
+        } {
+            self.note_window_prune_at(&mut guard, now);
+            return Ok(limiter);
         }
 
-        if guard.len() >= self.max_window_entries {
-            let excess = guard.len() + 1 - self.max_window_entries;
-            self.evict_oldest_windows(&mut guard, excess);
+        let current_len = guard.windows.len();
+        if current_len >= self.max_window_entries {
+            let excess = current_len + 1 - self.max_window_entries;
+            self.evict_oldest_windows(&mut guard.windows, excess);
         }
 
         let quota = quota_for_window(ctx, &spec.window)?;
         let limiter = Arc::new(Governor::direct(quota));
-        guard.insert(
+        guard.windows.insert(
             spec,
             GovernorWindowEntry {
                 limiter: limiter.clone(),
                 last_used: now,
             },
         );
+        self.note_window_prune_at(&mut guard, now);
         Ok(limiter)
     }
 
-    fn prune_windows(
-        &self,
-        windows: &mut HashMap<GovernorWindowSpec, GovernorWindowEntry>,
-        now: Instant,
-    ) {
+    fn prune_windows_if_needed(&self, state: &mut GovernorWindowState, now: Instant) {
+        if state.next_prune_at.is_none_or(|deadline| now < deadline) {
+            return;
+        }
+
+        self.prune_windows(state, now);
+    }
+
+    fn prune_windows(&self, state: &mut GovernorWindowState, now: Instant) {
         if !self.window_idle_ttl.is_zero() {
-            windows.retain(|_, entry| {
+            state.windows.retain(|_, entry| {
                 now.saturating_duration_since(entry.last_used) <= self.window_idle_ttl
             });
         }
 
-        if windows.len() > self.max_window_entries {
-            self.evict_oldest_windows(windows, windows.len() - self.max_window_entries);
+        let current_len = state.windows.len();
+        if current_len > self.max_window_entries {
+            self.evict_oldest_windows(&mut state.windows, current_len - self.max_window_entries);
         }
+
+        state.next_prune_at = self.next_window_prune_at(&state.windows);
     }
 
     fn evict_oldest_windows(
@@ -150,6 +170,36 @@ impl GovernorRateLimiter {
         for (spec, _) in oldest.into_iter().take(count) {
             windows.remove(&spec);
         }
+    }
+
+    fn note_window_prune_at(&self, state: &mut GovernorWindowState, now: Instant) {
+        if self.window_idle_ttl.is_zero() {
+            state.next_prune_at = Some(now);
+            return;
+        }
+
+        let Some(deadline) = now.checked_add(self.window_idle_ttl) else {
+            return;
+        };
+        state.next_prune_at = Some(
+            state
+                .next_prune_at
+                .map_or(deadline, |current| current.min(deadline)),
+        );
+    }
+
+    fn next_window_prune_at(
+        &self,
+        windows: &HashMap<GovernorWindowSpec, GovernorWindowEntry>,
+    ) -> Option<Instant> {
+        if self.window_idle_ttl.is_zero() {
+            return windows.values().map(|entry| entry.last_used).min();
+        }
+
+        windows
+            .values()
+            .filter_map(|entry| entry.last_used.checked_add(self.window_idle_ttl))
+            .min()
     }
 
     async fn wait_cooldown(&self, ctx: &RateLimitContext<'_>) -> Result<(), ApiClientError> {
@@ -646,7 +696,7 @@ mod tests {
 
         let windows = limiter.windows.lock().expect("window lock");
         let cooldowns = limiter.cooldowns.lock().expect("cooldown lock");
-        assert!(windows.is_empty());
+        assert!(windows.windows.is_empty());
         assert!(cooldowns.is_empty());
     }
 
@@ -1062,7 +1112,7 @@ mod tests {
         let _ = limiter.limiter_for(&ctx, spec_b).expect("second limiter");
 
         let guard = limiter.windows.lock().expect("window lock");
-        assert_eq!(guard.len(), 1);
+        assert_eq!(guard.windows.len(), 1);
     }
 
     #[test]
@@ -1096,7 +1146,7 @@ mod tests {
         let _ = limiter.limiter_for(&ctx, spec_b).expect("second limiter");
 
         let guard = limiter.windows.lock().expect("window lock");
-        assert_eq!(guard.len(), 1);
-        assert!(!guard.contains_key(&spec_a));
+        assert_eq!(guard.windows.len(), 1);
+        assert!(!guard.windows.contains_key(&spec_a));
     }
 }

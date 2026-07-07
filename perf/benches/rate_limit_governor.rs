@@ -18,6 +18,7 @@ const URL: &str = "https://example.com/perf/rate-limit";
 const HOST: Option<&str> = Some("example.com");
 const CONCURRENT_TASKS: usize = 32;
 const FULL_CONCURRENT_TASKS: usize = 1000;
+const WINDOW_PRUNE_PREFILL: usize = 256;
 static METHOD: Method = Method::GET;
 
 fn full_fixture_enabled() -> bool {
@@ -307,6 +308,48 @@ fn bench_cooldown_cardinality(c: &mut Criterion) {
     });
 }
 
+fn bench_window_pruning(c: &mut Criterion) {
+    let setup_runtime = Arc::new(runtime());
+    let bench_runtime = Arc::new(runtime());
+    c.bench_function("window_pruning/hot_acquire_after_prefill_256", |b| {
+        let setup_runtime = setup_runtime.clone();
+        let bench_runtime = bench_runtime.clone();
+        b.iter_batched(
+            move || {
+                let limiter = GovernorRateLimiter::new()
+                    .with_window_idle_ttl(Duration::from_secs(60));
+                let hot_plan = single_bucket_plan(
+                    "bench",
+                    "hot-acquire",
+                    vec![RateLimitKeyPart::static_value("tenant", "hot")],
+                );
+                setup_runtime.block_on(async {
+                    for idx in 0..WINDOW_PRUNE_PREFILL {
+                        let plan = single_bucket_plan(
+                            "bench",
+                            format!("prefill-{idx}"),
+                            vec![RateLimitKeyPart::static_value(
+                                "tenant",
+                                format!("tenant-{idx}"),
+                            )],
+                        );
+                        let ctx = acquire_context("rate_limit_prune_prefill", &plan);
+                        black_box(limiter.acquire(ctx).await.expect("prefill permit"));
+                    }
+                });
+                (limiter, hot_plan)
+            },
+            move |(limiter, plan)| {
+                let ctx = acquire_context("rate_limit_prune_hot", &plan);
+                bench_runtime.block_on(async {
+                    black_box(limiter.acquire(ctx).await.expect("hot permit"));
+                });
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 fn rate_limit_governor(c: &mut Criterion) {
     bench_acquire(c, "empty_plan/acquire", concord_core::advanced::RateLimitPlan::new());
     bench_acquire(
@@ -328,6 +371,7 @@ fn rate_limit_governor(c: &mut Criterion) {
     );
     bench_cooldown_store(c);
     bench_cooldown_cardinality(c);
+    bench_window_pruning(c);
 
     if full_fixture_enabled() {
         bench_concurrent_acquire(
