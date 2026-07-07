@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthHttpExecutor,
-    AuthPlacement, AuthRequirement, CredentialContext, CredentialId, CredentialProvider,
-    CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
+    AuthPlacement, AuthProvenance, AuthRequirement, CredentialContext, CredentialId,
+    CredentialProvider, CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
     PreparedAuthCredential, RequestMeta, RetryBackoff, RetryConfig, RetryIdempotency,
     apply_secret_credential,
 };
@@ -18,6 +18,8 @@ use perf::support::{
 use std::hint::black_box;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+const REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER: &str = "request_local_reusable";
 
 fn base_plan(name: &'static str, path: &'static str) -> RequestPlan {
     request_plan(
@@ -132,6 +134,32 @@ fn bench_repeated_credential(c: &mut Criterion) {
                     .execute_plan_raw(plan)
                     .await
                     .expect("auth retry bench");
+                black_box((response.status, response.body.len()));
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+fn bench_cached_preparation(c: &mut Criterion) {
+    let rt = runtime();
+    c.bench_function("cached_preparation/slot_retry_reuses_preparation", |b| {
+        b.to_async(&rt).iter_batched(
+            || {
+                let mut plan = with_retry(with_auth(
+                    base_plan("CachedPreparation", "/perf/cached-preparation"),
+                    AuthPlacement::Bearer,
+                    "bearer",
+                ));
+                plan.endpoint.policy.auth.requirements[0].provenance =
+                    AuthProvenance::new(REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER);
+                (slot_client(retry_transport()), plan)
+            },
+            |(client, plan)| async move {
+                let response = client
+                    .execute_plan_raw(plan)
+                    .await
+                    .expect("slot auth retry bench");
                 black_box((response.status, response.body.len()));
             },
             BatchSize::SmallInput,
@@ -325,6 +353,7 @@ fn auth_runtime(c: &mut Criterion) {
     });
     bench_collision(c);
     bench_repeated_credential(c);
+    bench_cached_preparation(c);
     bench_cached_slot(c);
 }
 

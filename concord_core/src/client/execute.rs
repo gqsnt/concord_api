@@ -18,6 +18,27 @@ enum AttemptTransportSuccess {
     Transport(TransportResponse),
 }
 
+struct CachedAuthPreparation {
+    preparation: AuthPreparation,
+    extensions: crate::auth::RequestExtensions,
+}
+
+impl CachedAuthPreparation {
+    fn new(built: &BuiltRequest, preparation: AuthPreparation) -> Self {
+        Self {
+            preparation,
+            extensions: built.extensions.clone(),
+        }
+    }
+
+    fn apply_to(&self, built: &mut BuiltRequest) -> &AuthPreparation {
+        // RequestExtensions only carries auth-preparation output (sensitive query keys
+        // and pending auth slots), so replacing the auth-owned extensions here is safe.
+        built.extensions.replace_auth_extensions(self.extensions.clone());
+        &self.preparation
+    }
+}
+
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     fn build_attempt_request(
         &self,
@@ -134,6 +155,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut attempt_index: u32 = 0;
         let mut transport_retry_index: u32 = 0;
         let mut auth_retry_index: u32 = 0;
+        // Request-local auth preparation cache.
+        // It is reused across transport/status retries and cleared when auth
+        // response handling asks for a refreshed credential state.
+        let mut cached_auth_preparation: Option<CachedAuthPreparation> = None;
 
         loop {
             let current_attempt = checked_attempt(base_attempt, attempt_index, &ctx)?;
@@ -142,9 +167,26 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
             let mut built = self.build_attempt_request(plan, args, meta)?;
-            let auth_attempt = self
-                .prepare_auth(plan, &auth_state_snapshot, &auth_http, &mut built)
-                .await?;
+            let auth_preparation = if cached_auth_preparation.is_none() {
+                Some(
+                    self.prepare_auth(plan, &auth_state_snapshot, &auth_http, &mut built)
+                        .await?,
+                )
+            } else {
+                None
+            };
+            let auth_attempt = if let Some(cache) = cached_auth_preparation.as_ref() {
+                cache.apply_to(&mut built)
+            } else {
+                let prepared = auth_preparation
+                    .as_ref()
+                    .expect("prepared auth must exist when cache is absent");
+                if prepared.cache_policy.allows_request_local_reuse() {
+                    cached_auth_preparation =
+                        Some(CachedAuthPreparation::new(&built, prepared.clone()));
+                }
+                prepared
+            };
             let mut built = crate::transport::validate_transport_auth_collisions(built).map_err(|source| {
                 ApiClientError::Auth {
                     ctx: ctx.clone(),
@@ -257,6 +299,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             }
                             auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
                             attempt_index = next_attempt_counter(attempt_index, &ctx)?;
+                            cached_auth_preparation = None;
                             continue;
                         }
                         AuthRejectionOutcome::Terminal => {
@@ -327,6 +370,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                                 }
                                 auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
                                 attempt_index = next_attempt_counter(attempt_index, &ctx)?;
+                                cached_auth_preparation = None;
                                 continue;
                             }
                             AuthRejectionOutcome::Terminal => {
@@ -699,6 +743,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     ) -> Result<AuthPreparation, ApiClientError> {
         let mut summary = crate::auth::AuthAttemptSummary::default();
         let mut materials = Vec::new();
+        let mut cacheable = !plan.endpoint.policy.auth.requirements.is_empty();
         for requirement in &plan.endpoint.policy.auth.requirements {
             let auth_meta = built.meta.clone();
             let mut auth_request =
@@ -721,11 +766,23 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 source,
             })?;
             attach_prepared_auth_generation(built, &prepared);
+            if prepared.applied.provenance.layer != REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER {
+                cacheable = false;
+            }
             let applied = prepared.applied;
             summary.applied.push(applied);
             materials.push(prepared.material);
         }
-        Ok(AuthPreparation { summary, materials })
+        let cache_policy = if cacheable {
+            AuthPreparationCachePolicy::RequestLocalReusable
+        } else {
+            AuthPreparationCachePolicy::Never
+        };
+        Ok(AuthPreparation {
+            summary,
+            materials,
+            cache_policy,
+        })
     }
 
     async fn auth_retry_requested(

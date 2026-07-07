@@ -2,6 +2,7 @@ use super::common::*;
 use crate::support::assert_error_chain_does_not_contain_any;
 use base64::Engine as _;
 use bytes::Bytes;
+use concord_core::advanced::AuthProvenance;
 #[cfg(feature = "json")]
 use concord_core::advanced::OAuth2ClientCredentialsProvider;
 use concord_core::advanced::{
@@ -15,7 +16,7 @@ use concord_core::advanced::{
     InvalidateReason,
 };
 use concord_core::error::ErrorCategory;
-use concord_core::internal::{ClientPlanContext, RequestPlan, ResponseEntity};
+use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy, ResponseEntity};
 use concord_core::prelude::{
     AccessToken, ApiClientError, ApiKey, ClientContext, Endpoint, ReusableEndpoint,
 };
@@ -24,12 +25,21 @@ use http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Mutex;
 
 const AUTH_TRANSPORT_SENTINEL: &str = "PR17_AUTH_TRANSPORT_SENTINEL";
 const AUTH_DECODE_SENTINEL: &str = "PR17_AUTH_DECODE_SENTINEL";
 const AUTH_RETRY_SENTINEL: &str = "PR17_AUTH_RETRY_SENTINEL";
 const AUTH_RESPONSE_SENTINEL: &str = "PR17_AUTH_RESPONSE_SENTINEL";
+const REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER: &str = "request_local_reusable";
+
+fn request_local_reusable_auth_policy(placement: AuthPlacement) -> ResolvedPolicy {
+    let mut policy = auth_policy(placement);
+    policy.auth.requirements[0].provenance =
+        AuthProvenance::new(REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER);
+    policy
+}
 
 #[tokio::test]
 async fn missing_credential_error_is_actionable() {
@@ -629,6 +639,248 @@ async fn auth_retry_reuses_bearer_material_across_attempts() -> Result<(), ApiCl
     }
     assert_eq!(requests[0].meta.attempt, 0);
     assert_eq!(requests[1].meta.attempt, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn auth_retry_reuses_cached_preparation_without_auth_refresh() -> Result<(), ApiClientError> {
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-one"),
+            MockResponse::text(StatusCode::OK, "retry-ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+        (),
+        SlotAuthVars::new(
+            Arc::new(CredentialSlot::new(SlotTokenProvider {
+                events: events.clone(),
+                fail_acquire: false,
+            })),
+            events.clone(),
+            prepare_calls.clone(),
+        ),
+        transport,
+    );
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = request_local_reusable_auth_policy(AuthPlacement::Bearer);
+            policy.retry =
+                retry_policy_for_statuses(2, vec![StatusCode::INTERNAL_SERVER_ERROR]).retry;
+            policy
+        },
+        ..Default::default()
+    };
+
+    let decoded = client
+        .request(endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "retry-ok");
+    assert_eq!(sent.sent_count().await, 2);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let expected = "Bearer token-1";
+    for request in &requests {
+        assert_eq!(
+            request
+                .headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some(expected)
+        );
+    }
+    assert_eq!(prepare_calls.load(Ordering::Relaxed), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn auth_retry_without_request_local_cache_marker_reprepares_auth()
+-> Result<(), ApiClientError> {
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-one"),
+            MockResponse::text(StatusCode::OK, "retry-ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+        (),
+        SlotAuthVars::new(
+            Arc::new(CredentialSlot::new(SlotTokenProvider {
+                events: events.clone(),
+                fail_acquire: false,
+            })),
+            events.clone(),
+            prepare_calls.clone(),
+        ),
+        transport,
+    );
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = auth_policy(AuthPlacement::Bearer);
+            policy.retry =
+                retry_policy_for_statuses(2, vec![StatusCode::INTERNAL_SERVER_ERROR]).retry;
+            policy
+        },
+        ..Default::default()
+    };
+
+    let decoded = client
+        .request(endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "retry-ok");
+    assert_eq!(sent.sent_count().await, 2);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let expected = "Bearer token-1";
+    for request in &requests {
+        assert_eq!(
+            request
+                .headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some(expected)
+        );
+    }
+    assert_eq!(prepare_calls.load(Ordering::Relaxed), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn transport_retry_reuses_cached_auth_preparation_without_auth_refresh()
+-> Result<(), ApiClientError> {
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::with_outcomes(
+        events.clone(),
+        vec![
+            MockOutcome::TransportError(TransportErrorKind::Timeout),
+            MockResponse::text(StatusCode::OK, "retry-ok").into(),
+        ],
+    );
+    let sent = transport.clone();
+    let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+        (),
+        SlotAuthVars::new(
+            Arc::new(CredentialSlot::new(SlotTokenProvider {
+                events: events.clone(),
+                fail_acquire: false,
+            })),
+            events.clone(),
+            prepare_calls.clone(),
+        ),
+        transport,
+    );
+    let endpoint = TextEndpoint {
+        policy: {
+            let mut policy = request_local_reusable_auth_policy(AuthPlacement::Bearer);
+            policy.retry =
+                retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]).retry;
+            policy
+        },
+        ..Default::default()
+    };
+
+    let decoded = client
+        .request(endpoint)
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await?;
+
+    assert_eq!(decoded.value(), "retry-ok");
+    assert_eq!(sent.sent_count().await, 2);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let expected = "Bearer token-1";
+    for request in &requests {
+        assert_eq!(
+            request
+                .headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some(expected)
+        );
+    }
+    assert_eq!(prepare_calls.load(Ordering::Relaxed), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn auth_refresh_retry_invalidates_cached_auth_preparation() -> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
+    let slot = Arc::new(CredentialSlot::new(SlotTokenProvider {
+        events: events.clone(),
+        fail_acquire: false,
+    }));
+    let transport = GateTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::UNAUTHORIZED, "expired"),
+            MockResponse::text(StatusCode::OK, "refreshed"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+        (),
+        SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone()),
+        transport,
+    );
+    let client = Arc::new(client);
+    let endpoint = TextEndpoint {
+        policy: request_local_reusable_auth_policy(AuthPlacement::Bearer),
+        ..Default::default()
+    };
+    let handle = {
+        let client = client.clone();
+        let endpoint = endpoint.clone();
+        tokio::spawn(async move {
+            client
+                .request(endpoint)
+                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .await
+                .map(|response| response.into_value())
+        })
+    };
+
+    sent.wait_for_sends(1).await;
+    slot.set_manual(AccessToken::new("token-2".to_string()))
+        .await
+        .expect("manual replacement should advance the generation");
+    sent.release_all();
+
+    let decoded = handle
+        .await
+        .expect("request task should complete successfully")?;
+    assert_eq!(decoded, "refreshed");
+    assert_eq!(sent.sent_count().await, 2);
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer token-1")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer token-2")
+    );
+    assert_eq!(prepare_calls.load(Ordering::Relaxed), 2);
     Ok(())
 }
 
@@ -2359,6 +2611,7 @@ impl PolicyAuthHarness {
 struct SlotAuthVars {
     slot: Arc<CredentialSlot<SlotAuthCx, SlotTokenProvider>>,
     events: Arc<Mutex<Vec<String>>>,
+    prepare_calls: Arc<AtomicUsize>,
 }
 
 #[derive(Clone)]
@@ -2368,6 +2621,20 @@ struct SlotAuthState {
 
 #[derive(Clone)]
 struct SlotAuthCx;
+
+impl SlotAuthVars {
+    fn new(
+        slot: Arc<CredentialSlot<SlotAuthCx, SlotTokenProvider>>,
+        events: Arc<Mutex<Vec<String>>>,
+        prepare_calls: Arc<AtomicUsize>,
+    ) -> Self {
+        Self {
+            slot,
+            events,
+            prepare_calls,
+        }
+    }
+}
 
 #[derive(Clone)]
 struct SlotTokenProvider {
@@ -2443,6 +2710,7 @@ impl ClientContext for SlotAuthCx {
         _meta: &'a RequestMeta,
     ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>> {
         Box::pin(async move {
+            auth.prepare_calls.fetch_add(1, Ordering::Relaxed);
             let lease = auth
                 .slot
                 .get_or_refresh(
@@ -2559,6 +2827,7 @@ impl ReusableEndpoint<SlotAuthCx> for TextEndpoint {
 async fn endpoint_backed_auth_slot_acquires_and_applies_the_credential()
 -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
     let slot = Arc::new(CredentialSlot::new(SlotTokenProvider {
         events: events.clone(),
         fail_acquire: false,
@@ -2570,10 +2839,7 @@ async fn endpoint_backed_auth_slot_acquires_and_applies_the_credential()
     let sent_transport = transport.clone();
     let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
         (),
-        SlotAuthVars {
-            slot: slot.clone(),
-            events: events.clone(),
-        },
+        SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone()),
         transport,
     );
     client.set_max_auth_retries(8);
@@ -2599,12 +2865,14 @@ async fn endpoint_backed_auth_slot_acquires_and_applies_the_credential()
     );
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event == "slot_acquire:Missing"));
+    assert_eq!(prepare_calls.load(Ordering::Relaxed), 1);
     Ok(())
 }
 
 #[tokio::test]
 async fn endpoint_backed_auth_slot_acquire_failure_is_typed_and_contextual() {
     let events = Arc::new(Mutex::new(Vec::new()));
+    let prepare_calls = Arc::new(AtomicUsize::new(0));
     let slot = Arc::new(CredentialSlot::new(SlotTokenProvider {
         events: events.clone(),
         fail_acquire: true,
@@ -2616,10 +2884,7 @@ async fn endpoint_backed_auth_slot_acquire_failure_is_typed_and_contextual() {
     let sent_transport = transport.clone();
     let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
         (),
-        SlotAuthVars {
-            slot: slot.clone(),
-            events: events.clone(),
-        },
+        SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone()),
         transport,
     );
     client.set_max_auth_retries(8);
@@ -2646,6 +2911,7 @@ async fn endpoint_backed_auth_slot_acquire_failure_is_typed_and_contextual() {
     assert_eq!(sent_transport.sent_count().await, 0);
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event == "slot_acquire:Missing"));
+    assert_eq!(prepare_calls.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]
@@ -2653,6 +2919,7 @@ async fn auth_rejection_stale_invalidation_cannot_clear_newer_generation()
 -> Result<(), ApiClientError> {
     for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
         let events = Arc::new(Mutex::new(Vec::new()));
+        let prepare_calls = Arc::new(AtomicUsize::new(0));
         let slot = Arc::new(CredentialSlot::new(SlotTokenProvider {
             events: events.clone(),
             fail_acquire: false,
@@ -2667,10 +2934,7 @@ async fn auth_rejection_stale_invalidation_cannot_clear_newer_generation()
         let sent_transport = transport.clone();
         let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
             (),
-            SlotAuthVars {
-                slot: slot.clone(),
-                events: events.clone(),
-            },
+            SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone()),
             transport,
         );
         client.set_max_auth_retries(8);
@@ -2719,6 +2983,7 @@ async fn auth_rejection_stale_invalidation_cannot_clear_newer_generation()
                 .and_then(|value| value.to_str().ok()),
             Some("Bearer token-2")
         );
+        assert_eq!(prepare_calls.load(Ordering::Relaxed), 2);
         let cached = client
             .auth_state()
             .slot

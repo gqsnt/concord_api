@@ -130,3 +130,10 @@ pub struct RequestExtensions {
     pub sensitive_query_keys: Vec<String>,
     pub pending_auth_slots: Vec<crate::auth::PendingAuthSlot>,
 }
+
+impl RequestExtensions {
+    #[inline]
+    pub(crate) fn replace_auth_extensions(&mut self, other: Self) {
+        *self = other;
+    }
+}

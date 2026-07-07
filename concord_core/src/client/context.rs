@@ -78,9 +78,29 @@ struct SendClassifyCtx<'a> {
     auth_materials: &'a [crate::auth::AuthTransportMaterial],
 }
 
-struct AuthPreparation {
-    summary: crate::auth::AuthAttemptSummary,
-    materials: Vec<crate::auth::AuthTransportMaterial>,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AuthPreparationCachePolicy {
+    Never,
+    RequestLocalReusable,
+}
+
+// Request-local auth-preparation reuse is an explicit opt-in marker so only known
+// retry-stable credential paths reuse cached preparation across transport retries.
+pub(super) const REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER: &str =
+    "request_local_reusable";
+
+impl AuthPreparationCachePolicy {
+    #[inline]
+    fn allows_request_local_reuse(self) -> bool {
+        matches!(self, Self::RequestLocalReusable)
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct AuthPreparation {
+    pub(super) summary: crate::auth::AuthAttemptSummary,
+    pub(super) materials: Vec<crate::auth::AuthTransportMaterial>,
+    pub(super) cache_policy: AuthPreparationCachePolicy,
 }
 
 struct AuthRejectionCtx<'a, Cx: ClientContext, T: Transport> {
