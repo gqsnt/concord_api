@@ -196,9 +196,9 @@ impl<'a> SanitizedHeaders<'a> {
     where
         N: http::header::AsHeaderName + Clone,
     {
-        let name_str = name.as_str().to_owned();
+        let name_str = name.as_str();
         let value = self.headers.get(name.clone())?;
-        Some(sanitized_header_value(&name_str, value))
+        Some(sanitized_header_value(name_str, value))
     }
 
     pub fn contains_key<N>(&self, name: N) -> bool

@@ -83,13 +83,21 @@ impl RuntimeHooks for CountingHooks {
     }
 }
 
-fn plan(name: &'static str, query: usize, headers: usize) -> RequestPlan {
+fn plan(name: &'static str, query: usize, headers: usize, mixed_case: bool) -> RequestPlan {
     let mut policy = ResolvedPolicy::default();
     for idx in 0..query {
         let key = if idx % 2 == 0 {
-            format!("token_{idx}")
+            if mixed_case {
+                format!("ToKeN_{idx}")
+            } else {
+                format!("token_{idx}")
+            }
         } else {
-            format!("visible_{idx}")
+            if mixed_case {
+                format!("Visible_{idx}")
+            } else {
+                format!("visible_{idx}")
+            }
         };
         policy
             .query
@@ -97,9 +105,17 @@ fn plan(name: &'static str, query: usize, headers: usize) -> RequestPlan {
     }
     for idx in 0..headers {
         let name = if idx % 2 == 0 {
-            format!("x-api-token-{idx}")
+            if mixed_case {
+                format!("X-Api-Token-{idx}")
+            } else {
+                format!("x-api-token-{idx}")
+            }
         } else {
-            format!("x-visible-{idx}")
+            if mixed_case {
+                format!("X-Visible-{idx}")
+            } else {
+                format!("x-visible-{idx}")
+            }
         };
         policy.headers.insert(
             HeaderName::from_bytes(name.as_bytes()).expect("valid header"),
@@ -118,13 +134,21 @@ fn plan(name: &'static str, query: usize, headers: usize) -> RequestPlan {
     )
 }
 
-fn response(headers: usize) -> MockResponse {
+fn response(headers: usize, mixed_case: bool) -> MockResponse {
     let mut response = MockResponse::text(StatusCode::OK, Bytes::from_static(b"ok"));
     for idx in 0..headers {
         let name = if idx % 2 == 0 {
-            format!("x-refresh-token-{idx}")
+            if mixed_case {
+                format!("X-Refresh-Token-{idx}")
+            } else {
+                format!("x-refresh-token-{idx}")
+            }
         } else {
-            format!("x-response-visible-{idx}")
+            if mixed_case {
+                format!("X-Response-Visible-{idx}")
+            } else {
+                format!("x-response-visible-{idx}")
+            }
         };
         response = response.with_header(
             HeaderName::from_bytes(name.as_bytes()).expect("valid header"),
@@ -135,12 +159,12 @@ fn response(headers: usize) -> MockResponse {
     response
 }
 
-fn bench_case(c: &mut Criterion, name: &str, query: usize, req_headers: usize, resp_headers: usize, debug: DebugLevel, hooks: bool) {
+fn bench_case(c: &mut Criterion, name: &str, query: usize, req_headers: usize, resp_headers: usize, debug: DebugLevel, hooks: bool, mixed_case: bool) {
     let rt = runtime();
     c.bench_function(name, |b| {
         b.to_async(&rt).iter_batched(
             || {
-                let transport = MockTransport::repeating(response(resp_headers));
+                let transport = MockTransport::repeating(response(resp_headers, mixed_case));
                 let mut client = if debug == DebugLevel::None {
                     client(transport)
                 } else {
@@ -155,7 +179,7 @@ fn bench_case(c: &mut Criterion, name: &str, query: usize, req_headers: usize, r
                 if hooks {
                     client.set_runtime_hooks(Arc::new(CountingHooks::default()));
                 }
-                let mut plan = plan("RedactionHooks", query, req_headers);
+                let mut plan = plan("RedactionHooks", query, req_headers, mixed_case);
                 plan.overrides = RequestOverrides {
                     debug_level: Some(debug),
                     ..Default::default()
@@ -175,16 +199,17 @@ fn bench_case(c: &mut Criterion, name: &str, query: usize, req_headers: usize, r
 }
 
 fn redaction_hooks(c: &mut Criterion) {
-    bench_case(c, "url_query/small", 4, 0, 0, DebugLevel::V, false);
-    bench_case(c, "url_query/many", 64, 0, 0, DebugLevel::V, false);
-    bench_case(c, "headers/small", 0, 4, 4, DebugLevel::VV, false);
-    bench_case(c, "headers/many", 0, 64, 64, DebugLevel::VV, false);
-    bench_case(c, "debug/disabled", 8, 8, 8, DebugLevel::None, false);
-    bench_case(c, "debug/v", 8, 8, 8, DebugLevel::V, false);
-    bench_case(c, "debug/vv", 8, 8, 8, DebugLevel::VV, false);
-    bench_case(c, "hooks/noop_runtime", 8, 8, 8, DebugLevel::None, false);
-    bench_case(c, "hooks/counting_runtime", 8, 8, 8, DebugLevel::None, true);
-    bench_case(c, "hooks_debug/real_path_vv", 16, 16, 16, DebugLevel::VV, true);
+    bench_case(c, "url_query/small", 4, 0, 0, DebugLevel::V, false, false);
+    bench_case(c, "url_query/many", 64, 0, 0, DebugLevel::V, false, false);
+    bench_case(c, "headers/small", 0, 4, 4, DebugLevel::VV, false, false);
+    bench_case(c, "headers/many", 0, 64, 64, DebugLevel::VV, false, false);
+    bench_case(c, "headers/mixed_case", 0, 32, 32, DebugLevel::VV, false, true);
+    bench_case(c, "debug/disabled", 8, 8, 8, DebugLevel::None, false, false);
+    bench_case(c, "debug/v", 8, 8, 8, DebugLevel::V, false, false);
+    bench_case(c, "debug/vv", 8, 8, 8, DebugLevel::VV, false, false);
+    bench_case(c, "hooks/noop_runtime", 8, 8, 8, DebugLevel::None, false, false);
+    bench_case(c, "hooks/counting_runtime", 8, 8, 8, DebugLevel::None, true, false);
+    bench_case(c, "hooks_debug/real_path_vv", 16, 16, 16, DebugLevel::VV, true, true);
 }
 
 criterion_group!(benches, redaction_hooks);

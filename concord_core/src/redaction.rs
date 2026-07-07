@@ -1,38 +1,74 @@
 use http::{HeaderMap, HeaderValue};
 
 pub(crate) fn is_sensitive_name(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    matches!(
-        n.as_str(),
-        "authorization"
-            | "proxy-authorization"
-            | "cookie"
-            | "set-cookie"
-            | "www-authenticate"
-            | "x-api-key"
-            | "x-api-token"
-            | "x-auth-token"
-            | "x-access-token"
-            | "x-refresh-token"
-            | "x-session-token"
-            | "access_token"
-            | "refresh_token"
-            | "api_key"
-            | "apikey"
-            | "key"
-            | "token"
-            | "secret"
-            | "password"
-            | "auth"
-    ) || n.contains("token")
-        || n.contains("secret")
-        || n.contains("api-key")
-        || n.contains("apikey")
-        || n.contains("session")
-        || n.contains("credential")
-        || n.contains("authorization")
-        || n.ends_with("_key")
-        || n.ends_with("-key")
+    matches_ignore_ascii_case(
+        name,
+        &[
+            "authorization",
+            "proxy-authorization",
+            "cookie",
+            "set-cookie",
+            "www-authenticate",
+            "x-api-key",
+            "x-api-token",
+            "x-auth-token",
+            "x-access-token",
+            "x-refresh-token",
+            "x-session-token",
+            "access_token",
+            "refresh_token",
+            "api_key",
+            "apikey",
+            "key",
+            "token",
+            "secret",
+            "password",
+            "auth",
+        ],
+    ) || contains_ignore_ascii_case(name, "token")
+        || contains_ignore_ascii_case(name, "secret")
+        || contains_ignore_ascii_case(name, "api-key")
+        || contains_ignore_ascii_case(name, "apikey")
+        || contains_ignore_ascii_case(name, "session")
+        || contains_ignore_ascii_case(name, "credential")
+        || contains_ignore_ascii_case(name, "authorization")
+        || ends_with_ignore_ascii_case(name, "_key")
+        || ends_with_ignore_ascii_case(name, "-key")
+}
+
+fn matches_ignore_ascii_case(name: &str, candidates: &[&str]) -> bool {
+    candidates
+        .iter()
+        .any(|candidate| name.eq_ignore_ascii_case(candidate))
+}
+
+fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+
+    let haystack = haystack.as_bytes();
+    let needle = needle.as_bytes();
+    if needle.len() > haystack.len() {
+        return false;
+    }
+
+    haystack.windows(needle.len()).any(|window| {
+        window
+            .iter()
+            .zip(needle.iter())
+            .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
+    })
+}
+
+fn ends_with_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    let haystack = haystack.as_bytes();
+    let needle = needle.as_bytes();
+    haystack.len() >= needle.len()
+        && haystack[haystack.len() - needle.len()..]
+            .iter()
+            .zip(needle.iter())
+            .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
 }
 
 pub(crate) fn should_redact_header_name(name: &http::HeaderName) -> bool {
@@ -55,23 +91,22 @@ pub(crate) fn sanitize_url_for_debug<I, S>(url: &url::Url, sensitive_query_keys:
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
+    I::IntoIter: Clone,
 {
     if url.query().is_none() {
         return url.to_string();
     }
 
-    let explicit_sensitive = sensitive_query_keys
-        .into_iter()
-        .map(|key| key.as_ref().to_ascii_lowercase())
-        .collect::<std::collections::BTreeSet<_>>();
-
+    let sensitive_query_keys = sensitive_query_keys.into_iter();
     let mut out = url.clone();
     out.set_query(None);
     {
         let mut pairs = out.query_pairs_mut();
         for (key, value) in url.query_pairs() {
-            let redacted =
-                explicit_sensitive.contains(&key.to_ascii_lowercase()) || is_sensitive_name(&key);
+            let redacted = sensitive_query_keys
+                .clone()
+                .any(|candidate| key.eq_ignore_ascii_case(candidate.as_ref()))
+                || is_sensitive_name(&key);
 
             if redacted {
                 pairs.append_pair(&key, "<redacted>");
@@ -104,6 +139,31 @@ mod tests {
         }
 
         assert!(!is_sensitive_name("accept"));
+    }
+
+    #[test]
+    fn sensitive_name_rules_are_ascii_case_insensitive_and_keep_non_sensitive_visible() {
+        for name in [
+            "Authorization",
+            "X-Api-Key",
+            "x-API-TOKEN",
+            "X-Auth-Token",
+            "x-access-token",
+            "X-Refresh-Token",
+            "X-Session-Token",
+            "client_secret",
+            "X-CREDENTIAL-ID",
+            "My-Token-Header",
+            "apiKEY",
+            "prefix_secret_suffix",
+            "trailing-key",
+        ] {
+            assert!(is_sensitive_name(name), "{name} should be sensitive");
+        }
+
+        for name in ["accept", "x-visible-id", "x-public-handle"] {
+            assert!(!is_sensitive_name(name), "{name} should stay visible");
+        }
     }
 
     #[test]
