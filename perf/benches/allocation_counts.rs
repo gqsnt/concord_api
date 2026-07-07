@@ -1,20 +1,29 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    NoopDebugSink, NoopRateLimiter, StreamBody, Transport, TransportError, TransportRequest,
+    GovernorRateLimiter, NoopDebugSink, NoopRateLimiter, OffsetLimitPagination, PaginateBinding,
+    PaginationRuntimeAdapter, RateLimiter, StreamBody, Transport, TransportError, TransportRequest,
     TransportResponse,
 };
-use concord_core::internal::{BodyPlan, RequestArgs, RequestPlan, ResolvedPolicy, Replayability};
+use concord_core::internal::{
+    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestArgs,
+    RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan, Replayability,
+};
+use concord_core::prelude::{
+    ApiClientError, Endpoint, PageItems, PaginatedEndpoint, PaginationTermination, ReusableEndpoint,
+    Text,
+};
 use futures_util::StreamExt;
-use http::{Method, StatusCode};
+use http::{Method, StatusCode, header::HeaderValue};
 use perf::support::{
     AllocationSnapshot, CountingAllocator, EmptyBody, InMemoryAsyncRead, MockResponse,
-    MockTransport, auth_requirement, client, filled_bytes, request_plan, reset_allocation_counts,
-    runtime, snapshot_allocation_counts,
+    MockTransport, auth_requirement, client, context, filled_bytes, request_plan,
+    reset_allocation_counts, runtime, snapshot_allocation_counts,
 };
 use std::alloc::System;
 use std::future::Future;
 use std::hint::black_box;
 use std::pin::Pin;
+use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 #[global_allocator]
@@ -37,6 +46,13 @@ fn success_transport() -> MockTransport {
         StatusCode::OK,
         Bytes::from_static(b"ok"),
     ))
+}
+
+fn retry_transport() -> MockTransport {
+    MockTransport::scripted(vec![
+        MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, Bytes::from_static(b"retry")),
+        MockResponse::text(StatusCode::OK, Bytes::from_static(b"ok")),
+    ])
 }
 
 fn report_case<T, Setup, Run>(rt: &Runtime, label: &'static str, setup: Setup, mut run: Run)
@@ -62,6 +78,31 @@ fn print_report(label: &str, counts: AllocationSnapshot) {
     );
 }
 
+fn report_case_with_caveat<T, Setup, Run>(
+    rt: &Runtime,
+    label: &'static str,
+    setup: Setup,
+    mut run: Run,
+    caveat: &'static str,
+)
+where
+    Setup: FnOnce() -> T,
+    for<'a> Run: FnMut(&'a mut T) -> Pin<Box<dyn Future<Output = ()> + 'a>>,
+{
+    let mut state = setup();
+    reset_allocation_counts();
+    rt.block_on(run(&mut state));
+    let counts = snapshot_allocation_counts();
+    println!(
+        "allocation_counts/{label} allocs={} deallocs={} bytes_allocated={} bytes_deallocated={} report_only=true caveat={caveat}",
+        counts.alloc_calls,
+        counts.dealloc_calls,
+        counts.bytes_allocated,
+        counts.bytes_deallocated,
+    );
+    drop(state);
+}
+
 fn sanity_check_counter() {
     reset_allocation_counts();
     {
@@ -75,6 +116,29 @@ fn sanity_check_counter() {
         "allocation counter sanity check should observe at least one allocation"
     );
     reset_allocation_counts();
+}
+
+fn with_bearer_auth(mut plan: RequestPlan) -> RequestPlan {
+    plan.endpoint.policy.auth.requirements.push(auth_requirement(
+        concord_core::advanced::AuthPlacement::Bearer,
+        "bearer",
+    ));
+    plan
+}
+
+fn with_retry(mut plan: RequestPlan, max_attempts: u32) -> RequestPlan {
+    plan.endpoint.policy.retry = concord_core::internal::RetrySetting::Config(
+        concord_core::advanced::RetryConfig {
+            max_attempts,
+            methods: vec![Method::GET],
+            statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
+            transport_errors: Vec::new(),
+            backoff: concord_core::advanced::RetryBackoff::None,
+            respect_retry_after: false,
+            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
+        },
+    );
+    plan
 }
 
 fn run_attempt_pipeline(rt: &Runtime) {
@@ -93,6 +157,22 @@ fn run_attempt_pipeline(rt: &Runtime) {
             })
         },
     );
+
+    report_case(
+        rt,
+        "attempt_pipeline/retry_once_then_success",
+        || client(retry_transport()),
+        |client| {
+            Box::pin(async move {
+                let plan = with_retry(base_plan("RetryOnce", "/perf/retry-once"), 2);
+                let response = client
+                    .execute_plan_raw(plan)
+                    .await
+                    .expect("allocation report retry");
+                black_box((response.status, response.body.len()));
+            })
+        },
+    );
 }
 
 fn run_auth_runtime(rt: &Runtime) {
@@ -102,11 +182,7 @@ fn run_auth_runtime(rt: &Runtime) {
         || client(success_transport()),
         |client| {
             Box::pin(async move {
-                let mut plan = base_plan("BearerAuth", "/perf/bearer-auth");
-                plan.endpoint.policy.auth.requirements.push(auth_requirement(
-                    concord_core::advanced::AuthPlacement::Bearer,
-                    "bearer",
-                ));
+                let plan = with_bearer_auth(base_plan("BearerAuth", "/perf/bearer-auth"));
                 let response = client
                     .execute_plan_raw(plan)
                     .await
@@ -128,9 +204,9 @@ fn run_redaction_hooks(rt: &Runtime) {
             ));
             let mut client = client(transport);
             client.configure(|cfg| {
-                cfg.debug_sink(std::sync::Arc::new(NoopDebugSink));
+                cfg.debug_sink(Arc::new(NoopDebugSink));
                 cfg.debug_level(concord_core::prelude::DebugLevel::VV);
-                cfg.rate_limiter(std::sync::Arc::new(NoopRateLimiter::new()));
+                cfg.rate_limiter(Arc::new(NoopRateLimiter::new()));
             });
             client
         },
@@ -236,7 +312,7 @@ fn run_streaming_upload(rt: &Runtime) {
                     "/perf/streaming-upload",
                     ResolvedPolicy::default(),
                     BodyPlan::RawStream {
-                        content_type: http::HeaderValue::from_static("application/octet-stream"),
+                        content_type: HeaderValue::from_static("application/octet-stream"),
                     },
                     RequestArgs::with_stream_body(stream_body),
                     Replayability::NonReplayable,
@@ -251,6 +327,171 @@ fn run_streaming_upload(rt: &Runtime) {
     );
 }
 
+fn run_pagination(rt: &Runtime) {
+    report_case(
+        rt,
+        "pagination/collect_pages",
+        || {
+            let transport = MockTransport::scripted(vec![
+                MockResponse::text(StatusCode::OK, "item-0"),
+                MockResponse::text(StatusCode::OK, "item-1"),
+            ]);
+            (client(transport), PaginationEndpoint::new(2))
+        },
+        |state| {
+            let client = &state.0;
+            let endpoint = state.1.clone();
+            Box::pin(async move {
+                let items = client
+                    .request(endpoint)
+                    .paginate(PaginationTermination::take_pages(2))
+                    .collect()
+                    .await
+                    .expect("allocation report pagination");
+                black_box(items.len());
+            })
+        },
+    );
+}
+
+fn run_rate_limit_governor(rt: &Runtime) {
+    report_case_with_caveat(
+        rt,
+        "rate_limit_governor/empty_plan_context_and_acquire",
+        || (GovernorRateLimiter::new(), concord_core::advanced::RateLimitPlan::new()),
+        |state| {
+            let limiter = &state.0;
+            let plan = &state.1;
+            Box::pin(async move {
+                let ctx = context(
+                    "allocation_counts_empty_plan",
+                    &Method::GET,
+                    "https://example.com/perf/empty-plan",
+                    Some("example.com"),
+                    plan,
+                );
+                let permit = limiter.acquire(ctx).await.expect("empty plan permit");
+                black_box(permit);
+            })
+        },
+        "context_construction_included empty_plan_fast_path",
+    );
+}
+
+#[derive(Clone)]
+struct PaginationEndpoint {
+    count: u64,
+}
+
+impl PaginationEndpoint {
+    fn new(count: u64) -> Self {
+        Self { count }
+    }
+}
+
+impl Endpoint<perf::support::PerfCx> for PaginationEndpoint {
+    type Response = PaginationPage;
+
+    fn execute<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<perf::support::PerfCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        Box::pin(async move {
+            let decoded = client.execute_plan::<Text<String>>(plan).await?;
+            Ok(PaginationPage::parse(decoded.into_value()))
+        })
+    }
+}
+
+impl ReusableEndpoint<perf::support::PerfCx> for PaginationEndpoint {
+    fn plan(
+        &self,
+        _ctx: &ClientPlanContext<'_, perf::support::PerfCx>,
+    ) -> Result<RequestPlan, ApiClientError> {
+        Ok(RequestPlan {
+            endpoint: EndpointPlan {
+                meta: EndpointMeta {
+                    name: "AllocationPagination",
+                    method: Method::GET,
+                    idempotent: true,
+                    facade_path: &[],
+                },
+                route: ResolvedRoute::new(
+                    http::uri::Scheme::HTTPS,
+                    "example.com",
+                    "/perf/pagination",
+                ),
+                policy: ResolvedPolicy::default(),
+                body: BodyPlan::None,
+                response: ResponsePlan {
+                    accept: Some(HeaderValue::from_static("text/plain")),
+                    no_content: false,
+                    format: concord_core::internal::Format::Text,
+                },
+                pagination: Some(PaginationMarker),
+            },
+            args: RequestArgs::empty(),
+            overrides: RequestOverrides::default(),
+            replayability: Replayability::Replayable,
+        })
+    }
+}
+
+impl PaginatedEndpoint<perf::support::PerfCx> for PaginationEndpoint {
+    type Pagination = OffsetLimitPagination;
+
+    fn pagination_runtime(
+        &self,
+    ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
+        Some(Box::new(PaginationRuntimeAdapter::<OffsetLimitPagination>::new()))
+    }
+}
+
+impl PaginateBinding<OffsetLimitPagination> for PaginationEndpoint {
+    fn load_pagination(&self) -> OffsetLimitPagination {
+        OffsetLimitPagination {
+            offset: 0,
+            limit: self.count,
+        }
+    }
+
+    fn store_pagination(&mut self, pagination: &OffsetLimitPagination) {
+        self.count = pagination.limit;
+        let _ = pagination.offset;
+    }
+}
+
+#[derive(Clone)]
+struct PaginationPage {
+    items: Vec<String>,
+}
+
+impl PaginationPage {
+    fn parse(raw: String) -> Self {
+        let items = raw
+            .split(',')
+            .filter(|item| !item.is_empty())
+            .map(str::to_string)
+            .collect();
+        Self { items }
+    }
+}
+
+impl PageItems for PaginationPage {
+    type Item = String;
+
+    fn item_count(&self) -> usize {
+        self.items.len()
+    }
+
+    fn into_items(self) -> Vec<Self::Item> {
+        self.items
+    }
+}
+
 fn main() {
     let rt = runtime();
     sanity_check_counter();
@@ -260,4 +501,6 @@ fn main() {
     run_auth_runtime(&rt);
     run_redaction_hooks(&rt);
     run_streaming_upload(&rt);
+    run_pagination(&rt);
+    run_rate_limit_governor(&rt);
 }

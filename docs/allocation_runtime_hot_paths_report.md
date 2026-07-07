@@ -4,7 +4,7 @@ This is a report-only summary of the current runtime allocation-count prototype.
 
 ## 1. Executive Summary
 
-This is the first runtime allocation-count report for Concord hot paths using the benchmark-only prototype from PERF-PR 21A.
+This is the first runtime allocation-count report for Concord hot paths using the benchmark-only prototype from PERF-PR 21A. PERF-PR 21C extends the matrix to include retry, pagination, and rate-limit governor cases.
 
 The counts below are process-local and machine-local. They are report-only observations from one local run. No allocation thresholds are introduced here.
 
@@ -27,6 +27,8 @@ The current prototype reports four counters:
 - allocated bytes
 - deallocated bytes
 
+The added pagination case uses the collect-only path. The governor case measures empty-plan context construction plus acquisition, so the report stays focused on the empty-plan fast path while making the boundary explicit.
+
 ## 3. Allocation Target Matrix
 
 Current local output from:
@@ -41,6 +43,14 @@ cargo bench --manifest-path perf/Cargo.toml --bench allocation_counts
 - dealloc calls: `21`
 - bytes allocated: `10902`
 - bytes deallocated: `9522`
+- caveat: `setup_teardown_excluded async_runtime_may_be_included`
+
+### attempt_pipeline/retry_once_then_success
+
+- alloc calls: `45`
+- dealloc calls: `46`
+- bytes allocated: `12395`
+- bytes deallocated: `12293`
 - caveat: `setup_teardown_excluded async_runtime_may_be_included`
 
 ### auth_runtime/apply/bearer
@@ -66,6 +76,22 @@ cargo bench --manifest-path perf/Cargo.toml --bench allocation_counts
 - bytes allocated: `2115945`
 - bytes deallocated: `2115921`
 - caveat: `setup_teardown_excluded async_runtime_may_be_included`
+
+### pagination/collect_pages
+
+- alloc calls: `44`
+- dealloc calls: `44`
+- bytes allocated: `13907`
+- bytes deallocated: `13184`
+- caveat: `setup_teardown_excluded async_runtime_may_be_included`
+
+### rate_limit_governor/empty_plan_context_and_acquire
+
+- alloc calls: `12`
+- dealloc calls: `12`
+- bytes allocated: `901`
+- bytes deallocated: `901`
+- caveat: `context_construction_included empty_plan_fast_path`
 
 ## 4. Interpretation Notes
 
