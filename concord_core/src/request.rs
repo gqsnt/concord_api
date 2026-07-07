@@ -12,7 +12,6 @@ use crate::sse::SseStream;
 use crate::stream_response::StreamResponse;
 use crate::timeout::TimeoutOverride;
 use crate::transport::{BuiltResponse, DecodedResponse};
-use base64::Engine;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::future::{Future, IntoFuture};
@@ -386,7 +385,7 @@ where
         plan.overrides.attempt = pending.opts.attempt;
         plan.overrides.page_index = page_index;
         let request_identity = pagination_request_identity(&plan);
-        progress_state.ensure_progress(request_identity.clone(), &ctx, page_index)?;
+        progress_state.ensure_progress(request_identity, &ctx, page_index)?;
         let page = E::execute(pending.client, plan).await?;
         let page_len = page.item_count();
         let pre_advance = pre_advance_decision(
@@ -580,13 +579,13 @@ fn common_content_stop(item_count: usize, expected_items: Option<NonZeroUsize>) 
 
 #[derive(Default)]
 struct PaginationRunState {
-    seen_request_identities: HashSet<String>,
+    seen_request_identities: HashSet<PaginationRequestIdentity>,
 }
 
 impl PaginationRunState {
     fn ensure_progress(
         &mut self,
-        current_identity: String,
+        current_identity: PaginationRequestIdentity,
         ctx: &crate::error::ErrorContext,
         page_index: u32,
     ) -> Result<(), ApiClientError> {
@@ -604,62 +603,49 @@ impl PaginationRunState {
     }
 }
 
-fn pagination_request_identity(plan: &crate::endpoint::RequestPlan) -> String {
-    let mut out = String::new();
-    push_identity_component(&mut out, "endpoint", plan.endpoint.meta.name);
-    push_identity_component(&mut out, "method", plan.endpoint.meta.method.as_str());
-    push_identity_component(&mut out, "url", &sanitized_plan_url(plan));
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct PaginationRequestIdentity {
+    endpoint: &'static str,
+    method: http::Method,
+    scheme: http::uri::Scheme,
+    host: String,
+    path: String,
+    query: Vec<(String, String)>,
+    headers: Vec<PaginationRequestHeader>,
+}
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+struct PaginationRequestHeader {
+    name: String,
+    value: Vec<u8>,
+}
+
+fn pagination_request_identity(plan: &crate::endpoint::RequestPlan) -> PaginationRequestIdentity {
     let mut headers: Vec<_> = plan
         .endpoint
         .policy
         .headers
         .iter()
-        .map(|(name, value)| {
-            (
-                name.as_str().to_string(),
-                base64::engine::general_purpose::STANDARD_NO_PAD.encode(value.as_bytes()),
-            )
+        .map(|(name, value)| PaginationRequestHeader {
+            name: name.as_str().to_string(),
+            value: value.as_bytes().to_vec(),
         })
         .collect();
     headers.sort_unstable_by(|a, b| {
-        let name_order = a.0.cmp(&b.0);
+        let name_order = a.name.cmp(&b.name);
         if name_order == Ordering::Equal {
-            a.1.cmp(&b.1)
+            a.value.cmp(&b.value)
         } else {
             name_order
         }
     });
-    for (name, value) in headers {
-        push_identity_component(&mut out, "header", &name);
-        push_identity_component(&mut out, "value", &value);
+    PaginationRequestIdentity {
+        endpoint: plan.endpoint.meta.name,
+        method: plan.endpoint.meta.method.clone(),
+        scheme: plan.endpoint.route.scheme.clone(),
+        host: plan.endpoint.route.host.clone(),
+        path: plan.endpoint.route.path.clone(),
+        query: plan.endpoint.policy.query.clone(),
+        headers,
     }
-
-    out
-}
-
-fn sanitized_plan_url(plan: &crate::endpoint::RequestPlan) -> String {
-    let route = &plan.endpoint.route;
-    let mut url = format!("{}://{}{}", route.scheme.as_str(), route.host, route.path);
-    if !plan.endpoint.policy.query.is_empty() {
-        url.push('?');
-        for (idx, (key, value)) in plan.endpoint.policy.query.iter().enumerate() {
-            if idx > 0 {
-                url.push('&');
-            }
-            url.push_str(urlencoding::encode(key).as_ref());
-            url.push('=');
-            url.push_str(urlencoding::encode(value).as_ref());
-        }
-    }
-    url
-}
-
-fn push_identity_component(out: &mut String, label: &str, value: &str) {
-    out.push_str(label);
-    out.push(':');
-    out.push_str(&value.len().to_string());
-    out.push(':');
-    out.push_str(value);
-    out.push('|');
 }
