@@ -5,13 +5,15 @@ mod query_auth_redaction {
     };
     use bytes::Bytes;
     use concord_core::advanced::ClientCertificate;
+    #[cfg(feature = "transport-reqwest")]
+    use concord_core::advanced::ReqwestTransport;
     use concord_core::advanced::{
         AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
         AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
         AuthRequirementId, AuthRetryReason, DebugSink, DecodedResponse, PreparedInternalAuth,
-        RequestMeta, ReqwestTransport, RuntimeHooks, SanitizedHeaders, Transport, TransportAuth,
-        TransportError, TransportErrorHookContext, TransportRequest, TransportResponse,
-        apply_basic_credential, apply_certificate_credential, apply_secret_credential,
+        RequestMeta, RuntimeHooks, SanitizedHeaders, Transport, TransportAuth, TransportError,
+        TransportErrorHookContext, TransportRequest, TransportResponse, apply_basic_credential,
+        apply_certificate_credential, apply_secret_credential,
     };
     use concord_core::advanced::{BuiltResponse, PreparedAuthCredential, RateLimitPlan};
     #[cfg(feature = "json")]
@@ -830,6 +832,7 @@ mod query_auth_redaction {
         Ok(())
     }
 
+    #[cfg(feature = "transport-reqwest")]
     #[tokio::test]
     async fn reqwest_transport_error_display_debug_and_source_strip_materialized_url_secret() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind local port");

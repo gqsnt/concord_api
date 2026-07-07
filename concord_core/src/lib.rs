@@ -158,10 +158,12 @@ pub mod advanced {
     pub use crate::sse::{JsonSse, SseCodec, SseEvent, SseRawEvent, SseStream};
     pub use crate::stream_body::{BodySizeHint, StreamBody, StreamBodyError};
     pub use crate::stream_response::StreamResponse;
+    #[cfg(feature = "transport-reqwest")]
+    pub use crate::transport::ReqwestTransport;
     pub use crate::transport::{
-        BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta, ReqwestTransport, Transport,
-        TransportAuth, TransportBody, TransportByteStream, TransportError, TransportErrorKind,
-        TransportRequest, TransportRequestBody, TransportResponse,
+        BuiltRequest, BuiltResponse, DecodedResponse, DefaultTransport, DefaultTransportMarker,
+        RequestMeta, Transport, TransportAuth, TransportBody, TransportByteStream, TransportError,
+        TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
     };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,

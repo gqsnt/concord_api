@@ -165,4 +165,4 @@ Header-auth placements reserve their header name as well. A public header that c
 
 The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug output, diagnostics, and generated documentation, not to the request sent over transport.
 
-Concord's default reqwest transport disables redirects, so bearer, basic, header, and query auth material stays on the original request instead of being forwarded to a remote-selected redirect target. Advanced callers who supply their own reqwest client own that redirect policy themselves.
+Concord's default reqwest transport disables redirects, so bearer, basic, header, and query auth material stays on the original request instead of being forwarded to a remote-selected redirect target. Advanced callers who supply their own reqwest client own that redirect policy themselves. These reqwest convenience APIs require the `transport-reqwest` feature; custom transports can still be used without it.

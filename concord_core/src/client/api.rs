@@ -1,5 +1,5 @@
 #[derive(Clone)]
-pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = ReqwestTransport> {
+pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = DefaultTransport> {
     transport: T,
     vars: Cx::Vars,
     auth_vars: Cx::AuthVars,
@@ -15,6 +15,32 @@ mod tests {
     use super::*;
     use crate::auth::NoAuthState;
     use std::panic::AssertUnwindSafe;
+
+    #[derive(Clone)]
+    struct PoisonTransport;
+
+    impl Transport for PoisonTransport {
+        fn send(
+            &self,
+            _req: crate::transport::TransportRequest,
+        ) -> ::std::pin::Pin<
+            Box<
+                dyn ::std::future::Future<
+                        Output = Result<
+                            crate::transport::TransportResponse,
+                            crate::transport::TransportError,
+                        >,
+                    > + Send,
+            >,
+        > {
+            Box::pin(async move {
+                Err(crate::transport::TransportError::with_kind(
+                    crate::transport::TransportErrorKind::Request,
+                    std::io::Error::other("poison transport should not be used"),
+                ))
+            })
+        }
+    }
 
     #[derive(Clone)]
     struct PoisonCx;
@@ -33,7 +59,8 @@ mod tests {
 
     #[test]
     fn poisoned_auth_state_lock_returns_typed_error() {
-        let client = ApiClient::<PoisonCx>::new((), ());
+        let client: ApiClient<PoisonCx, PoisonTransport> =
+            ApiClient::with_transport((), (), PoisonTransport);
         let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
             let _guard = client
                 .auth_state
@@ -50,7 +77,11 @@ mod tests {
         assert!(err.to_string().contains("auth state lock poisoned"));
     }
 }
-impl<Cx: ClientContext> ApiClient<Cx, ReqwestTransport> {
+#[cfg(feature = "transport-reqwest")]
+impl<Cx: ClientContext> ApiClient<Cx, DefaultTransport>
+where
+    DefaultTransport: DefaultTransportMarker,
+{
     pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
         Self::with_reqwest_client(vars, auth_vars, default_reqwest_client())
     }
@@ -63,6 +94,7 @@ impl<Cx: ClientContext> ApiClient<Cx, ReqwestTransport> {
     }
 }
 
+#[cfg(feature = "transport-reqwest")]
 fn default_reqwest_client() -> reqwest::Client {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())

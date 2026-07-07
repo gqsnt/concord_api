@@ -441,13 +441,13 @@ fn generated_client_construction_contains_current_api_only() {
     assert_contains_all(
         &out,
         &[
-            "pub struct ConstructApi < T : :: concord_core :: advanced :: Transport = :: concord_core :: advanced :: ReqwestTransport >",
+            "pub struct ConstructApi < T : :: concord_core :: advanced :: Transport = :: concord_core :: advanced :: DefaultTransport >",
             "pub fn new ( tenant : String , api_key : String ) -> Self",
             "pub fn builder () -> ConstructApiBuilder",
             "pub struct ConstructApiBuilder",
             "tenant : :: core :: option :: Option < String >",
             "api_key : :: core :: option :: Option < String >",
-            "pub fn build ( self ) -> :: core :: result :: Result < ConstructApi < :: concord_core :: advanced :: ReqwestTransport > , :: concord_core :: prelude :: ApiClientError >",
+            "pub fn build ( self ) -> :: core :: result :: Result < ConstructApi < :: concord_core :: advanced :: DefaultTransport > , :: concord_core :: prelude :: ApiClientError >",
             "ApiClientError :: invalid_param (__ctx . clone () , \"builder.tenant\")",
             "ApiClientError :: invalid_param (__ctx . clone () , \"builder.api_key\")",
             "pub fn configure ( mut self , f : impl FnOnce (& mut :: concord_core :: advanced :: RuntimeConfig)) -> Self",

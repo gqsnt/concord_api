@@ -416,16 +416,19 @@ fn emit_client_wrapper(
     quote! {
         #[doc = "Generated API client."]
         #[derive(Clone)]
-        pub struct #client_ty<T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
+        pub struct #client_ty<T: ::concord_core::advanced::Transport = ::concord_core::advanced::DefaultTransport> {
             inner: ::concord_core::prelude::ApiClient<#cx_ty, T>,
         }
-        impl #client_ty<::concord_core::advanced::ReqwestTransport> {
+        impl #client_ty<::concord_core::advanced::DefaultTransport>
+        where
+            ::concord_core::advanced::DefaultTransport: ::concord_core::advanced::DefaultTransportMarker,
+        {
             #[doc = "Create a client with the default reqwest transport."]
             #[inline]
             pub fn new( #( #ctor_args ),* ) -> Self {
                let vars = #vars_ty::new( #( #new_pass ),* );
-                let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
-                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty, ::concord_core::advanced::ReqwestTransport>::new(vars, auth_vars);
+               let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
+                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::new(vars, auth_vars);
                 #configure_rate_limiter
                 Self { inner: __inner }
             }
@@ -474,7 +477,10 @@ fn emit_client_wrapper(
 
             #[doc = "Build the generated client."]
             #[inline]
-            pub fn build(self) -> ::core::result::Result<#client_ty<::concord_core::advanced::ReqwestTransport>, ::concord_core::prelude::ApiClientError> {
+            pub fn build(self) -> ::core::result::Result<#client_ty<::concord_core::advanced::DefaultTransport>, ::concord_core::prelude::ApiClientError>
+            where
+                ::concord_core::advanced::DefaultTransport: ::concord_core::advanced::DefaultTransportMarker,
+            {
                 let __ctx = ::concord_core::error::ErrorContext {
                     endpoint: concat!(stringify!(#client_ty), "::builder"),
                     method: ::http::Method::GET,
@@ -564,7 +570,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
             name.span(),
         );
         Some(quote! {
-            pub struct #handle_ty<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
+            pub struct #handle_ty<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::DefaultTransport> {
                 client: &'a #client_ty<T>,
             }
 
@@ -641,7 +647,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
         }
     };
     let auth_state_item = quote! {
-        pub struct #auth_ty<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
+        pub struct #auth_ty<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::DefaultTransport> {
             client: &'a #client_ty<T>,
         }
 
@@ -857,7 +863,7 @@ fn emit_facade_scope_struct(
 
     quote! {
         #( #[doc = #docs] )*
-        pub struct #struct_name<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::ReqwestTransport> {
+        pub struct #struct_name<'a, T: ::concord_core::advanced::Transport = ::concord_core::advanced::DefaultTransport> {
             client: &'a #client_ty<T>,
             #( #fields, )*
         }

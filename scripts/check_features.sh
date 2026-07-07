@@ -112,6 +112,8 @@ expect_check_failure_contains() {
 
 run_check check -p concord_core --no-default-features
 run_check check -p concord_core --no-default-features --features json
+run_check check -p concord_core --no-default-features --features transport-reqwest
+run_check check -p concord_core --no-default-features --features "transport-reqwest json"
 run_check check -p concord_core --all-features
 run_check test -p concord_core --no-default-features no_default_rate_limit
 run_check test -p concord_core --no-default-features --features json no_default_rate_limit
@@ -123,16 +125,19 @@ run_check check -p concord_examples --all-targets
 run_check check -p concord_examples --all-targets --all-features
 
 
-manifest_contains "concord_core Cargo.toml" "concord_core/Cargo.toml" 'default = ["rate-limit-governor"]'
+manifest_contains "concord_core Cargo.toml" "concord_core/Cargo.toml" 'default = ["rate-limit-governor", "transport-reqwest"]'
 manifest_not_contains "concord_macros Cargo.toml" "concord_macros/Cargo.toml" '[features]'
 
 tree_contains "concord_core default feature tree" 'governor feature "default"' -p concord_core --edges normal,features
+tree_contains "concord_core default feature tree" 'reqwest v' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'async-compression' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'brotli' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'flate2' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'cookie_store' -p concord_core --edges normal,features
 tree_not_contains "concord_core default feature tree" 'cookie ' -p concord_core --edges normal,features
 tree_not_contains "concord_core no-default feature tree" 'governor feature "default"' -p concord_core --edges normal,features --no-default-features
+tree_not_contains "concord_core no-default feature tree" 'reqwest v' -p concord_core --edges normal,features --no-default-features
+tree_contains "concord_core transport-reqwest feature tree" 'reqwest v' -p concord_core --edges normal,features --no-default-features --features transport-reqwest
 
 tree_same "concord_macros default feature tree" -p concord_macros --edges normal,features
 tree_not_contains "concord_macros default feature tree" 'serde_json v' -p concord_macros --edges normal,features

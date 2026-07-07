@@ -750,6 +750,7 @@ impl Error for TransportError {
     }
 }
 
+#[cfg(feature = "transport-reqwest")]
 impl From<reqwest::Error> for TransportError {
     fn from(e: reqwest::Error) -> Self {
         let kind = classify_reqwest_error(&e);
@@ -767,6 +768,7 @@ impl From<CodecError> for TransportError {
     }
 }
 
+#[cfg(feature = "transport-reqwest")]
 fn classify_reqwest_error(err: &reqwest::Error) -> TransportErrorKind {
     if err.is_timeout() {
         return TransportErrorKind::Timeout;
@@ -836,11 +838,45 @@ pub trait Transport: Send + Clone + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>;
 }
 
+#[doc(hidden)]
+pub trait DefaultTransportMarker: Transport + Clone {}
+
+#[cfg(feature = "transport-reqwest")]
+#[doc(hidden)]
+pub type DefaultTransport = ReqwestTransport;
+
+#[cfg(feature = "transport-reqwest")]
+impl DefaultTransportMarker for ReqwestTransport {}
+
+#[cfg(not(feature = "transport-reqwest"))]
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct DefaultTransport(());
+
+#[cfg(not(feature = "transport-reqwest"))]
+impl Transport for DefaultTransport {
+    fn send(
+        &self,
+        _req: TransportRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        Box::pin(async move {
+            Err(TransportError::with_kind(
+                TransportErrorKind::Request,
+                std::io::Error::other(
+                    "default reqwest transport is disabled; enable the `transport-reqwest` feature",
+                ),
+            ))
+        })
+    }
+}
+
+#[cfg(feature = "transport-reqwest")]
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
 }
 
+#[cfg(feature = "transport-reqwest")]
 impl ReqwestTransport {
     #[inline]
     pub fn new(client: reqwest::Client) -> Self {
@@ -853,10 +889,12 @@ impl ReqwestTransport {
     }
 }
 
+#[cfg(feature = "transport-reqwest")]
 struct ReqwestBody {
     resp: reqwest::Response,
 }
 
+#[cfg(feature = "transport-reqwest")]
 impl TransportBody for ReqwestBody {
     fn next_chunk<'a>(
         &'a mut self,
@@ -865,6 +903,7 @@ impl TransportBody for ReqwestBody {
     }
 }
 
+#[cfg(feature = "transport-reqwest")]
 impl Transport for ReqwestTransport {
     fn send(
         &self,

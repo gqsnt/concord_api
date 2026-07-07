@@ -120,21 +120,30 @@ metadata_report "workspace metadata summary" --manifest-path Cargo.toml
 metadata_report "perf package metadata summary" --manifest-path perf/Cargo.toml
 
 run_cmd "concord_core tree --no-default-features" "${CARGO[@]}" tree -p concord_core --no-default-features
+run_cmd "concord_core tree --no-default-features --features transport-reqwest" "${CARGO[@]}" tree -p concord_core --no-default-features --features transport-reqwest
 run_cmd "concord_core tree --features json" "${CARGO[@]}" tree -p concord_core --features json
 run_cmd "concord_core tree --all-features" "${CARGO[@]}" tree -p concord_core --all-features
 run_cmd "concord_core feature tree --no-default-features" "${CARGO[@]}" tree -p concord_core -e features --no-default-features
+run_cmd "concord_core feature tree --no-default-features --features transport-reqwest" "${CARGO[@]}" tree -p concord_core -e features --no-default-features --features transport-reqwest
 run_cmd "concord_core feature tree --features json" "${CARGO[@]}" tree -p concord_core -e features --features json
 run_cmd "concord_core feature tree --all-features" "${CARGO[@]}" tree -p concord_core -e features --all-features
 
 section "reqwest footprint"
 run_cmd "concord_core reqwest inverse tree --all-features" "${CARGO[@]}" tree -p concord_core --all-features -i reqwest
-run_cmd "concord_core reqwest inverse tree --no-default-features" "${CARGO[@]}" tree -p concord_core --no-default-features -i reqwest
+run_cmd "concord_core reqwest inverse tree --no-default-features --features transport-reqwest" "${CARGO[@]}" tree -p concord_core --no-default-features --features transport-reqwest -i reqwest
 
-reqwest_no_default_output="$("${CARGO[@]}" tree -p concord_core --no-default-features -i reqwest)"
+reqwest_no_default_output="$("${CARGO[@]}" tree -p concord_core --no-default-features)"
 if [[ "$reqwest_no_default_output" == *"reqwest v"* ]]; then
   emit "no-default concord_core includes reqwest: yes"
 else
   emit "no-default concord_core includes reqwest: no"
+fi
+
+reqwest_transport_output="$("${CARGO[@]}" tree -p concord_core --no-default-features --features transport-reqwest -i reqwest)"
+if [[ "$reqwest_transport_output" == *"reqwest v"* ]]; then
+  emit "transport-reqwest concord_core includes reqwest: yes"
+else
+  emit "transport-reqwest concord_core includes reqwest: no"
 fi
 
 section "macro footprint"

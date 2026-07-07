@@ -1,6 +1,22 @@
 # Optional Reqwest Transport Design Report
 
-This is a report-only note for the later implementation PR that would make the default reqwest transport optional. It does not change behavior in this branch.
+This is a report-only note that records the optional reqwest transport design and the implementation outcome in this branch. It does not change behavior itself.
+
+## Implementation Outcome
+
+This branch implements the design:
+
+- `concord_core` now owns an optional `transport-reqwest` feature that keeps the default reqwest-backed client available on the default feature set.
+- `reqwest` is now optional for `concord_core` and is absent from the `--no-default-features` dependency tree.
+- `json` remains an independent core feature; it does not reintroduce `reqwest`.
+- Generated clients use a feature-neutral `DefaultTransport` default generic path plus a marker-bound default-constructor surface, so custom transports remain available without reqwest.
+
+Current report-only observations:
+
+- `cargo tree -p concord_core` still shows the reqwest transport path on the default feature set.
+- `cargo tree -p concord_core --no-default-features` omits `reqwest`.
+- `cargo tree -p concord_core --no-default-features --features transport-reqwest` restores the reqwest transport path.
+- `./scripts/perf_footprint.sh` continues to be the machine-local footprint summary tool for the workspace and now reflects the optional transport split.
 
 ## Current State Inventory
 
@@ -8,14 +24,14 @@ This is a report-only note for the later implementation PR that would make the d
 
 - Workspace dependency: [`Cargo.toml`](../Cargo.toml)
 - `concord_core` direct dependency with transport codec features: [`concord_core/Cargo.toml`](../concord_core/Cargo.toml)
-- `concord_examples` direct dependency: [`concord_examples/Cargo.toml`](../concord_examples/Cargo.toml)
+- `concord_examples` no longer depends on `reqwest` directly: [`concord_examples/Cargo.toml`](../concord_examples/Cargo.toml)
 
 `concord_test_support` does not depend on `reqwest` directly.
 
 ### Which crates depend on it
 
-- `concord_core` depends on `reqwest` directly for `ReqwestTransport`, default client construction, and HTTP codec integration.
-- `concord_examples` depends on `reqwest` directly for compile-checked example code that exercises the default transport path and caller-owned client configuration.
+- `concord_core` depends on `reqwest` optionally for `ReqwestTransport`, default client construction, and HTTP codec integration when `transport-reqwest` is enabled.
+- `concord_examples` no longer depends on `reqwest` directly.
 - `concord_test_support` currently does not.
 
 ### Which modules expose or use the reqwest transport

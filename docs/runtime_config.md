@@ -13,6 +13,8 @@ api.configure(|cfg| {
 });
 ```
 
+Generated client wrappers forward the same runtime mutation surface through `configure(...)`; some wrapper types also expose a `configure_mut(...)` convenience method, but the underlying core client API is `configure(...)`.
+
 Common configuration methods include:
 
 - `debug_level(...)`

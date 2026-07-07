@@ -18,13 +18,13 @@ let api = session_api::SessionApi::new("upstream-key".to_string());
 
 For example, a client declaring `var tenant`, `var region`, then auth secrets `username` and `password` is constructed as `Example::new(tenant, region, username, password)`. For clients with several same-typed values, the builder API is often clearer.
 
-Tests and custom transports can use `new_with_transport(...)`.
+Default-feature callers can use `new()`, `builder()`, or `new_with_transport(...)`. Builds without `transport-reqwest` still use `new_with_transport(...)`, but the default reqwest-backed convenience constructor and builder shortcut are omitted.
 
 ```rust
 let api = minimal_api::MinimalApi::new_with_transport(transport);
 ```
 
-Concord's default reqwest transport disables redirects. That keeps auth material on the original request instead of letting reqwest forward it to a redirected location. If you pass a caller-owned reqwest client through `with_reqwest_client(...)` or `new_with_transport(...)`, redirect, proxy, TLS, cookie, and similar reqwest policies stay under caller control.
+Concord's default reqwest transport disables redirects. That keeps auth material on the original request instead of letting reqwest forward it to a redirected location. If you enable `transport-reqwest` and pass a caller-owned reqwest client through `with_reqwest_client(...)`, redirect, proxy, TLS, cookie, and similar reqwest policies stay under caller control.
 
 When you configure runtime hooks or debug sinks, those callbacks receive sanitized metadata views. Sensitive request and response headers and sensitive query values are redacted before callback invocation, and neither surface receives request or response body bytes or raw secret material. High-volume debug can add measurable overhead.
 

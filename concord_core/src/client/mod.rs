@@ -20,9 +20,13 @@ use crate::runtime_hooks::{
 };
 use crate::runtime_state::ClientRuntimeState;
 use crate::sse::SseStream;
+#[cfg(feature = "transport-reqwest")]
+use crate::transport::DefaultTransportMarker;
+#[cfg(feature = "transport-reqwest")]
+use crate::transport::ReqwestTransport;
 use crate::transport::{BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta};
 use crate::transport::{
-    ReqwestTransport, Transport, TransportBody, TransportError, TransportResponse,
+    DefaultTransport, Transport, TransportBody, TransportError, TransportResponse,
 };
 use crate::types::RouteBuilder;
 use bytes::Bytes;

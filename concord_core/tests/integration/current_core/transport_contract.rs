@@ -442,6 +442,7 @@ async fn finalized_request_metadata_and_materialization_are_preserved_through_a_
     );
 }
 
+#[cfg(feature = "transport-reqwest")]
 #[tokio::test]
 async fn default_reqwest_transport_does_not_follow_redirects_or_forward_auth_material() {
     let _guard = redirect_test_lock().lock().await;
@@ -529,6 +530,7 @@ async fn default_reqwest_transport_does_not_follow_redirects_or_forward_auth_mat
     assert!(second_requests.lock().await.is_empty());
 }
 
+#[cfg(feature = "transport-reqwest")]
 #[tokio::test]
 async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
     let _guard = redirect_test_lock().lock().await;
