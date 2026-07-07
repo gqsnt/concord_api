@@ -37,6 +37,38 @@ fn generated_auth_plan_uses_resolved_requirements() {
 }
 
 #[test]
+fn generated_auth_dispatch_uses_direct_match_on_credential_ids() {
+    let out = expanded(quote! {
+        client AuthDispatchApi {
+            base "https://example.com"
+            secret upstream_token: String
+            secret session_token: String
+            credential upstream = api_key(secret.upstream_token)
+            credential session = bearer(secret.session_token)
+        }
+
+        GET Protected
+            path ["protected"]
+            auth header "X-Upstream-Key" = upstream
+            auth bearer session
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "match(requirement.credential.id.namespace(),requirement.credential.id.name())",
+            "(\"AuthDispatchApi\",\"upstream\")=>{",
+            "(\"AuthDispatchApi\",\"session\")=>{",
+        ],
+    );
+    assert_not_contains_all(
+        &out,
+        &["ifrequirement.credential.id==::concord_core::advanced::CredentialId::new"],
+    );
+}
+
+#[test]
 fn generated_inherited_auth_step_ids_use_final_endpoint_target() {
     let out = expanded(quote! {
         client InheritedAuthStepsApi {

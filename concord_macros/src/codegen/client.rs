@@ -298,7 +298,7 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
             | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? },
         };
         quote! {
-            if requirement.credential.id == ::concord_core::advanced::CredentialId::new(#client_ns, #name_lit) {
+            (#client_ns, #name_lit) => {
                 let credential_ctx = ::concord_core::advanced::CredentialContext {
                     vars,
                     auth,
@@ -335,11 +335,13 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
             _meta: &'a ::concord_core::advanced::RequestMeta,
         ) -> ::concord_core::advanced::AuthFuture<'a, ::core::result::Result<::concord_core::advanced::PreparedAuthCredential, ::concord_core::advanced::AuthError>> {
             ::std::boxed::Box::pin(async move {
-                #( #arms )*
-                ::core::result::Result::Err(::concord_core::advanced::AuthError::new(
-                    ::concord_core::advanced::AuthErrorKind::UnsupportedScheme,
-                    format!("unknown auth credential `{}`", requirement.credential.id),
-                ))
+                match (requirement.credential.id.namespace(), requirement.credential.id.name()) {
+                    #( #arms, )*
+                    _ => ::core::result::Result::Err(::concord_core::advanced::AuthError::new(
+                        ::concord_core::advanced::AuthErrorKind::UnsupportedScheme,
+                        format!("unknown auth credential `{}`", requirement.credential.id),
+                    )),
+                }
             })
         }
     }
@@ -366,7 +368,7 @@ fn emit_client_auth_response_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
             },
         };
         quote! {
-            if requirement.credential.id == ::concord_core::advanced::CredentialId::new(#client_ns, #name_lit) {
+            (#client_ns, #name_lit) => {
                 if let ::core::option::Option::Some(decision) =
                     ::concord_core::advanced::auth_decision_for_status(
                         status,
@@ -405,8 +407,10 @@ fn emit_client_auth_response_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
             _headers: &'a ::http::HeaderMap,
         ) -> ::concord_core::advanced::AuthFuture<'a, ::core::result::Result<::concord_core::advanced::AuthDecision, ::concord_core::advanced::AuthError>> {
             ::std::boxed::Box::pin(async move {
-                #( #arms )*
-                ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::Continue)
+                match (requirement.credential.id.namespace(), requirement.credential.id.name()) {
+                    #( #arms, )*
+                    _ => ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::Continue),
+                }
             })
         }
     }
