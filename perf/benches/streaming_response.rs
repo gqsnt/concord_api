@@ -156,14 +156,14 @@ fn sse_body(events: usize) -> Bytes {
     Bytes::from(body)
 }
 
-fn bench_sse(c: &mut Criterion, name: &str, events: usize) {
+fn bench_sse(c: &mut Criterion, name: &str, events: usize, chunk_size: usize) {
     let rt = runtime();
     c.bench_function(name, |b| {
         b.to_async(&rt).iter_batched(
             || {
                 let response = MockResponse::chunked(
                     StatusCode::OK,
-                    chunked_bytes(sse_body(events), 128),
+                    chunked_bytes(sse_body(events), chunk_size),
                 )
                 .with_header(
                     http::header::CONTENT_TYPE,
@@ -253,13 +253,14 @@ fn streaming_response(c: &mut Criterion) {
     bench_raw(c, "raw_drain/chunks_16", 16, 256);
     bench_raw(c, "raw_drain/chunks_1024", 1024, 256);
     bench_ndjson(c, "ndjson/records_128", 128);
-    bench_sse(c, "sse/events_128", 128);
+    bench_sse(c, "sse/events_128", 128, 128);
+    bench_sse(c, "sse/events_128_bytewise", 128, 1);
     bench_multipart(c, "multipart/parts_32", 32);
 
     if full_fixture_enabled() {
         bench_raw(c, "raw_drain/chunks_8192", 8192, 256);
         bench_ndjson(c, "ndjson/records_4096", 4096);
-        bench_sse(c, "sse/events_4096", 4096);
+        bench_sse(c, "sse/events_4096", 4096, 128);
         bench_multipart(c, "multipart/parts_512", 512);
     }
 }

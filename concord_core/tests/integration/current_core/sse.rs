@@ -252,6 +252,12 @@ fn sse_no_content_plan(name: &'static str, path: &'static str) -> RequestPlan {
     plan
 }
 
+fn byte_chunks(body: Bytes) -> Vec<Bytes> {
+    body.iter()
+        .map(|byte| Bytes::copy_from_slice(&[*byte]))
+        .collect()
+}
+
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 struct LogEvent {
     id: u64,
@@ -346,6 +352,56 @@ async fn sse_response_yields_json_events_incrementally() -> Result<(), ApiClient
     assert!(acquire < send);
     assert!(send < response);
     assert!(response < poll);
+    Ok(())
+}
+
+#[tokio::test]
+async fn sse_response_handles_bytewise_chunks_incrementally() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = SseTransport::new(
+        events.clone(),
+        vec![ResponseFixture::sse(
+            StatusCode::OK,
+            byte_chunks(Bytes::from_static(
+                b"data: {\"id\":1,\"msg\":\"bytewise\"}\n\ndata: {\"id\":2,\"msg\":\"chunks\"}\n\n",
+            )),
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut stream = <concord_core::advanced::SseResponse<LogEvent, JsonSse> as concord_core::advanced::ResponseEntity>::execute(&client, sse_response_plan(
+            "SseBytewise",
+            "/sse-bytewise",
+            ResolvedPolicy::default(),
+            None,
+        ))
+        .await?;
+
+    let first = stream.next_event().await?.expect("first event");
+    assert_eq!(
+        first.data,
+        LogEvent {
+            id: 1,
+            msg: "bytewise".to_string()
+        }
+    );
+    let second = stream.next_event().await?.expect("second event");
+    assert_eq!(
+        second.data,
+        LogEvent {
+            id: 2,
+            msg: "chunks".to_string()
+        }
+    );
+    assert!(stream.next_event().await?.is_none());
+    assert!(
+        events
+            .lock()
+            .expect("events lock")
+            .iter()
+            .any(|event| event == "sse_chunk_poll")
+    );
     Ok(())
 }
 

@@ -6,7 +6,6 @@ use crate::transport::{
 };
 use bytes::{Bytes, BytesMut};
 use http::{HeaderMap, StatusCode};
-use std::collections::VecDeque;
 use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -237,6 +236,7 @@ impl<T> fmt::Debug for SseStream<T> {
 struct SseStreamState {
     body: Box<dyn TransportBody>,
     buffer: BytesMut,
+    scan_offset: usize,
     current: SseEventBuilder,
     eof_seen: bool,
     finished: bool,
@@ -247,6 +247,7 @@ impl SseStreamState {
         Self {
             body,
             buffer: BytesMut::new(),
+            scan_offset: 0,
             current: SseEventBuilder::default(),
             eof_seen: false,
             finished: false,
@@ -254,14 +255,20 @@ impl SseStreamState {
     }
 
     fn take_line(&mut self) -> Option<Bytes> {
-        if let Some(pos) = self.buffer.iter().position(|byte| *byte == b'\n') {
+        if let Some(pos) = self.buffer[self.scan_offset..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+        {
+            let pos = self.scan_offset + pos;
             let mut line = self.buffer.split_to(pos + 1);
             line.truncate(pos);
             if line.last().is_some_and(|byte| *byte == b'\r') {
                 line.truncate(line.len().saturating_sub(1));
             }
+            self.scan_offset = 0;
             return Some(line.freeze());
         }
+        self.scan_offset = self.buffer.len();
         if self.eof_seen {
             if self.buffer.is_empty() {
                 return None;
@@ -270,14 +277,15 @@ impl SseStreamState {
             if line.last().is_some_and(|byte| *byte == b'\r') {
                 line.truncate(line.len().saturating_sub(1));
             }
+            self.scan_offset = 0;
             return Some(line.freeze());
         }
         None
     }
 
     fn apply_line(&mut self, line: Bytes) -> Result<Option<SseRawEvent>, CodecError> {
-        let line = String::from_utf8(line.to_vec())
-            .map_err(|_| CodecError::new("sse event decode failed"))?;
+        let line =
+            std::str::from_utf8(&line).map_err(|_| CodecError::new("sse event decode failed"))?;
         if line.is_empty() {
             return Ok(self.finish_current_event());
         }
@@ -286,12 +294,15 @@ impl SseStreamState {
         }
         let (field, value) = match line.split_once(':') {
             Some((field, value)) => (field, value.strip_prefix(' ').unwrap_or(value)),
-            None => (line.as_str(), ""),
+            None => (line, ""),
         };
         match field {
             "data" => {
+                if self.current.has_data {
+                    self.current.data.push('\n');
+                }
                 self.current.has_data = true;
-                self.current.data.push_back(value.to_string());
+                self.current.data.push_str(value);
             }
             "event" => self.current.event = Some(value.to_string()),
             "id" => self.current.id = Some(value.to_string()),
@@ -327,7 +338,7 @@ struct SseEventBuilder {
     event: Option<String>,
     id: Option<String>,
     retry: Option<Duration>,
-    data: VecDeque<String>,
+    data: String,
     has_data: bool,
 }
 
@@ -336,12 +347,11 @@ impl SseEventBuilder {
         if !self.has_data {
             return None;
         }
-        let data = self.data.drain(..).collect::<Vec<_>>().join("\n");
         Some(SseRawEvent {
             event: self.event.take(),
             id: self.id.take(),
             retry: self.retry.take(),
-            data,
+            data: std::mem::take(&mut self.data),
         })
     }
 }
