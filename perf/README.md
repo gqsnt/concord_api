@@ -10,6 +10,7 @@ Reasons:
 
 The consolidated post-optimization summary lives in [`../docs/perf_post_optimization_report.md`](../docs/perf_post_optimization_report.md).
 The allocation-measurement design note lives in [`../docs/allocation_measurement_design.md`](../docs/allocation_measurement_design.md).
+The runtime allocation-count report lives in [`../docs/allocation_runtime_hot_paths_report.md`](../docs/allocation_runtime_hot_paths_report.md).
 
 Run the allocation-count prototype with:
 

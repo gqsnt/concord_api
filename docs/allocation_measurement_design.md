@@ -21,7 +21,7 @@ This PR is report-only. It documents measurement options, a staged plan, and the
 
 ## 1.1 Implementation Status
 
-A benchmark-only allocation-count prototype now exists under `perf/benches/allocation_counts.rs` and reports a small initial matrix without changing production behavior. The prototype keeps setup-owned fixtures alive until after the allocation snapshot so teardown does not pollute per-operation counts.
+A benchmark-only allocation-count prototype now exists under `perf/benches/allocation_counts.rs` and reports a small initial matrix without changing production behavior. The prototype keeps setup-owned fixtures alive until after the allocation snapshot so teardown does not pollute per-operation counts. The first runtime allocation report lives in [`allocation_runtime_hot_paths_report.md`](allocation_runtime_hot_paths_report.md).
 
 ## 2. Measurement Goals
 
