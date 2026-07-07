@@ -207,14 +207,14 @@ fn multipart_body(parts: usize) -> Bytes {
     Bytes::from(body)
 }
 
-fn bench_multipart(c: &mut Criterion, name: &str, parts: usize) {
+fn bench_multipart(c: &mut Criterion, name: &str, parts: usize, chunk_size: usize) {
     let rt = runtime();
     c.bench_function(name, |b| {
         b.to_async(&rt).iter_batched(
             || {
                 let response = MockResponse::chunked(
                     StatusCode::OK,
-                    chunked_bytes(multipart_body(parts), 128),
+                    chunked_bytes(multipart_body(parts), chunk_size),
                 )
                 .with_header(
                     http::header::CONTENT_TYPE,
@@ -255,13 +255,14 @@ fn streaming_response(c: &mut Criterion) {
     bench_ndjson(c, "ndjson/records_128", 128);
     bench_sse(c, "sse/events_128", 128, 128);
     bench_sse(c, "sse/events_128_bytewise", 128, 1);
-    bench_multipart(c, "multipart/parts_32", 32);
+    bench_multipart(c, "multipart/parts_32", 32, 128);
+    bench_multipart(c, "multipart/parts_32_bytewise", 32, 1);
 
     if full_fixture_enabled() {
         bench_raw(c, "raw_drain/chunks_8192", 8192, 256);
         bench_ndjson(c, "ndjson/records_4096", 4096);
         bench_sse(c, "sse/events_4096", 4096, 128);
-        bench_multipart(c, "multipart/parts_512", 512);
+        bench_multipart(c, "multipart/parts_512", 512, 128);
     }
 }
 

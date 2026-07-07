@@ -367,6 +367,9 @@ struct MultipartResponseState {
     boundary_prefix: Bytes,
     body_boundary_prefix: Bytes,
     buffer: BytesMut,
+    header_scan_offset: usize,
+    body_scan_offset: usize,
+    boundary_prefix_progress: usize,
     stage: MultipartStage,
     next_token: u64,
 }
@@ -386,6 +389,9 @@ impl MultipartResponseState {
             boundary_prefix: Bytes::from(format!("--{boundary}")),
             body_boundary_prefix: Bytes::from(format!("\r\n--{boundary}")),
             buffer: BytesMut::new(),
+            header_scan_offset: 0,
+            body_scan_offset: 0,
+            boundary_prefix_progress: 0,
             stage: MultipartStage::SeekingFirstBoundary,
             next_token: 0,
         }
@@ -438,9 +444,15 @@ impl MultipartResponseState {
                         return Ok(PartChunk::Finished);
                     }
 
-                    if let Some(idx) = find_subslice(&self.buffer, &self.body_boundary_prefix) {
+                    if let Some(idx) = find_subslice_from(
+                        &self.buffer,
+                        &self.body_boundary_prefix,
+                        self.body_scan_offset
+                            .saturating_sub(self.body_boundary_prefix.len().saturating_sub(1)),
+                    ) {
                         if idx > 0 {
                             let chunk = self.buffer.split_to(idx).freeze();
+                            self.body_scan_offset = 0;
                             self.stage = MultipartStage::ReadingBody {
                                 token,
                                 boundary_pending: true,
@@ -458,10 +470,12 @@ impl MultipartResponseState {
                         let take = self.buffer.len() - keep;
                         if take > 0 {
                             let chunk = self.buffer.split_to(take).freeze();
+                            self.body_scan_offset = 0;
                             return Ok(PartChunk::Data(chunk));
                         }
                     }
 
+                    self.body_scan_offset = self.buffer.len();
                     if self.fill_buffer().await? == FillOutcome::Eof {
                         return Err(multipart_parse_error());
                     }
@@ -488,12 +502,19 @@ impl MultipartResponseState {
     async fn read_headers(&mut self) -> Result<HeaderMap, TransportError> {
         let terminator = Bytes::from_static(b"\r\n\r\n");
         loop {
-            if let Some(idx) = find_subslice(&self.buffer, &terminator) {
+            if let Some(idx) = find_subslice_from(
+                &self.buffer,
+                &terminator,
+                self.header_scan_offset
+                    .saturating_sub(terminator.len().saturating_sub(1)),
+            ) {
                 let header_block = self.buffer.split_to(idx).freeze();
                 let _ = self.buffer.split_to(terminator.len());
+                self.header_scan_offset = 0;
                 let headers = parse_headers(&header_block)?;
                 return Ok(headers);
             }
+            self.header_scan_offset = self.buffer.len();
             if self.fill_buffer().await? == FillOutcome::Eof {
                 return Err(multipart_parse_error());
             }
@@ -507,7 +528,19 @@ impl MultipartResponseState {
             } else {
                 &self.body_boundary_prefix
             };
-            if !self.buffer.as_ref().starts_with(prefix.as_ref()) {
+            let matched = self.boundary_prefix_progress.min(prefix.len());
+            let available = self.buffer.len();
+            let checked_end = available.min(prefix.len());
+            if matched < checked_end {
+                if self.buffer[matched..checked_end] != prefix[matched..checked_end] {
+                    self.finish_with_parse_error();
+                    return Err(multipart_parse_error());
+                }
+                self.boundary_prefix_progress = checked_end;
+            }
+
+            if available < prefix.len() {
+                self.boundary_prefix_progress = available;
                 if self.fill_buffer().await? == FillOutcome::Eof {
                     return Err(multipart_parse_error());
                 }
@@ -518,6 +551,7 @@ impl MultipartResponseState {
             let remainder = &self.buffer[consumed..];
             if remainder.starts_with(b"--") {
                 if remainder.len() < 4 {
+                    self.boundary_prefix_progress = prefix.len();
                     if self.fill_buffer().await? == FillOutcome::Eof {
                         return Err(multipart_parse_error());
                     }
@@ -529,12 +563,16 @@ impl MultipartResponseState {
                 }
                 consumed += 4;
                 let _ = self.buffer.split_to(consumed);
+                self.boundary_prefix_progress = 0;
+                self.header_scan_offset = 0;
+                self.body_scan_offset = 0;
                 self.consume_epilogue()?;
                 self.stage = MultipartStage::Finished;
                 return Ok(BoundaryOutcome::Finished);
             }
 
             if remainder.len() < 2 {
+                self.boundary_prefix_progress = prefix.len();
                 if self.fill_buffer().await? == FillOutcome::Eof {
                     return Err(multipart_parse_error());
                 }
@@ -546,6 +584,9 @@ impl MultipartResponseState {
             }
             consumed += 2;
             let _ = self.buffer.split_to(consumed);
+            self.boundary_prefix_progress = 0;
+            self.header_scan_offset = 0;
+            self.body_scan_offset = 0;
             self.stage = MultipartStage::ReadingHeaders;
             return Ok(BoundaryOutcome::Part);
         }
@@ -574,6 +615,9 @@ impl MultipartResponseState {
     fn finish_with_parse_error(&mut self) {
         self.stage = MultipartStage::Failed;
         self.buffer.clear();
+        self.header_scan_offset = 0;
+        self.body_scan_offset = 0;
+        self.boundary_prefix_progress = 0;
     }
 
     async fn fill_buffer(&mut self) -> Result<FillOutcome, TransportError> {
@@ -599,6 +643,9 @@ impl MultipartResponseState {
     fn finish(&mut self) {
         self.stage = MultipartStage::Finished;
         self.buffer.clear();
+        self.header_scan_offset = 0;
+        self.body_scan_offset = 0;
+        self.boundary_prefix_progress = 0;
     }
 }
 
@@ -639,13 +686,18 @@ fn parse_headers(block: &Bytes) -> Result<HeaderMap, TransportError> {
     Ok(headers)
 }
 
-fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+fn find_subslice_from(haystack: &[u8], needle: &[u8], start: usize) -> Option<usize> {
     if needle.is_empty() {
-        return Some(0);
+        return Some(start.min(haystack.len()));
     }
-    haystack
+    let start = start.min(haystack.len());
+    if haystack.len() < needle.len() || start > haystack.len().saturating_sub(needle.len()) {
+        return None;
+    }
+    haystack[start..]
         .windows(needle.len())
         .position(|window| window == needle)
+        .map(|idx| start + idx)
 }
 
 fn multipart_parse_error() -> TransportError {

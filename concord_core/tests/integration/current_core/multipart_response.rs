@@ -83,6 +83,12 @@ fn multipart_body_chunks(boundary: &str) -> Vec<Bytes> {
     ]
 }
 
+fn byte_chunks(body: Bytes) -> Vec<Bytes> {
+    body.iter()
+        .map(|byte| Bytes::copy_from_slice(&[*byte]))
+        .collect()
+}
+
 async fn collect_part_bytes(mut part: RawResponsePart) -> Result<Bytes, ApiClientError> {
     let mut out = BytesMut::new();
     while let Some(chunk) = part.next_chunk().await? {
@@ -136,6 +142,44 @@ async fn multipart_mixed_response_yields_raw_parts_incrementally() -> Result<(),
     let second_bytes = collect_part_bytes(second).await?;
     assert_eq!(second_bytes, Bytes::from_static(b"world"));
 
+    assert!(stream.next_part().await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn multipart_mixed_response_handles_bytewise_chunks_incrementally()
+-> Result<(), ApiClientError> {
+    let boundary = "BOUNDARY";
+    let transport = MockTransport::new(
+        Default::default(),
+        vec![multipart_fixture_response(
+            "multipart/mixed; boundary=BOUNDARY",
+            byte_chunks(Bytes::from(format!(
+                "--{boundary}\r\nContent-Type: text/plain\r\n\r\nhello\r\n--{boundary}\r\nContent-Type: text/plain\r\n\r\nworld\r\n--{boundary}--\r\n"
+            ))),
+            None,
+            None,
+        )],
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let mut stream = <concord_core::advanced::MultipartResponse<RawResponsePart, Mixed> as concord_core::advanced::ResponseEntity>::execute(&client, multipart_response_plan::<Mixed>(
+            "MultipartBytewiseResponse",
+            "/multipart-bytewise",
+        ))
+        .await?;
+
+    let first = stream.next_part().await?.expect("first part");
+    assert_eq!(
+        collect_part_bytes(first).await?,
+        Bytes::from_static(b"hello")
+    );
+    let second = stream.next_part().await?.expect("second part");
+    assert_eq!(
+        collect_part_bytes(second).await?,
+        Bytes::from_static(b"world")
+    );
     assert!(stream.next_part().await?.is_none());
     Ok(())
 }
