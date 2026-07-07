@@ -11,6 +11,14 @@ Reasons:
 The consolidated post-optimization summary lives in [`../docs/perf_post_optimization_report.md`](../docs/perf_post_optimization_report.md).
 The allocation-measurement design note lives in [`../docs/allocation_measurement_design.md`](../docs/allocation_measurement_design.md).
 
+Run the allocation-count prototype with:
+
+```bash
+cargo bench --manifest-path perf/Cargo.toml --bench allocation_counts
+```
+
+This target prints allocation counts for a very small set of hot-path scenarios. The counts are report-only, local to the process, exclude fixture teardown by keeping setup-owned state alive until after the snapshot, and may still include async runtime and library overhead around the measured operation. For consumed-input cases, the measured block owns the consumed input so the report reflects the operation rather than setup teardown.
+
 Run the smoke benchmark with:
 
 ```bash
@@ -34,6 +42,7 @@ cargo bench --manifest-path perf/Cargo.toml --bench auth_runtime
 cargo bench --manifest-path perf/Cargo.toml --bench pagination
 cargo bench --manifest-path perf/Cargo.toml --bench redaction_hooks
 cargo bench --manifest-path perf/Cargo.toml --bench streaming_response
+cargo bench --manifest-path perf/Cargo.toml --bench allocation_counts
 ```
 
 Set `CONCORD_PERF_FULL=1` to enable the larger optional fixtures:

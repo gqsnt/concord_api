@@ -19,6 +19,10 @@ Those changes reduced overhead, but further allocation-focused work needs a meas
 
 This PR is report-only. It documents measurement options, a staged plan, and the initial target matrix for later allocation-report work.
 
+## 1.1 Implementation Status
+
+A benchmark-only allocation-count prototype now exists under `perf/benches/allocation_counts.rs` and reports a small initial matrix without changing production behavior. The prototype keeps setup-owned fixtures alive until after the allocation snapshot so teardown does not pollute per-operation counts.
+
 ## 2. Measurement Goals
 
 The initial allocation-report effort should cover:

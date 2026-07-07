@@ -48,3 +48,7 @@ harness = false
 [[bench]]
 name = "streaming_response"
 harness = false
+
+[[bench]]
+name = "allocation_counts"
+harness = false
