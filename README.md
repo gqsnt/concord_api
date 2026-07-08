@@ -58,6 +58,7 @@ let user = api.users().get_user(42).await?;
 - [Pagination](docs/pagination.md)
 - [Retry And Rate Limit](docs/retry_and_rate_limit.md)
 - [Runtime Config](docs/runtime_config.md)
+- [Performance](docs/performance.md)
 - [Advanced Endpoints](docs/advanced_endpoints.md)
 - [Optional Reqwest Transport Design Report](docs/optional_reqwest_transport.md)
 - [Internals](docs/internals.md)
