@@ -2,21 +2,21 @@ use super::common::*;
 use crate::support::assert_error_chain_does_not_contain_any;
 use base64::Engine as _;
 use bytes::Bytes;
-use concord_core::advanced::AuthProvenance;
 #[cfg(feature = "json")]
 use concord_core::advanced::OAuth2ClientCredentialsProvider;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthChallengePolicy, AuthDecision, AuthError,
-    AuthErrorKind, AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
-    AuthStepPolicy, BufferedResponse, CodecError, DecodeContext, PreparedAuthCredential,
-    RequestMeta, ResponseCodec, RetryDecision, TextContentType, auth_decision_for_status,
+    AuthErrorKind, AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement,
+    AuthPreparationReuse, AuthRequirement, AuthStepPolicy, BufferedResponse, CodecError,
+    DecodeContext, PreparedAuthCredential, RequestMeta, ResponseCodec, RetryDecision,
+    TextContentType, auth_decision_for_status,
 };
 use concord_core::advanced::{
     CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason, CredentialSlot,
     InvalidateReason,
 };
 use concord_core::error::ErrorCategory;
-use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy, ResponseEntity};
+use concord_core::internal::{ClientPlanContext, RequestPlan, ResponseEntity};
 use concord_core::prelude::{
     AccessToken, ApiClientError, ApiKey, ClientContext, Endpoint, ReusableEndpoint,
 };
@@ -32,15 +32,6 @@ const AUTH_TRANSPORT_SENTINEL: &str = "PR17_AUTH_TRANSPORT_SENTINEL";
 const AUTH_DECODE_SENTINEL: &str = "PR17_AUTH_DECODE_SENTINEL";
 const AUTH_RETRY_SENTINEL: &str = "PR17_AUTH_RETRY_SENTINEL";
 const AUTH_RESPONSE_SENTINEL: &str = "PR17_AUTH_RESPONSE_SENTINEL";
-const REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER: &str = "request_local_reusable";
-
-fn request_local_reusable_auth_policy(placement: AuthPlacement) -> ResolvedPolicy {
-    let mut policy = auth_policy(placement);
-    policy.auth.requirements[0].provenance =
-        AuthProvenance::new(REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER);
-    policy
-}
-
 #[tokio::test]
 async fn missing_credential_error_is_actionable() {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -663,12 +654,13 @@ async fn auth_retry_reuses_cached_preparation_without_auth_refresh() -> Result<(
             })),
             events.clone(),
             prepare_calls.clone(),
-        ),
+        )
+        .with_request_local_reuse(),
         transport,
     );
     let endpoint = TextEndpoint {
         policy: {
-            let mut policy = request_local_reusable_auth_policy(AuthPlacement::Bearer);
+            let mut policy = auth_policy(AuthPlacement::Bearer);
             policy.retry =
                 retry_policy_for_statuses(2, vec![StatusCode::INTERNAL_SERVER_ERROR]).retry;
             policy
@@ -700,8 +692,7 @@ async fn auth_retry_reuses_cached_preparation_without_auth_refresh() -> Result<(
 }
 
 #[tokio::test]
-async fn auth_retry_without_request_local_cache_marker_reprepares_auth()
--> Result<(), ApiClientError> {
+async fn auth_retry_without_request_local_reuse_reprepares_auth() -> Result<(), ApiClientError> {
     let prepare_calls = Arc::new(AtomicUsize::new(0));
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
@@ -779,12 +770,13 @@ async fn transport_retry_reuses_cached_auth_preparation_without_auth_refresh()
             })),
             events.clone(),
             prepare_calls.clone(),
-        ),
+        )
+        .with_request_local_reuse(),
         transport,
     );
     let endpoint = TextEndpoint {
         policy: {
-            let mut policy = request_local_reusable_auth_policy(AuthPlacement::Bearer);
+            let mut policy = auth_policy(AuthPlacement::Bearer);
             policy.retry =
                 retry_policy_for_transport_errors(2, vec![TransportErrorKind::Timeout]).retry;
             policy
@@ -833,12 +825,13 @@ async fn auth_refresh_retry_invalidates_cached_auth_preparation() -> Result<(), 
     let sent = transport.clone();
     let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
         (),
-        SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone()),
+        SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone())
+            .with_request_local_reuse(),
         transport,
     );
     let client = Arc::new(client);
     let endpoint = TextEndpoint {
-        policy: request_local_reusable_auth_policy(AuthPlacement::Bearer),
+        policy: auth_policy(AuthPlacement::Bearer),
         ..Default::default()
     };
     let handle = {
@@ -2612,6 +2605,7 @@ struct SlotAuthVars {
     slot: Arc<CredentialSlot<SlotAuthCx, SlotTokenProvider>>,
     events: Arc<Mutex<Vec<String>>>,
     prepare_calls: Arc<AtomicUsize>,
+    request_local_reuse: bool,
 }
 
 #[derive(Clone)]
@@ -2632,7 +2626,13 @@ impl SlotAuthVars {
             slot,
             events,
             prepare_calls,
+            request_local_reuse: false,
         }
+    }
+
+    fn with_request_local_reuse(mut self) -> Self {
+        self.request_local_reuse = true;
+        self
     }
 }
 
@@ -2737,7 +2737,12 @@ impl ClientContext for SlotAuthCx {
                 generation: Some(lease.generation),
                 provenance: requirement.provenance.clone(),
             };
-            Ok(PreparedAuthCredential::new(applied, application))
+            let prepared = PreparedAuthCredential::new(applied, application);
+            if auth.request_local_reuse {
+                Ok(prepared.with_reuse(AuthPreparationReuse::RequestLocal))
+            } else {
+                Ok(prepared)
+            }
         })
     }
 

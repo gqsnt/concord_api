@@ -152,6 +152,7 @@ pub struct AuthApplication {
 #[derive(Clone, Debug)]
 pub struct PreparedAuthCredential {
     pub applied: AuthAppliedCredential,
+    pub(crate) reuse: AuthPreparationReuse,
     pub(crate) material: AuthTransportMaterial,
 }
 
@@ -160,9 +161,23 @@ impl PreparedAuthCredential {
     pub fn new(applied: AuthAppliedCredential, application: AuthApplication) -> Self {
         Self {
             applied,
+            reuse: AuthPreparationReuse::Never,
             material: application.material,
         }
     }
+
+    #[inline]
+    pub fn with_reuse(mut self, reuse: AuthPreparationReuse) -> Self {
+        self.reuse = reuse;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum AuthPreparationReuse {
+    #[default]
+    Never,
+    RequestLocal,
 }
 
 #[derive(Clone, Debug, Default)]

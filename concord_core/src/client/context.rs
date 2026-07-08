@@ -87,10 +87,6 @@ pub(super) enum AuthPreparationCachePolicy {
     RequestLocalReusable,
 }
 
-// Request-local auth-preparation reuse is an explicit opt-in marker so only known
-// retry-stable credential paths reuse cached preparation across transport retries.
-pub(super) const REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER: &str = "request_local_reusable";
-
 impl AuthPreparationCachePolicy {
     #[inline]
     pub(super) fn allows_request_local_reuse(self) -> bool {

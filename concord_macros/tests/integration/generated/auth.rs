@@ -76,10 +76,24 @@ mod basic_helper_contract {
             secret username: String
             secret password: String
             credential login = basic(secret.username, secret.password)
+
+            policies {
+                retry once {
+                    max_attempts 2
+                    methods [GET]
+                    on [500]
+                }
+            }
         }
 
         GET BasicMe
             path ["basic-me"]
+            auth basic login
+            -> Json<User>
+
+        GET BasicRetry
+            path ["basic-retry"]
+            retry once
             auth basic login
             -> Json<User>
     }
@@ -158,10 +172,24 @@ mod o_auth_helper_contract {
                 client_secret: secret.client_secret,
                 scope: "read:me",
             }
+
+            policies {
+                retry once {
+                    max_attempts 2
+                    methods [GET]
+                    on [500]
+                }
+            }
         }
 
         GET OAuthMe
             path ["oauth-me"]
+            auth bearer oauth
+            -> Json<User>
+
+        GET OAuthRetry
+            path ["oauth-retry"]
+            retry once
             auth bearer oauth
             -> Json<User>
     }
@@ -493,6 +521,56 @@ async fn generated_basic_auth_keeps_username_and_password_secret_until_transport
 }
 
 #[tokio::test]
+async fn generated_static_basic_auth_reuses_preparation_across_transport_retry() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::status_json(StatusCode::INTERNAL_SERVER_ERROR, r#"{"error":"retry"}"#),
+        ResponseFixture::json(r#"{"name":"Ada"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = BasicHelperApi::new_with_transport(
+        "static-user".to_string(),
+        "static-password".to_string(),
+        transport,
+    );
+
+    let user = api
+        .basic_retry()
+        .execute()
+        .await
+        .expect("static basic retry request succeeds");
+    assert_eq!(user.name, "Ada");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].meta.endpoint, "BasicRetry");
+    assert_eq!(requests[1].meta.endpoint, "BasicRetry");
+    let first_slot = requests[0]
+        .extensions
+        .pending_auth_slots
+        .first()
+        .expect("first request has prepared auth")
+        .id;
+    let second_slot = requests[1]
+        .extensions
+        .pending_auth_slots
+        .first()
+        .expect("retry request has prepared auth")
+        .id;
+    assert_eq!(
+        first_slot, second_slot,
+        "cached request-local preparation should reuse the auth slot"
+    );
+    for req in &requests {
+        assert_eq!(
+            req.headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Basic c3RhdGljLXVzZXI6c3RhdGljLXBhc3N3b3Jk")
+        );
+    }
+}
+
+#[tokio::test]
 async fn generated_oauth_client_credentials_acquires_token_and_sends_bearer() {
     const CLIENT_ID: &str = "oauth-client";
     const CLIENT_SECRET: &str = "LEAK_SENTINEL_OAUTH_CLIENT_SECRET";
@@ -656,6 +734,108 @@ async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
             .and_then(|value| value.to_str().ok()),
         Some("Bearer token-b")
     );
+}
+
+#[tokio::test]
+async fn generated_static_basic_auth_reprepares_after_auth_rejection_invalidation() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::status_json(StatusCode::UNAUTHORIZED, r#"{"error":"expired"}"#),
+        ResponseFixture::json(r#"{"name":"Ada"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = BasicHelperApi::new_with_transport(
+        "static-user".to_string(),
+        "static-password".to_string(),
+        transport,
+    );
+
+    let user = api
+        .basic_me()
+        .execute()
+        .await
+        .expect("static basic request retries after auth rejection");
+    assert_eq!(user.name, "Ada");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let first_slot = requests[0]
+        .extensions
+        .pending_auth_slots
+        .first()
+        .expect("first request has prepared auth")
+        .id;
+    let second_slot = requests[1]
+        .extensions
+        .pending_auth_slots
+        .first()
+        .expect("auth retry request has prepared auth")
+        .id;
+    assert_ne!(
+        first_slot, second_slot,
+        "auth rejection must invalidate cached preparation before retry"
+    );
+    for req in &requests {
+        assert_eq!(
+            req.headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Basic c3RhdGljLXVzZXI6c3RhdGljLXBhc3N3b3Jk")
+        );
+    }
+}
+
+#[tokio::test]
+async fn generated_oauth_prepares_each_transport_retry() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(
+            r#"{"access_token":"oauth-retry-token","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::status_json(StatusCode::INTERNAL_SERVER_ERROR, r#"{"error":"retry"}"#),
+        ResponseFixture::json(r#"{"name":"Ada"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = OAuthHelperApi::new_with_transport(
+        "oauth-client".to_string(),
+        "oauth-secret".to_string(),
+        transport,
+    );
+
+    let user = api
+        .oauth_retry()
+        .execute()
+        .await
+        .expect("oauth retry request succeeds");
+    assert_eq!(user.name, "Ada");
+
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0].meta.endpoint, "<auth>");
+    assert_eq!(requests[1].meta.endpoint, "OAuthRetry");
+    assert_eq!(requests[2].meta.endpoint, "OAuthRetry");
+    let first_slot = requests[1]
+        .extensions
+        .pending_auth_slots
+        .first()
+        .expect("first protected request has prepared auth")
+        .id;
+    let second_slot = requests[2]
+        .extensions
+        .pending_auth_slots
+        .first()
+        .expect("retry protected request has prepared auth")
+        .id;
+    assert_ne!(
+        first_slot, second_slot,
+        "oauth credentials are not request-local reusable"
+    );
+    for req in &requests[1..] {
+        assert_eq!(
+            req.headers
+                .get(http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            Some("Bearer oauth-retry-token")
+        );
+    }
 }
 
 #[tokio::test]

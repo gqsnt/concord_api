@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthHttpExecutor,
-    AuthPlacement, AuthProvenance, AuthRequirement, CredentialContext, CredentialId,
+    AuthPlacement, AuthPreparationReuse, AuthRequirement, CredentialContext, CredentialId,
     CredentialProvider, CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
     PreparedAuthCredential, RequestMeta, RetryBackoff, RetryConfig, RetryIdempotency,
     apply_secret_credential,
@@ -18,8 +18,6 @@ use perf::support::{
 use std::hint::black_box;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-const REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER: &str = "request_local_reusable";
 
 fn base_plan(name: &'static str, path: &'static str) -> RequestPlan {
     request_plan(
@@ -146,13 +144,11 @@ fn bench_cached_preparation(c: &mut Criterion) {
     c.bench_function("cached_preparation/slot_retry_reuses_preparation", |b| {
         b.to_async(&rt).iter_batched(
             || {
-                let mut plan = with_retry(with_auth(
+                let plan = with_retry(with_auth(
                     base_plan("CachedPreparation", "/perf/cached-preparation"),
                     AuthPlacement::Bearer,
                     "bearer",
                 ));
-                plan.endpoint.policy.auth.requirements[0].provenance =
-                    AuthProvenance::new(REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER);
                 (slot_client(retry_transport()), plan)
             },
             |(client, plan)| async move {
@@ -248,7 +244,8 @@ impl ClientContext for SlotAuthCx {
                 generation: Some(lease.generation),
                 provenance: requirement.provenance.clone(),
             };
-            Ok(PreparedAuthCredential::new(applied, material))
+            Ok(PreparedAuthCredential::new(applied, material)
+                .with_reuse(AuthPreparationReuse::RequestLocal))
         })
     }
 

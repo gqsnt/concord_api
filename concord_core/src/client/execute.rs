@@ -805,7 +805,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 source,
             })?;
             attach_prepared_auth_generation(built, &prepared);
-            if prepared.applied.provenance.layer != REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER {
+            if prepared.reuse != crate::auth::AuthPreparationReuse::RequestLocal {
                 cacheable = false;
             }
             let applied = prepared.applied;

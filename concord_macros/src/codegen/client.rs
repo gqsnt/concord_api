@@ -278,24 +278,42 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
     let arms = resolved_api.client_auth_credentials.iter().map(|c| {
         let name = &c.name;
         let name_lit = LitStr::new(&name.to_string(), name.span());
-        let apply = match &c.kind {
-            AuthCredentialKindIr::Basic { .. } => quote! { ::concord_core::advanced::apply_basic_credential(request, requirement, &lease.value)? },
+        let (apply, reuse) = match &c.kind {
+            AuthCredentialKindIr::Basic { .. } => (
+                quote! { ::concord_core::advanced::apply_basic_credential(request, requirement, &lease.value)? },
+                quote! { ::concord_core::advanced::AuthPreparationReuse::RequestLocal },
+            ),
             AuthCredentialKindIr::Endpoint { material_shape, .. } => match material_shape {
                 AuthMaterialShapeIr::Basic => {
-                    quote! { ::concord_core::advanced::apply_basic_credential(request, requirement, &lease.value)? }
+                    (
+                        quote! { ::concord_core::advanced::apply_basic_credential(request, requirement, &lease.value)? },
+                        quote! { ::concord_core::advanced::AuthPreparationReuse::Never },
+                    )
                 }
                 AuthMaterialShapeIr::Certificate => {
-                    quote! { ::concord_core::advanced::apply_certificate_credential(request, requirement, &lease.value)? }
+                    (
+                        quote! { ::concord_core::advanced::apply_certificate_credential(request, requirement, &lease.value)? },
+                        quote! { ::concord_core::advanced::AuthPreparationReuse::Never },
+                    )
                 }
                 AuthMaterialShapeIr::AccessToken
                 | AuthMaterialShapeIr::SecretValue
                 | AuthMaterialShapeIr::Unknown => {
-                    quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? }
+                    (
+                        quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? },
+                        quote! { ::concord_core::advanced::AuthPreparationReuse::Never },
+                    )
                 }
             },
             AuthCredentialKindIr::ApiKey { .. }
-            | AuthCredentialKindIr::StaticBearer { .. }
-            | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? },
+            | AuthCredentialKindIr::StaticBearer { .. } => (
+                quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? },
+                quote! { ::concord_core::advanced::AuthPreparationReuse::RequestLocal },
+            ),
+            AuthCredentialKindIr::OAuth2ClientCredentials { .. } => (
+                quote! { ::concord_core::advanced::apply_secret_credential(request, requirement, &lease.value)? },
+                quote! { ::concord_core::advanced::AuthPreparationReuse::Never },
+            ),
         };
         quote! {
             (#client_ns, #name_lit) => {
@@ -320,6 +338,7 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
                 };
                 return ::core::result::Result::Ok(
                     ::concord_core::advanced::PreparedAuthCredential::new(applied, application)
+                        .with_reuse(#reuse)
                 );
             }
         }

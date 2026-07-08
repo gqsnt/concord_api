@@ -24,7 +24,7 @@ Validated work falls into these groups:
   - PERF-PR 12 made retry metadata/header cloning lazier. **[implemented]**
   - PERF-PR 13 removed duplicate auth collision validation. **[implemented]**
   - PERF-PR 17 reduced sensitive-name matching allocations. **[implemented]**
-  - PERF-PR 18 added a request-local cached auth preparation mechanism. **[partial — mechanism implemented, not activated; see "PERF-PR 18 status detail" below]**
+  - PERF-PR 18 added and activated a request-local cached auth preparation mechanism for generated clients on retry-stable credential paths. **[implemented]**
 - Macro/codegen optimizations
   - PERF-PR 14 added local lookup indexes for facade/codegen resolution. **[implemented]**
   - PERF-PR 15 avoided duplicate `FacadeIr` construction. **[implemented]**
@@ -32,17 +32,15 @@ Validated work falls into these groups:
   - PERF-PR 16A produced the optional reqwest transport design report. **[implemented]**
   - PERF-PR 16B implemented the optional reqwest feature split while keeping default users compatible. **[implemented]**
 - Security-adjacent runtime cleanup
-  - PERF-PR 10, 12, 13, 17, and 18 all kept sanitized surfaces intact while removing avoidable work. **[implemented for PERF-PR 10, 12, 13, 17; partial for PERF-PR 18 — see below]**
+  - PERF-PR 10, 12, 13, 17, and 18 all kept sanitized surfaces intact while removing avoidable work. **[implemented]**
 
-### PERF-PR 18 status detail: request-local cached auth preparation is partial
+### PERF-PR 18 status detail: request-local cached auth preparation
 
-PERF-PR 18 implemented a request-local auth-preparation cache in `concord_core/src/client/execute.rs`. The cache is gated by an internal provenance marker, `REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER` (the string `"request_local_reusable"`), defined in `concord_core/src/client/context.rs`: a prepared credential is only cacheable when its `provenance.layer` equals that marker.
+PERF-PR 18 implemented a request-local auth-preparation cache in `concord_core/src/client/execute.rs`. The cache is gated by the typed `AuthPreparationReuse` field on `PreparedAuthCredential`; `AuthProvenance.layer` is diagnostic-only and is no longer used as a control signal.
 
-No generated client can currently produce that marker. The only place generated-client provenance labels are produced is `concord_macros/src/sema/auth.rs::provenance_label`, which returns exactly `"client"`, `"scope:{id}"`, or `"endpoint"` — none of which match the marker. As a result, the cache policy always resolves to `Never` for generated clients, and the caching mechanism, while implemented, does not run outside of test and benchmark code today.
+Generated clients now set `AuthPreparationReuse::RequestLocal` for retry-stable static credential paths: API key, static bearer, and basic credentials. OAuth2 client credentials and endpoint/manual credentials remain `Never` because they can refresh or be externally replaced outside ordinary transport-retry flow.
 
-The `auth_runtime` bench's `cached_preparation/*` rows (see Section 3 below) exercise a hand-constructed fixture that manually sets the marker (in `perf/benches/auth_runtime.rs` and mirrored in `concord_core/tests/integration/current_core/auth.rs`). Those rows measure that fixture path, not any path reachable by a generated client.
-
-Activating this optimization for generated clients is tracked as planned follow-up work: replacing the internal string marker with a typed, explicit opt-in that generated or user code can set for retry-stable credential paths. No PR number is assigned to that follow-up yet.
+The cache remains request-local only. It is cleared on auth-rejection retry before the next attempt, so stale rejected material is not reused after invalidation.
 
 All timing and benchmark observations below are machine-local and report-only.
 
@@ -100,7 +98,7 @@ All benchmark commands were run with `cargo bench --manifest-path perf/Cargo.tom
   - `apply/multiple_requirements`: `[4.0299 us 4.1328 us 4.2459 us]`
   - `collision/query/error_path`: `[2.2823 us 2.3178 us 2.3584 us]`
   - `repeated_credential/retry_reuses_material`: `[5.2793 us 5.3797 us 5.4884 us]`
-  - `cached_preparation/slot_retry_reuses_preparation`: `[5.6564 us 5.7306 us 5.8144 us]` — fixture-only; see "PERF-PR 18 status detail" in Section 1, this scenario manually sets the internal provenance marker and is not reachable by generated clients
+  - `cached_preparation/slot_retry_reuses_preparation`: before `[6.1259 us 6.2486 us 6.3945 us]`, after `[6.9359 us 7.1612 us 7.4065 us]` — PR 12 machine-local run; the fixture now uses the typed `AuthPreparationReuse::RequestLocal` opt-in instead of the deleted provenance marker
   - `cached_credential/slot_two_requests`: `[5.6623 us 5.6980 us 5.7378 us]`
 
 ### Rate-limit governor
@@ -259,7 +257,7 @@ Current risks and caveats:
 - Criterion does not provide allocation counts by itself
 - the optional reqwest feature matrix will need continued maintenance as the crate surface evolves
 - the doc-hidden `DefaultTransport` compatibility shim remains part of the reqwest optionality story
-- the request-local auth-preparation cache (PERF-PR 18) is implemented but partial: it is not activated for generated clients today because no generated-client provenance label matches the internal reuse marker; see "PERF-PR 18 status detail" in Section 1
+- the request-local auth-preparation cache (PERF-PR 18) is implemented for generated retry-stable static credentials; OAuth2 and endpoint/manual credentials remain uncached by design
 - sensitive-name matching remains ASCII-case-insensitive by design
 
 Likely future candidates, not implemented here:
