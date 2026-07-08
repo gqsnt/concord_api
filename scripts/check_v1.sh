@@ -29,21 +29,73 @@ run_step() {
   "$@"
 }
 
+run_nextest_count_guard() {
+  local label="$1"
+  local min_count="$2"
+  shift 2
+
+  local tmp
+  tmp="$(mktemp)"
+  printf '\n==> %s\n' "$label"
+  printf '+'
+  printf ' %q' "$@"
+  printf '\n'
+
+  local status
+  set +e
+  "$@" 2>&1 | tee "$tmp"
+  status=${PIPESTATUS[0]}
+  set -e
+  if [[ "$status" -ne 0 ]]; then
+    rm -f -- "$tmp"
+    return "$status"
+  fi
+
+  local count
+  count="$(awk '
+    /Summary/ && /tests run/ {
+      for (i = 1; i <= NF; i++) {
+        if ($i == "tests" && $(i + 1) == "run:") {
+          print $(i - 1)
+        }
+      }
+    }
+  ' "$tmp" | tail -n 1)"
+  rm -f -- "$tmp"
+  if [[ -z "$count" ]]; then
+    echo "error: could not parse nextest test count for $label" >&2
+    exit 1
+  fi
+  if (( count < min_count )); then
+    echo "error: $label ran $count tests, expected at least $min_count" >&2
+    exit 1
+  fi
+  printf 'coverage guard: %s ran %s tests (minimum %s)\n' "$label" "$count" "$min_count"
+}
+
 run_step "architecture boundary" bash ./scripts/check_architecture.sh
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
 # Clippy is currently non-strict because the tree still carries known warnings.
 run_step "clippy workspace all targets" "${CARGO[@]}" clippy --workspace --all-targets
-run_step "macro integration tests" "${CARGO[@]}" nextest run -p concord_macros integration
-run_step "macro generated tests" "${CARGO[@]}" nextest run -p concord_macros generated
-run_step "macro trybuild current" "${CARGO[@]}" nextest run -p concord_macros --test trybuild_current
-run_step "macro trybuild sema" "${CARGO[@]}" nextest run -p concord_macros --test trybuild_sema
-run_step "macro trybuild codegen" "${CARGO[@]}" nextest run -p concord_macros --test trybuild_codegen
-run_step "core tests" "${CARGO[@]}" nextest run -p concord_core
-run_step "core tests all features" "${CARGO[@]}" nextest run -p concord_core --all-features
-run_step "examples tests" "${CARGO[@]}" nextest run -p concord_examples
-run_step "examples tests all features" "${CARGO[@]}" nextest run -p concord_examples --all-features
-run_step "workspace tests" "${CARGO[@]}" nextest run --workspace
-run_step "workspace tests all features" "${CARGO[@]}" nextest run --workspace --all-features
-run_step "workspace all-target tests" "${CARGO[@]}" nextest run --workspace --all-targets
+
+# Coverage baseline captured with `cargo nextest list` before removing redundant
+# per-crate runs:
+# - `--workspace`: 945 tests, including macro integration/generated filtered suites.
+# - `--workspace --all-features`: 945 tests, covering the all-features axis.
+# - `--workspace --all-targets`: 945 tests, including trybuild_current/sema/codegen.
+# Removed per-crate steps were exact subsets of these retained workspace runs.
+# Removed subset commands:
+# - nextest run -p concord_macros integration
+# - nextest run -p concord_macros generated
+# - nextest run -p concord_macros --test trybuild_current
+# - nextest run -p concord_macros --test trybuild_sema
+# - nextest run -p concord_macros --test trybuild_codegen
+# - nextest run -p concord_core
+# - nextest run -p concord_core --all-features
+# - nextest run -p concord_examples
+# - nextest run -p concord_examples --all-features
+run_nextest_count_guard "workspace tests" 945 "${CARGO[@]}" nextest run --workspace
+run_nextest_count_guard "workspace tests all features" 945 "${CARGO[@]}" nextest run --workspace --all-features
+run_nextest_count_guard "workspace all-target tests" 945 "${CARGO[@]}" nextest run --workspace --all-targets
 run_step "rustdoc warnings denied" env RUSTDOCFLAGS="-D warnings" "${CARGO[@]}" doc --workspace --no-deps
