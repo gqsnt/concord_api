@@ -220,6 +220,7 @@ print_heading() {
   fi
   printf 'report_only: true\n'
   printf 'timing_thresholds: none\n'
+  printf 'decision_rule_pr11: proceed if redundant per-crate steps are >=~20%% of total gate wall time; otherwise defer\n'
 }
 
 print_summary() {
@@ -260,24 +261,18 @@ run_timed "feature matrix" bash ./scripts/check_features.sh
 section "Format/lint/doc"
 run_timed "format check" "${CARGO[@]}" fmt --check
 run_timed "clippy workspace all targets" "${CARGO[@]}" clippy --workspace --all-targets
-run_timed "rustdoc warnings denied" env RUSTDOCFLAGS="-D warnings" "${CARGO[@]}" doc --workspace --no-deps
 
 section "Test commands"
-run_nextest_or_fallback "core tests all targets" "cargo test -p concord_core --all-targets" -p concord_core --all-targets
 if [[ "$HAS_NEXTEST" == "1" ]]; then
-  run_timed "macro current integration tests" "${CARGO[@]}" nextest run -p concord_macros --test main --no-fail-fast current
-  run_timed "macro generated integration tests" "${CARGO[@]}" nextest run -p concord_macros --test main --no-fail-fast generated
+  run_timed "macro integration tests" "${CARGO[@]}" nextest run -p concord_macros integration
+  run_timed "macro generated tests" "${CARGO[@]}" nextest run -p concord_macros generated
 else
-  run_skip "macro current integration tests" "cargo-nextest is unavailable; running fallback \`cargo test -p concord_macros --test main current -- --nocapture\`"
-  run_timed "cargo test macro current integration nocapture" "${CARGO[@]}" test -p concord_macros --test main current -- --nocapture
-  run_skip "macro generated integration tests" "cargo-nextest is unavailable; running fallback \`cargo test -p concord_macros --test main generated -- --nocapture\`"
-  run_timed "cargo test macro generated integration nocapture" "${CARGO[@]}" test -p concord_macros --test main generated -- --nocapture
+  run_skip "macro integration tests" "cargo-nextest is unavailable; running fallback \`cargo test -p concord_macros integration\`"
+  run_timed "cargo test macro integration" "${CARGO[@]}" test -p concord_macros integration
+  run_skip "macro generated tests" "cargo-nextest is unavailable; running fallback \`cargo test -p concord_macros generated\`"
+  run_timed "cargo test macro generated" "${CARGO[@]}" test -p concord_macros generated
 fi
-run_nextest_or_fallback "examples tests all targets" "cargo test -p concord_examples --all-targets" -p concord_examples --all-targets
-run_nextest_or_fallback "workspace tests all targets" "cargo test --workspace --all-targets" --workspace --all-targets
-run_nextest_or_fallback "workspace tests all features all targets" "cargo test --workspace --all-features --all-targets" --workspace --all-features --all-targets
 
-section "Trybuild and explicit macro test targets"
 if [[ "$HAS_NEXTEST" == "1" ]]; then
   run_timed "macro trybuild current" "${CARGO[@]}" nextest run -p concord_macros --test trybuild_current
   run_timed "macro trybuild sema" "${CARGO[@]}" nextest run -p concord_macros --test trybuild_sema
@@ -288,12 +283,16 @@ else
   run_timed "cargo test macro trybuild codegen nocapture" "${CARGO[@]}" test -p concord_macros --test trybuild_codegen -- --nocapture
 fi
 
-section "Supply-chain check"
-if [[ "$HAS_DENY" == "1" ]]; then
-  run_timed "supply-chain policy" bash ./scripts/check_supply_chain.sh
-else
-  run_skip "supply-chain policy" "cargo-deny is unavailable; supply-chain timing skipped"
-fi
+run_nextest_or_fallback "core tests" "cargo test -p concord_core" -p concord_core
+run_nextest_or_fallback "core tests all features" "cargo test -p concord_core --all-features" -p concord_core --all-features
+run_nextest_or_fallback "examples tests" "cargo test -p concord_examples" -p concord_examples
+run_nextest_or_fallback "examples tests all features" "cargo test -p concord_examples --all-features" -p concord_examples --all-features
+run_nextest_or_fallback "workspace tests" "cargo test --workspace" --workspace
+run_nextest_or_fallback "workspace tests all features" "cargo test --workspace --all-features" --workspace --all-features
+run_nextest_or_fallback "workspace all-target tests" "cargo test --workspace --all-targets" --workspace --all-targets
+
+section "Doc"
+run_timed "rustdoc warnings denied" env RUSTDOCFLAGS="-D warnings" "${CARGO[@]}" doc --workspace --no-deps
 
 print_summary
 

@@ -4,14 +4,34 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$script_dir/.."
 
-if command -v cargo >/dev/null 2>&1; then
+if command -v cmd.exe >/dev/null 2>&1 && cmd.exe /c cargo expand --version >/dev/null 2>&1; then
+  CARGO=(cmd.exe /c cargo)
+  CARGO_NEEDS_HOST_PATHS=1
+elif command -v cargo >/dev/null 2>&1; then
   CARGO=(cargo)
+  CARGO_NEEDS_HOST_PATHS=0
 elif command -v cmd.exe >/dev/null 2>&1; then
   CARGO=(cmd.exe /c cargo)
+  CARGO_NEEDS_HOST_PATHS=1
 else
   echo "error: cargo not found" >&2
   exit 127
 fi
+
+cargo_path() {
+  local path="$1"
+  if [[ "$CARGO_NEEDS_HOST_PATHS" == "1" ]]; then
+    if command -v wslpath >/dev/null 2>&1; then
+      wslpath -w "$path"
+    elif command -v cygpath >/dev/null 2>&1; then
+      cygpath -w "$path"
+    else
+      printf '%s\n' "$path"
+    fi
+  else
+    printf '%s\n' "$path"
+  fi
+}
 
 OUT_FILE="${CONCORD_PERF_OUT:-}"
 if [[ -n "$OUT_FILE" ]]; then
@@ -95,39 +115,47 @@ run_timed_cmd() {
 
 ROOT_DIR="$PWD"
 FIXTURE_ROOT="$ROOT_DIR/target/perf-macro-scale"
+BUILD_TARGET_ROOT="$ROOT_DIR/target/perf-macro-scale-target"
 
 if [[ "${CONCORD_PERF_CLEAN:-0}" == "1" ]]; then
   section "opt-in clean"
   emit "cleaning generated fixtures under: $FIXTURE_ROOT"
   rm -rf -- "$FIXTURE_ROOT"
+  emit "cleaning generated fixture build artifacts under: $BUILD_TARGET_ROOT"
+  rm -rf -- "$BUILD_TARGET_ROOT"
 fi
 
 mkdir -p -- "$FIXTURE_ROOT"
 
-if [[ "${CONCORD_PERF_FULL:-0}" == "1" ]]; then
-  SIZES=(1 10 50 100 250 500 1000)
-else
-  SIZES=(1 10 50 100 250)
-fi
+ENDPOINT_COUNTS=(5 20 50)
+SCOPE_POLICY_OPS=(2 10)
 
 emit "fixture_root: $FIXTURE_ROOT"
-emit "sizes: ${SIZES[*]}"
-if [[ "${CONCORD_PERF_FULL:-0}" == "1" ]]; then
-  emit "full_mode: enabled"
+emit "build_target_root: $BUILD_TARGET_ROOT"
+emit "endpoint_counts: ${ENDPOINT_COUNTS[*]}"
+emit "scope_policy_ops: ${SCOPE_POLICY_OPS[*]}"
+if "${CARGO[@]}" expand --version >/dev/null 2>&1; then
+  HAS_CARGO_EXPAND=1
+  emit "cargo_expand: $("${CARGO[@]}" expand --version 2>/dev/null | head -n 1)"
 else
-  emit "full_mode: disabled"
+  HAS_CARGO_EXPAND=0
+  emit "cargo_expand: unavailable; using source-size proxy"
 fi
+emit "decision_rule_pr9: proceed if expanded size or build time at 50x10 is >25% above the linear projection from the 5x2 baseline scaled by endpoint count; otherwise defer"
 
 generate_fixture() {
   local size="$1"
-  local fixture_dir="$FIXTURE_ROOT/size-$size"
+  local ops="$2"
+  local fixture_dir="$FIXTURE_ROOT/endpoints-${size}-scopeops-${ops}"
   local src_dir="$fixture_dir/src"
-  local root_path="$ROOT_DIR"
+  local root_path
+  root_path="$(cargo_path "$ROOT_DIR")"
+  root_path="${root_path//\\//}"
   mkdir -p -- "$src_dir"
 
   cat >"$fixture_dir/Cargo.toml" <<EOF
 [package]
-name = "perf_macro_scale_${size}"
+name = "perf_macro_scale_${size}_${ops}"
 version = "0.1.0"
 edition = "2024"
 
@@ -185,6 +213,16 @@ api! {
 
     scope scale {
         path ["scale"]
+        headers {
+EOF
+
+  local op_idx
+  for op_idx in $(seq 1 "$ops"); do
+    printf '            "x-scope-%03d" = "scope-%03d",\n' "$op_idx" "$op_idx" >>"$src_dir/lib.rs"
+  done
+
+  cat >>"$src_dir/lib.rs" <<'EOF'
+        }
 EOF
 
   local idx mod3 pad endpoint_name
@@ -248,20 +286,49 @@ EOF
 pub use self::macro_scale_api::{MacroScaleApi, endpoints};
 EOF
 
+  local source_bytes source_lines
+  source_bytes=$(wc -c <"$src_dir/lib.rs" | tr -d ' ')
+  source_lines=$(wc -l <"$src_dir/lib.rs" | tr -d ' ')
   emit "generated fixture: $fixture_dir"
+  emit "matrix_point: endpoints=${size} scope_policy_ops=${ops} source_bytes=${source_bytes} source_lines=${source_lines}"
 }
 
 run_fixture() {
   local size="$1"
-  local fixture_dir="$FIXTURE_ROOT/size-$size"
-  generate_fixture "$size"
-  run_timed_cmd "cargo check macro scale size ${size}" \
-    "${CARGO[@]}" check --manifest-path "$fixture_dir/Cargo.toml" || {
+  local ops="$2"
+  local fixture_dir="$FIXTURE_ROOT/endpoints-${size}-scopeops-${ops}"
+  local expand_file="$fixture_dir/expanded.rs"
+  local manifest_path
+  local target_dir="$BUILD_TARGET_ROOT/endpoints-${size}-scopeops-${ops}"
+  local target_dir_for_cargo
+  manifest_path="$(cargo_path "$fixture_dir/Cargo.toml")"
+  target_dir_for_cargo="$(cargo_path "$target_dir")"
+  generate_fixture "$size" "$ops"
+  rm -rf -- "$target_dir"
+  if [[ "$HAS_CARGO_EXPAND" == "1" ]]; then
+    section "cargo expand macro scale endpoints ${size} scopeops ${ops}"
+    quote_cmd "${CARGO[@]}" expand --manifest-path "$manifest_path"
+    "${CARGO[@]}" expand --manifest-path "$manifest_path" >"$expand_file" 2>/dev/null || true
+    if [[ -s "$expand_file" ]]; then
+      local expanded_bytes expanded_lines
+      expanded_bytes=$(wc -c <"$expand_file" | tr -d ' ')
+      expanded_lines=$(wc -l <"$expand_file" | tr -d ' ')
+      emit "expanded_metrics: endpoints=${size} scope_policy_ops=${ops} expanded_bytes=${expanded_bytes} expanded_lines=${expanded_lines}"
+    else
+      emit "expanded_metrics: endpoints=${size} scope_policy_ops=${ops} unavailable"
+    fi
+  else
+    emit "expanded_metrics: endpoints=${size} scope_policy_ops=${ops} unavailable"
+  fi
+  run_timed_cmd "cargo check macro scale endpoints ${size} scopeops ${ops}" \
+    env CARGO_TARGET_DIR="$target_dir_for_cargo" "${CARGO[@]}" check --manifest-path "$manifest_path" || {
       emit "fixture failed: $fixture_dir"
       return 1
     }
 }
 
-for size in "${SIZES[@]}"; do
-  run_fixture "$size"
+for size in "${ENDPOINT_COUNTS[@]}"; do
+  for ops in "${SCOPE_POLICY_OPS[@]}"; do
+    run_fixture "$size" "$ops"
+  done
 done

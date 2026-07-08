@@ -128,6 +128,24 @@ run_cmd "concord_core feature tree --no-default-features --features transport-re
 run_cmd "concord_core feature tree --features json" "${CARGO[@]}" tree -p concord_core -e features --features json
 run_cmd "concord_core feature tree --all-features" "${CARGO[@]}" tree -p concord_core -e features --all-features
 
+section "csv footprint"
+run_cmd "concord_core csv inverse tree --no-default-features" "${CARGO[@]}" tree -p concord_core --no-default-features -i csv
+run_cmd "concord_core csv-core inverse tree --no-default-features" "${CARGO[@]}" tree -p concord_core --no-default-features -i csv-core
+csv_no_default_output="$("${CARGO[@]}" tree -p concord_core --no-default-features)"
+csv_no_default_count="$(printf '%s\n' "$csv_no_default_output" | sed -E 's/^[│├└─ ]*//' | grep -E '^[A-Za-z0-9_-]+ v' | sort -u | wc -l | tr -d ' ')"
+emit "no-default dependency_count_unique_lines: $csv_no_default_count"
+if [[ "$csv_no_default_output" == *"csv v"* ]]; then
+  emit "no-default concord_core includes csv: yes"
+else
+  emit "no-default concord_core includes csv: no"
+fi
+if [[ "$csv_no_default_output" == *"csv-core v"* ]]; then
+  emit "no-default concord_core includes csv-core: yes"
+else
+  emit "no-default concord_core includes csv-core: no"
+fi
+emit "decision_rule_pr13: proceed if gating csv/csv-core meaningfully reduces no-default compile time or dependency count; otherwise document-and-accept"
+
 section "reqwest footprint"
 run_cmd "concord_core reqwest inverse tree --all-features" "${CARGO[@]}" tree -p concord_core --all-features -i reqwest
 run_cmd "concord_core reqwest inverse tree --no-default-features --features transport-reqwest" "${CARGO[@]}" tree -p concord_core --no-default-features --features transport-reqwest -i reqwest
