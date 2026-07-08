@@ -1,3 +1,5 @@
+use super::*;
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct BehaviorResolved {
     pub auth_uses: Vec<NormAuthUse>,
@@ -5,7 +7,7 @@ pub(crate) struct BehaviorResolved {
     pub rate_limit_specs: Vec<RateLimitSpec>,
 }
 
-fn resolve_behavior_profiles(
+pub(super) fn resolve_behavior_profiles(
     block: Option<&BehaviorProfilesBlock>,
     retry_profiles: &BTreeMap<String, RetryConfigResolved>,
     rate_limit_profiles: &BTreeMap<String, RateLimitPlanTemplate>,
@@ -41,7 +43,7 @@ fn resolve_behavior_profiles(
     Ok(resolved)
 }
 
-fn resolve_behavior_profile(
+pub(super) fn resolve_behavior_profile(
     name: &str,
     raw_profiles: &BTreeMap<String, &BehaviorProfileDef>,
     visiting: &mut std::collections::BTreeSet<String>,
@@ -53,12 +55,9 @@ fn resolve_behavior_profile(
         return Ok(value.clone());
     }
 
-    let profile = raw_profiles.get(name).ok_or_else(|| {
-        syn::Error::new(
-            Span::call_site(),
-            format!("unknown behavior `{name}`"),
-        )
-    })?;
+    let profile = raw_profiles
+        .get(name)
+        .ok_or_else(|| syn::Error::new(Span::call_site(), format!("unknown behavior `{name}`")))?;
 
     if !visiting.insert(name.to_string()) {
         return Err(syn::Error::new(
@@ -109,7 +108,7 @@ fn resolve_behavior_profile(
     Ok(out)
 }
 
-fn resolve_behavior_uses(
+pub(super) fn resolve_behavior_uses(
     uses: &[BehaviorUseSpec],
     profiles: &BTreeMap<String, BehaviorResolved>,
 ) -> Result<BehaviorResolved> {
@@ -152,7 +151,7 @@ pub(crate) fn behavior_use_names(uses: &[BehaviorUseSpec]) -> Vec<String> {
         .collect()
 }
 
-fn resolve_behavior_rate_limit_specs(
+pub(super) fn resolve_behavior_rate_limit_specs(
     specs: &[RateLimitSpec],
     rate_limit_profiles: &BTreeMap<String, RateLimitPlanTemplate>,
     visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
@@ -175,7 +174,10 @@ fn resolve_behavior_rate_limit_specs(
     Ok(out)
 }
 
-fn merge_behavior(mut parent: BehaviorResolved, child: BehaviorResolved) -> BehaviorResolved {
+pub(super) fn merge_behavior(
+    mut parent: BehaviorResolved,
+    child: BehaviorResolved,
+) -> BehaviorResolved {
     parent.auth_uses.extend(child.auth_uses);
     if child.retry.is_some() {
         parent.retry = child.retry;
@@ -184,7 +186,7 @@ fn merge_behavior(mut parent: BehaviorResolved, child: BehaviorResolved) -> Beha
     parent
 }
 
-fn merge_rate_limit_resolved(
+pub(super) fn merge_rate_limit_resolved(
     existing: Option<RateLimitResolved>,
     incoming: Option<RateLimitResolved>,
 ) -> Option<RateLimitResolved> {
@@ -193,7 +195,9 @@ fn merge_rate_limit_resolved(
     };
     match (existing, incoming) {
         (None, incoming) => Some(incoming),
-        (Some(RateLimitResolved::Clear), RateLimitResolved::Clear) => Some(RateLimitResolved::Clear),
+        (Some(RateLimitResolved::Clear), RateLimitResolved::Clear) => {
+            Some(RateLimitResolved::Clear)
+        }
         (Some(RateLimitResolved::Clear), RateLimitResolved::Add(plan)) => {
             Some(RateLimitResolved::Add(plan))
         }
@@ -207,7 +211,9 @@ fn merge_rate_limit_resolved(
         (Some(RateLimitResolved::Add(_)), RateLimitResolved::Replace(plan)) => {
             Some(RateLimitResolved::Replace(plan))
         }
-        (Some(RateLimitResolved::Add(_)), RateLimitResolved::Clear) => Some(RateLimitResolved::Clear),
+        (Some(RateLimitResolved::Add(_)), RateLimitResolved::Clear) => {
+            Some(RateLimitResolved::Clear)
+        }
         (Some(RateLimitResolved::Replace(mut parent)), RateLimitResolved::Add(mut child)) => {
             parent.buckets.append(&mut child.buckets);
             Some(RateLimitResolved::Replace(parent))

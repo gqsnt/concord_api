@@ -1,7 +1,7 @@
-use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
-use crate::retry::{NoRetryPolicy, RetryPolicy};
+use crate::rate_limit::RateLimiter;
+use crate::retry::RetryPolicy;
 use crate::runtime::RuntimeConfig;
-use crate::runtime_hooks::{NoopRuntimeHooks, RuntimeHooks};
+use crate::runtime_hooks::RuntimeHooks;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,18 +22,7 @@ pub struct ClientRuntimeState {
 
 impl Default for ClientRuntimeState {
     fn default() -> Self {
-        Self {
-            hooks: Arc::new(NoopRuntimeHooks),
-            rate_limiter: Arc::new(DefaultRateLimiter::default()),
-            retry_policy: Arc::new(NoRetryPolicy),
-            max_auth_retries: 8,
-            max_retry_delay: Duration::from_secs(60),
-            max_rate_limit_cooldown: Duration::from_secs(60),
-            max_response_body_bytes: Some(16 * 1024 * 1024),
-            max_stream_request_body_bytes: Some(16 * 1024 * 1024),
-            max_stream_response_body_bytes: Some(16 * 1024 * 1024),
-            dev_body_capture: None,
-        }
+        Self::from_config(RuntimeConfig::default())
     }
 }
 

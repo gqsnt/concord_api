@@ -1,9 +1,11 @@
-fn lower_public_policy_expr_checked(expr: &Expr) -> Result<Expr> {
+use super::*;
+
+pub(super) fn lower_public_policy_expr_checked(expr: &Expr) -> Result<Expr> {
     reject_direct_secret_expr(expr)?;
     Ok(lower_public_policy_expr(expr.clone()))
 }
 
-fn lower_public_policy_expr(expr: Expr) -> Expr {
+pub(super) fn lower_public_policy_expr(expr: Expr) -> Expr {
     match expr {
         Expr::Path(p) => lower_public_policy_expr_path(p),
         Expr::Field(mut f) => {
@@ -42,7 +44,7 @@ fn lower_public_policy_expr(expr: Expr) -> Expr {
     }
 }
 
-fn lower_public_policy_expr_path(path: syn::ExprPath) -> Expr {
+pub(super) fn lower_public_policy_expr_path(path: syn::ExprPath) -> Expr {
     if path.qself.is_none() && path.path.segments.len() == 1 {
         let seg = &path.path.segments[0];
         let id = &seg.ident;
@@ -59,7 +61,7 @@ fn lower_public_policy_expr_path(path: syn::ExprPath) -> Expr {
     Expr::Path(path)
 }
 
-fn reject_direct_secret_expr(expr: &Expr) -> Result<()> {
+pub(super) fn reject_direct_secret_expr(expr: &Expr) -> Result<()> {
     match expr {
         Expr::Field(field) => {
             if let Expr::Path(base_path) = &*field.base
@@ -113,7 +115,7 @@ fn reject_direct_secret_expr(expr: &Expr) -> Result<()> {
     }
 }
 
-fn resolve_paginate(
+pub(super) fn resolve_paginate(
     p: &PaginateSpec,
     client_vars: &BTreeMap<String, VarInfo>,
     auth_vars: &BTreeMap<String, VarInfo>,
@@ -155,7 +157,7 @@ fn resolve_paginate(
     })
 }
 
-fn resolve_policy_blocks(
+pub(super) fn resolve_policy_blocks(
     policy: &PolicyBlocks,
     owner: PolicyOwner,
     client_vars: &BTreeMap<String, VarInfo>,
@@ -199,7 +201,7 @@ fn resolve_policy_blocks(
     Ok(out)
 }
 
-fn resolve_policy_block(
+pub(super) fn resolve_policy_block(
     blk: &PolicyBlock,
     kind: PolicyKeyKind,
     owner: PolicyOwner,
@@ -224,7 +226,9 @@ fn resolve_policy_block(
                     ));
                 }
                 let lowered_value = match value {
-                    PolicyValue::Expr(expr) => PolicyValue::Expr(lower_public_policy_expr_checked(expr)?),
+                    PolicyValue::Expr(expr) => {
+                        PolicyValue::Expr(lower_public_policy_expr_checked(expr)?)
+                    }
                     PolicyValue::Fmt(fmt) => PolicyValue::Fmt(fmt.clone()),
                 };
                 let vk = resolve_policy_value_kind(
@@ -241,12 +245,7 @@ fn resolve_policy_block(
                         let v = client_vars.get(&id.to_string()).ok_or_else(|| {
                             syn::Error::new(
                                 id.span(),
-                                unknown_scoped_name_message(
-                                    "client var",
-                                    "vars",
-                                    &id,
-                                    client_vars,
-                                ),
+                                unknown_scoped_name_message("client var", "vars", &id, client_vars),
                             )
                         })?;
                         if v.optional {
@@ -271,12 +270,10 @@ fn resolve_policy_block(
                             PolicySetValue::Value(PublicValueKind::EpField(id))
                         }
                     }
-                    other => {
-                        PolicySetValue::Value(public_value_from_value_kind(
-                            other,
-                            lowered_value.span(),
-                        )?)
-                    }
+                    other => PolicySetValue::Value(public_value_from_value_kind(
+                        other,
+                        lowered_value.span(),
+                    )?),
                 };
 
                 ops.push(PolicyOp::Set {
@@ -338,9 +335,9 @@ fn resolve_policy_block(
                 PolicySetValue::Value(PublicValueKind::OtherExpr(e)) => {
                     validate_public_expr(e)?;
                 }
-                PolicySetValue::Value(
-                    PublicValueKind::LitStr(lit)
-                ) if kind == PolicyKeyKind::Header => {
+                PolicySetValue::Value(PublicValueKind::LitStr(lit))
+                    if kind == PolicyKeyKind::Header =>
+                {
                     if http::HeaderValue::from_str(&lit.value()).is_err() {
                         return Err(syn::Error::new(
                             lit.span(),
@@ -360,14 +357,17 @@ fn resolve_policy_block(
     Ok(ops)
 }
 
-fn reject_duplicate_header_sets(ops: &[PolicyOp]) -> Result<()> {
+pub(super) fn reject_duplicate_header_sets(ops: &[PolicyOp]) -> Result<()> {
     let mut seen: BTreeMap<String, Span> = BTreeMap::new();
     for op in ops {
         let PolicyOp::Set { key, .. } = op else {
             continue;
         };
         let normalized = header_key_for_duplicate_check(key);
-        if seen.insert(normalized.clone(), key_resolved_span(key)).is_some() {
+        if seen
+            .insert(normalized.clone(), key_resolved_span(key))
+            .is_some()
+        {
             return Err(syn::Error::new(
                 key_resolved_span(key),
                 format!("duplicate header `{normalized}` in the same policy layer"),
@@ -377,28 +377,28 @@ fn reject_duplicate_header_sets(ops: &[PolicyOp]) -> Result<()> {
     Ok(())
 }
 
-fn header_key_for_duplicate_check(key: &KeyResolved) -> String {
+pub(super) fn header_key_for_duplicate_check(key: &KeyResolved) -> String {
     match key {
         KeyResolved::Static(lit) => lit.value().to_ascii_lowercase(),
         KeyResolved::Ident(ident) => emit_helpers::to_kebab(ident).to_ascii_lowercase(),
     }
 }
 
-fn key_resolved_span(key: &KeyResolved) -> Span {
+pub(super) fn key_resolved_span(key: &KeyResolved) -> Span {
     match key {
         KeyResolved::Static(lit) => lit.span(),
         KeyResolved::Ident(ident) => ident.span(),
     }
 }
 
-fn key_spec_span(k: &KeySpec) -> Span {
+pub(super) fn key_spec_span(k: &KeySpec) -> Span {
     match k {
         KeySpec::Ident(id) => id.span(),
         KeySpec::Str(s) => s.span(),
     }
 }
 
-fn policy_stmt_span(s: &PolicyStmt) -> Span {
+pub(super) fn policy_stmt_span(s: &PolicyStmt) -> Span {
     match s {
         PolicyStmt::Remove { key } => key_spec_span(key),
         PolicyStmt::Set {
@@ -409,14 +409,14 @@ fn policy_stmt_span(s: &PolicyStmt) -> Span {
     }
 }
 
-fn resolve_key(k: &KeySpec) -> KeyResolved {
+pub(super) fn resolve_key(k: &KeySpec) -> KeyResolved {
     match k {
         KeySpec::Ident(id) => KeyResolved::Ident(id.clone()),
         KeySpec::Str(s) => KeyResolved::Static(s.clone()),
     }
 }
 
-fn resolve_value_kind(
+pub(super) fn resolve_value_kind(
     expr: &Expr,
     client_vars: &BTreeMap<String, VarInfo>,
     auth_vars: &BTreeMap<String, VarInfo>,
@@ -443,7 +443,7 @@ fn resolve_value_kind(
     Ok(ValueKind::OtherExpr(expr.clone()))
 }
 
-fn resolve_route_fmt_spec(
+pub(super) fn resolve_route_fmt_spec(
     spec: &FmtSpec,
     client_vars: Option<&BTreeMap<String, VarInfo>>,
     ep_vars: Option<&BTreeMap<String, VarInfo>>,
@@ -470,10 +470,7 @@ fn resolve_route_fmt_spec(
                                     )
                                 },
                             );
-                            syn::Error::new(
-                                r.ident.span(),
-                                msg,
-                            )
+                            syn::Error::new(r.ident.span(), msg)
                         })?;
                     pieces.push(FmtResolvedPiece::Var {
                         source: FmtVarSource::Cx,
@@ -519,7 +516,7 @@ fn resolve_route_fmt_spec(
     })
 }
 
-fn resolve_policy_value_kind(
+pub(super) fn resolve_policy_value_kind(
     v: &PolicyValue,
     _owner: PolicyOwner,
     client_vars: &BTreeMap<String, VarInfo>,
@@ -563,12 +560,7 @@ fn resolve_policy_value_kind(
                             let v = ep.get(&r.ident.to_string()).ok_or_else(|| {
                                 syn::Error::new(
                                     r.ident.span(),
-                                    unknown_scoped_name_message(
-                                        "endpoint var",
-                                        "ep",
-                                        &r.ident,
-                                        ep,
-                                    ),
+                                    unknown_scoped_name_message("endpoint var", "ep", &r.ident, ep),
                                 )
                             })?;
                             has_optional |= v.optional;
@@ -601,7 +593,10 @@ fn resolve_policy_value_kind(
     }
 }
 
-fn public_value_from_value_kind(value: ValueKind, _span: Span) -> Result<PublicValueKind> {
+pub(super) fn public_value_from_value_kind(
+    value: ValueKind,
+    _span: Span,
+) -> Result<PublicValueKind> {
     match value {
         ValueKind::LitStr(value) => Ok(PublicValueKind::LitStr(value)),
         ValueKind::CxField(value) => Ok(PublicValueKind::CxField(value)),
@@ -614,7 +609,10 @@ fn public_value_from_value_kind(value: ValueKind, _span: Span) -> Result<PublicV
     }
 }
 
-fn pagination_value_from_value_kind(value: ValueKind, span: Span) -> Result<PaginationValueKind> {
+pub(super) fn pagination_value_from_value_kind(
+    value: ValueKind,
+    span: Span,
+) -> Result<PaginationValueKind> {
     match value {
         ValueKind::LitStr(value) => Ok(PaginationValueKind::LitStr(value)),
         ValueKind::EpField(value) => Ok(PaginationValueKind::EpField(value)),
@@ -643,14 +641,14 @@ fn pagination_value_from_value_kind(value: ValueKind, span: Span) -> Result<Pagi
     }
 }
 
-fn validate_public_expr(expr: &Expr) -> Result<()> {
+pub(super) fn validate_public_expr(expr: &Expr) -> Result<()> {
     if let Some(found) = emit_helpers::public_expr_forbidden(expr)? {
         return Err(public_expr_forbidden_error(found));
     }
     Ok(())
 }
 
-fn public_expr_forbidden_error(found: emit_helpers::PublicExprForbidden) -> syn::Error {
+pub(super) fn public_expr_forbidden_error(found: emit_helpers::PublicExprForbidden) -> syn::Error {
     let msg = match found.kind {
         emit_helpers::PublicExprForbiddenKind::Auth => {
             "auth references are not allowed in public policy expressions; use an auth declaration/use instead".to_string()
@@ -671,14 +669,14 @@ fn public_expr_forbidden_error(found: emit_helpers::PublicExprForbidden) -> syn:
     syn::Error::new(found.span, msg)
 }
 
-fn direct_secret_policy_error(span: Span) -> syn::Error {
+pub(super) fn direct_secret_policy_error(span: Span) -> syn::Error {
     syn::Error::new(
         span,
         "direct secret.* is not allowed in policy expressions; declare an auth credential",
     )
 }
 
-fn pagination_scoped_ref_error(span: Span) -> syn::Error {
+pub(super) fn pagination_scoped_ref_error(span: Span) -> syn::Error {
     syn::Error::new(
         span,
         "paginate assignments must not reference client variables or secrets; use `ep.*` or constants",
@@ -740,13 +738,13 @@ mod pagination_value_tests {
     fn pagination_expr_rejects_nested_client_vars() {
         let expr: syn::Expr = syn::parse_quote! { format!("{}", cx.cursor) };
 
-        let err =
-            pagination_value_from_value_kind(ValueKind::OtherExpr(expr), Span::call_site())
-                .unwrap_err();
+        let err = pagination_value_from_value_kind(ValueKind::OtherExpr(expr), Span::call_site())
+            .unwrap_err();
 
         assert!(
-            err.to_string()
-                .contains("generated implementation local `cx` is not part of the public DSL expression scope"),
+            err.to_string().contains(
+                "generated implementation local `cx` is not part of the public DSL expression scope"
+            ),
             "{err}"
         );
     }
@@ -755,9 +753,8 @@ mod pagination_value_tests {
     fn pagination_expr_rejects_nested_auth_vars() {
         let expr: syn::Expr = syn::parse_quote! { format!("{}", auth.cursor) };
 
-        let err =
-            pagination_value_from_value_kind(ValueKind::OtherExpr(expr), Span::call_site())
-                .unwrap_err();
+        let err = pagination_value_from_value_kind(ValueKind::OtherExpr(expr), Span::call_site())
+            .unwrap_err();
 
         assert!(
             err.to_string()

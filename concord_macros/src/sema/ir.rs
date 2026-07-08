@@ -1,3 +1,5 @@
+use super::*;
+
 #[derive(Debug)]
 pub struct ResolvedApi {
     pub mod_name: Ident,
@@ -172,11 +174,7 @@ pub struct EndpointTargetIr {
 impl EndpointTargetIr {
     pub(crate) fn key(&self) -> EndpointTargetKey {
         EndpointTargetKey {
-            scope_modules: self
-                .scope_modules
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
+            scope_modules: self.scope_modules.iter().map(ToString::to_string).collect(),
             endpoint: self.endpoint.to_string(),
         }
     }
@@ -266,23 +264,11 @@ pub enum AuthUsePlanIr {
 
 #[derive(Debug, Clone)]
 pub enum AuthUseKindIr {
-    Bearer {
-        credential: Ident,
-    },
-    Header {
-        header: LitStr,
-        credential: Ident,
-    },
-    Query {
-        key: LitStr,
-        credential: Ident,
-    },
-    Basic {
-        credential: Ident,
-    },
-    Certificate {
-        credential: Ident,
-    },
+    Bearer { credential: Ident },
+    Header { header: LitStr, credential: Ident },
+    Query { key: LitStr, credential: Ident },
+    Basic { credential: Ident },
+    Certificate { credential: Ident },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -523,5 +509,3 @@ pub struct PaginationAssignmentResolved {
     pub field: Ident,
     pub value: PaginationValueKind,
 }
-
-

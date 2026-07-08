@@ -1,5 +1,8 @@
+// Client lifecycle phase modules intentionally share one private parent namespace.
+use super::*;
+
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
-    fn build_request_from_plan(
+    pub(super) fn build_request_from_plan(
         &self,
         plan: &crate::endpoint::RequestPlanView,
         args: &mut crate::endpoint::RequestArgs,
@@ -13,7 +16,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let retry = plan.endpoint.policy.retry.clone();
         let rate_limit = plan.endpoint.policy.rate_limit.clone();
 
-        let base = format!("{}://{}", plan.endpoint.route.scheme, plan.endpoint.route.host);
+        let base = format!(
+            "{}://{}",
+            plan.endpoint.route.scheme, plan.endpoint.route.host
+        );
         let mut url = url::Url::parse(&base).map_err(|e| ApiClientError::BuildUrl {
             ctx: ctx.clone(),
             source: e,

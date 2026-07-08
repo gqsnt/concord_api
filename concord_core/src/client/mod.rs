@@ -118,11 +118,16 @@ async fn read_body_all_limited(
     Ok(buf.freeze())
 }
 
-// Request lifecycle is kept in phase files while preserving one private client namespace.
-include!("context.rs");
-include!("api.rs");
-include!("execute.rs");
-include!("build.rs");
-include!("send_flow.rs");
-include!("retry_flow.rs");
-include!("auth_http.rs");
+// Request lifecycle is kept in phase modules while preserving one private client namespace.
+mod api;
+mod auth_http;
+mod build;
+mod context;
+mod execute;
+mod retry_flow;
+mod send_flow;
+
+pub use self::api::*;
+pub use self::context::*;
+
+use self::auth_http::*;

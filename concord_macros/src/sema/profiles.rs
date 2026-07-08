@@ -59,7 +59,10 @@ where
             },
         );
     }
-    set.defaults = defaults.into_iter().map(|ident| ident.to_string()).collect();
+    set.defaults = defaults
+        .into_iter()
+        .map(|ident| ident.to_string())
+        .collect();
 
     for default in &set.defaults {
         if !set.profiles.contains_key(default) {
@@ -80,7 +83,7 @@ where
 }
 
 #[allow(dead_code)]
-fn resolve_one_profile<T: ProfileValue>(
+pub(super) fn resolve_one_profile<T: ProfileValue>(
     label: &'static str,
     set: &ProfileSet<T>,
     key: &str,

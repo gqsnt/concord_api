@@ -1,13 +1,16 @@
+// Client lifecycle phase modules intentionally share one private parent namespace.
+use super::*;
+
 #[derive(Clone)]
 pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = DefaultTransport> {
-    transport: T,
-    vars: Cx::Vars,
-    auth_vars: Cx::AuthVars,
-    auth_state: Arc<RwLock<Arc<Cx::AuthState>>>,
-    debug_level: DebugLevel,
-    pagination_detect_loops: bool,
-    debug_sink: Arc<dyn DebugSink>,
-    runtime_state: Arc<ClientRuntimeState>,
+    pub(super) transport: T,
+    pub(super) vars: Cx::Vars,
+    pub(super) auth_vars: Cx::AuthVars,
+    pub(super) auth_state: Arc<RwLock<Arc<Cx::AuthState>>>,
+    pub(super) debug_level: DebugLevel,
+    pub(super) pagination_detect_loops: bool,
+    pub(super) debug_sink: Arc<dyn DebugSink>,
+    pub(super) runtime_state: Arc<ClientRuntimeState>,
 }
 
 #[cfg(test)]
@@ -330,12 +333,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 sink: self.debug_sink.clone(),
             },
             max_response_body_bytes: self.runtime_state.max_response_body_bytes(),
-            max_stream_request_body_bytes: self
-                .runtime_state
-                .max_stream_request_body_bytes(),
-            max_stream_response_body_bytes: self
-                .runtime_state
-                .max_stream_response_body_bytes(),
+            max_stream_request_body_bytes: self.runtime_state.max_stream_request_body_bytes(),
+            max_stream_response_body_bytes: self.runtime_state.max_stream_response_body_bytes(),
             dev_body_capture: self.runtime_state.dev_body_capture().cloned(),
         };
         f(&mut config);
@@ -361,5 +360,4 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             auth_vars: self.auth_vars(),
         }
     }
-
 }

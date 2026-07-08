@@ -1,4 +1,6 @@
-fn resolve_rate_limit_profiles(
+use super::*;
+
+pub(super) fn resolve_rate_limit_profiles(
     block: Option<&RateLimitProfilesBlock>,
 ) -> Result<BTreeMap<String, RateLimitPlanTemplate>> {
     let Some(block) = block else {
@@ -22,7 +24,7 @@ fn resolve_rate_limit_profiles(
     )
 }
 
-fn resolve_client_rate_limit(
+pub(super) fn resolve_client_rate_limit(
     block: Option<&RateLimitProfilesBlock>,
     profiles: &BTreeMap<String, RateLimitPlanTemplate>,
     visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
@@ -43,7 +45,7 @@ fn resolve_client_rate_limit(
     )?)))
 }
 
-fn resolve_rate_limit_spec(
+pub(super) fn resolve_rate_limit_spec(
     spec: Option<&RateLimitSpec>,
     profiles: &BTreeMap<String, RateLimitPlanTemplate>,
     visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
@@ -79,7 +81,7 @@ fn resolve_rate_limit_spec(
     }
 }
 
-fn combine_rate_limit_profiles(
+pub(super) fn combine_rate_limit_profiles(
     names: &[Ident],
     profiles: &BTreeMap<String, RateLimitPlanTemplate>,
 ) -> Result<RateLimitPlanTemplate> {
@@ -96,7 +98,7 @@ fn combine_rate_limit_profiles(
     Ok(out)
 }
 
-fn resolve_rate_limit_plan_spec(
+pub(super) fn resolve_rate_limit_plan_spec(
     plan: &RateLimitPlanSpec,
     default_bucket_name: &str,
 ) -> Result<RateLimitPlanTemplate> {
@@ -192,7 +194,7 @@ impl ProfileValue for RateLimitPlanTemplate {
     }
 }
 
-fn resolve_rate_limit_key_spec(spec: &RateLimitKeySpec) -> RateLimitKeyTemplate {
+pub(super) fn resolve_rate_limit_key_spec(spec: &RateLimitKeySpec) -> RateLimitKeyTemplate {
     match spec {
         RateLimitKeySpec::RouteHost => RateLimitKeyTemplate::RouteHost,
         RateLimitKeySpec::Endpoint => RateLimitKeyTemplate::Endpoint,
@@ -208,7 +210,7 @@ fn resolve_rate_limit_key_spec(spec: &RateLimitKeySpec) -> RateLimitKeyTemplate 
     }
 }
 
-fn materialize_rate_limit_plan(
+pub(super) fn materialize_rate_limit_plan(
     mut plan: RateLimitPlanTemplate,
     visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
     endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
@@ -222,14 +224,7 @@ fn materialize_rate_limit_plan(
             key: bucket
                 .key
                 .iter()
-                .map(|key| {
-                    materialize_rate_limit_key(
-                        key,
-                        visible_keys,
-                        endpoint_vars,
-                        ctx,
-                    )
-                })
+                .map(|key| materialize_rate_limit_key(key, visible_keys, endpoint_vars, ctx))
                 .collect::<Result<Vec<_>>>()?,
             cost: bucket.cost,
             windows: bucket.windows,
@@ -238,7 +233,7 @@ fn materialize_rate_limit_plan(
     Ok(out)
 }
 
-fn materialize_rate_limit_key(
+pub(super) fn materialize_rate_limit_key(
     key: &RateLimitKeyTemplate,
     visible_keys: &BTreeMap<String, RateLimitKeyBindingResolved>,
     endpoint_vars: Option<&BTreeMap<String, VarInfo>>,
@@ -276,10 +271,7 @@ fn materialize_rate_limit_key(
                 ));
             };
             let Some(var) = vars.get(name) else {
-                let available = visible_keys
-                    .keys()
-                    .cloned()
-                    .chain(vars.keys().cloned());
+                let available = visible_keys.keys().cloned().chain(vars.keys().cloned());
                 return Err(syn::Error::new(
                     *span,
                     unknown_name_message_from_keys("rate_limit key", name, available),
@@ -299,7 +291,7 @@ fn materialize_rate_limit_key(
     }
 }
 
-fn resolve_rate_limit_key_bindings(
+pub(super) fn resolve_rate_limit_key_bindings(
     bindings: &[RateLimitKeyBindingSpec],
     decls: &[VarInfo],
 ) -> Result<Vec<RateLimitKeyBindingResolved>> {
@@ -335,4 +327,3 @@ fn resolve_rate_limit_key_bindings(
     }
     Ok(out)
 }
-

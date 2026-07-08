@@ -1,5 +1,8 @@
-struct ClientAuthHttpExecutor<'a, Cx: ClientContext, T: Transport> {
-    client: &'a ApiClient<Cx, T>,
+// Client lifecycle phase modules intentionally share one private parent namespace.
+use super::*;
+
+pub(super) struct ClientAuthHttpExecutor<'a, Cx: ClientContext, T: Transport> {
+    pub(super) client: &'a ApiClient<Cx, T>,
 }
 
 tokio::task_local! {
@@ -33,7 +36,10 @@ impl Drop for AuthInternalStackGuard {
     fn drop(&mut self) {
         let _ = AUTH_INTERNAL_STACK.try_with(|stack| {
             let mut stack = stack.borrow_mut();
-            if stack.last().is_some_and(|item| item == &self.requirement_key) {
+            if stack
+                .last()
+                .is_some_and(|item| item == &self.requirement_key)
+            {
                 stack.pop();
                 return;
             }
@@ -260,6 +266,9 @@ mod test {
         let err = next_auth_transport_attempt(u32::MAX)
             .expect_err("overflowing auth transport attempt counter should fail");
         assert_eq!(err.kind, AuthErrorKind::AcquireFailed);
-        assert!(err.to_string().contains("auth transport attempt counter overflowed"));
+        assert!(
+            err.to_string()
+                .contains("auth transport attempt counter overflowed")
+        );
     }
 }

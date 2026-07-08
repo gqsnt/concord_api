@@ -1,4 +1,6 @@
-fn resolve_retry_profiles(
+use super::*;
+
+pub(super) fn resolve_retry_profiles(
     block: Option<&RetryProfilesBlock>,
 ) -> Result<BTreeMap<String, RetryConfigResolved>> {
     let Some(block) = block else {
@@ -32,7 +34,7 @@ fn resolve_retry_profiles(
         .collect())
 }
 
-fn resolve_client_retry(
+pub(super) fn resolve_client_retry(
     spec: Option<&RetrySpec>,
     default_profile: Option<&Ident>,
     profiles: &BTreeMap<String, RetryConfigResolved>,
@@ -53,16 +55,16 @@ fn resolve_client_retry(
     Ok(Some(RetryDirectiveResolved::Set(config.clone())))
 }
 
-fn resolve_retry_spec(
+pub(super) fn resolve_retry_spec(
     spec: Option<&RetrySpec>,
     profiles: &BTreeMap<String, RetryConfigResolved>,
 ) -> Result<Option<RetryDirectiveResolved>> {
     match spec {
         None => Ok(None),
         Some(RetrySpec::Off) => Ok(Some(RetryDirectiveResolved::Clear)),
-        Some(RetrySpec::Patch(patch)) => {
-            Ok(Some(RetryDirectiveResolved::Patch(resolve_retry_patch(patch)?)))
-        }
+        Some(RetrySpec::Patch(patch)) => Ok(Some(RetryDirectiveResolved::Patch(
+            resolve_retry_patch(patch)?,
+        ))),
         Some(RetrySpec::Profile(name)) => {
             let Some(config) = profiles.get(&name.to_string()) else {
                 return Err(syn::Error::new(
@@ -93,7 +95,7 @@ pub(crate) fn materialize_retry_directive(
     }
 }
 
-fn resolve_retry_patch(patch: &RetryPatch) -> Result<RetryPatchResolved> {
+pub(super) fn resolve_retry_patch(patch: &RetryPatch) -> Result<RetryPatchResolved> {
     Ok(RetryPatchResolved {
         max_attempts: patch
             .max_attempts
@@ -124,7 +126,7 @@ fn resolve_retry_patch(patch: &RetryPatch) -> Result<RetryPatchResolved> {
     })
 }
 
-fn apply_retry_patch(config: &mut RetryConfigResolved, patch: &RetryPatchResolved) {
+pub(super) fn apply_retry_patch(config: &mut RetryConfigResolved, patch: &RetryPatchResolved) {
     if let Some(max_attempts) = patch.max_attempts {
         config.max_attempts = max_attempts;
     }
@@ -177,7 +179,7 @@ impl ProfileValue for RetryPatchResolved {
     }
 }
 
-fn resolve_retry_max_attempts(lit: &syn::LitInt) -> Result<u32> {
+pub(super) fn resolve_retry_max_attempts(lit: &syn::LitInt) -> Result<u32> {
     let max_attempts = lit.base10_parse::<u32>()?;
     if max_attempts == 0 {
         return Err(syn::Error::new(
@@ -188,7 +190,7 @@ fn resolve_retry_max_attempts(lit: &syn::LitInt) -> Result<u32> {
     Ok(max_attempts)
 }
 
-fn resolve_retry_methods(methods: &[Ident]) -> Result<Vec<Ident>> {
+pub(super) fn resolve_retry_methods(methods: &[Ident]) -> Result<Vec<Ident>> {
     if methods.is_empty() {
         return Err(syn::Error::new(
             Span::call_site(),
@@ -219,7 +221,7 @@ fn resolve_retry_methods(methods: &[Ident]) -> Result<Vec<Ident>> {
         .collect()
 }
 
-fn resolve_retry_statuses(statuses: &[syn::LitInt]) -> Result<Vec<u16>> {
+pub(super) fn resolve_retry_statuses(statuses: &[syn::LitInt]) -> Result<Vec<u16>> {
     if statuses.is_empty() {
         return Err(syn::Error::new(
             Span::call_site(),
@@ -242,7 +244,7 @@ fn resolve_retry_statuses(statuses: &[syn::LitInt]) -> Result<Vec<u16>> {
         .collect()
 }
 
-fn resolve_retry_transport_errors(kinds: &[Ident]) -> Result<Vec<Ident>> {
+pub(super) fn resolve_retry_transport_errors(kinds: &[Ident]) -> Result<Vec<Ident>> {
     if kinds.is_empty() {
         return Err(syn::Error::new(
             Span::call_site(),
@@ -273,7 +275,9 @@ fn resolve_retry_transport_errors(kinds: &[Ident]) -> Result<Vec<Ident>> {
         .collect()
 }
 
-fn resolve_retry_idempotency(spec: &RetryIdempotencySpec) -> Result<RetryIdempotencyResolved> {
+pub(super) fn resolve_retry_idempotency(
+    spec: &RetryIdempotencySpec,
+) -> Result<RetryIdempotencyResolved> {
     match spec {
         RetryIdempotencySpec::Header(header) => {
             if header.value().trim().is_empty() {
@@ -286,4 +290,3 @@ fn resolve_retry_idempotency(spec: &RetryIdempotencySpec) -> Result<RetryIdempot
         }
     }
 }
-

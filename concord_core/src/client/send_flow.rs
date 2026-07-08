@@ -1,8 +1,8 @@
+// Client lifecycle phase modules intentionally share one private parent namespace.
+use super::*;
+
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
-    async fn run_post_response_hook(
-        &self,
-        ctx: ResponseObservationCtx<'_>,
-    ) {
+    pub(super) async fn run_post_response_hook(&self, ctx: ResponseObservationCtx<'_>) {
         let hook_meta = HookMeta {
             endpoint: ctx.endpoint,
             method: ctx.method,
@@ -21,7 +21,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .await;
     }
 
-    async fn acquire_rate_limit_and_send(
+    pub(super) async fn acquire_rate_limit_and_send(
         &self,
         built: crate::transport::AuthCollisionValidatedBuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
@@ -87,7 +87,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         .await
     }
 
-    async fn observe_rate_limit_response(
+    pub(super) async fn observe_rate_limit_response(
         &self,
         ctx: ResponseObservationCtx<'_>,
         error_ctx: &ErrorContext,
@@ -122,7 +122,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             })
     }
 
-    async fn send_built_request(
+    pub(super) async fn send_built_request(
         &self,
         built: crate::transport::AuthCollisionValidatedBuiltRequest,
         safe_url: &str,
@@ -142,9 +142,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             stream_request_limit,
         )
         .map_err(|source| ApiClientError::Auth {
-                ctx: ctx.clone(),
-                source,
-            })?;
+            ctx: ctx.clone(),
+            source,
+        })?;
 
         match self.transport.send(transport_req).await {
             Ok(mut resp) => {
@@ -152,9 +152,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Ok(resp)
             }
             Err(e) => {
-                if let Some(_codec_error) = e
-                    .source_error()
-                    .downcast_ref::<crate::codec::CodecError>()
+                if let Some(_codec_error) =
+                    e.source_error().downcast_ref::<crate::codec::CodecError>()
                 {
                     return Err(ApiClientError::Codec {
                         ctx: ctx.clone(),
@@ -201,7 +200,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    async fn classify_transport_response(
+    pub(super) async fn classify_transport_response(
         &self,
         mut resp: TransportResponse,
         skip_body: bool,
@@ -213,18 +212,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     ) -> Result<BuiltResponse, ApiClientError> {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self
-            .observe_rate_limit_response(observe_ctx, ctx)
-            .await?;
+        let rate_limit_action = self.observe_rate_limit_response(observe_ctx, ctx).await?;
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
                     self.debug_sink
                         .response_status(dbg, resp.status, url_str, false);
-                    self.debug_sink.response_headers(
-                        dbg,
-                        crate::debug::SanitizedHeaders::new(&resp.headers),
-                    );
+                    self.debug_sink
+                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(&resp.headers));
                 }
                 Err(ApiClientError::HttpStatus {
                     ctx: ctx.clone(),
@@ -246,10 +241,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     .await
                     .map_err(|e| match e {
                         BodyReadError::Transport(source) => {
-                            ApiClientError::response_body_read_transport_error(
-                                ctx.clone(),
-                                source,
-                            )
+                            ApiClientError::response_body_read_transport_error(ctx.clone(), source)
                         }
                         BodyReadError::ContentLengthTooLarge { limit, actual } => {
                             ApiClientError::ResponseTooLarge {
@@ -278,7 +270,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    async fn send_and_classify_once(
+    pub(super) async fn send_and_classify_once(
         &self,
         built: crate::transport::AuthCollisionValidatedBuiltRequest,
         skip_body: bool,
@@ -303,7 +295,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         .await
     }
 
-    async fn send_and_classify_transport_once(
+    pub(super) async fn send_and_classify_transport_once(
         &self,
         built: crate::transport::AuthCollisionValidatedBuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
@@ -328,7 +320,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         .await
     }
 
-    async fn observe_and_classify_transport_response(
+    pub(super) async fn observe_and_classify_transport_response(
         &self,
         resp: TransportResponse,
         dbg: DebugLevel,
@@ -340,18 +332,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     ) -> Result<TransportResponse, ApiClientError> {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self
-            .observe_rate_limit_response(observe_ctx, ctx)
-            .await?;
+        let rate_limit_action = self.observe_rate_limit_response(observe_ctx, ctx).await?;
         match classify_status(resp.status) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
                     self.debug_sink
                         .response_status(dbg, resp.status, url_str, false);
-                    self.debug_sink.response_headers(
-                        dbg,
-                        crate::debug::SanitizedHeaders::new(&resp.headers),
-                    );
+                    self.debug_sink
+                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(&resp.headers));
                 }
                 Err(ApiClientError::HttpStatus {
                     ctx: ctx.clone(),
@@ -365,10 +353,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 if dbg_verbose {
                     self.debug_sink
                         .response_status(dbg, resp.status, url_str, true);
-                    self.debug_sink.response_headers(
-                        dbg,
-                        crate::debug::SanitizedHeaders::new(&resp.headers),
-                    );
+                    self.debug_sink
+                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(&resp.headers));
                 }
                 if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
                     if actual > limit as u64 {
@@ -384,7 +370,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    fn response_observation_ctx<'a>(
+    pub(super) fn response_observation_ctx<'a>(
         resp: &'a TransportResponse,
         url_str: &'a str,
     ) -> ResponseObservationCtx<'a> {
@@ -402,7 +388,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    fn header_matches_media_type(
+    pub(super) fn header_matches_media_type(
         value: Option<&http::HeaderValue>,
         expected: &'static str,
     ) -> bool {
@@ -412,7 +398,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .map(|base| base.trim().eq_ignore_ascii_case(expected))
             .unwrap_or(false)
     }
-
 }
 
 fn wrap_rate_limit_error(

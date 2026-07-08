@@ -1,4 +1,6 @@
-fn analyze_auth_credentials(
+use super::*;
+
+pub(super) fn analyze_auth_credentials(
     block: Option<&AuthCredentials>,
     auth_vars: &BTreeMap<String, VarInfo>,
     endpoint_outputs: &BTreeMap<EndpointTargetKey, Type>,
@@ -84,7 +86,7 @@ fn analyze_auth_credentials(
     Ok(out)
 }
 
-fn endpoint_target_from_path(path: &syn::Path) -> Result<EndpointTargetIr> {
+pub(super) fn endpoint_target_from_path(path: &syn::Path) -> Result<EndpointTargetIr> {
     if path.segments.is_empty() {
         return Err(syn::Error::new_spanned(
             path,
@@ -100,7 +102,11 @@ fn endpoint_target_from_path(path: &syn::Path) -> Result<EndpointTargetIr> {
             ));
         }
     }
-    for segment in path.segments.iter().take(path.segments.len().saturating_sub(1)) {
+    for segment in path
+        .segments
+        .iter()
+        .take(path.segments.len().saturating_sub(1))
+    {
         scope_modules.push(segment.ident.clone());
     }
     let endpoint = path
@@ -115,7 +121,7 @@ fn endpoint_target_from_path(path: &syn::Path) -> Result<EndpointTargetIr> {
     })
 }
 
-fn validate_required_secret(
+pub(super) fn validate_required_secret(
     secret: &SecretRef,
     auth_vars: &BTreeMap<String, VarInfo>,
 ) -> Result<()> {
@@ -140,7 +146,7 @@ fn validate_required_secret(
     Ok(())
 }
 
-fn resolve_auth_requirements(
+pub(super) fn resolve_auth_requirements(
     uses: &[NormAuthUse],
     credentials: &BTreeMap<String, AuthCredentialIr>,
     provenance: AuthUseProvenanceIr,
@@ -158,7 +164,7 @@ fn resolve_auth_requirements(
     Ok(out)
 }
 
-fn reject_duplicate_auth_materialization_keys(uses: &[NormAuthUse]) -> Result<()> {
+pub(super) fn reject_duplicate_auth_materialization_keys(uses: &[NormAuthUse]) -> Result<()> {
     let mut headers: BTreeMap<String, String> = BTreeMap::new();
     let mut queries: BTreeMap<String, Span> = BTreeMap::new();
 
@@ -191,7 +197,7 @@ fn reject_duplicate_auth_materialization_keys(uses: &[NormAuthUse]) -> Result<()
     Ok(())
 }
 
-fn resolve_auth_use_kind(
+pub(super) fn resolve_auth_use_kind(
     kind: &AuthUseKind,
     credentials: &BTreeMap<String, AuthCredentialIr>,
     provenance: AuthUseProvenanceIr,
@@ -227,7 +233,7 @@ fn resolve_auth_use_kind(
     Ok(AuthUseIr { kind, provenance })
 }
 
-fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
+pub(super) fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
     match u {
         AuthUseKind::Bearer { credential }
         | AuthUseKind::Header { credential, .. }
@@ -237,14 +243,14 @@ fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
     }
 }
 
-fn auth_plan_references_credential(plans: &[AuthRequirementIr], target: &Ident) -> bool {
+pub(super) fn auth_plan_references_credential(plans: &[AuthRequirementIr], target: &Ident) -> bool {
     plans.iter().any(|plan| match plan {
         plan => &plan.credential == target,
     })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum AuthMaterializationTargetKey {
+pub(super) enum AuthMaterializationTargetKey {
     Header(String),
     Query(String),
     Authorization,
@@ -262,7 +268,9 @@ impl AuthMaterializationTargetKey {
     }
 }
 
-fn final_auth_materialization_target(req: &AuthRequirementIr) -> AuthMaterializationTargetKey {
+pub(super) fn final_auth_materialization_target(
+    req: &AuthRequirementIr,
+) -> AuthMaterializationTargetKey {
     match &req.placement {
         AuthPlacementIr::Header { name } => {
             let name = name.value();
@@ -303,13 +311,10 @@ pub(crate) fn validate_final_auth_materialization_targets(
     Ok(())
 }
 
-fn validate_oauth2_token_url(token_url: &syn::LitStr) -> Result<()> {
+pub(super) fn validate_oauth2_token_url(token_url: &syn::LitStr) -> Result<()> {
     validate_oauth2_token_url_raw(&token_url.value(), token_url.span())?;
     let url = token_url.value().parse::<url::Url>().map_err(|err| {
-        syn::Error::new(
-            token_url.span(),
-            format!("invalid OAuth2 token URL: {err}"),
-        )
+        syn::Error::new(token_url.span(), format!("invalid OAuth2 token URL: {err}"))
     })?;
     if url.scheme() != "https"
         || url.host_str().is_none_or(|host| host.is_empty())
@@ -325,7 +330,7 @@ fn validate_oauth2_token_url(token_url: &syn::LitStr) -> Result<()> {
     Ok(())
 }
 
-fn validate_oauth2_token_url_raw(token_url: &str, span: Span) -> Result<()> {
+pub(super) fn validate_oauth2_token_url_raw(token_url: &str, span: Span) -> Result<()> {
     let Some(rest) = token_url.strip_prefix("https://") else {
         return Err(syn::Error::new(
             span,
@@ -345,7 +350,7 @@ fn validate_oauth2_token_url_raw(token_url: &str, span: Span) -> Result<()> {
     Ok(())
 }
 
-fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<()> {
+pub(super) fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) -> Result<()> {
     let shape = match &cred.kind {
         AuthCredentialKindIr::ApiKey { .. } => AuthMaterialShapeIr::SecretValue,
         AuthCredentialKindIr::StaticBearer { .. }
@@ -424,14 +429,11 @@ pub(crate) fn materialize_auth_requirement(
             },
             credential,
         ),
-        AuthUseKindIr::Query { key, credential } => (
-            AuthPlacementIr::Query { key: key.clone() },
-            credential,
-        ),
-        AuthUseKindIr::Basic { credential } => (AuthPlacementIr::Basic, credential),
-        AuthUseKindIr::Certificate { credential } => {
-            (AuthPlacementIr::Certificate, credential)
+        AuthUseKindIr::Query { key, credential } => {
+            (AuthPlacementIr::Query { key: key.clone() }, credential)
         }
+        AuthUseKindIr::Basic { credential } => (AuthPlacementIr::Basic, credential),
+        AuthUseKindIr::Certificate { credential } => (AuthPlacementIr::Certificate, credential),
     };
     AuthRequirementIr {
         credential: credential.clone(),
@@ -453,14 +455,16 @@ pub(crate) fn materialize_auth_requirements(
         .iter()
         .enumerate()
         .map(|(idx, plan)| match plan {
-            AuthUsePlanIr::Use(auth_use) => {
-                materialize_auth_requirement(auth_use.as_ref(), endpoint_step_prefix, start_idx + idx)
-            }
+            AuthUsePlanIr::Use(auth_use) => materialize_auth_requirement(
+                auth_use.as_ref(),
+                endpoint_step_prefix,
+                start_idx + idx,
+            ),
         })
         .collect()
 }
 
-fn auth_usage_id(kind: &AuthUseKindIr) -> &'static str {
+pub(super) fn auth_usage_id(kind: &AuthUseKindIr) -> &'static str {
     match kind {
         AuthUseKindIr::Bearer { .. } => "bearer",
         AuthUseKindIr::Header { .. } => "header",
@@ -470,7 +474,7 @@ fn auth_usage_id(kind: &AuthUseKindIr) -> &'static str {
     }
 }
 
-fn provenance_label(provenance: AuthUseProvenanceIr) -> String {
+pub(super) fn provenance_label(provenance: AuthUseProvenanceIr) -> String {
     match provenance {
         AuthUseProvenanceIr::Client => "client".to_string(),
         AuthUseProvenanceIr::Scope(scope_id) => format!("scope:{scope_id}"),
@@ -478,7 +482,7 @@ fn provenance_label(provenance: AuthUseProvenanceIr) -> String {
     }
 }
 
-fn shape_from_type(ty: &Type) -> AuthMaterialShapeIr {
+pub(super) fn shape_from_type(ty: &Type) -> AuthMaterialShapeIr {
     let Type::Path(type_path) = ty else {
         return AuthMaterialShapeIr::Unknown;
     };
@@ -493,4 +497,3 @@ fn shape_from_type(ty: &Type) -> AuthMaterialShapeIr {
         _ => AuthMaterialShapeIr::Unknown,
     }
 }
-

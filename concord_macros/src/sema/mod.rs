@@ -23,12 +23,19 @@ use proc_macro2::Span;
 use std::collections::{BTreeMap, BTreeSet as PublicNameSet};
 use syn::{Expr, Ident, LitStr, Path, Result, Type, spanned::Spanned};
 
-include!("ir.rs");
-include!("profiles.rs");
-include!("behavior.rs");
-include!("normalize.rs");
+mod behavior;
+mod ir;
+mod normalize;
+mod profiles;
 #[path = "resolve.rs"]
 mod resolve_stage;
+
+pub(crate) use self::ir::*;
+pub(crate) use self::policy::*;
+
+use self::behavior::*;
+use self::normalize::*;
+use self::profiles::*;
 
 #[cfg(test)]
 pub(crate) fn analyze_tokens_for_test(input: proc_macro2::TokenStream) -> ResolvedApi {
@@ -724,13 +731,20 @@ fn push_error(errors: &mut Option<syn::Error>, error: syn::Error) {
     }
 }
 
-// Keep feature-domain macro chunks in separate files without widening helper visibility.
-include!("common.rs");
-include!("auth.rs");
-include!("retry.rs");
-include!("rate_limit.rs");
-include!("items.rs");
-include!("policy.rs");
+// Keep feature-domain macro chunks in separate modules without widening helper visibility.
+mod auth;
+mod common;
+mod items;
+mod policy;
+mod rate_limit;
+mod retry;
+
+pub(crate) use self::auth::*;
+
+use self::common::*;
+use self::items::*;
+use self::rate_limit::*;
+use self::retry::*;
 
 #[cfg(test)]
 fn debug_resolved_endpoints(resolved_api: &ResolvedApi) -> String {

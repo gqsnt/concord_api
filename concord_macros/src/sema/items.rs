@@ -1,17 +1,19 @@
-struct WalkItemsCtx<'a> {
-    client_vars: &'a BTreeMap<String, VarInfo>,
-    auth_vars: &'a BTreeMap<String, VarInfo>,
-    auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
-    client_auth: &'a [AuthUsePlanIr],
-    client_default_behavior_names: &'a [String],
-    retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
-    rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanTemplate>,
-    behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
-    layers: &'a mut Vec<LayerIr>,
-    endpoints: &'a mut Vec<ResolvedEndpoint>,
+use super::*;
+
+pub(super) struct WalkItemsCtx<'a> {
+    pub(super) client_vars: &'a BTreeMap<String, VarInfo>,
+    pub(super) auth_vars: &'a BTreeMap<String, VarInfo>,
+    pub(super) auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
+    pub(super) client_auth: &'a [AuthUsePlanIr],
+    pub(super) client_default_behavior_names: &'a [String],
+    pub(super) retry_profiles: &'a BTreeMap<String, RetryConfigResolved>,
+    pub(super) rate_limit_profiles: &'a BTreeMap<String, RateLimitPlanTemplate>,
+    pub(super) behavior_profiles: &'a BTreeMap<String, BehaviorResolved>,
+    pub(super) layers: &'a mut Vec<LayerIr>,
+    pub(super) endpoints: &'a mut Vec<ResolvedEndpoint>,
 }
 
-struct EndpointAnalysisCtx<'a> {
+pub(super) struct EndpointAnalysisCtx<'a> {
     client_vars: &'a BTreeMap<String, VarInfo>,
     auth_vars: &'a BTreeMap<String, VarInfo>,
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
@@ -23,7 +25,7 @@ struct EndpointAnalysisCtx<'a> {
     layers: &'a [LayerIr],
 }
 
-fn rate_limit_key_bindings_for_ancestry(
+pub(super) fn rate_limit_key_bindings_for_ancestry(
     ancestry: &[usize],
     layers: &[LayerIr],
 ) -> BTreeMap<String, RateLimitKeyBindingResolved> {
@@ -36,7 +38,7 @@ fn rate_limit_key_bindings_for_ancestry(
     out
 }
 
-fn walk_items(
+pub(super) fn walk_items(
     items: &[NormNode],
     ancestry: &mut Vec<usize>,
     ctx: &mut WalkItemsCtx<'_>,
@@ -92,7 +94,8 @@ fn walk_items(
                     None,
                     RateLimitAttachmentContext::Layer,
                 )?;
-                policy.rate_limit = merge_rate_limit_resolved(behavior_rate_limit, explicit_rate_limit);
+                policy.rate_limit =
+                    merge_rate_limit_resolved(behavior_rate_limit, explicit_rate_limit);
                 let mut auth_uses = behavior.auth_uses;
                 auth_uses.extend(ld.auth_uses.iter().cloned());
                 let auth = resolve_auth_requirements(
@@ -138,7 +141,7 @@ fn walk_items(
     Ok(())
 }
 
-fn reject_formatted_lit(lit: &LitStr, ctx: &'static str) -> Result<()> {
+pub(super) fn reject_formatted_lit(lit: &LitStr, ctx: &'static str) -> Result<()> {
     let s = lit.value();
     if s.contains('{') || s.contains('}') {
         return Err(syn::Error::new(
@@ -151,14 +154,16 @@ fn reject_formatted_lit(lit: &LitStr, ctx: &'static str) -> Result<()> {
     Ok(())
 }
 
-fn collect_endpoint_output_types(items: &[NormNode]) -> Result<BTreeMap<EndpointTargetKey, Type>> {
+pub(super) fn collect_endpoint_output_types(
+    items: &[NormNode],
+) -> Result<BTreeMap<EndpointTargetKey, Type>> {
     let mut out = BTreeMap::new();
     let mut scope_stack: Vec<Ident> = Vec::new();
     collect_endpoint_output_types_into(items, &mut out, &mut scope_stack, 0)?;
     Ok(out)
 }
 
-fn collect_endpoint_output_types_into(
+pub(super) fn collect_endpoint_output_types_into(
     items: &[NormNode],
     out: &mut BTreeMap<EndpointTargetKey, Type>,
     scope_stack: &mut Vec<Ident>,
@@ -171,12 +176,7 @@ fn collect_endpoint_output_types_into(
                     let next_depth = scope_depth + 1;
                     crate::limits::check_dsl_scope_depth(next_depth, layer.span)?;
                     scope_stack.push(name.clone());
-                    collect_endpoint_output_types_into(
-                        &layer.items,
-                        out,
-                        scope_stack,
-                        next_depth,
-                    )?;
+                    collect_endpoint_output_types_into(&layer.items, out, scope_stack, next_depth)?;
                     let _ = scope_stack.pop();
                 } else {
                     collect_endpoint_output_types_into(
@@ -221,12 +221,12 @@ fn collect_endpoint_output_types_into(
     Ok(())
 }
 
-fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Result<Type> {
+pub(super) fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Result<Type> {
     let response_io = classify_http_response_io(&endpoint.response)?;
     Ok(response_public_output_ty(&response_io))
 }
 
-fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPlanIr {
+pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPlanIr {
     match request_io {
         ResolvedRequestBodyIo::None => RequestEntityPlanIr {
             adapter_ty: syn::parse_quote!(::concord_core::advanced::NoRequestBody),
@@ -281,7 +281,9 @@ fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPl
         },
         ResolvedRequestBodyIo::Records { item_ty, format_ty } => RequestEntityPlanIr {
             adapter_ty: syn::parse_quote!(::concord_core::advanced::RecordRequest<#item_ty, #format_ty>),
-            public_input_ty: Some(syn::parse_quote!(::concord_core::advanced::RecordBody<#item_ty>)),
+            public_input_ty: Some(
+                syn::parse_quote!(::concord_core::advanced::RecordBody<#item_ty>),
+            ),
             body_field_ty: Some(syn::parse_quote!(::concord_core::advanced::RecordBody<#item_ty>)),
             doc: IoDocIr {
                 summary: "Record-streaming request body.".to_string(),
@@ -321,7 +323,9 @@ fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPl
     }
 }
 
-fn response_entity_plan_ir(response_io: &ResolvedResponseBodyIo) -> ResponseEntityPlanIr {
+pub(super) fn response_entity_plan_ir(
+    response_io: &ResolvedResponseBodyIo,
+) -> ResponseEntityPlanIr {
     match response_io {
         ResolvedResponseBodyIo::BufferedCodec(io) => {
             let marker = &io.marker;
@@ -376,10 +380,7 @@ fn response_entity_plan_ir(response_io: &ResolvedResponseBodyIo) -> ResponseEnti
             public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Streaming response body.".to_string(),
-                facade_summary: Some(format!(
-                    "Response: Stream<{}>",
-                    quote::quote!(#media_ty)
-                )),
+                facade_summary: Some(format!("Response: Stream<{}>", quote::quote!(#media_ty))),
             },
             capabilities: ResponseIoCapabilities {
                 supports_pagination: false,
@@ -441,8 +442,7 @@ fn response_entity_plan_ir(response_io: &ResolvedResponseBodyIo) -> ResponseEnti
     }
 }
 
-fn response_public_output_ty(response_io: &ResolvedResponseBodyIo) -> Type {
-
+pub(super) fn response_public_output_ty(response_io: &ResolvedResponseBodyIo) -> Type {
     match response_io {
         ResolvedResponseBodyIo::BufferedCodec(io) => io.value_ty.clone(),
         ResolvedResponseBodyIo::BufferedBytes => syn::parse_quote!(::bytes::Bytes),
@@ -462,11 +462,11 @@ fn response_public_output_ty(response_io: &ResolvedResponseBodyIo) -> Type {
     }
 }
 
-fn doc_codec(enc: &Path, ty: &Type) -> String {
+pub(super) fn doc_codec(enc: &Path, ty: &Type) -> String {
     format!("{}<{}>", quote::quote!(#enc), quote::quote!(#ty))
 }
 
-fn analyze_layer_route_and_decls(
+pub(super) fn analyze_layer_route_and_decls(
     ld: &NormScope,
     ancestry: &[usize],
     known_layers: &[LayerIr],
@@ -513,59 +513,61 @@ fn analyze_layer_route_and_decls(
                         }
                     }
                     RouteAtom::Fmt(spec) => {
-                        let resolved =
-                            resolve_route_fmt_spec(spec, Some(client_vars), Some(&layer_vars), false)?;
+                        let resolved = resolve_route_fmt_spec(
+                            spec,
+                            Some(client_vars),
+                            Some(&layer_vars),
+                            false,
+                        )?;
                         prefix_pieces.push(PrefixPiece::Fmt(resolved));
                     }
-                    RouteAtom::Ref(r) => {
-                        match r.scope {
-                            RefScope::Cx => {
-                                let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
-                                    syn::Error::new(
-                                        r.ident.span(),
-                                        unknown_scoped_name_message(
-                                            "client var",
-                                            "vars",
-                                            &r.ident,
-                                            client_vars,
-                                        ),
-                                    )
-                                })?;
-                                prefix_pieces.push(PrefixPiece::CxVar {
-                                    field: r.ident.clone(),
-                                    optional: v.optional,
-                                });
-                            }
-                            RefScope::Ep => {
-                                if r.explicit {
-                                    return Err(syn::Error::new(
-                                        r.ident.span(),
-                                        "`ep.*` is not allowed in scope routes; use the scope parameter name directly",
-                                    ));
-                                }
-                                let _v = layer_vars.get(&r.ident.to_string()).ok_or_else(|| {
-                                    syn::Error::new(
-                                        r.ident.span(),
-                                        unknown_scoped_name_message(
-                                            "scope param",
-                                            "scope",
-                                            &r.ident,
-                                            &layer_vars,
-                                        ),
-                                    )
-                                })?;
-                                prefix_pieces.push(PrefixPiece::EpVar {
-                                    field: r.ident.clone(),
-                                });
-                            }
-                            RefScope::Auth => {
+                    RouteAtom::Ref(r) => match r.scope {
+                        RefScope::Cx => {
+                            let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                syn::Error::new(
+                                    r.ident.span(),
+                                    unknown_scoped_name_message(
+                                        "client var",
+                                        "vars",
+                                        &r.ident,
+                                        client_vars,
+                                    ),
+                                )
+                            })?;
+                            prefix_pieces.push(PrefixPiece::CxVar {
+                                field: r.ident.clone(),
+                                optional: v.optional,
+                            });
+                        }
+                        RefScope::Ep => {
+                            if r.explicit {
                                 return Err(syn::Error::new(
                                     r.ident.span(),
-                                    "secret references are only allowed in credential declarations",
+                                    "`ep.*` is not allowed in scope routes; use the scope parameter name directly",
                                 ));
                             }
+                            let _v = layer_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                syn::Error::new(
+                                    r.ident.span(),
+                                    unknown_scoped_name_message(
+                                        "scope param",
+                                        "scope",
+                                        &r.ident,
+                                        &layer_vars,
+                                    ),
+                                )
+                            })?;
+                            prefix_pieces.push(PrefixPiece::EpVar {
+                                field: r.ident.clone(),
+                            });
                         }
-                    }
+                        RefScope::Auth => {
+                            return Err(syn::Error::new(
+                                r.ident.span(),
+                                "secret references are only allowed in credential declarations",
+                            ));
+                        }
+                    },
                 }
             }
         }
@@ -577,59 +579,61 @@ fn analyze_layer_route_and_decls(
                         path_pieces.push(PathPiece::Static(lit.value()));
                     }
                     RouteAtom::Fmt(spec) => {
-                        let resolved =
-                            resolve_route_fmt_spec(spec, Some(client_vars), Some(&layer_vars), false)?;
+                        let resolved = resolve_route_fmt_spec(
+                            spec,
+                            Some(client_vars),
+                            Some(&layer_vars),
+                            false,
+                        )?;
                         path_pieces.push(PathPiece::Fmt(resolved));
                     }
-                    RouteAtom::Ref(r) => {
-                        match r.scope {
-                            RefScope::Cx => {
-                                let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
-                                    syn::Error::new(
-                                        r.ident.span(),
-                                        unknown_scoped_name_message(
-                                            "client var",
-                                            "vars",
-                                            &r.ident,
-                                            client_vars,
-                                        ),
-                                    )
-                                })?;
-                                path_pieces.push(PathPiece::CxVar {
-                                    field: r.ident.clone(),
-                                    optional: v.optional,
-                                });
-                            }
-                            RefScope::Ep => {
-                                if r.explicit {
-                                    return Err(syn::Error::new(
-                                        r.ident.span(),
-                                        "`ep.*` is not allowed in scope routes; use the scope parameter name directly",
-                                    ));
-                                }
-                                let _v = layer_vars.get(&r.ident.to_string()).ok_or_else(|| {
-                                    syn::Error::new(
-                                        r.ident.span(),
-                                        unknown_scoped_name_message(
-                                            "scope param",
-                                            "scope",
-                                            &r.ident,
-                                            &layer_vars,
-                                        ),
-                                    )
-                                })?;
-                                path_pieces.push(PathPiece::EpVar {
-                                    field: r.ident.clone(),
-                                });
-                            }
-                            RefScope::Auth => {
+                    RouteAtom::Ref(r) => match r.scope {
+                        RefScope::Cx => {
+                            let v = client_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                syn::Error::new(
+                                    r.ident.span(),
+                                    unknown_scoped_name_message(
+                                        "client var",
+                                        "vars",
+                                        &r.ident,
+                                        client_vars,
+                                    ),
+                                )
+                            })?;
+                            path_pieces.push(PathPiece::CxVar {
+                                field: r.ident.clone(),
+                                optional: v.optional,
+                            });
+                        }
+                        RefScope::Ep => {
+                            if r.explicit {
                                 return Err(syn::Error::new(
                                     r.ident.span(),
-                                    "secret references are only allowed in credential declarations",
+                                    "`ep.*` is not allowed in scope routes; use the scope parameter name directly",
                                 ));
                             }
+                            let _v = layer_vars.get(&r.ident.to_string()).ok_or_else(|| {
+                                syn::Error::new(
+                                    r.ident.span(),
+                                    unknown_scoped_name_message(
+                                        "scope param",
+                                        "scope",
+                                        &r.ident,
+                                        &layer_vars,
+                                    ),
+                                )
+                            })?;
+                            path_pieces.push(PathPiece::EpVar {
+                                field: r.ident.clone(),
+                            });
                         }
-                    }
+                        RefScope::Auth => {
+                            return Err(syn::Error::new(
+                                r.ident.span(),
+                                "secret references are only allowed in credential declarations",
+                            ));
+                        }
+                    },
                 }
             }
         }
@@ -638,7 +642,7 @@ fn analyze_layer_route_and_decls(
     Ok((prefix_pieces, path_pieces, decls))
 }
 
-fn analyze_endpoint(
+pub(super) fn analyze_endpoint(
     ed: &NormEndpoint,
     ancestry: &[usize],
     ctx: &EndpointAnalysisCtx<'_>,
@@ -797,7 +801,8 @@ fn analyze_endpoint(
         ctx.auth_credentials,
         AuthUseProvenanceIr::Endpoint,
     )?);
-    let auth = materialize_auth_requirements(&auth_plans, &current_endpoint_target.display_string(), 0);
+    let auth =
+        materialize_auth_requirements(&auth_plans, &current_endpoint_target.display_string(), 0);
     validate_final_auth_materialization_targets(
         &auth,
         &current_endpoint_target.display_string(),
@@ -816,8 +821,8 @@ fn analyze_endpoint(
                 format!(
                     "credential `{}` cannot acquire via endpoint `{}` because the endpoint uses that credential",
                     credential.name, ed.name
-            ),
-        ));
+                ),
+            ));
         }
     }
 
@@ -906,23 +911,23 @@ fn analyze_endpoint(
 }
 
 #[derive(Copy, Clone)]
-enum EndpointIoPosition {
+pub(super) enum EndpointIoPosition {
     Request,
     Response,
 }
 
-fn endpoint_io_family_name(spec: &RawIoSpec) -> Option<&syn::Ident> {
+pub(super) fn endpoint_io_family_name(spec: &RawIoSpec) -> Option<&syn::Ident> {
     match &spec.marker {
         syn::Type::Path(tp) => tp.path.segments.last().map(|segment| &segment.ident),
         _ => None,
     }
 }
 
-fn endpoint_io_arg_count(spec: &RawIoSpec) -> usize {
+pub(super) fn endpoint_io_arg_count(spec: &RawIoSpec) -> usize {
     spec.args.len()
 }
 
-fn buffered_codec_io(spec: &RawIoSpec) -> BufferedCodecIo {
+pub(super) fn buffered_codec_io(spec: &RawIoSpec) -> BufferedCodecIo {
     BufferedCodecIo {
         marker: spec.marker.clone(),
         codec_path: spec.enc.clone(),
@@ -930,7 +935,7 @@ fn buffered_codec_io(spec: &RawIoSpec) -> BufferedCodecIo {
     }
 }
 
-fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo> {
+pub(super) fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo> {
     let Some(spec) = spec else {
         return Ok(ResolvedRequestBodyIo::None);
     };
@@ -949,15 +954,19 @@ fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo
                 "`NoContent` is not valid as an endpoint request",
             ));
         }
-        EndpointIoClassification::RawStream { media_ty } => ResolvedRequestBodyIo::RawStream {
-            media_ty,
-        },
+        EndpointIoClassification::RawStream { media_ty } => {
+            ResolvedRequestBodyIo::RawStream { media_ty }
+        }
         EndpointIoClassification::Records { item_ty, format_ty } => {
             ResolvedRequestBodyIo::Records { item_ty, format_ty }
         }
-        EndpointIoClassification::Multipart { value_ty, format_ty } => {
-            ResolvedRequestBodyIo::Multipart { value_ty, format_ty }
-        }
+        EndpointIoClassification::Multipart {
+            value_ty,
+            format_ty,
+        } => ResolvedRequestBodyIo::Multipart {
+            value_ty,
+            format_ty,
+        },
         EndpointIoClassification::Sse { .. } => {
             return Err(syn::Error::new_spanned(
                 spec.marker.clone(),
@@ -967,56 +976,42 @@ fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRequestBodyIo
     })
 }
 
-fn classify_http_response_io(spec: &RawResponseIo) -> Result<ResolvedResponseBodyIo> {
+pub(super) fn classify_http_response_io(spec: &RawResponseIo) -> Result<ResolvedResponseBodyIo> {
     let io = classify_endpoint_io(spec, EndpointIoPosition::Response)?;
     Ok(match io {
         EndpointIoClassification::BufferedCodec(io) => ResolvedResponseBodyIo::BufferedCodec(io),
         EndpointIoClassification::BufferedBytes => ResolvedResponseBodyIo::BufferedBytes,
         EndpointIoClassification::NoContent => ResolvedResponseBodyIo::NoContent,
-        EndpointIoClassification::RawStream { media_ty } => ResolvedResponseBodyIo::RawStream {
-            media_ty,
-        },
+        EndpointIoClassification::RawStream { media_ty } => {
+            ResolvedResponseBodyIo::RawStream { media_ty }
+        }
         EndpointIoClassification::Records { item_ty, format_ty } => {
             ResolvedResponseBodyIo::Records { item_ty, format_ty }
         }
-        EndpointIoClassification::Multipart { value_ty, format_ty } => {
-            ResolvedResponseBodyIo::Multipart {
-                part_ty: value_ty,
-                format_ty,
-            }
-        }
-        EndpointIoClassification::Sse {
-            event_ty,
-            codec_ty,
-        } => ResolvedResponseBodyIo::Sse {
-            event_ty,
-            codec_ty,
+        EndpointIoClassification::Multipart {
+            value_ty,
+            format_ty,
+        } => ResolvedResponseBodyIo::Multipart {
+            part_ty: value_ty,
+            format_ty,
         },
+        EndpointIoClassification::Sse { event_ty, codec_ty } => {
+            ResolvedResponseBodyIo::Sse { event_ty, codec_ty }
+        }
     })
 }
 
-enum EndpointIoClassification {
+pub(super) enum EndpointIoClassification {
     BufferedCodec(BufferedCodecIo),
     BufferedBytes,
     NoContent,
-    RawStream {
-        media_ty: Type,
-    },
-    Records {
-        item_ty: Type,
-        format_ty: Type,
-    },
-    Multipart {
-        value_ty: Type,
-        format_ty: Type,
-    },
-    Sse {
-        event_ty: Type,
-        codec_ty: Type,
-    },
+    RawStream { media_ty: Type },
+    Records { item_ty: Type, format_ty: Type },
+    Multipart { value_ty: Type, format_ty: Type },
+    Sse { event_ty: Type, codec_ty: Type },
 }
 
-fn classify_endpoint_io(
+pub(super) fn classify_endpoint_io(
     spec: &RawIoSpec,
     position: EndpointIoPosition,
 ) -> Result<EndpointIoClassification> {
@@ -1086,7 +1081,10 @@ fn classify_endpoint_io(
                 .get(1)
                 .cloned()
                 .unwrap_or_else(|| syn::parse_quote!(::concord_core::advanced::FormData));
-            Ok(EndpointIoClassification::Multipart { value_ty, format_ty })
+            Ok(EndpointIoClassification::Multipart {
+                value_ty,
+                format_ty,
+            })
         }
         "Sse" => {
             if !(arg_count == 1 || arg_count == 2) {
@@ -1117,8 +1115,9 @@ fn classify_endpoint_io(
                     "codec spec expects exactly one type argument: `Enc<T>`",
                 ));
             }
-            Ok(EndpointIoClassification::BufferedCodec(buffered_codec_io(spec)))
+            Ok(EndpointIoClassification::BufferedCodec(buffered_codec_io(
+                spec,
+            )))
         }
     }
 }
-

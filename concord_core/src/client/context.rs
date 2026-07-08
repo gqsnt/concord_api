@@ -1,3 +1,6 @@
+// Client lifecycle phase modules intentionally share one private parent namespace.
+use super::*;
+
 pub trait ClientContext: Sized + Send + Sync + 'static {
     type Vars: Clone + Send + Sync + 'static;
     type AuthVars: Clone + Send + Sync + 'static;
@@ -69,13 +72,13 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
 }
 
 #[derive(Clone, Copy)]
-struct SendClassifyCtx<'a> {
-    dbg: DebugLevel,
-    dbg_verbose: bool,
-    dbg_vv: bool,
-    url_str: &'a str,
-    error_ctx: &'a ErrorContext,
-    auth_materials: &'a [crate::auth::AuthTransportMaterial],
+pub(super) struct SendClassifyCtx<'a> {
+    pub(super) dbg: DebugLevel,
+    pub(super) dbg_verbose: bool,
+    pub(super) dbg_vv: bool,
+    pub(super) url_str: &'a str,
+    pub(super) error_ctx: &'a ErrorContext,
+    pub(super) auth_materials: &'a [crate::auth::AuthTransportMaterial],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,12 +89,11 @@ pub(super) enum AuthPreparationCachePolicy {
 
 // Request-local auth-preparation reuse is an explicit opt-in marker so only known
 // retry-stable credential paths reuse cached preparation across transport retries.
-pub(super) const REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER: &str =
-    "request_local_reusable";
+pub(super) const REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER: &str = "request_local_reusable";
 
 impl AuthPreparationCachePolicy {
     #[inline]
-    fn allows_request_local_reuse(self) -> bool {
+    pub(super) fn allows_request_local_reuse(self) -> bool {
         matches!(self, Self::RequestLocalReusable)
     }
 }
@@ -103,26 +105,26 @@ pub(super) struct AuthPreparation {
     pub(super) cache_policy: AuthPreparationCachePolicy,
 }
 
-struct AuthRejectionCtx<'a, Cx: ClientContext, T: Transport> {
-    plan: &'a crate::endpoint::RequestPlanView,
-    auth_state: &'a Cx::AuthState,
-    auth_http: &'a ClientAuthHttpExecutor<'a, Cx, T>,
-    meta: &'a RequestMeta,
-    status: StatusCode,
-    headers: &'a http::HeaderMap,
-    auth_attempt: &'a crate::auth::AuthAttemptSummary,
+pub(super) struct AuthRejectionCtx<'a, Cx: ClientContext, T: Transport> {
+    pub(super) plan: &'a crate::endpoint::RequestPlanView,
+    pub(super) auth_state: &'a Cx::AuthState,
+    pub(super) auth_http: &'a ClientAuthHttpExecutor<'a, Cx, T>,
+    pub(super) meta: &'a RequestMeta,
+    pub(super) status: StatusCode,
+    pub(super) headers: &'a http::HeaderMap,
+    pub(super) auth_attempt: &'a crate::auth::AuthAttemptSummary,
 }
 
 #[derive(Clone, Copy)]
-struct ResponseObservationCtx<'a> {
-    endpoint: &'static str,
-    method: &'a http::Method,
-    url: &'a str,
-    url_host: Option<&'a str>,
-    attempt: u32,
-    page_index: u32,
-    idempotent: bool,
-    plan: &'a RateLimitPlan,
-    status: StatusCode,
-    headers: &'a http::HeaderMap,
+pub(super) struct ResponseObservationCtx<'a> {
+    pub(super) endpoint: &'static str,
+    pub(super) method: &'a http::Method,
+    pub(super) url: &'a str,
+    pub(super) url_host: Option<&'a str>,
+    pub(super) attempt: u32,
+    pub(super) page_index: u32,
+    pub(super) idempotent: bool,
+    pub(super) plan: &'a RateLimitPlan,
+    pub(super) status: StatusCode,
+    pub(super) headers: &'a http::HeaderMap,
 }

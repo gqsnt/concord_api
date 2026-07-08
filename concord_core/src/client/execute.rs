@@ -1,8 +1,30 @@
+// Client lifecycle phase modules intentionally share one private parent namespace.
+use super::*;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AuthRejectionOutcome {
     NotProtected,
     Retry,
     Terminal,
+}
+
+enum AuthRejectionStep {
+    NotProtected,
+    Retry,
+    Fail(ApiClientError),
+}
+
+struct AuthRejectionStepCtx<'a, Cx: ClientContext, T: Transport> {
+    plan: &'a crate::endpoint::RequestPlanView,
+    auth_state: &'a Cx::AuthState,
+    auth_http: &'a ClientAuthHttpExecutor<'a, Cx, T>,
+    response_meta: &'a RequestMeta,
+    status: StatusCode,
+    headers: &'a http::HeaderMap,
+    auth_attempt: &'a crate::auth::AuthAttemptSummary,
+    error_ctx: &'a ErrorContext,
+    is_replayable: bool,
+    max_auth_retries: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,7 +56,9 @@ impl CachedAuthPreparation {
     fn apply_to(&self, built: &mut BuiltRequest) -> &AuthPreparation {
         // RequestExtensions only carries auth-preparation output (sensitive query keys
         // and pending auth slots), so replacing the auth-owned extensions here is safe.
-        built.extensions.replace_auth_extensions(self.extensions.clone());
+        built
+            .extensions
+            .replace_auth_extensions(self.extensions.clone());
         &self.preparation
     }
 }
@@ -56,7 +80,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         executor: &dyn AuthHttpExecutor,
         built: &mut BuiltRequest,
     ) -> Result<AuthPreparation, ApiClientError> {
-        self.prepare_auth_plan(plan, auth_state, executor, built).await
+        self.prepare_auth_plan(plan, auth_state, executor, built)
+            .await
     }
 
     async fn handle_auth_rejection(
@@ -78,6 +103,72 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     ) -> bool {
         matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
             && !plan.endpoint.policy.auth.requirements.is_empty()
+    }
+
+    async fn handle_auth_rejection_step(
+        &self,
+        ctx: AuthRejectionStepCtx<'_, Cx, T>,
+        auth_retry_index: &mut u32,
+        attempt_index: &mut u32,
+    ) -> Result<AuthRejectionStep, ApiClientError> {
+        if !ctx.is_replayable && Self::is_protected_auth_rejection(ctx.plan, ctx.status) {
+            return Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
+                ctx.error_ctx,
+            )));
+        }
+        match self
+            .handle_auth_rejection(AuthRejectionCtx {
+                plan: ctx.plan,
+                auth_state: ctx.auth_state,
+                auth_http: ctx.auth_http,
+                meta: ctx.response_meta,
+                status: ctx.status,
+                headers: ctx.headers,
+                auth_attempt: ctx.auth_attempt,
+            })
+            .await?
+        {
+            AuthRejectionOutcome::Retry => {
+                if !ctx.is_replayable {
+                    return Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
+                        ctx.error_ctx,
+                    )));
+                }
+                if *auth_retry_index >= ctx.max_auth_retries {
+                    return Ok(AuthRejectionStep::Fail(Self::auth_retry_budget_exhausted(
+                        ctx.error_ctx,
+                        ctx.max_auth_retries,
+                    )));
+                }
+                // Keep counter mutation here so both classified-response and HttpStatus
+                // paths preserve the same order. Cache invalidation stays at the caller
+                // because the auth summary may borrow from the request-local cache.
+                *auth_retry_index = next_attempt_counter(*auth_retry_index, ctx.error_ctx)?;
+                *attempt_index = next_attempt_counter(*attempt_index, ctx.error_ctx)?;
+                Ok(AuthRejectionStep::Retry)
+            }
+            AuthRejectionOutcome::Terminal => Ok(AuthRejectionStep::Fail(
+                Self::auth_challenge_rejected(ctx.error_ctx),
+            )),
+            AuthRejectionOutcome::NotProtected => Ok(AuthRejectionStep::NotProtected),
+        }
+    }
+
+    fn auth_challenge_rejected(ctx: &ErrorContext) -> ApiClientError {
+        ApiClientError::Auth {
+            ctx: ctx.clone(),
+            source: AuthError::new(AuthErrorKind::ProviderRejected, "auth challenge rejected"),
+        }
+    }
+
+    fn auth_retry_budget_exhausted(ctx: &ErrorContext, max_auth_retries: u32) -> ApiClientError {
+        ApiClientError::Auth {
+            ctx: ctx.clone(),
+            source: AuthError::new(
+                AuthErrorKind::ProviderRejected,
+                format!("auth retry budget exhausted (max_auth_retries={max_auth_retries})"),
+            ),
+        }
     }
 
     fn decide_retry(
@@ -147,10 +238,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
         let base_attempt: u32 = plan.overrides.attempt;
         let max_auth_retries = self.runtime_state.max_auth_retries();
-        let auth_state_snapshot = self.try_auth_state().map_err(|source| ApiClientError::Auth {
-            ctx: ctx.clone(),
-            source,
-        })?;
+        let auth_state_snapshot = self
+            .try_auth_state()
+            .map_err(|source| ApiClientError::Auth {
+                ctx: ctx.clone(),
+                source,
+            })?;
         let auth_http = ClientAuthHttpExecutor { client: self };
         let mut attempt_index: u32 = 0;
         let mut transport_retry_index: u32 = 0;
@@ -187,12 +280,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 }
                 prepared
             };
-            let mut built = crate::transport::validate_transport_auth_collisions(built).map_err(|source| {
-                ApiClientError::Auth {
-                    ctx: ctx.clone(),
-                    source,
-                }
-            })?;
+            let mut built =
+                crate::transport::validate_transport_auth_collisions(built).map_err(|source| {
+                    ApiClientError::Auth {
+                        ctx: ctx.clone(),
+                        source,
+                    }
+                })?;
             if is_replayable
                 && matches!(
                     &built.body,
@@ -249,69 +343,37 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Ok(resp) => {
                     let (response_status, response_meta, response_headers) = match &resp {
                         AttemptTransportSuccess::Buffered(resp) => {
-                            (resp.status, &resp.meta, Some(&resp.headers))
+                            (resp.status, &resp.meta, &resp.headers)
                         }
                         AttemptTransportSuccess::Transport(resp) => {
-                            (resp.status, &resp.meta, Some(&resp.headers))
+                            (resp.status, &resp.meta, &resp.headers)
                         }
                     };
-                    if !is_replayable && Self::is_protected_auth_rejection(plan, response_status) {
-                        return Err(ApiClientError::Auth {
-                            ctx: ctx.clone(),
-                            source: AuthError::new(
-                                AuthErrorKind::ProviderRejected,
-                                "auth challenge rejected",
-                            ),
-                        });
-                    }
                     match self
-                        .handle_auth_rejection(AuthRejectionCtx {
-                            plan,
-                            auth_state: &auth_state_snapshot,
-                            auth_http: &auth_http,
-                            meta: response_meta,
-                            status: response_status,
-                            headers: response_headers.expect("classified response missing headers"),
-                            auth_attempt: &auth_attempt.summary,
-                        })
+                        .handle_auth_rejection_step(
+                            AuthRejectionStepCtx {
+                                plan,
+                                auth_state: &auth_state_snapshot,
+                                auth_http: &auth_http,
+                                response_meta,
+                                status: response_status,
+                                headers: response_headers,
+                                auth_attempt: &auth_attempt.summary,
+                                error_ctx: &ctx,
+                                is_replayable,
+                                max_auth_retries,
+                            },
+                            &mut auth_retry_index,
+                            &mut attempt_index,
+                        )
                         .await?
                     {
-                        AuthRejectionOutcome::Retry => {
-                            if !is_replayable {
-                                return Err(ApiClientError::Auth {
-                                    ctx: ctx.clone(),
-                                    source: AuthError::new(
-                                        AuthErrorKind::ProviderRejected,
-                                        "auth challenge rejected",
-                                    ),
-                                });
-                            }
-                            if auth_retry_index >= max_auth_retries {
-                                return Err(ApiClientError::Auth {
-                                    ctx: ctx.clone(),
-                                    source: AuthError::new(
-                                        AuthErrorKind::ProviderRejected,
-                                        format!(
-                                            "auth retry budget exhausted (max_auth_retries={max_auth_retries})"
-                                        ),
-                                    ),
-                                });
-                            }
-                            auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
-                            attempt_index = next_attempt_counter(attempt_index, &ctx)?;
+                        AuthRejectionStep::Retry => {
                             cached_auth_preparation = None;
                             continue;
                         }
-                        AuthRejectionOutcome::Terminal => {
-                            return Err(ApiClientError::Auth {
-                                ctx: ctx.clone(),
-                                source: AuthError::new(
-                                    AuthErrorKind::ProviderRejected,
-                                    "auth challenge rejected",
-                                ),
-                            });
-                        }
-                        AuthRejectionOutcome::NotProtected => {}
+                        AuthRejectionStep::Fail(err) => return Err(err),
+                        AuthRejectionStep::NotProtected => {}
                     }
                     return Ok(resp);
                 }
@@ -323,66 +385,39 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     ) {
                         return Err(err);
                     }
-                    if let ApiClientError::HttpStatus { status, headers, .. } = &err {
-                        if !is_replayable && Self::is_protected_auth_rejection(plan, *status) {
-                            return Err(ApiClientError::Auth {
-                                ctx: ctx.clone(),
-                                source: AuthError::new(
-                                    AuthErrorKind::ProviderRejected,
-                                    "auth challenge rejected",
-                                ),
-                            });
-                        }
-                        let response_meta =
-                            plan.endpoint.meta.request_meta(current_attempt, plan.overrides.page_index);
+                    if let ApiClientError::HttpStatus {
+                        status, headers, ..
+                    } = &err
+                    {
+                        let response_meta = plan
+                            .endpoint
+                            .meta
+                            .request_meta(current_attempt, plan.overrides.page_index);
                         match self
-                            .handle_auth_rejection(AuthRejectionCtx {
-                                plan,
-                                auth_state: &auth_state_snapshot,
-                                auth_http: &auth_http,
-                                meta: &response_meta,
-                                status: *status,
-                                headers: headers.as_ref(),
-                                auth_attempt: &auth_attempt.summary,
-                            })
+                            .handle_auth_rejection_step(
+                                AuthRejectionStepCtx {
+                                    plan,
+                                    auth_state: &auth_state_snapshot,
+                                    auth_http: &auth_http,
+                                    response_meta: &response_meta,
+                                    status: *status,
+                                    headers: headers.as_ref(),
+                                    auth_attempt: &auth_attempt.summary,
+                                    error_ctx: &ctx,
+                                    is_replayable,
+                                    max_auth_retries,
+                                },
+                                &mut auth_retry_index,
+                                &mut attempt_index,
+                            )
                             .await?
                         {
-                            AuthRejectionOutcome::Retry => {
-                                if !is_replayable {
-                                    return Err(ApiClientError::Auth {
-                                        ctx: ctx.clone(),
-                                        source: AuthError::new(
-                                            AuthErrorKind::ProviderRejected,
-                                            "auth challenge rejected",
-                                        ),
-                                    });
-                                }
-                                if auth_retry_index >= max_auth_retries {
-                                    return Err(ApiClientError::Auth {
-                                        ctx: ctx.clone(),
-                                        source: AuthError::new(
-                                            AuthErrorKind::ProviderRejected,
-                                            format!(
-                                                "auth retry budget exhausted (max_auth_retries={max_auth_retries})"
-                                            ),
-                                        ),
-                                    });
-                                }
-                                auth_retry_index = next_attempt_counter(auth_retry_index, &ctx)?;
-                                attempt_index = next_attempt_counter(attempt_index, &ctx)?;
+                            AuthRejectionStep::Retry => {
                                 cached_auth_preparation = None;
                                 continue;
                             }
-                            AuthRejectionOutcome::Terminal => {
-                                return Err(ApiClientError::Auth {
-                                    ctx: ctx.clone(),
-                                    source: AuthError::new(
-                                        AuthErrorKind::ProviderRejected,
-                                        "auth challenge rejected",
-                                    ),
-                                });
-                            }
-                            AuthRejectionOutcome::NotProtected => {}
+                            AuthRejectionStep::Fail(err) => return Err(err),
+                            AuthRejectionStep::NotProtected => {}
                         }
                     }
                     if !is_replayable {
@@ -437,7 +472,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
         };
-        let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
+        let dbg = plan
+            .overrides
+            .debug_level
+            .unwrap_or_else(|| self.debug_level());
         let resp = match self
             .drive_attempts(
                 &plan,
@@ -477,13 +515,22 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         skip_body: bool,
     ) -> Result<BuiltResponse, ApiClientError> {
         let (plan, mut args) = into_canonical_request_plan_view(plan);
-        let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
+        let dbg = plan
+            .overrides
+            .debug_level
+            .unwrap_or_else(|| self.debug_level());
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
         };
         let resp = match self
-            .drive_attempts(&plan, &mut args, ctx, dbg, AttemptFamily::Buffered { skip_body })
+            .drive_attempts(
+                &plan,
+                &mut args,
+                ctx,
+                dbg,
+                AttemptFamily::Buffered { skip_body },
+            )
             .await?
         {
             AttemptTransportSuccess::Buffered(resp) => resp,
@@ -534,7 +581,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 msg: "stream responses cannot use a no-content response plan".into(),
             });
         }
-        let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
+        let dbg = plan
+            .overrides
+            .debug_level
+            .unwrap_or_else(|| self.debug_level());
         let stream_response_limit = self.runtime_state.max_stream_response_body_bytes();
         let resp = match self
             .drive_attempts(
@@ -557,7 +607,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 "stream response content type did not match expected media type",
             ));
         }
-        Ok(crate::stream_response::StreamResponse::new(resp, stream_response_limit))
+        Ok(crate::stream_response::StreamResponse::new(
+            resp,
+            stream_response_limit,
+        ))
     }
     pub(crate) async fn execute_sse_response<Item, Codec>(
         &self,
@@ -601,7 +654,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 msg: "sse responses cannot use a no-content response plan".into(),
             });
         }
-        let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
+        let dbg = plan
+            .overrides
+            .debug_level
+            .unwrap_or_else(|| self.debug_level());
         let response_limit = self.runtime_state.max_stream_response_body_bytes();
         let resp = match self
             .drive_attempts(
@@ -681,7 +737,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 msg: "multipart responses cannot use a no-content response plan".into(),
             });
         }
-        let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
+        let dbg = plan
+            .overrides
+            .debug_level
+            .unwrap_or_else(|| self.debug_level());
         let response_limit = self.runtime_state.max_stream_response_body_bytes();
         let resp = match self
             .drive_attempts(
@@ -696,10 +755,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             AttemptTransportSuccess::Transport(resp) => resp,
             _ => unreachable!(),
         };
-        let boundary = crate::multipart_response::parse_response_boundary::<Fmt>(
-            &resp.headers,
-            ctx.clone(),
-        )?;
+        let boundary =
+            crate::multipart_response::parse_response_boundary::<Fmt>(&resp.headers, ctx.clone())?;
         if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
             if actual > limit as u64 {
                 return Err(ApiClientError::ResponseTooLarge {
@@ -729,8 +786,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let mut cacheable = !plan.endpoint.policy.auth.requirements.is_empty();
         for requirement in &plan.endpoint.policy.auth.requirements {
             let auth_meta = built.meta.clone();
-            let mut auth_request =
-                crate::auth::AuthApplicationRequest::new(&mut built.extensions);
+            let mut auth_request = crate::auth::AuthApplicationRequest::new(&mut built.extensions);
             let prepared = Cx::prepare_auth_requirement(
                 requirement,
                 &mut auth_request,
@@ -773,9 +829,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         ctx: AuthRejectionCtx<'_, Cx, T>,
     ) -> Result<bool, ApiClientError> {
         for applied in &ctx.auth_attempt.applied {
-            let Some(requirement) = ctx.plan.endpoint.policy.auth.requirements.iter().find(|req| {
-                req.credential.id == applied.credential_id && req.step_id == applied.step_id
-            }) else {
+            let Some(requirement) = ctx
+                .plan
+                .endpoint
+                .policy
+                .auth
+                .requirements
+                .iter()
+                .find(|req| {
+                    req.credential.id == applied.credential_id && req.step_id == applied.step_id
+                })
+            else {
                 continue;
             };
             match Cx::handle_auth_response(
@@ -805,7 +869,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             endpoint: ctx.meta.endpoint,
                             method: ctx.meta.method.clone(),
                         },
-                        source: AuthError::new(AuthErrorKind::ProviderRejected, "auth challenge rejected"),
+                        source: AuthError::new(
+                            AuthErrorKind::ProviderRejected,
+                            "auth challenge rejected",
+                        ),
                     });
                 }
             }
@@ -825,8 +892,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         if resp.meta.method == http::Method::HEAD && !no_content {
             return Err(ApiClientError::HeadRequiresNoContent { ctx });
         }
-        if matches!(resp.status, StatusCode::NO_CONTENT | StatusCode::RESET_CONTENT)
-            && !no_content
+        if matches!(
+            resp.status,
+            StatusCode::NO_CONTENT | StatusCode::RESET_CONTENT
+        ) && !no_content
         {
             return Err(ApiClientError::NoContentStatusRequiresNoContent {
                 ctx: ctx.clone(),
@@ -839,12 +908,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .and_then(|value| value.to_str().ok());
         let value = C::decode(
             resp.body.clone(),
-            crate::codec::DecodeContext::new(
-                ctx.endpoint,
-                &ctx.method,
-                resp.status,
-                content_type,
-            ),
+            crate::codec::DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
         )
         .map_err(|_| {
             ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
@@ -858,7 +922,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         })
     }
 
-    fn debug_planned_request(&self, dbg: DebugLevel, plan: &crate::endpoint::RequestPlanView, built: &BuiltRequest, url_str: &str) {
+    fn debug_planned_request(
+        &self,
+        dbg: DebugLevel,
+        plan: &crate::endpoint::RequestPlanView,
+        built: &BuiltRequest,
+        url_str: &str,
+    ) {
         if dbg.is_verbose() {
             self.debug_sink.request_start(
                 dbg,
@@ -876,7 +946,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
 
     fn debug_planned_response(&self, dbg: DebugLevel, resp: &BuiltResponse, url_str: &str) {
         if dbg.is_verbose() {
-            self.debug_sink.response_status(dbg, resp.status, url_str, true);
+            self.debug_sink
+                .response_status(dbg, resp.status, url_str, true);
         }
         if dbg.is_very_verbose() {
             self.debug_sink
@@ -885,7 +956,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[allow(deprecated)]
-    fn maybe_capture_dev_response_body(&self, plan: &crate::endpoint::RequestPlanView, resp: &BuiltResponse) {
+    fn maybe_capture_dev_response_body(
+        &self,
+        plan: &crate::endpoint::RequestPlanView,
+        resp: &BuiltResponse,
+    ) {
         let Some(capture) = self.runtime_state.dev_body_capture() else {
             return;
         };
@@ -916,7 +991,10 @@ fn attach_prepared_auth_generation(
 
 fn into_canonical_request_plan_view(
     mut plan: RequestPlan,
-) -> (crate::endpoint::RequestPlanView, crate::endpoint::RequestArgs) {
+) -> (
+    crate::endpoint::RequestPlanView,
+    crate::endpoint::RequestArgs,
+) {
     plan.endpoint.policy.rate_limit.canonicalize();
     let RequestPlan {
         endpoint,
@@ -939,21 +1017,21 @@ fn checked_attempt(
     attempt_index: u32,
     ctx: &ErrorContext,
 ) -> Result<u32, ApiClientError> {
-    base_attempt.checked_add(attempt_index).ok_or_else(|| {
-        ApiClientError::PolicyViolation {
+    base_attempt
+        .checked_add(attempt_index)
+        .ok_or_else(|| ApiClientError::PolicyViolation {
             ctx: ctx.clone(),
             msg: "request attempt counter overflowed",
-        }
-    })
+        })
 }
 
 fn next_attempt_counter(attempt: u32, ctx: &ErrorContext) -> Result<u32, ApiClientError> {
-    attempt.checked_add(1).ok_or_else(|| {
-        ApiClientError::PolicyViolation {
+    attempt
+        .checked_add(1)
+        .ok_or_else(|| ApiClientError::PolicyViolation {
             ctx: ctx.clone(),
             msg: "request attempt counter overflowed",
-        }
-    })
+        })
 }
 
 #[cfg(test)]
@@ -968,10 +1046,16 @@ mod attempt_counter_tests {
         };
         let err = next_attempt_counter(u32::MAX, &ctx)
             .expect_err("overflowing attempt counter should fail");
-        assert!(err.to_string().contains("request attempt counter overflowed"));
+        assert!(
+            err.to_string()
+                .contains("request attempt counter overflowed")
+        );
 
         let err = checked_attempt(u32::MAX, 1, &ctx)
             .expect_err("overflowing base plus attempt should fail");
-        assert!(err.to_string().contains("request attempt counter overflowed"));
+        assert!(
+            err.to_string()
+                .contains("request attempt counter overflowed")
+        );
     }
 }

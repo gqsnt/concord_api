@@ -1,6 +1,7 @@
+use super::*;
 use crate::limits::check_dsl_scope_depth;
 
-fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
+pub(super) fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
     let client_auth_uses = normalize_auth_uses(raw.client.auth_uses)?;
 
     Ok(NormApiTree {
@@ -27,25 +28,29 @@ fn normalize_api(raw: crate::ast::RawApi) -> Result<NormApiTree> {
     })
 }
 
-fn normalize_items(items: Vec<crate::ast::RawItem>, scope_depth: usize) -> Result<Vec<NormNode>> {
+pub(super) fn normalize_items(
+    items: Vec<crate::ast::RawItem>,
+    scope_depth: usize,
+) -> Result<Vec<NormNode>> {
     items
         .into_iter()
         .map(|item| normalize_item(item, scope_depth))
         .collect()
 }
 
-fn normalize_item(item: crate::ast::RawItem, scope_depth: usize) -> Result<NormNode> {
+pub(super) fn normalize_item(item: crate::ast::RawItem, scope_depth: usize) -> Result<NormNode> {
     match item {
-        crate::ast::RawItem::Layer(scope) => {
-            Ok(NormNode::Layer(Box::new(normalize_scope(*scope, scope_depth + 1)?)))
-        }
+        crate::ast::RawItem::Layer(scope) => Ok(NormNode::Layer(Box::new(normalize_scope(
+            *scope,
+            scope_depth + 1,
+        )?))),
         crate::ast::RawItem::Endpoint(endpoint) => {
             Ok(NormNode::Endpoint(Box::new(normalize_endpoint(*endpoint)?)))
         }
     }
 }
 
-fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> Result<NormScope> {
+pub(super) fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> Result<NormScope> {
     check_dsl_scope_depth(scope_depth, raw.span)?;
     let auth_uses = normalize_auth_uses(raw.auth_uses)?;
     let items = normalize_items(raw.items, scope_depth)?;
@@ -131,7 +136,7 @@ fn normalize_scope(raw: crate::ast::RawScope, scope_depth: usize) -> Result<Norm
     }
 }
 
-fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEndpoint> {
+pub(super) fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEndpoint> {
     let auth_uses = normalize_auth_uses(raw.auth_uses)?;
     Ok(NormEndpoint {
         span: raw.span,
@@ -152,7 +157,7 @@ fn normalize_endpoint(raw: crate::ast::RawEndpoint) -> Result<NormEndpoint> {
     })
 }
 
-fn normalize_auth_uses(uses: Vec<crate::ast::AuthUseDecl>) -> Result<Vec<NormAuthUse>> {
+pub(super) fn normalize_auth_uses(uses: Vec<crate::ast::AuthUseDecl>) -> Result<Vec<NormAuthUse>> {
     let mut out = Vec::with_capacity(uses.len());
     for auth_use in uses {
         match auth_use {

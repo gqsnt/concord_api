@@ -1,5 +1,8 @@
+// Client lifecycle phase modules intentionally share one private parent namespace.
+use super::*;
+
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
-    fn retry_outcome_from_error(err: &ApiClientError) -> RetryOutcome<'_> {
+    pub(super) fn retry_outcome_from_error(err: &ApiClientError) -> RetryOutcome<'_> {
         match err {
             ApiClientError::Transport { source, .. } => RetryOutcome::Transport(source),
             ApiClientError::HttpStatus { status, .. } => RetryOutcome::HttpStatus(*status),
@@ -8,21 +11,25 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    fn rate_limit_action_from_error(err: &ApiClientError) -> Option<&RateLimitResponseAction> {
+    pub(super) fn rate_limit_action_from_error(
+        err: &ApiClientError,
+    ) -> Option<&RateLimitResponseAction> {
         match err {
             ApiClientError::HttpStatus { rate_limit, .. } => rate_limit.as_deref(),
             _ => None,
         }
     }
 
-    fn retry_response_headers_from_error(err: &ApiClientError) -> Option<&http::HeaderMap> {
+    pub(super) fn retry_response_headers_from_error(
+        err: &ApiClientError,
+    ) -> Option<&http::HeaderMap> {
         match err {
             ApiClientError::HttpStatus { headers, .. } => Some(headers.as_ref()),
             _ => None,
         }
     }
 
-    fn retry_delay(
+    pub(super) fn retry_delay(
         &self,
         config: &RetrySetting,
         ctx: &RetryContext<'_>,
@@ -37,7 +44,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             if retry_count >= self.runtime_state.retry_policy().max_retries() {
                 return Ok(None);
             }
-            self.runtime_state.retry_policy().should_retry_checked(ctx)?
+            self.runtime_state
+                .retry_policy()
+                .should_retry_checked(ctx)?
         } else {
             return Ok(None);
         };

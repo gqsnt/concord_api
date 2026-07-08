@@ -1,8 +1,14 @@
-fn unknown_name_message<T>(kind: &str, name: &Ident, available: &BTreeMap<String, T>) -> String {
+use super::*;
+
+pub(super) fn unknown_name_message<T>(
+    kind: &str,
+    name: &Ident,
+    available: &BTreeMap<String, T>,
+) -> String {
     unknown_name_message_from_keys(kind, &name.to_string(), available.keys().cloned())
 }
 
-fn unknown_scoped_name_message<T>(
+pub(super) fn unknown_scoped_name_message<T>(
     kind: &str,
     prefix: &str,
     name: &Ident,
@@ -16,7 +22,7 @@ fn unknown_scoped_name_message<T>(
     )
 }
 
-fn unknown_name_message_from_keys(
+pub(super) fn unknown_name_message_from_keys(
     kind: &str,
     name: &str,
     available: impl Iterator<Item = String>,
@@ -39,7 +45,7 @@ fn unknown_name_message_from_keys(
     message
 }
 
-fn best_name_suggestion<'a>(
+pub(super) fn best_name_suggestion<'a>(
     needle: &str,
     candidates: impl Iterator<Item = &'a String>,
 ) -> Option<String> {
@@ -56,7 +62,7 @@ fn best_name_suggestion<'a>(
         .map(|(_, _, candidate)| candidate)
 }
 
-fn levenshtein(a: &str, b: &str) -> usize {
+pub(super) fn levenshtein(a: &str, b: &str) -> usize {
     let b_chars = b.chars().collect::<Vec<_>>();
     let mut costs = (0..=b_chars.len()).collect::<Vec<_>>();
     for (i, ca) in a.chars().enumerate() {
@@ -74,13 +80,13 @@ fn levenshtein(a: &str, b: &str) -> usize {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PolicyOwner {
+pub(super) enum PolicyOwner {
     Client,
     Endpoint,
     Layer,
 }
 
-fn upsert_var(
+pub(super) fn upsert_var(
     out: &mut BTreeMap<String, VarInfo>,
     rust: &Ident,
     optional: bool,
@@ -125,4 +131,3 @@ fn upsert_var(
     );
     Ok(())
 }
-

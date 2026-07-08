@@ -134,6 +134,9 @@ pub enum ApiClientError {
     },
 }
 
+// Keep large payloads boxed so every Result<ApiClientError> does not silently bloat.
+const _: () = assert!(std::mem::size_of::<ApiClientError>() <= 96);
+
 impl Debug for ApiClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
