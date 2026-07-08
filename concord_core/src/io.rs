@@ -871,10 +871,10 @@ mod tests {
             content_length: None,
         });
         let client = ApiClient::<TestCx, _>::with_transport((), (), transport.clone());
-        let response = NoContentResponse::execute(&client, request_plan(plan.response_plan))
+        NoContentResponse::execute(&client, request_plan(plan.response_plan))
             .await
             .expect("no content execute");
-        assert_eq!(response, ());
+        assert_eq!((), ());
     }
 
     #[tokio::test]
@@ -1099,10 +1099,10 @@ mod tests {
                 content_length: None,
             }),
         );
-        let decoded = NoContentResponse::execute(&client, request_plan(plan.response_plan))
+        NoContentResponse::execute(&client, request_plan(plan.response_plan))
             .await
             .expect("decode");
-        assert_eq!(decoded, ());
+        assert_eq!((), ());
     }
 
     #[test]

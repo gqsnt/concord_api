@@ -260,11 +260,11 @@ fn validate_generated_public_api(
         }
     }
 
-    validate_client_method_namespace(api, &facade_ir, &mut errors);
+    validate_client_method_namespace(api, facade_ir, &mut errors);
     validate_builder_namespace(api, &mut errors);
     validate_auth_facade_namespace(api, &mut errors);
-    validate_scope_method_namespaces(api, &facade_ir, &mut errors);
-    validate_generated_type_namespace(api, &facade_ir, &mut errors);
+    validate_scope_method_namespaces(api, facade_ir, &mut errors);
+    validate_generated_type_namespace(api, facade_ir, &mut errors);
 
     match errors {
         Some(error) => Err(error),
@@ -1024,7 +1024,7 @@ mod tests {
         assert!(stream_req.io.request_entity.capabilities.is_streaming);
         assert_eq!(
             ty_string(
-                &stream_req
+                stream_req
                     .io
                     .request_entity
                     .public_input_ty

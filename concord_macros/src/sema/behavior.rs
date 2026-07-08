@@ -43,6 +43,9 @@ pub(super) fn resolve_behavior_profiles(
     Ok(resolved)
 }
 
+// The profile maps are threaded through recursive resolution uniformly; some
+// maps are consumed only after recursion depending on the directive kind.
+#[allow(clippy::only_used_in_recursion)]
 pub(super) fn resolve_behavior_profile(
     name: &str,
     raw_profiles: &BTreeMap<String, &BehaviorProfileDef>,

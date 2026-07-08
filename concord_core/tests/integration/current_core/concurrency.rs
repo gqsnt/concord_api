@@ -1,3 +1,5 @@
+#![allow(clippy::needless_update)] // Concurrent endpoint fixtures keep `..Default::default()` for resilience to added fields.
+
 use super::common::*;
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;

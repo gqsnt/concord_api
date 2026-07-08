@@ -145,6 +145,9 @@ impl<T> RecordBody<T> {
         }
     }
 
+    // Public constructor predates this clippy rule and is intentionally named
+    // like the standard collection constructor for ergonomic record bodies.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_iter<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = T>,
@@ -328,13 +331,13 @@ impl<T: 'static> RecordStream<T> {
     }
 
     fn body_error(&self, source: TransportError) -> ApiClientError {
-        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>() {
-            if matches!(limit_error.direction, StreamLimitDirection::Response) {
-                return ApiClientError::ResponseBodyLimitExceeded {
-                    ctx: self.error_context(),
-                    limit: limit_error.limit,
-                };
-            }
+        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>()
+            && matches!(limit_error.direction, StreamLimitDirection::Response)
+        {
+            return ApiClientError::ResponseBodyLimitExceeded {
+                ctx: self.error_context(),
+                limit: limit_error.limit,
+            };
         }
         ApiClientError::Transport {
             ctx: self.error_context(),
@@ -1058,12 +1061,15 @@ mod tests {
             Csv::<CsvCommaDelim>::try_header_value().expect("csv content type"),
             http::HeaderValue::from_static("text/csv")
         );
+        let comma_has_headers = CsvCommaDelim::HAS_HEADERS;
+        let semicolon_has_headers = CsvSemicolonDelim::HAS_HEADERS;
+        let tab_has_headers = CsvTabDelim::HAS_HEADERS;
         assert_eq!(CsvCommaDelim::DELIMITER, b',');
-        assert_eq!(CsvCommaDelim::HAS_HEADERS, true);
+        assert!(comma_has_headers);
         assert_eq!(CsvSemicolonDelim::DELIMITER, b';');
-        assert_eq!(CsvSemicolonDelim::HAS_HEADERS, true);
+        assert!(semicolon_has_headers);
         assert_eq!(CsvTabDelim::DELIMITER, b'\t');
-        assert_eq!(CsvTabDelim::HAS_HEADERS, true);
+        assert!(tab_has_headers);
     }
 
     #[cfg(feature = "records-csv")]

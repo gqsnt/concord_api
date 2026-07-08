@@ -57,7 +57,7 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
         window
             .iter()
             .zip(needle.iter())
-            .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
+            .all(|(a, b)| a.eq_ignore_ascii_case(b))
     })
 }
 
@@ -68,7 +68,7 @@ fn ends_with_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
         && haystack[haystack.len() - needle.len()..]
             .iter()
             .zip(needle.iter())
-            .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
+            .all(|(a, b)| a.eq_ignore_ascii_case(b))
 }
 
 pub(crate) fn should_redact_header_name(name: &http::HeaderName) -> bool {

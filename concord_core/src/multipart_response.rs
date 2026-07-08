@@ -158,13 +158,13 @@ impl<T> MultipartStream<T> {
     }
 
     fn body_read_error(ctx: ErrorContext, source: TransportError) -> ApiClientError {
-        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>() {
-            if matches!(limit_error.direction, StreamLimitDirection::Response) {
-                return ApiClientError::ResponseBodyLimitExceeded {
-                    ctx,
-                    limit: limit_error.limit,
-                };
-            }
+        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>()
+            && matches!(limit_error.direction, StreamLimitDirection::Response)
+        {
+            return ApiClientError::ResponseBodyLimitExceeded {
+                ctx,
+                limit: limit_error.limit,
+            };
         }
         ApiClientError::Transport {
             ctx,
@@ -261,7 +261,7 @@ impl RawResponsePart {
         loop {
             match body.next_chunk().await {
                 Ok(Some(chunk)) => {
-                    let next_seen = seen.checked_add(chunk.len()).unwrap_or(usize::MAX);
+                    let next_seen = seen.saturating_add(chunk.len());
                     if next_seen > limit {
                         return Err(ApiClientError::ResponseBodyLimitExceeded { ctx, limit });
                     }
@@ -284,13 +284,13 @@ impl RawResponsePart {
     }
 
     fn body_error(ctx: ErrorContext, source: TransportError) -> ApiClientError {
-        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>() {
-            if matches!(limit_error.direction, StreamLimitDirection::Response) {
-                return ApiClientError::ResponseBodyLimitExceeded {
-                    ctx,
-                    limit: limit_error.limit,
-                };
-            }
+        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>()
+            && matches!(limit_error.direction, StreamLimitDirection::Response)
+        {
+            return ApiClientError::ResponseBodyLimitExceeded {
+                ctx,
+                limit: limit_error.limit,
+            };
         }
         ApiClientError::Transport {
             ctx,
@@ -417,7 +417,7 @@ impl MultipartResponseState {
                 MultipartStage::ReadingHeaders => {
                     let headers = self.read_headers().await?;
                     let token = self.next_token;
-                    self.next_token = self.next_token.checked_add(1).unwrap_or(u64::MAX);
+                    self.next_token = self.next_token.saturating_add(1);
                     self.stage = MultipartStage::ReadingBody {
                         token,
                         boundary_pending: false,
@@ -746,7 +746,7 @@ impl TransportBody for LimitedTransportBody {
                 return Ok(None);
             };
             if let Some(limit) = self.limit {
-                let next_seen = self.seen.checked_add(chunk.len()).unwrap_or(usize::MAX);
+                let next_seen = self.seen.saturating_add(chunk.len());
                 if next_seen > limit {
                     self.exhausted = true;
                     return Err(TransportError::with_kind(

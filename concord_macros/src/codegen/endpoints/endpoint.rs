@@ -312,7 +312,7 @@ fn emit_paginate_binding_assignment(assign: &PaginationAssignmentResolved, p: &P
         PaginationValueKind::LitStr(s) => quote! { #s },
         PaginationValueKind::OtherExpr(e) => quote! { (#e) },
         PaginationValueKind::Fmt(fmt) => {
-            let build = emit_fmt_build_string(&fmt);
+            let build = emit_fmt_build_string(fmt);
             quote! { { #build } }
         }
     };
@@ -326,7 +326,7 @@ fn pagination_binding_for_controller_field<'a>(
     p.bindings
         .iter()
         .rev()
-        .find(|binding| binding.controller_field.to_string() == field)
+        .find(|binding| binding.controller_field == field)
 }
 
 fn emit_endpoint_plan_route_policy(

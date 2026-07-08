@@ -292,7 +292,7 @@ impl Transport for StreamTransport {
                 headers: response.headers,
                 content_length: Some(response.body.len() as u64),
                 rate_limit: req.rate_limit,
-                body: Box::new(StaticBody::new(Bytes::from(response.body))),
+                body: Box::new(StaticBody::new(response.body)),
             })
         })
     }

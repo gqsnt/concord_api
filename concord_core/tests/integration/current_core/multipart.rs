@@ -660,9 +660,8 @@ async fn multipart_request_is_not_retried_or_replayed() {
     );
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-    let mut policy = ResolvedPolicy::default();
-    policy.retry =
-        concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
+    let policy = ResolvedPolicy {
+        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
             max_attempts: 2,
             methods: vec![Method::GET],
             statuses: Vec::new(),
@@ -670,7 +669,9 @@ async fn multipart_request_is_not_retried_or_replayed() {
             backoff: concord_core::advanced::RetryBackoff::None,
             respect_retry_after: false,
             idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
-        });
+        }),
+        ..Default::default()
+    };
 
     let err = client
         .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(

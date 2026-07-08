@@ -210,7 +210,7 @@ mod tests {
         let marker = PaginationMarker;
         let debug = format!("{marker:?}");
         assert_eq!(marker, PaginationMarker);
-        assert_eq!(PaginationMarker::default(), PaginationMarker);
+        assert_eq!(PaginationMarker, PaginationMarker);
         assert!(debug.contains("PaginationMarker"));
     }
 }

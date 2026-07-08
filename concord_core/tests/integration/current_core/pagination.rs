@@ -1,3 +1,5 @@
+#![allow(clippy::needless_update)] // Test fixtures keep `..Default::default()` for resilience to added fields.
+
 use super::common::*;
 use crate::support::{RedactionSentinels, assert_error_chain_does_not_contain_any};
 use bytes::Bytes;

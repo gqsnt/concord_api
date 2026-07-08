@@ -13,73 +13,6 @@ pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = DefaultTransport>
     pub(super) runtime_state: Arc<ClientRuntimeState>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::auth::NoAuthState;
-    use std::panic::AssertUnwindSafe;
-
-    #[derive(Clone)]
-    struct PoisonTransport;
-
-    impl Transport for PoisonTransport {
-        fn send(
-            &self,
-            _req: crate::transport::TransportRequest,
-        ) -> ::std::pin::Pin<
-            Box<
-                dyn ::std::future::Future<
-                        Output = Result<
-                            crate::transport::TransportResponse,
-                            crate::transport::TransportError,
-                        >,
-                    > + Send,
-            >,
-        > {
-            Box::pin(async move {
-                Err(crate::transport::TransportError::with_kind(
-                    crate::transport::TransportErrorKind::Request,
-                    std::io::Error::other("poison transport should not be used"),
-                ))
-            })
-        }
-    }
-
-    #[derive(Clone)]
-    struct PoisonCx;
-
-    impl ClientContext for PoisonCx {
-        type Vars = ();
-        type AuthVars = ();
-        type AuthState = NoAuthState;
-        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
-        const DOMAIN: &'static str = "example.com";
-
-        fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {
-            NoAuthState
-        }
-    }
-
-    #[test]
-    fn poisoned_auth_state_lock_returns_typed_error() {
-        let client: ApiClient<PoisonCx, PoisonTransport> =
-            ApiClient::with_transport((), (), PoisonTransport);
-        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            let _guard = client
-                .auth_state
-                .write()
-                .expect("test auth_state lock should be available");
-            panic!("poison auth state lock");
-        }));
-
-        let err = match client.try_auth_state() {
-            Ok(_) => panic!("poisoned auth state should return typed auth error"),
-            Err(err) => err,
-        };
-        assert_eq!(err.kind, crate::auth::AuthErrorKind::StateUnavailable);
-        assert!(err.to_string().contains("auth state lock poisoned"));
-    }
-}
 #[cfg(feature = "transport-reqwest")]
 impl<Cx: ClientContext> ApiClient<Cx, DefaultTransport>
 where
@@ -359,5 +292,73 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             vars: self.vars(),
             auth_vars: self.auth_vars(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::NoAuthState;
+    use std::panic::AssertUnwindSafe;
+
+    #[derive(Clone)]
+    struct PoisonTransport;
+
+    impl Transport for PoisonTransport {
+        fn send(
+            &self,
+            _req: crate::transport::TransportRequest,
+        ) -> ::std::pin::Pin<
+            Box<
+                dyn ::std::future::Future<
+                        Output = Result<
+                            crate::transport::TransportResponse,
+                            crate::transport::TransportError,
+                        >,
+                    > + Send,
+            >,
+        > {
+            Box::pin(async move {
+                Err(crate::transport::TransportError::with_kind(
+                    crate::transport::TransportErrorKind::Request,
+                    std::io::Error::other("poison transport should not be used"),
+                ))
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct PoisonCx;
+
+    impl ClientContext for PoisonCx {
+        type Vars = ();
+        type AuthVars = ();
+        type AuthState = NoAuthState;
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+        const DOMAIN: &'static str = "example.com";
+
+        fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {
+            NoAuthState
+        }
+    }
+
+    #[test]
+    fn poisoned_auth_state_lock_returns_typed_error() {
+        let client: ApiClient<PoisonCx, PoisonTransport> =
+            ApiClient::with_transport((), (), PoisonTransport);
+        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            let _guard = client
+                .auth_state
+                .write()
+                .expect("test auth_state lock should be available");
+            panic!("poison auth state lock");
+        }));
+
+        let err = match client.try_auth_state() {
+            Ok(_) => panic!("poisoned auth state should return typed auth error"),
+            Err(err) => err,
+        };
+        assert_eq!(err.kind, crate::auth::AuthErrorKind::StateUnavailable);
+        assert!(err.to_string().contains("auth state lock poisoned"));
     }
 }

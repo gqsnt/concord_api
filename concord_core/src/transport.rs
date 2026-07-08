@@ -23,7 +23,9 @@ pub struct RequestMeta {
     pub page_index: u32,
 }
 
+#[derive(Default)]
 pub enum TransportRequestBody {
+    #[default]
     Empty,
     Bytes(bytes::Bytes),
     Stream(TransportByteStream),
@@ -94,12 +96,6 @@ impl fmt::Display for StreamBodyLimitError {
 
 impl Error for StreamBodyLimitError {}
 
-impl Default for TransportRequestBody {
-    fn default() -> Self {
-        Self::Empty
-    }
-}
-
 impl fmt::Debug for TransportRequestBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -162,7 +158,7 @@ impl Stream for TransportByteStream {
         match this.inner.as_mut().poll_next(cx) {
             std::task::Poll::Ready(Some(Ok(bytes))) => {
                 if let Some(limit) = this.limit.as_mut() {
-                    let next_seen = limit.seen.checked_add(bytes.len()).unwrap_or(usize::MAX);
+                    let next_seen = limit.seen.saturating_add(bytes.len());
                     if next_seen > limit.limit {
                         limit.exceeded = true;
                         let error = StreamBodyLimitError {
@@ -595,7 +591,7 @@ pub(crate) fn materialize_transport_request_validated(
         (stream_request_limit, &mut req.body)
     {
         let meta = req.meta.clone();
-        let stream = std::mem::replace(stream, TransportByteStream::new(EmptyStream::default()));
+        let stream = std::mem::replace(stream, TransportByteStream::new(EmptyStream));
         req.body = TransportRequestBody::Stream(stream.with_limit(limit, meta));
     }
 

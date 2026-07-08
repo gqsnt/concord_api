@@ -405,13 +405,7 @@ impl Stream for MultipartEncodeStream {
                 }
 
                 let result = match &mut active.body {
-                    ActiveBody::Text(bytes) | ActiveBody::Bytes(bytes) => {
-                        if let Some(bytes) = bytes.take() {
-                            Some(Ok(bytes))
-                        } else {
-                            None
-                        }
-                    }
+                    ActiveBody::Text(bytes) | ActiveBody::Bytes(bytes) => bytes.take().map(Ok),
                     ActiveBody::Stream { stream, done } => {
                         if *done {
                             None

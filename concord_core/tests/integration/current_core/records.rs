@@ -235,9 +235,9 @@ impl ResponseFixture {
         content_type: &'static str,
         chunks: Vec<Bytes>,
     ) -> Self {
-        let content_length = chunks.iter().fold(Some(0u64), |acc, chunk| {
-            acc.and_then(|len| len.checked_add(chunk.len() as u64))
-        });
+        let content_length = chunks
+            .iter()
+            .try_fold(0u64, |len, chunk| len.checked_add(chunk.len() as u64));
         let mut headers = HeaderMap::new();
         headers.insert(
             http::header::CONTENT_TYPE,

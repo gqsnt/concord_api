@@ -63,12 +63,12 @@ fn pagination_resolution_lowers_multiple_endpoint_pagination_shapes() {
     assert_eq!(offset.assigns[0].field.to_string(), "offset");
     assert!(matches!(
         &offset.assigns[0].value,
-        PaginationValueKind::EpField(field) if field.to_string() == "start"
+        PaginationValueKind::EpField(field) if *field == "start"
     ));
     assert_eq!(offset.assigns[1].field.to_string(), "limit");
     assert!(matches!(
         &offset.assigns[1].value,
-        PaginationValueKind::EpField(field) if field.to_string() == "count"
+        PaginationValueKind::EpField(field) if *field == "count"
     ));
 
     let cursor = endpoint_pagination(endpoint_by_name(&api, "Cursor"));
@@ -185,7 +185,7 @@ fn pagination_resolution_lowers_type_driven_assignment_binding() {
     assert_eq!(pagination.assigns[0].field.to_string(), "per_page");
     assert!(matches!(
         &pagination.assigns[0].value,
-        PaginationValueKind::EpField(field) if field.to_string() == "count"
+        PaginationValueKind::EpField(field) if *field == "count"
     ));
     assert_eq!(pagination.bindings.len(), 1);
     assert_eq!(
@@ -238,10 +238,10 @@ fn pagination_resolution_lowers_custom_controller_bindings() {
     );
     assert!(matches!(
         &pagination.assigns[0].value,
-        PaginationValueKind::EpField(field) if field.to_string() == "page"
+        PaginationValueKind::EpField(field) if *field == "page"
     ));
     assert!(matches!(
         &pagination.assigns[1].value,
-        PaginationValueKind::EpField(field) if field.to_string() == "count"
+        PaginationValueKind::EpField(field) if *field == "count"
     ));
 }

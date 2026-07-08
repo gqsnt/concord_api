@@ -51,16 +51,15 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     err,
                 )
             })?;
-        if let (Some(limit), Some(hint)) = (stream_request_limit, built.stream_size_hint) {
-            if let Some(actual) = hint.upper() {
-                if actual > limit as u64 {
-                    return Err(ApiClientError::RequestBodyLimitExceeded {
-                        ctx: send_ctx.error_ctx.clone(),
-                        limit,
-                        actual,
-                    });
-                }
-            }
+        if let (Some(limit), Some(hint)) = (stream_request_limit, built.stream_size_hint)
+            && let Some(actual) = hint.upper()
+            && actual > limit as u64
+        {
+            return Err(ApiClientError::RequestBodyLimitExceeded {
+                ctx: send_ctx.error_ctx.clone(),
+                limit,
+                actual,
+            });
         }
         let pre_send_meta = HookMeta {
             endpoint: built.meta.endpoint,
@@ -165,17 +164,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 if let Some(limit_error) = e
                     .source_error()
                     .downcast_ref::<crate::transport::StreamBodyLimitError>()
-                {
-                    if matches!(
+                    && matches!(
                         limit_error.direction,
                         crate::transport::StreamLimitDirection::Request
-                    ) {
-                        return Err(ApiClientError::RequestBodyLimitExceeded {
-                            ctx: ctx.clone(),
-                            limit: limit_error.limit,
-                            actual: limit_error.seen as u64,
-                        });
-                    }
+                    )
+                {
+                    return Err(ApiClientError::RequestBodyLimitExceeded {
+                        ctx: ctx.clone(),
+                        limit: limit_error.limit,
+                        actual: limit_error.seen as u64,
+                    });
                 }
                 let hook_meta = HookMeta {
                     endpoint,
@@ -200,6 +198,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
+    // Lifecycle classification carries request metadata separately to preserve
+    // the fixed attempt ordering; grouping it would be a behavioral refactor.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn classify_transport_response(
         &self,
         mut resp: TransportResponse,
@@ -320,6 +321,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         .await
     }
 
+    // Streaming classification mirrors the buffered path so hook, rate-limit,
+    // and debug ordering stays explicit at the call site.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn observe_and_classify_transport_response(
         &self,
         resp: TransportResponse,
@@ -356,14 +360,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     self.debug_sink
                         .response_headers(dbg, crate::debug::SanitizedHeaders::new(&resp.headers));
                 }
-                if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
-                    if actual > limit as u64 {
-                        return Err(ApiClientError::ResponseTooLarge {
-                            ctx: ctx.clone(),
-                            limit,
-                            actual,
-                        });
-                    }
+                if let (Some(limit), Some(actual)) = (response_limit, resp.content_length)
+                    && actual > limit as u64
+                {
+                    return Err(ApiClientError::ResponseTooLarge {
+                        ctx: ctx.clone(),
+                        limit,
+                        actual,
+                    });
                 }
                 Ok(resp)
             }

@@ -31,10 +31,10 @@ fn timeout_resolution_lowers_client_scope_endpoint_timeouts() {
     ));
     assert!(matches!(
         &scope_policy(policy, 0).timeout,
-        Some(PublicValueKind::CxField(field)) if field.to_string() == "client_timeout"
+        Some(PublicValueKind::CxField(field)) if *field == "client_timeout"
     ));
     assert!(matches!(
         &policy.endpoint.timeout,
-        Some(PublicValueKind::EpField(field)) if field.to_string() == "endpoint_timeout"
+        Some(PublicValueKind::EpField(field)) if *field == "endpoint_timeout"
     ));
 }

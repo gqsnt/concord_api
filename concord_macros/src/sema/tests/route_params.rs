@@ -18,16 +18,11 @@ fn route_params_lowers_path_params_from_endpoint_fields() {
     );
     let endpoint = single_endpoint(&api);
 
-    assert!(
-        endpoint
-            .vars
-            .iter()
-            .any(|var| var.rust.to_string() == "post_id")
-    );
+    assert!(endpoint.vars.iter().any(|var| var.rust == "post_id"));
     assert!(matches!(
         endpoint.route_pieces.as_slice(),
         [PathPiece::Static(prefix), PathPiece::EpVar { field }]
-            if prefix == "posts" && field.to_string() == "post_id"
+            if prefix == "posts" && *field == "post_id"
     ));
 }
 
@@ -83,26 +78,16 @@ fn route_params_lowers_scope_and_endpoint_path_params() {
     let endpoint = single_endpoint(&api);
 
     assert_eq!(scope_module_path(endpoint), vec!["users".to_string()]);
-    assert!(
-        endpoint
-            .vars
-            .iter()
-            .any(|var| var.rust.to_string() == "tenant_id")
-    );
-    assert!(
-        endpoint
-            .vars
-            .iter()
-            .any(|var| var.rust.to_string() == "user_id")
-    );
+    assert!(endpoint.vars.iter().any(|var| var.rust == "tenant_id"));
+    assert!(endpoint.vars.iter().any(|var| var.rust == "user_id"));
     assert!(matches!(
         endpoint.scope_path_pieces.as_slice(),
         [PathPiece::Static(prefix), PathPiece::EpVar { field }]
-            if prefix == "tenants" && field.to_string() == "tenant_id"
+            if prefix == "tenants" && *field == "tenant_id"
     ));
     assert!(matches!(
         endpoint.route_pieces.as_slice(),
         [PathPiece::Static(prefix), PathPiece::EpVar { field }]
-            if prefix == "users" && field.to_string() == "user_id"
+            if prefix == "users" && *field == "user_id"
     ));
 }

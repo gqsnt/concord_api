@@ -125,13 +125,13 @@ impl<M> StreamResponse<M> {
     }
 
     fn sanitize_body_error(ctx: ErrorContext, source: TransportError) -> ApiClientError {
-        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>() {
-            if matches!(limit_error.direction, StreamLimitDirection::Response) {
-                return ApiClientError::ResponseBodyLimitExceeded {
-                    ctx,
-                    limit: limit_error.limit,
-                };
-            }
+        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>()
+            && matches!(limit_error.direction, StreamLimitDirection::Response)
+        {
+            return ApiClientError::ResponseBodyLimitExceeded {
+                ctx,
+                limit: limit_error.limit,
+            };
         }
         Self::transport_error(ctx, source.kind(), "stream response body read failed")
     }
@@ -220,7 +220,7 @@ impl TransportBody for LimitedTransportBody {
                 return Ok(None);
             };
             if let Some(limit) = self.limit {
-                let next_seen = self.seen.checked_add(chunk.len()).unwrap_or(usize::MAX);
+                let next_seen = self.seen.saturating_add(chunk.len());
                 if next_seen > limit {
                     self.exhausted = true;
                     return Err(TransportError::with_kind(

@@ -244,9 +244,7 @@ pub(super) fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
 }
 
 pub(super) fn auth_plan_references_credential(plans: &[AuthRequirementIr], target: &Ident) -> bool {
-    plans.iter().any(|plan| match plan {
-        plan => &plan.credential == target,
-    })
+    plans.iter().any(|plan| &plan.credential == target)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]

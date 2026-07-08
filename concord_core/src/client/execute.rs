@@ -572,13 +572,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
-                msg: "stream responses do not support pagination".into(),
+                msg: "stream responses do not support pagination",
             });
         }
         if plan.endpoint.response.no_content {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
-                msg: "stream responses cannot use a no-content response plan".into(),
+                msg: "stream responses cannot use a no-content response plan",
             });
         }
         let dbg = plan
@@ -645,13 +645,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
-                msg: "sse responses do not support pagination".into(),
+                msg: "sse responses do not support pagination",
             });
         }
         if plan.endpoint.response.no_content {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
-                msg: "sse responses cannot use a no-content response plan".into(),
+                msg: "sse responses cannot use a no-content response plan",
             });
         }
         let dbg = plan
@@ -728,13 +728,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
-                msg: "multipart responses do not support pagination".into(),
+                msg: "multipart responses do not support pagination",
             });
         }
         if plan.endpoint.response.no_content {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
-                msg: "multipart responses cannot use a no-content response plan".into(),
+                msg: "multipart responses cannot use a no-content response plan",
             });
         }
         let dbg = plan
@@ -757,14 +757,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         };
         let boundary =
             crate::multipart_response::parse_response_boundary::<Fmt>(&resp.headers, ctx.clone())?;
-        if let (Some(limit), Some(actual)) = (response_limit, resp.content_length) {
-            if actual > limit as u64 {
-                return Err(ApiClientError::ResponseTooLarge {
-                    ctx: ctx.clone(),
-                    limit,
-                    actual,
-                });
-            }
+        if let (Some(limit), Some(actual)) = (response_limit, resp.content_length)
+            && actual > limit as u64
+        {
+            return Err(ApiClientError::ResponseTooLarge {
+                ctx: ctx.clone(),
+                limit,
+                actual,
+            });
         }
         Ok(crate::multipart_response::MultipartStream::new(
             resp,

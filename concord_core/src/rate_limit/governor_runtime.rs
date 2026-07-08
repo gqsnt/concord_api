@@ -864,7 +864,9 @@ mod tests {
 
     #[test]
     fn default_cooldown_entry_cap_is_finite() {
-        assert!(GovernorRateLimiter::DEFAULT_MAX_COOLDOWN_ENTRIES > 0);
+        const {
+            assert!(GovernorRateLimiter::DEFAULT_MAX_COOLDOWN_ENTRIES > 0);
+        }
     }
 
     #[test]

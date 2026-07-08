@@ -186,6 +186,13 @@ impl<P> PaginationRuntimeAdapter<P> {
     }
 }
 
+impl<P> Default for PaginationRuntimeAdapter<P> {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<E, Page, P> PaginationRuntime<E, Page> for PaginationRuntimeAdapter<P>
 where
     E: PaginateBinding<P>,

@@ -38,7 +38,7 @@ fn route_inheritance_combines_scope_path_layers_in_order() {
     ));
     assert!(matches!(
         endpoint.route_pieces.as_slice(),
-        [PathPiece::EpVar { field }] if field.to_string() == "post_id"
+        [PathPiece::EpVar { field }] if *field == "post_id"
     ));
 }
 
@@ -81,6 +81,6 @@ fn route_inheritance_combines_host_and_path_scopes() {
     ));
     assert!(matches!(
         endpoint.route_pieces.as_slice(),
-        [PathPiece::EpVar { field }] if field.to_string() == "post_id"
+        [PathPiece::EpVar { field }] if *field == "post_id"
     ));
 }

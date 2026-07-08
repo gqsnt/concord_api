@@ -76,8 +76,10 @@ run_nextest_count_guard() {
 run_step "architecture boundary" bash ./scripts/check_architecture.sh
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
-# Clippy is currently non-strict because the tree still carries known warnings.
-run_step "clippy workspace all targets" "${CARGO[@]}" clippy --workspace --all-targets
+# Clippy is strict in the release gate; intentional exceptions must be narrow
+# item- or fixture-level allows naming the specific lint.
+run_step "clippy workspace all targets" "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
+run_step "clippy workspace all targets all features" "${CARGO[@]}" clippy --workspace --all-targets --all-features -- -D warnings
 
 # Coverage baseline captured with `cargo nextest list` before removing redundant
 # per-crate runs:

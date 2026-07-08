@@ -1,3 +1,5 @@
+#![allow(clippy::needless_update)] // Matrix fixtures keep `..Default::default()` for resilience to added fields.
+
 use super::common::{
     CapturedTransportRequest, ItemsEndpoint, MockOutcome, MockResponse, MockTransport,
     PaginationVariant, TestAuthVars, auth_policy, client, request_plan, retry_policy,

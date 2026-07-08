@@ -1,3 +1,5 @@
+#![allow(clippy::needless_update)] // Async endpoint fixtures keep `..Default::default()` for resilience to added fields.
+
 use super::common::{
     CapturedTransportRequestSnapshot, GateableBodyTransport, GateableHooks, GateableTransport,
     ItemsEndpoint, MockOutcome, MockResponse, MockTransport, ObservationRuntimeHooks,

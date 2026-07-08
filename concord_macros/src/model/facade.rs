@@ -460,10 +460,8 @@ fn facade_endpoint_from_resolved(ep: &ResolvedEndpoint) -> FacadeEndpoint {
     let mut constructor_args: Vec<FacadeConstructorArg> = Vec::new();
     for var in &ep.vars {
         let is_captured = captured_names.contains(&var.rust.to_string());
-        if var.optional || var.default.is_some() {
-            if is_captured {
-                continue;
-            }
+        if (var.optional || var.default.is_some()) && is_captured {
+            continue;
         }
         if !is_captured && !var.optional && var.default.is_none() {
             required_args.push(FacadeArg {

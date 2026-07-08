@@ -855,7 +855,7 @@ fn emit_facade_scope_struct(
             }
             Some(emit_facade_endpoint_method(facade, client_ty, cx_ty, false))
         });
-    let auth_accessor_methods = if scope_ir.path.len() == 1 && scope_ir.path[0].to_string() == "auth" {
+    let auth_accessor_methods = if scope_ir.path.len() == 1 && scope_ir.path[0] == "auth" {
         emit_auth_accessor_methods(resolved_api, client_ty)
     } else {
         quote! {}
