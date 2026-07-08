@@ -89,6 +89,10 @@ pub(super) fn forbidden_stream_exec_call() -> String {
     ["execute_plan_", "stream::<", "OctetStream", ">"].concat()
 }
 
+pub(super) fn forbidden_endpoint_execute_box_wrapper() -> String {
+    ["Box::pin(asyncmove{", "ResponseEntity", ">::execute"].concat()
+}
+
 pub(super) fn forbidden_records_exec_call() -> String {
     ["execute_plan_", "records::<", " LogEntry , NdJson ", ">"].concat()
 }

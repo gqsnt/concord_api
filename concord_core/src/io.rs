@@ -229,7 +229,7 @@ where
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { execute_buffered_codec_response::<Cx, T, C>(client, plan).await })
+        Box::pin(execute_buffered_codec_response::<Cx, T, C>(client, plan))
     }
 }
 
@@ -262,7 +262,7 @@ impl ResponseEntity for BytesResponse {
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { execute_bytes_response(client, plan).await })
+        Box::pin(execute_bytes_response(client, plan))
     }
 }
 
@@ -295,7 +295,7 @@ impl ResponseEntity for NoContentResponse {
         Cx: ClientContext,
         T: crate::transport::Transport + 'a,
     {
-        Box::pin(async move { execute_no_content_response(client, plan).await })
+        Box::pin(execute_no_content_response(client, plan))
     }
 }
 
@@ -458,23 +458,21 @@ where
     }
 }
 
-fn execute_buffered_codec_response<'a, Cx, T, C>(
-    client: &'a ApiClient<Cx, T>,
+async fn execute_buffered_codec_response<Cx, T, C>(
+    client: &ApiClient<Cx, T>,
     plan: RequestPlan,
-) -> Pin<Box<dyn Future<Output = Result<C::Value, ApiClientError>> + Send + 'a>>
+) -> Result<C::Value, ApiClientError>
 where
     Cx: ClientContext,
-    T: crate::transport::Transport + 'a,
+    T: crate::transport::Transport,
     C: ResponseCodec,
 {
-    Box::pin(async move {
-        if C::is_no_content() {
-            let resp = client.execute_plan_raw_skip_body(plan).await?;
-            return decode_buffered_response::<C>(resp);
-        }
-        let resp = client.execute_plan_raw(plan).await?;
-        decode_buffered_response::<C>(resp)
-    })
+    if C::is_no_content() {
+        let resp = client.execute_plan_raw_skip_body(plan).await?;
+        return decode_buffered_response::<C>(resp);
+    }
+    let resp = client.execute_plan_raw(plan).await?;
+    decode_buffered_response::<C>(resp)
 }
 
 async fn execute_bytes_response<Cx, T>(

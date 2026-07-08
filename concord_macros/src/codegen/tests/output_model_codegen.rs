@@ -32,6 +32,7 @@ fn generated_invalid_codec_headers_return_typed_errors() {
             &forbidden_response_codec_try_accept(),
             &forbidden_response_codec_decode(),
             &forbidden_generated_decode_binding(),
+            &forbidden_endpoint_execute_box_wrapper(),
         ],
     );
 }
@@ -66,6 +67,7 @@ fn generated_bytes_response_uses_response_entity_plan() {
             &forbidden_response_codec_try_accept(),
             &forbidden_response_codec_decode(),
             &forbidden_generated_decode_binding(),
+            &forbidden_endpoint_execute_box_wrapper(),
             "no_content :",
             "format :",
         ],

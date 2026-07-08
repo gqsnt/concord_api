@@ -34,6 +34,7 @@ fn emit_uses_stream_request_and_response_codegen() {
             &forbidden_request_body_plan_raw_stream(),
             &forbidden_request_args_with_stream_body(),
             &forbidden_stream_exec_call(),
+            &forbidden_endpoint_execute_box_wrapper(),
             &["Stream", "ResponseEndpoint"].concat(),
         ],
     );
@@ -133,6 +134,7 @@ fn emit_uses_record_request_and_response_codegen() {
             &forbidden_request_body_plan_records(),
             &forbidden_request_args_with_record_body(),
             &forbidden_records_exec_call(),
+            &forbidden_endpoint_execute_box_wrapper(),
             &["Record", "ResponseEndpoint"].concat(),
         ],
     );
@@ -172,6 +174,7 @@ fn emit_uses_multipart_request_and_response_codegen() {
             &forbidden_request_args_with_multipart_body(),
             &forbidden_content_type_check_name(),
             &forbidden_multipart_exec_call(),
+            &forbidden_endpoint_execute_box_wrapper(),
             &["Multipart", "ResponseEndpoint"].concat(),
         ],
     );

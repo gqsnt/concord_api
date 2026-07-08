@@ -589,13 +589,10 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, ty_name: &Ident, cx_ty: &Ide
         where
             T: ::concord_core::advanced::Transport + 'a,
         {
-            ::std::boxed::Box::pin(async move {
-                <#response_entity_adapter_ty as ::concord_core::advanced::ResponseEntity>::execute(
-                    client,
-                    plan,
-                )
-                .await
-            })
+            <#response_entity_adapter_ty as ::concord_core::advanced::ResponseEntity>::execute(
+                client,
+                plan,
+            )
         }
     }
 }
