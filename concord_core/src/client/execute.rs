@@ -432,17 +432,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     where
         C: crate::codec::ResponseCodec,
     {
-        let RequestPlan {
-            endpoint,
-            mut args,
-            overrides,
-            replayability,
-        } = plan;
-        let plan = crate::endpoint::RequestPlanView {
-            endpoint,
-            overrides,
-            replayability,
-        };
+        let (plan, mut args) = into_canonical_request_plan_view(plan);
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
@@ -486,17 +476,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         plan: RequestPlan,
         skip_body: bool,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let RequestPlan {
-            endpoint,
-            mut args,
-            overrides,
-            replayability,
-        } = plan;
-        let plan = crate::endpoint::RequestPlanView {
-            endpoint,
-            overrides,
-            replayability,
-        };
+        let (plan, mut args) = into_canonical_request_plan_view(plan);
         let dbg = plan.overrides.debug_level.unwrap_or_else(|| self.debug_level());
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
@@ -522,7 +502,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let RequestPlan {
             mut endpoint,
-            mut args,
+            args,
             overrides,
             replayability,
         } = plan;
@@ -536,11 +516,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
             );
         }
-        let plan = crate::endpoint::RequestPlanView {
+        let (plan, mut args) = into_canonical_request_plan_view(RequestPlan {
             endpoint,
+            args,
             overrides,
             replayability,
-        };
+        });
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
@@ -588,7 +569,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let RequestPlan {
             mut endpoint,
-            mut args,
+            args,
             overrides,
             replayability,
         } = plan;
@@ -602,11 +583,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
             );
         }
-        let plan = crate::endpoint::RequestPlanView {
+        let (plan, mut args) = into_canonical_request_plan_view(RequestPlan {
             endpoint,
+            args,
             overrides,
             replayability,
-        };
+        });
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
@@ -667,7 +649,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let RequestPlan {
             mut endpoint,
-            mut args,
+            args,
             overrides,
             replayability,
         } = plan;
@@ -681,11 +663,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
             );
         }
-        let plan = crate::endpoint::RequestPlanView {
+        let (plan, mut args) = into_canonical_request_plan_view(RequestPlan {
             endpoint,
+            args,
             overrides,
             replayability,
-        };
+        });
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
@@ -929,6 +912,26 @@ fn attach_prepared_auth_generation(
             break;
         }
     }
+}
+
+fn into_canonical_request_plan_view(
+    mut plan: RequestPlan,
+) -> (crate::endpoint::RequestPlanView, crate::endpoint::RequestArgs) {
+    plan.endpoint.policy.rate_limit.canonicalize();
+    let RequestPlan {
+        endpoint,
+        args,
+        overrides,
+        replayability,
+    } = plan;
+    (
+        crate::endpoint::RequestPlanView {
+            endpoint,
+            overrides,
+            replayability,
+        },
+        args,
+    )
 }
 
 fn checked_attempt(

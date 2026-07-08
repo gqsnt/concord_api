@@ -36,6 +36,19 @@ impl Default for RequestOptions {
     }
 }
 
+impl RequestOptions {
+    fn apply_to(&self, plan: &mut crate::endpoint::RequestPlan, page_index: u32) {
+        plan.overrides.timeout = match self.timeout_override {
+            TimeoutOverride::Inherit => plan.overrides.timeout,
+            TimeoutOverride::Clear => None,
+            TimeoutOverride::Set(d) => Some(d),
+        };
+        plan.overrides.debug_level = self.debug_level;
+        plan.overrides.attempt = self.attempt;
+        plan.overrides.page_index = page_index;
+    }
+}
+
 pub struct PendingRequest<
     'a,
     Cx: ClientContext,
@@ -153,14 +166,7 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>, T: crate::transport::Transp
         let Self { client, ep, opts } = self;
         let plan_ctx = client.plan_context();
         let mut plan = ep.into_plan(&plan_ctx)?;
-        plan.overrides.timeout = match opts.timeout_override {
-            TimeoutOverride::Inherit => plan.overrides.timeout,
-            TimeoutOverride::Clear => None,
-            TimeoutOverride::Set(d) => Some(d),
-        };
-        plan.overrides.debug_level = opts.debug_level;
-        plan.overrides.attempt = opts.attempt;
-        plan.overrides.page_index = 0;
+        opts.apply_to(&mut plan, 0);
         Ok(plan)
     }
 
@@ -376,14 +382,7 @@ where
         )?;
         let expected_items = runtime.expected_items_per_page();
         let mut plan = pending.ep.plan(&pending.client.plan_context())?;
-        plan.overrides.timeout = match pending.opts.timeout_override {
-            TimeoutOverride::Inherit => plan.overrides.timeout,
-            TimeoutOverride::Clear => None,
-            TimeoutOverride::Set(d) => Some(d),
-        };
-        plan.overrides.debug_level = pending.opts.debug_level;
-        plan.overrides.attempt = pending.opts.attempt;
-        plan.overrides.page_index = page_index;
+        pending.opts.apply_to(&mut plan, page_index);
         let request_identity = pagination_request_identity(&plan);
         progress_state.ensure_progress(request_identity, &ctx, page_index)?;
         let page = E::execute(pending.client, plan).await?;

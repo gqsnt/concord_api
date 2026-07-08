@@ -40,6 +40,12 @@ impl RateLimitPlan {
     }
 
     #[inline]
+    /// Deduplicate buckets in-place.
+    ///
+    /// Call this once when a plan is constructed or ingested for execution.
+    /// Generated endpoint plans do this at plan-construction time; execution
+    /// should do it once per request before any attempt loop. Do not call it
+    /// per attempt.
     pub fn canonicalize(&mut self) {
         let mut seen: HashSet<RateLimitBucketUse> = HashSet::with_capacity(self.buckets.len());
         self.buckets.retain(|bucket| seen.insert(bucket.clone()));

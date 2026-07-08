@@ -9,12 +9,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
         };
-        let mut policy = plan.endpoint.policy.clone();
-        if let Some(timeout) = plan.overrides.timeout {
-            policy.timeout = Some(timeout);
-        }
-        let mut rate_limit = policy.rate_limit.clone();
-        rate_limit.canonicalize();
+        let timeout = plan.overrides.timeout.or(plan.endpoint.policy.timeout);
+        let retry = plan.endpoint.policy.retry.clone();
+        let rate_limit = plan.endpoint.policy.rate_limit.clone();
 
         let base = format!("{}://{}", plan.endpoint.route.scheme, plan.endpoint.route.host);
         let mut url = url::Url::parse(&base).map_err(|e| ApiClientError::BuildUrl {
@@ -22,14 +19,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             source: e,
         })?;
         url.set_path(&plan.endpoint.route.path);
-        if !policy.query.is_empty() {
+        if !plan.endpoint.policy.query.is_empty() {
             let mut qp = url.query_pairs_mut();
-            for (k, v) in policy.query.iter() {
+            for (k, v) in &plan.endpoint.policy.query {
                 qp.append_pair(k, v);
             }
         }
 
-        let mut headers = policy.headers.clone();
+        let mut headers = plan.endpoint.policy.headers.clone();
         if !headers.contains_key(CONTENT_TYPE) {
             match &plan.endpoint.body {
                 BodyPlan::Encoded { content_type, .. } => {
@@ -162,8 +159,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             headers,
             body,
             stream_size_hint: std::mem::take(&mut args.stream_size_hint),
-            timeout: policy.timeout,
-            retry: policy.retry,
+            timeout,
+            retry,
             rate_limit,
             extensions: Default::default(),
         })
