@@ -87,12 +87,16 @@ async fn read_body_all_limited(
 
     const SMALL_START: usize = 8 * 1024;
     const LARGE_START: usize = 64 * 1024;
+    // When the response body limit is disabled, we still must not let an unverified
+    // server Content-Length drive pre-read allocation. Honest large bodies grow the
+    // buffer via normal amortized reallocation; this only caps the INITIAL guess.
+    const NO_LIMIT_INITIAL_CAP: usize = 1 << 20; // 1 MiB
     let cap = match content_length {
         Some(n) => {
             let n_usize = usize::try_from(n).unwrap_or(usize::MAX);
             match limit {
                 Some(limit) => n_usize.min(limit),
-                None => n_usize.max(SMALL_START),
+                None => n_usize.clamp(SMALL_START, NO_LIMIT_INITIAL_CAP),
             }
         }
         None => limit.map_or(SMALL_START, |limit| limit.min(LARGE_START)),

@@ -390,6 +390,81 @@ async fn disabled_body_limit_behavior_characterized() -> Result<(), ApiClientErr
 }
 
 #[tokio::test]
+async fn no_response_body_limit_ignores_lying_content_length_for_initial_capacity() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"small-body"))
+                .with_content_length(Some(10_000_000_000)),
+        ],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.no_response_body_limit();
+    });
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect("a lying Content-Length must not prevent reading the actual small body");
+
+    assert_eq!(decoded.value, "small-body");
+}
+
+#[tokio::test]
+async fn no_response_body_limit_reads_honest_large_body_completely() {
+    // Larger than NO_LIMIT_INITIAL_CAP (1 MiB) so the read loop must grow the buffer.
+    let large_body: String = "A".repeat(3 * 1024 * 1024);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![MockResponse::text(
+            StatusCode::OK,
+            Bytes::from(large_body.clone()),
+        )],
+    );
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.no_response_body_limit();
+    });
+
+    let decoded = client
+        .request(TextEndpoint::default())
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect("an honest large body must still be read completely when the limit is disabled");
+
+    assert_eq!(decoded.value, large_body);
+}
+
+#[tokio::test]
+async fn default_body_limit_rejects_content_length_over_16_mib() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let read_count = Arc::new(AtomicUsize::new(0));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"irrelevant"))
+                .with_content_length(Some(16 * 1024 * 1024 + 1))
+                .with_read_count(read_count.clone()),
+        ],
+    );
+    let client = client(TestAuthVars::default(), transport);
+
+    let err = client
+        .request(TextEndpoint::default())
+        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .await
+        .expect_err("the default response body limit should reject an oversize Content-Length");
+
+    assert_response_too_large(&err);
+    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(transport_events(&events).await, vec!["transport"]);
+}
+
+#[tokio::test]
 async fn debug_level_changes_metadata_volume_not_body_or_auth_exposure()
 -> Result<(), ApiClientError> {
     let low = run_debug_safety_request(DebugLevel::V).await?;
