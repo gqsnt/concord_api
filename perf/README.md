@@ -26,6 +26,8 @@ Run the smoke benchmark with:
 cargo bench --manifest-path perf/Cargo.toml --bench smoke
 ```
 
+The `auth_runtime` bench's `cached_preparation/*` scenario exercises a hand-constructed fixture that manually sets an internal provenance marker; that scenario is not reachable by generated clients today (see the PERF-PR 18 status detail in [`../docs/perf_post_optimization_report.md`](../docs/perf_post_optimization_report.md)).
+
 Run future benches with the same pattern:
 
 ```bash

@@ -2,29 +2,47 @@
 
 This is a report-only summary of the validated performance work completed across PERF-PR 1 through PERF-PR 18. It records the current machine-local evidence after the runtime, macro/codegen, build-footprint, and security-adjacent optimization series. It does not introduce new optimizations or behavior changes.
 
+## Status Legend
+
+Every PERF-PR entry below is tagged with one of these three states:
+
+- **implemented** — active in the runtime today and reachable by generated clients.
+- **partial** — a mechanism exists in the runtime, but nothing in the generated-client path currently activates it.
+- **deferred** — not yet implemented; tracked as future work only.
+
 ## 1. Executive Summary
 
 Validated work falls into these groups:
 
 - Benchmark and report infrastructure
-  - PERF-PR 1 through PERF-PR 7 established the standalone `perf/` benchmark package, runtime benchmark coverage, build-footprint reporting, macro-scale reporting, and release-gate timing reporting.
+  - PERF-PR 1 through PERF-PR 7 established the standalone `perf/` benchmark package, runtime benchmark coverage, build-footprint reporting, macro-scale reporting, and release-gate timing reporting. **[implemented]**
 - Runtime-path optimizations
-  - PERF-PR 8 lowered async-read/file-upload chunk allocation overhead.
-  - PERF-PR 9 bounded governor cooldown cardinality and preserved fail-closed behavior.
-  - PERF-PR 10 reused the sanitized URL through the attempt path.
-  - PERF-PR 11 added governor empty-plan and no-cooldown fast paths.
-  - PERF-PR 12 made retry metadata/header cloning lazier.
-  - PERF-PR 13 removed duplicate auth collision validation.
-  - PERF-PR 17 reduced sensitive-name matching allocations.
-  - PERF-PR 18 added opt-in request-local cached auth preparation.
+  - PERF-PR 8 lowered async-read/file-upload chunk allocation overhead. **[implemented]**
+  - PERF-PR 9 bounded governor cooldown cardinality and preserved fail-closed behavior. **[implemented]**
+  - PERF-PR 10 reused the sanitized URL through the attempt path. **[implemented]**
+  - PERF-PR 11 added governor empty-plan and no-cooldown fast paths. **[implemented]**
+  - PERF-PR 12 made retry metadata/header cloning lazier. **[implemented]**
+  - PERF-PR 13 removed duplicate auth collision validation. **[implemented]**
+  - PERF-PR 17 reduced sensitive-name matching allocations. **[implemented]**
+  - PERF-PR 18 added a request-local cached auth preparation mechanism. **[partial — mechanism implemented, not activated; see "PERF-PR 18 status detail" below]**
 - Macro/codegen optimizations
-  - PERF-PR 14 added local lookup indexes for facade/codegen resolution.
-  - PERF-PR 15 avoided duplicate `FacadeIr` construction.
+  - PERF-PR 14 added local lookup indexes for facade/codegen resolution. **[implemented]**
+  - PERF-PR 15 avoided duplicate `FacadeIr` construction. **[implemented]**
 - Build-footprint and feature work
-  - PERF-PR 16A produced the optional reqwest transport design report.
-  - PERF-PR 16B implemented the optional reqwest feature split while keeping default users compatible.
+  - PERF-PR 16A produced the optional reqwest transport design report. **[implemented]**
+  - PERF-PR 16B implemented the optional reqwest feature split while keeping default users compatible. **[implemented]**
 - Security-adjacent runtime cleanup
-  - PERF-PR 10, 12, 13, 17, and 18 all kept sanitized surfaces intact while removing avoidable work.
+  - PERF-PR 10, 12, 13, 17, and 18 all kept sanitized surfaces intact while removing avoidable work. **[implemented for PERF-PR 10, 12, 13, 17; partial for PERF-PR 18 — see below]**
+
+### PERF-PR 18 status detail: request-local cached auth preparation is partial
+
+PERF-PR 18 implemented a request-local auth-preparation cache in `concord_core/src/client/execute.rs`. The cache is gated by an internal provenance marker, `REQUEST_LOCAL_AUTH_PREPARATION_REUSE_MARKER` (the string `"request_local_reusable"`), defined in `concord_core/src/client/context.rs`: a prepared credential is only cacheable when its `provenance.layer` equals that marker.
+
+No generated client can currently produce that marker. The only place generated-client provenance labels are produced is `concord_macros/src/sema/auth.rs::provenance_label`, which returns exactly `"client"`, `"scope:{id}"`, or `"endpoint"` — none of which match the marker. As a result, the cache policy always resolves to `Never` for generated clients, and the caching mechanism, while implemented, does not run outside of test and benchmark code today.
+
+The `auth_runtime` bench's `cached_preparation/*` rows (see Section 3 below) exercise a hand-constructed fixture that manually sets the marker (in `perf/benches/auth_runtime.rs` and mirrored in `concord_core/tests/integration/current_core/auth.rs`). Those rows measure that fixture path, not any path reachable by a generated client.
+
+Activating this optimization for generated clients is tracked as planned follow-up work: replacing the internal string marker with a typed, explicit opt-in that generated or user code can set for retry-stable credential paths. No PR number is assigned to that follow-up yet.
 
 All timing and benchmark observations below are machine-local and report-only.
 
@@ -82,7 +100,7 @@ All benchmark commands were run with `cargo bench --manifest-path perf/Cargo.tom
   - `apply/multiple_requirements`: `[4.0299 us 4.1328 us 4.2459 us]`
   - `collision/query/error_path`: `[2.2823 us 2.3178 us 2.3584 us]`
   - `repeated_credential/retry_reuses_material`: `[5.2793 us 5.3797 us 5.4884 us]`
-  - `cached_preparation/slot_retry_reuses_preparation`: `[5.6564 us 5.7306 us 5.8144 us]`
+  - `cached_preparation/slot_retry_reuses_preparation`: `[5.6564 us 5.7306 us 5.8144 us]` — fixture-only; see "PERF-PR 18 status detail" in Section 1, this scenario manually sets the internal provenance marker and is not reachable by generated clients
   - `cached_credential/slot_two_requests`: `[5.6623 us 5.6980 us 5.7378 us]`
 
 ### Rate-limit governor
@@ -241,7 +259,7 @@ Current risks and caveats:
 - Criterion does not provide allocation counts by itself
 - the optional reqwest feature matrix will need continued maintenance as the crate surface evolves
 - the doc-hidden `DefaultTransport` compatibility shim remains part of the reqwest optionality story
-- the auth-preparation cache is opt-in and intentionally narrow
+- the request-local auth-preparation cache (PERF-PR 18) is implemented but partial: it is not activated for generated clients today because no generated-client provenance label matches the internal reuse marker; see "PERF-PR 18 status detail" in Section 1
 - sensitive-name matching remains ASCII-case-insensitive by design
 
 Likely future candidates, not implemented here:
