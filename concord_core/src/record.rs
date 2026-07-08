@@ -5,18 +5,25 @@ use crate::transport::{
     StreamBodyLimitError, StreamLimitDirection, TransportByteStream, TransportError,
     TransportResponse,
 };
-use bytes::{Buf, Bytes, BytesMut};
-use csv::{ByteRecord, WriterBuilder};
-use csv_core::{ReadRecordResult, Reader as CsvReader, ReaderBuilder as CsvReaderBuilder};
+use bytes::{Bytes, BytesMut};
 use futures_core::Stream;
 use serde::{Serialize, de::DeserializeOwned};
-use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fmt;
-use std::io::{self, Write};
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+#[cfg(feature = "records-csv")]
+use bytes::Buf;
+#[cfg(feature = "records-csv")]
+use csv::{ByteRecord, WriterBuilder};
+#[cfg(feature = "records-csv")]
+use csv_core::{ReadRecordResult, Reader as CsvReader, ReaderBuilder as CsvReaderBuilder};
+#[cfg(feature = "records-csv")]
+use std::cell::RefCell;
+#[cfg(feature = "records-csv")]
+use std::io::{self, Write};
 
 pub trait RecordEncoder<T>: Send + 'static {
     fn encode_record(&mut self, value: T) -> Result<Bytes, CodecError>;
@@ -36,38 +43,47 @@ pub trait RecordFormat<T>: ContentType + Send + Sync + 'static {
     fn decoder() -> Box<dyn RecordDecoder<T>>;
 }
 
+#[cfg(feature = "records-csv")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Csv<Cfg>(PhantomData<Cfg>);
 
+#[cfg(feature = "records-csv")]
 pub trait CsvConfig {
     const DELIMITER: u8;
     const HAS_HEADERS: bool;
 }
 
+#[cfg(feature = "records-csv")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CsvCommaDelim;
 
+#[cfg(feature = "records-csv")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CsvSemicolonDelim;
 
+#[cfg(feature = "records-csv")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CsvTabDelim;
 
+#[cfg(feature = "records-csv")]
 impl CsvConfig for CsvCommaDelim {
     const DELIMITER: u8 = b',';
     const HAS_HEADERS: bool = true;
 }
 
+#[cfg(feature = "records-csv")]
 impl CsvConfig for CsvSemicolonDelim {
     const DELIMITER: u8 = b';';
     const HAS_HEADERS: bool = true;
 }
 
+#[cfg(feature = "records-csv")]
 impl CsvConfig for CsvTabDelim {
     const DELIMITER: u8 = b'\t';
     const HAS_HEADERS: bool = true;
 }
 
+#[cfg(feature = "records-csv")]
 impl<Cfg> ContentType for Csv<Cfg>
 where
     Cfg: CsvConfig + Send + Sync + 'static,
@@ -95,6 +111,7 @@ where
     }
 }
 
+#[cfg(feature = "records-csv")]
 impl<T, Cfg> RecordFormat<T> for Csv<Cfg>
 where
     T: Serialize + DeserializeOwned + Send + 'static,
@@ -558,17 +575,20 @@ where
     }
 }
 
+#[cfg(feature = "records-csv")]
 #[derive(Default)]
 struct CsvOutputBuffer {
     bytes: RefCell<Vec<u8>>,
 }
 
+#[cfg(feature = "records-csv")]
 impl CsvOutputBuffer {
     fn take_bytes(&self) -> Bytes {
         Bytes::from(std::mem::take(&mut *self.bytes.borrow_mut()))
     }
 }
 
+#[cfg(feature = "records-csv")]
 impl Write for CsvOutputBuffer {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.bytes.get_mut().extend_from_slice(buf);
@@ -580,11 +600,13 @@ impl Write for CsvOutputBuffer {
     }
 }
 
+#[cfg(feature = "records-csv")]
 struct CsvEncoder<T, Cfg> {
     writer: csv::Writer<CsvOutputBuffer>,
     _marker: PhantomData<fn() -> (T, Cfg)>,
 }
 
+#[cfg(feature = "records-csv")]
 impl<T, Cfg> CsvEncoder<T, Cfg>
 where
     Cfg: CsvConfig,
@@ -612,6 +634,7 @@ where
     }
 }
 
+#[cfg(feature = "records-csv")]
 impl<T, Cfg> RecordEncoder<T> for CsvEncoder<T, Cfg>
 where
     T: Serialize + Send + 'static,
@@ -634,6 +657,7 @@ where
     }
 }
 
+#[cfg(feature = "records-csv")]
 struct CsvDecoder<T, Cfg> {
     reader: CsvReader,
     buffer: BytesMut,
@@ -645,6 +669,7 @@ struct CsvDecoder<T, Cfg> {
     _marker: PhantomData<fn() -> (T, Cfg)>,
 }
 
+#[cfg(feature = "records-csv")]
 impl<T, Cfg> CsvDecoder<T, Cfg>
 where
     Cfg: CsvConfig,
@@ -801,6 +826,7 @@ where
     }
 }
 
+#[cfg(feature = "records-csv")]
 impl<T, Cfg> RecordDecoder<T> for CsvDecoder<T, Cfg>
 where
     T: DeserializeOwned + Send + 'static,
@@ -828,15 +854,18 @@ mod tests {
         id: u32,
     }
 
+    #[cfg(feature = "records-csv")]
     #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
     struct CsvRow {
         id: u32,
         name: String,
     }
 
+    #[cfg(feature = "records-csv")]
     #[derive(Debug, Clone, Copy, Default)]
     struct HeaderlessPipe;
 
+    #[cfg(feature = "records-csv")]
     impl CsvConfig for HeaderlessPipe {
         const DELIMITER: u8 = b'|';
         const HAS_HEADERS: bool = false;
@@ -854,6 +883,7 @@ mod tests {
         Pin::new(stream).poll_next(&mut cx)
     }
 
+    #[cfg(feature = "records-csv")]
     fn collect_bytes(stream: &mut TransportByteStream) -> Bytes {
         let mut out = Vec::new();
         loop {
@@ -1021,6 +1051,7 @@ mod tests {
         assert!(decoder.finish().expect("finish").is_empty());
     }
 
+    #[cfg(feature = "records-csv")]
     #[test]
     fn csv_content_type_and_config_constants_are_exposed() {
         assert_eq!(
@@ -1035,6 +1066,7 @@ mod tests {
         assert_eq!(CsvTabDelim::HAS_HEADERS, true);
     }
 
+    #[cfg(feature = "records-csv")]
     #[test]
     fn csv_request_encoding_with_headers_and_without_headers_is_incremental() {
         let mut headered = RecordBody::from_iter(vec![CsvRow {
@@ -1068,6 +1100,7 @@ mod tests {
         assert!(matches!(poll_next(&mut headerless), Poll::Ready(None)));
     }
 
+    #[cfg(feature = "records-csv")]
     #[test]
     fn csv_request_encoding_does_not_accumulate_emitted_bytes() {
         let expected = Bytes::from_static(b"7|repeat\n");
@@ -1094,6 +1127,7 @@ mod tests {
         assert_eq!(count, 128);
     }
 
+    #[cfg(feature = "records-csv")]
     #[test]
     fn csv_semicolon_and_tab_round_trip() {
         let mut semicolon = RecordBody::from_iter(vec![CsvRow {
@@ -1132,6 +1166,7 @@ mod tests {
         assert!(tab_decoder.finish().expect("finish").is_empty());
     }
 
+    #[cfg(feature = "records-csv")]
     #[test]
     fn csv_response_decoder_handles_headers_headerless_and_chunk_boundaries() {
         let mut decoder: Box<dyn RecordDecoder<CsvRow>> = Csv::<CsvCommaDelim>::decoder();
@@ -1185,6 +1220,7 @@ mod tests {
         assert!(headerless.finish().expect("finish").is_empty());
     }
 
+    #[cfg(feature = "records-csv")]
     #[test]
     fn csv_response_decoder_supports_semicolon_tab_quotes_crlf_and_final_rows() {
         let mut semicolon: Box<dyn RecordDecoder<CsvRow>> = Csv::<CsvSemicolonDelim>::decoder();
@@ -1228,6 +1264,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "records-csv")]
     #[test]
     fn csv_response_decoder_rejects_malformed_quoted_eof_row() {
         let mut decoder: Box<dyn RecordDecoder<CsvRow>> = Csv::<CsvCommaDelim>::decoder();
@@ -1247,6 +1284,7 @@ mod tests {
         assert!(!display.contains("ba"));
     }
 
+    #[cfg(feature = "records-csv")]
     #[test]
     fn csv_response_decoder_ignores_empty_rows_and_sanitizes_errors() {
         let mut decoder: Box<dyn RecordDecoder<CsvRow>> = Csv::<CsvCommaDelim>::decoder();

@@ -1,12 +1,14 @@
 use super::common::{TestAuthVars, TestCx, auth_policy};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, CodecError, ContentType, Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim,
-    CsvTabDelim, DebugSink, NdJson, PostResponseHookContext, PreSendHookContext, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RuntimeHooks, Transport,
-    TransportBody, TransportError, TransportErrorKind, TransportRequest, TransportResponse,
+    AuthPlacement, CodecError, ContentType, DebugSink, NdJson, PostResponseHookContext,
+    PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
+    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RecordBody, RecordDecoder,
+    RecordEncoder, RecordFormat, RuntimeHooks, Transport, TransportBody, TransportError,
+    TransportErrorKind, TransportRequest, TransportResponse,
 };
+#[cfg(feature = "records-csv")]
+use concord_core::advanced::{Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim};
 use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
     ResolvedPolicy, ResolvedRoute, ResponsePlan,
@@ -1730,6 +1732,7 @@ async fn custom_record_response_decoder_error_is_sanitized() -> Result<(), ApiCl
     Ok(())
 }
 
+#[cfg(feature = "records-csv")]
 #[tokio::test]
 async fn csv_record_request_sets_text_csv_and_remains_streamed() -> Result<(), ApiClientError> {
     let events = Arc::new(StdMutex::new(Vec::new()));
@@ -1791,6 +1794,7 @@ async fn csv_record_request_sets_text_csv_and_remains_streamed() -> Result<(), A
     Ok(())
 }
 
+#[cfg(feature = "records-csv")]
 #[tokio::test]
 async fn csv_record_request_large_batch_does_not_accumulate_bytes() -> Result<(), ApiClientError> {
     let events = Arc::new(StdMutex::new(Vec::new()));
@@ -1840,6 +1844,7 @@ async fn csv_record_request_large_batch_does_not_accumulate_bytes() -> Result<()
     Ok(())
 }
 
+#[cfg(feature = "records-csv")]
 #[tokio::test]
 async fn csv_record_response_streams_incrementally_across_chunks() -> Result<(), ApiClientError> {
     let events = Arc::new(StdMutex::new(Vec::new()));
@@ -1909,6 +1914,7 @@ async fn csv_record_response_streams_incrementally_across_chunks() -> Result<(),
     Ok(())
 }
 
+#[cfg(feature = "records-csv")]
 #[tokio::test]
 async fn csv_record_response_next_batch_consumes_in_explicit_batches() -> Result<(), ApiClientError>
 {
@@ -1971,6 +1977,7 @@ async fn csv_record_response_next_batch_consumes_in_explicit_batches() -> Result
     Ok(())
 }
 
+#[cfg(feature = "records-csv")]
 #[tokio::test]
 async fn csv_record_response_streams_many_records_across_chunks() -> Result<(), ApiClientError> {
     let mut body = String::from("id,message\n");
@@ -2069,6 +2076,7 @@ async fn ndjson_record_response_next_batch_stops_at_requested_batch_size()
     Ok(())
 }
 
+#[cfg(feature = "records-csv")]
 #[tokio::test]
 async fn csv_record_response_headerless_semicolon_and_tab_configs_work()
 -> Result<(), ApiClientError> {

@@ -59,9 +59,10 @@ pub mod internal {
         ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
+    #[cfg(feature = "records-csv")]
+    pub use crate::record::{Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim};
     pub use crate::record::{
-        Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim, NdJson, RecordBody,
-        RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
+        NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
     };
     pub use crate::retry::RetrySetting;
     pub use crate::sse::{JsonSse, SseCodec, SseEvent, SseRawEvent, SseStream};
@@ -141,9 +142,10 @@ pub mod advanced {
         RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting, RateLimitWindow,
         RateLimiter, parse_retry_after,
     };
+    #[cfg(feature = "records-csv")]
+    pub use crate::record::{Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim};
     pub use crate::record::{
-        Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim, NdJson, RecordBody,
-        RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
+        NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
     };
     pub use crate::retry::{
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,

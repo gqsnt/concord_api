@@ -39,10 +39,13 @@ fn public_v1_surface_compiles() {
     uses_type::<advanced::StreamBody>();
     uses_type::<advanced::StreamBodyError>();
     uses_type::<advanced::BodySizeHint>();
-    uses_type::<advanced::Csv<advanced::CsvCommaDelim>>();
-    uses_type::<advanced::CsvCommaDelim>();
-    uses_type::<advanced::CsvSemicolonDelim>();
-    uses_type::<advanced::CsvTabDelim>();
+    #[cfg(feature = "records-csv")]
+    {
+        uses_type::<advanced::Csv<advanced::CsvCommaDelim>>();
+        uses_type::<advanced::CsvCommaDelim>();
+        uses_type::<advanced::CsvSemicolonDelim>();
+        uses_type::<advanced::CsvTabDelim>();
+    }
     uses_type::<advanced::OctetStream>();
     uses_type::<advanced::Mp3>();
     uses_type::<advanced::Mp4>();

@@ -57,6 +57,22 @@ run_cmd() {
   fi
 }
 
+run_optional_cmd() {
+  local label="$1"
+  shift
+  section "$label"
+  quote_cmd "$@"
+  local output status
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+  emit "$output"
+  if [[ $status -ne 0 ]]; then
+    emit "command exited with status $status (accepted for optional/absent dependency probe)"
+  fi
+}
+
 run_timed_cmd() {
   local label="$1"
   shift
@@ -120,6 +136,7 @@ metadata_report "workspace metadata summary" --manifest-path Cargo.toml
 metadata_report "perf package metadata summary" --manifest-path perf/Cargo.toml
 
 run_cmd "concord_core tree --no-default-features" "${CARGO[@]}" tree -p concord_core --no-default-features
+run_cmd "concord_core tree --no-default-features --features records-csv" "${CARGO[@]}" tree -p concord_core --no-default-features --features records-csv
 run_cmd "concord_core tree --no-default-features --features transport-reqwest" "${CARGO[@]}" tree -p concord_core --no-default-features --features transport-reqwest
 run_cmd "concord_core tree --features json" "${CARGO[@]}" tree -p concord_core --features json
 run_cmd "concord_core tree --all-features" "${CARGO[@]}" tree -p concord_core --all-features
@@ -129,11 +146,16 @@ run_cmd "concord_core feature tree --features json" "${CARGO[@]}" tree -p concor
 run_cmd "concord_core feature tree --all-features" "${CARGO[@]}" tree -p concord_core -e features --all-features
 
 section "csv footprint"
-run_cmd "concord_core csv inverse tree --no-default-features" "${CARGO[@]}" tree -p concord_core --no-default-features -i csv
-run_cmd "concord_core csv-core inverse tree --no-default-features" "${CARGO[@]}" tree -p concord_core --no-default-features -i csv-core
+run_optional_cmd "concord_core csv inverse tree --no-default-features" "${CARGO[@]}" tree -p concord_core --no-default-features -i csv
+run_optional_cmd "concord_core csv-core inverse tree --no-default-features" "${CARGO[@]}" tree -p concord_core --no-default-features -i csv-core
+run_cmd "concord_core csv inverse tree --no-default-features --features records-csv" "${CARGO[@]}" tree -p concord_core --no-default-features --features records-csv -i csv
+run_cmd "concord_core csv-core inverse tree --no-default-features --features records-csv" "${CARGO[@]}" tree -p concord_core --no-default-features --features records-csv -i csv-core
 csv_no_default_output="$("${CARGO[@]}" tree -p concord_core --no-default-features)"
+csv_records_output="$("${CARGO[@]}" tree -p concord_core --no-default-features --features records-csv)"
 csv_no_default_count="$(printf '%s\n' "$csv_no_default_output" | sed -E 's/^[│├└─ ]*//' | grep -E '^[A-Za-z0-9_-]+ v' | sort -u | wc -l | tr -d ' ')"
+csv_records_count="$(printf '%s\n' "$csv_records_output" | sed -E 's/^[│├└─ ]*//' | grep -E '^[A-Za-z0-9_-]+ v' | sort -u | wc -l | tr -d ' ')"
 emit "no-default dependency_count_unique_lines: $csv_no_default_count"
+emit "no-default records-csv dependency_count_unique_lines: $csv_records_count"
 if [[ "$csv_no_default_output" == *"csv v"* ]]; then
   emit "no-default concord_core includes csv: yes"
 else
@@ -143,6 +165,16 @@ if [[ "$csv_no_default_output" == *"csv-core v"* ]]; then
   emit "no-default concord_core includes csv-core: yes"
 else
   emit "no-default concord_core includes csv-core: no"
+fi
+if [[ "$csv_records_output" == *"csv v"* ]]; then
+  emit "no-default records-csv concord_core includes csv: yes"
+else
+  emit "no-default records-csv concord_core includes csv: no"
+fi
+if [[ "$csv_records_output" == *"csv-core v"* ]]; then
+  emit "no-default records-csv concord_core includes csv-core: yes"
+else
+  emit "no-default records-csv concord_core includes csv-core: no"
 fi
 emit "decision_rule_pr13: proceed if gating csv/csv-core meaningfully reduces no-default compile time or dependency count; otherwise document-and-accept"
 
@@ -192,6 +224,7 @@ run_cmd "perf feature tree" "${CARGO[@]}" tree --manifest-path perf/Cargo.toml -
 
 section "build timing"
 run_timed_cmd "cargo check concord_core --no-default-features" "${CARGO[@]}" check -p concord_core --no-default-features
+run_timed_cmd "cargo check concord_core --no-default-features --features records-csv" "${CARGO[@]}" check -p concord_core --no-default-features --features records-csv
 run_timed_cmd "cargo check concord_core --features json" "${CARGO[@]}" check -p concord_core --features json
 run_timed_cmd "cargo check concord_core --all-features" "${CARGO[@]}" check -p concord_core --all-features
 run_timed_cmd "cargo check concord_macros" "${CARGO[@]}" check -p concord_macros
