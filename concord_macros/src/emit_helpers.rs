@@ -310,7 +310,7 @@ mod tests {
 
     #[test]
     fn public_token_stream_forbidden_detects_secret_exposure_inside_nested_groups() {
-        let tokens = wrap_in_paren_groups(quote!(value.expose()), 2);
+        let tokens = wrap_in_paren_groups(quote!(value.expose_secret()), 2);
         let found = public_token_stream_forbidden(&tokens, 0)
             .expect("scanner should succeed")
             .expect("secret exposure should be detected");

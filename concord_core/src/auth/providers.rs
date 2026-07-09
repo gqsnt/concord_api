@@ -235,8 +235,8 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
             let mut headers = HeaderMap::new();
             let raw = format!(
                 "{}:{}",
-                self.client_id.expose(),
-                self.client_secret.expose()
+                self.client_id.expose_secret(),
+                self.client_secret.expose_secret()
             );
             let basic = format!("Basic {}", BASE64_STANDARD.encode(raw));
             headers.insert(

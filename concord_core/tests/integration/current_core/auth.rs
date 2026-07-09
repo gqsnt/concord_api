@@ -1891,7 +1891,7 @@ async fn oauth_client_credentials_valid_https_token_url_still_succeeds() {
         .await
         .expect("valid HTTPS token URL should succeed");
 
-    assert_eq!(token.token.expose(), "token-1");
+    assert_eq!(token.token.expose_secret(), "token-1");
 }
 
 #[cfg(feature = "json")]
@@ -1941,7 +1941,7 @@ async fn oauth_client_credentials_accepts_mixed_case_bearer_token_type() {
         .await
         .expect("mixed-case bearer token type should succeed");
 
-    assert_eq!(token.token.expose(), "token-1");
+    assert_eq!(token.token.expose_secret(), "token-1");
 }
 
 fn assert_auth_response_too_large(err: ApiClientError, limit: usize) {

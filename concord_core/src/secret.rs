@@ -14,7 +14,7 @@ impl SecretString {
 
     /// Explicit "escape hatch" used by generated code to materialize the secret.
     #[inline]
-    pub fn expose(&self) -> &str {
+    pub fn expose_secret(&self) -> &str {
         &self.0
     }
 }
@@ -68,5 +68,25 @@ impl<'de> Deserialize<'de> for SecretString {
         }
 
         deserializer.deserialize_string(SecretStringVisitor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SecretString;
+
+    #[test]
+    fn expose_secret_returns_raw_secret() {
+        let secret = SecretString::new("SECRET_SENTINEL");
+        assert_eq!(secret.expose_secret(), "SECRET_SENTINEL");
+    }
+
+    #[test]
+    fn debug_and_display_remain_redacted() {
+        let secret = SecretString::new("SECRET_SENTINEL");
+        assert_eq!(format!("{secret:?}"), "<secret>");
+        assert_eq!(format!("{secret}"), "<secret>");
+        assert!(!format!("{secret:?}").contains("SECRET_SENTINEL"));
+        assert!(!format!("{secret}").contains("SECRET_SENTINEL"));
     }
 }

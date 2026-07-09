@@ -39,7 +39,7 @@ impl CredentialMaterial for AccessToken {
 
 impl SecretCredential for AccessToken {
     fn secret_value(&self) -> &str {
-        self.token.expose()
+        self.token.expose_secret()
     }
 }
 
@@ -89,7 +89,7 @@ impl CredentialMaterial for ApiKey {}
 
 impl SecretCredential for ApiKey {
     fn secret_value(&self) -> &str {
-        self.value.expose()
+        self.value.expose_secret()
     }
 }
 

@@ -107,6 +107,23 @@ check_public_request_api_terms() {
   rm -f -- "$tmp"
 }
 
+check_public_secret_expose_terms() {
+  local tmp
+  tmp="$(mktemp)"
+  set +e
+  grep -RInE --exclude-dir=fail '\.expose[[:space:]]*\(' \
+    README.md docs concord_examples/src concord_macros/tests/trybuild >"$tmp"
+  local status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    echo "error: stale public SecretString::expose references found; use expose_secret() or keep legacy uses only in negative migration fixtures" >&2
+    cat "$tmp" >&2
+    rm -f -- "$tmp"
+    exit 1
+  fi
+  rm -f -- "$tmp"
+}
+
 check_public_dev_body_capture_terms() {
   local tmp
   tmp="$(mktemp)"
@@ -127,6 +144,7 @@ check_public_dev_body_capture_terms() {
 run_step "architecture boundary" bash ./scripts/check_architecture.sh
 run_step "public DSL terminology" check_public_dsl_terms
 run_step "public request API" check_public_request_api_terms
+run_step "public secret expose API" check_public_secret_expose_terms
 run_step "public dev body capture API" check_public_dev_body_capture_terms
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
@@ -137,9 +155,9 @@ run_step "clippy workspace all targets all features" "${CARGO[@]}" clippy --work
 
 # Coverage baseline captured with `cargo nextest list` after raw-response tests
 # were feature-gated:
-# - `--workspace`: 931 tests, including macro integration/generated filtered suites.
-# - `--workspace --all-features`: 953 tests, covering the all-features axis.
-# - `--workspace --all-targets`: 931 tests, including trybuild_current/sema/codegen.
+# - `--workspace`: 928 tests, including macro integration/generated filtered suites.
+# - `--workspace --all-features`: 955 tests, covering the all-features axis.
+# - `--workspace --all-targets`: 928 tests, including trybuild_current/sema/codegen.
 # Removed per-crate steps were exact subsets of these retained workspace runs.
 # Removed subset commands:
 # - nextest run -p concord_macros integration
@@ -151,7 +169,7 @@ run_step "clippy workspace all targets all features" "${CARGO[@]}" clippy --work
 # - nextest run -p concord_core --all-features
 # - nextest run -p concord_examples
 # - nextest run -p concord_examples --all-features
-run_nextest_count_guard "workspace tests" 926 "${CARGO[@]}" nextest run --workspace
-run_nextest_count_guard "workspace tests all features" 953 "${CARGO[@]}" nextest run --workspace --all-features
-run_nextest_count_guard "workspace all-target tests" 926 "${CARGO[@]}" nextest run --workspace --all-targets
+run_nextest_count_guard "workspace tests" 928 "${CARGO[@]}" nextest run --workspace
+run_nextest_count_guard "workspace tests all features" 955 "${CARGO[@]}" nextest run --workspace --all-features
+run_nextest_count_guard "workspace all-target tests" 928 "${CARGO[@]}" nextest run --workspace --all-targets
 run_step "rustdoc warnings denied" env RUSTDOCFLAGS="-D warnings" "${CARGO[@]}" doc --workspace --no-deps

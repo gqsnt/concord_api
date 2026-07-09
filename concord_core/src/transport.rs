@@ -521,7 +521,7 @@ pub(crate) fn materialize_transport_request_validated(
                 PendingAuthPlacement::Bearer,
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
-                let value = format!("Bearer {}", secret.expose());
+                let value = format!("Bearer {}", secret.expose_secret());
                 let value = HeaderValue::from_str(&value).map_err(|_| {
                     crate::auth::AuthError::new(
                         crate::auth::AuthErrorKind::UnsupportedScheme,
@@ -534,7 +534,7 @@ pub(crate) fn materialize_transport_request_validated(
                 PendingAuthPlacement::Header(name),
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
-                let value = HeaderValue::from_str(secret.expose()).map_err(|_| {
+                let value = HeaderValue::from_str(secret.expose_secret()).map_err(|_| {
                     crate::auth::AuthError::new(
                         crate::auth::AuthErrorKind::UnsupportedScheme,
                         "invalid auth header value",
@@ -546,7 +546,9 @@ pub(crate) fn materialize_transport_request_validated(
                 PendingAuthPlacement::Query(name),
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
-                req.url.query_pairs_mut().append_pair(name, secret.expose());
+                req.url
+                    .query_pairs_mut()
+                    .append_pair(name, secret.expose_secret());
             }
             (
                 PendingAuthPlacement::Basic,
@@ -554,7 +556,7 @@ pub(crate) fn materialize_transport_request_validated(
                     username, password, ..
                 },
             ) => {
-                let raw = format!("{}:{}", username.expose(), password.expose());
+                let raw = format!("{}:{}", username.expose_secret(), password.expose_secret());
                 let value = format!(
                     "Basic {}",
                     base64::engine::general_purpose::STANDARD.encode(raw)
