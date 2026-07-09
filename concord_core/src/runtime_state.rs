@@ -16,6 +16,7 @@ pub struct ClientRuntimeState {
     max_response_body_bytes: Option<usize>,
     max_stream_request_body_bytes: Option<usize>,
     max_stream_response_body_bytes: Option<usize>,
+    #[cfg(feature = "dangerous-dev-tools")]
     #[allow(deprecated)]
     dev_body_capture: Option<crate::runtime::DevBodyCaptureConfig>,
 }
@@ -39,6 +40,7 @@ impl ClientRuntimeState {
             max_response_body_bytes: config.max_response_body_bytes,
             max_stream_request_body_bytes: config.max_stream_request_body_bytes,
             max_stream_response_body_bytes: config.max_stream_response_body_bytes,
+            #[cfg(feature = "dangerous-dev-tools")]
             dev_body_capture: config.dev_body_capture,
         }
     }
@@ -113,6 +115,7 @@ impl ClientRuntimeState {
         self.max_stream_response_body_bytes
     }
 
+    #[cfg(feature = "dangerous-dev-tools")]
     #[allow(deprecated)]
     #[inline]
     pub fn dev_body_capture(&self) -> Option<&crate::runtime::DevBodyCaptureConfig> {

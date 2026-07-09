@@ -6,9 +6,9 @@ Concord keeps feature surfaces explicit and minimal. This document records the s
 
 | Crate | Default features | Optional features | Supported no-default build | Notes |
 | --- | --- | --- | --- | --- |
-| `concord_core` | `rate-limit-governor`, `records-csv`, `transport-reqwest` | `json`, `gzip`, `brotli`, `deflate`, `cookies`, `multipart`, `rate-limit-governor`, `records-csv`, `transport-reqwest` | yes | `json` keeps the built-in JSON/auth helpers available without reqwest. `records-csv` owns CSV record encode/decode support and the `csv`/`csv-core` dependencies; NDJSON records remain available without it. `transport-reqwest` owns `ReqwestTransport` and the reqwest transport codec features. `serde` and `serde_json` are always present in `concord_core`; `reqwest` is optional and only enters the build when `transport-reqwest` or a reqwest codec feature is enabled. When `rate-limit-governor` is off, the default limiter fails closed for non-empty declared plans and `NoopRateLimiter` is the explicit opt-out. |
+| `concord_core` | `rate-limit-governor`, `records-csv`, `transport-reqwest` | `json`, `gzip`, `brotli`, `deflate`, `cookies`, `multipart`, `rate-limit-governor`, `records-csv`, `transport-reqwest`, `dangerous-raw-response`, `dangerous-dev-tools` | yes | `json` keeps the built-in JSON/auth helpers available without reqwest. `records-csv` owns CSV record encode/decode support and the `csv`/`csv-core` dependencies; NDJSON records remain available without it. `transport-reqwest` owns `ReqwestTransport` and the reqwest transport codec features. `dangerous-raw-response` enables the raw-response escape hatch and `dangerous-dev-tools` enables the dev-body-capture configuration API; neither feature enables the escape hatch by itself. `serde` and `serde_json` are always present in `concord_core`; `reqwest` is optional and only enters the build when `transport-reqwest` or a reqwest codec feature is enabled. When `rate-limit-governor` is off, the default limiter fails closed for non-empty declared plans and `NoopRateLimiter` is the explicit opt-out. |
 | `concord_macros` | none | none | yes | Proc-macro crate. |
-| `concord_examples` | none | none | no | Compile-checked examples depend on `concord_core` with `json` enabled. |
+| `concord_examples` | none | `dangerous-raw-response`, `dangerous-dev-tools` | no | Compile-checked examples depend on `concord_core` with `json` enabled and forward the dangerous escape-hatch features for example-specific compile checks; neither feature is enabled by default. |
 
 ## Compile / Check Matrix
 
@@ -19,6 +19,7 @@ cargo check -p concord_core --no-default-features
 cargo check -p concord_core --no-default-features --features records-csv
 cargo check -p concord_core --no-default-features --features json
 cargo check -p concord_core --no-default-features --features transport-reqwest
+cargo check -p concord_core --no-default-features --features dangerous-dev-tools
 cargo check -p concord_core --no-default-features --features "transport-reqwest json"
 cargo check -p concord_core --all-features
 cargo test -p concord_core --no-default-features no_default_rate_limit
@@ -28,6 +29,7 @@ cargo check -p concord_macros
 cargo check -p concord_macros --all-features
 
 cargo check -p concord_examples --all-targets
+cargo check -p concord_examples --all-targets --features dangerous-dev-tools
 cargo check -p concord_examples --all-targets --all-features
 ```
 

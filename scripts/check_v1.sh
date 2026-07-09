@@ -107,9 +107,27 @@ check_public_request_api_terms() {
   rm -f -- "$tmp"
 }
 
+check_public_dev_body_capture_terms() {
+  local tmp
+  tmp="$(mktemp)"
+  set +e
+  grep -RInE 'DevBodyCaptureConfig|dev_body_capture[[:space:]]*\(' \
+    README.md docs/advanced_endpoints.md docs/design_invariants.md docs/errors.md docs/features.md docs/generated_client.md docs/quick_start.md concord_examples/src >"$tmp"
+  local status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    echo "error: stale public dev body capture terminology found; keep it behind dangerous-dev-tools and out of the normal API" >&2
+    cat "$tmp" >&2
+    rm -f -- "$tmp"
+    exit 1
+  fi
+  rm -f -- "$tmp"
+}
+
 run_step "architecture boundary" bash ./scripts/check_architecture.sh
 run_step "public DSL terminology" check_public_dsl_terms
 run_step "public request API" check_public_request_api_terms
+run_step "public dev body capture API" check_public_dev_body_capture_terms
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
 # Clippy is strict in the release gate; intentional exceptions must be narrow
@@ -133,7 +151,7 @@ run_step "clippy workspace all targets all features" "${CARGO[@]}" clippy --work
 # - nextest run -p concord_core --all-features
 # - nextest run -p concord_examples
 # - nextest run -p concord_examples --all-features
-run_nextest_count_guard "workspace tests" 931 "${CARGO[@]}" nextest run --workspace
+run_nextest_count_guard "workspace tests" 926 "${CARGO[@]}" nextest run --workspace
 run_nextest_count_guard "workspace tests all features" 953 "${CARGO[@]}" nextest run --workspace --all-features
-run_nextest_count_guard "workspace all-target tests" 931 "${CARGO[@]}" nextest run --workspace --all-targets
+run_nextest_count_guard "workspace all-target tests" 926 "${CARGO[@]}" nextest run --workspace --all-targets
 run_step "rustdoc warnings denied" env RUSTDOCFLAGS="-D warnings" "${CARGO[@]}" doc --workspace --no-deps

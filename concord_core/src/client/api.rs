@@ -268,6 +268,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             max_response_body_bytes: self.runtime_state.max_response_body_bytes(),
             max_stream_request_body_bytes: self.runtime_state.max_stream_request_body_bytes(),
             max_stream_response_body_bytes: self.runtime_state.max_stream_response_body_bytes(),
+            #[cfg(feature = "dangerous-dev-tools")]
             dev_body_capture: self.runtime_state.dev_body_capture().cloned(),
         };
         f(&mut config);

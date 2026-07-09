@@ -152,8 +152,11 @@ pub mod advanced {
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,
         RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy,
     };
+    #[cfg(feature = "dangerous-dev-tools")]
     #[allow(deprecated)]
-    pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, DevBodyCaptureConfig, RuntimeConfig};
+    pub use crate::runtime::DevBodyCaptureConfig;
+    #[allow(deprecated)]
+    pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{
         HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext, RuntimeHooks,
         TransportErrorHookContext,

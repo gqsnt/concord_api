@@ -115,6 +115,7 @@ run_check check -p concord_core --no-default-features --features records-csv
 run_check check -p concord_core --no-default-features --features json
 run_check check -p concord_core --no-default-features --features transport-reqwest
 run_check check -p concord_core --no-default-features --features dangerous-raw-response
+run_check check -p concord_core --no-default-features --features dangerous-dev-tools
 run_check check -p concord_core --no-default-features --features "transport-reqwest json"
 run_check check -p concord_core --all-features
 run_check test -p concord_core --no-default-features no_default_rate_limit
@@ -125,6 +126,7 @@ run_check check -p concord_macros --all-features
 
 run_check check -p concord_examples --all-targets
 run_check check -p concord_examples --all-targets --features dangerous-raw-response
+run_check check -p concord_examples --all-targets --features dangerous-dev-tools
 run_check check -p concord_examples --all-targets --all-features
 
 

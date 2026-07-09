@@ -1698,6 +1698,7 @@ async fn dev_body_capture_disabled_by_default() -> Result<(), ApiClientError> {
     Ok(())
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 #[allow(deprecated)]
 #[tokio::test]
 async fn dev_body_capture_writes_response_only_to_safe_file() -> Result<(), ApiClientError> {
@@ -1750,6 +1751,7 @@ async fn dev_body_capture_writes_response_only_to_safe_file() -> Result<(), ApiC
     Ok(())
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 #[allow(deprecated)]
 #[tokio::test]
 async fn dev_body_capture_skips_oversized_response() -> Result<(), ApiClientError> {
@@ -1781,6 +1783,7 @@ async fn dev_body_capture_skips_oversized_response() -> Result<(), ApiClientErro
     Ok(())
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 #[allow(deprecated)]
 #[tokio::test]
 async fn dev_body_capture_skips_protected_auth_response() -> Result<(), ApiClientError> {
@@ -1823,6 +1826,7 @@ async fn dev_body_capture_skips_protected_auth_response() -> Result<(), ApiClien
     Ok(())
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 #[allow(deprecated)]
 #[tokio::test]
 async fn debug_sink_body_free_when_dev_body_capture_enabled() -> Result<(), ApiClientError> {
@@ -1866,6 +1870,7 @@ async fn debug_sink_body_free_when_dev_body_capture_enabled() -> Result<(), ApiC
     Ok(())
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 #[allow(deprecated)]
 #[tokio::test]
 async fn runtime_hooks_body_free_when_dev_body_capture_enabled() -> Result<(), ApiClientError> {

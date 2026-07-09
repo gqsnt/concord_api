@@ -2,15 +2,23 @@ use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
 use crate::runtime_hooks::{NoopRuntimeHooks, RuntimeHooks};
-use bytes::Bytes;
-use http::{Method, StatusCode};
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+#[cfg(feature = "dangerous-dev-tools")]
+use bytes::Bytes;
+#[cfg(feature = "dangerous-dev-tools")]
+use http::{Method, StatusCode};
+#[cfg(feature = "dangerous-dev-tools")]
+use std::fs::{self, OpenOptions};
+#[cfg(feature = "dangerous-dev-tools")]
+use std::io::Write;
+#[cfg(feature = "dangerous-dev-tools")]
+use std::path::{Path, PathBuf};
+#[cfg(feature = "dangerous-dev-tools")]
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[cfg(feature = "dangerous-dev-tools")]
 static DEV_BODY_CAPTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
@@ -43,6 +51,7 @@ impl Default for DebugConfig {
     }
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 #[deprecated(
     note = "dev-only diagnostic body capture; disabled by default; may persist sensitive response bytes to local disk; do not use in production"
 )]
@@ -52,6 +61,7 @@ pub struct DevBodyCaptureConfig {
     pub(crate) max_bytes: usize,
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 #[allow(deprecated)]
 impl DevBodyCaptureConfig {
     pub const DEFAULT_MAX_BYTES: usize = 64 * 1024;
@@ -105,6 +115,7 @@ impl DevBodyCaptureConfig {
     }
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 fn sanitize_path_component(value: &str) -> String {
     let mut out = String::with_capacity(value.len().max(1));
     for ch in value.chars() {
@@ -117,6 +128,7 @@ fn sanitize_path_component(value: &str) -> String {
     if out.is_empty() { "_".to_string() } else { out }
 }
 
+#[cfg(feature = "dangerous-dev-tools")]
 fn safe_capture_path(dir: &Path, filename: &str) -> PathBuf {
     debug_assert!(!filename.contains('/') && !filename.contains('\\'));
     dir.join(filename)
@@ -134,6 +146,7 @@ pub struct RuntimeConfig {
     pub(crate) max_response_body_bytes: Option<usize>,
     pub(crate) max_stream_request_body_bytes: Option<usize>,
     pub(crate) max_stream_response_body_bytes: Option<usize>,
+    #[cfg(feature = "dangerous-dev-tools")]
     #[allow(deprecated)]
     pub(crate) dev_body_capture: Option<DevBodyCaptureConfig>,
 }
@@ -151,6 +164,7 @@ impl Default for RuntimeConfig {
             max_response_body_bytes: Some(16 * 1024 * 1024),
             max_stream_request_body_bytes: Some(16 * 1024 * 1024),
             max_stream_response_body_bytes: Some(16 * 1024 * 1024),
+            #[cfg(feature = "dangerous-dev-tools")]
             dev_body_capture: None,
         }
     }
@@ -174,6 +188,7 @@ impl RuntimeConfig {
         self
     }
 
+    #[cfg(feature = "dangerous-dev-tools")]
     #[deprecated(
         note = "dev-only diagnostic body capture; disabled by default; may persist sensitive response bytes to local disk; do not use in production"
     )]
@@ -284,6 +299,7 @@ mod tests {
         assert_eq!(cfg.max_stream_response_body_bytes, Some(16 * 1024 * 1024));
         assert_eq!(cfg.auth.max_retry_delay, Duration::from_secs(60));
         assert_eq!(cfg.max_rate_limit_cooldown, Duration::from_secs(60));
+        #[cfg(feature = "dangerous-dev-tools")]
         assert!(cfg.dev_body_capture.is_none());
 
         assert_eq!(Arc::strong_count(&cfg.hooks), 1);

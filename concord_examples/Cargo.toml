@@ -17,6 +17,7 @@ url.workspace = true
 
 [features]
 dangerous-raw-response = ["concord_core/dangerous-raw-response"]
+dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]
 
 
 [dev-dependencies]

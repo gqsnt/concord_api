@@ -45,7 +45,7 @@ Common configuration methods include:
 | `max_retry_delay` | `Duration::from_secs(60)` |
 | `max_rate_limit_cooldown` | `Duration::from_secs(60)` |
 | `max_response_body_bytes` | `Some(16 * 1024 * 1024)` |
-| `dev_body_capture` | disabled |
+| `dev_body_capture` | disabled, feature-gated behind `dangerous-dev-tools` |
 
 With `rate-limit-governor` enabled, the default rate limiter enforces declared plans. With `default-features = false`, the default rate limiter fails closed for non-empty declared plans so they do not disappear silently. Empty plans still succeed. `NoopRateLimiter` remains an explicit opt-out for callers that intentionally want no enforcement.
 
@@ -89,9 +89,11 @@ Reserved auth names are structural, not best-effort. Query-auth names are reject
 
 ## Dev Body Capture
 
+`dangerous-dev-tools` enables the deprecated dev body capture configuration API, but it does not turn capture on by itself.
+
 Live request and response body debug is not supported. `DebugSink`, stderr debug output, and runtime hooks never receive body bytes.
 
-For local generated-client debugging only, Concord exposes deprecated `DevBodyCaptureConfig` through `RuntimeConfig::dev_body_capture(...)`. It is deprecated, disabled by default, dev-only, and local-file-only. It writes raw selected response bytes to local disk with no redaction. It never captures request bodies, and it skips protected auth-bearing requests and auth endpoint traffic by default. `max_bytes` is a capture-size filter, not redaction and not a truncation guarantee.
+For local generated-client debugging only, Concord exposes deprecated `DevBodyCaptureConfig` through `RuntimeConfig::dev_body_capture(...)` behind `dangerous-dev-tools`. It is deprecated, disabled by default, dev-only, and local-file-only. It writes raw selected response bytes to local disk with no redaction. It never captures request bodies, and it skips protected auth-bearing requests and auth endpoint traffic by default. `max_bytes` is a capture-size filter, not redaction and not a truncation guarantee.
 
 Dev body capture is separate from debug sinks, runtime hooks, stderr debug output, public errors, retry metadata, and rate-limit metadata. Do not enable it in production, CI logs, CI artifacts, shared directories, user-visible support bundles, or any environment without controlled local filesystem permissions. Callers are responsible for local directory permissions, retention, cleanup, and artifact exclusion.
 

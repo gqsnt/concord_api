@@ -491,6 +491,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             AttemptTransportSuccess::Buffered(resp) => resp,
             _ => unreachable!(),
         };
+        #[cfg(feature = "dangerous-dev-tools")]
         self.maybe_capture_dev_response_body(&plan, &resp);
         self.debug_planned_response(dbg, &resp, resp.url.as_str());
         Self::decode_planned_response::<C>(&plan, resp, ctx.clone())
@@ -536,6 +537,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             AttemptTransportSuccess::Buffered(resp) => resp,
             _ => unreachable!(),
         };
+        #[cfg(feature = "dangerous-dev-tools")]
         self.maybe_capture_dev_response_body(&plan, &resp);
         self.debug_planned_response(dbg, &resp, resp.url.as_str());
         Ok(resp)
@@ -955,6 +957,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
+    #[cfg(feature = "dangerous-dev-tools")]
     #[allow(deprecated)]
     fn maybe_capture_dev_response_body(
         &self,
