@@ -1,4 +1,4 @@
-error[E0609]: no field `offset` on type `concord_core::internal::CursorPagination`
+error[E0609]: no field `offset` on type `concord_core::prelude::CursorPagination`
   --> tests/trybuild/fail/sema/pagination/pagination_unknown_field_cursor.rs:16:13
    |
 16 |             offset = count,
@@ -6,7 +6,7 @@ error[E0609]: no field `offset` on type `concord_core::internal::CursorPaginatio
    |
    = note: available fields are: `cursor`, `per_page`, `send_cursor_on_first`, `stop_when_cursor_missing`
 
-error[E0609]: no field `offset` on type `&concord_core::internal::CursorPagination`
+error[E0609]: no field `offset` on type `&concord_core::prelude::CursorPagination`
   --> tests/trybuild/fail/sema/pagination/pagination_unknown_field_cursor.rs:16:13
    |
 16 |             offset = count,

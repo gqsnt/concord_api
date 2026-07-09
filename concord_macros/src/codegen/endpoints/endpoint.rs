@@ -348,7 +348,7 @@ fn emit_endpoint_plan_route_policy(
         quote! {
             {
                 let __prev = policy.layer();
-                policy.set_layer(::concord_core::internal::PolicyLayer::PrefixPath);
+                policy.set_layer(::concord_core::__private::PolicyLayer::PrefixPath);
                 #scope_policy_apply
                 policy.set_layer(__prev);
             }
@@ -362,7 +362,7 @@ fn emit_endpoint_plan_route_policy(
         #path_layer_route_ops
         #endpoint_route_apply
         route.host().validate(ctx_err.clone())?;
-        let __resolved_route = ::concord_core::internal::ResolvedRoute {
+        let __resolved_route = ::concord_core::__private::ResolvedRoute {
             scheme: <super::#cx_ty as ::concord_core::prelude::ClientContext>::SCHEME,
             host: route.host().join(<super::#cx_ty as ::concord_core::prelude::ClientContext>::DOMAIN),
             path: route.path().as_str().to_string(),
@@ -372,11 +372,11 @@ fn emit_endpoint_plan_route_policy(
         #( #scope_policy_ops )*
         {
             let __prev = policy.layer();
-            policy.set_layer(::concord_core::internal::PolicyLayer::Endpoint);
+            policy.set_layer(::concord_core::__private::PolicyLayer::Endpoint);
             #endpoint_policy_apply
             policy.set_layer(__prev);
         }
-        policy.set_layer(::concord_core::internal::PolicyLayer::Runtime);
+        policy.set_layer(::concord_core::__private::PolicyLayer::Runtime);
         if ::http::Method::#method != ::http::Method::HEAD
             && !#response_no_content
             && let ::core::option::Option::Some(__accept) = #response_accept
@@ -385,7 +385,7 @@ fn emit_endpoint_plan_route_policy(
         }
         let (headers, query, timeout, retry, mut rate_limit) = policy.into_parts();
         rate_limit.canonicalize();
-        let __resolved_policy = ::concord_core::internal::ResolvedPolicy {
+        let __resolved_policy = ::concord_core::__private::ResolvedPolicy {
             headers,
             query,
             timeout,
@@ -401,7 +401,7 @@ fn emit_endpoint_pagination_plan(ep: &ResolvedEndpoint) -> TokenStream2 {
     if ep.paginate.is_some() {
         quote! {
             let __pagination_plan =
-                ::core::option::Option::Some(::concord_core::internal::PaginationMarker);
+                ::core::option::Option::Some(::concord_core::__private::PaginationMarker);
         }
     } else {
         quote! {
@@ -461,7 +461,7 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
                 )?;
             let __body_plan = __prepared_request_entity.body_plan;
             let __request_args = __prepared_request_entity.args;
-            let __replayability = ::concord_core::internal::Replayability::Replayable;
+            let __replayability = ::concord_core::__private::Replayability::Replayable;
         })
     }
 }
@@ -508,9 +508,9 @@ fn endpoint_plan_impl(
         #route_policy
         #pagination_plan
         #body_plan
-        ::core::result::Result::Ok(::concord_core::internal::RequestPlan {
-            endpoint: ::concord_core::internal::EndpointPlan {
-                meta: ::concord_core::internal::EndpointMeta {
+        ::core::result::Result::Ok(::concord_core::__private::RequestPlan {
+            endpoint: ::concord_core::__private::EndpointPlan {
+                meta: ::concord_core::__private::EndpointMeta {
                     name: #endpoint_name,
                     method: ::http::Method::#method,
                     idempotent: #idempotent,
@@ -523,7 +523,7 @@ fn endpoint_plan_impl(
                 pagination: __pagination_plan,
             },
             args: __request_args,
-            overrides: ::concord_core::internal::RequestOverrides::default(),
+            overrides: ::concord_core::__private::RequestOverrides::default(),
             replayability: __replayability,
         })
     };
@@ -532,8 +532,8 @@ fn endpoint_plan_impl(
             impl ::concord_core::prelude::IntoEndpointPlan<super::#cx_ty> for #ty_name {
                 fn into_plan(
                     self,
-                    plan_ctx: &::concord_core::internal::ClientPlanContext<'_, super::#cx_ty>,
-                ) -> ::core::result::Result<::concord_core::internal::RequestPlan, ::concord_core::prelude::ApiClientError> {
+                    plan_ctx: &::concord_core::__private::ClientPlanContext<'_, super::#cx_ty>,
+                ) -> ::core::result::Result<::concord_core::__private::RequestPlan, ::concord_core::prelude::ApiClientError> {
                     #plan_body
                 }
             }
@@ -543,8 +543,8 @@ fn endpoint_plan_impl(
             impl ::concord_core::prelude::ReusableEndpoint<super::#cx_ty> for #ty_name {
                 fn plan(
                     &self,
-                    plan_ctx: &::concord_core::internal::ClientPlanContext<'_, super::#cx_ty>,
-                ) -> ::core::result::Result<::concord_core::internal::RequestPlan, ::concord_core::prelude::ApiClientError> {
+                    plan_ctx: &::concord_core::__private::ClientPlanContext<'_, super::#cx_ty>,
+                ) -> ::core::result::Result<::concord_core::__private::RequestPlan, ::concord_core::prelude::ApiClientError> {
                     #plan_body
                 }
             }
@@ -578,7 +578,7 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, ty_name: &Ident, cx_ty: &Ide
     quote! {
         fn execute<'a, T>(
             client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
-            plan: ::concord_core::internal::RequestPlan,
+            plan: ::concord_core::__private::RequestPlan,
         ) -> ::core::pin::Pin<
             ::std::boxed::Box<
                 dyn ::core::future::Future<
@@ -611,10 +611,10 @@ fn endpoint_response_terminal_impl(
 
     let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
     quote! {
-        impl ::concord_core::internal::ResponseTerminalEndpoint<super::#cx_ty> for #ty_name {
+        impl ::concord_core::__private::ResponseTerminalEndpoint<super::#cx_ty> for #ty_name {
             fn execute_response<'a, T>(
                 client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
-                plan: ::concord_core::internal::RequestPlan,
+                plan: ::concord_core::__private::RequestPlan,
             ) -> ::core::pin::Pin<
                 ::std::boxed::Box<
                     dyn ::core::future::Future<
@@ -628,7 +628,7 @@ fn endpoint_response_terminal_impl(
             where
                 T: ::concord_core::advanced::Transport + 'a,
             {
-                <#response_entity_adapter_ty as ::concord_core::internal::ResponseEntityWithMeta>::execute_with_meta(
+                <#response_entity_adapter_ty as ::concord_core::__private::ResponseEntityWithMeta>::execute_with_meta(
                     client,
                     plan,
                 )

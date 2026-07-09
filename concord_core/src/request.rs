@@ -1,3 +1,4 @@
+use crate::advanced::DecodedResponse;
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{
@@ -13,7 +14,6 @@ use crate::record::RecordStream;
 use crate::sse::SseStream;
 use crate::stream_response::StreamResponse;
 use crate::timeout::TimeoutOverride;
-use crate::transport::DecodedResponse;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::future::{Future, IntoFuture};
@@ -161,7 +161,7 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>, T: crate::transport::Transp
     #[cfg(feature = "dangerous-raw-response")]
     pub async fn execute_raw_response(
         self,
-    ) -> Result<crate::transport::BuiltResponse, ApiClientError> {
+    ) -> Result<crate::dangerous::BuiltResponse, ApiClientError> {
         let client = self.client;
         let plan = self.request_plan()?;
         client.execute_plan_raw(plan).await

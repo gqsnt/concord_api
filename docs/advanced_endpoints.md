@@ -33,7 +33,7 @@ let items = api
 
 The `.paginate(...)` builder is available only for endpoint structs generated from DSL endpoints that declare `paginate ...`, and it requires an explicit `PaginationTermination`.
 
-Use `#[cfg(feature = "dangerous-raw-response")]` with `.execute_raw_response()` when a test or diagnostic needs the classified raw response before endpoint decoding. It still enforces the same bounded response-body limit as decoded execution, so oversized responses fail before raw body material is returned.
+Use `#[cfg(feature = "dangerous-raw-response")]` with `concord_core::dangerous::BuiltResponse` and `.execute_raw_response()` when a test or diagnostic needs the classified raw response before endpoint decoding. It still enforces the same bounded response-body limit as decoded execution, so oversized responses fail before raw body material is returned.
 
 Raw execution still applies logical request construction, auth collision validation, rate-limit acquisition, transport materialization, transport send, response classification, hook observation, auth rejection handling, and retry.
 

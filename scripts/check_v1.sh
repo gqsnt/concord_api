@@ -129,7 +129,8 @@ check_public_dev_body_capture_terms() {
   tmp="$(mktemp)"
   set +e
   grep -RInE 'DevBodyCaptureConfig|dev_body_capture[[:space:]]*\(' \
-    README.md docs/advanced_endpoints.md docs/design_invariants.md docs/errors.md docs/features.md docs/generated_client.md docs/quick_start.md concord_examples/src >"$tmp"
+    README.md docs/advanced_endpoints.md docs/customization.md docs/design_invariants.md docs/errors.md docs/features.md docs/generated_client.md docs/quick_start.md docs/runtime_config.md concord_examples/src \
+    | grep -vE 'dangerous::DevBodyCaptureConfig|dangerous-dev-tools' >"$tmp"
   local status=$?
   set -e
   if [[ "$status" -eq 0 ]]; then
@@ -153,11 +154,11 @@ run_step "format check" "${CARGO[@]}" fmt --check
 run_step "clippy workspace all targets" "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
 run_step "clippy workspace all targets all features" "${CARGO[@]}" clippy --workspace --all-targets --all-features -- -D warnings
 
-# Coverage baseline captured with `cargo nextest list` after raw-response tests
-# were feature-gated:
-# - `--workspace`: 928 tests, including macro integration/generated filtered suites.
+# Coverage baseline captured with `cargo nextest list` after the V1 surface
+# split and dangerous feature gates:
+# - `--workspace`: 926 tests, including macro integration/generated filtered suites.
 # - `--workspace --all-features`: 955 tests, covering the all-features axis.
-# - `--workspace --all-targets`: 928 tests, including trybuild_current/sema/codegen.
+# - `--workspace --all-targets`: 926 tests, including trybuild_current/sema/codegen.
 # Removed per-crate steps were exact subsets of these retained workspace runs.
 # Removed subset commands:
 # - nextest run -p concord_macros integration
@@ -169,7 +170,7 @@ run_step "clippy workspace all targets all features" "${CARGO[@]}" clippy --work
 # - nextest run -p concord_core --all-features
 # - nextest run -p concord_examples
 # - nextest run -p concord_examples --all-features
-run_nextest_count_guard "workspace tests" 928 "${CARGO[@]}" nextest run --workspace
+run_nextest_count_guard "workspace tests" 926 "${CARGO[@]}" nextest run --workspace
 run_nextest_count_guard "workspace tests all features" 955 "${CARGO[@]}" nextest run --workspace --all-features
-run_nextest_count_guard "workspace all-target tests" 928 "${CARGO[@]}" nextest run --workspace --all-targets
+run_nextest_count_guard "workspace all-target tests" 926 "${CARGO[@]}" nextest run --workspace --all-targets
 run_step "rustdoc warnings denied" env RUSTDOCFLAGS="-D warnings" "${CARGO[@]}" doc --workspace --no-deps

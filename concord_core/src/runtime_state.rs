@@ -18,7 +18,7 @@ pub struct ClientRuntimeState {
     max_stream_response_body_bytes: Option<usize>,
     #[cfg(feature = "dangerous-dev-tools")]
     #[allow(deprecated)]
-    dev_body_capture: Option<crate::runtime::DevBodyCaptureConfig>,
+    dev_body_capture: Option<crate::dangerous::DevBodyCaptureConfig>,
 }
 
 impl Default for ClientRuntimeState {
@@ -118,7 +118,7 @@ impl ClientRuntimeState {
     #[cfg(feature = "dangerous-dev-tools")]
     #[allow(deprecated)]
     #[inline]
-    pub fn dev_body_capture(&self) -> Option<&crate::runtime::DevBodyCaptureConfig> {
+    pub fn dev_body_capture(&self) -> Option<&crate::dangerous::DevBodyCaptureConfig> {
         self.dev_body_capture.as_ref()
     }
 

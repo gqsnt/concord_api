@@ -137,7 +137,7 @@ let user = response.into_value();
 
 ## Dangerous Raw Response
 
-`#[cfg(feature = "dangerous-raw-response")]` enables `.execute_raw_response()`, which returns the classified raw response before endpoint decoding. It still observes the configured response-body limit.
+`#[cfg(feature = "dangerous-raw-response")]` enables `concord_core::dangerous::BuiltResponse` and `.execute_raw_response()`, which returns the classified raw response before endpoint decoding. It still observes the configured response-body limit.
 
 ```rust
 #[cfg(feature = "dangerous-raw-response")]

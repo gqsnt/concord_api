@@ -32,7 +32,7 @@ fn generated_policy_materializes_resolved_policy() {
         &out,
         &[
             "let mut policy = < super :: PolicyPlanApiCx as :: concord_core :: prelude :: ClientContext > :: base_policy",
-            "policy . set_layer (:: concord_core :: internal :: PolicyLayer :: Endpoint)",
+            "policy . set_layer (:: concord_core :: __private :: PolicyLayer :: Endpoint)",
             "policy.set_query(\"q\"",
             "policy.insert_header",
             "HeaderName :: from_bytes (\"X-Endpoint\" . as_bytes ())",
@@ -41,7 +41,7 @@ fn generated_policy_materializes_resolved_policy() {
             "policy.ensure_accept",
             "let (headers , query , timeout , retry , mut rate_limit) = policy.into_parts()",
             "rate_limit.canonicalize()",
-            "let __resolved_policy = :: concord_core :: internal :: ResolvedPolicy",
+            "let __resolved_policy = :: concord_core :: __private :: ResolvedPolicy",
             "auth : __auth_plan",
         ],
     );

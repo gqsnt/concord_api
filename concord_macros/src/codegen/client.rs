@@ -96,7 +96,7 @@ fn emit_client_auth_state(resolved_api: &ResolvedApi, auth_state_ty: &Ident, cx_
         let name = &c.name;
         let provider_ty = emit_auth_provider_ty(&c.kind);
         quote! {
-            pub(crate) #name: ::std::sync::Arc<::concord_core::internal::CredentialSlot<#cx_ty, #provider_ty>>
+            pub(crate) #name: ::std::sync::Arc<::concord_core::__private::CredentialSlot<#cx_ty, #provider_ty>>
         }
     });
 
@@ -111,11 +111,11 @@ fn emit_client_auth_state(resolved_api: &ResolvedApi, auth_state_ty: &Ident, cx_
 fn emit_client_auth_state_init(resolved_api: &ResolvedApi, auth_state_ty: &Ident) -> (TokenStream2, TokenStream2) {
     if resolved_api.client_auth_credentials.is_empty() {
         return (
-            quote! { ::concord_core::internal::NoAuthState },
+            quote! { ::concord_core::__private::NoAuthState },
             quote! {
                 let _ = vars;
                 let _ = auth;
-                ::concord_core::internal::NoAuthState
+                ::concord_core::__private::NoAuthState
             },
         );
     }
@@ -127,13 +127,13 @@ fn emit_client_auth_state_init(resolved_api: &ResolvedApi, auth_state_ty: &Ident
         let provider = emit_auth_provider_init(&client_ns, c);
         match &c.kind {
             AuthCredentialKindIr::OAuth2ClientCredentials { .. } => quote! {
-                #name: ::std::sync::Arc::new(::concord_core::internal::CredentialSlot::new_result(
+                #name: ::std::sync::Arc::new(::concord_core::__private::CredentialSlot::new_result(
                     ::concord_core::advanced::CredentialId::new(#client_ns, #name_lit),
                     #provider,
                 ))
             },
             _ => quote! {
-                #name: ::std::sync::Arc::new(::concord_core::internal::CredentialSlot::new(#provider))
+                #name: ::std::sync::Arc::new(::concord_core::__private::CredentialSlot::new(#provider))
             },
         }
     });
@@ -488,7 +488,7 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
                 vars: &Self::Vars,
                 __concord_auth_vars: &Self::AuthVars,
                 ctx: &::concord_core::error::ErrorContext,
-            ) -> ::core::result::Result<::concord_core::internal::Policy, ::concord_core::prelude::ApiClientError> {
+            ) -> ::core::result::Result<::concord_core::__private::Policy, ::concord_core::prelude::ApiClientError> {
                 let _ = __concord_auth_vars;
                 #base_policy
             }
@@ -520,7 +520,7 @@ fn emit_policy_fn_base(policy: &PolicyBlocksResolved) -> TokenStream2 {
     }
 
     quote! {
-        let mut policy = ::concord_core::internal::Policy::new();
+        let mut policy = ::concord_core::__private::Policy::new();
         let ctx = ctx.clone();
         #[allow(unused_variables)]
         let cx = vars;

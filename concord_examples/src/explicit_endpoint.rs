@@ -1,6 +1,6 @@
 use crate::minimal::{MinimalApi, User, endpoints};
 #[cfg(feature = "dangerous-raw-response")]
-use concord_core::advanced::BuiltResponse;
+use concord_core::dangerous::BuiltResponse;
 use concord_core::prelude::*;
 
 pub async fn explicit_endpoint_example(api: MinimalApi) -> Result<User, ApiClientError> {

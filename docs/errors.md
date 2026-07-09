@@ -23,7 +23,7 @@ Concord runtime failures surface as `ApiClientError`. The enum is `non_exhaustiv
 
 ## `execute_raw_response()`
 
-`#[cfg(feature = "dangerous-raw-response")]` enables `execute_raw_response()`. It skips endpoint decode. It still performs logical request construction, auth collision validation, rate-limit acquire and observation, transport send, retry, response classification, auth rejection handling, and runtime response-body limits.
+`#[cfg(feature = "dangerous-raw-response")]` enables `concord_core::dangerous::BuiltResponse` and `execute_raw_response()`. It skips endpoint decode. It still performs logical request construction, auth collision validation, rate-limit acquire and observation, transport send, retry, response classification, auth rejection handling, and runtime response-body limits.
 
 Consequences:
 

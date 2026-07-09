@@ -27,7 +27,8 @@ mod timeout;
 pub mod transport;
 mod types;
 
-pub mod internal {
+#[doc(hidden)]
+pub mod __private {
     #[doc(hidden)]
     pub use crate::auth::{CredentialSlot, NoAuthState};
     #[doc(hidden)]
@@ -68,6 +69,10 @@ pub mod internal {
     pub use crate::retry::RetrySetting;
     pub use crate::sse::{JsonSse, SseCodec, SseEvent, SseRawEvent, SseStream};
 }
+#[doc(hidden)]
+#[deprecated(note = "use concord_core::__private for generated-code internals")]
+pub use self::__private as internal;
+
 pub mod prelude {
     pub use crate::auth::{AccessToken, ApiKey, BasicCredential};
     pub use crate::client::{ApiClient, ClientContext};
@@ -152,9 +157,6 @@ pub mod advanced {
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,
         RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy,
     };
-    #[cfg(feature = "dangerous-dev-tools")]
-    #[allow(deprecated)]
-    pub use crate::runtime::DevBodyCaptureConfig;
     #[allow(deprecated)]
     pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{
@@ -168,11 +170,19 @@ pub mod advanced {
     #[cfg(feature = "transport-reqwest")]
     pub use crate::transport::ReqwestTransport;
     pub use crate::transport::{
-        BuiltRequest, BuiltResponse, DecodedResponse, DefaultTransport, DefaultTransportMarker,
-        RequestMeta, Transport, TransportAuth, TransportBody, TransportByteStream, TransportError,
-        TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
+        DecodedResponse, DefaultTransport, DefaultTransportMarker, RequestMeta, Transport,
+        TransportAuth, TransportBody, TransportByteStream, TransportError, TransportErrorKind,
+        TransportRequest, TransportRequestBody, TransportResponse,
     };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,
     };
+}
+
+pub mod dangerous {
+    #[cfg(feature = "dangerous-dev-tools")]
+    #[allow(deprecated)]
+    pub use crate::runtime::DevBodyCaptureConfig;
+    #[cfg(feature = "dangerous-raw-response")]
+    pub use crate::transport::BuiltResponse;
 }

@@ -17,10 +17,12 @@ mod query_auth_redaction {
         TransportErrorHookContext, TransportRequest, TransportResponse, apply_basic_credential,
         apply_certificate_credential, apply_secret_credential,
     };
-    use concord_core::advanced::{BuiltResponse, PreparedAuthCredential, RateLimitPlan};
     #[cfg(feature = "json")]
     use concord_core::advanced::{CredentialProvider, OAuth2ClientCredentialsProvider};
+    use concord_core::advanced::{PreparedAuthCredential, RateLimitPlan};
     use concord_core::auth::RequestExtensions;
+    #[cfg(feature = "dangerous-raw-response")]
+    use concord_core::dangerous::BuiltResponse;
     use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
     use concord_core::prelude::{
         AccessToken, ApiClient, ApiClientError, ApiKey, BasicCredential, ClientContext, DebugLevel,
@@ -448,6 +450,7 @@ mod query_auth_redaction {
         Ok((output, sent.requests().await))
     }
 
+    #[cfg(feature = "dangerous-raw-response")]
     #[test]
     fn response_header_debug_redacts_sensitive_names_case_insensitively() {
         let headers = sensitive_header_map();
@@ -497,6 +500,7 @@ mod query_auth_redaction {
         }
     }
 
+    #[cfg(feature = "dangerous-raw-response")]
     #[test]
     fn built_and_decoded_response_debug_redacts_sensitive_headers() {
         let meta = RequestMeta {

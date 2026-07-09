@@ -1,4 +1,4 @@
-pub mod config;
+mod config;
 
 #[allow(deprecated)]
 pub use config::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};

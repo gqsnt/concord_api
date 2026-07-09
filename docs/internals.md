@@ -20,6 +20,8 @@ Code generation consumes resolved semantic data. Parser structures stay on the p
 
 Profile use names are preserved as endpoint documentation metadata even though profile semantics are lowered into ordinary auth, retry, and rate-limit policy data.
 
+Generated client code targets `concord_core::__private` for plan and plumbing internals. `concord_core::internal` remains a deprecated hidden compatibility alias during the transition, but it is not the intended user import path.
+
 ## Runtime Pipeline
 
 ```text

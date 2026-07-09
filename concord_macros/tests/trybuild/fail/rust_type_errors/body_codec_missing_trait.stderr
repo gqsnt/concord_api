@@ -21,18 +21,18 @@ help: the following other types implement trait `BodyCodec`
    |   impl BodyCodec for NoContent {
    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `NoContent`
    |
+  ::: $WORKSPACE/concord_core/src/codec/text.rs
+   |
+   | / impl<T> BodyCodec for Text<T>
+   | | where
+   | |     T: AsRef<str> + Send + Sync + 'static,
+   | |__________________________________________^ `Text<T>`
+   |
   ::: $WORKSPACE/concord_core/src/codec/json.rs
    |
    | / impl<T> BodyCodec for Json<T>
    | | where
    | |     T: Serialize + Send + Sync + 'static,
    | |_________________________________________^ `concord_core::prelude::Json<T>`
-   |
-  ::: $WORKSPACE/concord_core/src/codec/text.rs
-   |
-   | / impl<T> BodyCodec for Text<T>
-   | | where
-   | |     T: AsRef<str> + Send + Sync + 'static,
-   | |__________________________________________^ `concord_core::prelude::Text<T>`
    = note: required for `EncodedRequest<MissingBody<CreateUser>>` to implement `RequestEntity`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

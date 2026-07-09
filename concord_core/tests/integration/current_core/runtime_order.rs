@@ -1717,7 +1717,7 @@ async fn dev_body_capture_writes_response_only_to_safe_file() -> Result<(), ApiC
     client.set_debug_level(DebugLevel::VV);
     client.configure(|cfg| {
         cfg.dev_body_capture(
-            concord_core::advanced::DevBodyCaptureConfig::response_dir(&dir).max_bytes(1024),
+            concord_core::dangerous::DevBodyCaptureConfig::response_dir(&dir).max_bytes(1024),
         );
     });
 
@@ -1769,7 +1769,7 @@ async fn dev_body_capture_skips_oversized_response() -> Result<(), ApiClientErro
     client.set_debug_level(DebugLevel::VV);
     client.configure(|cfg| {
         cfg.dev_body_capture(
-            concord_core::advanced::DevBodyCaptureConfig::response_dir(&dir).max_bytes(8),
+            concord_core::dangerous::DevBodyCaptureConfig::response_dir(&dir).max_bytes(8),
         );
     });
 
@@ -1803,7 +1803,7 @@ async fn dev_body_capture_skips_protected_auth_response() -> Result<(), ApiClien
         transport,
     );
     client.configure(|cfg| {
-        cfg.dev_body_capture(concord_core::advanced::DevBodyCaptureConfig::response_dir(
+        cfg.dev_body_capture(concord_core::dangerous::DevBodyCaptureConfig::response_dir(
             &dir,
         ));
     });
@@ -1844,7 +1844,7 @@ async fn debug_sink_body_free_when_dev_body_capture_enabled() -> Result<(), ApiC
     client.set_debug_level(DebugLevel::VV);
     client.configure(|cfg| {
         cfg.dev_body_capture(
-            concord_core::advanced::DevBodyCaptureConfig::response_dir(&dir).max_bytes(1024),
+            concord_core::dangerous::DevBodyCaptureConfig::response_dir(&dir).max_bytes(1024),
         );
     });
 
@@ -1886,7 +1886,7 @@ async fn runtime_hooks_body_free_when_dev_body_capture_enabled() -> Result<(), A
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
     client.configure(|cfg| {
         cfg.dev_body_capture(
-            concord_core::advanced::DevBodyCaptureConfig::response_dir(&dir).max_bytes(1024),
+            concord_core::dangerous::DevBodyCaptureConfig::response_dir(&dir).max_bytes(1024),
         );
     });
 

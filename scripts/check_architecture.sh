@@ -110,11 +110,32 @@ if "${RG[@]}" 'crate::ast|Raw(Api|Ast|Client|Scope|Endpoint|Item)|NormApiTree' c
   fail_with_matches "concord_macros codegen must not import raw AST or normalized parser tree types." "$codegen_refs"
 fi
 
+section "generated-code private surface fence"
+generated_private_refs="$tmpdir/generated_private.refs"
+if ! "${RG[@]}" '__private::' concord_macros/src/codegen >/dev/null 2>&1; then
+  fail "concord_macros codegen must target concord_core::__private for generated-only internals."
+fi
+if "${RG[@]}" '::concord_core::internal::' concord_macros/src/codegen >"$generated_private_refs" 2>/dev/null; then
+  fail_with_matches "concord_macros codegen must not emit concord_core::internal for generated-only internals." "$generated_private_refs"
+fi
+
 section "macro pagination runtime construction fence"
 macro_pagination_runtime_refs="$tmpdir/macro_pagination_runtime.refs"
 if "${RG[@]}" 'SingleObjectPaginationRuntimeAdapter|PaginationRuntimeAdapter|EndpointPagination\s*<' \
   concord_macros/src/codegen >"$macro_pagination_runtime_refs" 2>/dev/null; then
   fail_with_matches "concord_macros codegen must not construct pagination runtimes directly." "$macro_pagination_runtime_refs"
+fi
+
+section "dangerous surface feature gate fence"
+dangerous_surface_refs="$tmpdir/dangerous_surface.refs"
+if ! "${RG[@]}" 'pub mod dangerous' concord_core/src/lib.rs >/dev/null 2>&1; then
+  fail "concord_core/src/lib.rs must expose a dangerous surface module."
+fi
+if ! "${RG[@]}" '#\[cfg\(feature = "dangerous-raw-response"\)\]' concord_core/src/lib.rs >/dev/null 2>&1; then
+  fail "concord_core/src/lib.rs must gate raw-response exports behind dangerous-raw-response."
+fi
+if ! "${RG[@]}" '#\[cfg\(feature = "dangerous-dev-tools"\)\]' concord_core/src/lib.rs >/dev/null 2>&1; then
+  fail "concord_core/src/lib.rs must gate dev-tool exports behind dangerous-dev-tools."
 fi
 
 section "macro request body construction fence"
