@@ -6,6 +6,8 @@ This page describes the implementation model for maintainers.
 
 Maintainers should read `design_invariants.md` before changing DSL syntax, semantic resolution, code generation, or runtime pipeline behavior.
 
+Maintain the consumer-facing safety boundary described in [Security Model](security_model.md) when changing public surfaces or documentation.
+
 ## Compiler Pipeline
 
 ```text

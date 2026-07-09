@@ -2,6 +2,8 @@
 
 The generated client is facade-first. Normal callers construct the client, navigate scopes with methods, call an endpoint method, optionally set request parameters, and then await or execute the pending request.
 
+See [Security Model](security_model.md) for the boundary between safe generated-client use, advanced extension points, and dangerous escape hatches.
+
 ## Construct A Client
 
 Clients with no required variables use `new()`.

@@ -15,6 +15,7 @@ Concord is a Rust API-tree DSL and contract compiler that generates a facade-fir
 - [Retry And Rate Limit](retry_and_rate_limit.md)
 - [Feature Matrix](features.md)
 - [Runtime Config](runtime_config.md)
+- [Security Model](security_model.md)
 - [Public Errors](errors.md)
 - [Advanced Endpoints](advanced_endpoints.md)
 - [Test Ownership](test_ownership.md)

@@ -158,12 +158,48 @@ check_generated_rustdoc_terms() {
   rm -f -- "$tmp"
 }
 
+check_security_model_doc() {
+  if [[ ! -f docs/security_model.md ]]; then
+    echo "error: docs/security_model.md is missing" >&2
+    exit 1
+  fi
+
+  if ! grep -qF 'Security Model](docs/security_model.md)' README.md; then
+    echo "error: README.md does not link to docs/security_model.md" >&2
+    exit 1
+  fi
+
+  local required_phrase
+  local tmp
+  for required_phrase in \
+    'dangerous-raw-response' \
+    'dangerous-dev-tools' \
+    'expose_secret' \
+    '__private' \
+    'body bytes'
+  do
+    tmp="$(mktemp)"
+    set +e
+    grep -RInF "$required_phrase" docs/security_model.md >"$tmp"
+    local status=$?
+    set -e
+    if [[ "$status" -ne 0 ]]; then
+      echo "error: docs/security_model.md is missing required phrase: $required_phrase" >&2
+      cat "$tmp" >&2
+      rm -f -- "$tmp"
+      exit 1
+    fi
+    rm -f -- "$tmp"
+  done
+}
+
 run_step "architecture boundary" bash ./scripts/check_architecture.sh
 run_step "public DSL terminology" check_public_dsl_terms
 run_step "public request API" check_public_request_api_terms
 run_step "public secret expose API" check_public_secret_expose_terms
 run_step "public dev body capture API" check_public_dev_body_capture_terms
 run_step "generated rustdoc terminology" check_generated_rustdoc_terms
+run_step "security model doc" check_security_model_doc
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
 # Clippy is strict in the release gate; intentional exceptions must be narrow

@@ -2,6 +2,8 @@
 
 The facade-first client is the normal API. Advanced endpoint structs are available under `endpoints::*` for focused tests, reusable endpoint values, and explicit request construction.
 
+See [Security Model](security_model.md) for the boundary between normal, advanced, and dangerous surfaces.
+
 ```rust
 let endpoint = example_api::endpoints::GetUser::new(42);
 let user = api.request(endpoint).execute().await?;

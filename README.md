@@ -60,6 +60,7 @@ Import `concord_core::prelude::*` for normal generated-client use, `concord_core
 - [Pagination](docs/pagination.md)
 - [Retry And Rate Limit](docs/retry_and_rate_limit.md)
 - [Runtime Config](docs/runtime_config.md)
+- [Security Model](docs/security_model.md)
 - [Performance](docs/performance.md)
 - [Advanced Endpoints](docs/advanced_endpoints.md)
 - [Optional Reqwest Transport Design Report](docs/optional_reqwest_transport.md)

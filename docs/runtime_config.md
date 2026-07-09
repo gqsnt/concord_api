@@ -2,6 +2,8 @@
 
 Generated clients expose advanced runtime configuration through `configure`.
 
+See [Security Model](security_model.md) for the boundary between safe runtime defaults, advanced configuration, and dangerous dev-only capture.
+
 Use `configure` on a mutable client.
 
 ```rust
@@ -98,6 +100,8 @@ For local generated-client debugging only, Concord exposes deprecated `concord_c
 Dev body capture is separate from debug sinks, runtime hooks, stderr debug output, public errors, retry metadata, and rate-limit metadata. Do not enable it in production, CI logs, CI artifacts, shared directories, user-visible support bundles, or any environment without controlled local filesystem permissions. Callers are responsible for local directory permissions, retention, cleanup, and artifact exclusion.
 
 Do not use dev body capture in production. Release checks treat deprecated use outside explicit tests as a failure.
+
+See [Security Model](security_model.md) for the consumer guidance around dangerous features and local capture artifacts.
 
 ## Response Body Limits
 

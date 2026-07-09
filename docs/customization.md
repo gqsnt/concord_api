@@ -2,6 +2,8 @@
 
 Concord keeps the common path small, but the advanced API exposes stable extension points for projects that need formats or pagination styles outside the built-ins.
 
+See [Security Model](security_model.md) for how `prelude`, `advanced`, and `dangerous` are separated.
+
 Use these extension points when the protocol is part of your API contract. Do not use them to change runtime pipeline order or to bypass redaction.
 
 Custom transports are an advanced caller-owned security boundary. Concord's default reqwest transport disables redirects, but `with_reqwest_client(...)` hands redirect, proxy, TLS, cookie, and other reqwest client policies to the caller. Both the default constructor and `with_reqwest_client(...)` require the `transport-reqwest` feature; `with_transport(...)` remains available without reqwest.

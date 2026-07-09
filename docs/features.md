@@ -2,6 +2,8 @@
 
 Concord keeps feature surfaces explicit and minimal. This document records the supported crate defaults, optional feature ownership, and the matrix enforced by `scripts/check_features.sh`.
 
+See [Security Model](security_model.md) for the consumer-facing boundary between safe, advanced, and dangerous surfaces.
+
 ## Matrix
 
 | Crate | Default features | Optional features | Supported no-default build | Notes |
