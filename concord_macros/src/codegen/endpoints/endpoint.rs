@@ -9,7 +9,7 @@ fn emit_endpoint_def(
     ty_name: &Ident,
     cx_ty: &Ident,
 ) -> TokenStream2 {
-    let endpoint_docs = facade_endpoint_docs(ep, &resolved_api.client_policy);
+    let endpoint_docs = facade_ir_endpoint_docs(facade, facade.public_method.span());
     let facade_setters_by_field: std::collections::BTreeMap<String, usize> = facade
         .setters
         .iter()

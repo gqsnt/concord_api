@@ -653,5 +653,12 @@ fn generated_pagination_public_surface_exposes_collect_only() {
             -> Json<Vec<String>>
     });
 
-    assert_contains_all(&out, &["#[doc=\"Pagination: OffsetLimitPagination\"]"]);
+    assert_contains_all(
+        &out,
+        &[
+            "#[doc=\"Pagination:\"]",
+            "#[doc=\"- Controller: OffsetLimitPagination\"]",
+            "#[doc=\"- Collect-onlyvia`.paginate(...).collect()`.\"]",
+        ],
+    );
 }

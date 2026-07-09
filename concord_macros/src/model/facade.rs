@@ -1,4 +1,5 @@
 use crate::emit_helpers;
+use crate::model::Scheme;
 use crate::sema::*;
 use proc_macro2::Span;
 use std::collections::{BTreeMap, BTreeSet};
@@ -180,7 +181,7 @@ pub(crate) fn build_facade_ir(resolved_api: &ResolvedApi) -> FacadeIr {
     let endpoints = resolved_api
         .endpoints
         .iter()
-        .map(facade_endpoint_from_resolved)
+        .map(|ep| facade_endpoint_from_resolved(resolved_api, ep))
         .collect();
     FacadeIr {
         client_name: resolved_api.client_name.clone(),
@@ -449,7 +450,10 @@ fn facade_scope_setter_docs(var: &VarInfo) -> (String, String, String) {
     }
 }
 
-fn facade_endpoint_from_resolved(ep: &ResolvedEndpoint) -> FacadeEndpoint {
+fn facade_endpoint_from_resolved(
+    resolved_api: &ResolvedApi,
+    ep: &ResolvedEndpoint,
+) -> FacadeEndpoint {
     let captured_names = ep
         .facade_param_groups
         .iter()
@@ -548,15 +552,27 @@ fn facade_endpoint_from_resolved(ep: &ResolvedEndpoint) -> FacadeEndpoint {
         },
         captured_setters,
         setters,
-        docs: facade_endpoint_doc_texts(ep),
+        docs: facade_endpoint_doc_texts(resolved_api, ep),
     }
 }
 
-fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
-    let mut docs = vec![FacadeDoc {
+fn facade_endpoint_doc_texts(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
+    let mut docs = Vec::new();
+
+    docs.push(FacadeDoc {
         summary: format!("{} {}", ep.method, doc_path(ep)),
         details: Vec::new(),
-    }];
+    });
+
+    if let Some(profile_line) = profile_doc_line(&ep.behavior_doc.names) {
+        docs.push(FacadeDoc {
+            summary: profile_line,
+            details: Vec::new(),
+        });
+    }
+
+    push_section(&mut docs, "HTTP:", http_doc_lines(resolved_api, ep));
+
     let required = ep
         .vars
         .iter()
@@ -564,31 +580,451 @@ fn facade_endpoint_doc_texts(ep: &ResolvedEndpoint) -> Vec<FacadeDoc> {
         .map(|var| format!("`{}`", var.rust))
         .collect::<Vec<_>>();
     if !required.is_empty() {
-        docs.push(FacadeDoc {
-            summary: format!("Required params: {}", required.join(", ")),
-            details: Vec::new(),
-        });
+        push_section(
+            &mut docs,
+            "Request:",
+            vec![format!("Required params: {}", required.join(", "))],
+        );
     }
+
+    let query = doc_policy_keys(ep, &resolved_api.client_policy, PolicyKeyKind::Query);
+    if !query.is_empty() {
+        push_section(
+            &mut docs,
+            "Query:",
+            vec![format!("Params: {}", query.join(", "))],
+        );
+    }
+
+    let headers = doc_policy_keys(ep, &resolved_api.client_policy, PolicyKeyKind::Header);
+    if !headers.is_empty() {
+        push_section(
+            &mut docs,
+            "Headers:",
+            vec![format!("Names: {}", headers.join(", "))],
+        );
+    }
+
+    push_section(&mut docs, "Response:", response_doc_lines(ep));
+
+    push_section(&mut docs, "Auth:", auth_doc_lines(ep));
+
+    if let Some(timeout) = effective_timeout(ep, &resolved_api.client_policy) {
+        push_section(
+            &mut docs,
+            "Timeout:",
+            vec![format!("Value: {}", doc_public_value(&timeout))],
+        );
+    }
+
+    if let Some(retry) = effective_retry(ep, &resolved_api.client_policy) {
+        push_section(&mut docs, "Retry:", retry_doc_lines(&retry));
+    } else {
+        push_section(&mut docs, "Retry:", vec!["off".to_string()]);
+    }
+
+    if let Some(rate_limit) = effective_rate_limit(ep, &resolved_api.client_policy) {
+        push_section(&mut docs, "Rate limit:", rate_limit_doc_lines(&rate_limit));
+    } else {
+        push_section(&mut docs, "Rate limit:", vec!["none".to_string()]);
+    }
+
     if let Some(pagination) = &ep.paginate {
-        let controller_ty = &pagination.controller_ty;
-        docs.push(FacadeDoc {
-            summary: format!("Pagination: {}", quote::quote!(#controller_ty)),
-            details: Vec::new(),
-        });
+        push_section(&mut docs, "Pagination:", pagination_doc_lines(pagination));
     }
+
     if let Some(body_summary) = &ep.io.request_entity.doc.facade_summary {
-        docs.push(FacadeDoc {
-            summary: body_summary.clone(),
-            details: Vec::new(),
-        });
+        push_section(
+            &mut docs,
+            "Body:",
+            vec![strip_doc_prefix(body_summary, "Body: ").to_string()],
+        );
+        push_section(
+            &mut docs,
+            "Replayability:",
+            vec![replayability_doc_line(ep)],
+        );
     }
-    if let Some(response_summary) = &ep.io.response_entity.doc.facade_summary {
-        docs.push(FacadeDoc {
-            summary: response_summary.clone(),
-            details: Vec::new(),
-        });
-    }
+
+    push_section(&mut docs, "Safety:", safety_doc_lines());
+
     docs
+}
+
+fn http_doc_lines(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) -> Vec<String> {
+    vec![
+        format!("Method: {}", ep.method),
+        format!("Path: {}", doc_path(ep)),
+        format!(
+            "Base: {}://{}",
+            scheme_name(resolved_api.scheme),
+            resolved_api.domain.value()
+        ),
+    ]
+}
+
+fn push_section(docs: &mut Vec<FacadeDoc>, title: &str, lines: Vec<String>) {
+    if !docs.is_empty() {
+        docs.push(FacadeDoc {
+            summary: String::new(),
+            details: Vec::new(),
+        });
+    }
+    docs.push(FacadeDoc {
+        summary: title.to_string(),
+        details: Vec::new(),
+    });
+    for line in lines {
+        docs.push(FacadeDoc {
+            summary: format!("- {}", line),
+            details: Vec::new(),
+        });
+    }
+}
+
+fn strip_doc_prefix<'a>(text: &'a str, prefix: &str) -> &'a str {
+    text.strip_prefix(prefix).unwrap_or(text)
+}
+
+pub(crate) fn profile_doc_line(names: &[String]) -> Option<String> {
+    if names.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "Profile: {}",
+        names
+            .iter()
+            .map(|name| format!("`{name}`"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
+fn auth_doc_lines(ep: &ResolvedEndpoint) -> Vec<String> {
+    if ep.policy.auth.is_empty() {
+        return vec!["none".to_string()];
+    }
+
+    ep.policy.auth.iter().map(doc_auth_requirement).collect()
+}
+
+fn response_doc_lines(ep: &ResolvedEndpoint) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(summary) = &ep.io.response_entity.doc.facade_summary {
+        lines.push(strip_doc_prefix(summary, "Response: ").to_string());
+    }
+
+    let output_ty = type_to_doc(&ep.io.response_entity.public_output_ty);
+    if ep.io.response_entity.capabilities.is_streaming {
+        let terminal = response_terminal_method(ep);
+        lines.push(format!(
+            "Terminal: `.{terminal}().await` returns `{output_ty}`"
+        ));
+        lines.push(format!(
+            "Metadata terminal: `.response().await` is unavailable; use `.{terminal}().await`."
+        ));
+    } else {
+        lines.push(format!(
+            "Terminal: `.execute().await` returns `{output_ty}`"
+        ));
+        lines.push(format!(
+            "Metadata terminal: `.response().await` returns `DecodedResponse<{output_ty}>` with status, headers, url, and meta."
+        ));
+    }
+    lines
+}
+
+fn response_terminal_method(ep: &ResolvedEndpoint) -> &'static str {
+    let summary = ep
+        .io
+        .response_entity
+        .doc
+        .facade_summary
+        .as_deref()
+        .unwrap_or_default();
+    if summary.starts_with("Response: Stream<") {
+        "execute_stream"
+    } else if summary.starts_with("Response: Records<") {
+        "execute_records"
+    } else if summary.starts_with("Response: Multipart<") {
+        "execute_multipart"
+    } else if summary.starts_with("Response: Sse<") {
+        "execute_sse"
+    } else {
+        "execute"
+    }
+}
+
+fn retry_doc_lines(retry: &RetryConfigResolved) -> Vec<String> {
+    let mut lines = vec![format!("max attempts: {}", retry.max_attempts)];
+    if !retry.methods.is_empty() {
+        lines.push(format!(
+            "methods: {}",
+            retry
+                .methods
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !retry.statuses.is_empty() {
+        lines.push(format!(
+            "statuses: {}",
+            retry
+                .statuses
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !retry.transport_errors.is_empty() {
+        lines.push(format!(
+            "transport errors: {}",
+            retry
+                .transport_errors
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if retry.respect_retry_after {
+        lines.push("retry-after: yes".to_string());
+    }
+    if !matches!(retry.backoff, RetryBackoffResolved::None) {
+        lines.push("backoff: configured".to_string());
+    }
+    match &retry.idempotency {
+        RetryIdempotencyResolved::SafeMethodsOnly => {
+            lines.push("idempotency: safe methods only".to_string());
+        }
+        RetryIdempotencyResolved::Header(header) => {
+            lines.push(format!("idempotency header: `{}`", header.value()));
+        }
+    }
+    lines
+}
+
+fn pagination_doc_lines(pagination: &PaginateResolved) -> Vec<String> {
+    vec![
+        format!("Controller: {}", type_to_doc(&pagination.controller_ty)),
+        "Collect-only via `.paginate(...).collect()`.".to_string(),
+    ]
+}
+
+fn effective_retry(
+    ep: &ResolvedEndpoint,
+    client_policy: &PolicyBlocksResolved,
+) -> Option<RetryConfigResolved> {
+    let mut current = apply_retry_layer(None, &client_policy.retry);
+    for scope in &ep.policy.scopes {
+        current = apply_retry_layer(current, &scope.retry);
+    }
+    apply_retry_layer(current, &ep.policy.endpoint.retry)
+}
+
+fn apply_retry_layer(
+    current: Option<RetryConfigResolved>,
+    layer: &Option<RetryResolved>,
+) -> Option<RetryConfigResolved> {
+    match layer {
+        None => current,
+        Some(RetryResolved::Clear) => None,
+        Some(RetryResolved::Set(config)) => Some(config.clone()),
+    }
+}
+
+fn rate_limit_doc_lines(plan: &RateLimitPlanResolved) -> Vec<String> {
+    let mut lines = Vec::new();
+    for bucket in &plan.buckets {
+        let key = bucket
+            .key
+            .iter()
+            .map(rate_limit_key_doc)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let windows = bucket
+            .windows
+            .iter()
+            .map(|window| format!("{} / {}s", window.max, window.per_secs))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!(
+            "bucket `{}` key [{}] cost {} windows [{}]",
+            bucket.kind, key, bucket.cost, windows
+        ));
+    }
+    lines
+}
+
+fn rate_limit_key_doc(key: &RateLimitKeyResolved) -> String {
+    match key {
+        RateLimitKeyResolved::RouteHost => "host".to_string(),
+        RateLimitKeyResolved::Endpoint => "endpoint".to_string(),
+        RateLimitKeyResolved::Method => "method".to_string(),
+        RateLimitKeyResolved::EpField { name, .. } => format!("`{name}`"),
+        RateLimitKeyResolved::Static { name, value } => format!("{name}=`{value}`"),
+    }
+}
+
+fn effective_rate_limit(
+    ep: &ResolvedEndpoint,
+    client_policy: &PolicyBlocksResolved,
+) -> Option<RateLimitPlanResolved> {
+    let mut current = apply_rate_limit_layer(None, &client_policy.rate_limit);
+    for scope in &ep.policy.scopes {
+        current = apply_rate_limit_layer(current, &scope.rate_limit);
+    }
+    apply_rate_limit_layer(current, &ep.policy.endpoint.rate_limit).and_then(|resolved| {
+        match resolved {
+            RateLimitResolved::Add(plan) | RateLimitResolved::Replace(plan) => Some(plan),
+            RateLimitResolved::Clear => None,
+        }
+    })
+}
+
+fn apply_rate_limit_layer(
+    current: Option<RateLimitResolved>,
+    layer: &Option<RateLimitResolved>,
+) -> Option<RateLimitResolved> {
+    let Some(incoming) = layer else {
+        return current;
+    };
+    match (current, incoming.clone()) {
+        (None, incoming) => Some(incoming),
+        (Some(RateLimitResolved::Clear), RateLimitResolved::Clear) => {
+            Some(RateLimitResolved::Clear)
+        }
+        (Some(RateLimitResolved::Clear), RateLimitResolved::Add(plan)) => {
+            Some(RateLimitResolved::Add(plan))
+        }
+        (Some(RateLimitResolved::Clear), RateLimitResolved::Replace(plan)) => {
+            Some(RateLimitResolved::Replace(plan))
+        }
+        (Some(RateLimitResolved::Add(mut parent)), RateLimitResolved::Add(mut child)) => {
+            parent.buckets.append(&mut child.buckets);
+            Some(RateLimitResolved::Add(parent))
+        }
+        (Some(RateLimitResolved::Add(_)), RateLimitResolved::Replace(plan)) => {
+            Some(RateLimitResolved::Replace(plan))
+        }
+        (Some(RateLimitResolved::Add(_)), RateLimitResolved::Clear) => {
+            Some(RateLimitResolved::Clear)
+        }
+        (Some(RateLimitResolved::Replace(mut parent)), RateLimitResolved::Add(mut child)) => {
+            parent.buckets.append(&mut child.buckets);
+            Some(RateLimitResolved::Replace(parent))
+        }
+        (Some(RateLimitResolved::Replace(_)), RateLimitResolved::Replace(plan)) => {
+            Some(RateLimitResolved::Replace(plan))
+        }
+        (Some(RateLimitResolved::Replace(_)), RateLimitResolved::Clear) => {
+            Some(RateLimitResolved::Clear)
+        }
+    }
+}
+
+fn effective_timeout(
+    ep: &ResolvedEndpoint,
+    client_policy: &PolicyBlocksResolved,
+) -> Option<PublicValueKind> {
+    let mut timeout = client_policy.timeout.clone();
+    for scope in &ep.policy.scopes {
+        if let Some(value) = &scope.timeout {
+            timeout = Some(value.clone());
+        }
+    }
+    if let Some(value) = &ep.policy.endpoint.timeout {
+        timeout = Some(value.clone());
+    }
+    timeout
+}
+
+fn doc_public_value(value: &PublicValueKind) -> String {
+    match value {
+        PublicValueKind::LitStr(lit) => lit.value(),
+        PublicValueKind::CxField(field) => format!("vars.{field}"),
+        PublicValueKind::EpField(field) => field.to_string(),
+        PublicValueKind::OtherExpr(expr) => quote::quote!(#expr).to_string().replace(' ', ""),
+        PublicValueKind::Fmt(fmt) => format!("{:?}", fmt),
+    }
+}
+
+fn safety_doc_lines() -> Vec<String> {
+    vec!["Names and metadata only; secret values and body bytes are redacted.".to_string()]
+}
+
+fn replayability_doc_line(ep: &ResolvedEndpoint) -> String {
+    if ep.io.request_entity.capabilities.is_streaming
+        || ep.io.request_entity.capabilities.is_multipart
+    {
+        "non-replayable".to_string()
+    } else {
+        "replayable".to_string()
+    }
+}
+
+fn type_to_doc(ty: &Type) -> String {
+    quote::quote!(#ty).to_string().replace(' ', "")
+}
+
+fn doc_auth_requirement(auth: &AuthRequirementIr) -> String {
+    match &auth.placement {
+        AuthPlacementIr::Bearer => format!("bearer `{}`", auth.credential),
+        AuthPlacementIr::Header { name } => {
+            format!("header `{}` = `{}`", name.value(), auth.credential)
+        }
+        AuthPlacementIr::Query { key } => {
+            format!("query `{}` = `{}`", key.value(), auth.credential)
+        }
+        AuthPlacementIr::Basic => format!("basic `{}`", auth.credential),
+        AuthPlacementIr::Certificate => format!("certificate `{}`", auth.credential),
+    }
+}
+
+fn doc_policy_keys(
+    ep: &ResolvedEndpoint,
+    client_policy: &PolicyBlocksResolved,
+    kind: PolicyKeyKind,
+) -> Vec<String> {
+    let mut keys = std::collections::BTreeSet::new();
+    let policies = std::iter::once(client_policy)
+        .chain(ep.policy.scopes.iter())
+        .chain(std::iter::once(&ep.policy.endpoint));
+    for policy in policies {
+        let ops = match kind {
+            PolicyKeyKind::Header => &policy.headers,
+            PolicyKeyKind::Query => &policy.query,
+        };
+        for op in ops {
+            let key = match op {
+                PolicyOp::Set { key, .. } | PolicyOp::Remove { key } => key,
+            };
+            let key = doc_key_string(key, kind);
+            keys.insert(format!("`{key}`"));
+        }
+    }
+    keys.into_iter().collect()
+}
+
+fn doc_key_string(key: &KeyResolved, kind: PolicyKeyKind) -> String {
+    match key {
+        KeyResolved::Static(lit) => lit.value(),
+        KeyResolved::Ident(id) => match kind {
+            PolicyKeyKind::Header => emit_helpers::to_kebab(id),
+            PolicyKeyKind::Query => id.to_string(),
+        },
+    }
+}
+
+fn scheme_name(scheme: Scheme) -> &'static str {
+    match scheme {
+        Scheme::Http => "http",
+        Scheme::Https => "https",
+    }
 }
 
 fn facade_setter_docs(ep: &ResolvedEndpoint, var: &VarInfo) -> (String, String, String) {

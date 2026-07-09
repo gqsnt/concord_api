@@ -1,5 +1,5 @@
 use super::helpers::*;
-use crate::codegen::behavior_doc_line;
+use crate::model::facade::profile_doc_line;
 use quote::quote;
 
 #[test]
@@ -48,12 +48,12 @@ fn generated_policy_materializes_resolved_policy() {
 }
 
 #[test]
-fn behavior_doc_line_formats_labels_in_order() {
+fn profile_doc_line_formats_labels_in_order() {
     assert_eq!(
-        behavior_doc_line(&["client_read".to_string(), "endpoint_read".to_string()]),
+        profile_doc_line(&["client_read".to_string(), "endpoint_read".to_string()]),
         Some("Profile: `client_read`, `endpoint_read`".to_string())
     );
-    assert_eq!(behavior_doc_line(&[]), None);
+    assert_eq!(profile_doc_line(&[]), None);
 }
 
 #[test]
@@ -192,11 +192,11 @@ fn rustdoc_behavior_label_dedup_does_not_affect_policy() {
 
     assert_contains_all(&out, &["#[doc=\"Profile: `read`\"]", "policy.set_retry"]);
     assert_contains_all(&out, &["policy.add_rate_limit"]);
-    let behavior_doc_lines = generated_doc_attrs(&out)
+    let profile_doc_lines = generated_doc_attrs(&out)
         .into_iter()
         .filter(|doc| doc.contains("Profile:`"))
         .collect::<Vec<_>>();
-    assert_eq!(behavior_doc_lines.len(), 1);
+    assert_eq!(profile_doc_lines.len(), 2);
     assert_eq!(
         out.match_indices("RateLimitBucketUse::new(\"read\",\"read_limit_0\"")
             .count(),

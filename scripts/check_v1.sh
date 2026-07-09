@@ -142,11 +142,28 @@ check_public_dev_body_capture_terms() {
   rm -f -- "$tmp"
 }
 
+check_generated_rustdoc_terms() {
+  local tmp
+  tmp="$(mktemp)"
+  set +e
+  grep -RInE 'Behavior:' docs/generated_client.md docs/dsl.md >"$tmp"
+  local status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    echo "error: stale generated rustdoc terminology found; use profile/effective-contract wording" >&2
+    cat "$tmp" >&2
+    rm -f -- "$tmp"
+    exit 1
+  fi
+  rm -f -- "$tmp"
+}
+
 run_step "architecture boundary" bash ./scripts/check_architecture.sh
 run_step "public DSL terminology" check_public_dsl_terms
 run_step "public request API" check_public_request_api_terms
 run_step "public secret expose API" check_public_secret_expose_terms
 run_step "public dev body capture API" check_public_dev_body_capture_terms
+run_step "generated rustdoc terminology" check_generated_rustdoc_terms
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
 # Clippy is strict in the release gate; intentional exceptions must be narrow

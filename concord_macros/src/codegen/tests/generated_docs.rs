@@ -24,8 +24,17 @@ fn generated_rustdoc_covers_client_endpoint_and_request_builder() {
             "#[doc=\"Create a client with the default reqwest transport.\"]",
             "#[doc=\"Builder for required client configuration.\"]",
             "#[doc=\"GET / search\"]",
-            "#[doc=\"Query params: `count`\"]",
-            "#[doc=\"Response: Json<String>\"]",
+            "#[doc=\"HTTP:\"]",
+            "#[doc=\"- Method: GET\"]",
+            "#[doc=\"- Path: /search\"]",
+            "#[doc=\"- Base: https://example.com\"]",
+            "#[doc=\"Query:\"]",
+            "#[doc=\"- Params: `count`\"]",
+            "#[doc=\"Response:\"]",
+            "#[doc=\"- Json<String>\"]",
+            "#[doc=\"- Terminal: `.execute().await` returns `String`\"]",
+            "#[doc=\"- Metadata terminal: `.response().await` returns `DecodedResponse<String>` with status, headers, url, and meta.\"]",
+            "#[doc=\"Safety:\"]",
             "#[doc=\"Advanced explicit endpoint request. Prefer facade methods for normal use.\"]",
             "#[doc=\"Create this advanced explicit endpoint request.\"]",
             "#[doc=\"Set optional query parameter `count`.\"]",
@@ -38,7 +47,7 @@ fn generated_rustdoc_covers_client_endpoint_and_request_builder() {
 }
 
 #[test]
-fn generated_rustdoc_includes_behavior_names() {
+fn generated_rustdoc_includes_profile_names() {
     let out = expanded(quote! {
         client BehaviorDocs {
             base "https://example.com"
@@ -75,6 +84,7 @@ fn generated_rustdoc_includes_behavior_names() {
         &out,
         &["#[doc=\"Profile: `client_read`, `scope_read`, `endpoint_read`\"]"],
     );
+    assert_generated_doc_attrs_do_not_contain(&out, "Behavior:");
 }
 
 #[test]
@@ -136,16 +146,34 @@ fn generated_rustdoc_includes_endpoint_contract_without_secret_values() {
         &out,
         &[
             "#[doc=\"POST / items / {id}\"]",
-            "#[doc=\"Required params: `id`\"]",
-            "#[doc=\"Query params: `count`, `filter`\"]",
-            "#[doc=\"Headers: `X-Tenant`\"]",
+            "#[doc=\"HTTP:\"]",
+            "#[doc=\"- Method: POST\"]",
+            "#[doc=\"- Path: /items/{id}\"]",
+            "#[doc=\"- Base: https://example.com\"]",
+            "#[doc=\"Request:\"]",
+            "#[doc=\"- Required params: `id`\"]",
+            "#[doc=\"Query:\"]",
+            "#[doc=\"- Params: `count`, `filter`\"]",
+            "#[doc=\"Headers:\"]",
+            "#[doc=\"- Names: `X-Tenant`\"]",
             "#[doc=\"Auth:\"]",
             "#[doc=\"- header `X-Api-Key` = `key`\"]",
-            "#[doc=\"Retry: configured\"]",
-            "#[doc=\"Rate limit: configured\"]",
-            "#[doc=\"Pagination: OffsetLimitPagination\"]",
-            "#[doc=\"Body: Json<CreateBody>\"]",
-            "#[doc=\"Response: Json<CreateResponse>\"]",
+            "#[doc=\"Retry:\"]",
+            "#[doc=\"- max attempts: 2\"]",
+            "#[doc=\"- methods: GET, POST\"]",
+            "#[doc=\"Rate limit:\"]",
+            "#[doc=\"- bucket `application` key [host] cost 1 windows [10 / 1s]\"]",
+            "#[doc=\"Pagination:\"]",
+            "#[doc=\"- Controller: OffsetLimitPagination\"]",
+            "#[doc=\"Body:\"]",
+            "#[doc=\"- Json<CreateBody>\"]",
+            "#[doc=\"Replayability:\"]",
+            "#[doc=\"- replayable\"]",
+            "#[doc=\"Response:\"]",
+            "#[doc=\"- Json<CreateResponse>\"]",
+            "#[doc=\"- Terminal: `.execute().await` returns `CreateResponse`\"]",
+            "#[doc=\"- Metadata terminal: `.response().await` returns `DecodedResponse<CreateResponse>` with status, headers, url, and meta.\"]",
+            "#[doc=\"Safety:\"]",
             "#[doc=\"Set optional query parameter `filter`.\"]",
             "#[doc=\"Set defaulted query parameter `count`.\"]",
             "#[doc=\"Set defaulted query parameter `count` from an Option; None resets to the declared default.\"]",
@@ -156,6 +184,211 @@ fn generated_rustdoc_includes_endpoint_contract_without_secret_values() {
     assert_generated_doc_attrs_do_not_contain(&out, "api_key");
     assert_generated_doc_attrs_do_not_contain(&out, "LEAK_SENTINEL_DEFAULT");
     assert_generated_doc_attrs_do_not_contain(&out, "default: `20`");
+}
+
+#[test]
+fn generated_rustdoc_rate_limit_add_accumulates_inherited_buckets() {
+    let out = expanded(quote! {
+        client RateLimitAddDocs {
+            base "https://example.com"
+
+            rate_limit client_limit {
+                bucket client by [host] {
+                    1 / 1s
+                }
+            }
+
+            rate_limit scope_limit {
+                bucket scope by [host, endpoint] {
+                    2 / 1s
+                }
+            }
+
+            profiles {
+                profile client_rate_limit {
+                    rate_limit client_limit
+                }
+
+                profile scope_rate_limit {
+                    rate_limit scope_limit
+                }
+            }
+
+            default {
+                profile client_rate_limit
+            }
+        }
+
+        scope users {
+            path ["users"]
+            profile scope_rate_limit
+
+            GET List
+                path ["list"]
+                -> Json<()>
+        }
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "#[doc=\"Rate limit:\"]",
+            "#[doc=\"- bucket `client` key [host] cost 1 windows [1 / 1s]\"]",
+            "#[doc=\"- bucket `scope` key [host, endpoint] cost 1 windows [2 / 1s]\"]",
+        ],
+    );
+}
+
+#[test]
+fn generated_rustdoc_rate_limit_replace_discards_inherited_buckets() {
+    let out = expanded(quote! {
+        client RateLimitReplaceDocs {
+            base "https://example.com"
+
+            rate_limit client_limit {
+                bucket client by [host] {
+                    1 / 1s
+                }
+            }
+
+            rate_limit endpoint_limit {
+                bucket endpoint by [host, endpoint] {
+                    3 / 1s
+                }
+            }
+
+            profiles {
+                profile client_rate_limit {
+                    rate_limit client_limit
+                }
+            }
+
+            default {
+                profile client_rate_limit
+            }
+        }
+
+        GET Show
+            path ["show"]
+            rate_limit only endpoint_limit
+            -> Json<()>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "#[doc=\"Rate limit:\"]",
+            "#[doc=\"- bucket `endpoint` key [host, endpoint] cost 1 windows [3 / 1s]\"]",
+        ],
+    );
+    assert_generated_doc_attrs_do_not_contain(
+        &out,
+        "bucket `client` key [host] cost 1 windows [1 / 1s]",
+    );
+}
+
+#[test]
+fn generated_rustdoc_rate_limit_clear_removes_inherited_configuration() {
+    let out = expanded(quote! {
+        client RateLimitClearDocs {
+            base "https://example.com"
+
+            rate_limit client_limit {
+                bucket client by [host] {
+                    1 / 1s
+                }
+            }
+
+            profiles {
+                profile client_rate_limit {
+                    rate_limit client_limit
+                }
+
+                profile clear_rate_limit {
+                    rate_limit off
+                }
+            }
+
+            default {
+                profile client_rate_limit
+            }
+        }
+
+        GET Show
+            path ["show"]
+            profile clear_rate_limit
+            -> Json<()>
+    });
+
+    assert_contains_all(&out, &["#[doc=\"Rate limit:\"]", "#[doc=\"- none\"]"]);
+}
+
+#[test]
+fn generated_rustdoc_includes_no_auth_retry_rate_limit_sections() {
+    let out = expanded(quote! {
+        client EmptyContractDocs {
+            base "https://example.com"
+        }
+
+        GET Ping
+            path ["ping"]
+            -> Json<()>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "#[doc=\"HTTP:\"]",
+            "#[doc=\"Response:\"]",
+            "#[doc=\"- Json<()>\"]",
+            "#[doc=\"Auth:\"]",
+            "#[doc=\"- none\"]",
+            "#[doc=\"Retry:\"]",
+            "#[doc=\"- off\"]",
+            "#[doc=\"Rate limit:\"]",
+            "#[doc=\"- none\"]",
+            "#[doc=\"Safety:\"]",
+        ],
+    );
+}
+
+#[test]
+fn generated_rustdoc_includes_streaming_terminal_methods() {
+    let out = expanded(quote! {
+        client StreamingDocs {
+            base "https://example.com"
+        }
+
+        GET Streamed
+            path ["streamed"]
+            -> Stream<OctetStream>
+
+        GET Listed
+            path ["listed"]
+            -> Records<Item, NdJson>
+
+        GET Multiparted
+            path ["multiparted"]
+            -> Multipart<Part, Mixed>
+
+        GET Ssed
+            path ["ssed"]
+            -> Sse<Event>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "#[doc=\"- Terminal: `.execute_stream().await` returns `::concord_core::advanced::StreamResponse<OctetStream>`\"]",
+            "#[doc=\"- Metadata terminal: `.response().await` is unavailable; use `.execute_stream().await`.\"]",
+            "#[doc=\"- Terminal: `.execute_records().await` returns `::concord_core::advanced::RecordStream<Item>`\"]",
+            "#[doc=\"- Metadata terminal: `.response().await` is unavailable; use `.execute_records().await`.\"]",
+            "#[doc=\"- Terminal: `.execute_multipart().await` returns `::concord_core::advanced::MultipartStream<Part>`\"]",
+            "#[doc=\"- Metadata terminal: `.response().await` is unavailable; use `.execute_multipart().await`.\"]",
+            "#[doc=\"- Terminal: `.execute_sse().await` returns `::concord_core::advanced::SseStream<Event>`\"]",
+            "#[doc=\"- Metadata terminal: `.response().await` is unavailable; use `.execute_sse().await`.\"]",
+        ],
+    );
 }
 
 #[test]

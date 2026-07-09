@@ -218,12 +218,14 @@ Endpoint-backed credentials expose deterministic acquisition helpers such as `.a
 
 Generated endpoint methods and endpoint structs include rustdoc with:
 
-- HTTP method and path pattern
-- required parameters
-- query and header names
-- auth summary
-- retry and rate-limit summary
-- pagination controller
-- body and response codecs
+- an effective contract summary derived from resolved semantics
+- HTTP method, resolved path, and base identity
+- resolved auth attachments after client default, profile, scope, and endpoint resolution
+- response entity/output type and the applicable terminal method
+- buffered metadata access when `.response().await` is available
+- retry and rate-limit summaries with bounded resolved details
+- pagination controller and collect-only usage when present
+- request body summary and replayability when relevant
+- names and metadata only; secret values and raw body bytes are not rendered
 
 Generated setters document whether a field is a path, query, header, or request parameter and whether clearing removes an optional value or resets a default.

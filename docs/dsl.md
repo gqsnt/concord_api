@@ -478,7 +478,7 @@ Pagination remains an endpoint concern. It is not part of grouped policy or prof
 
 ## Generated Documentation
 
-Generated endpoint documentation is derived from the resolved semantic model, not from raw syntax. That is why profile names remain visible in rustdoc even though profile semantics are lowered into ordinary auth, retry, and rate-limit data.
+Generated endpoint documentation is derived from the resolved semantic model, not from raw syntax. That is why rustdoc summarizes the effective endpoint contract after profile, default, scope, and endpoint resolution while still showing profile names as labels.
 
 ## Keyword Reference
 
