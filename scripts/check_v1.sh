@@ -94,12 +94,12 @@ check_public_request_api_terms() {
   local tmp
   tmp="$(mktemp)"
   set +e
-  grep -RInE 'execute_decoded_with[[:space:]]*::?<[[:space:]]*|execute_decoded_with[[:space:]]*\(' \
-    README.md docs concord_examples/src concord_macros/tests/trybuild/pass >"$tmp"
+  grep -RInE 'execute_decoded_with[[:space:]]*::?<[[:space:]]*|execute_decoded_with[[:space:]]*\(|execute_raw[[:space:]]*\(\)' \
+    README.md docs concord_examples/src >"$tmp"
   local status=$?
   set -e
   if [[ "$status" -eq 0 ]]; then
-    echo "error: stale public V1 request API terminology found; use response() for metadata" >&2
+    echo "error: stale public V1 request API terminology found; use response() or gated raw-response access" >&2
     cat "$tmp" >&2
     rm -f -- "$tmp"
     exit 1
@@ -117,11 +117,11 @@ run_step "format check" "${CARGO[@]}" fmt --check
 run_step "clippy workspace all targets" "${CARGO[@]}" clippy --workspace --all-targets -- -D warnings
 run_step "clippy workspace all targets all features" "${CARGO[@]}" clippy --workspace --all-targets --all-features -- -D warnings
 
-# Coverage baseline captured with `cargo nextest list` before removing redundant
-# per-crate runs:
-# - `--workspace`: 945 tests, including macro integration/generated filtered suites.
-# - `--workspace --all-features`: 945 tests, covering the all-features axis.
-# - `--workspace --all-targets`: 945 tests, including trybuild_current/sema/codegen.
+# Coverage baseline captured with `cargo nextest list` after raw-response tests
+# were feature-gated:
+# - `--workspace`: 931 tests, including macro integration/generated filtered suites.
+# - `--workspace --all-features`: 953 tests, covering the all-features axis.
+# - `--workspace --all-targets`: 931 tests, including trybuild_current/sema/codegen.
 # Removed per-crate steps were exact subsets of these retained workspace runs.
 # Removed subset commands:
 # - nextest run -p concord_macros integration
@@ -133,7 +133,7 @@ run_step "clippy workspace all targets all features" "${CARGO[@]}" clippy --work
 # - nextest run -p concord_core --all-features
 # - nextest run -p concord_examples
 # - nextest run -p concord_examples --all-features
-run_nextest_count_guard "workspace tests" 945 "${CARGO[@]}" nextest run --workspace
-run_nextest_count_guard "workspace tests all features" 945 "${CARGO[@]}" nextest run --workspace --all-features
-run_nextest_count_guard "workspace all-target tests" 945 "${CARGO[@]}" nextest run --workspace --all-targets
+run_nextest_count_guard "workspace tests" 931 "${CARGO[@]}" nextest run --workspace
+run_nextest_count_guard "workspace tests all features" 953 "${CARGO[@]}" nextest run --workspace --all-features
+run_nextest_count_guard "workspace all-target tests" 931 "${CARGO[@]}" nextest run --workspace --all-targets
 run_step "rustdoc warnings denied" env RUSTDOCFLAGS="-D warnings" "${CARGO[@]}" doc --workspace --no-deps

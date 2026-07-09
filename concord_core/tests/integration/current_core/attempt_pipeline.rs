@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 use super::common::{
     MockOutcome, MockResponse, MockTransport, TestAuthVars, TestCx, buffered_endpoint_execute,
     buffered_endpoint_response_terminal, client,
@@ -158,6 +160,7 @@ fn attempt_sentinels() -> RedactionSentinels {
     )
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn finalized_attempt_request_is_sent_once() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -173,7 +176,7 @@ async fn finalized_attempt_request_is_sent_once() -> Result<(), ApiClientError> 
         AttemptBody::Bytes(Bytes::from_static(b"{\"attempt\":true}")),
     );
 
-    let raw = client.request(endpoint).execute_raw().await?;
+    let raw = client.request(endpoint).execute_raw_response().await?;
 
     assert_eq!(raw.status, StatusCode::OK);
     assert_eq!(sent_transport.sent_count().await, 1);
@@ -214,6 +217,7 @@ async fn finalized_attempt_request_is_sent_once() -> Result<(), ApiClientError> 
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_and_decoded_share_the_same_attempt_path() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -235,7 +239,10 @@ async fn execute_raw_and_decoded_share_the_same_attempt_path() -> Result<(), Api
         AttemptBody::Bytes(Bytes::from_static(b"shared-request")),
     );
 
-    let raw = client.request(endpoint.clone()).execute_raw().await?;
+    let raw = client
+        .request(endpoint.clone())
+        .execute_raw_response()
+        .await?;
     let decoded = client.request(endpoint).response().await?;
 
     assert_eq!(raw.body, Bytes::from_static(b"shared-response"));
@@ -298,6 +305,7 @@ async fn http_status_errors_remain_typed_and_redacted() {
     );
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn transport_errors_remain_typed_and_redacted() {
     let sentinels = attempt_sentinels();
@@ -324,7 +332,7 @@ async fn transport_errors_remain_typed_and_redacted() {
 
     let err = client
         .request(endpoint)
-        .execute_raw()
+        .execute_raw_response()
         .await
         .expect_err("transport failure should surface as transport error");
 
@@ -342,6 +350,7 @@ async fn transport_errors_remain_typed_and_redacted() {
     );
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn replayable_encoded_bodies_can_retry_with_the_same_payload() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -365,7 +374,7 @@ async fn replayable_encoded_bodies_can_retry_with_the_same_payload() -> Result<(
         AttemptBody::Bytes(Bytes::from_static(b"replayable-body")),
     );
 
-    let raw = client.request(endpoint).execute_raw().await?;
+    let raw = client.request(endpoint).execute_raw_response().await?;
 
     assert_eq!(raw.status, StatusCode::OK);
     assert_eq!(sent_transport.sent_count().await, 2);
@@ -385,6 +394,7 @@ async fn replayable_encoded_bodies_can_retry_with_the_same_payload() -> Result<(
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn non_replayable_stream_bodies_stop_after_the_first_attempt() {
     let sentinels = attempt_sentinels();
@@ -409,7 +419,7 @@ async fn non_replayable_stream_bodies_stop_after_the_first_attempt() {
 
     let err = client
         .request(endpoint)
-        .execute_raw()
+        .execute_raw_response()
         .await
         .expect_err("stream bodies should not be silently retried");
 

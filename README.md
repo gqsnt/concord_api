@@ -42,7 +42,7 @@ let user = api.users().get_user(42).await?;
 - Typed facade navigation through `client`, `scope`, and endpoint methods.
 - Required params as direct method arguments.
 - Optional and defaulted request setters with `field`, `field_opt`, and `clear_field`.
-- Direct `.await`, `.execute()`, `.response()`, and explicit `.execute_raw()`.
+- Direct `.await`, `.execute()`, `.response()`, and feature-gated raw response access behind `dangerous-raw-response`.
 - Explicit `.paginate().collect()`.
 - Endpoint-backed credential acquisition with `.acquire_as_<credential>()`.
 - OAuth2 client-credentials auth through generated token acquisition and bearer materialization.

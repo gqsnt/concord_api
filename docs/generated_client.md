@@ -135,12 +135,13 @@ let meta = response.meta();
 let user = response.into_value();
 ```
 
-## Raw Execution
+## Dangerous Raw Response
 
-`.execute_raw()` returns the classified raw response before endpoint decoding. It still observes the configured response-body limit.
+`#[cfg(feature = "dangerous-raw-response")]` enables `.execute_raw_response()`, which returns the classified raw response before endpoint decoding. It still observes the configured response-body limit.
 
 ```rust
-let raw = api.users().get_user(42).execute_raw().await?;
+#[cfg(feature = "dangerous-raw-response")]
+let raw = api.users().get_user(42).execute_raw_response().await?;
 ```
 
 This is an advanced escape hatch for diagnostics and protocol tests.

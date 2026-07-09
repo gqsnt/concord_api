@@ -9,7 +9,7 @@ error[E0599]: the method `execute_multipart` exists for struct `PendingRequest<'
    | |________________- doesn't satisfy `<_ as Endpoint<StreamEndpointExecuteMultipartApiCx>>::Response = MultipartStream<_>`
 ...
 16 |       let _ = api.download().execute_multipart().await.unwrap();
-   |                              ^^^^^^^^^^^^^^^^^
+   |                              ^^^^^^^^^^^^^^^^^ method cannot be called due to unsatisfied trait bounds
    |
    = note: the following trait bounds were not satisfied:
            `<EpDownloadHd3386a2ef42e80b9 as concord_core::prelude::Endpoint<StreamEndpointExecuteMultipartApiCx>>::Response = MultipartStream<_>`

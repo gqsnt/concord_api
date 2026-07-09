@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 use super::common::{
     GateTransport, MockOutcome, MockResponse, MockTransport, TestAuthVars, TestCx,
     buffered_endpoint_execute, buffered_endpoint_response_terminal, client, request_plan,
@@ -396,6 +398,7 @@ fn redirect_policy() -> ResolvedPolicy {
     super::common::auth_policy(concord_core::advanced::AuthPlacement::Bearer)
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn finalized_request_metadata_and_materialization_are_preserved_through_a_custom_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -409,7 +412,7 @@ async fn finalized_request_metadata_and_materialization_are_preserved_through_a_
         request_contract_policy(),
     );
 
-    let handle = tokio::spawn(async move { client.request(endpoint).execute_raw().await });
+    let handle = tokio::spawn(async move { client.request(endpoint).execute_raw_response().await });
     sent.wait_for_sends(1).await;
 
     let requests = sent.requests().await;
@@ -446,7 +449,7 @@ async fn finalized_request_metadata_and_materialization_are_preserved_through_a_
     );
 }
 
-#[cfg(feature = "transport-reqwest")]
+#[cfg(all(feature = "transport-reqwest", feature = "dangerous-raw-response"))]
 #[tokio::test]
 async fn default_reqwest_transport_does_not_follow_redirects_or_forward_auth_material() {
     let _guard = redirect_test_lock().lock().await;
@@ -497,7 +500,7 @@ async fn default_reqwest_transport_does_not_follow_redirects_or_forward_auth_mat
 
     let err = client
         .request(endpoint)
-        .execute_raw()
+        .execute_raw_response()
         .await
         .expect_err("redirect response should stop at the first response");
 
@@ -534,7 +537,7 @@ async fn default_reqwest_transport_does_not_follow_redirects_or_forward_auth_mat
     assert!(second_requests.lock().await.is_empty());
 }
 
-#[cfg(feature = "transport-reqwest")]
+#[cfg(all(feature = "transport-reqwest", feature = "dangerous-raw-response"))]
 #[tokio::test]
 async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
     let _guard = redirect_test_lock().lock().await;
@@ -590,7 +593,7 @@ async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
 
     let response = client
         .request(endpoint)
-        .execute_raw()
+        .execute_raw_response()
         .await
         .expect("caller-owned reqwest client should follow redirects");
 
@@ -611,6 +614,7 @@ async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
         .expect("second redirect server should stop");
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn stream_request_body_remains_non_replayable_at_the_transport_boundary()
 -> Result<(), ApiClientError> {
@@ -628,7 +632,7 @@ async fn stream_request_body_remains_non_replayable_at_the_transport_boundary()
         request_contract_policy(),
     );
 
-    let response = client.request(endpoint).execute_raw().await?;
+    let response = client.request(endpoint).execute_raw_response().await?;
 
     assert_eq!(response.status, StatusCode::OK);
     assert_eq!(sent.sent_count().await, 1);
@@ -649,6 +653,7 @@ async fn stream_request_body_remains_non_replayable_at_the_transport_boundary()
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn response_metadata_is_preserved_on_raw_and_decoded_surfaces() -> Result<(), ApiClientError>
 {
@@ -682,7 +687,7 @@ async fn response_metadata_is_preserved_on_raw_and_decoded_surfaces() -> Result<
     assert_eq!(decoded.meta().page_index, 0);
     assert_eq!(decoded.value(), "decoded-value");
 
-    let raw = client.request(endpoint).execute_raw().await?;
+    let raw = client.request(endpoint).execute_raw_response().await?;
     assert_eq!(raw.status, StatusCode::OK);
     assert_eq!(raw.headers[CONTENT_TYPE], "text/plain");
     assert_eq!(raw.url.as_str(), "https://example.com/transport/response");
@@ -695,6 +700,7 @@ async fn response_metadata_is_preserved_on_raw_and_decoded_surfaces() -> Result<
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn transport_error_preserves_context_and_redacts_request_sentinels() {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -717,7 +723,7 @@ async fn transport_error_preserves_context_and_redacts_request_sentinels() {
 
     let err = client
         .request(endpoint)
-        .execute_raw()
+        .execute_raw_response()
         .await
         .expect_err("transport failure should surface");
 

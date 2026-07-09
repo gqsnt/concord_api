@@ -15,6 +15,9 @@ dotenvy.workspace = true
 bytes.workspace = true
 url.workspace = true
 
+[features]
+dangerous-raw-response = ["concord_core/dangerous-raw-response"]
+
 
 [dev-dependencies]
 trybuild = "1"

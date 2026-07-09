@@ -1,4 +1,4 @@
-#![allow(clippy::needless_update)] // Test fixtures keep `..Default::default()` for resilience to added fields.
+#![allow(clippy::needless_update, dead_code)] // Test fixtures keep `..Default::default()` for resilience to added fields.
 
 use super::common::*;
 use crate::support::{RedactionSentinels, assert_error_chain_does_not_contain_any};
@@ -861,6 +861,7 @@ async fn paged_pagination_runtime_advances_page() -> Result<(), ApiClientError> 
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -885,7 +886,7 @@ async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), A
         ..Default::default()
     };
 
-    let raw = client.request(endpoint).execute_raw().await?;
+    let raw = client.request(endpoint).execute_raw_response().await?;
 
     assert_eq!(raw.body, Bytes::from_static(b"raw-page-1"));
     let requests = sent.requests().await;
@@ -2541,8 +2542,8 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
-
 async fn execute_raw_static_auth_collision_validates_before_rate_limit_and_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let rate_limiter = Arc::new(RecordingRateLimiter::new(events.clone()));
@@ -2572,9 +2573,9 @@ async fn execute_raw_static_auth_collision_validates_before_rate_limit_and_trans
 
     let err = client
         .request(endpoint)
-        .execute_raw()
+        .execute_raw_response()
         .await
-        .expect_err("execute_raw should still validate auth collisions before transport");
+        .expect_err("execute_raw_response should still validate auth collisions before transport");
 
     assert!(matches!(err, ApiClientError::Auth { .. }));
     assert_eq!(sent.sent_count().await, 0);

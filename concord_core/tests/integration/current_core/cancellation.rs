@@ -733,6 +733,7 @@ async fn transport_timeout_error_is_typed_and_safe() {
     assert_events_do_not_contain(&events, &body_sentinels()).await;
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_cancellation_matches_raw_contract() {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -761,7 +762,7 @@ async fn execute_raw_cancellation_matches_raw_contract() {
     gate.block("transport_send").await;
     let task = tokio::spawn({
         let client = client.clone();
-        async move { client.request(endpoint).execute_raw().await }
+        async move { client.request(endpoint).execute_raw_response().await }
     });
 
     gate.wait_for("transport_send", 1).await;
@@ -779,7 +780,7 @@ async fn execute_raw_cancellation_matches_raw_contract() {
                     policy: rate_limit_policy(),
                     ..Default::default()
                 })
-                .execute_raw()
+                .execute_raw_response()
                 .await
         }
     });
@@ -794,6 +795,7 @@ async fn execute_raw_cancellation_matches_raw_contract() {
     assert_events_do_not_contain(&events, &body_sentinels()).await;
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_cancellation_during_rate_limit_acquire_does_not_send_transport() {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -824,7 +826,7 @@ async fn execute_raw_cancellation_during_rate_limit_acquire_does_not_send_transp
     gate.block("rate_acquire").await;
     let task = tokio::spawn({
         let client = client.clone();
-        async move { client.request(endpoint).execute_raw().await }
+        async move { client.request(endpoint).execute_raw_response().await }
     });
 
     gate.wait_for("rate_acquire", 1).await;
@@ -845,7 +847,7 @@ async fn execute_raw_cancellation_during_rate_limit_acquire_does_not_send_transp
                     policy: rate_limit_policy(),
                     ..Default::default()
                 })
-                .execute_raw()
+                .execute_raw_response()
                 .await
         }
     });

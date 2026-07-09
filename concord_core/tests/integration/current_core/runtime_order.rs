@@ -1521,6 +1521,7 @@ async fn execute_returns_same_decoded_value_as_await() -> Result<(), ApiClientEr
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_returns_classified_raw_response() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -1529,7 +1530,7 @@ async fn execute_raw_returns_classified_raw_response() -> Result<(), ApiClientEr
 
     let response = client
         .request(TextEndpoint::default())
-        .execute_raw()
+        .execute_raw_response()
         .await?;
 
     assert_eq!(response.status, StatusCode::OK);
@@ -1539,6 +1540,7 @@ async fn execute_raw_returns_classified_raw_response() -> Result<(), ApiClientEr
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_uses_retry() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -1566,7 +1568,7 @@ async fn execute_raw_uses_retry() -> Result<(), ApiClientError> {
             policy: ResolvedPolicy::default(),
             ..Default::default()
         })
-        .execute_raw()
+        .execute_raw_response()
         .await?;
 
     assert_eq!(raw.status, StatusCode::OK);
@@ -2535,6 +2537,7 @@ async fn body_limit_error_does_not_trigger_ordinary_retry() {
     assert!(!err.to_string().contains(RESPONSE_SENTINEL));
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_body_limit_behavior_characterized() {
     const RESPONSE_SENTINEL: &str = "PR74_EXECUTE_RAW_BODY_LIMIT_SENTINEL";
@@ -2559,9 +2562,9 @@ async fn execute_raw_body_limit_behavior_characterized() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_raw()
+        .execute_raw_response()
         .await
-        .expect_err("execute_raw should enforce the same response body limit");
+        .expect_err("execute_raw_response should enforce the same response body limit");
 
     assert!(matches!(
         err,

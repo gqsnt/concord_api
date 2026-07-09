@@ -9,7 +9,7 @@ error[E0599]: the method `execute_records` exists for struct `PendingRequest<'_,
    | |____________- doesn't satisfy `<_ as Endpoint<BufferedEndpointExecuteRecordsApiCx>>::Response = RecordStream<_>`
 ...
 16 |       let _ = api.user().execute_records().await.unwrap();
-   |                          ^^^^^^^^^^^^^^^
+   |                          ^^^^^^^^^^^^^^^ method cannot be called due to unsatisfied trait bounds
    |
    = note: the following trait bounds were not satisfied:
            `<EpUserHa48f81f001b893d2 as concord_core::prelude::Endpoint<BufferedEndpointExecuteRecordsApiCx>>::Response = RecordStream<_>`

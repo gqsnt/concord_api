@@ -1362,6 +1362,7 @@ async fn pagination_error_is_distinct_and_safe() {
     assert_observers_safe(&events).await;
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_error_taxonomy_matches_documented_behavior() {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -1388,7 +1389,7 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_raw()
+        .execute_raw_response()
         .await
         .expect_err("raw transport error should surface as transport");
     assert!(matches!(transport_err, ApiClientError::Transport { .. }));
@@ -1399,7 +1400,7 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_raw()
+        .execute_raw_response()
         .await
         .expect_err("raw body limit should still be enforced");
     assert!(matches!(body_err, ApiClientError::ResponseTooLarge { .. }));
@@ -1411,7 +1412,7 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_raw()
+        .execute_raw_response()
         .await
         .expect_err("raw HTTP status should surface as status error");
     assert!(matches!(status_err, ApiClientError::HttpStatus { .. }));
@@ -1445,7 +1446,7 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_raw()
+        .execute_raw_response()
         .await
         .expect_err("raw rate-limit acquire failure should surface");
 

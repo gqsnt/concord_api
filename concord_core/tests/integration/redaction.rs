@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_imports)]
+
 mod query_auth_redaction {
     use super::super::current_core::common::{
         CapturedTransportRequest, MockResponse, MockTransport, auth_policy,

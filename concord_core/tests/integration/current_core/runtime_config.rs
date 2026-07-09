@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use super::common::{
     GateTransport, MockResponse, MockTransport, ObservationRateLimiter, RecordingRateLimiter,
     TestAuthVars, TestCx, TextEndpoint, auth_policy, client, retry_policy,
@@ -294,6 +296,7 @@ async fn per_request_attempt_override_wins_and_does_not_leak() -> Result<(), Api
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_uses_same_runtime_safety_config() {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -331,9 +334,9 @@ async fn execute_raw_uses_same_runtime_safety_config() {
             policy,
             ..TextEndpoint::default()
         })
-        .execute_raw()
+        .execute_raw_response()
         .await
-        .expect_err("execute_raw should enforce the runtime body limit");
+        .expect_err("execute_raw_response should enforce the runtime body limit");
 
     assert_response_too_large(&err);
     assert_eq!(body_reads(&read_count), 0);

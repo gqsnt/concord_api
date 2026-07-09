@@ -1,0 +1,11 @@
+error[E0599]: no method named `execute_raw` found for struct `PendingRequest<'a, Cx, E, T>` in the current scope
+  --> tests/trybuild/fail/codegen_contract/pending_request_execute_raw_unavailable.rs:16:24
+   |
+16 |     let _ = api.user().execute_raw().await.unwrap();
+   |                        ^^^^^^^^^^^
+   |
+help: there is a method `execute` with a similar name
+   |
+16 -     let _ = api.user().execute_raw().await.unwrap();
+16 +     let _ = api.user().execute().await.unwrap();
+   |

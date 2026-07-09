@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use super::common::{MockResponse, MockTransport, TestAuthVars, TextEndpoint, client};
 use bytes::Bytes;
 use concord_core::prelude::ApiClientError;
@@ -57,6 +59,7 @@ async fn execute_returns_same_decoded_value_as_await() -> Result<(), ApiClientEr
     Ok(())
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_returns_classified_raw_response() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -65,7 +68,7 @@ async fn execute_raw_returns_classified_raw_response() -> Result<(), ApiClientEr
 
     let response = client
         .request(TextEndpoint::default())
-        .execute_raw()
+        .execute_raw_response()
         .await?;
 
     assert_eq!(response.status, StatusCode::OK);

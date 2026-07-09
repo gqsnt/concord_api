@@ -536,6 +536,7 @@ async fn fmt_path_interpolation_follows_dynamic_path_safety() {
     }
 }
 
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn execute_raw_obeys_same_url_host_path_validation() {
     let records = RecordingEvents::default();
@@ -553,9 +554,9 @@ async fn execute_raw_obeys_same_url_host_path_validation() {
     let err = client
         .regional("tenant".to_string())
         .show("a/b".to_string(), "prefix".to_string())
-        .execute_raw()
+        .execute_raw_response()
         .await
-        .expect_err("execute_raw must still reject invalid path segments");
+        .expect_err("execute_raw_response must still reject invalid path segments");
 
     assert_eq!(err.category(), concord_core::error::ErrorCategory::Config);
     assert!(transport.requests().is_empty());

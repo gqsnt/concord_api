@@ -115,7 +115,7 @@ api.configure(|cfg| {
 });
 ```
 
-Auth-internal HTTP and token responses use their own read limit. When a response includes `Content-Length`, Concord rejects bodies above the configured limit before reading any body chunks. Chunked or unknown-length responses are still bounded: Concord reads them cumulatively and fails as soon as the buffered body would exceed the limit. Body-limit failures are typed and remain body-free in debug sinks, hooks, rate-limit metadata, and retry metadata. `execute_raw()` follows the same response-body limit; it only bypasses endpoint response decoding.
+Auth-internal HTTP and token responses use their own read limit. When a response includes `Content-Length`, Concord rejects bodies above the configured limit before reading any body chunks. Chunked or unknown-length responses are still bounded: Concord reads them cumulatively and fails as soon as the buffered body would exceed the limit. Body-limit failures are typed and remain body-free in debug sinks, hooks, rate-limit metadata, and retry metadata. `#[cfg(feature = "dangerous-raw-response")] execute_raw_response()` follows the same response-body limit; it only bypasses endpoint response decoding.
 
 Per-request overrides stay on the pending request.
 

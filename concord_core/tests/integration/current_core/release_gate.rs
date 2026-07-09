@@ -145,7 +145,7 @@ fn examples_cover_v1_usage_surface() {
     assert!(pagination.contains(".collect()"));
 
     let explicit = read_repo_file("concord_examples/src/explicit_endpoint.rs");
-    assert!(explicit.contains("execute_raw"));
+    assert!(explicit.contains("execute_raw_response"));
 }
 
 fn read_repo_file(path: impl AsRef<Path>) -> String {

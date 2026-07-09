@@ -160,6 +160,6 @@ The execution order is fixed:
 12. Decode the endpoint response and return the decoded response entity output.
 13. Return the final value.
 
-`execute_raw()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding. It still obeys the configured response-body limit.
+`#[cfg(feature = "dangerous-raw-response")] execute_raw_response()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding. It still obeys the configured response-body limit.
 
-Raw execution still traverses the transport scheduling layer, so rate-limit acquire and response observation semantics remain in effect for `execute_raw()`.
+Raw execution still traverses the transport scheduling layer, so rate-limit acquire and response observation semantics remain in effect.

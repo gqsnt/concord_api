@@ -65,7 +65,10 @@ async fn execution_usage(api: UsageExecutionApi) -> Result<(), ApiClientError> {
         .attempt(1)
         .response()
         .await?;
-    let _raw = api.list().execute_raw().await?;
+    #[cfg(feature = "dangerous-raw-response")]
+    let _raw = api.list().execute_raw_response().await?;
+    #[cfg(not(feature = "dangerous-raw-response"))]
+    let _decoded = api.list().execute().await?;
     let _items = api
         .list()
         .count(100)

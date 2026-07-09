@@ -495,7 +495,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         self.debug_planned_response(dbg, &resp, resp.url.as_str());
         Self::decode_planned_response::<C>(&plan, resp, ctx.clone())
     }
-    pub async fn execute_plan_raw(
+    pub(crate) async fn execute_plan_raw(
         &self,
         plan: RequestPlan,
     ) -> Result<BuiltResponse, ApiClientError> {
