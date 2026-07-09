@@ -240,6 +240,77 @@ fn boolean_query_flag_fails() {
 }
 
 #[test]
+fn legacy_behavior_keyword_fails_with_migration_diagnostic() {
+    let err = parse_err(
+        r#"
+        api! {
+            client Api {
+                base "https://example.com"
+
+                behavior read {
+                    retry off
+                }
+            }
+        }
+        "#,
+    );
+
+    assert!(
+        err.to_string()
+            .contains("`behavior` is not valid V1 DSL; use `profile`"),
+        "{err}"
+    );
+}
+
+#[test]
+fn legacy_behaviors_block_fails_with_migration_diagnostic() {
+    let err = parse_err(
+        r#"
+        api! {
+            client Api {
+                base "https://example.com"
+
+                behaviors {
+                    behavior read {
+                        retry off
+                    }
+                }
+            }
+        }
+        "#,
+    );
+
+    assert!(
+        err.to_string()
+            .contains("`behaviors` is not valid V1 DSL; use `profiles"),
+        "{err}"
+    );
+}
+
+#[test]
+fn legacy_defaults_block_fails_with_migration_diagnostic() {
+    let err = parse_err(
+        r#"
+        api! {
+            client Api {
+                base "https://example.com"
+
+                defaults {
+                    retry off
+                }
+            }
+        }
+        "#,
+    );
+
+    assert!(
+        err.to_string()
+            .contains("`defaults` is not valid V1 DSL; use `default"),
+        "{err}"
+    );
+}
+
+#[test]
 fn nested_scope_depth_limit_is_enforced_at_parse_time() {
     let source = nested_scope_source(64, "LimitPing");
     let ast = parse_ok(&source);

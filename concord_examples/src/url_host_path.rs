@@ -28,7 +28,7 @@ api! {
             }
         }
 
-        defaults {
+        default {
             rate_limit app
         }
     }

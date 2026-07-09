@@ -103,26 +103,26 @@ fn codegen_uses_resolved_ir() {
                 }
             }
 
-            behaviors {
-                behavior shared {
+            profiles {
+                profile shared {
                     auth bearer session
                     retry read
                     rate_limit app
                 }
 
-                behavior endpoint_override {
+                profile endpoint_override {
                     retry off
                 }
             }
 
-            defaults {
-                behavior shared
+            default {
+                profile shared
             }
         }
 
         GET Ping(page?: u64 = 0)
             path ["ping"]
-            behavior endpoint_override
+            profile endpoint_override
             -> Json<String>
     });
 
@@ -135,7 +135,7 @@ fn codegen_uses_resolved_ir() {
             assert!(config.respect_retry_after);
         }
         other => {
-            panic!("expected resolved client retry from behavior/default lowering, got {other:?}")
+            panic!("expected resolved client retry from profile/default lowering, got {other:?}")
         }
     }
     match &resolved.client_policy.rate_limit {
@@ -148,7 +148,7 @@ fn codegen_uses_resolved_ir() {
             assert_eq!(bucket.key.len(), 1);
         }
         other => panic!(
-            "expected resolved client rate limit from behavior/default lowering, got {other:?}"
+            "expected resolved client rate limit from profile/default lowering, got {other:?}"
         ),
     }
 

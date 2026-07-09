@@ -101,9 +101,12 @@ impl Parse for RawScopeTaggedScope {
                 let t = content.parse::<Expr>()?;
                 policy.timeout = Some(t);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::behavior) {
+            } else if content.peek(kw::profile) {
                 behavior_uses.push(parse_behavior_use_spec(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::behavior) {
+                let legacy: kw::behavior = content.parse()?;
+                return Err(legacy_behavior_keyword_error(legacy.span));
             } else if content.peek(kw::auth) {
                 content.parse::<kw::auth>()?;
                 auth_uses.push(parse_auth_use_decl_after_auth_keyword(&content)?);

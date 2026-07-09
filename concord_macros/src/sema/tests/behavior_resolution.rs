@@ -8,30 +8,30 @@ fn behavior_resolution_lowers_behavior_declarations() {
             client Api {
                 base "https://example.com"
 
-                behavior client_read {
+                profile client_read {
                     retry off
                 }
 
-                behavior scope_read {
+                profile scope_read {
                     retry off
                 }
 
-                behavior endpoint_read {
+                profile endpoint_read {
                     retry off
                 }
 
-                defaults {
-                    behavior client_read
+                default {
+                    profile client_read
                 }
             }
 
             scope users {
                 path ["users"]
-                behavior scope_read
+                profile scope_read
 
                 GET Me
                     path ["me"]
-                    behavior endpoint_read
+                    profile endpoint_read
                     -> Json<()>
             }
         }
@@ -57,26 +57,26 @@ fn behavior_doc_names_are_deduped_in_stable_order() {
             client Api {
                 base "https://example.com"
 
-                behavior read {
+                profile read {
                     retry off
                 }
 
-                behavior match_read {
+                profile match_read {
                     retry off
                 }
 
-                defaults {
-                    behavior read
+                default {
+                    profile read
                 }
             }
 
             scope users {
                 path ["users"]
-                behavior read
+                profile read
 
                 GET Me
                     path ["me"]
-                    behavior match_read
+                    profile match_read
                     -> Json<()>
             }
         }
@@ -98,22 +98,22 @@ fn duplicate_behavior_across_layers_remains_allowed() {
             client Api {
                 base "https://example.com"
 
-                behavior read {
+                profile read {
                     retry off
                 }
 
-                defaults {
-                    behavior read
+                default {
+                    profile read
                 }
             }
 
             scope users {
                 path ["users"]
-                behavior read
+                profile read
 
                 GET Me
                     path ["me"]
-                    behavior read
+                    profile read
                     -> Json<()>
             }
         }

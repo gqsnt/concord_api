@@ -167,7 +167,7 @@ fn normalize_route_layer_ownership_does_not_copy_outer_state_to_synthetic_path_l
                 retry read
                 rate_limit api
                 rate_limit key tenant_key = tenant_id
-                behavior audit
+                profile audit
 
                 GET Show
                     path ["profile"]

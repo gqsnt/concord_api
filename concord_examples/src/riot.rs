@@ -163,88 +163,88 @@ api! {
             }
         }
 
-        behaviors {
-            behavior riot_read {
+        profiles {
+            profile riot_read {
                 auth header "X-Riot-Token" = riot_api_key
                 retry read
                 rate_limit app
             }
 
-            behavior summoner_by_puuid_read {
+            profile summoner_by_puuid_read {
                 rate_limit summoner_by_puuid
             }
 
-            behavior league_apex_read {
+            profile league_apex_read {
                 rate_limit league_apex_by_queue
             }
 
-            behavior league_entries_page_read {
+            profile league_entries_page_read {
                 rate_limit league_entries_page
             }
 
-            behavior league_entries_by_puuid_read {
+            profile league_entries_by_puuid_read {
                 rate_limit league_entries_by_puuid
             }
 
-            behavior league_exp_entries_page_read {
+            profile league_exp_entries_page_read {
                 rate_limit league_exp_entries_page
             }
 
-            behavior clash_team_read {
+            profile clash_team_read {
                 rate_limit clash_team
             }
 
-            behavior clash_tournament_read {
+            profile clash_tournament_read {
                 rate_limit clash_tournament
             }
 
-            behavior clash_players_by_puuid_read {
+            profile clash_players_by_puuid_read {
                 rate_limit clash_players_by_puuid
             }
 
-            behavior account_standard_read {
+            profile account_standard_read {
                 rate_limit account_standard_lookup
             }
 
-            behavior account_high_volume_read {
+            profile account_high_volume_read {
                 rate_limit account_high_volume
             }
 
-            behavior status_platform_data_read {
+            profile status_platform_data_read {
                 rate_limit status_platform_data
             }
 
-            behavior match_v5_standard_read {
+            profile match_v5_standard_read {
                 rate_limit match_v5_standard
             }
 
-            behavior match_v5_replays_read {
+            profile match_v5_replays_read {
                 rate_limit match_v5_replays
             }
 
-            behavior challenges_high_volume_read {
+            profile challenges_high_volume_read {
                 rate_limit challenges_high_volume
             }
 
-            behavior champion_mastery_high_volume_read {
+            profile champion_mastery_high_volume_read {
                 rate_limit champion_mastery_high_volume
             }
 
-            behavior tournament_stub_high_volume_read {
+            profile tournament_stub_high_volume_read {
                 rate_limit tournament_stub_high_volume
             }
 
-            behavior champion_rotation_high_volume_read {
+            profile champion_rotation_high_volume_read {
                 rate_limit champion_rotation_high_volume
             }
 
-            behavior spectator_live_game_read {
+            profile spectator_live_game_read {
                 rate_limit spectator_live_game
             }
         }
 
-        defaults {
-            behavior riot_read
+        default {
+            profile riot_read
         }
     }
 
@@ -258,7 +258,7 @@ api! {
             GET GetChampionRotations
             as rotations
             path ["champion-rotations"]
-            behavior champion_rotation_high_volume_read
+            profile champion_rotation_high_volume_read
             -> Json<models::ChampionRotationsDto>
         }
 
@@ -268,7 +268,7 @@ api! {
             GET GetSummonerByPuuid(encrypted_puuid: String)
             as by_puuid
             path ["by-puuid", encrypted_puuid]
-            behavior summoner_by_puuid_read
+            profile summoner_by_puuid_read
             -> Json<models::SummonerDto>
         }
 
@@ -281,7 +281,7 @@ api! {
                 GET GetChallengerLeagueByQueue(queue: LeagueQueue)
                 as by_queue
                 path ["by-queue", queue]
-                behavior league_apex_read
+                profile league_apex_read
                 -> Json<models::LeagueListDto>
             }
 
@@ -291,7 +291,7 @@ api! {
                 GET GetGrandmasterLeagueByQueue(queue: LeagueQueue)
                 as by_queue
                 path ["by-queue", queue]
-                behavior league_apex_read
+                profile league_apex_read
                 -> Json<models::LeagueListDto>
             }
 
@@ -301,7 +301,7 @@ api! {
                 GET GetMasterLeagueByQueue(queue: LeagueQueue)
                 as by_queue
                 path ["by-queue", queue]
-                behavior league_apex_read
+                profile league_apex_read
                 -> Json<models::LeagueListDto>
             }
 
@@ -314,13 +314,13 @@ api! {
                 query {
                     page
                 }
-                behavior league_entries_page_read
+                profile league_entries_page_read
                 -> Json<Vec<models::LeagueEntryDto>>
 
                 GET GetLeagueEntriesByPuuid(encrypted_puuid: String)
                 as by_puuid
                 path ["by-puuid", encrypted_puuid]
-                behavior league_entries_by_puuid_read
+                profile league_entries_by_puuid_read
                 -> Json<Vec<models::LeagueEntryDto>>
             }
         }
@@ -334,7 +334,7 @@ api! {
             query {
                 page
             }
-            behavior league_exp_entries_page_read
+            profile league_exp_entries_page_read
             -> Json<Vec<models::LeagueEntryDto>>
         }
 
@@ -344,31 +344,31 @@ api! {
             GET GetClashTeam(team_id: String)
             as team
             path ["teams", team_id]
-            behavior clash_team_read
+            profile clash_team_read
             -> Json<models::ClashTeamDto>
 
             GET GetClashTournament(tournament_id: i64)
             as tournament
             path ["tournaments", tournament_id]
-            behavior clash_tournament_read
+            profile clash_tournament_read
             -> Json<models::ClashTournamentDto>
 
             GET GetClashTournamentByTeam(team_id: String)
             as tournament_by_team
             path ["tournaments", "by-team", team_id]
-            behavior clash_team_read
+            profile clash_team_read
             -> Json<models::ClashTournamentDto>
 
             GET GetClashTournaments
             as tournaments
             path ["tournaments"]
-            behavior clash_tournament_read
+            profile clash_tournament_read
             -> Json<Vec<models::ClashTournamentDto>>
 
             GET GetClashPlayersByPuuid(puuid: String)
             as players_by_puuid
             path ["players", "by-puuid", puuid]
-            behavior clash_players_by_puuid_read
+            profile clash_players_by_puuid_read
             -> Json<Vec<models::ClashPlayerDto>>
         }
 
@@ -378,13 +378,13 @@ api! {
             GET GetPlatformData
             as platform_data
             path ["platform-data"]
-            behavior status_platform_data_read
+            profile status_platform_data_read
             -> Json<models::PlatformDataDto>
         }
 
         scope challenges_v1 {
             path ["challenges", "v1"]
-            behavior challenges_high_volume_read
+            profile challenges_high_volume_read
 
             GET GetChallengePercentiles
             as percentiles
@@ -422,7 +422,7 @@ api! {
 
         scope champion_mastery_v4 {
             path ["champion-mastery", "v4"]
-            behavior champion_mastery_high_volume_read
+            profile champion_mastery_high_volume_read
 
             GET GetChampionMasteriesByPuuid(encrypted_puuid: String)
             as by_puuid
@@ -454,7 +454,7 @@ api! {
             GET GetActiveGameByPuuid(encrypted_puuid: String)
             as active_game_by_puuid
             path ["active-games", "by-summoner", encrypted_puuid]
-            behavior spectator_live_game_read
+            profile spectator_live_game_read
             -> Json<models::CurrentGameInfo>
         }
     }
@@ -468,13 +468,13 @@ api! {
             GET GetAccountByRiotId(game_name: String, tag_line: String)
             as by_riot_id
             path ["by-riot-id", game_name, tag_line]
-            behavior account_standard_read
+            profile account_standard_read
             -> Json<models::AccountDto>
 
             GET GetAccountByPuuid(puuid: String)
             as by_puuid
             path ["by-puuid", puuid]
-            behavior account_standard_read
+            profile account_standard_read
             -> Json<models::AccountDto>
         }
 
@@ -484,7 +484,7 @@ api! {
             GET GetAccountRegionByGameAndPuuid(game: String, puuid: String)
             as by_game_and_puuid
             path ["by-game", game, "by-puuid", puuid]
-            behavior account_high_volume_read
+            profile account_high_volume_read
             -> Json<models::AccountRegionDto>
         }
 
@@ -506,31 +506,31 @@ api! {
                 offset = start,
                 limit = count
             }
-            behavior match_v5_standard_read
+            profile match_v5_standard_read
             -> Json<Vec<String>>
 
             GET GetMatch(match_id: String)
             as by_id
             path [match_id]
-            behavior match_v5_standard_read
+            profile match_v5_standard_read
             -> Json<models::MatchDto>
 
             GET GetTimeline(match_id: String)
             as timeline
             path [match_id, "timeline"]
-            behavior match_v5_standard_read
+            profile match_v5_standard_read
             -> Json<models::TimelineDto>
 
             GET GetMatchReplaysByPuuid(puuid: String)
             as replays_by_puuid
             path ["by-puuid", puuid, "replays"]
-            behavior match_v5_replays_read
+            profile match_v5_replays_read
             -> Json<serde_json::Value>
         }
 
         scope tournament_stub_v5 {
             path ["lol", "tournament-stub", "v5"]
-            behavior tournament_stub_high_volume_read
+            profile tournament_stub_high_volume_read
 
             // Mutation endpoints are included for DSL/type coverage only. The
             // default live smoke path must not call them. Do not run mutation

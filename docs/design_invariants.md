@@ -14,7 +14,7 @@ client root
     endpoint leaves
 ```
 
-The client owns base identity, client-wide variables, credentials, defaults, named profiles, and runtime configuration.
+The client owns base identity, client-wide variables, credentials, the default attachment block, named profiles, and runtime configuration.
 
 Scopes refine route, host, auth, and policy context.
 
@@ -36,7 +36,7 @@ Endpoint leaves should primarily describe endpoint contracts:
 - response codec
 - response entity output
 
-Cross-cutting behavior should be inherited from scopes or named profiles whenever possible.
+Cross-cutting policy should be inherited from scopes or named profiles whenever possible.
 
 ## Response Terminator
 
@@ -106,5 +106,5 @@ A reader should be able to scan a Concord client in this order:
 
 1. API shape.
 2. Endpoint contracts.
-3. Named behavior and policy attachment.
+3. Named profile and policy attachment.
 4. Low-level mechanism details.

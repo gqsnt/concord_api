@@ -21,14 +21,14 @@ api! {
 
         }
 
-        behaviors {
-            behavior read {
+        profiles {
+            profile read {
                 retry read
                 rate_limit app
             }
         }
 
-        defaults {
+        default {
             retry read
             rate_limit app
         }
@@ -50,10 +50,10 @@ api! {
         path ["limited"]
         -> Text<String>
 
-    GET BehaviorText
-        as behavior_text
-        path ["behavior-text"]
-        behavior read
+    GET ProfileText
+        as profile_text
+        path ["profile-text"]
+        profile read
         -> Text<String>
 }
 
@@ -64,7 +64,7 @@ mod tests {
     use super::PolicyApi;
 
     #[test]
-    fn policy_behavior_merge_docs_examples_compile() {
+    fn policy_profile_merge_docs_examples_compile() {
         let _ = std::mem::size_of::<PolicyApi>();
     }
 }

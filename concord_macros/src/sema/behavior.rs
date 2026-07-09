@@ -22,7 +22,7 @@ pub(super) fn resolve_behavior_profiles(
         if raw_profiles.insert(key.clone(), profile).is_some() {
             return Err(syn::Error::new(
                 profile.name.span(),
-                format!("duplicate behavior `{key}`"),
+                format!("duplicate profile `{key}`"),
             ));
         }
     }
@@ -60,12 +60,12 @@ pub(super) fn resolve_behavior_profile(
 
     let profile = raw_profiles
         .get(name)
-        .ok_or_else(|| syn::Error::new(Span::call_site(), format!("unknown behavior `{name}`")))?;
+        .ok_or_else(|| syn::Error::new(Span::call_site(), format!("unknown profile `{name}`")))?;
 
     if !visiting.insert(name.to_string()) {
         return Err(syn::Error::new(
             profile.name.span(),
-            format!("behavior inheritance cycle involving `{name}`"),
+            format!("profile inheritance cycle involving `{name}`"),
         ));
     }
 
@@ -73,13 +73,13 @@ pub(super) fn resolve_behavior_profile(
         if parent == &profile.name {
             return Err(syn::Error::new(
                 parent.span(),
-                format!("behavior inheritance cycle involving `{name}`"),
+                format!("profile inheritance cycle involving `{name}`"),
             ));
         }
         if !raw_profiles.contains_key(&parent.to_string()) {
             return Err(syn::Error::new(
                 parent.span(),
-                format!("unknown behavior parent `{parent}`"),
+                format!("unknown profile parent `{parent}`"),
             ));
         }
         resolve_behavior_profile(
@@ -121,7 +121,7 @@ pub(super) fn resolve_behavior_uses(
             let Some(profile) = profiles.get(&name.to_string()) else {
                 return Err(syn::Error::new(
                     name.span(),
-                    format!("unknown behavior `{name}`"),
+                    format!("unknown profile `{name}`"),
                 ));
             };
             out = merge_behavior(out, profile.clone());
@@ -138,7 +138,7 @@ pub(crate) fn validate_behavior_uses_unique_at_site(uses: &[BehaviorUseSpec]) ->
             if !seen.insert(name.to_string()) {
                 return Err(syn::Error::new(
                     name.span(),
-                    format!("duplicate behavior `{name}` at this attachment site"),
+                    format!("duplicate profile `{name}` at this attachment site"),
                 ));
             }
         }

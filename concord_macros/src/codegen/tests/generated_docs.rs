@@ -43,37 +43,37 @@ fn generated_rustdoc_includes_behavior_names() {
         client BehaviorDocs {
             base "https://example.com"
 
-            behavior client_read {
+            profile client_read {
                 retry off
             }
 
-            behavior scope_read {
+            profile scope_read {
                 retry off
             }
 
-            behavior endpoint_read {
+            profile endpoint_read {
                 retry off
             }
 
-            defaults {
-                behavior client_read
+            default {
+                profile client_read
             }
         }
 
         scope users {
             path ["users"]
-            behavior scope_read
+            profile scope_read
 
             GET Me
                 path ["me"]
-                behavior endpoint_read
+                profile endpoint_read
                 -> Json<()>
         }
     });
 
     assert_contains_all(
         &out,
-        &["#[doc=\"Behavior: `client_read`, `scope_read`, `endpoint_read`\"]"],
+        &["#[doc=\"Profile: `client_read`, `scope_read`, `endpoint_read`\"]"],
     );
 }
 
@@ -182,8 +182,8 @@ fn generated_rustdoc_redaction_does_not_render_secret_literals() {
                 }
             }
 
-            behaviors {
-                behavior protected_read {
+            profiles {
+                profile protected_read {
                     auth bearer session
                 }
             }
@@ -191,7 +191,7 @@ fn generated_rustdoc_redaction_does_not_render_secret_literals() {
 
         GET GetBearerDoc
             path ["bearer"]
-            behavior protected_read
+            profile protected_read
             -> Json<()>
 
         GET GetHeaderDoc
@@ -213,7 +213,7 @@ fn generated_rustdoc_redaction_does_not_render_secret_literals() {
     assert_contains_all(
         &out,
         &[
-            "#[doc=\"Behavior: `protected_read`\"]",
+            "#[doc=\"Profile: `protected_read`\"]",
             "#[doc=\"- bearer `session`\"]",
             "#[doc=\"- header `X-Api-Key` = `upstream`\"]",
             "#[doc=\"- basic `login`\"]",

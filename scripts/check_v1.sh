@@ -73,7 +73,25 @@ run_nextest_count_guard() {
   printf 'coverage guard: %s ran %s tests (minimum %s)\n' "$label" "$count" "$min_count"
 }
 
+check_public_dsl_terms() {
+  local tmp
+  tmp="$(mktemp)"
+  set +e
+  grep -RInE '^[[:space:]]*(behavior[[:space:]]+|behaviors[[:space:]]*\{|defaults[[:space:]]*\{)' \
+    README.md docs concord_examples/src scripts/perf_macro_scale.sh >"$tmp"
+  local status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    echo "error: stale public V1 DSL terminology found; use profiles/profile/default" >&2
+    cat "$tmp" >&2
+    rm -f -- "$tmp"
+    exit 1
+  fi
+  rm -f -- "$tmp"
+}
+
 run_step "architecture boundary" bash ./scripts/check_architecture.sh
+run_step "public DSL terminology" check_public_dsl_terms
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
 # Clippy is strict in the release gate; intentional exceptions must be narrow

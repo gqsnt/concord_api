@@ -24,12 +24,12 @@ api! {
 The tree is the mental model to keep in mind:
 
 - `client` defines the root type, base URL, root variables, credentials, grouped config, and reusable profiles.
-- `scope` groups route fragments, host fragments, auth, behaviors, and policy attachments.
+- `scope` groups route fragments, host fragments, auth, profiles, and policy attachments.
 - An endpoint leaf defines one HTTP operation and its typed response.
 
 ## Client Configuration
 
-Client-level configuration is where reusable declarations live. Attachments happen later, at defaults, scope, or endpoint sites.
+Client-level configuration is where reusable declarations live. Attachments happen later, at default, scope, or endpoint sites.
 
 ### Declarations And Attachments
 
@@ -39,16 +39,16 @@ Use declarations to define reusable profiles:
 - `credential session = bearer(secret.token)`
 - `retry read { ... }`
 - `rate_limit app { ... }`
-- `behavior read { ... }`
+- `profile read { ... }`
 
 Use attachments to apply those profiles:
 
 - `auth bearer session`
 - `retry read`
 - `rate_limit app`
-- `behavior read`
+- `profile read`
 
-Declarations belong in client-level config, usually grouped under `auth { ... }`, `policies { ... }`, or `behaviors { ... }`. Attachments belong in `default { ... }` / `defaults { ... }`, scopes, or endpoints. `policies { ... }` is for declarations and observers, not default attachments.
+Declarations belong in client-level config, usually grouped under `auth { ... }`, `policies { ... }`, or `profiles { ... }`. Attachments belong in `default { ... }`, scopes, or endpoints. `policies { ... }` is for declarations and observers, not default attachments.
 
 ### Canonical Client Example
 
@@ -79,16 +79,16 @@ api! {
             observe rate_limit ExampleRateLimitHeaders
         }
 
-        behaviors {
-            behavior read {
+        profiles {
+            profile read {
                 auth bearer api_token
                 retry read
                 rate_limit app
             }
         }
 
-        defaults {
-            behavior read
+        default {
+            profile read
         }
     }
 
@@ -125,7 +125,7 @@ client ExampleApi {
 }
 ```
 
-This is equivalent to writing `secret` and `credential` directly in the client block. Auth use clauses such as `auth bearer session` do not belong in `auth { ... }`; they belong in defaults, scopes, endpoints, or behavior profiles.
+This is equivalent to writing `secret` and `credential` directly in the client block. Auth use clauses such as `auth bearer session` do not belong in `auth { ... }`; they belong in default, scopes, endpoints, or profiles.
 
 `auth certificate` is an attachment form for client-certificate credential material. The DSL does not provide a certificate constructor in v1. Use endpoint-backed or runtime-provided credential material when certificate auth is needed.
 
@@ -158,16 +158,16 @@ client PolicyApi {
 
 Flat declarations still work when they are clearer. `policies { ... }` is the preferred grouped form for larger clients.
 
-### Behaviors
+### Profiles
 
-Behavior profiles are semantic bundles over auth, retry, and rate-limit policy.
+Profiles are semantic bundles over auth, retry, and rate-limit policy.
 
 ```rust
 client ExampleApi {
     base "https://api.example.com"
 
-    behaviors {
-        behavior read {
+    profiles {
+        profile read {
             auth bearer session
             retry read
             rate_limit app
@@ -176,50 +176,50 @@ client ExampleApi {
 }
 ```
 
-Behavior profiles are a name layer over ordinary policy attachments. They do not change runtime semantics; they make repeated request behavior easier to read and move.
+Profiles are a name layer over ordinary policy attachments. They do not change runtime semantics; they make repeated request patterns easier to read and move.
 
 Merge rules:
 
 - client defaults apply first
 - scope policies apply from outer to inner
 - endpoint policies apply last
-- behavior clauses at one site apply in source order
-- the same behavior name may be reused across different layers, but not more than once at the same defaults, scope, or endpoint site
-- explicit `retry` overrides behavior-provided `retry` at the same attachment site
+- profile clauses at one site apply in source order
+- the same profile name may be reused across different layers, but not more than once at the same default, scope, or endpoint site
+- explicit `retry` overrides profile-provided `retry` at the same attachment site
 - `retry off` clears inherited policy
-- behavior-provided `rate_limit` combines with explicit local `rate_limit`
+- profile-provided `rate_limit` combines with explicit local `rate_limit`
 - `rate_limit off` clears inherited rate-limit policy
-- behavior rate-limit key bindings are resolved where the behavior is attached
-- auth uses append in source order across client defaults, scopes, and endpoints
-- behavior names are preserved only as rustdoc labels; they do not affect resolved runtime policy
+- profile rate-limit key bindings are resolved where the profile is attached
+- auth uses append in source order across client default, scopes, and endpoints
+- profile names are preserved only as rustdoc labels; they do not affect resolved runtime policy
 
-Behavior profiles can also be grouped:
+Profiles can also be grouped:
 
 ```rust
-behaviors {
-    behavior read {
+profiles {
+    profile read {
         retry read
         rate_limit app
     }
 }
 ```
 
-This is equivalent to writing behavior profiles directly in the client block. Flat behavior declarations still work.
+This is the canonical grouped form for profile declarations.
 
-A behavior can extend another behavior. Parent auth uses are inherited, parent rate-limit profiles are combined, and child `retry` overrides parent `retry`.
+A profile can extend another profile. Parent auth uses are inherited, parent rate-limit profiles are combined, and child `retry` overrides parent `retry`.
 
 ```rust
-behavior read {
+profile read {
     retry read
     rate_limit app
 }
 
-behavior protected_read extends read {
+profile protected_read extends read {
     auth bearer session
 }
 ```
 
-Behavior `rate_limit` clauses are resolved where the behavior is attached. This lets a behavior carry the rate-limit profile while the endpoint supplies a contextual key binding.
+Profile `rate_limit` clauses are resolved where the profile is attached. This lets a profile carry the rate-limit profile while the endpoint supplies a contextual key binding.
 
 ```rust
 rate_limit match_bucket {
@@ -228,14 +228,14 @@ rate_limit match_bucket {
     }
 }
 
-behavior match_read {
+profile match_read {
     rate_limit match_bucket
 }
 
 GET Match(match_id: String)
 path ["matches", match_id]
 rate_limit key match_key = match_id
-behavior match_read
+profile match_read
 -> Json<MatchDto>
 ```
 
@@ -243,22 +243,22 @@ Attaching `match_read` as a client default would fail because `match_id` is an e
 
 ### Defaults
 
-Default attachments can be written with either `default { ... }` or `defaults { ... }`. The singular form is valid; the plural form is the preferred grouped form for larger clients.
+Default attachments use a singular `default { ... }` block.
 
 ```rust
-defaults {
-    behavior read
+default {
+    profile read
     retry read
     rate_limit app
     auth bearer session
 }
 ```
 
-`default` / `defaults` applies client-wide defaults before scope and endpoint attachments. A default behavior applies before explicit default `retry` and `rate_limit` clauses.
+`default` applies client-wide defaults before scope and endpoint attachments. A default profile applies before explicit default `retry` and `rate_limit` clauses.
 
 Use `rate_limit off` or `retry off` on a narrower layer to clear inherited policy.
 
-Only one default/defaults block is allowed per client.
+Only one `default` block is allowed per client.
 
 ## Scopes
 
@@ -267,7 +267,7 @@ Scopes shape the tree below the client root. They add route fragments, host frag
 ```rust
 scope users {
     path ["users"]
-    behavior scope_read
+    profile scope_read
 
     GET Me
     path ["me"]
@@ -375,14 +375,14 @@ path [...]
 query { ... }
 headers { ... }
 paginate ...
-behavior ...
+profile ...
 retry/rate_limit/auth ...
 -> Json<Response>
 ```
 
 Request bodies are endpoint signature arguments named `body`, for example `POST Create(body: Json<CreateUser>)`.
 
-The response line should normally be the final line of the endpoint contract. Policy and behavior attachments come before the response line so the endpoint leaf stays visually closed by its return type.
+The response line should normally be the final line of the endpoint contract. Policy and profile attachments come before the response line so the endpoint leaf stays visually closed by its return type.
 
 ### Arguments
 
@@ -412,7 +412,7 @@ query { start, count }
 -> Json<Vec<Item>>
 ```
 
-Optional arguments may also have defaults.
+Optional arguments may also have default.
 
 ```rust
 GET Search(region?: String = "euw1".to_string())
@@ -434,13 +434,13 @@ path ["items"]
 ```
 
 ### Response Output
-Endpoint output is exactly the decoded response entity output. Behavior names also appear on endpoint docs. Generated endpoint documentation includes attached behavior names from client defaults, scopes, and endpoints.
+Endpoint output is exactly the decoded response entity output. Profile names also appear on endpoint docs. Generated endpoint documentation includes attached profile names from client default, scopes, and endpoints.
 
 ### Auth Keyword Reference
 
 `auth certificate` is an attachment form for client-certificate credential material. The DSL does not provide a certificate constructor in v1. Use endpoint-backed or runtime-provided credential material when certificate auth is needed.
 
-Protected-request refresh behavior treats `401 Unauthorized` and `403 Forbidden` as refreshable rejection statuses when the credential can be reacquired. Refresh tries are bounded by `max_auth_retries`.
+Protected-request refresh profile treats `401 Unauthorized` and `403 Forbidden` as refreshable rejection statuses when the credential can be reacquired. Refresh tries are bounded by `max_auth_retries`.
 
 Secret-bearing auth values are redacted from debug and display output, diagnostics, and generated documentation.
 
@@ -474,11 +474,11 @@ paginate CursorPagination<String> {
 -> Json<CursorPage>
 ```
 
-Pagination remains an endpoint concern. It is not part of grouped policy or behavior declarations.
+Pagination remains an endpoint concern. It is not part of grouped policy or profile declarations.
 
 ## Generated Documentation
 
-Generated endpoint documentation is derived from the resolved semantic model, not from raw syntax. That is why behavior names remain visible in rustdoc even though behavior semantics are lowered into ordinary auth, retry, and rate-limit data.
+Generated endpoint documentation is derived from the resolved semantic model, not from raw syntax. That is why profile names remain visible in rustdoc even though profile semantics are lowered into ordinary auth, retry, and rate-limit data.
 
 ## Keyword Reference
 
@@ -500,13 +500,12 @@ Preferred large-client grouping:
 
 - `auth { ... }` contains `secret` and `credential` declarations.
 - `policies { ... }` contains `retry` and `rate_limit` profile declarations plus `observe rate_limit`.
-- `behaviors { ... }` contains `behavior` declarations.
-- `defaults { ... }` contains client-wide attachments.
+- `profiles { ... }` contains `profile` declarations.
+- `default { ... }` contains client-wide attachments.
 
-Compatibility forms remain valid:
+Flat declaration forms remain valid:
 
-- `secret`, `credential`, `retry`, `rate_limit`, and `behavior` declarations may be written directly in `client`.
-- `default { ... }` is accepted as an alias for `defaults { ... }`.
+- `secret`, `credential`, `retry`, `rate_limit`, and `profile` declarations may be written directly in `client`.
 
 ### Variables And Arguments
 
@@ -616,7 +615,7 @@ rate_limit {
 }
 ```
 
-`rate_limit [a, b]` lists must contain at least one profile and cannot contain a duplicate name within the same list. Reusing a rate-limit profile across separate defaults, scopes, endpoints, or behaviors remains valid.
+`rate_limit [a, b]` lists must contain at least one profile and cannot contain a duplicate name within the same list. Reusing a rate-limit profile across separate default, scope, endpoint, or profile attachment sites remains valid.
 
 `rate_limit {}` is rejected because an empty inline rate-limit block has no effect. Use `rate_limit off` to clear inherited policy, or include at least one bucket.
 
@@ -634,13 +633,13 @@ observe rate_limit ProviderRateLimitHeaders
 
 Rate-limit profiles may use `extends parent`.
 
-### Behaviors
+### Profiles
 
-Behavior declarations may be flat or grouped:
+Profile declarations may be flat or grouped:
 
 ```rust
-behaviors {
-    behavior protected_read extends read {
+profiles {
+    profile protected_read extends read {
         auth bearer session
         retry read
         rate_limit [app, method]
@@ -648,14 +647,14 @@ behaviors {
 }
 ```
 
-Behavior bodies support only `auth`, `retry`, and `rate_limit`. Behavior use syntax:
+Profile bodies support only `auth`, `retry`, and `rate_limit`. Profile use syntax:
 
 ```rust
-behavior protected_read
-behavior [read, protected_read]
+profile protected_read
+profile [read, protected_read]
 ```
 
-Behavior lists must contain at least one behavior and cannot contain a duplicate name within the same list. The same behavior also cannot be attached more than once at the same defaults, scope, or endpoint site, even across separate `behavior` clauses. Reusing a behavior across separate layers remains valid.
+Profile lists must contain at least one profile and cannot contain a duplicate name within the same list. The same profile also cannot be attached more than once at the same default, scope, or endpoint site, even across separate `profile` clauses. Reusing a profile across separate layers remains valid.
 
 ### Request Policy Clauses
 
@@ -719,7 +718,7 @@ Endpoint leaves support:
 - `timeout: expr`
 - `rate_limit key name = arg`
 - `paginate Controller { ... }`
-- `behavior ...`
+- `profile ...`
 - `auth ...`
 - `retry ...`
 - `rate_limit ...`
@@ -765,10 +764,9 @@ The grouped form is preferred for larger clients, but the flat form remains vali
 
 - `secret` and `credential` may be written directly in `client`
 - `retry` and `rate_limit` profile declarations may be written directly in `client`
-- `behavior` profiles may be written directly in `client`
-- `default { ... }` remains valid beside the preferred `defaults { ... }`
+- `profile` declarations may be written directly in `client`
 
-Use grouped config when the client has enough policy, auth, or behavior declarations that structure improves readability.
+Use grouped config when the client has enough policy, auth, or profile declarations that structure improves readability.
 
 ## Unsupported Or Reserved Syntax
 
@@ -777,17 +775,17 @@ Use grouped config when the client has enough policy, auth, or behavior declarat
 - `prefix` is not public v1 syntax.
 - The older bracketed interpolation form is not public syntax; use `fmt[...]`.
 - The unsupported auth-combinator spellings are reserved and rejected.
-- `behaviors { ... }` accepts only `behavior` declarations.
+- `profiles { ... }` accepts only `profile` declarations.
 - `auth { ... }` accepts only `secret` and `credential` declarations.
-- `policies { ... }` accepts policy declarations and `observe`; default attachments belong in `defaults { ... }` or `default { ... }`.
-- `profile` and `access_token` are reserved or internal keywords, not standalone public DSL clauses.
+- `policies { ... }` accepts policy declarations and `observe`; default attachments belong in `default { ... }`.
+- `behavior`, `behaviors`, and `defaults` are legacy spellings and are rejected with migration diagnostics.
+- `access_token` is reserved for credential declarations and is not a standalone public DSL clause.
 
 ## Design Rules
 
 - Keep endpoint leaves readable.
 - Keep the response line last in normal endpoints.
-- Prefer grouped client config for large clients: `auth { ... }`, `policies { ... }`, `behaviors { ... }`, and `defaults { ... }`.
-- Keep `default { ... }` valid, but prefer `defaults { ... }` when the block is meant to read as grouped configuration.
-- Attach behaviors and policies at the narrowest scope that needs them.
-- Use behaviors for semantic request patterns, not for mechanical details that are already covered by a reusable policy profile.
+- Prefer grouped client config for large clients: `auth { ... }`, `policies { ... }`, `profiles { ... }`, and `default { ... }`.
+- Attach profiles and policies at the narrowest scope that needs them.
+- Use profiles for semantic request patterns, not for mechanical details that are already covered by a reusable policy profile.
 - See `docs/design_invariants.md` for the more detailed design invariants that should stay true as the DSL evolves.

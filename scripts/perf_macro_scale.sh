@@ -205,7 +205,7 @@ api! {
             }
         }
 
-        defaults {
+        default {
             retry read
             rate_limit app
         }

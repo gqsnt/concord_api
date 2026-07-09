@@ -59,18 +59,18 @@ api! {
             observe rate_limit AdvancedRateLimitHeaders
         }
 
-        behaviors {
-            behavior basic_write {
+        profiles {
+            profile basic_write {
                 auth basic basic_login
                 retry write
             }
 
-            behavior tenant_read {
+            profile tenant_read {
                 auth bearer oauth_session
                 rate_limit tenant
             }
 
-            behavior query_authenticated {
+            profile query_authenticated {
                 auth query "api_key" = query_key
             }
         }
@@ -86,7 +86,7 @@ api! {
         header "X-Request-Id" = request_id,
         query "tenant" = tenant_id,
         rate_limit only tenant
-        behavior tenant_read
+        profile tenant_read
         -> Json<Vec<AdvancedUser>>
 
         GET SearchTaggedUsers(request_id: String, tag: String)
@@ -96,17 +96,17 @@ api! {
         query "tag" += tag,
         query "debug" -
         timeout: std::time::Duration::from_secs(5),
-        behavior tenant_read
+        profile tenant_read
         -> Json<Vec<AdvancedUser>>
 
         POST CreateUser(body: Json<AdvancedUser>)
         path ["users"]
-        behavior basic_write
+        profile basic_write
         -> Json<AdvancedUser>
     }
 
     GET QueryAuthenticated
     path ["query-authenticated"]
-    behavior query_authenticated
+    profile query_authenticated
     -> Json<AdvancedUser>
 }

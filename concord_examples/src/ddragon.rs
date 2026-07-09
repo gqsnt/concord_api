@@ -21,7 +21,7 @@ api! {
             }
         }
 
-        defaults {
+        default {
             retry read
         }
     }

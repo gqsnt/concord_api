@@ -135,8 +135,8 @@ impl Parse for RawClient {
                 braced!(policy_content in content);
                 parse_client_policies_group(&policy_content, &mut retry_profiles, &mut rate_limit)?;
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::behavior) {
-                content.parse::<kw::behavior>()?;
+            } else if content.peek(kw::profile) {
+                content.parse::<kw::profile>()?;
                 behavior_profiles
                     .get_or_insert_with(|| BehaviorProfilesBlock {
                         profiles: Vec::new(),
@@ -144,19 +144,23 @@ impl Parse for RawClient {
                     .profiles
                     .push(parse_behavior_profile_decl_after_keyword(&content)?);
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::behaviors) {
-                content.parse::<kw::behaviors>()?;
+            } else if content.peek(kw::profiles) {
+                content.parse::<kw::profiles>()?;
                 let behavior_content;
                 braced!(behavior_content in content);
                 while !behavior_content.is_empty() {
-                    if !behavior_content.peek(kw::behavior) {
+                    if behavior_content.peek(kw::behavior) {
+                        let legacy: kw::behavior = behavior_content.parse()?;
+                        return Err(legacy_behavior_keyword_error(legacy.span));
+                    }
+                    if !behavior_content.peek(kw::profile) {
                         let tt: TokenTree = behavior_content.parse()?;
                         return Err(syn::Error::new(
                             tt.span(),
-                            "invalid item in behaviors block; expected behavior profile",
+                            "invalid item in profiles block; expected `profile NAME { ... }`",
                         ));
                     }
-                    behavior_content.parse::<kw::behavior>()?;
+                    behavior_content.parse::<kw::profile>()?;
                     behavior_profiles
                         .get_or_insert_with(|| BehaviorProfilesBlock {
                             profiles: Vec::new(),
@@ -168,12 +172,14 @@ impl Parse for RawClient {
                     let _ = behavior_content.parse::<Option<Token![,]>>()?;
                 }
                 let _ = content.parse::<Option<Token![,]>>()?;
-            } else if content.peek(kw::default) || content.peek(kw::defaults) {
-                let default_span = if content.peek(kw::default) {
-                    content.parse::<kw::default>()?.span
-                } else {
-                    content.parse::<kw::defaults>()?.span
-                };
+            } else if content.peek(kw::behavior) {
+                let legacy: kw::behavior = content.parse()?;
+                return Err(legacy_behavior_keyword_error(legacy.span));
+            } else if content.peek(kw::behaviors) {
+                let legacy: kw::behaviors = content.parse()?;
+                return Err(legacy_behaviors_keyword_error(legacy.span));
+            } else if content.peek(kw::default) {
+                let default_span = content.parse::<kw::default>()?.span;
                 if seen_default_block {
                     return Err(syn::Error::new(
                         default_span,
@@ -192,6 +198,9 @@ impl Parse for RawClient {
                     &mut rate_limit,
                 )?;
                 let _ = content.parse::<Option<Token![,]>>()?;
+            } else if content.peek(kw::defaults) {
+                let legacy: kw::defaults = content.parse()?;
+                return Err(legacy_defaults_keyword_error(legacy.span));
             } else if content.peek(kw::observe) {
                 content.parse::<kw::observe>()?;
                 content.parse::<kw::rate_limit>()?;
@@ -370,7 +379,7 @@ fn parse_client_policies_group(
             if fork.peek(kw::off) {
                 return Err(syn::Error::new(
                     fork.span(),
-                    "default retry policy is not allowed in policies block; use defaults { ... } or default { ... }",
+                    "default retry policy is not allowed in policies block; use default { ... }",
                 ));
             }
             if !fork.peek(Ident) {
@@ -388,7 +397,7 @@ fn parse_client_policies_group(
             if !fork.peek(token::Brace) {
                 return Err(syn::Error::new(
                     input.span(),
-                    "default retry policy is not allowed in policies block; use defaults { ... } or default { ... }",
+                    "default retry policy is not allowed in policies block; use default { ... }",
                 ));
             }
 
@@ -406,7 +415,7 @@ fn parse_client_policies_group(
             if fork.peek(kw::off) || fork.peek(kw::only) {
                 return Err(syn::Error::new(
                     fork.span(),
-                    "default rate_limit policy is not allowed in policies block; use defaults { ... } or default { ... }",
+                    "default rate_limit policy is not allowed in policies block; use default { ... }",
                 ));
             }
             if !fork.peek(Ident) {
@@ -424,7 +433,7 @@ fn parse_client_policies_group(
             if !fork.peek(token::Brace) {
                 return Err(syn::Error::new(
                     input.span(),
-                    "default rate_limit policy is not allowed in policies block; use defaults { ... } or default { ... }",
+                    "default rate_limit policy is not allowed in policies block; use default { ... }",
                 ));
             }
 
@@ -507,8 +516,11 @@ fn parse_client_default_block(
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);
-        } else if input.peek(kw::behavior) {
+        } else if input.peek(kw::profile) {
             default_behavior_uses.push(parse_behavior_use_spec(input)?);
+        } else if input.peek(kw::behavior) {
+            let legacy: kw::behavior = input.parse()?;
+            return Err(legacy_behavior_keyword_error(legacy.span));
         } else if input.peek(kw::retry) {
             if retry.is_some() {
                 return Err(syn::Error::new(
@@ -553,6 +565,27 @@ fn parse_client_default_block(
         let _ = input.parse::<Option<Token![,]>>()?;
     }
     Ok(())
+}
+
+fn legacy_behavior_keyword_error(span: Span) -> syn::Error {
+    syn::Error::new(
+        span,
+        "`behavior` is not valid V1 DSL; use `profile` for profile declarations and attachments",
+    )
+}
+
+fn legacy_behaviors_keyword_error(span: Span) -> syn::Error {
+    syn::Error::new(
+        span,
+        "`behaviors` is not valid V1 DSL; use `profiles { profile NAME { ... } }`",
+    )
+}
+
+fn legacy_defaults_keyword_error(span: Span) -> syn::Error {
+    syn::Error::new(
+        span,
+        "`defaults` is not valid V1 DSL; use `default { ... }`",
+    )
 }
 
 // Keep feature-domain macro chunks in separate files without widening helper visibility.

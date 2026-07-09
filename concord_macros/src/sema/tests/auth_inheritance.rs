@@ -69,32 +69,32 @@ fn auth_inheritance_combines_client_scope_behavior_and_endpoint_in_order() {
                 credential endpoint_auth = api_key(secret.endpoint_token)
                 credential direct_auth = api_key(secret.direct_token)
 
-                behaviors {
-                    behavior client_behavior {
+                profiles {
+                    profile client_behavior {
                         auth bearer client_auth
                     }
 
-                    behavior scope_behavior {
+                    profile scope_behavior {
                         auth header "X-Scope" = scope_auth
                     }
 
-                    behavior endpoint_behavior {
+                    profile endpoint_behavior {
                         auth query "X-Endpoint" = endpoint_auth
                     }
                 }
 
-                defaults {
-                    behavior client_behavior
+                default {
+                    profile client_behavior
                 }
             }
 
             scope protected {
                 path ["protected"]
-                behavior scope_behavior
+                profile scope_behavior
 
                 GET Show
                     path ["show"]
-                    behavior endpoint_behavior
+                    profile endpoint_behavior
                     auth header "X-Direct" = direct_auth
                     -> Json<()>
             }

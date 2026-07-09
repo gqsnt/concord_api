@@ -26,8 +26,8 @@ fn behavior_use_applies_policy_and_auth_to_endpoint() {
                     }
                 }
 
-                behaviors {
-                    behavior read_behavior {
+                profiles {
+                    profile read_behavior {
                         auth bearer session
                         retry read
                         rate_limit app
@@ -37,7 +37,7 @@ fn behavior_use_applies_policy_and_auth_to_endpoint() {
 
             GET Me
                 path ["me"]
-                behavior read_behavior
+                profile read_behavior
                 -> Json<()>
         }
         "#,
@@ -88,16 +88,16 @@ fn client_default_behavior_applies_to_endpoint_policy() {
                     }
                 }
 
-                behaviors {
-                    behavior read_behavior {
+                profiles {
+                    profile read_behavior {
                         auth bearer session
                         retry read
                         rate_limit app
                     }
                 }
 
-                defaults {
-                    behavior read_behavior
+                default {
+                    profile read_behavior
                 }
             }
 
@@ -147,15 +147,15 @@ fn default_behavior_applies_to_client_policy() {
                     }
                 }
 
-                behaviors {
-                    behavior protected_read {
+                profiles {
+                    profile protected_read {
                         retry read
                         rate_limit app
                     }
                 }
 
-                defaults {
-                    behavior protected_read
+                default {
+                    profile protected_read
                 }
             }
 
@@ -190,8 +190,8 @@ fn scope_behavior_is_inherited_by_nested_endpoint() {
                     on [401]
                 }
 
-                behaviors {
-                    behavior scope_read {
+                profiles {
+                    profile scope_read {
                         retry read
                     }
                 }
@@ -199,7 +199,7 @@ fn scope_behavior_is_inherited_by_nested_endpoint() {
 
             scope users {
                 path ["users"]
-                behavior scope_read
+                profile scope_read
 
                 GET Me
                     path ["me"]
@@ -242,24 +242,24 @@ fn endpoint_behavior_adds_policy_without_losing_inherited_auth() {
                     on [401]
                 }
 
-                behaviors {
-                    behavior default_auth {
+                profiles {
+                    profile default_auth {
                         auth bearer session
                     }
 
-                    behavior endpoint_read {
+                    profile endpoint_read {
                         retry endpoint_retry
                     }
                 }
 
-                defaults {
-                    behavior default_auth
+                default {
+                    profile default_auth
                 }
             }
 
             GET Me
                 path ["me"]
-                behavior endpoint_read
+                profile endpoint_read
                 -> Json<()>
         }
         "#,

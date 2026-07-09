@@ -7,7 +7,7 @@ api! {
 
     scope users {
         path ["users"]
-        behavior missing
+        profile missing
     }
 }
 

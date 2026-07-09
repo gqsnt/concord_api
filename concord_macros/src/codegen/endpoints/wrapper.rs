@@ -1005,7 +1005,7 @@ fn behavior_doc_line(names: &[String]) -> Option<String> {
     }
 
     Some(format!(
-        "Behavior: {}",
+        "Profile: {}",
         names
             .iter()
             .map(|name| format!("`{name}`"))

@@ -16,13 +16,13 @@ client root
       endpoint leaf
 ```
 
-- `client` is the root and owns base URL, variables, credentials, profiles, and defaults.
+- `client` is the root and owns base URL, variables, credentials, profiles, and the default attachment block.
 - `scope` is a branch and can add host, path, auth, and policy context.
 - An endpoint stanza is a leaf and describes one HTTP operation.
 
-For larger clients, client configuration is usually grouped into `auth { ... }`, `policies { ... }`, `behaviors { ... }`, and `defaults { ... }`. Behavior profiles give semantic names to repeated auth, retry, and rate-limit combinations while lowering to ordinary policy data before code generation.
+For larger clients, client configuration is usually grouped into `auth { ... }`, `policies { ... }`, `profiles { ... }`, and `default { ... }`. Profiles give semantic names to repeated auth, retry, and rate-limit combinations while lowering to ordinary policy data before code generation.
 
-Behavior profiles may extend other behavior profiles; inheritance is resolved during semantic analysis before code generation.
+Profiles may extend other profiles; inheritance is resolved during semantic analysis before code generation.
 
 ## Planning And Execution
 

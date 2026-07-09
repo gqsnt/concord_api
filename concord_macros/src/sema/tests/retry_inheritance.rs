@@ -85,12 +85,12 @@ fn retry_inheritance_explicit_default_retry_overrides_default_behavior_retry() {
                     methods [GET]
                 }
 
-                behavior read_behavior {
+                profile read_behavior {
                     retry from_behavior
                 }
 
                 default {
-                    behavior read_behavior
+                    profile read_behavior
                     retry explicit
                 }
             }
@@ -126,14 +126,14 @@ fn retry_inheritance_endpoint_retry_overrides_behavior_retry_at_same_layer() {
                     methods [GET]
                 }
 
-                behavior read_behavior {
+                profile read_behavior {
                     retry behavior_retry
                 }
             }
 
             GET Me
                 path ["me"]
-                behavior read_behavior
+                profile read_behavior
                 retry explicit_retry
                 -> Json<()>
         }
@@ -161,36 +161,36 @@ fn retry_patches_materialize_inherited_and_after_clear() {
                     on [429]
                 }
 
-                behaviors {
-                    behavior client_base {
+                profiles {
+                    profile client_base {
                         retry base
                     }
 
-                    behavior patch_methods {
+                    profile patch_methods {
                         retry {
                             methods [POST]
                         }
                     }
 
-                    behavior clear_retry {
+                    profile clear_retry {
                         retry off
                     }
 
-                    behavior patch_after_clear {
+                    profile patch_after_clear {
                         retry {
                             max_attempts 7
                         }
                     }
                 }
 
-                defaults {
-                    behavior client_base
+                default {
+                    profile client_base
                 }
             }
 
             scope inherited {
                 path ["inherited"]
-                behavior patch_methods
+                profile patch_methods
 
                 GET Patched
                     path ["patched"]
@@ -199,11 +199,11 @@ fn retry_patches_materialize_inherited_and_after_clear() {
 
             scope cleared {
                 path ["cleared"]
-                behavior clear_retry
+                profile clear_retry
 
                 GET Reenabled
                     path ["reenabled"]
-                    behavior patch_after_clear
+                    profile patch_after_clear
                     -> Json<()>
             }
         }

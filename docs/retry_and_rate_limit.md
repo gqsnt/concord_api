@@ -1,6 +1,6 @@
 # Retry And Rate Limit
 
-Retry and rate-limit behavior is declared as named profiles and attached through defaults, scopes, or endpoints.
+Retry and rate-limit policy is declared as named profiles and attached through `default`, scopes, or endpoints.
 
 ## Profiles
 
@@ -23,14 +23,14 @@ client PolicyApi {
         }
     }
 
-    defaults {
+    default {
         retry read
         rate_limit app
     }
 }
 ```
 
-Flat `retry` and `rate_limit` profile declarations remain valid. `policies { ... }` and `defaults { ... }` are the preferred grouped form for larger clients.
+Flat `retry` and `rate_limit` profile declarations remain valid. `policies { ... }` and `default { ... }` are the preferred grouped form for larger clients.
 
 ## Retry
 
@@ -86,7 +86,7 @@ With `rate-limit-governor` enabled, the default rate limiter enforces declared p
 Rate-limit configuration, acquire, and response-action failures now surface as structured `ApiClientError::RateLimit` values with an inspectable `RateLimitErrorKind`. The execution order and retry behavior are unchanged.
 Pure transport errors do not produce response observation.
 
-`rate_limit [...]` lists must not be empty and must not contain duplicate profile names within the same list. Reusing a profile across separate defaults, scopes, endpoints, or behaviors remains valid. Empty inline `rate_limit {}` blocks are rejected because they have no effect. Use `rate_limit off` to clear inherited rate-limit policy.
+`rate_limit [...]` lists must not be empty and must not contain duplicate profile names within the same list. Reusing a profile across separate default, scope, endpoint, or profile attachment sites remains valid. Empty inline `rate_limit {}` blocks are rejected because they have no effect. Use `rate_limit off` to clear inherited rate-limit policy.
 
 `[host]` is strict. If a bucket uses `[host]`, the request URL must have a host. Hostless `[host]` keying fails before permit acquisition and before transport. Concord does not invent fallback host key values such as `"<unknown-host>"`. Endpoint, method, static string, and named key parts remain valid without host data when used alone.
 
@@ -162,4 +162,4 @@ The execution order is fixed:
 
 `execute_raw()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding. It still obeys the configured response-body limit.
 
-Raw execution still traverses the transport scheduling layer, so rate-limit acquire and response observation behavior remain in effect for `execute_raw()`.
+Raw execution still traverses the transport scheduling layer, so rate-limit acquire and response observation semantics remain in effect for `execute_raw()`.

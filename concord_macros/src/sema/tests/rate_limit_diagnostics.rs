@@ -34,12 +34,12 @@ fn rate_limit_diagnostics_reject_default_behavior_rate_limit_key_in_client_base_
                     }
                 }
 
-                behavior match_read {
+                profile match_read {
                     rate_limit match_bucket
                 }
 
-                defaults {
-                    behavior match_read
+                default {
+                    profile match_read
                 }
             }
 
@@ -71,14 +71,14 @@ fn rate_limit_diagnostics_reject_unknown_endpoint_var_in_key() {
                     }
                 }
 
-                behavior match_read {
+                profile match_read {
                     rate_limit match_bucket
                 }
             }
 
             GET Match(match_id: String)
                 path ["match", match_id]
-                behavior match_read
+                profile match_read
                 -> Json<()>
         }
         "#,
@@ -102,14 +102,14 @@ fn rate_limit_diagnostics_reject_scope_behavior_key_without_binding() {
                     }
                 }
 
-                behavior match_read {
+                profile match_read {
                     rate_limit match_bucket
                 }
             }
 
             scope MatchScope {
                 path ["match"]
-                behavior match_read
+                profile match_read
 
                 GET Match(match_id: String)
                     path [match_id]

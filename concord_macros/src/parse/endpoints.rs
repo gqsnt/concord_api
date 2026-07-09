@@ -178,8 +178,11 @@ fn parse_endpoint_inline_parts(input: ParseStream<'_>, name: &Ident) -> Result<E
             }
             let t = parse_expr_until_comma_or_endpoint_arrow(input)?;
             parts.policy.timeout = Some(t);
-        } else if input.peek(kw::behavior) {
+        } else if input.peek(kw::profile) {
             parts.behavior_uses.push(parse_behavior_use_spec(input)?);
+        } else if input.peek(kw::behavior) {
+            let legacy: kw::behavior = input.parse()?;
+            return Err(legacy_behavior_keyword_error(legacy.span));
         } else if input.peek(kw::auth) {
             input.parse::<kw::auth>()?;
             parts.auth_uses.push(parse_auth_use_decl_after_auth_keyword(input)?);

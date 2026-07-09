@@ -211,3 +211,45 @@ fn parses_grouped_policy_profiles() {
     assert!(ast.client.retry_profiles.is_some());
     assert!(ast.client.rate_limit.is_some());
 }
+
+#[test]
+fn parses_grouped_profiles_and_singular_default_profile() {
+    let ast = parse_ok(
+        r#"
+        api! {
+            client Api {
+                base "https://example.com"
+
+                profiles {
+                    profile protected_read {
+                        retry off
+                    }
+                }
+
+                default {
+                    profile protected_read
+                }
+            }
+
+            GET Me
+                path ["me"]
+                -> Json<()>
+        }
+        "#,
+    );
+
+    assert_eq!(
+        ast.client
+            .behavior_profiles
+            .as_ref()
+            .unwrap()
+            .profiles
+            .len(),
+        1
+    );
+    assert_eq!(ast.client.default_behavior_uses.len(), 1);
+    assert_eq!(
+        ast.client.default_behavior_uses[0].names[0].to_string(),
+        "protected_read"
+    );
+}

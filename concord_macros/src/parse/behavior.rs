@@ -25,7 +25,7 @@ fn parse_behavior_patch_body(input: ParseStream<'_>) -> Result<BehaviorPatch> {
             if patch.retry.is_some() {
                 return Err(syn::Error::new(
                     input.span(),
-                    "duplicate retry policy in behavior",
+                    "duplicate retry policy in profile",
                 ));
             }
             match parse_retry_decl(input)? {
@@ -35,7 +35,7 @@ fn parse_behavior_patch_body(input: ParseStream<'_>) -> Result<BehaviorPatch> {
             if patch.rate_limit.is_some() {
                 return Err(syn::Error::new(
                     input.span(),
-                    "duplicate rate_limit policy in behavior",
+                    "duplicate rate_limit policy in profile",
                 ));
             }
             patch.rate_limit = Some(parse_rate_limit_spec(input)?);
@@ -43,7 +43,7 @@ fn parse_behavior_patch_body(input: ParseStream<'_>) -> Result<BehaviorPatch> {
             let tt: TokenTree = input.parse()?;
             return Err(syn::Error::new(
                 tt.span(),
-                "invalid item in behavior; expected auth, retry, or rate_limit",
+                "invalid item in profile; expected auth, retry, or rate_limit",
             ));
         }
         let _ = input.parse::<Option<Token![,]>>()?;
@@ -53,7 +53,7 @@ fn parse_behavior_patch_body(input: ParseStream<'_>) -> Result<BehaviorPatch> {
 
 fn parse_behavior_use_spec(input: ParseStream<'_>) -> Result<BehaviorUseSpec> {
     let span = input.span();
-    input.parse::<kw::behavior>()?;
+    input.parse::<kw::profile>()?;
     let names = if input.peek(token::Bracket) {
         let list_span = input.span();
         let content;
@@ -65,7 +65,7 @@ fn parse_behavior_use_spec(input: ParseStream<'_>) -> Result<BehaviorUseSpec> {
             if !seen.insert(name.to_string()) {
                 return Err(syn::Error::new(
                     name.span(),
-                    format!("duplicate behavior `{name}` in behavior list"),
+                    format!("duplicate profile `{name}` in profile list"),
                 ));
             }
             names.push(name);
@@ -74,7 +74,7 @@ fn parse_behavior_use_spec(input: ParseStream<'_>) -> Result<BehaviorUseSpec> {
         if names.is_empty() {
             return Err(syn::Error::new(
                 list_span,
-                "empty behavior list; expected at least one behavior name",
+                "empty profile list; expected at least one profile name",
             ));
         }
         names

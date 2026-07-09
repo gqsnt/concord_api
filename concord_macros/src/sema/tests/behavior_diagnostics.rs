@@ -11,11 +11,11 @@ fn behavior_diagnostics_reject_unknown_behavior_use() {
 
             GET Me
                 path ["me"]
-                behavior missing
+                profile missing
                 -> Json<()>
         }
         "#,
-        "unknown behavior `missing`",
+        "unknown profile `missing`",
     );
 }
 
@@ -27,19 +27,19 @@ fn behavior_diagnostics_reject_duplicate_behavior_names() {
             client Api {
                 base "https://example.com"
 
-                behaviors {
-                    behavior read {
+                profiles {
+                    profile read {
                         retry off
                     }
 
-                    behavior read {
+                    profile read {
                         retry off
                     }
                 }
             }
         }
         "#,
-        "duplicate behavior `read`",
+        "duplicate profile `read`",
     );
 }
 
@@ -51,18 +51,18 @@ fn behavior_diagnostics_reject_duplicate_behavior_at_same_attachment_site() {
             client Api {
                 base "https://example.com"
 
-                behavior read {
+                profile read {
                     retry off
                 }
 
-                defaults {
-                    behavior read
-                    behavior read
+                default {
+                    profile read
+                    profile read
                 }
             }
         }
         "#,
-        "duplicate behavior `read` at this attachment site",
+        "duplicate profile `read` at this attachment site",
     );
 }
 
@@ -74,18 +74,18 @@ fn behavior_diagnostics_reject_behavior_cycles() {
             client Api {
                 base "https://example.com"
 
-                behaviors {
-                    behavior read extends write {
+                profiles {
+                    profile read extends write {
                         retry off
                     }
 
-                    behavior write extends read {
+                    profile write extends read {
                         retry off
                     }
                 }
             }
         }
         "#,
-        "behavior inheritance cycle",
+        "profile inheritance cycle",
     );
 }

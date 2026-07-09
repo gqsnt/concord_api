@@ -158,7 +158,7 @@ fn rate_limit_keys_resolve_scope_behavior_key_binding() {
                     }
                 }
 
-                behavior tenant_read {
+                profile tenant_read {
                     rate_limit tenant_bucket
                 }
             }
@@ -166,7 +166,7 @@ fn rate_limit_keys_resolve_scope_behavior_key_binding() {
             scope tenants(tenant: String) {
                 path ["tenants", tenant]
                 rate_limit key tenant_key = tenant
-                behavior tenant_read
+                profile tenant_read
 
                 GET List
                     path ["items"]
@@ -206,7 +206,7 @@ fn rate_limit_keys_resolve_endpoint_behavior_key_binding() {
                     }
                 }
 
-                behavior match_read {
+                profile match_read {
                     rate_limit match_bucket
                 }
             }
@@ -214,7 +214,7 @@ fn rate_limit_keys_resolve_endpoint_behavior_key_binding() {
             GET Match(match_id: String)
                 path ["match", match_id]
                 rate_limit key match_key = match_id
-                behavior match_read
+                profile match_read
                 -> Json<()>
         }
         "#,
@@ -222,7 +222,7 @@ fn rate_limit_keys_resolve_endpoint_behavior_key_binding() {
     let endpoint = single_endpoint(&api);
 
     let Some(RateLimitResolved::Add(plan)) = &endpoint.policy.endpoint.rate_limit else {
-        panic!("expected endpoint behavior rate limit to resolve");
+        panic!("expected endpoint profile rate limit to resolve");
     };
     assert_eq!(plan.buckets.len(), 1);
     let bucket = &rate_limit_plan(endpoint.policy.endpoint.rate_limit.as_ref().unwrap()).buckets[0];

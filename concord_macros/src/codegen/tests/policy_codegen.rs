@@ -51,7 +51,7 @@ fn generated_policy_materializes_resolved_policy() {
 fn behavior_doc_line_formats_labels_in_order() {
     assert_eq!(
         behavior_doc_line(&["client_read".to_string(), "endpoint_read".to_string()]),
-        Some("Behavior: `client_read`, `endpoint_read`".to_string())
+        Some("Profile: `client_read`, `endpoint_read`".to_string())
     );
     assert_eq!(behavior_doc_line(&[]), None);
 }
@@ -77,16 +77,16 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
                 }
             }
 
-            behaviors {
-                    behavior alpha {
-                        auth header "X-Behavior-Token" = session
+            profiles {
+                    profile alpha {
+                        auth header "X-Profile-Token" = session
                         retry read
                         rate_limit app
                     }
             }
 
-            defaults {
-                behavior alpha
+            default {
+                profile alpha
             }
         }
 
@@ -113,16 +113,16 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
                 }
             }
 
-            behaviors {
-                    behavior beta {
-                        auth header "X-Behavior-Token" = session
+            profiles {
+                    profile beta {
+                        auth header "X-Profile-Token" = session
                         retry read
                         rate_limit app
                     }
             }
 
-            defaults {
-                behavior beta
+            default {
+                profile beta
             }
         }
 
@@ -134,7 +134,7 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
     assert_contains_all(
         &alpha,
         &[
-            "#[doc=\"Behavior: `alpha`\"]",
+            "#[doc=\"Profile: `alpha`\"]",
             "policy.set_retry",
             "policy.add_rate_limit",
         ],
@@ -142,7 +142,7 @@ fn behavior_profiles_do_not_reach_runtime_codegen() {
     assert_contains_all(
         &beta,
         &[
-            "#[doc=\"Behavior: `beta`\"]",
+            "#[doc=\"Profile: `beta`\"]",
             "policy.set_retry",
             "policy.add_rate_limit",
         ],
@@ -167,34 +167,34 @@ fn rustdoc_behavior_label_dedup_does_not_affect_policy() {
                 }
             }
 
-            behaviors {
-                behavior read {
+            profiles {
+                profile read {
                     retry read
                     rate_limit read_limit
                 }
             }
 
-            defaults {
-                behavior read
+            default {
+                profile read
             }
         }
 
         scope users {
             path ["users"]
-            behavior read
+            profile read
 
             GET Me
                 path ["me"]
-                behavior read
+                profile read
                 -> Json<()>
         }
     });
 
-    assert_contains_all(&out, &["#[doc=\"Behavior: `read`\"]", "policy.set_retry"]);
+    assert_contains_all(&out, &["#[doc=\"Profile: `read`\"]", "policy.set_retry"]);
     assert_contains_all(&out, &["policy.add_rate_limit"]);
     let behavior_doc_lines = generated_doc_attrs(&out)
         .into_iter()
-        .filter(|doc| doc.contains("Behavior:`"))
+        .filter(|doc| doc.contains("Profile:`"))
         .collect::<Vec<_>>();
     assert_eq!(behavior_doc_lines.len(), 1);
     assert_eq!(

@@ -213,14 +213,14 @@ fn endpoint_backed_credential_rejects_inherited_behavior_auth_self_use() {
                 credential upstream = api_key(secret.upstream_key)
                 credential session = endpoint auth_api::Login
 
-                behaviors {
-                    behavior default_auth {
+                profiles {
+                    profile default_auth {
                         auth bearer session
                     }
                 }
 
-                defaults {
-                    behavior default_auth
+                default {
+                    profile default_auth
                 }
             }
 

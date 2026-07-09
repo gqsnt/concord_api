@@ -4,15 +4,15 @@ api! {
     client DuplicateBehaviorApi {
         base "https://example.com"
 
-        behaviors {
-            behavior read {
+        profiles {
+            profile read {
                 retry off
             }
         }
 
-        defaults {
-            behavior read
-            behavior read
+        default {
+            profile read
+            profile read
         }
     }
 }

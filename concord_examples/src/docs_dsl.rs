@@ -84,30 +84,30 @@ api! {
             }
         }
 
-        behaviors {
-            behavior read {
+        profiles {
+            profile read {
                 auth bearer api_token
                 retry read
                 rate_limit app
             }
 
-            behavior scoped_read {
+            profile scoped_read {
                 retry read
             }
 
-            behavior match_read {
+            profile match_read {
                 rate_limit match_bucket
             }
         }
 
-        defaults {
-            behavior read
+        default {
+            profile read
         }
     }
 
     scope users {
         path ["users"]
-        behavior scoped_read
+        profile scoped_read
 
         GET Me(trace_id: String)
         path ["me"]
@@ -123,7 +123,7 @@ api! {
         verbose
     }
     rate_limit key match_key = match_id
-    behavior match_read
+    profile match_read
     -> Json<MatchDto>
 
     GET Search(region?: String = "euw1".to_string())
