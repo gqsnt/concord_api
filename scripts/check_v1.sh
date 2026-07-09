@@ -90,8 +90,26 @@ check_public_dsl_terms() {
   rm -f -- "$tmp"
 }
 
+check_public_request_api_terms() {
+  local tmp
+  tmp="$(mktemp)"
+  set +e
+  grep -RInE 'execute_decoded_with[[:space:]]*::?<[[:space:]]*|execute_decoded_with[[:space:]]*\(' \
+    README.md docs concord_examples/src concord_macros/tests/trybuild/pass >"$tmp"
+  local status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    echo "error: stale public V1 request API terminology found; use response() for metadata" >&2
+    cat "$tmp" >&2
+    rm -f -- "$tmp"
+    exit 1
+  fi
+  rm -f -- "$tmp"
+}
+
 run_step "architecture boundary" bash ./scripts/check_architecture.sh
 run_step "public DSL terminology" check_public_dsl_terms
+run_step "public request API" check_public_request_api_terms
 run_step "feature matrix" bash ./scripts/check_features.sh
 run_step "format check" "${CARGO[@]}" fmt --check
 # Clippy is strict in the release gate; intentional exceptions must be narrow

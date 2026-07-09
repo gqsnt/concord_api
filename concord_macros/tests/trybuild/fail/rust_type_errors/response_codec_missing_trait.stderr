@@ -34,3 +34,47 @@ help: the following other types implement trait `ResponseCodec`
    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::prelude::Text`
    = note: required for `BufferedResponse<MissingResponse<User>>` to implement `ResponseEntity`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `MissingResponse<User>: ResponseCodec` is not satisfied
+  --> tests/trybuild/fail/rust_type_errors/response_codec_missing_trait.rs:9:1
+   |
+ 9 | / api! {
+10 | |     client MissingResponseCodecApi { base "https://example.com" }
+11 | |
+12 | |     GET GetUser
+...  |
+15 | |         -> MissingResponse<User>
+16 | | }
+   | |_^ unsatisfied trait bound
+   |
+help: the trait `ResponseCodec` is not implemented for `MissingResponse<User>`
+  --> tests/trybuild/fail/rust_type_errors/response_codec_missing_trait.rs:4:1
+   |
+ 4 | pub struct MissingResponse<T>(PhantomData<T>);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `ResponseCodec`
+  --> $WORKSPACE/concord_core/src/codec/json.rs
+   |
+   | / impl<T> ResponseCodec for Json<T>
+   | | where
+   | |     T: DeserializeOwned + Send + Sync + 'static,
+   | |________________________________________________^ `Json<T>`
+   |
+  ::: $WORKSPACE/concord_core/src/codec.rs
+   |
+   |   impl ResponseCodec for NoContent {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `NoContent`
+   |
+  ::: $WORKSPACE/concord_core/src/codec/text.rs
+   |
+   |   impl ResponseCodec for Text<String> {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `concord_core::prelude::Text`
+   = note: required for `BufferedResponse<MissingResponse<User>>` to implement `ResponseEntity`
+note: required by a bound in `concord_core::internal::ResponseEntityWithMeta::execute_with_meta`
+  --> $WORKSPACE/concord_core/src/io.rs
+   |
+   | pub trait ResponseEntityWithMeta: ResponseEntity {
+   |                                   ^^^^^^^^^^^^^^ required by this bound in `ResponseEntityWithMeta::execute_with_meta`
+   |     fn execute_with_meta<'a, Cx, T>(
+   |        ----------------- required by a bound in this associated function
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

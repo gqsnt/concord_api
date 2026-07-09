@@ -131,6 +131,7 @@ fn emit_endpoint_def(
 
     let final_response_ty = endpoint_response_output_ty(ep);
     let execute_override = endpoint_execute_override(ep, ty_name, cx_ty);
+    let response_terminal_impl = endpoint_response_terminal_impl(ep, ty_name, cx_ty);
     let plan_impl = endpoint_plan_impl(
         resolved_api,
         ep,
@@ -234,6 +235,8 @@ fn emit_endpoint_def(
             type Response = #final_response_ty;
             #execute_override
         }
+
+        #response_terminal_impl
 
         #plan_impl
 
@@ -593,6 +596,43 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, ty_name: &Ident, cx_ty: &Ide
                 client,
                 plan,
             )
+        }
+    }
+}
+
+fn endpoint_response_terminal_impl(
+    ep: &ResolvedEndpoint,
+    ty_name: &Ident,
+    cx_ty: &Ident,
+) -> TokenStream2 {
+    if ep.io.response_entity.capabilities.is_streaming {
+        return quote! {};
+    }
+
+    let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
+    quote! {
+        impl ::concord_core::internal::ResponseTerminalEndpoint<super::#cx_ty> for #ty_name {
+            fn execute_response<'a, T>(
+                client: &'a ::concord_core::prelude::ApiClient<super::#cx_ty, T>,
+                plan: ::concord_core::internal::RequestPlan,
+            ) -> ::core::pin::Pin<
+                ::std::boxed::Box<
+                    dyn ::core::future::Future<
+                            Output = ::core::result::Result<
+                                ::concord_core::advanced::DecodedResponse<Self::Response>,
+                                ::concord_core::prelude::ApiClientError,
+                            >,
+                        > + Send + 'a,
+                >,
+            >
+            where
+                T: ::concord_core::advanced::Transport + 'a,
+            {
+                <#response_entity_adapter_ty as ::concord_core::internal::ResponseEntityWithMeta>::execute_with_meta(
+                    client,
+                    plan,
+                )
+            }
         }
     }
 }

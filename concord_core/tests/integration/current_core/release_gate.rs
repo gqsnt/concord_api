@@ -134,7 +134,7 @@ fn examples_cover_v1_usage_surface() {
 
     let minimal = read_repo_file("concord_examples/tests/integration/minimal.rs");
     assert!(minimal.contains(".execute()"));
-    assert!(minimal.contains(".execute_decoded_with::<concord_core::prelude::Json<User>>()"));
+    assert!(minimal.contains(".response()"));
 
     let policy = read_repo_file("concord_examples/tests/integration/policy_stack.rs");
     assert!(policy.contains("rate_limiter"));

@@ -38,13 +38,14 @@ pub mod internal {
     pub use crate::endpoint::{
         BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, IntoEndpointPlan,
         PaginatedEndpoint, PaginationMarker, RequestArgs, RequestOverrides, RequestPlan,
-        RequestPlanView, ResolvedRoute, ResponsePlan, ReusableEndpoint,
+        RequestPlanView, ResolvedRoute, ResponsePlan, ResponseTerminalEndpoint, ReusableEndpoint,
     };
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
         NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,
         RawStreamResponse, RecordRequest, RecordResponse, Replayability, RequestEntity,
-        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
+        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, ResponseEntityWithMeta,
+        SseResponse,
     };
     pub use crate::multipart::{
         FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,

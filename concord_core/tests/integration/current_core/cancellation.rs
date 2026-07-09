@@ -1,5 +1,6 @@
 #![allow(clippy::needless_update)] // Async endpoint fixtures keep `..Default::default()` for resilience to added fields.
 
+use super::common::buffered_endpoint_response_terminal;
 use super::common::{
     CapturedTransportRequestSnapshot, GateableBodyTransport, GateableHooks, GateableTransport,
     ItemsEndpoint, MockOutcome, MockResponse, MockTransport, ObservationRuntimeHooks,
@@ -226,6 +227,12 @@ impl concord_core::prelude::Endpoint<InternalAuthCx> for InternalAuthEndpoint {
     buffered_endpoint_execute!(InternalAuthCx, concord_core::prelude::Text<String>);
 }
 
+buffered_endpoint_response_terminal!(
+    InternalAuthEndpoint,
+    InternalAuthCx,
+    concord_core::prelude::Text<String>
+);
+
 impl concord_core::prelude::ReusableEndpoint<InternalAuthCx> for InternalAuthEndpoint {
     fn plan(
         &self,
@@ -271,12 +278,7 @@ async fn cancel_during_rate_limit_acquire_does_not_send_transport() {
     gate.block("rate_acquire").await;
     let task = tokio::spawn({
         let client = client.clone();
-        async move {
-            client
-                .request(endpoint)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(endpoint).response().await }
     });
 
     gate.wait_for("rate_acquire", 1).await;
@@ -295,7 +297,7 @@ async fn cancel_during_rate_limit_acquire_does_not_send_transport() {
                     policy: rate_limit_policy(),
                     ..Default::default()
                 })
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
         }
     });
@@ -338,12 +340,7 @@ async fn cancel_during_pre_send_hook_does_not_send_transport() {
     gate.block("hook_pre_send").await;
     let task = tokio::spawn({
         let client = client.clone();
-        async move {
-            client
-                .request(endpoint)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(endpoint).response().await }
     });
 
     gate.wait_for("hook_pre_send", 1).await;
@@ -361,7 +358,7 @@ async fn cancel_during_pre_send_hook_does_not_send_transport() {
                     policy: rate_limit_policy(),
                     ..Default::default()
                 })
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
         }
     });
@@ -402,12 +399,7 @@ async fn cancel_while_transport_is_pending_preserves_request_context_and_redacts
     gate.block("transport_send").await;
     let task = tokio::spawn({
         let client = client.clone();
-        async move {
-            client
-                .request(endpoint)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(endpoint).response().await }
     });
 
     gate.wait_for("transport_send", 1).await;
@@ -453,11 +445,7 @@ async fn cancel_during_internal_auth_does_not_poison_recursion_stack() {
         transport.clone(),
     );
 
-    let mut first = Box::pin(
-        client
-            .request(InternalAuthEndpoint)
-            .execute_decoded_with::<concord_core::prelude::Text<String>>(),
-    );
+    let mut first = Box::pin(client.request(InternalAuthEndpoint).response());
     let mut entered = Box::pin(client.auth_vars().entered.notified());
 
     tokio::select! {
@@ -471,7 +459,7 @@ async fn cancel_during_internal_auth_does_not_poison_recursion_stack() {
 
     let value = client
         .request(InternalAuthEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect("second request should complete after cancellation")
         .into_value();
@@ -502,7 +490,7 @@ async fn real_internal_auth_recursion_is_still_rejected() {
 
     let err = client
         .request(InternalAuthEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("recursive internal auth should fail");
 
@@ -542,12 +530,7 @@ async fn cancel_while_response_body_is_pending_drops_body_stream_and_redacts_sen
     gate.block("body_chunk").await;
     let task = tokio::spawn({
         let client = client.clone();
-        async move {
-            client
-                .request(endpoint)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(endpoint).response().await }
     });
 
     gate.wait_for("body_chunk", 1).await;
@@ -608,7 +591,7 @@ async fn cancel_before_retry_progression_stops_the_second_attempt() {
                     policy,
                     ..Default::default()
                 })
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
         }
     });
@@ -732,7 +715,7 @@ async fn transport_timeout_error_is_typed_and_safe() {
 
     let err = client
         .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("transport timeout should surface as a transport error");
 
@@ -920,7 +903,7 @@ async fn cancellation_observer_surfaces_are_body_auth_free() {
                     policy,
                     ..Default::default()
                 })
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
         }
     });
@@ -955,12 +938,9 @@ async fn transport_timeout_metadata_reaches_transport_and_is_request_scoped()
     client
         .request(endpoint.clone())
         .timeout(std::time::Duration::from_secs(2))
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
-    client
-        .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    client.request(endpoint).response().await?;
     let requests = transport.requests().await;
     assert_eq!(requests[0].timeout, Some(std::time::Duration::from_secs(2)));
     assert_eq!(requests[1].timeout, Some(std::time::Duration::from_secs(5)));

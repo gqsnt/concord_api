@@ -1,6 +1,6 @@
 use super::common::{
     MockOutcome, MockResponse, MockTransport, TestAuthVars, TestCx, buffered_endpoint_execute,
-    client,
+    buffered_endpoint_response_terminal, client,
 };
 use bytes::Bytes;
 use concord_core::advanced::{RetryBackoff, RetryConfig, RetryIdempotency, StreamBody};
@@ -106,6 +106,8 @@ impl Endpoint<TestCx> for AttemptEndpoint {
 
     buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
+
+buffered_endpoint_response_terminal!(AttemptEndpoint, TestCx, concord_core::prelude::Text<String>);
 
 impl ReusableEndpoint<TestCx> for AttemptEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
@@ -234,10 +236,7 @@ async fn execute_raw_and_decoded_share_the_same_attempt_path() -> Result<(), Api
     );
 
     let raw = client.request(endpoint.clone()).execute_raw().await?;
-    let decoded = client
-        .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    let decoded = client.request(endpoint).response().await?;
 
     assert_eq!(raw.body, Bytes::from_static(b"shared-response"));
     assert_eq!(decoded.into_value(), "shared-response");
@@ -279,7 +278,7 @@ async fn http_status_errors_remain_typed_and_redacted() {
 
     let err = client
         .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("HTTP 500 should surface as a status error");
 

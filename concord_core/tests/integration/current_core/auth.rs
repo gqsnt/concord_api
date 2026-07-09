@@ -1,3 +1,4 @@
+use super::common::buffered_endpoint_response_terminal;
 use super::common::*;
 use crate::support::assert_error_chain_does_not_contain_any;
 use base64::Engine as _;
@@ -47,7 +48,7 @@ async fn missing_credential_error_is_actionable() {
 
     let err = client
         .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("missing token must fail before transport");
 
@@ -127,7 +128,7 @@ async fn auth_rejection_is_handled_before_normal_retry() {
 
     let err = client
         .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("auth rejection should not fall through to retry");
 
@@ -213,7 +214,7 @@ async fn auth_rejection_errors_are_raw_secret_free() {
                 policy: auth_policy(placement),
                 ..Default::default()
             })
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
             .expect_err("auth rejection should fail");
 
@@ -273,7 +274,7 @@ async fn auth_rejection_errors_are_raw_secret_free() {
             policy: auth_policy(AuthPlacement::Basic),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("basic auth rejection should fail");
 
@@ -317,10 +318,7 @@ async fn unauthorized_can_trigger_bounded_auth_refresh_before_retry() -> Result<
         ..Default::default()
     };
 
-    let decoded = client
-        .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    let decoded = client.request(endpoint).response().await?;
 
     assert_eq!(decoded.value(), "refreshed");
     assert_eq!(sent_transport.sent_count().await, 2);
@@ -352,7 +350,7 @@ async fn auth_refresh_failure_is_terminal_auth_error() {
 
     let err = client
         .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("auth refresh failure is terminal");
 
@@ -384,14 +382,14 @@ async fn bearer_header_and_query_auth_are_applied() -> Result<(), ApiClientError
             policy: auth_policy(AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
     client
         .request(TextEndpoint {
             policy: auth_policy(AuthPlacement::Query("api_key")),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     let requests = sent.requests().await;
@@ -434,7 +432,7 @@ async fn header_auth_is_applied_to_the_configured_header() -> Result<(), ApiClie
             policy: auth_policy(AuthPlacement::Header("X-Api-Key")),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "header-auth-ok");
@@ -475,7 +473,7 @@ async fn basic_auth_is_applied_as_an_authorization_header() -> Result<(), ApiCli
             policy: auth_policy(AuthPlacement::Basic),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "basic-auth-ok");
@@ -518,7 +516,7 @@ async fn auth_transport_failure_redacts_the_request_auth_sentinel() {
             policy: auth_policy(AuthPlacement::Header("X-Api-Key")),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("transport failure should surface");
 
@@ -609,10 +607,7 @@ async fn auth_retry_reuses_bearer_material_across_attempts() -> Result<(), ApiCl
         ..Default::default()
     };
 
-    let decoded = client
-        .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    let decoded = client.request(endpoint).response().await?;
 
     assert_eq!(decoded.value(), "retry-ok");
     assert_eq!(sent.sent_count().await, 2);
@@ -668,10 +663,7 @@ async fn auth_retry_reuses_cached_preparation_without_auth_refresh() -> Result<(
         ..Default::default()
     };
 
-    let decoded = client
-        .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    let decoded = client.request(endpoint).response().await?;
 
     assert_eq!(decoded.value(), "retry-ok");
     assert_eq!(sent.sent_count().await, 2);
@@ -725,10 +717,7 @@ async fn auth_retry_without_request_local_reuse_reprepares_auth() -> Result<(), 
         ..Default::default()
     };
 
-    let decoded = client
-        .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    let decoded = client.request(endpoint).response().await?;
 
     assert_eq!(decoded.value(), "retry-ok");
     assert_eq!(sent.sent_count().await, 2);
@@ -784,10 +773,7 @@ async fn transport_retry_reuses_cached_auth_preparation_without_auth_refresh()
         ..Default::default()
     };
 
-    let decoded = client
-        .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    let decoded = client.request(endpoint).response().await?;
 
     assert_eq!(decoded.value(), "retry-ok");
     assert_eq!(sent.sent_count().await, 2);
@@ -840,7 +826,7 @@ async fn auth_refresh_retry_invalidates_cached_auth_preparation() -> Result<(), 
         tokio::spawn(async move {
             client
                 .request(endpoint)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
                 .map(|response| response.into_value())
         })
@@ -907,7 +893,7 @@ async fn auth_retry_exhaustion_redacts_request_and_response_sentinels() {
 
     let err = client
         .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("retry exhaustion should surface as status error");
 
@@ -956,7 +942,7 @@ async fn query_auth_key_collision_fails_before_transport_without_leaking_secret(
             policy,
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("query auth key collision should fail before transport");
 
@@ -999,7 +985,7 @@ async fn query_auth_collision_fails_before_rate_limit() {
             policy,
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("query auth collision should fail before rate limit");
 
@@ -1046,7 +1032,7 @@ async fn public_header_auth_collision_fails_before_rate_limit() {
             policy,
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("bearer authorization collision should fail before rate limit");
 
@@ -1093,7 +1079,7 @@ async fn custom_header_auth_collision_fails_before_rate_limit_case_insensitive()
             policy,
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("custom header collision should fail before rate limit");
 
@@ -1139,7 +1125,7 @@ async fn auth_policy_default_401_invalidates_and_retries_runtime_reacquirable()
 
     let decoded = client
         .request(harness.endpoint(StatusCode::UNAUTHORIZED))
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "refreshed");
@@ -1179,7 +1165,7 @@ async fn auth_policy_default_403_invalidates_and_retries_runtime_reacquirable()
 
     let decoded = client
         .request(harness.endpoint(StatusCode::FORBIDDEN))
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "refreshed");
@@ -1207,7 +1193,7 @@ async fn auth_403_retries_when_policy_enables_forbidden_retry() -> Result<(), Ap
 
     let decoded = client
         .request(harness.endpoint(StatusCode::FORBIDDEN))
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "refreshed");
@@ -1230,7 +1216,7 @@ async fn auth_403_invalidates_only_when_policy_enables_forbidden_invalidation() 
 
     let err = client
         .request(harness.endpoint(StatusCode::FORBIDDEN))
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("403 should not retry when retry_on_forbidden is false");
 
@@ -1270,10 +1256,7 @@ async fn auth_policy_retry_true_invalidate_false_behavior_characterized()
             8,
         )));
 
-        let decoded = client
-            .request(harness.endpoint(status))
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
-            .await?;
+        let decoded = client.request(harness.endpoint(status)).response().await?;
 
         assert_eq!(decoded.value(), "recovered");
         assert_eq!(harness.transport_attempts().await, 2);
@@ -1333,7 +1316,7 @@ async fn auth_policy_invalidate_true_retry_false_behavior_characterized()
 
         let err = client
             .request(harness.endpoint(status))
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
             .expect_err("invalidate-only auth rejection should be terminal");
 
@@ -1398,7 +1381,7 @@ async fn auth_policy_no_retry_no_invalidate_terminal_rejection() -> Result<(), A
 
         let err = client
             .request(harness.endpoint(status))
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
             .expect_err("non-refreshing auth rejection should be terminal");
 
@@ -1429,7 +1412,7 @@ async fn auth_never_refresh_does_not_retry_or_invalidate() {
 
     let err = client
         .request(harness.endpoint(StatusCode::UNAUTHORIZED))
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("NeverRefresh should produce a terminal auth error");
 
@@ -1451,7 +1434,7 @@ async fn auth_never_refresh_does_not_retry_or_invalidate_forbidden() {
 
     let err = client
         .request(harness.endpoint(StatusCode::FORBIDDEN))
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("NeverRefresh should leave 403 as a terminal auth error");
 
@@ -1481,7 +1464,7 @@ async fn max_auth_retries_zero_behavior_characterized() {
 
         let err = client
             .request(harness.endpoint(status))
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
             .expect_err("zero auth retry budget should stop refresh attempts");
 
@@ -1544,7 +1527,7 @@ async fn auth_retry_respects_max_auth_retries() {
 
         let err = client
             .request(harness.endpoint(status))
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
             .expect_err(
                 "auth retry budget should stop repeated refresh attempts with an auth error",
@@ -1603,7 +1586,7 @@ async fn auth_http_content_length_above_limit_fails() {
 
     let err = client
         .request(AuthHttpLimitEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("auth HTTP content length above limit should fail");
 
@@ -1628,7 +1611,7 @@ async fn auth_http_unknown_length_above_limit_fails() {
 
     let err = client
         .request(AuthHttpLimitEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("auth HTTP chunked body above limit should fail");
 
@@ -1647,10 +1630,7 @@ async fn auth_http_body_at_limit_succeeds() -> Result<(), ApiClientError> {
     );
     let client = auth_http_client(transport, AuthHttpLimitVars::plain(4));
 
-    let decoded = client
-        .request(AuthHttpLimitEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    let decoded = client.request(AuthHttpLimitEndpoint).response().await?;
 
     assert_eq!(decoded.value(), "protected");
     Ok(())
@@ -1672,7 +1652,7 @@ async fn oauth_client_credentials_token_response_above_limit_fails() {
 
     let err = client
         .request(AuthHttpLimitEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("oversized OAuth token response should fail");
 
@@ -1695,7 +1675,7 @@ async fn oauth_client_credentials_expires_in_overflow_returns_typed_error() {
 
     let err = client
         .request(AuthHttpLimitEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("overflowing OAuth expires_in should fail");
 
@@ -1722,7 +1702,7 @@ async fn oauth_client_credentials_invalid_token_url_returns_typed_error() {
 
     let err = client
         .request(AuthHttpLimitEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("invalid OAuth token URL should fail before transport");
 
@@ -1809,7 +1789,7 @@ async fn oauth_client_credentials_reject_unsupported_token_type_without_leaking_
 
     let err = client
         .request(AuthHttpLimitEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("unsupported OAuth token type should fail before protected request");
 
@@ -2107,6 +2087,12 @@ impl Endpoint<AuthHttpLimitCx> for AuthHttpLimitEndpoint {
     buffered_endpoint_execute!(AuthHttpLimitCx, concord_core::prelude::Text<String>);
 }
 
+buffered_endpoint_response_terminal!(
+    AuthHttpLimitEndpoint,
+    AuthHttpLimitCx,
+    concord_core::prelude::Text<String>
+);
+
 impl ReusableEndpoint<AuthHttpLimitCx> for AuthHttpLimitEndpoint {
     fn plan(
         &self,
@@ -2231,6 +2217,12 @@ impl Endpoint<RecordingAuthCx> for TextEndpoint {
     buffered_endpoint_execute!(RecordingAuthCx, concord_core::prelude::Text<String>);
 }
 
+buffered_endpoint_response_terminal!(
+    TextEndpoint,
+    RecordingAuthCx,
+    concord_core::prelude::Text<String>
+);
+
 impl ReusableEndpoint<RecordingAuthCx> for TextEndpoint {
     fn plan(
         &self,
@@ -2335,6 +2327,12 @@ impl Endpoint<PolicyAuthCx> for TextEndpoint {
 
     buffered_endpoint_execute!(PolicyAuthCx, concord_core::prelude::Text<String>);
 }
+
+buffered_endpoint_response_terminal!(
+    TextEndpoint,
+    PolicyAuthCx,
+    concord_core::prelude::Text<String>
+);
 
 impl ReusableEndpoint<PolicyAuthCx> for TextEndpoint {
     fn plan(
@@ -2452,6 +2450,12 @@ impl Endpoint<RotatingPolicyAuthCx> for TextEndpoint {
 
     buffered_endpoint_execute!(RotatingPolicyAuthCx, concord_core::prelude::Text<String>);
 }
+
+buffered_endpoint_response_terminal!(
+    TextEndpoint,
+    RotatingPolicyAuthCx,
+    concord_core::prelude::Text<String>
+);
 
 impl ReusableEndpoint<RotatingPolicyAuthCx> for TextEndpoint {
     fn plan(
@@ -2811,6 +2815,12 @@ impl Endpoint<SlotAuthCx> for TextEndpoint {
     buffered_endpoint_execute!(SlotAuthCx, concord_core::prelude::Text<String>);
 }
 
+buffered_endpoint_response_terminal!(
+    TextEndpoint,
+    SlotAuthCx,
+    concord_core::prelude::Text<String>
+);
+
 impl ReusableEndpoint<SlotAuthCx> for TextEndpoint {
     fn plan(
         &self,
@@ -2854,7 +2864,7 @@ async fn endpoint_backed_auth_slot_acquires_and_applies_the_credential()
             policy: auth_policy(AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "slot-ok");
@@ -2899,7 +2909,7 @@ async fn endpoint_backed_auth_slot_acquire_failure_is_typed_and_contextual() {
             policy: auth_policy(AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("slot acquisition failure should surface as auth error");
 
@@ -2955,7 +2965,7 @@ async fn auth_rejection_stale_invalidation_cannot_clear_newer_generation()
             tokio::spawn(async move {
                 client
                     .request(request)
-                    .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                    .response()
                     .await
                     .map(|response| response.into_value())
             })

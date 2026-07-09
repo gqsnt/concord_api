@@ -1,6 +1,6 @@
 use super::common::{
     GateTransport, MockOutcome, MockResponse, MockTransport, TestAuthVars, TestCx,
-    buffered_endpoint_execute, client, request_plan,
+    buffered_endpoint_execute, buffered_endpoint_response_terminal, client, request_plan,
 };
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
@@ -112,6 +112,8 @@ impl Endpoint<TestCx> for TransportContractEndpoint {
 
     buffered_endpoint_execute!(TestCx, Text<String>);
 }
+
+buffered_endpoint_response_terminal!(TransportContractEndpoint, TestCx, Text<String>);
 
 impl ReusableEndpoint<TestCx> for TransportContractEndpoint {
     fn plan(
@@ -372,6 +374,8 @@ impl Endpoint<RedirectCx> for RedirectEndpoint {
 
     buffered_endpoint_execute!(RedirectCx, Text<String>);
 }
+
+buffered_endpoint_response_terminal!(RedirectEndpoint, RedirectCx, Text<String>);
 
 impl ReusableEndpoint<RedirectCx> for RedirectEndpoint {
     fn plan(
@@ -665,10 +669,7 @@ async fn response_metadata_is_preserved_on_raw_and_decoded_surfaces() -> Result<
         ResolvedPolicy::default(),
     );
 
-    let decoded = client
-        .request(endpoint.clone())
-        .execute_decoded_with::<Text<String>>()
-        .await?;
+    let decoded = client.request(endpoint.clone()).response().await?;
     assert_eq!(decoded.status(), StatusCode::ACCEPTED);
     assert_eq!(decoded.headers()[CONTENT_TYPE], "text/plain");
     assert_eq!(

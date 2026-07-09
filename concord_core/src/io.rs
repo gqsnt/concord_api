@@ -8,7 +8,7 @@ use crate::record::{RecordBody, RecordFormat};
 use crate::sse::SseCodec;
 use crate::stream_body::StreamBody;
 use crate::stream_response::StreamResponse;
-use crate::transport::BuiltResponse;
+use crate::transport::{BuiltResponse, DecodedResponse};
 use bytes::Bytes;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -187,6 +187,10 @@ pub struct ResponseEntityPlan {
     pub capabilities: ResponseEntityCapabilities,
 }
 
+#[doc(hidden)]
+pub type ResponseEntityFuture<'a, Output> =
+    Pin<Box<dyn Future<Output = Result<Output, ApiClientError>> + Send + 'a>>;
+
 pub trait ResponseEntity {
     type Output;
 
@@ -195,7 +199,18 @@ pub trait ResponseEntity {
     fn execute<'a, Cx, T>(
         client: &'a ApiClient<Cx, T>,
         plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
+    ) -> ResponseEntityFuture<'a, Self::Output>
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a;
+}
+
+#[doc(hidden)]
+pub trait ResponseEntityWithMeta: ResponseEntity {
+    fn execute_with_meta<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> ResponseEntityFuture<'a, DecodedResponse<Self::Output>>
     where
         Cx: ClientContext,
         T: crate::transport::Transport + 'a;
@@ -233,6 +248,26 @@ where
     }
 }
 
+impl<C> ResponseEntityWithMeta for BufferedResponse<C>
+where
+    C: ResponseCodec,
+{
+    fn execute_with_meta<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<DecodedResponse<Self::Output>, ApiClientError>> + Send + 'a>,
+    >
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(execute_buffered_codec_response_with_meta::<Cx, T, C>(
+            client, plan,
+        ))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct BytesResponse;
 
@@ -266,6 +301,21 @@ impl ResponseEntity for BytesResponse {
     }
 }
 
+impl ResponseEntityWithMeta for BytesResponse {
+    fn execute_with_meta<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<DecodedResponse<Self::Output>, ApiClientError>> + Send + 'a>,
+    >
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(execute_bytes_response_with_meta(client, plan))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct NoContentResponse;
 
@@ -296,6 +346,21 @@ impl ResponseEntity for NoContentResponse {
         T: crate::transport::Transport + 'a,
     {
         Box::pin(execute_no_content_response(client, plan))
+    }
+}
+
+impl ResponseEntityWithMeta for NoContentResponse {
+    fn execute_with_meta<'a, Cx, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<DecodedResponse<Self::Output>, ApiClientError>> + Send + 'a>,
+    >
+    where
+        Cx: ClientContext,
+        T: crate::transport::Transport + 'a,
+    {
+        Box::pin(execute_no_content_response_with_meta(client, plan))
     }
 }
 
@@ -467,12 +532,26 @@ where
     T: crate::transport::Transport,
     C: ResponseCodec,
 {
-    if C::is_no_content() {
-        let resp = client.execute_plan_raw_skip_body(plan).await?;
-        return decode_buffered_response::<C>(resp);
-    }
-    let resp = client.execute_plan_raw(plan).await?;
-    decode_buffered_response::<C>(resp)
+    execute_buffered_codec_response_with_meta::<Cx, T, C>(client, plan)
+        .await
+        .map(|decoded| decoded.value)
+}
+
+async fn execute_buffered_codec_response_with_meta<Cx, T, C>(
+    client: &ApiClient<Cx, T>,
+    plan: RequestPlan,
+) -> Result<DecodedResponse<C::Value>, ApiClientError>
+where
+    Cx: ClientContext,
+    T: crate::transport::Transport,
+    C: ResponseCodec,
+{
+    let resp = if C::is_no_content() {
+        client.execute_plan_raw_skip_body(plan).await?
+    } else {
+        client.execute_plan_raw(plan).await?
+    };
+    decode_buffered_response_with_meta::<C>(resp)
 }
 
 async fn execute_bytes_response<Cx, T>(
@@ -483,9 +562,9 @@ where
     Cx: ClientContext,
     T: crate::transport::Transport,
 {
-    let resp = client.execute_plan_raw(plan).await?;
-    validate_buffered_response(&resp, false)?;
-    Ok(resp.body)
+    execute_bytes_response_with_meta(client, plan)
+        .await
+        .map(|decoded| decoded.value)
 }
 
 async fn execute_no_content_response<Cx, T>(
@@ -496,9 +575,33 @@ where
     Cx: ClientContext,
     T: crate::transport::Transport,
 {
+    execute_no_content_response_with_meta(client, plan)
+        .await
+        .map(|decoded| decoded.value)
+}
+
+async fn execute_bytes_response_with_meta<Cx, T>(
+    client: &ApiClient<Cx, T>,
+    plan: RequestPlan,
+) -> Result<DecodedResponse<Bytes>, ApiClientError>
+where
+    Cx: ClientContext,
+    T: crate::transport::Transport,
+{
+    let resp = client.execute_plan_raw(plan).await?;
+    decode_bytes_response_with_meta(resp)
+}
+
+async fn execute_no_content_response_with_meta<Cx, T>(
+    client: &ApiClient<Cx, T>,
+    plan: RequestPlan,
+) -> Result<DecodedResponse<()>, ApiClientError>
+where
+    Cx: ClientContext,
+    T: crate::transport::Transport,
+{
     let resp = client.execute_plan_raw_skip_body(plan).await?;
-    validate_buffered_response(&resp, true)?;
-    Ok(())
+    decode_no_content_response_with_meta(resp)
 }
 
 fn response_plan_from_codec<C>(ctx: ErrorContext) -> Result<ResponsePlan, ApiClientError>
@@ -513,7 +616,9 @@ where
     })
 }
 
-fn decode_buffered_response<C>(resp: BuiltResponse) -> Result<C::Value, ApiClientError>
+fn decode_buffered_response_with_meta<C>(
+    resp: BuiltResponse,
+) -> Result<DecodedResponse<C::Value>, ApiClientError>
 where
     C: ResponseCodec,
 {
@@ -522,23 +627,56 @@ where
         .headers
         .get(http::header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok());
-    if C::is_no_content() {
-        return C::decode(
+    let value = if C::is_no_content() {
+        C::decode(
             Bytes::new(),
             DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
         )
         .map_err(|_| {
             ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
-        });
-    }
-    let decoded = C::decode(
-        resp.body.clone(),
-        DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
-    )
-    .map_err(|_| {
-        ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
-    })?;
-    Ok(decoded)
+        })?
+    } else {
+        C::decode(
+            resp.body.clone(),
+            DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
+        )
+        .map_err(|_| {
+            ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
+        })?
+    };
+    Ok(DecodedResponse {
+        meta: resp.meta,
+        url: resp.url,
+        status: resp.status,
+        headers: resp.headers,
+        value,
+    })
+}
+
+fn decode_bytes_response_with_meta(
+    resp: BuiltResponse,
+) -> Result<DecodedResponse<Bytes>, ApiClientError> {
+    let _ctx = validate_buffered_response(&resp, false)?;
+    Ok(DecodedResponse {
+        meta: resp.meta,
+        url: resp.url,
+        status: resp.status,
+        headers: resp.headers,
+        value: resp.body,
+    })
+}
+
+fn decode_no_content_response_with_meta(
+    resp: BuiltResponse,
+) -> Result<DecodedResponse<()>, ApiClientError> {
+    let _ctx = validate_buffered_response(&resp, true)?;
+    Ok(DecodedResponse {
+        meta: resp.meta,
+        url: resp.url,
+        status: resp.status,
+        headers: resp.headers,
+        value: (),
+    })
 }
 
 fn validate_buffered_response(

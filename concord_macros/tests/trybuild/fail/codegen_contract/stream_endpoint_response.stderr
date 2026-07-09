@@ -1,0 +1,74 @@
+error[E0277]: the trait bound `EpDownloadHd3386a2ef42e80b9: concord_core::internal::ResponseTerminalEndpoint<StreamEndpointResponseApiCx>` is not satisfied
+  --> tests/trybuild/fail/codegen_contract/stream_endpoint_response.rs:16:28
+   |
+16 |     let _ = api.download().response().await.unwrap();
+   |                            ^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `concord_core::internal::ResponseTerminalEndpoint<StreamEndpointResponseApiCx>` is not implemented for `EpDownloadHd3386a2ef42e80b9`
+  --> tests/trybuild/fail/codegen_contract/stream_endpoint_response.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client StreamEndpointResponseApi {
+ 7 | |         base "https://example.com"
+...  |
+10 | |     GET Download
+   | |________________^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::response`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn response(self) -> Result<DecodedResponse<E::Response>, ApiClientError>
+   |                  -------- required by a bound in this associated function
+   |     where
+   |         E: ResponseTerminalEndpoint<Cx>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::response`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `EpDownloadHd3386a2ef42e80b9: concord_core::internal::ResponseTerminalEndpoint<StreamEndpointResponseApiCx>` is not satisfied
+  --> tests/trybuild/fail/codegen_contract/stream_endpoint_response.rs:16:13
+   |
+16 |     let _ = api.download().response().await.unwrap();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `concord_core::internal::ResponseTerminalEndpoint<StreamEndpointResponseApiCx>` is not implemented for `EpDownloadHd3386a2ef42e80b9`
+  --> tests/trybuild/fail/codegen_contract/stream_endpoint_response.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client StreamEndpointResponseApi {
+ 7 | |         base "https://example.com"
+...  |
+10 | |     GET Download
+   | |________________^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::response`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn response(self) -> Result<DecodedResponse<E::Response>, ApiClientError>
+   |                  -------- required by a bound in this associated function
+   |     where
+   |         E: ResponseTerminalEndpoint<Cx>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::response`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `EpDownloadHd3386a2ef42e80b9: concord_core::internal::ResponseTerminalEndpoint<StreamEndpointResponseApiCx>` is not satisfied
+  --> tests/trybuild/fail/codegen_contract/stream_endpoint_response.rs:16:39
+   |
+16 |     let _ = api.download().response().await.unwrap();
+   |                                       ^^^^^ unsatisfied trait bound
+   |
+help: the trait `concord_core::internal::ResponseTerminalEndpoint<StreamEndpointResponseApiCx>` is not implemented for `EpDownloadHd3386a2ef42e80b9`
+  --> tests/trybuild/fail/codegen_contract/stream_endpoint_response.rs:5:1
+   |
+ 5 | / api! {
+ 6 | |     client StreamEndpointResponseApi {
+ 7 | |         base "https://example.com"
+...  |
+10 | |     GET Download
+   | |________________^
+note: required by a bound in `PendingRequest::<'a, Cx, E, T>::response`
+  --> $WORKSPACE/concord_core/src/request.rs
+   |
+   |     pub async fn response(self) -> Result<DecodedResponse<E::Response>, ApiClientError>
+   |                  -------- required by a bound in this associated function
+   |     where
+   |         E: ResponseTerminalEndpoint<Cx>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `PendingRequest::<'a, Cx, E, T>::response`
+   = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)

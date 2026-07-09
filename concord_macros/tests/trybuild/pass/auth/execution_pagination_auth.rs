@@ -63,7 +63,7 @@ async fn execution_usage(api: UsageExecutionApi) -> Result<(), ApiClientError> {
         .clear_timeout()
         .inherit_timeout()
         .attempt(1)
-        .execute_decoded_with::<Text<String>>()
+        .response()
         .await?;
     let _raw = api.list().execute_raw().await?;
     let _items = api

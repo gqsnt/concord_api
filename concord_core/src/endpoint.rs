@@ -1,5 +1,6 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::error::ApiClientError;
+use crate::transport::DecodedResponse;
 use crate::transport::Transport;
 use std::future::Future;
 use std::pin::Pin;
@@ -16,6 +17,10 @@ pub struct ClientPlanContext<'a, Cx: ClientContext> {
     pub auth_vars: &'a Cx::AuthVars,
 }
 
+#[doc(hidden)]
+pub type EndpointFuture<'a, Output> =
+    Pin<Box<dyn Future<Output = Result<Output, ApiClientError>> + Send + 'a>>;
+
 /// Endpoint model used by generated Concord clients.
 pub trait Endpoint<Cx: ClientContext>: Send + Sized + 'static {
     type Response: Send + 'static;
@@ -27,7 +32,21 @@ pub trait Endpoint<Cx: ClientContext>: Send + Sized + 'static {
     fn execute<'a, T>(
         client: &'a ApiClient<Cx, T>,
         plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>>
+    ) -> EndpointFuture<'a, Self::Response>
+    where
+        T: Transport + 'a;
+}
+
+/// Marker for endpoints that expose a metadata-bearing decoded response terminal.
+///
+/// Generated buffered endpoints implement this with their resolved response
+/// adapter so callers cannot choose a response codec at the call site.
+#[doc(hidden)]
+pub trait ResponseTerminalEndpoint<Cx: ClientContext>: Endpoint<Cx> {
+    fn execute_response<'a, T>(
+        client: &'a ApiClient<Cx, T>,
+        plan: RequestPlan,
+    ) -> EndpointFuture<'a, DecodedResponse<Self::Response>>
     where
         T: Transport + 'a;
 }

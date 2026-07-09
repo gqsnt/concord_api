@@ -261,6 +261,8 @@ impl Endpoint<TestCx> for TextEndpoint {
     }
 }
 
+buffered_endpoint_response_terminal!(TextEndpoint, TestCx, concord_core::prelude::Text<String>);
+
 impl ReusableEndpoint<TestCx> for TextEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         Ok(request_plan(
@@ -846,6 +848,37 @@ macro_rules! buffered_endpoint_execute {
 
 pub(crate) use buffered_endpoint_execute;
 
+macro_rules! buffered_endpoint_response_terminal {
+    ($endpoint:ty, $cx:ty, $codec:ty) => {
+        impl ::concord_core::internal::ResponseTerminalEndpoint<$cx> for $endpoint {
+            fn execute_response<'a, T>(
+                client: &'a concord_core::prelude::ApiClient<$cx, T>,
+                plan: concord_core::internal::RequestPlan,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = Result<
+                                ::concord_core::advanced::DecodedResponse<Self::Response>,
+                                concord_core::prelude::ApiClientError,
+                            >,
+                        > + Send
+                        + 'a,
+                >,
+            >
+            where
+                T: concord_core::advanced::Transport + 'a,
+            {
+                <concord_core::advanced::BufferedResponse<$codec> as ::concord_core::internal::ResponseEntityWithMeta>::execute_with_meta(
+                    client,
+                    plan,
+                )
+            }
+        }
+    };
+}
+
+pub(crate) use buffered_endpoint_response_terminal;
+
 #[derive(Clone)]
 pub struct ObservationAuthVars {
     pub token: Option<String>,
@@ -1009,6 +1042,12 @@ impl Endpoint<ObservationAuthCx> for TextEndpoint {
 
     buffered_endpoint_execute!(ObservationAuthCx, concord_core::prelude::Text<String>);
 }
+
+buffered_endpoint_response_terminal!(
+    TextEndpoint,
+    ObservationAuthCx,
+    concord_core::prelude::Text<String>
+);
 
 impl ReusableEndpoint<ObservationAuthCx> for TextEndpoint {
     fn plan(

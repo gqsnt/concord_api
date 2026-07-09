@@ -1,6 +1,8 @@
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
-use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
+use crate::endpoint::{
+    Endpoint, IntoEndpointPlan, PaginatedEndpoint, ResponseTerminalEndpoint, ReusableEndpoint,
+};
 use crate::error::{ApiClientError, ErrorContext, PaginationErrorKind};
 use crate::multipart_response::MultipartStream;
 use crate::pagination::{
@@ -145,15 +147,15 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>, T: crate::transport::Transp
         Ok(())
     }
 
-    pub async fn execute_decoded_with<C>(
-        self,
-    ) -> Result<DecodedResponse<E::Response>, ApiClientError>
+    /// Return the decoded endpoint value together with response metadata.
+    #[inline]
+    pub async fn response(self) -> Result<DecodedResponse<E::Response>, ApiClientError>
     where
-        C: crate::codec::ResponseCodec<Value = E::Response>,
+        E: ResponseTerminalEndpoint<Cx>,
     {
         let client = self.client;
         let plan = self.request_plan()?;
-        client.execute_plan::<C>(plan).await
+        E::execute_response(client, plan).await
     }
 
     pub async fn execute_raw(self) -> Result<BuiltResponse, ApiClientError> {

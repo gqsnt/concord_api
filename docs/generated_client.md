@@ -118,15 +118,15 @@ let user: User = api.users().get_user(42).await?;
 let user = api.users().get_user(42).execute().await?;
 ```
 
-## Execute Decoded
+## Response Metadata
 
-`.execute_decoded_with::<C>()` is the explicit-codec low-level path that returns a decoded value plus response metadata.
+`.response()` returns a decoded value plus response metadata for buffered endpoint requests.
 
 ```rust
 let response = api
     .users()
     .get_user(42)
-    .execute_decoded_with::<Json<User>>()
+    .response()
     .await?;
 let status = response.status();
 let headers = response.headers();

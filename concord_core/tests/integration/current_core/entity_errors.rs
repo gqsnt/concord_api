@@ -200,6 +200,35 @@ where
     }
 }
 
+impl<C> concord_core::internal::ResponseTerminalEndpoint<super::common::TestCx>
+    for BufferedEncodeFailureEndpoint<C>
+where
+    C: BodyCodec<Value = String>,
+{
+    fn execute_response<'a, T>(
+        client: &'a concord_core::prelude::ApiClient<super::common::TestCx, T>,
+        plan: RequestPlan,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        concord_core::advanced::DecodedResponse<Self::Response>,
+                        ApiClientError,
+                    >,
+                > + Send
+                + 'a,
+        >,
+    >
+    where
+        T: concord_core::advanced::Transport + 'a,
+    {
+        <concord_core::advanced::BufferedResponse<concord_core::prelude::Text<String>> as concord_core::internal::ResponseEntityWithMeta>::execute_with_meta(
+            client,
+            plan,
+        )
+    }
+}
+
 impl<C> ReusableEndpoint<super::common::TestCx> for BufferedEncodeFailureEndpoint<C>
 where
     C: BodyCodec<Value = String>,
@@ -273,7 +302,7 @@ async fn buffered_request_encoding_failure_is_public_safe_through_client_request
         .request(BufferedEncodeFailureEndpoint::<
             RequestBodySourceSentinelCodec,
         >::new("RequestEncode", "/request-encode", "body"))
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("buffered request encoding should fail");
 
@@ -308,7 +337,7 @@ async fn buffered_request_encoding_message_sentinel_is_redacted_through_client_r
         .request(BufferedEncodeFailureEndpoint::<
             RequestBodyMessageSentinelCodec,
         >::new("RequestEncode", "/request-encode", "body"))
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("buffered request encoding should fail");
 

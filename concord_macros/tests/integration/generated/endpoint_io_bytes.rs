@@ -6,7 +6,7 @@ use concord_core::error::ErrorCategory;
 use concord_core::prelude::ApiClientError;
 use concord_core::transport::RequestMeta;
 use concord_macros::api;
-use http::{HeaderMap, Method, StatusCode};
+use http::{HeaderMap, HeaderValue, Method, StatusCode};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
@@ -233,4 +233,43 @@ async fn generated_bytes_status_failure_is_body_free() {
     assert_eq!(polls.load(Ordering::SeqCst), 0);
     let rendered = format!("{err:?}");
     assert!(!rendered.contains("SECRET_BYTES_STATUS_SENTINEL_MUST_NOT_APPEAR"));
+}
+
+#[tokio::test]
+async fn generated_bytes_response_includes_metadata_and_value() {
+    let polls = Arc::new(AtomicUsize::new(0));
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        http::header::HeaderName::from_static("x-response-id"),
+        HeaderValue::from_static("abc123"),
+    );
+    let fixture = ResponseFixture::Buffered {
+        status: StatusCode::CREATED,
+        headers,
+        chunks: vec![Bytes::from_static(b"hello")],
+        content_length: Some(5),
+        polls: polls.clone(),
+    };
+    let transport = RecordingBytesTransport::new(fixture);
+    let api = BytesResponseApi::new_with_transport(transport.clone());
+
+    let response = api
+        .download()
+        .response()
+        .await
+        .expect("bytes response succeeds");
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_eq!(
+        response
+            .headers()
+            .get(http::header::HeaderName::from_static("x-response-id"))
+            .and_then(|value| value.to_str().ok()),
+        Some("abc123")
+    );
+    assert_eq!(response.meta().endpoint, "Download");
+    assert_eq!(response.meta().method, Method::GET);
+    assert_eq!(response.into_value(), Bytes::from_static(b"hello"));
+    assert_eq!(transport.send_count(), 1);
+    assert!(polls.load(Ordering::SeqCst) > 0);
 }

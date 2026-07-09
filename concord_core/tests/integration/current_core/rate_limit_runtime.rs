@@ -204,7 +204,7 @@ async fn rate_limit_acquires_planned_buckets_before_transport_and_preserves_orde
             policy,
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -290,7 +290,7 @@ async fn rate_limit_acquire_failure_reports_context_and_redacts_planned_sentinel
             policy,
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("rate-limit acquire failure should be typed");
 
@@ -345,7 +345,7 @@ async fn rate_limit_retry_boundary_stops_after_late_acquire_failure() -> Result<
             policy,
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("late rate-limit failure should stop retrying");
 
@@ -399,7 +399,7 @@ async fn empty_rate_limit_plan_carries_no_buckets_into_acquire() -> Result<(), A
             policy: ResolvedPolicy::default(),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "ok");

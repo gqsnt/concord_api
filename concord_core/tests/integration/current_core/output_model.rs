@@ -14,10 +14,7 @@ async fn decoded_response_exposes_user_metadata() -> Result<(), ApiClientError> 
     );
     let client = client(TestAuthVars::default(), transport);
 
-    let decoded = client
-        .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    let decoded = client.request(TextEndpoint::default()).response().await?;
 
     assert_eq!(decoded.status(), StatusCode::CREATED);
     assert_eq!(decoded.headers()[http::header::CONTENT_TYPE], "text/plain");
@@ -36,7 +33,7 @@ async fn direct_await_returns_decoded_value() -> Result<(), ApiClientError> {
 
     let value = client
         .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?
         .into_value();
 
@@ -52,7 +49,7 @@ async fn execute_returns_same_decoded_value_as_await() -> Result<(), ApiClientEr
 
     let value = client
         .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?
         .into_value();
 

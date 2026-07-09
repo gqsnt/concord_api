@@ -1,5 +1,6 @@
 #![allow(clippy::needless_update)] // Concurrent endpoint fixtures keep `..Default::default()` for resilience to added fields.
 
+use super::common::buffered_endpoint_response_terminal;
 use super::common::*;
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
@@ -290,7 +291,7 @@ async fn concurrent_retry_attempt_indexes_remain_request_local() -> Result<(), A
         async move {
             retry_client
                 .request(retry)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
                 .map(|response| response.into_value())
         }
@@ -299,7 +300,7 @@ async fn concurrent_retry_attempt_indexes_remain_request_local() -> Result<(), A
         async move {
             sibling_client
                 .request(sibling)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
                 .map(|response| response.into_value())
         }
@@ -443,18 +444,13 @@ async fn concurrent_pending_overrides_are_request_local() -> Result<(), ApiClien
                 .request(a)
                 .timeout(Duration::from_secs(2))
                 .debug_level(concord_core::prelude::DebugLevel::VV)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
         }
     });
     let task_b = tokio::spawn({
         let client = client.clone();
-        async move {
-            client
-                .request(b)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(b).response().await }
     });
 
     transport.wait_for_sends(2).await;
@@ -512,7 +508,7 @@ async fn concurrent_clone_reconfigure_does_not_affect_in_flight_request() {
     let in_flight = tokio::spawn(async move {
         request_client
             .request(TextEndpoint::default())
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
     });
 
@@ -530,7 +526,7 @@ async fn concurrent_clone_reconfigure_does_not_affect_in_flight_request() {
 
     let later = reconfigured_client
         .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect("later request should use the updated no-limit config");
     assert_eq!(later.value(), "abcde");
@@ -576,21 +572,11 @@ async fn concurrent_success_and_decode_failure_are_isolated() -> Result<(), ApiC
     let ok_task = tokio::spawn({
         let client = client.clone();
         let ok = ok.clone();
-        async move {
-            client
-                .request(ok)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(ok).response().await }
     });
     let bad_task = tokio::spawn({
         let client = client.clone();
-        async move {
-            client
-                .request(bad)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(bad).response().await }
     });
 
     gate.wait_for("transport_send", 2).await;
@@ -660,7 +646,7 @@ async fn concurrent_rate_limit_keys_are_isolated() -> Result<(), ApiClientError>
         async move {
             client
                 .request(a)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
                 .map(|response| response.into_value())
         }
@@ -670,7 +656,7 @@ async fn concurrent_rate_limit_keys_are_isolated() -> Result<(), ApiClientError>
         async move {
             client
                 .request(b)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
                 .map(|response| response.into_value())
         }
@@ -760,7 +746,7 @@ async fn concurrent_rate_limit_acquisitions_remain_request_local() -> Result<(),
         async move {
             client
                 .request(a)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
                 .map(|response| response.into_value())
         }
@@ -770,7 +756,7 @@ async fn concurrent_rate_limit_acquisitions_remain_request_local() -> Result<(),
         async move {
             client
                 .request(b)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
+                .response()
                 .await
                 .map(|response| response.into_value())
         }
@@ -872,21 +858,11 @@ async fn concurrent_transport_error_and_success_are_isolated() -> Result<(), Api
     let ok_task = tokio::spawn({
         let client = client.clone();
         let ok = ok.clone();
-        async move {
-            client
-                .request(ok)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(ok).response().await }
     });
     let err_task = tokio::spawn({
         let client = client.clone();
-        async move {
-            client
-                .request(err)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(err).response().await }
     });
     gate.wait_for("transport_send", 2).await;
     gate.release_all("transport_send").await;
@@ -1119,22 +1095,12 @@ async fn concurrent_observer_surfaces_are_body_auth_free() -> Result<(), ApiClie
     let a = tokio::spawn({
         let client = Arc::new(client_a);
         let endpoint = endpoint.clone();
-        async move {
-            client
-                .request(endpoint)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(endpoint).response().await }
     });
     let b = tokio::spawn({
         let client = Arc::new(client_b);
         let endpoint = endpoint.clone();
-        async move {
-            client
-                .request(endpoint)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(endpoint).response().await }
     });
 
     transport.wait_for_sends(2).await;
@@ -1241,22 +1207,12 @@ async fn concurrent_auth_material_does_not_cross_contaminate() -> Result<(), Api
     let left_task = tokio::spawn({
         let client = client_a.clone();
         let left = left.clone();
-        async move {
-            client
-                .request(left)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(left).response().await }
     });
     let right_task = tokio::spawn({
         let client = client_b.clone();
         let right = right.clone();
-        async move {
-            client
-                .request(right)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(right).response().await }
     });
 
     sent.wait_for_sends(2).await;
@@ -1322,22 +1278,12 @@ async fn concurrent_request_bodies_remain_isolated() -> Result<(), ApiClientErro
     let bytes_task = tokio::spawn({
         let client = client.clone();
         let endpoint = bytes_endpoint.clone();
-        async move {
-            client
-                .request(endpoint)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(endpoint).response().await }
     });
     let stream_task = tokio::spawn({
         let client = client.clone();
         let endpoint = stream_endpoint.clone();
-        async move {
-            client
-                .request(endpoint)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(endpoint).response().await }
     });
 
     let bytes_value = bytes_task
@@ -1413,22 +1359,12 @@ async fn concurrent_cancellation_does_not_affect_sibling_request() -> Result<(),
     let cancelled_task = tokio::spawn({
         let client = client_a.clone();
         let cancelled = cancelled.clone();
-        async move {
-            client
-                .request(cancelled)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(cancelled).response().await }
     });
     let sibling_task = tokio::spawn({
         let client = client_b.clone();
         let sibling = sibling.clone();
-        async move {
-            client
-                .request(sibling)
-                .execute_decoded_with::<concord_core::prelude::Text<String>>()
-                .await
-        }
+        async move { client.request(sibling).response().await }
     });
 
     sent.wait_for_sends(2).await;
@@ -1561,6 +1497,8 @@ impl Endpoint<TestCx> for BodyEndpoint {
     buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
+buffered_endpoint_response_terminal!(BodyEndpoint, TestCx, concord_core::prelude::Text<String>);
+
 impl ReusableEndpoint<TestCx> for BodyEndpoint {
     fn plan(
         &self,
@@ -1654,7 +1592,7 @@ where
     tokio::spawn(async move {
         client
             .request(endpoint)
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
             .map(|response| response.into_value())
     })
@@ -1670,7 +1608,7 @@ where
     tokio::spawn(async move {
         client
             .request(endpoint)
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
             .map(|response| response.into_value())
     })
@@ -1756,6 +1694,12 @@ impl Endpoint<SingleFlightCx> for TextEndpoint {
 
     buffered_endpoint_execute!(SingleFlightCx, concord_core::prelude::Text<String>);
 }
+
+buffered_endpoint_response_terminal!(
+    TextEndpoint,
+    SingleFlightCx,
+    concord_core::prelude::Text<String>
+);
 
 impl ReusableEndpoint<SingleFlightCx> for TextEndpoint {
     fn plan(

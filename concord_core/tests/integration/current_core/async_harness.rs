@@ -291,12 +291,8 @@ async fn gateable_transport_blocks_send_until_released() {
     let client: ApiClient<TestCx, GateableTransport> =
         ApiClient::with_transport((), TestAuthVars::default(), transport);
 
-    let mut task = tokio::spawn(async move {
-        client
-            .request(TextEndpoint::default())
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
-            .await
-    });
+    let mut task =
+        tokio::spawn(async move { client.request(TextEndpoint::default()).response().await });
 
     gate.wait_for("transport_send", 1).await;
     assert_eq!(sent.sent_count().await, 1);
@@ -332,12 +328,8 @@ async fn gateable_body_blocks_reads_and_counts_chunks() {
     let client: ApiClient<TestCx, GateableBodyTransport> =
         ApiClient::with_transport((), TestAuthVars::default(), transport);
 
-    let mut task = tokio::spawn(async move {
-        client
-            .request(TextEndpoint::default())
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
-            .await
-    });
+    let mut task =
+        tokio::spawn(async move { client.request(TextEndpoint::default()).response().await });
 
     gate.wait_for("body_chunk", 1).await;
     assert_eq!(body.read_count(), 0);
@@ -382,7 +374,7 @@ async fn counting_rate_limiter_records_lifecycle_completion() {
             policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect("request should succeed");
 
@@ -447,7 +439,7 @@ async fn counting_rate_limiter_records_lifecycle_completion() {
             policy: rate_limit_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("acquire failure should stop before transport");
     assert!(matches!(err, ApiClientError::RateLimit { .. }));
@@ -481,12 +473,8 @@ async fn gateable_hooks_block_pre_send_before_transport() {
         cfg.runtime_hooks(Arc::new(GateableHooks::new(gate.clone(), events.clone())));
     });
 
-    let task = tokio::spawn(async move {
-        client
-            .request(TextEndpoint::default())
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
-            .await
-    });
+    let task =
+        tokio::spawn(async move { client.request(TextEndpoint::default()).response().await });
 
     gate.wait_for("hook_pre_send", 1).await;
     assert_eq!(sent.sent_count().await, 0);
@@ -544,7 +532,7 @@ async fn harness_observer_surfaces_remain_body_auth_free() {
             policy,
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect("request should succeed");
 

@@ -1,8 +1,9 @@
 use super::common::{
     CapturedTransportRequest, CursorItems, CursorItemsEndpoint, MockOutcome, MockResponse,
     MockTransport, ObservationRateLimiter, ObservationRuntimeHooks, PaginationVariant,
-    TestAuthVars, TestCx, TextEndpoint, auth_policy, buffered_endpoint_execute, client,
-    request_plan, retry_policy, retry_policy_for_statuses,
+    TestAuthVars, TestCx, TextEndpoint, auth_policy, buffered_endpoint_execute,
+    buffered_endpoint_response_terminal, client, request_plan, retry_policy,
+    retry_policy_for_statuses,
 };
 use crate::support::assert_text_does_not_contain_any;
 use bytes::Bytes;
@@ -41,6 +42,12 @@ impl Endpoint<TestCx> for InvalidParamEndpoint {
     buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
 
+buffered_endpoint_response_terminal!(
+    InvalidParamEndpoint,
+    TestCx,
+    concord_core::prelude::Text<String>
+);
+
 impl ReusableEndpoint<TestCx> for InvalidParamEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
         Err(ApiClientError::invalid_param(
@@ -65,6 +72,12 @@ impl Endpoint<TestCx> for DynamicPathEndpoint {
 
     buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
+
+buffered_endpoint_response_terminal!(
+    DynamicPathEndpoint,
+    TestCx,
+    concord_core::prelude::Text<String>
+);
 
 impl ReusableEndpoint<TestCx> for DynamicPathEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
@@ -583,7 +596,7 @@ async fn no_content_status_mismatch_remains_structured_and_response_contract_cat
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("no-content status mismatch should fail");
 
@@ -606,7 +619,7 @@ async fn request_construction_errors_are_typed_and_pre_transport() {
 
     let err = client
         .request(InvalidParamEndpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("invalid request construction should fail");
 
@@ -649,7 +662,7 @@ async fn required_dynamic_path_segments_reject_empty_and_reserved_values_before_
 
         let err = client
             .request(endpoint)
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
             .expect_err("invalid dynamic path segment should fail before transport");
 
@@ -685,7 +698,7 @@ async fn optional_empty_dynamic_path_segments_fail_while_none_still_omits_the_se
 
     let invalid_err = invalid_client
         .request(invalid_endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("empty optional segment should fail before transport");
 
@@ -708,7 +721,7 @@ async fn optional_empty_dynamic_path_segments_fail_while_none_still_omits_the_se
 
     let response = valid_client
         .request(valid_endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect("dynamic path should be percent-encoded and sent");
 
@@ -741,7 +754,7 @@ async fn formatted_empty_dynamic_path_segments_fail_before_transport() {
 
     let err = client
         .request(endpoint)
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("empty formatted segment should fail before transport");
 
@@ -781,7 +794,7 @@ async fn auth_collision_errors_are_typed_and_pre_rate_transport() {
             policy,
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("auth collision should fail before side effects");
 
@@ -824,7 +837,7 @@ async fn auth_rejection_error_is_distinct_from_status_retry() {
                 policy,
                 ..TextEndpoint::default()
             })
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
             .expect_err("auth rejection should be terminal");
 
@@ -855,7 +868,7 @@ async fn transport_error_is_distinct_from_http_status_error() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("transport error should surface");
 
@@ -973,7 +986,7 @@ async fn http_status_error_is_distinct_from_transport_and_auth() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("500 should surface as status error");
 
@@ -1023,7 +1036,7 @@ async fn http_status_error_sanitizes_public_headers_before_storage() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("status error should surface");
 
@@ -1128,7 +1141,7 @@ async fn retry_exhaustion_returns_documented_final_error_and_safe_diagnostics() 
             policy: retry_policy(3),
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("retry exhaustion should return final status error");
 
@@ -1159,7 +1172,7 @@ async fn rate_limit_acquire_error_is_typed_and_pre_transport() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("rate limiter acquire should fail before transport");
 
@@ -1196,7 +1209,7 @@ async fn rate_limit_response_action_error_is_typed_and_post_transport() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("rate limiter response action should fail after transport");
 
@@ -1251,7 +1264,7 @@ async fn body_limit_errors_are_distinguishable_and_safe() {
                 policy: rate_policy(),
                 ..TextEndpoint::default()
             })
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
         {
             Ok(_) => panic!("{name} over-limit response should fail"),
@@ -1299,7 +1312,7 @@ async fn decode_errors_are_distinct_and_safe() {
             policy: rate_policy(),
             ..TextEndpoint::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("invalid utf-8 under limit should decode-error");
     assert!(matches!(decode_err, ApiClientError::Decode { .. }));

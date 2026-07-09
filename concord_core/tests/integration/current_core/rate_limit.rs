@@ -1,3 +1,4 @@
+use super::common::buffered_endpoint_response_terminal;
 use super::common::*;
 use crate::support::assert_error_chain_does_not_contain_any;
 
@@ -87,6 +88,12 @@ impl Endpoint<TestCx> for HostlessEndpoint {
 
     buffered_endpoint_execute!(TestCx, concord_core::prelude::Text<String>);
 }
+
+buffered_endpoint_response_terminal!(
+    HostlessEndpoint,
+    TestCx,
+    concord_core::prelude::Text<String>
+);
 
 impl ReusableEndpoint<TestCx> for HostlessEndpoint {
     fn plan(&self, _ctx: &ClientPlanContext<'_, TestCx>) -> Result<RequestPlan, ApiClientError> {
@@ -308,10 +315,7 @@ async fn rate_limit_observation_happens_after_response_classification() -> Resul
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
     configure_runtime(&mut client, Some(limiter));
 
-    client
-        .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    client.request(TextEndpoint::default()).response().await?;
 
     let events = events.lock().await.clone();
     let acquire = events
@@ -440,7 +444,7 @@ async fn rate_limit_observes_retryable_status_before_retry() -> Result<(), ApiCl
             policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), SECOND_SENTINEL);
@@ -482,7 +486,7 @@ async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientEr
             policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("403 query-auth rejection should remain terminal");
 
@@ -531,7 +535,7 @@ async fn rate_limit_does_not_observe_transport_error_as_response() {
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("transport error should remain terminal when not retryable");
 
@@ -560,7 +564,7 @@ async fn missing_host_fails_before_rate_limit_acquire() {
         .request(HostlessEndpoint {
             policy: ResolvedPolicy::default(),
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("hostless route should fail before rate limit acquisition");
 
@@ -596,7 +600,7 @@ async fn rate_limit_acquire_context_does_not_expose_bearer_auth() -> Result<(), 
             policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -637,7 +641,7 @@ async fn rate_limit_acquire_context_does_not_expose_query_auth() -> Result<(), A
             policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -678,7 +682,7 @@ async fn rate_limit_acquire_context_does_not_expose_basic_auth_material()
             policy: auth_policy(concord_core::advanced::AuthPlacement::Basic),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -718,7 +722,7 @@ async fn rate_limit_response_context_does_not_expose_bearer_auth() -> Result<(),
             policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     let events = events.lock().await.clone();
@@ -758,7 +762,7 @@ async fn rate_limit_response_context_does_not_expose_query_auth() -> Result<(), 
             policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     let events = events.lock().await.clone();
@@ -798,7 +802,7 @@ async fn rate_limit_response_context_does_not_expose_basic_auth_material()
             policy: auth_policy(concord_core::advanced::AuthPlacement::Basic),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     let events = events.lock().await.clone();
@@ -887,7 +891,7 @@ async fn rate_limit_response_above_cap_returns_typed_error_before_cooldown_stora
             policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("over-cap cooldown should fail closed");
 
@@ -928,7 +932,7 @@ async fn rate_limit_response_above_cap_does_not_poison_followup_request()
             policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("over-cap cooldown should fail closed");
     assert_eq!(
@@ -944,7 +948,7 @@ async fn rate_limit_response_above_cap_does_not_poison_followup_request()
                 policy: retry_policy(2),
                 ..Default::default()
             })
-            .execute_decoded_with::<concord_core::prelude::Text<String>>(),
+            .response(),
     )
     .await
     .expect("follow-up request should not sleep on poisoned cooldown")
@@ -984,7 +988,7 @@ async fn short_rate_limit_cooldown_still_allows_followup_requests() -> Result<()
             policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -1017,7 +1021,7 @@ async fn rate_limit_response_zero_delay_is_allowed() -> Result<(), ApiClientErro
             policy: retry_policy(2),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
@@ -1062,7 +1066,7 @@ async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(),
             policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("auth rejection should remain terminal");
 
@@ -1116,7 +1120,7 @@ async fn rate_limit_response_context_sanitizes_sensitive_response_headers()
 
     let err = client
         .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("429 should surface as a typed status error");
 
@@ -1194,7 +1198,7 @@ async fn retry_after_429_does_not_double_sleep_with_rate_limit_observer()
                 policy: retry_policy_for_statuses(2, vec![StatusCode::TOO_MANY_REQUESTS]),
                 ..Default::default()
             })
-            .execute_decoded_with::<concord_core::prelude::Text<String>>()
+            .response()
             .await
     });
     let decoded = tokio::time::timeout(Duration::from_secs(3), handle)
@@ -1220,10 +1224,7 @@ async fn no_default_rate_limit_empty_plan_succeeds() -> Result<(), ApiClientErro
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
 
-    let decoded = client
-        .request(TextEndpoint::default())
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
-        .await?;
+    let decoded = client.request(TextEndpoint::default()).response().await?;
 
     assert_eq!(decoded.value(), "ok");
     assert_eq!(sent.sent_count().await, 1);
@@ -1257,7 +1258,7 @@ async fn no_default_rate_limit_non_empty_plan_fails_closed() {
             policy,
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await
         .expect_err("non-empty rate-limit plans should fail closed without governor support");
 
@@ -1295,7 +1296,7 @@ async fn no_default_rate_limit_explicit_noop_limiter_opt_out_succeeds() -> Resul
             policy: rate_limit_policy(),
             ..Default::default()
         })
-        .execute_decoded_with::<concord_core::prelude::Text<String>>()
+        .response()
         .await?;
 
     assert_eq!(decoded.value(), "ok");
