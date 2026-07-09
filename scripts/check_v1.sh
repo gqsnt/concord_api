@@ -142,6 +142,23 @@ check_public_dev_body_capture_terms() {
   rm -f -- "$tmp"
 }
 
+check_public_dangerous_surface_terms() {
+  local tmp
+  tmp="$(mktemp)"
+  set +e
+  grep -RInE 'advanced::BuiltResponse|advanced::DevBodyCaptureConfig' \
+    README.md docs concord_examples/src >"$tmp"
+  local status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    echo "error: stale advanced dangerous-surface names found; use concord_core::dangerous instead" >&2
+    cat "$tmp" >&2
+    rm -f -- "$tmp"
+    exit 1
+  fi
+  rm -f -- "$tmp"
+}
+
 check_generated_rustdoc_terms() {
   local tmp
   tmp="$(mktemp)"
@@ -198,6 +215,7 @@ run_step "public DSL terminology" check_public_dsl_terms
 run_step "public request API" check_public_request_api_terms
 run_step "public secret expose API" check_public_secret_expose_terms
 run_step "public dev body capture API" check_public_dev_body_capture_terms
+run_step "public dangerous surface API" check_public_dangerous_surface_terms
 run_step "generated rustdoc terminology" check_generated_rustdoc_terms
 run_step "security model doc" check_security_model_doc
 run_step "feature matrix" bash ./scripts/check_features.sh

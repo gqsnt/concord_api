@@ -146,7 +146,7 @@ let user = response.into_value();
 let raw = api.users().get_user(42).execute_raw_response().await?;
 ```
 
-This is an advanced escape hatch for diagnostics and protocol tests.
+This is a dangerous escape hatch for diagnostics and protocol tests.
 
 ## Pagination
 

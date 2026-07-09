@@ -89,7 +89,7 @@ The defaults are finite, and over-cap remote or custom delays fail closed instea
 
 Reserved auth names are structural, not best-effort. Query-auth names are rejected if a public query parameter already uses the same key, and header-auth names are rejected case-insensitively if a public header already uses the same name. Those collisions are rejected before rate-limit acquisition and transport.
 
-## Dev Body Capture
+## Dangerous Dev Body Capture
 
 `dangerous-dev-tools` enables the deprecated dev body capture configuration API under `concord_core::dangerous`, but it does not turn capture on by itself.
 

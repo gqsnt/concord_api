@@ -23,7 +23,7 @@ See [Security Model](security_model.md) for the safe diagnostic boundary and the
 | Pagination non-progress or cap failure | `ApiClientError::Pagination` or `PaginationLimit` with a `PaginationErrorKind`; category `Pagination` | Depends on page stage; non-progress happens after a page completes | Depends on completed page | Page retry or auth refresh keeps page identity | Error is page and control metadata only; the kind is machine-readable and the message stays safe. |
 | Runtime config invalid values | Most v1 runtime config setters are infallible; invalid runtime state uses `RuntimeState` or typed subsystem errors | Where the configured subsystem is used | Depends on subsystem | Depends on subsystem | Diagnostics remain body-free and auth-free. |
 
-## `execute_raw_response()`
+## Dangerous Raw Response
 
 `#[cfg(feature = "dangerous-raw-response")]` enables `concord_core::dangerous::BuiltResponse` and `execute_raw_response()`. It skips endpoint decode. It still performs logical request construction, auth collision validation, rate-limit acquire and observation, transport send, retry, response classification, auth rejection handling, and runtime response-body limits.
 
