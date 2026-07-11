@@ -16,7 +16,9 @@ Current report-only observations:
 - `cargo tree -p concord_core` still shows the reqwest transport path on the default feature set.
 - `cargo tree -p concord_core --no-default-features` omits `reqwest`.
 - `cargo tree -p concord_core --no-default-features --features transport-reqwest` restores the reqwest transport path.
-- `./scripts/perf_footprint.sh` continues to be the machine-local footprint summary tool for the workspace and now reflects the optional transport split.
+- The historical machine-local footprint report is retired. The combined
+  all-feature workspace check remains part of `just release`; focused
+  no-default and dependency-tree commands are diagnostics for feature changes.
 
 ## Current State Inventory
 
@@ -126,7 +128,7 @@ Concrete steps for the implementation PR:
    - `cargo check -p concord_core --no-default-features`
    - `cargo check -p concord_core --no-default-features --features json`
    - `cargo test --workspace --all-targets`
-   - `./scripts/perf_footprint.sh`
+   - `just perf-check`, `just perf-test`, and `just bench-check` for deferred diagnostics
 
 Expected migration notes:
 
@@ -163,7 +165,7 @@ cargo tree -p concord_core --no-default-features
 cargo check -p concord_core
 cargo check -p concord_core --no-default-features
 cargo check -p concord_core --no-default-features --features json
-./scripts/perf_footprint.sh
+just perf-check
 ```
 
 If the implementation PR adds feature-specific test targets or supply-chain checks, include those in the same before/after comparison.

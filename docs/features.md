@@ -1,6 +1,6 @@
 # Concord Feature Matrix
 
-Concord keeps feature surfaces explicit and minimal. This document records the supported crate defaults, optional feature ownership, and the matrix enforced by `scripts/check_features.sh`.
+Concord keeps feature surfaces explicit and minimal. This document records the supported crate defaults and optional feature ownership. `just release` validates the combined all-feature workspace configuration.
 
 See [Security Model](security_model.md) for the consumer-facing boundary between safe, advanced, and dangerous surfaces.
 
@@ -14,7 +14,7 @@ See [Security Model](security_model.md) for the consumer-facing boundary between
 
 ## Compile / Check Matrix
 
-The following commands are intentionally supported and are checked by `scripts/check_features.sh`:
+The following focused commands are useful when diagnosing feature support:
 
 ```bash
 cargo check -p concord_core --no-default-features
@@ -37,7 +37,8 @@ cargo check -p concord_examples --all-targets --all-features
 
 `concord_examples --no-default-features` is intentionally unsupported.
 
-`scripts/check_features.sh` also checks dependency-tree invariants:
+The dependency-tree invariants are documented here for focused diagnosis when
+feature ownership changes:
 
 - the `concord_core` default tree contains `rate-limit-governor`, `records-csv`, `csv`, and `csv-core`, and omits optional HTTP codecs that are not enabled by default;
 - the `concord_core --no-default-features` tree omits the default `governor` feature edge and the CSV record dependencies;
@@ -53,28 +54,19 @@ cargo check -p concord_examples --all-targets --all-features
 - `concord_macros` must not widen the runtime feature surface through its normal dependency tree.
 - `concord_examples` may enable richer core features because it is a compile-checked example crate.
 
-## Feature-Relevant Nextest Runtime Matrix
+## Focused Feature Diagnostics
 
-The feature-relevant runtime commands in the local gate currently run:
-
-```bash
-cargo nextest run -p concord_core
-cargo nextest run -p concord_core --all-features
-cargo nextest run -p concord_examples
-cargo nextest run -p concord_examples --all-features
-cargo nextest run --workspace
-cargo nextest run --workspace --all-features
-cargo nextest run --workspace --all-targets
-```
-
-Feature-flavored core nextest invocations are intentionally omitted for now when they rely on the default-disabled core runtime path. The current core runtime suite is not feature-parametric, and these commands fail in the rate-limit characterization tests:
+No-default and feature-specific commands remain optional diagnostics. They are
+not dependencies of `just release`:
 
 ```bash
 cargo nextest run -p concord_core --no-default-features
 cargo nextest run -p concord_core --no-default-features --features json
 ```
 
-`scripts/check_features.sh` remains the compile/check feature matrix. `scripts/check_v1.sh` owns the full local gate.
+The root `justfile` owns the canonical compile, test, documentation, and
+supply-chain gate. It does not claim individual feature isolation or
+dependency-tree equivalence.
 
 ## Extending The Surface
 
@@ -82,5 +74,4 @@ When adding a new optional feature:
 
 1. Add the feature explicitly in the owning crate.
 2. Keep it out of `default` unless a deliberate release decision says otherwise.
-3. Add a feature-matrix check in `scripts/check_features.sh`.
-4. Update this table and any example fixtures that intentionally consume the new feature.
+3. Update this table and any example fixtures that intentionally consume the new feature.

@@ -54,14 +54,9 @@ The following commands were run from the repository root:
   - passed: 938 tests run, 938 passed, 0 skipped
 - `cargo doc --workspace --no-deps`
   - passed
-- `./scripts/check_features.sh`
-  - passed
-- `./scripts/perf_footprint.sh`
-  - passed
-- `CONCORD_PERF_OUT=target/perf-macro-scale-pr19.txt ./scripts/perf_macro_scale.sh`
-  - passed
-- `./scripts/perf_gate_timing.sh`
-  - passed
+- Historical feature, footprint, macro-scale, and gate-timing report commands
+  were retired with the old command surface. Current deferred diagnostics are
+  `just perf-check`, `just perf-test`, and `just bench-check`.
 
 ## 3. Runtime Benchmark Matrix
 
@@ -166,29 +161,26 @@ Current feature-state observations:
 - `cargo tree -p concord_core --no-default-features -i reqwest` reported that `reqwest` is absent by failing with `package ID specification 'reqwest' did not match any packages`.
 - `cargo tree -p concord_core --no-default-features --features transport-reqwest -i reqwest` showed `reqwest v0.13.3` under `concord_core`.
 
-Current footprint-script observations:
+Historical footprint-report observations:
 
 - `workspace metadata summary: perf_present_in_packages: no`
-  - this line comes from the root `Cargo.toml` workspace metadata probe in `./scripts/perf_footprint.sh`
+  - this historical observation came from a retired report command.
 - `perf package metadata summary: perf_present_in_packages: yes`
-  - this line comes from the `perf/Cargo.toml` metadata probe in `./scripts/perf_footprint.sh`
+  - this historical observation came from a retired report command.
 - `no-default concord_core includes reqwest: no`
-  - this line comes from the reqwest inverse-tree check in `./scripts/perf_footprint.sh`
+  - this historical observation came from a retired report command.
 - `transport-reqwest concord_core includes reqwest: yes`
-  - this line comes from the reqwest inverse-tree check in `./scripts/perf_footprint.sh`
+  - this historical observation came from a retired report command.
 - `serde_json present in concord_macros tree: yes`
-  - this line comes from the footprint script's plain `cargo tree -p concord_macros` capture. In this repository's current tree output, that capture includes a `[dev-dependencies]` section, so it sees `serde_json`; the normal `cargo tree -p concord_macros --edges normal,features` tree does not show `serde_json`
-- the footprint script also emitted local build timing lines including `0.07s`, `1.44s`, `3.56s`, `1.76s`, and `9.77s`
+  - this line comes from the historical report's plain `cargo tree -p concord_macros` capture. In this repository's current tree output, that capture includes a `[dev-dependencies]` section, so it sees `serde_json`; the normal `cargo tree -p concord_macros --edges normal,features` tree does not show `serde_json`
+- the historical report also emitted local build timing lines including `0.07s`, `1.44s`, `3.56s`, `1.76s`, and `9.77s`
 
 These are machine-local observations only.
 
 ## 5. Macro Compile-Time Observations
 
-The macro-scale report was run with:
-
-```bash
-CONCORD_PERF_OUT=target/perf-macro-scale-pr19.txt ./scripts/perf_macro_scale.sh
-```
+The command used for this historical macro-scale measurement has been retired.
+Current deferred diagnostics are documented in `perf/README.md`.
 
 Current local fixture summary:
 
@@ -214,11 +206,8 @@ The numbers are report-only and machine-local.
 
 ## 6. Release-Gate Timing Observations
 
-The gate-timing report was run with:
-
-```bash
-./scripts/perf_gate_timing.sh
-```
+The command used for this historical gate-timing measurement has been retired.
+Current deferred diagnostics are documented in `perf/README.md`.
 
 Current report header and summary:
 

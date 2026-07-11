@@ -7,7 +7,8 @@ pass/fail thresholds, live network calls, or real credentials.
 
 ## PR 9: Macro Scale Matrix
 
-Tooling: `scripts/perf_macro_scale.sh`
+Tooling: historical report command, now retired. Current deferred diagnostics are
+`just perf-check`, `just perf-test`, and `just bench-check`.
 
 Fixtures are generated under `target/perf-macro-scale` and built with artifacts under
 `target/perf-macro-scale-target`, so they are outside the workspace and are not discovered
@@ -57,9 +58,9 @@ not show a measurable clean-build win.
 
 ## PR 11: Gate Timing
 
-Tooling: `scripts/perf_gate_timing.sh`
+Tooling: historical report command, now retired.
 
-The timing helper mirrors `scripts/check_v1.sh` and records per-step wall time with no
+The historical timing helper mirrored the former release command and recorded per-step wall time with no
 thresholds.
 
 | step | real time |
@@ -119,7 +120,7 @@ satisfied.
 
 ## PR 13: CSV Footprint
 
-Tooling: `scripts/perf_footprint.sh`
+Tooling: historical report command, now retired.
 
 The no-default feature tree currently includes both `csv` and `csv-core`.
 

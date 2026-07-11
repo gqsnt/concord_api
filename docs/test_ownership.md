@@ -37,12 +37,13 @@ This repository keeps test ownership split by layer so new coverage lands in the
 - `concord_macros/tests/integration/generated/` owns feature-owned generated-client integration against the mock runtime.
 - `concord_examples/tests/` owns deterministic example checks. Live smoke paths stay opt-in behind environment variables.
 
-## Feature and CI scripts
+## Feature and CI validation
 
-- `scripts/check_features.sh` owns the supported Cargo feature matrix and dependency-tree expectations.
-- `scripts/check_v1.sh` owns the full local release gate that composes feature checks, formatting, clippy, tests, and docs.
-- `scripts/audit_current.sh` owns public docs/examples hygiene and release consistency checks.
-- `scripts/check_architecture.sh` owns source-boundary and current architecture invariants.
+- The root `justfile` owns the maintained workspace validation dimensions.
+- `just release` is the canonical release gate and does not include deferred perf diagnostics.
+- No-default, individual-feature, and dependency-tree checks are focused diagnostics, not proof supplied by the all-feature release check.
+- Architectural boundaries are maintained through module/crate organization, targeted compile/runtime tests, and review; the historical source-regex audit is retired.
+- `just perf-check`, `just perf-test`, and `just bench-check` are optional diagnostics for the historical perf package.
 
 ## Where to add new tests
 

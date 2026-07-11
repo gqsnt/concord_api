@@ -65,11 +65,22 @@ Codegen tests should prefer generated API compile checks, type checks, trybuild 
 
 Macro strictness belongs primarily in semantic unit tests and trybuild pass/fail fixtures. Add trybuild fail fixtures when a rejected form needs a stable public diagnostic. Source-level keyword audits can be useful during review, but they should not be normal `cargo test` checks.
 
-Feature-surface drift is gated separately by `scripts/check_features.sh`. That script uses normal dependency trees for the crate-surface proof so dev-dependencies do not widen the default feature story. `scripts/check_v1.sh` calls it before the rest of the local gate.
+`just release` validates the combined all-feature workspace configuration.
+No-default, individual-feature, and dependency-tree checks are focused
+diagnostics to run when changing feature ownership or optional dependencies;
+they are not part of the canonical release gate.
 
-Supply-chain policy is gated separately by `scripts/check_supply_chain.sh`. It requires `cargo-deny`, checks advisories, yanked crates, licenses, dependency sources and registries, and configured ban policy, and it may require a cached advisory database or network access to refresh advisory data. It does not use live credentials.
+Supply-chain policy is gated by `just supply-chain`. It requires `cargo-deny`, checks advisories, yanked crates, licenses, dependency sources and registries, and configured ban policy, and it may require a cached advisory database or network access to refresh advisory data. It does not use live credentials.
 
-The runtime nextest matrix is separate from the compile/check feature matrix. The checked-in local gate currently runs `cargo nextest run -p concord_core`, `cargo nextest run -p concord_core --all-features`, `cargo nextest run -p concord_examples`, `cargo nextest run -p concord_examples --all-features`, `cargo nextest run --workspace`, `cargo nextest run --workspace --all-features`, and `cargo nextest run --workspace --all-targets`. Feature-flavored core nextest runs such as `cargo nextest run -p concord_core --no-default-features` and `cargo nextest run -p concord_core --no-default-features --features json` are intentionally omitted for now because the core runtime suite is not feature-parametric and those runs fail in rate-limit characterization tests.
+The canonical release gate runs one executable-test axis:
+
+```text
+cargo nextest run --workspace --all-targets --all-features \
+  --no-tests fail --no-fail-fast --retries 0
+```
+
+Focused default-feature, per-crate, UI, no-default, and feature-specific
+commands are diagnostics and are not dependencies of `just release`.
 
 The no-default rate-limit regression is exercised separately with a focused cargo test filter instead of the full runtime suite:
 
@@ -80,21 +91,20 @@ cargo test -p concord_core --no-default-features --features json no_default_rate
 
 ## Architecture Boundary Checks
 
-Run:
+The historical source-regex architecture audit is retired. Architectural
+boundaries are maintained through module and crate organization, targeted
+compile/runtime tests, and review.
 
-```bash
-bash ./scripts/check_architecture.sh
-```
-
-This protects the crate and compiler/runtime split:
+The maintained architectural contract includes:
 
 - `concord_core` must not depend on `concord_macros`.
 - `concord_core` must not reference DSL, parser, or raw AST concepts.
 - codegen must consume resolved semantic data instead of raw syntax trees.
 - codegen must not rely on validation-dependent panics for semantic invalid states.
-- direct `.unwrap()` is intentionally banned in codegen by this gate so panic-prone semantic rendering does not creep back in under a different shape.
+- codegen review should avoid validation-dependent panics and direct `.unwrap()` in semantic rendering.
 
-If the check fails, fix the layer boundary instead of weakening the pattern. Only add a narrow allowlist if a future PR has documented a real exception.
+When a targeted test or review identifies a boundary regression, fix the layer
+organization instead of weakening the contract.
 
 ## Core Tests
 
@@ -146,35 +156,17 @@ Markdown prose is not validated by keyword tests in `cargo test`. Release review
 
 ## Full Local Gate
 
-Run:
+Run the canonical maintained-workspace gate with:
 
 ```bash
-bash ./scripts/check_v1.sh
+just release
 ```
 
-`scripts/check_v1.sh` requires `cargo-nextest` and performs:
-
-```bash
-bash ./scripts/check_architecture.sh
-bash ./scripts/check_features.sh
-cargo fmt --check
-cargo clippy --workspace --all-targets
-cargo nextest run -p concord_macros integration
-cargo nextest run -p concord_macros generated
-cargo nextest run -p concord_macros --test trybuild_current
-cargo nextest run -p concord_macros --test trybuild_sema
-cargo nextest run -p concord_macros --test trybuild_codegen
-cargo nextest run -p concord_core
-cargo nextest run -p concord_core --all-features
-cargo nextest run -p concord_examples
-cargo nextest run -p concord_examples --all-features
-cargo nextest run --workspace
-cargo nextest run --workspace --all-features
-cargo nextest run --workspace --all-targets
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-```
-
-The checked-in clippy step is non-strict (`cargo clippy --workspace --all-targets`). `-D warnings` is not enabled yet because the tree still carries known warnings in core and macros.
+It runs one formatting check, all-feature workspace check and Clippy, one
+all-target/all-feature workspace Nextest run, doctests, rustdoc, and the
+supply-chain policy check. Deferred performance diagnostics remain available as
+`just perf-check`, `just perf-test`, and `just bench-check`, but are not part of
+release validation.
 
 ## New DSL Feature Checklist
 

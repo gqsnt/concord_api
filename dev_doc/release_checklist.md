@@ -2,49 +2,41 @@
 
 ## Local V1 Gate
 
-Run:
+Run the canonical maintained-workspace verification command:
 
 ```bash
-bash ./scripts/check_v1.sh
+just release
 ```
 
-This runs the required local v1 verification commands without publishing or packaging. The default gate does not require external credentials or network access.
+This runs the required local verification commands without publishing or
+packaging. The gate does not require credentials or live service calls. Cargo
+dependency resolution and cargo-deny advisory data may require network access
+unless the necessary registry and advisory data are already cached.
 
-The script runs:
+The release recipe runs:
 
 ```bash
-bash ./scripts/check_architecture.sh
-bash ./scripts/check_features.sh
-cargo fmt --check
-cargo clippy --workspace --all-targets
-cargo nextest run -p concord_macros integration
-cargo nextest run -p concord_macros generated
-cargo nextest run -p concord_macros --test trybuild_current
-cargo nextest run -p concord_macros --test trybuild_sema
-cargo nextest run -p concord_macros --test trybuild_codegen
-cargo nextest run -p concord_core
-cargo nextest run -p concord_core --all-features
-cargo nextest run -p concord_examples
-cargo nextest run -p concord_examples --all-features
-cargo nextest run --workspace
-cargo nextest run --workspace --all-features
-cargo nextest run --workspace --all-targets
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+cargo fmt --all -- --check
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo nextest run --workspace --all-targets --all-features --no-tests fail --no-fail-fast --retries 0
+cargo test --workspace --doc --all-features
+cargo doc --workspace --no-deps --all-features
+cargo deny check
 ```
 
-The checked-in clippy step is non-strict (`cargo clippy --workspace --all-targets`). `-D warnings` is not enabled yet because the tree still carries known warnings.
-
-It explicitly requires `cargo-nextest`.
+The root `justfile` checks each required tool directly. Deferred performance
+diagnostics are available separately and are not part of release.
 
 ## Supply Chain Gate
 
-Run the supply-chain policy gate as a separate pre-release command:
+Run the supply-chain policy gate as a separate diagnostic command:
 
 ```bash
-bash ./scripts/check_supply_chain.sh
+just supply-chain
 ```
 
-It requires `cargo-deny`; install it with:
+This recipe requires `cargo-deny`; install it with:
 
 ```bash
 cargo install cargo-deny --locked
@@ -54,29 +46,27 @@ The check covers advisories, yanked crates, licenses, sources and registries, an
 
 ## Individual Commands
 
-Run:
+For focused diagnosis, use the corresponding recipes in the root `justfile`:
 
 ```bash
-bash ./scripts/check_architecture.sh
-bash ./scripts/check_features.sh
-cargo fmt --check
-cargo clippy --workspace --all-targets
-cargo nextest run -p concord_macros integration
-cargo nextest run -p concord_macros generated
-cargo nextest run -p concord_macros --test trybuild_current
-cargo nextest run -p concord_macros --test trybuild_sema
-cargo nextest run -p concord_macros --test trybuild_codegen
-cargo nextest run -p concord_core
-cargo nextest run -p concord_core --all-features
-cargo nextest run -p concord_examples
-cargo nextest run -p concord_examples --all-features
-cargo nextest run --workspace
-cargo nextest run --workspace --all-features
-cargo nextest run --workspace --all-targets
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+just fmt-check
+just check
+just clippy
+just test
+just doctest
+just docs
+just supply-chain
 ```
 
-The runtime nextest gate is separate from the compile/check feature matrix. It currently runs `cargo nextest run -p concord_core`, `cargo nextest run -p concord_core --all-features`, `cargo nextest run -p concord_examples`, and `cargo nextest run --workspace --all-targets`. Feature-flavored core nextest runs such as `cargo nextest run -p concord_core --no-default-features` and `cargo nextest run -p concord_core --no-default-features --features json` are intentionally omitted for now because the core runtime suite is not feature-parametric and those runs fail in rate-limit characterization tests.
+The canonical release gate runs one executable-test axis:
+
+```text
+cargo nextest run --workspace --all-targets --all-features \
+  --no-tests fail --no-fail-fast --retries 0
+```
+
+Focused default-feature, per-crate, UI, no-default, and feature-specific
+commands are diagnostics and are not dependencies of `just release`.
 
 ## Trybuild Snapshot Refresh
 
@@ -135,10 +125,10 @@ Trybuild remains part of the full gate through `cargo nextest run --workspace --
 
 ## Final Syntax Audit
 
-Before a v1 tag, run:
+Before a release tag, run:
 
 ```bash
-bash ./scripts/check_v1.sh
+just release
 ```
 
 and verify that public docs and examples do not describe rejected DSL forms as valid syntax.
@@ -157,13 +147,13 @@ and verify that public docs and examples do not describe rejected DSL forms as v
 - Public DSL reference covers every public keyword.
 - Unsupported and reserved syntax is explicitly documented.
 - Same-site duplicate behavior rejection is documented and tested.
-- The release gate does not require external credentials or network access by default.
+- The release gate does not require credentials or live service calls; dependency resolution and cargo-deny advisory data may require network access unless cached.
 - Query auth secrets are redacted from debug URLs.
 - Query auth redaction tests pass.
 - No auth secret appears in debug output tests.
 - `401` and `403` auth rejection behavior matches `AuthStepPolicy` defaults.
 - Redaction tests cover debug output, errors, wrappers, and OAuth client secrets.
-- Feature-surface drift has been checked through `scripts/check_features.sh`.
+- Feature-surface validation uses the maintained workspace check.
 - Macro trybuild diagnostics have been refreshed only when wording or spans intentionally changed.
 - Runtime characterization tests cover request order, auth collision ordering, rate-limit observation, retry exhaustion, pagination progress, and cancellation boundaries.
 - Runtime order tests still pass.

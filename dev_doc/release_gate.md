@@ -1,47 +1,41 @@
 # Local V1 Release Gate
 
-This gate is local workspace validation only. It does not package, publish, tag, or run any crates.io step. The default gate is deterministic, offline, and does not require credentials or network access.
+This gate is local workspace validation only. It does not package, publish, tag, or run any crates.io step. The gate does not require credentials or live service calls. Cargo dependency resolution and cargo-deny advisory data may require network access unless the necessary registry and advisory data are already cached.
 
-Run:
+Run the canonical maintained-workspace gate from the repository root:
 
 ```bash
-bash ./scripts/check_v1.sh
+just release
 ```
-
-`scripts/check_v1.sh` works from the repository root, uses `set -euo pipefail`, prints each step, and fails on the first failing command. It requires `cargo-nextest`.
 
 ## Command Matrix
 
-The release command runs:
+The release command runs one command for each maintained validation dimension:
 
 ```bash
-bash ./scripts/check_architecture.sh
-bash ./scripts/check_features.sh
-cargo fmt --check
-cargo clippy --workspace --all-targets
-cargo nextest run -p concord_macros integration
-cargo nextest run -p concord_macros generated
-cargo nextest run -p concord_macros --test trybuild_current
-cargo nextest run -p concord_macros --test trybuild_sema
-cargo nextest run -p concord_macros --test trybuild_codegen
-cargo nextest run -p concord_core
-cargo nextest run -p concord_core --all-features
-cargo nextest run -p concord_examples
-cargo nextest run -p concord_examples --all-features
-cargo nextest run --workspace
-cargo nextest run --workspace --all-features
-cargo nextest run --workspace --all-targets
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+cargo fmt --all -- --check
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo nextest run --workspace --all-targets --all-features --no-tests fail --no-fail-fast --retries 0
+cargo test --workspace --doc --all-features
+cargo doc --workspace --no-deps --all-features
+cargo deny check
 ```
 
-The workspace command intentionally duplicates some package-level coverage. The package-level commands keep macro, core, and example failures visible; the workspace command catches cross-crate and all-target drift.
-
-Clippy is currently run non-strictly as `cargo clippy --workspace --all-targets`; `-D warnings` is not enabled yet because the tree still carries known warnings.
+The release path intentionally uses one maximal workspace axis for each
+maintained dimension. Focused diagnostics remain available through the root
+`justfile` but are outside the release dependency graph.
 
 ## Feature Compatibility
 
-`scripts/check_features.sh` owns the feature and dependency matrix.
-`scripts/check_architecture.sh` owns the crate and compiler/runtime boundary checks and is invoked from `scripts/check_v1.sh`.
+`just release` validates the combined all-feature workspace configuration.
+No-default, individual-feature, and dependency-tree checks are focused
+diagnostics to run when changing feature ownership or optional dependencies;
+they are not part of the canonical release gate.
+
+The historical source-regex architecture audit is retired. Architectural
+boundaries are maintained through module and crate organization, targeted
+compile/runtime tests, and review.
 
 | Crate | v1 default features | Optional features | No-default support |
 | --- | --- | --- | --- |
@@ -49,17 +43,18 @@ Clippy is currently run non-strictly as `cargo clippy --workspace --all-targets`
 | `concord_macros` | none | none | supported |
 | `concord_examples` | none | none | intentionally unsupported |
 
-The feature script checks normal dependency trees, not dev-dependency trees, for the default feature story.
+The feature table documents the intended ownership and supported configurations;
+the focused commands above are diagnostic checks rather than release gates.
 
 ## Supply Chain Gate
 
-Run the supply-chain policy gate separately:
+Run the supply-chain policy gate separately when diagnosing it:
 
 ```bash
-bash ./scripts/check_supply_chain.sh
+just supply-chain
 ```
 
-This script requires `cargo-deny`. Install it with:
+This recipe requires `cargo-deny`. Install it with:
 
 ```bash
 cargo install cargo-deny --locked
@@ -67,7 +62,15 @@ cargo install cargo-deny --locked
 
 The gate checks advisories, yanked crates, license policy, dependency sources and registries, and the configured ban policy. It may require a cached advisory database or network access to refresh advisory data. It does not use live credentials.
 
-The runtime nextest gate is separate from the compile/check feature matrix. It currently runs `cargo nextest run -p concord_core`, `cargo nextest run -p concord_core --all-features`, `cargo nextest run -p concord_examples`, and `cargo nextest run --workspace --all-targets`. Feature-flavored core nextest runs such as `cargo nextest run -p concord_core --no-default-features` and `cargo nextest run -p concord_core --no-default-features --features json` are intentionally omitted for now because the core runtime suite is not feature-parametric and those runs fail in rate-limit characterization tests.
+The canonical release gate runs one executable-test axis:
+
+```text
+cargo nextest run --workspace --all-targets --all-features \
+  --no-tests fail --no-fail-fast --retries 0
+```
+
+Focused default-feature, per-crate, UI, no-default, and feature-specific
+commands are diagnostics and are not dependencies of `just release`.
 
 ## Public V1 Surface
 
@@ -162,7 +165,7 @@ Proof owners: `concord_core/tests/integration/current_core/runtime_order.rs`, `r
 
 ### feature-dependency-matrix
 
-Proof owners: `scripts/check_features.sh` and `docs/features.md`.
+Proof owners: the maintained workspace check and `docs/features.md`.
 
 Feature defaults and optional feature ownership remain explicit. Examples may use richer features than core or macros, but macro defaults must not enable runtime backends indirectly.
 
@@ -237,4 +240,4 @@ Batched record consumption is a `RecordStream<T>` consumer API, not a DSL featur
 
 ## Adding Future Release Checks
 
-Add checks to the narrowest owner first. Use compile-only public surface tests for API availability, trybuild for macro-facing diagnostics, integration tests for runtime behavior, and `scripts/check_features.sh` for feature and dependency surface drift. Then add the command or proof file to this document and make sure `scripts/check_v1.sh` invokes it directly or through an existing gate.
+Add checks to the narrowest owner first. Use compile-only public surface tests for API availability, trybuild for macro-facing diagnostics, and integration tests for runtime behavior. Keep the canonical validation dimensions in the root `justfile` and avoid adding command-surface or inventory tests.

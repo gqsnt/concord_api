@@ -48,20 +48,11 @@ cargo bench --manifest-path perf/Cargo.toml --bench streaming_response
 cargo bench --manifest-path perf/Cargo.toml --bench allocation_counts
 ```
 
-Set `CONCORD_PERF_FULL=1` to enable the larger optional fixtures:
-
-```bash
-CONCORD_PERF_FULL=1 cargo bench --manifest-path perf/Cargo.toml --bench streaming_upload
-CONCORD_PERF_FULL=1 cargo bench --manifest-path perf/Cargo.toml --bench rate_limit_governor
-CONCORD_PERF_FULL=1 cargo bench --manifest-path perf/Cargo.toml --bench pagination
-CONCORD_PERF_FULL=1 cargo bench --manifest-path perf/Cargo.toml --bench streaming_response
-```
-
 Benchmark output is machine-local. Treat it as a comparative signal on one machine and one build, not as universal truth.
 
 Benchmarks report timing only. They are not pass/fail gates for release automation.
 
-The default rate-limit suite measures insertion and acquisition overhead. Active cooldown waiting is intentionally not timed in the default suite because it reflects timer behavior rather than governor lookup overhead. The joined-futures cases are labeled explicitly; the 1,000-future fixture stays behind `CONCORD_PERF_FULL=1`.
+The default rate-limit suite measures insertion and acquisition overhead. Active cooldown waiting is intentionally not timed in the default suite because it reflects timer behavior rather than governor lookup overhead. The joined-futures cases are labeled explicitly; the larger fixture remains deferred with the historical report tooling.
 
 The pagination full suite adds 1,000-page offset and cursor collect fixtures. The streaming response full suite adds larger raw-drain, NDJSON, SSE, and multipart fixtures.
 
@@ -73,14 +64,19 @@ Benchmark helpers must stay in-memory and deterministic:
 - no real credentials
 - no filesystem timing dependencies
 
-## Footprint Report
+## Deferred performance diagnostics
 
-Run the local dependency and build-footprint report with:
+The historical footprint, macro-scale, and release-timing scripts were retired.
+
+Available diagnostics:
 
 ```bash
-./scripts/perf_footprint.sh
+just perf-check
+just perf-test
+just bench-check
 ```
 
+<<<<<<< HEAD
 To write the same report to a file as well:
 
 ```bash
@@ -124,3 +120,13 @@ CONCORD_PERF_OUT=target/perf-gate-timing.txt ./scripts/perf_gate_timing.sh
 Set `CONCORD_PERF_STRICT=1` to treat missing optional external tools such as `cargo-nextest` or `cargo-deny` as failures instead of report skips.
 
 This report is machine-local, report-only, and not a release-gate threshold. It does not run benchmarks and should not produce committed timing output.
+=======
+`bench-check` may currently fail because historical benchmarks still use
+pre-migration internal APIs. Perf diagnostics are deferred and are not part of
+`just release`.
+These benchmarks are migration baseline scaffolding. The old transport-body path and
+the frame-fixture path are not yet two production implementations, and results must
+not be treated as proof that either final adapter is superior. One-byte and
+production-like chunk shapes are intentionally included. `perf` remains an
+independent package excluded from the root workspace.
+>>>>>>> 72af991 (6.2.5)
