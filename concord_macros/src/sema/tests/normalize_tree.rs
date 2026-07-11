@@ -1,6 +1,5 @@
 use super::helpers::{normalize_ok, top_endpoint, top_scope};
 use crate::ast::{AuthUseKind, KeySpec, PolicyStmt, PolicyValue, RouteAtom};
-use crate::model::SetOp;
 use crate::model::norm::NormNode;
 use quote::ToTokens;
 use syn::Expr;
@@ -106,7 +105,6 @@ fn normalized_tree_preserves_client_and_top_level_endpoint_fields() {
             PolicyStmt::Set {
                 key: KeySpec::Ident(key),
                 value: PolicyValue::Expr(Expr::Path(path)),
-                op: SetOp::Set,
             },
         ] => {
             assert_eq!(key.to_string(), "id");
@@ -127,7 +125,6 @@ fn normalized_tree_preserves_client_and_top_level_endpoint_fields() {
             PolicyStmt::Set {
                 key: KeySpec::Str(key),
                 value: PolicyValue::Expr(Expr::Field(field)),
-                op: SetOp::Set,
             },
         ] => {
             assert_eq!(key.value(), "x-trace");
@@ -156,7 +153,7 @@ fn normalized_tree_contains_only_canonical_endpoint_constructs() {
                 path [fmt["items-", q]]
                 query {
                     q
-                    "tag" += tag
+                    "tag" = tag
                 }
                 headers {
                     "x-trace" = vars.trace_id
@@ -188,7 +185,6 @@ fn normalized_tree_contains_only_canonical_endpoint_constructs() {
         PolicyStmt::Set {
             key: KeySpec::Ident(key),
             value: PolicyValue::Expr(Expr::Path(path)),
-            op: SetOp::Set,
         } => {
             assert_eq!(key.to_string(), "q");
             assert_eq!(path.path.segments[0].ident, "q");
@@ -198,10 +194,9 @@ fn normalized_tree_contains_only_canonical_endpoint_constructs() {
     match &query.stmts[1] {
         PolicyStmt::Set {
             key: KeySpec::Str(key),
-            op: SetOp::Push,
             ..
         } => assert_eq!(key.value(), "tag"),
-        other => panic!("unexpected normalized query push: {other:?}"),
+        other => panic!("unexpected normalized query assignment: {other:?}"),
     }
 
     let headers = endpoint.policy.headers.as_ref().expect("headers policy");
@@ -209,7 +204,6 @@ fn normalized_tree_contains_only_canonical_endpoint_constructs() {
         PolicyStmt::Set {
             key: KeySpec::Str(key),
             value: PolicyValue::Expr(Expr::Field(field)),
-            op: SetOp::Set,
         } => {
             assert_eq!(key.value(), "x-trace");
             match field.base.as_ref() {

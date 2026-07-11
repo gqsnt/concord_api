@@ -5,7 +5,6 @@
 //! not inspect raw parser structs or raw scope stacks.
 
 use crate::emit_helpers;
-use crate::model::SetOp;
 use crate::model::facade::{
     FacadeConstructorArg, FacadeCredentialMethods, FacadeDoc, FacadeEndpoint, FacadeEndpointTarget,
     FacadeIr, FacadeMethod, FacadeScope, FacadeSetter, client_prefixed_type_name,

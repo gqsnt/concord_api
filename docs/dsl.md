@@ -326,12 +326,11 @@ query {
 }
 ```
 
-Append repeated values with `+=`.
+Vector-valued query parameters use ordinary assignment and replace the key.
 
 ```rust
 query {
-    "tag" += primary_tag,
-    "tag" += secondary_tag
+    "tag" = tags
 }
 ```
 
@@ -664,7 +663,7 @@ Profile lists must contain at least one profile and cannot contain a duplicate n
 query {
     count
     "startTime" = start_time
-    "tag" += primary_tag
+    "tag" = tags
     -"debug"
 }
 
@@ -679,15 +678,15 @@ Inline forms are also supported:
 
 ```rust
 query "tenant" = tenant_id
-query "tag" += tag
+query "tag" = tags
 query "debug" -
 header "X-Request-Id" = request_id
 header "X-Debug" -
 ```
 
-Query shorthand uses the Rust argument name as both key and value. Optional query values remove the key when absent. `+=` is query-only; headers support set and remove, not append.
+Query shorthand uses the Rust argument name as both key and value. Assignment is replacement, not append: `T` emits one pair, `Option<T>` emits one pair for `Some` and removes the key for `None`, `Vec<T>` emits repeated pairs in vector order, and `Option<Vec<T>>` uses vector semantics for `Some` while `None` removes the key. Empty vectors remove the key. Headers remain scalar and support set and remove.
 
-Query and header clauses preserve source order at a given layer. Removing a query key removes every matching value at that layer, and a later `query` assignment for the same key appends a new value at the end of the logical query list.
+Query and header clauses preserve source order at a given layer. Removing or replacing a query key removes every matching value, and vector values are emitted in order. The resolved query representation remains an ordered vector of pairs and URL serialization remains Concord-controlled.
 
 At the same declaration layer, distinct auth header/query declarations from inline forms and grouped blocks merge in declaration order. Duplicate auth headers at the same layer are rejected case-insensitively. Duplicate auth query parameter names at the same layer are rejected by exact key match. These checks do not change normal cross-layer inheritance.
 

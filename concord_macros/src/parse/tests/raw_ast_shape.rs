@@ -1,6 +1,5 @@
 use super::helpers::{endpoint_at_top_level, endpoint_in_scope, parse_ok, scope_at_top_level};
 use crate::ast::{FmtPiece, KeySpec, PolicyStmt, PolicyValue, RouteAtom};
-use crate::model::SetOp;
 use syn::Expr;
 
 #[test]
@@ -278,7 +277,6 @@ fn fmt_passes_in_host_path_query_and_header_contexts() {
             PolicyStmt::Set {
                 key: KeySpec::Str(key),
                 value: PolicyValue::Fmt(fmt),
-                op: SetOp::Set,
             },
         ] => {
             assert_eq!(key.value(), "x-trace");
@@ -298,7 +296,6 @@ fn fmt_passes_in_host_path_query_and_header_contexts() {
             PolicyStmt::Set {
                 key: KeySpec::Str(key),
                 value: PolicyValue::Fmt(fmt),
-                op: SetOp::Set,
             },
         ] => {
             assert_eq!(key.value(), "q");
@@ -347,7 +344,7 @@ fn query_and_header_policy_operations_parse_in_order() {
                 query {
                     q
                     "cursor" = cursor
-                    "tag" += q,
+                    "tag" = q,
                     -"old"
                 }
                 headers {
@@ -369,7 +366,6 @@ fn query_and_header_policy_operations_parse_in_order() {
         PolicyStmt::Set {
             key: KeySpec::Ident(key),
             value: PolicyValue::Expr(Expr::Path(path)),
-            op: SetOp::Set,
         } => {
             assert_eq!(key.to_string(), "q");
             assert_eq!(path.path.segments.len(), 1);
@@ -381,10 +377,9 @@ fn query_and_header_policy_operations_parse_in_order() {
     match &query.stmts[2] {
         PolicyStmt::Set {
             key: KeySpec::Str(key),
-            op: SetOp::Push,
             ..
         } => assert_eq!(key.value(), "tag"),
-        other => panic!("query push should remain raw syntax: {other:?}"),
+        other => panic!("query assignment should remain raw syntax: {other:?}"),
     }
 
     match &query.stmts[3] {
@@ -398,7 +393,6 @@ fn query_and_header_policy_operations_parse_in_order() {
         PolicyStmt::Set {
             key: KeySpec::Str(key),
             value: PolicyValue::Expr(Expr::Path(path)),
-            op: SetOp::Set,
         } => {
             assert_eq!(key.value(), "x-trace");
             assert_eq!(path.path.segments[0].ident, "trace_id");

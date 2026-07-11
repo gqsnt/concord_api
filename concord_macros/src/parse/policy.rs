@@ -28,13 +28,6 @@ fn key_spec_span(key: &KeySpec) -> Span {
     }
 }
 
-fn stmt_span(stmt: &PolicyStmt) -> Span {
-    match stmt {
-        PolicyStmt::Remove { key } => key_spec_span(key),
-        PolicyStmt::Set { key, .. } => key_spec_span(key),
-    }
-}
-
 fn merge_policy_block(slot: &mut Option<PolicyBlock>, mut block: PolicyBlock) {
     slot.get_or_insert_with(|| PolicyBlock { stmts: Vec::new() })
         .stmts
@@ -59,18 +52,6 @@ fn parse_policy_block(input: ParseStream<'_>, kind: PolicyBlockKind) -> Result<P
         };
 
         validate_policy_stmt_for_block(kind, &stmt)?;
-
-        // 1.2: `+=` is query-only. Forbid in `headers {}` with a direct diagnostic.
-        if kind == PolicyBlockKind::Headers
-            && let PolicyStmt::Set {
-                op: SetOp::Push, ..
-            } = &stmt
-        {
-            return Err(syn::Error::new(
-                stmt_span(&stmt),
-                "`+=` is not allowed in `headers {}` blocks (query-only operator)",
-            ));
-        }
 
         stmts.push(stmt);
 
@@ -127,7 +108,6 @@ fn parse_query_policy_stmt(input: ParseStream<'_>) -> Result<PolicyStmt> {
         let fork = input.fork();
         let ident: Ident = fork.parse()?;
             if !fork.peek(Token![=])
-                && !fork.peek(Token![+=])
                 && !fork.peek(Token![:])
                 && !fork.peek(Token![?])
                 && !fork.peek(Token![as])
@@ -137,7 +117,6 @@ fn parse_query_policy_stmt(input: ParseStream<'_>) -> Result<PolicyStmt> {
                 return Ok(PolicyStmt::Set {
                     key: KeySpec::Ident(ident),
                     value: PolicyValue::Expr(value),
-                    op: SetOp::Set,
                 });
             }
         }
@@ -167,21 +146,9 @@ fn parse_inline_policy_stmt(
         return Ok(PolicyStmt::Remove { key });
     }
 
-    let op = if input.peek(Token![+=]) {
-        if kind == PolicyBlockKind::Headers {
-            return Err(syn::Error::new(
-                input.span(),
-                "`+=` is not allowed for singular `header` policy",
-            ));
-        }
-        input.parse::<Token![+=]>()?;
-        SetOp::Push
-    } else {
-        input.parse::<Token![=]>()?;
-        SetOp::Set
-    };
+    input.parse::<Token![=]>()?;
     let value = PolicyValue::Expr(parse_expr_until_comma_or_endpoint_arrow(input)?);
-    let stmt = PolicyStmt::Set { key, value, op };
+    let stmt = PolicyStmt::Set { key, value };
     validate_policy_stmt_for_block(kind, &stmt)?;
     Ok(stmt)
 }
@@ -204,16 +171,9 @@ impl Parse for PolicyStmt {
                 ));
             }
 
-            // set/push
-            let op = if input.peek(Token![+=]) {
-                input.parse::<Token![+=]>()?;
-                SetOp::Push
-            } else {
-                input.parse::<Token![=]>()?;
-                SetOp::Set
-            };
+            input.parse::<Token![=]>()?;
             let value: PolicyValue = parse_policy_value(input)?;
-            return Ok(PolicyStmt::Set { key, value, op });
+            return Ok(PolicyStmt::Set { key, value });
         }
 
         // ident start
@@ -236,15 +196,9 @@ impl Parse for PolicyStmt {
             ));
         }
 
-        let op = if input.peek(Token![+=]) {
-            input.parse::<Token![+=]>()?;
-            SetOp::Push
-        } else {
-            input.parse::<Token![=]>()?;
-            SetOp::Set
-        };
+        input.parse::<Token![=]>()?;
         let value: PolicyValue = parse_policy_value(input)?;
-        Ok(PolicyStmt::Set { key, value, op })
+        Ok(PolicyStmt::Set { key, value })
     }
 }
 

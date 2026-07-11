@@ -6,7 +6,7 @@
 use crate::ast::*;
 use crate::emit_helpers;
 use crate::kw;
-use crate::model::{Scheme, SetOp};
+use crate::model::Scheme;
 use proc_macro2::{Span, TokenStream as TokenStream2, TokenTree};
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;

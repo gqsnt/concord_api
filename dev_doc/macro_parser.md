@@ -40,7 +40,7 @@ Normal endpoint policy and behavior clauses must appear before `->`.
 
 Request bodies are endpoint signature arguments named `body`; there is no `body ...` endpoint clause.
 
-Inline `query` and `header` clauses are accepted alongside block forms. `+=` is query-only; parser diagnostics reject header append.
+Inline `query` and `header` clauses are accepted alongside block forms. Query assignment is the only query set syntax; repeated values use a resolved `Vec<T>` field and ordinary `=` assignment.
 
 ## Rejected Syntax
 

@@ -224,6 +224,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "concord_core",
+ "concord_test_support",
  "futures-core",
  "http",
  "proc-macro2",

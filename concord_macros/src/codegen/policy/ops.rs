@@ -11,7 +11,11 @@ fn emit_policy_ops(
     ops.iter()
         .map(|op| match op {
             PolicyOp::Remove { key } => emit_remove_op(key, kind, ctx),
-            PolicyOp::Set { key, value, op } => emit_set_op(key, kind, value, *op, ctx),
+            PolicyOp::Set {
+                key,
+                value,
+                cardinality,
+            } => emit_set_op(key, kind, value, *cardinality, ctx),
         })
         .collect()
 }
@@ -53,12 +57,12 @@ fn emit_set_op(
     key: &KeyResolved,
     kind: PolicyKeyKind,
     value: &PolicySetValue,
-    op: SetOp,
+    cardinality: QueryValueCardinality,
     ctx: PolicyEmitCtx,
 ) -> TokenStream2 {
     match kind {
         PolicyKeyKind::Header => emit_header_set_op(key, value, ctx),
-        PolicyKeyKind::Query => emit_query_set_op(key, value, op, ctx),
+        PolicyKeyKind::Query => emit_query_set_op(key, value, cardinality, ctx),
     }
 }
 
@@ -174,7 +178,7 @@ fn emit_fmt_header_set(
 fn emit_query_set_op(
     key: &KeyResolved,
     value: &PolicySetValue,
-    op: SetOp,
+    cardinality: QueryValueCardinality,
     ctx: PolicyEmitCtx,
 ) -> TokenStream2 {
     let (ks, sp, _) = emit_key_string(key, PolicyKeyKind::Query);
@@ -186,26 +190,42 @@ fn emit_query_set_op(
                 PolicyEmitCtx::ClientBase => quote! { vars.#field.as_ref() },
                 _ => quote! { vars.#field.as_ref() },
             };
-            emit_optional_query_set(lit, as_ref_expr, op)
+            emit_optional_query_set(lit, as_ref_expr, cardinality)
         }
         PolicySetValue::OptionalEpField(field) => {
-            emit_optional_query_set(lit, quote! { ep.#field.as_ref() }, op)
+            emit_optional_query_set(lit, quote! { ep.#field.as_ref() }, cardinality)
         }
-        PolicySetValue::Value(PublicValueKind::Fmt(fmt)) => emit_fmt_query_set(fmt, lit, op),
+        PolicySetValue::Value(PublicValueKind::Fmt(fmt)) => emit_fmt_query_set(fmt, lit),
         PolicySetValue::Value(value) => {
             let ex = emit_value_expr(value, ctx);
-            match op {
-                SetOp::Set => quote! { policy.set_query(#lit, (#ex).to_string()); },
-                SetOp::Push => quote! { policy.push_query(#lit, (#ex).to_string()); },
+            if cardinality == QueryValueCardinality::Vector {
+                quote! {
+                    policy.replace_query_values(
+                        #lit,
+                        (#ex).iter().map(|__v| __v.to_string()),
+                    );
+                }
+            } else {
+                quote! { policy.set_query(#lit, (#ex).to_string()); }
             }
         }
     }
 }
 
-fn emit_optional_query_set(lit: syn::LitStr, as_ref_expr: TokenStream2, op: SetOp) -> TokenStream2 {
-    let setter = match op {
-        SetOp::Set => quote! { policy.set_query(#lit, __v.to_string()); },
-        SetOp::Push => quote! { policy.push_query(#lit, __v.to_string()); },
+fn emit_optional_query_set(
+    lit: syn::LitStr,
+    as_ref_expr: TokenStream2,
+    cardinality: QueryValueCardinality,
+) -> TokenStream2 {
+    let setter = if cardinality == QueryValueCardinality::OptionalVector {
+        quote! {
+            policy.replace_query_values(
+                #lit,
+                __v.iter().map(|__item| __item.to_string()),
+            );
+        }
+    } else {
+        quote! { policy.set_query(#lit, __v.to_string()); }
     };
     quote! {
         if let ::core::option::Option::Some(__v) = #as_ref_expr {
@@ -216,12 +236,9 @@ fn emit_optional_query_set(lit: syn::LitStr, as_ref_expr: TokenStream2, op: SetO
     }
 }
 
-fn emit_fmt_query_set(fmt: &FmtResolved, lit: syn::LitStr, op: SetOp) -> TokenStream2 {
+fn emit_fmt_query_set(fmt: &FmtResolved, lit: syn::LitStr) -> TokenStream2 {
     let build = emit_fmt_build_string(fmt);
-    let setter = match op {
-        SetOp::Set => quote! { policy.set_query(#lit, __fmt_s); },
-        SetOp::Push => quote! { policy.push_query(#lit, __fmt_s); },
-    };
+    let setter = quote! { policy.set_query(#lit, __fmt_s); };
 
     if fmt.require_all {
         let checks = fmt.pieces.iter().filter_map(|piece| {

@@ -202,6 +202,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
         inherited_retry,
         0,
     )?;
+    let client_query_cardinalities = collect_client_query_cardinalities(&client_policy, &endpoints);
 
     let resolved_api = ResolvedApi {
         mod_name,
@@ -212,6 +213,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
         client_auth_vars,
         client_auth_credentials,
         client_policy,
+        client_query_cardinalities,
         rate_limit_response_policy: norm
             .client
             .rate_limit

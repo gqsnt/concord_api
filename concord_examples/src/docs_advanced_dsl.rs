@@ -89,11 +89,11 @@ api! {
         profile tenant_read
         -> Json<Vec<AdvancedUser>>
 
-        GET SearchTaggedUsers(request_id: String, tag: String)
+        GET SearchTaggedUsers(request_id: String, tags: Vec<String>)
         path ["users", "tagged"]
         header "X-Request-Id" = request_id,
         header "X-Debug" -
-        query "tag" += tag,
+        query "tag" = tags,
         query "debug" -
         timeout: std::time::Duration::from_secs(5),
         profile tenant_read

@@ -57,6 +57,15 @@ pub(super) fn walk_items(
                 let id = ctx.layers.len();
                 let (prefix_pieces, path_pieces, decls) =
                     analyze_layer_route_and_decls(ld, ancestry, ctx.layers, ctx.client_vars)?;
+                let mut layer_vars = BTreeMap::new();
+                for &ancestor_id in ancestry.iter() {
+                    for var in &ctx.layers[ancestor_id].decls {
+                        layer_vars.insert(var.rust.to_string(), var.clone());
+                    }
+                }
+                for var in &decls {
+                    layer_vars.insert(var.rust.to_string(), var.clone());
+                }
                 let key_bindings = resolve_rate_limit_key_bindings(&ld.rate_limit_keys, &decls)?;
                 validate_behavior_uses_unique_at_site(&ld.behavior_uses)?;
                 let behavior = resolve_behavior_uses(&ld.behavior_uses, ctx.behavior_profiles)?;
@@ -66,7 +75,7 @@ pub(super) fn walk_items(
                     PolicyOwner::Layer,
                     ctx.client_vars,
                     ctx.auth_vars,
-                    None, // endpoint vars not known at layer-level alone (validated per endpoint)
+                    Some(&layer_vars),
                 )?;
                 let retry_directive = if ld.retry.is_some() {
                     resolve_retry_spec(ld.retry.as_ref(), ctx.retry_profiles)?
@@ -699,6 +708,7 @@ pub(super) fn analyze_endpoint(
         }
         scope_policies.push(layer.policy.clone());
     }
+    let query_cardinalities = collect_endpoint_query_cardinalities(&scope_policies, &policy);
     let current_endpoint_target = EndpointTargetIr {
         scope_modules: scope_modules.clone(),
         endpoint: ed.name.clone(),
@@ -805,6 +815,7 @@ pub(super) fn analyze_endpoint(
 
         // Stable declaration order.
         vars: endpoint_decls,
+        query_cardinalities,
 
         io: ResolvedHttpEndpointIo {
             request_entity,

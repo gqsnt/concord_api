@@ -218,13 +218,7 @@ pub(super) fn resolve_policy_block(
                     key: resolve_key(key),
                 });
             }
-            PolicyStmt::Set { key, value, op } => {
-                if kind == PolicyKeyKind::Header && *op == SetOp::Push {
-                    return Err(syn::Error::new(
-                        value.span(),
-                        "`+=` is not allowed in headers; only in query",
-                    ));
-                }
+            PolicyStmt::Set { key, value } => {
                 let lowered_value = match value {
                     PolicyValue::Expr(expr) => {
                         PolicyValue::Expr(lower_public_policy_expr_checked(expr)?)
@@ -276,10 +270,30 @@ pub(super) fn resolve_policy_block(
                     )?),
                 };
 
+                let cardinality = match &set_value {
+                    PolicySetValue::OptionalCxField(id) => client_vars
+                        .get(&id.to_string())
+                        .map(|v| query_cardinality(kind, true, &v.ty))
+                        .unwrap_or(QueryValueCardinality::OptionalScalar),
+                    PolicySetValue::OptionalEpField(id) => endpoint_vars
+                        .and_then(|vars| vars.get(&id.to_string()))
+                        .map(|v| query_cardinality(kind, true, &v.ty))
+                        .unwrap_or(QueryValueCardinality::OptionalScalar),
+                    PolicySetValue::Value(PublicValueKind::CxField(id)) => client_vars
+                        .get(&id.to_string())
+                        .map(|v| query_cardinality(kind, false, &v.ty))
+                        .unwrap_or(QueryValueCardinality::Scalar),
+                    PolicySetValue::Value(PublicValueKind::EpField(id)) => endpoint_vars
+                        .and_then(|vars| vars.get(&id.to_string()))
+                        .map(|v| query_cardinality(kind, false, &v.ty))
+                        .unwrap_or(QueryValueCardinality::Scalar),
+                    _ => QueryValueCardinality::Scalar,
+                };
+
                 ops.push(PolicyOp::Set {
                     key: resolve_key(key),
                     value: set_value,
-                    op: *op,
+                    cardinality,
                 });
             }
         }
@@ -357,6 +371,115 @@ pub(super) fn resolve_policy_block(
     Ok(ops)
 }
 
+fn query_cardinality(kind: PolicyKeyKind, optional: bool, ty: &Type) -> QueryValueCardinality {
+    if kind != PolicyKeyKind::Query {
+        return if optional {
+            QueryValueCardinality::OptionalScalar
+        } else {
+            QueryValueCardinality::Scalar
+        };
+    }
+    if is_standard_vec_type(ty) {
+        if optional {
+            QueryValueCardinality::OptionalVector
+        } else {
+            QueryValueCardinality::Vector
+        }
+    } else if optional {
+        QueryValueCardinality::OptionalScalar
+    } else {
+        QueryValueCardinality::Scalar
+    }
+}
+
+pub(super) fn is_standard_vec_type(ty: &Type) -> bool {
+    let Type::Path(path) = ty else {
+        return false;
+    };
+    if path.qself.is_some() {
+        return false;
+    }
+    let segments = &path.path.segments;
+    let is_standard_prefix = match segments.len() {
+        1 => path.path.leading_colon.is_none() && segments[0].ident == "Vec",
+        3 => {
+            matches!(segments[0].arguments, syn::PathArguments::None)
+                && matches!(segments[1].arguments, syn::PathArguments::None)
+                && segments[0].ident == "std"
+                && segments[1].ident == "vec"
+                && segments[2].ident == "Vec"
+        }
+        _ => false,
+    };
+    if !is_standard_prefix {
+        return false;
+    }
+    let last = segments.last().expect("standard Vec path has a segment");
+    let syn::PathArguments::AngleBracketed(args) = &last.arguments else {
+        return false;
+    };
+    args.args.len() == 1 && matches!(args.args.first(), Some(syn::GenericArgument::Type(_)))
+}
+
+pub(super) fn collect_endpoint_query_cardinalities(
+    scopes: &[PolicyBlocksResolved],
+    endpoint: &PolicyBlocksResolved,
+) -> BTreeMap<String, QueryValueCardinality> {
+    let mut out = BTreeMap::new();
+    for policy in scopes.iter().chain(std::iter::once(endpoint)) {
+        for op in &policy.query {
+            let PolicyOp::Set {
+                value, cardinality, ..
+            } = op
+            else {
+                continue;
+            };
+            let field = match value {
+                PolicySetValue::Value(PublicValueKind::EpField(field))
+                | PolicySetValue::OptionalEpField(field) => Some(field),
+                _ => None,
+            };
+            if let Some(field) = field {
+                out.insert(field.to_string(), *cardinality);
+            }
+        }
+    }
+    out
+}
+
+pub(super) fn collect_client_query_cardinalities(
+    client_policy: &PolicyBlocksResolved,
+    endpoints: &[ResolvedEndpoint],
+) -> BTreeMap<String, QueryValueCardinality> {
+    let mut out = BTreeMap::new();
+    let policies = std::iter::once(client_policy).chain(endpoints.iter().flat_map(|endpoint| {
+        endpoint
+            .policy
+            .scopes
+            .iter()
+            .chain(std::iter::once(&endpoint.policy.endpoint))
+    }));
+    for policy in policies {
+        for op in &policy.query {
+            let PolicyOp::Set {
+                value, cardinality, ..
+            } = op
+            else {
+                continue;
+            };
+            let field = match value {
+                PolicySetValue::Value(PublicValueKind::CxField(field))
+                | PolicySetValue::OptionalCxField(field) => Some(field),
+                _ => None,
+            };
+            if let Some(field) = field {
+                out.insert(field.to_string(), *cardinality);
+            }
+        }
+    }
+    out
+}
+
 pub(super) fn reject_duplicate_header_sets(ops: &[PolicyOp]) -> Result<()> {
     let mut seen: BTreeMap<String, Span> = BTreeMap::new();
     for op in ops {
@@ -401,11 +524,7 @@ pub(super) fn key_spec_span(k: &KeySpec) -> Span {
 pub(super) fn policy_stmt_span(s: &PolicyStmt) -> Span {
     match s {
         PolicyStmt::Remove { key } => key_spec_span(key),
-        PolicyStmt::Set {
-            key: _,
-            value,
-            op: _,
-        } => value.span(),
+        PolicyStmt::Set { key: _, value } => value.span(),
     }
 }
 
@@ -761,6 +880,35 @@ mod pagination_value_tests {
                 .contains("auth references are not allowed in public policy expressions"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn standard_vec_classifier_accepts_only_supported_shapes() {
+        for source in [
+            "Vec<String>",
+            "std::vec::Vec<String>",
+            "::std::vec::Vec<String>",
+        ] {
+            let ty: Type = syn::parse_str(source).expect("valid vector type");
+            assert!(is_standard_vec_type(&ty), "expected standard Vec: {source}");
+        }
+
+        for source in [
+            "custom::Vec<String>",
+            "crate::Vec<String>",
+            "foo::bar::Vec<String>",
+            "std::<u8>::vec::Vec<String>",
+            "Vec<String, u8>",
+            "Vec<'a>",
+            "Vec<3>",
+            "::Vec<String>",
+        ] {
+            let ty: Type = syn::parse_str(source).expect("valid rejected type shape");
+            assert!(
+                !is_standard_vec_type(&ty),
+                "unexpected standard Vec: {source}"
+            );
+        }
     }
 }
 

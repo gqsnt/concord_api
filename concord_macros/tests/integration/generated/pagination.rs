@@ -19,11 +19,12 @@ api! {
         base "https://example.com"
     }
 
-    GET List(filter?: String, start: u64 = 0, count: u64 = 2)
+    GET List(filter?: String, tags?: Vec<String>, start: u64 = 0, count: u64 = 2)
         as list
         path ["items"]
         query {
             filter
+            tags
             start
             count
         }
@@ -46,6 +47,7 @@ async fn generated_pagination_collect_preserves_query_setters_and_caps() {
     let items = api
         .list()
         .filter("ranked".to_string())
+        .tags(vec!["first".to_string(), "second".to_string()])
         .count(2)
         .paginate(PaginationTermination::hard_page_cap(3))
         .collect()
@@ -58,9 +60,11 @@ async fn generated_pagination_collect_preserves_query_setters_and_caps() {
     assert_eq!(requests[0].meta.page_index, 0);
     assert_eq!(requests[1].meta.page_index, 1);
     assert_query(&requests[0], "filter", "ranked");
+    assert_query_values(&requests[0], "tags", &["first", "second"]);
     assert_query(&requests[0], "start", "0");
     assert_query(&requests[0], "count", "2");
     assert_query(&requests[1], "filter", "ranked");
+    assert_query_values(&requests[1], "tags", &["first", "second"]);
     assert_query(&requests[1], "start", "2");
     assert_query(&requests[1], "count", "2");
 }
@@ -263,6 +267,16 @@ impl ResponseFixture {
         fixture.status = status;
         fixture
     }
+}
+
+fn assert_query_values(request: &RecordedRequest, key: &str, expected: &[&str]) {
+    let values: Vec<String> = request
+        .url
+        .query_pairs()
+        .filter(|(candidate, _)| candidate == key)
+        .map(|(_, value)| value.into_owned())
+        .collect();
+    assert_eq!(values, expected);
 }
 
 struct StaticBody(Option<Bytes>);

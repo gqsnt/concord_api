@@ -11,6 +11,9 @@ pub struct ResolvedApi {
     pub client_auth_vars: Vec<VarInfo>, // stable order
     pub client_auth_credentials: Vec<AuthCredentialIr>,
     pub client_policy: PolicyBlocksResolved,
+    /// Resolved cardinality for client fields that actually participate in
+    /// query policy. Other client fields deliberately do not appear here.
+    pub client_query_cardinalities: std::collections::BTreeMap<String, QueryValueCardinality>,
     pub rate_limit_response_policy: Option<syn::Path>,
 
     pub endpoints: Vec<ResolvedEndpoint>,
@@ -59,6 +62,9 @@ pub struct ResolvedEndpoint {
     pub route_pieces: Vec<PathPiece>,
 
     pub vars: Vec<VarInfo>, // endpoint vars (union, stable)
+    /// Resolved query cardinality by endpoint-visible field name. This is
+    /// semantic metadata consumed by facade documentation construction.
+    pub query_cardinalities: std::collections::BTreeMap<String, QueryValueCardinality>,
     pub io: ResolvedHttpEndpointIo,
 
     pub policy: ResolvedPolicySpec,
@@ -301,6 +307,14 @@ pub struct PolicyBlocksResolved {
     pub rate_limit: Option<RateLimitResolved>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryValueCardinality {
+    Scalar,
+    OptionalScalar,
+    Vector,
+    OptionalVector,
+}
+
 #[derive(Debug, Clone)]
 pub enum RetryResolved {
     Set(RetryConfigResolved),
@@ -440,7 +454,7 @@ pub enum PolicyOp {
     Set {
         key: KeyResolved,
         value: PolicySetValue,
-        op: SetOp,
+        cardinality: QueryValueCardinality,
     },
 }
 

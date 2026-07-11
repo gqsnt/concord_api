@@ -88,6 +88,150 @@ fn generated_rustdoc_includes_profile_names() {
 }
 
 #[test]
+fn generated_rustdoc_describes_optional_vector_query_setters() {
+    let out = expanded(quote! {
+        client VectorDocs {
+            base "https://example.com"
+        }
+
+        GET Search(tags?: Vec<String>)
+            as search
+            path ["search"]
+            query { tags }
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "Set optional query parameter `tags`. Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key.",
+            "Set or clear optional query parameter `tags` from an Option; None clears it. Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key.",
+        ],
+    );
+}
+
+#[test]
+fn generated_rustdoc_describes_only_client_query_vectors_as_repeated() {
+    let out = expanded(quote! {
+        client ClientSetterDocs {
+            base "https://example.com"
+            var optional_tags?: Vec<String>
+            var default_tags: Vec<String> = Vec::new()
+            var ordinary_tags: Vec<String>
+            var query_scalar: String
+
+            query {
+                "tags" = vars.optional_tags
+                "default-tags" = vars.default_tags
+                "scalar" = vars.query_scalar
+            }
+        }
+
+        GET Search
+            path ["search"]
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "Set client parameter `optional_tags`. Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key.",
+            "Clear client parameter `optional_tags`; this produces None and removes the query key. Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key.",
+            "Set client parameter `default_tags`. Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key.",
+            "Set client parameter `ordinary_tags`.",
+            "Set client parameter `query_scalar`.",
+        ],
+    );
+    assert_generated_doc_attrs_do_not_contain(
+        &out,
+        "Set client parameter `ordinary_tags`. Values produce repeated",
+    );
+    assert_generated_doc_attrs_do_not_contain(
+        &out,
+        "Set client parameter `query_scalar`. Values produce repeated",
+    );
+}
+
+#[test]
+fn generated_rustdoc_keeps_client_and_endpoint_query_names_separate() {
+    for endpoint_policy in [
+        quote! {
+            tags
+            "client-tags" = vars.tags
+        },
+        quote! {
+            "client-tags" = vars.tags
+            tags
+        },
+    ] {
+        let out = expanded(quote! {
+            client NamespaceCollisionDocs {
+                base "https://example.com"
+                var tags: Vec<String>
+
+                query {
+                    "client-tags" = vars.tags
+                }
+            }
+
+            GET Search(tags: String = "endpoint")
+                path ["search"]
+                query { #endpoint_policy }
+                -> Json<String>
+        });
+
+        assert_contains_all(
+            &out,
+            &[
+                "Set client parameter `tags`. Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key.",
+                "Set defaulted query parameter `tags`.",
+            ],
+        );
+        assert_generated_doc_attrs_do_not_contain(
+            &out,
+            "Set defaulted query parameter `tags`. Values produce repeated",
+        );
+    }
+}
+
+#[test]
+fn generated_rustdoc_keeps_client_and_scope_query_names_separate() {
+    let out = expanded(quote! {
+        client ScopeNamespaceCollisionDocs {
+            base "https://example.com"
+            var tags: Vec<String>
+
+            query {
+                "client-tags" = vars.tags
+            }
+        }
+
+        scope grouped(tags: String = "scope") {
+            query {
+                tags
+                "client-tags" = vars.tags
+            }
+
+            GET Search
+                path ["search"]
+                -> Json<String>
+        }
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "Set client parameter `tags`. Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key.",
+            "Set defaulted scope parameter `tags`.",
+        ],
+    );
+    assert_generated_doc_attrs_do_not_contain(
+        &out,
+        "Set defaulted scope parameter `tags`. Values produce repeated",
+    );
+}
+
+#[test]
 fn generated_rustdoc_includes_endpoint_contract_without_secret_values() {
     let out = expanded(quote! {
         client SnapshotRichDocs {

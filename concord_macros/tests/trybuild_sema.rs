@@ -5,6 +5,7 @@ fn trybuild_parser_diagnostics() {
     support::run_trybuild_fail(&[
         "tests/trybuild/fail/parser/route/*.rs",
         "tests/trybuild/fail/parser/fmt/*.rs",
+        "tests/trybuild/fail/parser/policy/*.rs",
     ]);
 }
 

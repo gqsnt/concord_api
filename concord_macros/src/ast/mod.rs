@@ -4,7 +4,7 @@
 //! never consume these types directly; `sema` is the boundary that normalizes
 //! them into resolved semantic data.
 
-use crate::model::{Scheme, SetOp};
+use crate::model::Scheme;
 use proc_macro2::Span;
 use syn::spanned::Spanned;
 use syn::{Expr, Ident, LitInt, LitStr, Path, Type};

@@ -1,5 +1,4 @@
 use super::helpers::{analyze_err, analyze_ok, assert_error_contains, single_endpoint};
-use crate::model::SetOp;
 use crate::sema::{KeyResolved, PolicyOp, PolicySetValue, PublicValueKind};
 
 #[test]
@@ -27,7 +26,7 @@ fn resolved_query_shorthand_lowers_to_endpoint_field_semantics() {
             PolicyOp::Set {
                 key: KeyResolved::Ident(key),
                 value: PolicySetValue::Value(PublicValueKind::EpField(field)),
-                op: SetOp::Set,
+                ..
             },
         ] => {
             assert_eq!(key.to_string(), "q");

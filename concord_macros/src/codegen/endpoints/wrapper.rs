@@ -150,14 +150,18 @@ fn emit_client_wrapper(
         let f = &v.rust;
         let ty = &v.ty;
         let set_name = setter.set_name.clone();
+        let set_doc = syn::LitStr::new(&setter.set_doc, f.span());
         if v.optional {
             let clear_name = setter.clear_name.clone();
+            let clear_doc = syn::LitStr::new(&setter.clear_doc, f.span());
             quote! {
+                #[doc = #set_doc]
                 #[inline]
                 pub fn #set_name(&mut self, v: #ty) -> &mut Self {
                     self.inner.vars_mut().#f = ::core::option::Option::Some(v);
                     self
                 }
+                #[doc = #clear_doc]
                 #[inline]
                 pub fn #clear_name(&mut self) -> &mut Self {
                     self.inner.vars_mut().#f = ::core::option::Option::None;
@@ -166,6 +170,7 @@ fn emit_client_wrapper(
             }
         } else {
             quote! {
+                #[doc = #set_doc]
                 #[inline]
                 pub fn #set_name(&mut self, v: #ty) -> &mut Self {
                     self.inner.vars_mut().#f = v;
@@ -949,14 +954,18 @@ fn facade_endpoint_path(target: &FacadeEndpointTarget) -> TokenStream2 {
 fn emit_scope_setter(setter: &FacadeSetter, var: &VarInfo) -> TokenStream2 {
     let name = setter.set_name.clone();
     let ty = &var.ty;
+    let set_doc = syn::LitStr::new(&setter.set_doc, name.span());
     if var.optional {
         let clear = setter.clear_name.clone();
+        let clear_doc = syn::LitStr::new(&setter.clear_doc, name.span());
         quote! {
+            #[doc = #set_doc]
             #[inline]
             pub fn #name(mut self, value: #ty) -> Self {
                 self.#name = ::core::option::Option::Some(value);
                 self
             }
+            #[doc = #clear_doc]
             #[inline]
             pub fn #clear(mut self) -> Self {
                 self.#name = ::core::option::Option::None;
@@ -965,6 +974,7 @@ fn emit_scope_setter(setter: &FacadeSetter, var: &VarInfo) -> TokenStream2 {
         }
     } else {
         quote! {
+            #[doc = #set_doc]
             #[inline]
             pub fn #name(mut self, value: #ty) -> Self {
                 self.#name = value;

@@ -185,8 +185,11 @@ pub(crate) fn build_facade_ir(resolved_api: &ResolvedApi) -> FacadeIr {
         .collect();
     FacadeIr {
         client_name: resolved_api.client_name.clone(),
-        client_setters: facade_client_setters(&resolved_api.client_vars),
-        auth_setters: facade_client_setters(&resolved_api.client_auth_vars),
+        client_setters: facade_client_setters(
+            &resolved_api.client_vars,
+            &resolved_api.client_query_cardinalities,
+        ),
+        auth_setters: facade_client_setters(&resolved_api.client_auth_vars, &BTreeMap::new()),
         credential_methods: facade_credential_methods(&resolved_api.client_auth_credentials),
         scopes,
         endpoints,
@@ -217,7 +220,10 @@ fn facade_credential_methods(credentials: &[AuthCredentialIr]) -> Vec<FacadeCred
         .collect()
 }
 
-fn facade_client_setters(vars: &[VarInfo]) -> Vec<FacadeSetter> {
+fn facade_client_setters(
+    vars: &[VarInfo],
+    query_cardinalities: &BTreeMap<String, QueryValueCardinality>,
+) -> Vec<FacadeSetter> {
     vars.iter()
         .map(|var| {
             let ty = &var.ty;
@@ -226,6 +232,7 @@ fn facade_client_setters(vars: &[VarInfo]) -> Vec<FacadeSetter> {
             if var.optional {
                 forms.push(SetterForm::Clear);
             }
+            let docs = facade_client_setter_docs(var, query_cardinalities);
             FacadeSetter {
                 field: field.clone(),
                 ty: ty.clone(),
@@ -233,38 +240,81 @@ fn facade_client_setters(vars: &[VarInfo]) -> Vec<FacadeSetter> {
                 set_optional_name: emit_helpers::ident(&format!("set_{field}_opt"), field.span()),
                 clear_name: emit_helpers::ident(&format!("clear_{field}"), field.span()),
                 forms,
-                set_doc: format!("Set client parameter `{field}`."),
-                set_optional_doc: format!(
-                    "Set or clear client parameter `{field}` from an Option; None clears it."
-                ),
-                clear_doc: format!("Clear client parameter `{field}`."),
+                set_doc: docs.0,
+                set_optional_doc: docs.1,
+                clear_doc: docs.2,
             }
         })
         .collect()
+}
+
+fn facade_client_setter_docs(
+    var: &VarInfo,
+    query_cardinalities: &BTreeMap<String, QueryValueCardinality>,
+) -> (String, String, String) {
+    let field = var.rust.to_string();
+    let vector_note = match query_cardinalities.get(&field) {
+        Some(QueryValueCardinality::Vector) => {
+            " Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key."
+        }
+        Some(QueryValueCardinality::OptionalVector) => {
+            " Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key."
+        }
+        _ => "",
+    };
+    (
+        format!("Set client parameter `{field}`.{vector_note}"),
+        format!(
+            "Set or clear client parameter `{field}` from an Option; None clears it.{vector_note}"
+        ),
+        if matches!(
+            query_cardinalities.get(&field),
+            Some(QueryValueCardinality::OptionalVector)
+        ) {
+            format!(
+                "Clear client parameter `{field}`; this produces None and removes the query key.{vector_note}"
+            )
+        } else {
+            format!("Clear client parameter `{field}`.{vector_note}")
+        },
+    )
 }
 
 #[derive(Clone)]
 struct FacadeScopeInfo {
     path: Vec<Ident>,
     decls: Vec<VarInfo>,
+    query_cardinalities: BTreeMap<String, QueryValueCardinality>,
 }
 
 fn collect_facade_scopes(resolved_api: &ResolvedApi) -> Vec<FacadeScopeInfo> {
     let mut scopes: Vec<FacadeScopeInfo> = Vec::new();
-    let mut seen = BTreeSet::new();
     for ep in &resolved_api.endpoints {
         for idx in 0..ep.scope_modules.len() {
             let path = ep.scope_modules[..=idx].to_vec();
-            if !seen.insert(scope_path_key(&path)) {
-                continue;
-            }
-            let decls = ep
+            let decls: Vec<VarInfo> = ep
                 .facade_param_groups
                 .iter()
                 .take(idx + 1)
                 .flat_map(|group| group.iter().cloned())
                 .collect();
-            scopes.push(FacadeScopeInfo { path, decls });
+            let declared_names: BTreeSet<String> =
+                decls.iter().map(|var| var.rust.to_string()).collect();
+            let query_cardinalities = ep
+                .query_cardinalities
+                .iter()
+                .filter(|(field, _)| declared_names.contains(*field))
+                .map(|(field, cardinality)| (field.clone(), *cardinality))
+                .collect();
+            if let Some(existing) = scopes.iter_mut().find(|scope| scope.path == path) {
+                existing.query_cardinalities.extend(query_cardinalities);
+            } else {
+                scopes.push(FacadeScopeInfo {
+                    path,
+                    decls,
+                    query_cardinalities,
+                });
+            }
         }
     }
     scopes
@@ -360,7 +410,7 @@ fn facade_scope_from_info(
         .filter(|var| var.optional || var.default.is_some())
         .map(|var| {
             let ty = &var.ty;
-            let docs = facade_scope_setter_docs(var);
+            let docs = facade_scope_setter_docs(var, &scope.query_cardinalities);
             let mut forms = vec![SetterForm::Set];
             if var.optional {
                 forms.push(SetterForm::Clear);
@@ -429,23 +479,37 @@ fn resolved_endpoint_key(ep: &ResolvedEndpoint) -> EndpointTargetKey {
     }
 }
 
-fn facade_scope_setter_docs(var: &VarInfo) -> (String, String, String) {
+fn facade_scope_setter_docs(
+    var: &VarInfo,
+    query_cardinalities: &BTreeMap<String, QueryValueCardinality>,
+) -> (String, String, String) {
     let field = var.rust.to_string();
+    let vector_query = matches!(
+        query_cardinalities.get(&field),
+        Some(QueryValueCardinality::Vector | QueryValueCardinality::OptionalVector)
+    );
+    let vector_note = if vector_query {
+        " Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key."
+    } else {
+        ""
+    };
     if var.optional {
         (
-            format!("Set optional scope parameter `{field}`."),
+            format!("Set optional scope parameter `{field}`.{vector_note}"),
             format!(
-                "Set or clear optional scope parameter `{field}` from an Option; None clears it."
+                "Set or clear optional scope parameter `{field}` from an Option; None clears it.{vector_note}"
             ),
-            format!("Clear optional scope parameter `{field}`."),
+            format!("Clear optional scope parameter `{field}`.{vector_note}"),
         )
     } else {
         (
-            format!("Set defaulted scope parameter `{field}`."),
+            format!("Set defaulted scope parameter `{field}`.{vector_note}"),
             format!(
-                "Set defaulted scope parameter `{field}` from an Option; None resets to the declared default."
+                "Set defaulted scope parameter `{field}` from an Option; None resets to the declared default.{vector_note}"
             ),
-            format!("Reset defaulted scope parameter `{field}` to its declared default."),
+            format!(
+                "Reset defaulted scope parameter `{field}` to its declared default.{vector_note}"
+            ),
         )
     }
 }
@@ -1024,21 +1088,33 @@ fn scheme_name(scheme: Scheme) -> &'static str {
 fn facade_setter_docs(ep: &ResolvedEndpoint, var: &VarInfo) -> (String, String, String) {
     let field = var.rust.to_string();
     let role = endpoint_var_role(ep, &var.rust);
+    let vector_query = role == "query"
+        && matches!(
+            ep.query_cardinalities.get(&field),
+            Some(QueryValueCardinality::Vector | QueryValueCardinality::OptionalVector)
+        );
+    let vector_note = if vector_query {
+        " Values produce repeated query pairs in vector order; setting the vector replaces existing values, and an empty vector removes the key."
+    } else {
+        ""
+    };
     if var.optional {
         (
-            format!("Set optional {role} parameter `{field}`."),
+            format!("Set optional {role} parameter `{field}`.{vector_note}"),
             format!(
-                "Set or clear optional {role} parameter `{field}` from an Option; None clears it."
+                "Set or clear optional {role} parameter `{field}` from an Option; None clears it.{vector_note}"
             ),
-            format!("Clear optional {role} parameter `{field}`."),
+            format!("Clear optional {role} parameter `{field}`.{vector_note}"),
         )
     } else {
         (
-            format!("Set defaulted {role} parameter `{field}`."),
+            format!("Set defaulted {role} parameter `{field}`.{vector_note}"),
             format!(
-                "Set defaulted {role} parameter `{field}` from an Option; None resets to the declared default."
+                "Set defaulted {role} parameter `{field}` from an Option; None resets to the declared default.{vector_note}"
             ),
-            format!("Reset defaulted {role} parameter `{field}` to its declared default."),
+            format!(
+                "Reset defaulted {role} parameter `{field}` to its declared default.{vector_note}"
+            ),
         )
     }
 }

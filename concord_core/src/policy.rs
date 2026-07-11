@@ -163,15 +163,19 @@ impl Policy {
 
     // ---------------- Query helpers ----------------
 
-    /// Append (allow duplicates): current behavior.
-    pub fn push_query(&mut self, key: &str, value: impl Into<String>) {
-        self.query.push((key.to_string(), value.into()));
-    }
-
     /// Override-by-key: remove existing entries with same key, then insert.
     pub fn set_query(&mut self, key: &str, value: impl Into<String>) {
+        self.replace_query_values(key, std::iter::once(value.into()));
+    }
+
+    /// Replace every query value for `key` with the supplied values in order.
+    pub fn replace_query_values<I>(&mut self, key: &str, values: I)
+    where
+        I: IntoIterator<Item = String>,
+    {
         self.remove_query(key);
-        self.query.push((key.to_string(), value.into()));
+        self.query
+            .extend(values.into_iter().map(|value| (key.to_string(), value)));
     }
 
     /// Remove all entries matching `key`.
@@ -244,19 +248,18 @@ mod test {
     }
 
     #[test]
-    fn query_set_push_and_remove_preserve_expected_order() {
+    fn query_replacement_and_remove_preserve_expected_order() {
         let mut p = Policy::new();
-        p.push_query("tag", "base");
         p.set_query("q", "first");
-        p.push_query("tag", "endpoint");
+        p.replace_query_values("tag", ["base".to_string(), "inherited".to_string()]);
         p.set_query("q", "override");
-        p.remove_query("tag");
-        p.push_query("tag", "final");
+        p.replace_query_values("tag", ["endpoint".to_string(), "final".to_string()]);
 
         assert_eq!(
             p.query(),
             &[
                 ("q".to_string(), "override".to_string()),
+                ("tag".to_string(), "endpoint".to_string()),
                 ("tag".to_string(), "final".to_string())
             ]
         );
@@ -266,9 +269,8 @@ mod test {
     fn query_remove_semantics_documented_and_tested() {
         let mut p = Policy::new();
 
-        p.push_query("dup", "first");
-        p.push_query("dup", "second");
-        p.push_query("keep", "base");
+        p.replace_query_values("dup", ["first".to_string(), "second".to_string()]);
+        p.set_query("keep", "base");
 
         p.remove_query("missing");
         assert_eq!(
@@ -301,9 +303,36 @@ mod test {
             ]
         );
 
-        p.push_query("dup", "shadow");
+        p.replace_query_values("dup", ["shadow".to_string()]);
         p.remove_query("dup");
         assert_eq!(p.query(), &[("keep".to_string(), "replace".to_string())]);
+    }
+
+    #[test]
+    fn query_replacement_supports_empty_values_and_empty_strings() {
+        let mut p = Policy::new();
+        p.replace_query_values("tags", ["a".to_string(), "b".to_string()]);
+        p.replace_query_values("tags", std::iter::empty());
+        p.set_query("empty", "");
+        assert_eq!(p.query(), &[("empty".to_string(), "".to_string())]);
+    }
+
+    #[test]
+    fn query_replacement_keeps_unrelated_key_order() {
+        let mut p = Policy::new();
+        p.set_query("first", "1");
+        p.replace_query_values("target", ["old".to_string()]);
+        p.set_query("last", "3");
+        p.replace_query_values("target", ["a".to_string(), "b".to_string()]);
+        assert_eq!(
+            p.query(),
+            &[
+                ("first".to_string(), "1".to_string()),
+                ("last".to_string(), "3".to_string()),
+                ("target".to_string(), "a".to_string()),
+                ("target".to_string(), "b".to_string()),
+            ]
+        );
     }
 
     #[test]

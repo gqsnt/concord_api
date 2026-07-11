@@ -1,5 +1,4 @@
 use super::helpers::{analyze_ok, client_policy, header_ops, query_ops, single_endpoint};
-use crate::model::SetOp;
 use crate::sema::{
     FmtResolvedPiece, FmtVarSource, KeyResolved, PolicyOp, PolicySetValue, PublicValueKind,
 };
@@ -18,7 +17,7 @@ fn resolved_query_and_header_ops_preserve_order_and_optional_conditions() {
                 path ["search"]
                 query {
                     q,
-                    "tag" += q,
+                    "tag" = q,
                     "maybe" = maybe,
                     -"old"
                 }
@@ -40,7 +39,7 @@ fn resolved_query_and_header_ops_preserve_order_and_optional_conditions() {
         PolicyOp::Set {
             key: KeyResolved::Ident(key),
             value: PolicySetValue::Value(PublicValueKind::EpField(field)),
-            op: SetOp::Set,
+            ..
         } => {
             assert_eq!(key.to_string(), "q");
             assert_eq!(field.to_string(), "q");
@@ -52,19 +51,19 @@ fn resolved_query_and_header_ops_preserve_order_and_optional_conditions() {
         PolicyOp::Set {
             key: KeyResolved::Static(key),
             value: PolicySetValue::Value(PublicValueKind::EpField(field)),
-            op: SetOp::Push,
+            ..
         } => {
             assert_eq!(key.value(), "tag");
             assert_eq!(field.to_string(), "q");
         }
-        other => panic!("unexpected query push lowering: {other:?}"),
+        other => panic!("unexpected query assignment lowering: {other:?}"),
     }
 
     match &query_ops(endpoint_policy)[2] {
         PolicyOp::Set {
             key: KeyResolved::Static(key),
             value: PolicySetValue::OptionalEpField(field),
-            op: SetOp::Set,
+            ..
         } => {
             assert_eq!(key.value(), "maybe");
             assert_eq!(field.to_string(), "maybe");
@@ -83,7 +82,7 @@ fn resolved_query_and_header_ops_preserve_order_and_optional_conditions() {
         PolicyOp::Set {
             key: KeyResolved::Static(key),
             value: PolicySetValue::Value(PublicValueKind::CxField(field)),
-            op: SetOp::Set,
+            ..
         } => {
             assert_eq!(key.value(), "x-trace");
             assert_eq!(field.to_string(), "trace_id");

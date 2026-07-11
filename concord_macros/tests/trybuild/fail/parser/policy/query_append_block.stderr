@@ -1,0 +1,5 @@
+error: expected `=`
+  --> tests/trybuild/fail/parser/policy/query_append_block.rs:13:19
+   |
+13 |             "tag" += tag
+   |                   ^

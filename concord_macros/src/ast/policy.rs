@@ -18,7 +18,6 @@ pub enum PolicyStmt {
     Set {
         key: KeySpec,
         value: PolicyValue,
-        op: SetOp,
     },
 }
 

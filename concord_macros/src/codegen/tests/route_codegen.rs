@@ -101,3 +101,59 @@ fn generated_query_contains_optional_and_empty_string_semantics() {
         ],
     );
 }
+
+#[test]
+fn generated_query_vectors_use_resolved_replacement_operations() {
+    let out = expanded(quote! {
+        client VectorQueryCodegen {
+            base "https://example.com"
+        }
+
+        GET Search(tags: Vec<String>, optional_tags?: Vec<String>)
+            as search
+            path ["search"]
+            query {
+                tags
+                optional_tags
+            }
+            -> Json<String>
+    });
+
+    assert_contains_all(
+        &out,
+        &[
+            "policy.replace_query_values (\"tags\"",
+            ".iter () . map (| __v | __v.to_string ())",
+            "if let ::core::option::Option::Some(__v) = ep.optional_tags.as_ref()",
+            "__v.iter () . map (| __item | __item.to_string ())",
+            "policy.remove_query(\"optional_tags\")",
+        ],
+    );
+}
+
+#[test]
+fn generated_query_uses_exact_standard_vec_shapes_only() {
+    let out = expanded(quote! {
+        client ExactVectorShapes {
+            base "https://example.com"
+        }
+
+        GET Search(
+            plain: Vec<String>,
+            qualified: std::vec::Vec<String>,
+            absolute: ::std::vec::Vec<String>,
+            custom: custom::Vec<String>
+        )
+            as search
+            path ["search"]
+            query {
+                plain
+                qualified
+                absolute
+                custom
+            }
+            -> Json<String>
+    });
+
+    assert_eq!(out.matches("replace_query_values").count(), 3);
+}
