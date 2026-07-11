@@ -49,10 +49,6 @@ pub(super) fn forbidden_request_body_plan_raw_stream() -> String {
     ["BodyPlan", "::", "RawStream"].concat()
 }
 
-pub(super) fn forbidden_request_body_plan_records() -> String {
-    ["BodyPlan", "::", "Records"].concat()
-}
-
 pub(super) fn forbidden_request_body_plan_multipart() -> String {
     ["BodyPlan", "::", "Multipart"].concat()
 }
@@ -67,10 +63,6 @@ pub(super) fn forbidden_request_args_with_body_bytes() -> String {
 
 pub(super) fn forbidden_request_args_with_stream_body() -> String {
     ["RequestArgs", "::", "with_stream_body"].concat()
-}
-
-pub(super) fn forbidden_request_args_with_record_body() -> String {
-    ["RequestArgs", "::", "with_record_body"].concat()
 }
 
 pub(super) fn forbidden_request_args_with_multipart_body() -> String {
@@ -91,20 +83,6 @@ pub(super) fn forbidden_stream_exec_call() -> String {
 
 pub(super) fn forbidden_endpoint_execute_box_wrapper() -> String {
     ["Box::pin(asyncmove{", "ResponseEntity", ">::execute"].concat()
-}
-
-pub(super) fn forbidden_records_exec_call() -> String {
-    ["execute_plan_", "records::<", " LogEntry , NdJson ", ">"].concat()
-}
-
-pub(super) fn forbidden_multipart_exec_call() -> String {
-    [
-        "execute_plan_",
-        "multipart::<",
-        " RawResponsePart , Mixed ",
-        ">",
-    ]
-    .concat()
 }
 
 pub(super) fn forbidden_response_plan_struct() -> String {

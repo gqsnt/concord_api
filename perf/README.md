@@ -54,7 +54,7 @@ Benchmarks report timing only. They are not pass/fail gates for release automati
 
 The default rate-limit suite measures insertion and acquisition overhead. Active cooldown waiting is intentionally not timed in the default suite because it reflects timer behavior rather than governor lookup overhead. The joined-futures cases are labeled explicitly; the larger fixture remains deferred with the historical report tooling.
 
-The pagination full suite adds 1,000-page offset and cursor collect fixtures. The streaming response full suite adds larger raw-drain, NDJSON, SSE, and multipart fixtures.
+The pagination full suite adds 1,000-page offset and cursor collect fixtures. The streaming response full suite adds larger raw-drain fixtures.
 
 Criterion does not provide allocation counts by itself. If allocation measurement is added later, it will need a separate profiler or counting allocator.
 

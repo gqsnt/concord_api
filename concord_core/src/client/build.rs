@@ -46,9 +46,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 BodyPlan::Multipart { content_type, .. } => {
                     headers.insert(CONTENT_TYPE, content_type.clone());
                 }
-                BodyPlan::Records { content_type, .. } => {
-                    headers.insert(CONTENT_TYPE, content_type.clone());
-                }
                 BodyPlan::None => {}
             }
         }
@@ -130,27 +127,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     });
                 }
             },
-            BodyPlan::Records { .. } => match std::mem::replace(
-                &mut args.body,
-                crate::transport::TransportRequestBody::Empty,
-            ) {
-                crate::transport::TransportRequestBody::Stream(stream) => {
-                    crate::transport::TransportRequestBody::Stream(stream)
-                }
-                crate::transport::TransportRequestBody::Empty
-                | crate::transport::TransportRequestBody::Bytes(_) => {
-                    return Err(ApiClientError::PolicyViolation {
-                        ctx,
-                        msg: "records body plan requires a stream request body",
-                    });
-                }
-            },
         };
 
         if plan.replayability.is_replayable()
             && matches!(
                 &plan.endpoint.body,
-                BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. } | BodyPlan::Records { .. }
+                BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. }
             )
         {
             return Err(ApiClientError::PolicyViolation {

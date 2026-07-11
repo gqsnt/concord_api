@@ -1,5 +1,0 @@
-error: reserved endpoint I/O family `Sse` expects one or two type arguments
-  --> tests/trybuild/fail/codegen_contract/reserved_sse_arity_three.rs:10:12
-   |
-10 |         -> Sse<A, B, C>
-   |            ^^^^^^^^^^^^

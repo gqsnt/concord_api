@@ -19,7 +19,6 @@ use crate::runtime_hooks::{
     HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
 };
 use crate::runtime_state::ClientRuntimeState;
-use crate::sse::SseStream;
 #[cfg(feature = "transport-reqwest")]
 use crate::transport::DefaultTransportMarker;
 #[cfg(feature = "transport-reqwest")]

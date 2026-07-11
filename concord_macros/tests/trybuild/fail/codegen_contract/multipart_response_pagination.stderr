@@ -1,5 +1,0 @@
-error: pagination is only supported for buffered responses
- --> tests/trybuild/fail/codegen_contract/multipart_response_pagination.rs:9:9
-  |
-9 |     GET List(start: u64 = 0, count: u64 = 10)
-  |         ^^^^

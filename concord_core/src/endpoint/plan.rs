@@ -1,9 +1,8 @@
 #![allow(dead_code)]
 
-use crate::advanced::{MultipartBody, MultipartBodyError, MultipartFormat};
+use crate::advanced::{MultipartBody, MultipartBodyError};
 use crate::multipart::MultipartBodyErrorKind;
 use crate::policy::ResolvedPolicy;
-use crate::record::RecordBody;
 use crate::stream_body::StreamBody;
 use crate::transport::RequestMeta;
 use crate::transport::TransportRequestBody;
@@ -72,27 +71,12 @@ impl RequestArgs {
         }
     }
 
-    pub fn with_record_body<T, F>(body: RecordBody<T>) -> Self
-    where
-        F: crate::record::RecordFormat<T>,
-        T: Send + 'static,
-    {
-        Self {
-            body: body.into_transport_body::<F>(),
-            stream_size_hint: None,
-            multipart_content_type: None,
-        }
-    }
-
-    pub fn with_multipart_body<F>(body: MultipartBody) -> Result<Self, MultipartBodyError>
-    where
-        F: MultipartFormat,
-    {
-        let multipart_content_type = body.try_content_type::<F>().map_err(|_| {
+    pub fn with_multipart_body(body: MultipartBody) -> Result<Self, MultipartBodyError> {
+        let multipart_content_type = body.try_content_type().map_err(|_| {
             MultipartBodyError::new(MultipartBodyErrorKind::InvalidMultipartContentType)
         })?;
         Ok(Self {
-            body: body.into_transport_body::<F>()?,
+            body: body.into_transport_body()?,
             stream_size_hint: None,
             multipart_content_type: Some(multipart_content_type),
         })
@@ -172,10 +156,6 @@ pub enum BodyPlan {
         content_type: HeaderValue,
     },
     Multipart {
-        content_type: HeaderValue,
-        format: crate::codec::Format,
-    },
-    Records {
         content_type: HeaderValue,
         format: crate::codec::Format,
     },

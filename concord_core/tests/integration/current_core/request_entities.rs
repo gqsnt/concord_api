@@ -1,8 +1,7 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    BodyCodec, CodecError, ContentType, EncodeContext, EncodedBody, ErrorContext, FormData,
-    MultipartBody, MultipartRequest, NdJson, NoRequestBody, OctetStream, RawStreamRequest,
-    RecordBody, RecordRequest, RequestEntity, StreamBody,
+    BodyCodec, CodecError, ContentType, EncodeContext, EncodedBody, ErrorContext, MultipartBody,
+    MultipartRequest, NoRequestBody, OctetStream, RawStreamRequest, RequestEntity, StreamBody,
 };
 use concord_core::internal::{BodyPlan, Format, Replayability};
 use http::Method;
@@ -59,11 +58,6 @@ fn ctx() -> ErrorContext {
         endpoint: "Example",
         method: Method::POST,
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-struct RecordRow {
-    value: String,
 }
 
 #[test]
@@ -131,43 +125,8 @@ fn raw_stream_request_prepares_stream_body() {
 }
 
 #[test]
-fn record_request_prepares_ndjson_stream_body() {
-    let prepared = RecordRequest::<RecordRow, NdJson>::prepare(
-        RecordBody::from_iter([
-            RecordRow {
-                value: "first".to_string(),
-            },
-            RecordRow {
-                value: "second".to_string(),
-            },
-        ]),
-        ctx(),
-    )
-    .expect("record request");
-
-    match prepared.body_plan {
-        BodyPlan::Records {
-            content_type,
-            format,
-        } => {
-            assert_eq!(
-                content_type,
-                http::HeaderValue::from_static("application/x-ndjson")
-            );
-            assert_eq!(format, Format::Text);
-        }
-        other => panic!("expected record body plan, got {other:?}"),
-    }
-    assert!(prepared.args.body.is_stream());
-    assert!(matches!(
-        prepared.replayability,
-        Replayability::NonReplayable
-    ));
-}
-
-#[test]
 fn multipart_request_prepares_stream_body_and_content_type() {
-    let prepared = MultipartRequest::<FormData>::prepare(
+    let prepared = MultipartRequest::prepare(
         MultipartBody::new()
             .text("title", "hello")
             .bytes("file", Bytes::from_static(b"abc")),

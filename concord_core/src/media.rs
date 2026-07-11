@@ -27,7 +27,6 @@ content_marker!(Pdf, "application/pdf");
 content_marker!(Zip, "application/zip");
 content_marker!(Png, "image/png");
 content_marker!(Jpeg, "image/jpeg");
-content_marker!(EventStream, "text/event-stream");
 
 #[cfg(test)]
 mod tests {
@@ -48,20 +47,8 @@ mod tests {
             http::HeaderValue::from_static("application/octet-stream")
         );
         assert_eq!(
-            crate::record::NdJson::try_header_value().expect("valid content type"),
-            http::HeaderValue::from_static("application/x-ndjson")
-        );
-        assert_eq!(
             crate::multipart::FormData::try_header_value().expect("valid content type"),
             http::HeaderValue::from_static("multipart/form-data")
-        );
-        assert_eq!(
-            crate::multipart::Mixed::try_header_value().expect("valid content type"),
-            http::HeaderValue::from_static("multipart/mixed")
-        );
-        assert_eq!(
-            EventStream::try_header_value().expect("valid content type"),
-            http::HeaderValue::from_static("text/event-stream")
         );
         assert_eq!(JsonContentType::CONTENT_TYPE, "application/json");
         assert_eq!(TextContentType::CONTENT_TYPE, "text/plain; charset=utf-8");
@@ -72,7 +59,6 @@ mod tests {
         assert_eq!(Zip::CONTENT_TYPE, "application/zip");
         assert_eq!(Png::CONTENT_TYPE, "image/png");
         assert_eq!(Jpeg::CONTENT_TYPE, "image/jpeg");
-        assert_eq!(EventStream::CONTENT_TYPE, "text/event-stream");
         assert_eq!(format!("{:?}", OctetStream), "OctetStream");
     }
 
@@ -91,20 +77,8 @@ mod tests {
             http::HeaderValue::from_static("application/octet-stream")
         );
         assert_eq!(
-            crate::record::NdJson::try_header_value().expect("valid content type"),
-            http::HeaderValue::from_static("application/x-ndjson")
-        );
-        assert_eq!(
             crate::multipart::FormData::try_header_value().expect("valid content type"),
             http::HeaderValue::from_static("multipart/form-data")
-        );
-        assert_eq!(
-            crate::multipart::Mixed::try_header_value().expect("valid content type"),
-            http::HeaderValue::from_static("multipart/mixed")
-        );
-        assert_eq!(
-            EventStream::try_header_value().expect("valid content type"),
-            http::HeaderValue::from_static("text/event-stream")
         );
     }
 }

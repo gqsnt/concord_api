@@ -839,17 +839,6 @@ mod tests {
                     path ["streamed"]
                     -> Stream<Bytes>
 
-                GET Listed
-                    path ["listed"]
-                    -> Records<Item, NdJson>
-
-                GET Multiparted
-                    path ["multiparted"]
-                    -> Multipart<Part>
-
-                GET Ssed
-                    path ["ssed"]
-                    -> Sse<Event>
             }
             "#,
         )
@@ -879,36 +868,6 @@ mod tests {
         assert_eq!(
             ty_string(&streamed.io.response_entity.adapter_ty),
             "::concord_core::advanced::RawStreamResponse<Bytes>"
-        );
-
-        let listed = resolved_api
-            .endpoints
-            .iter()
-            .find(|ep| ep.name == "Listed")
-            .expect("listed endpoint");
-        assert_eq!(
-            ty_string(&listed.io.response_entity.adapter_ty),
-            "::concord_core::advanced::RecordResponse<Item,NdJson>"
-        );
-
-        let multiparted = resolved_api
-            .endpoints
-            .iter()
-            .find(|ep| ep.name == "Multiparted")
-            .expect("multiparted endpoint");
-        assert_eq!(
-            ty_string(&multiparted.io.response_entity.adapter_ty),
-            "::concord_core::advanced::MultipartResponse<Part,::concord_core::advanced::FormData>"
-        );
-
-        let ssed = resolved_api
-            .endpoints
-            .iter()
-            .find(|ep| ep.name == "Ssed")
-            .expect("ssed endpoint");
-        assert_eq!(
-            ty_string(&ssed.io.response_entity.adapter_ty),
-            "::concord_core::advanced::SseResponse<Event,::concord_core::advanced::JsonSse>"
         );
     }
 
@@ -1036,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn resolved_endpoint_io_entity_metadata_covers_streaming_response_families() {
+    fn resolved_endpoint_io_entity_metadata_covers_retained_streaming_response_family() {
         let ast: crate::ast::RawApi = syn::parse_str(
             r#"
             api! {
@@ -1047,18 +1006,6 @@ mod tests {
                 GET Streamed
                     path ["streamed"]
                     -> Stream<OctetStream>
-
-                GET Listed
-                    path ["listed"]
-                    -> Records<Item, NdJson>
-
-                GET Multiparted
-                    path ["multiparted"]
-                    -> Multipart<Part, Mixed>
-
-                GET Ssed
-                    path ["ssed"]
-                    -> Sse<Event>
 
                 GET NoContent
                     path ["no-content"]
@@ -1085,45 +1032,6 @@ mod tests {
         );
         assert!(streamed.io.response_entity.capabilities.is_streaming);
         assert!(!streamed.io.response_entity.capabilities.supports_pagination);
-        let listed = resolved_api
-            .endpoints
-            .iter()
-            .find(|ep| ep.name == "Listed")
-            .expect("listed endpoint");
-        assert_eq!(
-            ty_string(&listed.io.response_entity.adapter_ty),
-            "::concord_core::advanced::RecordResponse<Item,NdJson>"
-        );
-        assert!(listed.io.response_entity.capabilities.is_streaming);
-        assert!(!listed.io.response_entity.capabilities.supports_pagination);
-        let multiparted = resolved_api
-            .endpoints
-            .iter()
-            .find(|ep| ep.name == "Multiparted")
-            .expect("multiparted endpoint");
-        assert_eq!(
-            ty_string(&multiparted.io.response_entity.adapter_ty),
-            "::concord_core::advanced::MultipartResponse<Part,Mixed>"
-        );
-        assert!(multiparted.io.response_entity.capabilities.is_streaming);
-        assert!(
-            !multiparted
-                .io
-                .response_entity
-                .capabilities
-                .supports_pagination
-        );
-        let ssed = resolved_api
-            .endpoints
-            .iter()
-            .find(|ep| ep.name == "Ssed")
-            .expect("ssed endpoint");
-        assert_eq!(
-            ty_string(&ssed.io.response_entity.adapter_ty),
-            "::concord_core::advanced::SseResponse<Event,::concord_core::advanced::JsonSse>"
-        );
-        assert!(ssed.io.response_entity.capabilities.is_streaming);
-        assert!(!ssed.io.response_entity.capabilities.supports_pagination);
         let no_content = resolved_api
             .endpoints
             .iter()

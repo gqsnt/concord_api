@@ -1,0 +1,5 @@
+error: reserved endpoint I/O family `Multipart` expects exactly one type argument
+ --> tests/trybuild/fail/codegen_contract/multipart_two_arguments.rs:5:23
+  |
+5 |     POST Upload(body: Multipart<(), concord_core::advanced::FormData>)
+  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

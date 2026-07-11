@@ -279,40 +279,13 @@ pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> Requ
                 is_multipart: false,
             },
         },
-        ResolvedRequestBodyIo::Records { item_ty, format_ty } => RequestEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::RecordRequest<#item_ty, #format_ty>),
-            public_input_ty: Some(
-                syn::parse_quote!(::concord_core::advanced::RecordBody<#item_ty>),
-            ),
-            body_field_ty: Some(syn::parse_quote!(::concord_core::advanced::RecordBody<#item_ty>)),
-            doc: IoDocIr {
-                summary: "Record-streaming request body.".to_string(),
-                facade_summary: Some(format!(
-                    "Body: Records<{}, {}>",
-                    quote::quote!(#item_ty),
-                    quote::quote!(#format_ty)
-                )),
-            },
-            capabilities: RequestIoCapabilities {
-                has_body: true,
-                is_streaming: true,
-                is_multipart: false,
-            },
-        },
-        ResolvedRequestBodyIo::Multipart {
-            value_ty,
-            format_ty,
-        } => RequestEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::MultipartRequest<#format_ty>),
+        ResolvedRequestBodyIo::Multipart { value_ty } => RequestEntityPlanIr {
+            adapter_ty: syn::parse_quote!(::concord_core::advanced::MultipartRequest),
             public_input_ty: Some(syn::parse_quote!(::concord_core::advanced::MultipartBody)),
             body_field_ty: Some(syn::parse_quote!(::concord_core::advanced::MultipartBody)),
             doc: IoDocIr {
                 summary: "Multipart request body.".to_string(),
-                facade_summary: Some(format!(
-                    "Body: Multipart<{}, {}>",
-                    quote::quote!(#value_ty),
-                    quote::quote!(#format_ty)
-                )),
+                facade_summary: Some(format!("Body: Multipart<{}>", quote::quote!(#value_ty))),
             },
             capabilities: RequestIoCapabilities {
                 has_body: true,
@@ -388,57 +361,6 @@ pub(super) fn response_entity_plan_ir(
                 is_no_content: false,
             },
         },
-        ResolvedResponseBodyIo::Records { item_ty, format_ty } => ResponseEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::RecordResponse<#item_ty, #format_ty>),
-            public_output_ty: response_public_output_ty(response_io),
-            doc: IoDocIr {
-                summary: "Record-streaming response body.".to_string(),
-                facade_summary: Some(format!(
-                    "Response: Records<{}, {}>",
-                    quote::quote!(#item_ty),
-                    quote::quote!(#format_ty)
-                )),
-            },
-            capabilities: ResponseIoCapabilities {
-                supports_pagination: false,
-                is_streaming: true,
-                is_no_content: false,
-            },
-        },
-        ResolvedResponseBodyIo::Multipart { part_ty, format_ty } => ResponseEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::MultipartResponse<#part_ty, #format_ty>),
-            public_output_ty: response_public_output_ty(response_io),
-            doc: IoDocIr {
-                summary: "Multipart response body.".to_string(),
-                facade_summary: Some(format!(
-                    "Response: Multipart<{}, {}>",
-                    quote::quote!(#part_ty),
-                    quote::quote!(#format_ty)
-                )),
-            },
-            capabilities: ResponseIoCapabilities {
-                supports_pagination: false,
-                is_streaming: true,
-                is_no_content: false,
-            },
-        },
-        ResolvedResponseBodyIo::Sse { event_ty, codec_ty } => ResponseEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::SseResponse<#event_ty, #codec_ty>),
-            public_output_ty: response_public_output_ty(response_io),
-            doc: IoDocIr {
-                summary: "Server-sent events response.".to_string(),
-                facade_summary: Some(format!(
-                    "Response: Sse<{}, {}>",
-                    quote::quote!(#event_ty),
-                    quote::quote!(#codec_ty)
-                )),
-            },
-            capabilities: ResponseIoCapabilities {
-                supports_pagination: false,
-                is_streaming: true,
-                is_no_content: false,
-            },
-        },
     }
 }
 
@@ -449,15 +371,6 @@ pub(super) fn response_public_output_ty(response_io: &ResolvedResponseBodyIo) ->
         ResolvedResponseBodyIo::NoContent => syn::parse_quote!(()),
         ResolvedResponseBodyIo::RawStream { media_ty } => {
             syn::parse_quote!(::concord_core::advanced::StreamResponse<#media_ty>)
-        }
-        ResolvedResponseBodyIo::Records { item_ty, .. } => {
-            syn::parse_quote!(::concord_core::advanced::RecordStream<#item_ty>)
-        }
-        ResolvedResponseBodyIo::Multipart { part_ty, .. } => {
-            syn::parse_quote!(::concord_core::advanced::MultipartStream<#part_ty>)
-        }
-        ResolvedResponseBodyIo::Sse { event_ty, .. } => {
-            syn::parse_quote!(::concord_core::advanced::SseStream<#event_ty>)
         }
     }
 }
@@ -957,21 +870,8 @@ pub(super) fn classify_request_io(spec: Option<&RawIoSpec>) -> Result<ResolvedRe
         EndpointIoClassification::RawStream { media_ty } => {
             ResolvedRequestBodyIo::RawStream { media_ty }
         }
-        EndpointIoClassification::Records { item_ty, format_ty } => {
-            ResolvedRequestBodyIo::Records { item_ty, format_ty }
-        }
-        EndpointIoClassification::Multipart {
-            value_ty,
-            format_ty,
-        } => ResolvedRequestBodyIo::Multipart {
-            value_ty,
-            format_ty,
-        },
-        EndpointIoClassification::Sse { .. } => {
-            return Err(syn::Error::new_spanned(
-                spec.marker.clone(),
-                "`Sse` is only valid as an endpoint response",
-            ));
+        EndpointIoClassification::Multipart { value_ty } => {
+            ResolvedRequestBodyIo::Multipart { value_ty }
         }
     })
 }
@@ -985,30 +885,22 @@ pub(super) fn classify_http_response_io(spec: &RawResponseIo) -> Result<Resolved
         EndpointIoClassification::RawStream { media_ty } => {
             ResolvedResponseBodyIo::RawStream { media_ty }
         }
-        EndpointIoClassification::Records { item_ty, format_ty } => {
-            ResolvedResponseBodyIo::Records { item_ty, format_ty }
-        }
-        EndpointIoClassification::Multipart {
-            value_ty,
-            format_ty,
-        } => ResolvedResponseBodyIo::Multipart {
-            part_ty: value_ty,
-            format_ty,
-        },
-        EndpointIoClassification::Sse { event_ty, codec_ty } => {
-            ResolvedResponseBodyIo::Sse { event_ty, codec_ty }
+        EndpointIoClassification::Multipart { .. } => {
+            return Err(syn::Error::new_spanned(
+                spec.marker.clone(),
+                "`Multipart` is only valid as an endpoint request",
+            ));
         }
     })
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(super) enum EndpointIoClassification {
     BufferedCodec(BufferedCodecIo),
     BufferedBytes,
     NoContent,
     RawStream { media_ty: Type },
-    Records { item_ty: Type, format_ty: Type },
-    Multipart { value_ty: Type, format_ty: Type },
-    Sse { event_ty: Type, codec_ty: Type },
+    Multipart { value_ty: Type },
 }
 
 pub(super) fn classify_endpoint_io(
@@ -1056,57 +948,15 @@ pub(super) fn classify_endpoint_io(
                 media_ty: spec.args[0].clone(),
             })
         }
-        "Records" => {
-            if arg_count != 2 {
-                return Err(syn::Error::new_spanned(
-                    spec.marker.clone(),
-                    "reserved endpoint I/O family `Records` expects exactly two type arguments",
-                ));
-            }
-            Ok(EndpointIoClassification::Records {
-                item_ty: spec.args[0].clone(),
-                format_ty: spec.args[1].clone(),
-            })
-        }
         "Multipart" => {
-            if !(arg_count == 1 || arg_count == 2) {
+            if arg_count != 1 {
                 return Err(syn::Error::new_spanned(
                     spec.marker.clone(),
-                    "reserved endpoint I/O family `Multipart` expects one or two type arguments",
+                    "reserved endpoint I/O family `Multipart` expects exactly one type argument",
                 ));
             }
             let value_ty = spec.args[0].clone();
-            let format_ty = spec
-                .args
-                .get(1)
-                .cloned()
-                .unwrap_or_else(|| syn::parse_quote!(::concord_core::advanced::FormData));
-            Ok(EndpointIoClassification::Multipart {
-                value_ty,
-                format_ty,
-            })
-        }
-        "Sse" => {
-            if !(arg_count == 1 || arg_count == 2) {
-                return Err(syn::Error::new_spanned(
-                    spec.marker.clone(),
-                    "reserved endpoint I/O family `Sse` expects one or two type arguments",
-                ));
-            }
-            if matches!(position, EndpointIoPosition::Request) {
-                return Err(syn::Error::new_spanned(
-                    spec.marker.clone(),
-                    "`Sse` is only valid as an endpoint response",
-                ));
-            }
-            Ok(EndpointIoClassification::Sse {
-                event_ty: spec.args[0].clone(),
-                codec_ty: spec
-                    .args
-                    .get(1)
-                    .cloned()
-                    .unwrap_or_else(|| syn::parse_quote!(::concord_core::advanced::JsonSse)),
-            })
+            Ok(EndpointIoClassification::Multipart { value_ty })
         }
         _ => {
             if arg_count > 1 {

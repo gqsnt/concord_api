@@ -8,9 +8,9 @@ For complete API details, cross-check this guide with [Runtime Config](runtime_c
 
 Buffered response families, including codec-decoded responses and byte responses, read the response body into memory before decoding or returning it. This is the ergonomic path for small bounded payloads and formats that naturally decode from a complete body. The buffering path is implemented by the response entity adapters in `concord_core/src/io.rs` and the limited body reader in `concord_core/src/client/mod.rs`.
 
-Streaming response families return a stream object and do not require the whole response body to be resident before the caller starts consuming it. `Stream<...>`, `Records<...>`, `Multipart<...>`, and `Sse<...>` use the streaming attempt path in `concord_core/src/client/execute.rs`, with adapters in `concord_core/src/io.rs`. Prefer these families for large or long-lived responses when bounded memory is more important than whole-body convenience.
+Streaming responses return a stream object and do not require the whole response body to be resident before the caller starts consuming it. `Stream<...>` uses the streaming attempt path in `concord_core/src/client/execute.rs`, with its adapter in `concord_core/src/io.rs`. Prefer it for large or long-lived byte transfers when bounded memory is more important than whole-body convenience.
 
-Record, multipart, SSE, and raw stream responses are still guarded by the configured stream response limit. The limit applies while the stream is read, so it bounds total bytes accepted by the runtime even though the caller consumes incrementally.
+Raw stream responses are guarded by the configured stream response limit. The limit applies while the stream is read, so it bounds total bytes accepted by the runtime even though the caller consumes incrementally.
 
 ## Body Limits
 
@@ -78,7 +78,7 @@ Users do not need to opt in. Static generated credentials can reuse preparation 
 
 For users minimizing dependency and compile footprint, `concord_core` supports `default-features = false`. The supported feature combinations are documented in [Feature Matrix](features.md).
 
-CSV record support is controlled by the default-on `records-csv` feature. Default builds include CSV record support and preserve the existing `Csv<...>` API. No-default builds omit `csv` and `csv-core`; NDJSON record support remains available, and API definitions that name `Csv<...>` should enable `records-csv`.
+The feature matrix describes the supported default and no-default dependency surfaces.
 
 `transport-reqwest` owns the reqwest transport dependency, and `rate-limit-governor` owns the default governor-backed limiter. Disabling those defaults changes which implementations are available; see [Feature Matrix](features.md) before using no-default builds in an application.
 

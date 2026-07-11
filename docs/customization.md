@@ -99,16 +99,6 @@ Codec rules:
 - Buffered response decode failures are also sanitized at the client boundary. Public `ApiClientError::Decode` values for buffered response handling use a generic response-body decode message and do not expose raw codec messages or nested codec source chains. Streaming decode paths remain separately sanitized by their own response-specific wrappers.
 - Built-in `Json<T>` and `Text<String>` use `JsonContentType` and `TextContentType`. The core `NoContent` codec intentionally omits request and response content headers. The DSL spelling `-> NoContent` is response-only, returns `()`, and remains distinct from the buffered codec; request-side `NoContent` remains invalid. The DSL spelling `-> Bytes` is response-only, returns `bytes::Bytes`, uses the ordinary bounded buffered response path that materializes payloads in memory, and is distinct from custom binary codecs and `#[cfg(feature = "dangerous-raw-response")] execute_raw_response()`. Request-side `Bytes` remains unsupported.
 
-## CSV Record Formats
-
-CSV is a `Records<T, Csv<Cfg>>` record format, not a new endpoint family. It reuses `RecordBody<T>` and `RecordStream<T>` as the runtime values.
-
-Custom CSV behavior implements `CsvConfig`.
-
-Use `CsvCommaDelim`, `CsvSemicolonDelim`, or `CsvTabDelim` as the built-in configs. The config type selects the delimiter and whether headers are enabled; delimiter and header state are not encoded as `Content-Type` parameters.
-
-CSV support uses the same `ContentType` marker path as the rest of the advanced API and uses `text/csv`.
-
 ## Page-Shape Traits
 
 Paginated responses expose their items by implementing `PageItems`.

@@ -10,7 +10,7 @@ use concord_core::prelude::DebugLevel;
 use http::{HeaderValue, Method, StatusCode, header::HeaderName};
 use perf::support::{
     CountingRateLimiter, MockResponse, MockTransport, auth_requirement, client, configured_client,
-    request_plan, runtime,
+    execute_raw_plan, request_plan, runtime,
 };
 use std::hint::black_box;
 use std::sync::Arc;
@@ -91,8 +91,7 @@ where
         b.to_async(runtime).iter_batched(
             &mut setup,
             |(client, plan)| async move {
-                let response = client
-                    .execute_plan_raw(plan)
+                let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("benchmark request");
                 black_box((response.status, response.body.len()));

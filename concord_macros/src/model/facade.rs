@@ -745,12 +745,6 @@ fn response_terminal_method(ep: &ResolvedEndpoint) -> &'static str {
         .unwrap_or_default();
     if summary.starts_with("Response: Stream<") {
         "execute_stream"
-    } else if summary.starts_with("Response: Records<") {
-        "execute_records"
-    } else if summary.starts_with("Response: Multipart<") {
-        "execute_multipart"
-    } else if summary.starts_with("Response: Sse<") {
-        "execute_sse"
     } else {
         "execute"
     }

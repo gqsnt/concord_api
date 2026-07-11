@@ -134,43 +134,13 @@ fn facade_ir_uses_stream_body_for_stream_request_endpoints() {
 }
 
 #[test]
-fn facade_ir_uses_record_body_for_record_request_endpoints() {
-    let resolved = crate::sema::analyze_tokens_for_test(quote! {
-        client RecordMeta {
-            base "https://example.com"
-        }
-
-        POST Upload(body: Records<LogEntry, NdJson>)
-            path ["upload"]
-            -> Json<String>
-    });
-    let ir = build_facade_ir(&resolved);
-
-    let endpoint = &ir.endpoints[0];
-    assert_eq!(
-        endpoint
-            .required_args
-            .iter()
-            .map(|arg| {
-                let ty = &arg.ty;
-                (arg.name.to_string(), type_text(ty))
-            })
-            .collect::<Vec<_>>(),
-        vec![(
-            "body".to_string(),
-            ":: concord_core :: advanced :: RecordBody < LogEntry >".to_string()
-        )]
-    );
-}
-
-#[test]
 fn facade_ir_uses_multipart_body_for_multipart_request_endpoints() {
     let resolved = crate::sema::analyze_tokens_for_test(quote! {
         client MultipartMeta {
             base "https://example.com"
         }
 
-        POST Upload(body: Multipart<RawResponsePart>)
+        POST Upload(body: Multipart<()>)
             path ["upload"]
             -> Json<String>
     });

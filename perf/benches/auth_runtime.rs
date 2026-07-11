@@ -4,18 +4,23 @@ use concord_core::advanced::{
     AuthPlacement, AuthPreparationReuse, AuthRequirement, CredentialContext, CredentialId,
     CredentialProvider, CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
     PreparedAuthCredential, RequestMeta, RetryBackoff, RetryConfig, RetryIdempotency,
-    apply_secret_credential,
+    Transport, apply_secret_credential,
 };
 use concord_core::internal::{
-    BodyPlan, RequestArgs, RequestPlan, ResolvedPolicy, RetrySetting, Replayability,
+    BodyPlan, ClientPlanContext, RequestArgs, RequestPlan, ResolvedPolicy, RetrySetting,
+    Replayability,
 };
-use concord_core::prelude::{AccessToken, ApiClient, ClientContext};
+use concord_core::prelude::{AccessToken, ApiClient, ClientContext, Endpoint, IntoEndpointPlan};
+use concord_core::{dangerous, error};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use http::{Method, StatusCode};
 use perf::support::{
-    MockResponse, MockTransport, auth_requirement, client, request_plan, runtime,
+    MockResponse, MockTransport, auth_requirement, client, execute_raw_plan, raw_plan_overrides,
+    request_plan, runtime,
 };
 use std::hint::black_box;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -78,7 +83,7 @@ where
             move || (client(success_transport()), setup_plan()),
             move |(client, plan)| {
                 async move {
-                    let response = client.execute_plan_raw(plan).await.expect("auth bench");
+                    let response = execute_raw_plan(&client, plan).await.expect("auth bench");
                     black_box((response.status, response.body.len()));
                 }
             },
@@ -104,8 +109,7 @@ fn bench_collision(c: &mut Criterion) {
                 (client(success_transport()), plan)
             },
             |(client, plan)| async move {
-                let err = client
-                    .execute_plan_raw(plan)
+                let err = execute_raw_plan(&client, plan)
                     .await
                     .expect_err("query auth collision should fail");
                 black_box(err.to_string().len());
@@ -128,8 +132,7 @@ fn bench_repeated_credential(c: &mut Criterion) {
                 (client(retry_transport()), plan)
             },
             |(client, plan)| async move {
-                let response = client
-                    .execute_plan_raw(plan)
+                let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("auth retry bench");
                 black_box((response.status, response.body.len()));
@@ -152,8 +155,7 @@ fn bench_cached_preparation(c: &mut Criterion) {
                 (slot_client(retry_transport()), plan)
             },
             |(client, plan)| async move {
-                let response = client
-                    .execute_plan_raw(plan)
+                let response = execute_slot_raw_plan(&client, plan)
                     .await
                     .expect("slot auth retry bench");
                 black_box((response.status, response.body.len()));
@@ -264,6 +266,61 @@ impl ClientContext for SlotAuthCx {
     }
 }
 
+struct SlotRawPlanEndpoint {
+    plan: RequestPlan,
+}
+
+impl Endpoint<SlotAuthCx> for SlotRawPlanEndpoint {
+    type Response = ();
+
+    fn execute<'a, T>(
+        _client: &'a ApiClient<SlotAuthCx, T>,
+        plan: RequestPlan,
+    ) -> Pin<Box<dyn Future<Output = Result<Self::Response, error::ApiClientError>> + Send + 'a>>
+    where
+        T: Transport + 'a,
+    {
+        let ctx = error::ErrorContext {
+            endpoint: plan.endpoint.meta.name,
+            method: plan.endpoint.meta.method,
+        };
+        Box::pin(async move {
+            Err(error::ApiClientError::PolicyViolation {
+                ctx,
+                msg: "SlotRawPlanEndpoint only supports execute_raw_response",
+            })
+        })
+    }
+}
+
+impl IntoEndpointPlan<SlotAuthCx> for SlotRawPlanEndpoint {
+    fn into_plan(
+        self,
+        _ctx: &ClientPlanContext<'_, SlotAuthCx>,
+    ) -> Result<RequestPlan, error::ApiClientError> {
+        raw_plan_overrides(&self.plan)?;
+        Ok(self.plan)
+    }
+}
+
+async fn execute_slot_raw_plan<T: Transport>(
+    client: &ApiClient<SlotAuthCx, T>,
+    plan: RequestPlan,
+) -> Result<dangerous::BuiltResponse, error::ApiClientError> {
+    let overrides = raw_plan_overrides(&plan)?;
+    let mut pending = client.request(SlotRawPlanEndpoint { plan });
+    if let Some(level) = overrides.debug_level {
+        pending = pending.debug_level(level);
+    }
+    if let Some(timeout) = overrides.timeout {
+        pending = pending.timeout(timeout);
+    }
+    pending
+        .attempt(overrides.attempt)
+        .execute_raw_response()
+        .await
+}
+
 fn slot_client(transport: MockTransport) -> ApiClient<SlotAuthCx, MockTransport> {
     let slot = Arc::new(CredentialSlot::new(BenchTokenProvider::default()));
     let mut client = ApiClient::with_transport((), SlotAuthVars { slot }, transport);
@@ -287,18 +344,19 @@ fn bench_cached_slot(c: &mut Criterion) {
                 (slot_client(success_transport()), plan)
             },
             |(client, plan)| async move {
-                let first = client
-                    .execute_plan_raw(plan)
+                let first = execute_slot_raw_plan(&client, plan)
                     .await
                     .expect("slot acquire request");
-                let second = client
-                    .execute_plan_raw(with_auth(
+                let second = execute_slot_raw_plan(
+                    &client,
+                    with_auth(
                         base_plan("CachedSlotAuth", "/perf/cached-slot-auth"),
                         AuthPlacement::Bearer,
                         "bearer",
-                    ))
-                    .await
-                    .expect("slot cached request");
+                    ),
+                )
+                .await
+                .expect("slot cached request");
                 black_box((first.status, second.status));
             },
             BatchSize::SmallInput,

@@ -1,11 +1,11 @@
 use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, ContentType, DebugSink, FormData, Mixed, MultipartBody, MultipartBodyErrorKind,
-    MultipartFormat, PostResponseHookContext, PreSendHookContext, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RuntimeHooks, StreamBody, Transport, TransportBody, TransportError,
-    TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
+    AuthPlacement, DebugSink, MultipartBody, MultipartBodyErrorKind, PostResponseHookContext,
+    PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
+    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks, StreamBody,
+    Transport, TransportBody, TransportError, TransportErrorKind, TransportRequest,
+    TransportRequestBody, TransportResponse,
 };
 use concord_core::internal::{
     BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
@@ -394,7 +394,7 @@ async fn collect_stream(
     Ok(Bytes::from(out))
 }
 
-fn multipart_request_plan<F: MultipartFormat>(
+fn multipart_request_plan(
     name: &'static str,
     method: Method,
     path: &'static str,
@@ -402,8 +402,8 @@ fn multipart_request_plan<F: MultipartFormat>(
     policy: ResolvedPolicy,
     body: MultipartBody,
 ) -> RequestPlan {
-    let content_type = body.content_type::<F>();
-    multipart_request_plan_with_content_type::<F>(
+    let content_type = body.content_type();
+    multipart_request_plan_with_content_type(
         name,
         method,
         path,
@@ -414,7 +414,7 @@ fn multipart_request_plan<F: MultipartFormat>(
     )
 }
 
-fn multipart_request_plan_with_content_type<F: MultipartFormat>(
+fn multipart_request_plan_with_content_type(
     name: &'static str,
     method: Method,
     path: &'static str,
@@ -444,7 +444,7 @@ fn multipart_request_plan_with_content_type<F: MultipartFormat>(
             },
             pagination: None,
         },
-        args: RequestArgs::with_multipart_body::<F>(body).expect("multipart body"),
+        args: RequestArgs::with_multipart_body(body).expect("multipart body"),
         overrides: RequestOverrides::default(),
         replayability: concord_core::internal::Replayability::NonReplayable,
     }
@@ -473,7 +473,7 @@ async fn multipart_form_data_request_reaches_transport_and_is_body_free_in_debug
     assert!(!rendered_body.contains("abc"));
 
     let decoded = client
-        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan(
             "MultipartFormData",
             Method::POST,
             "/multipart-form-data",
@@ -524,38 +524,6 @@ async fn multipart_form_data_request_reaches_transport_and_is_body_free_in_debug
 }
 
 #[tokio::test]
-async fn multipart_mixed_request_reaches_transport() -> Result<(), ApiClientError> {
-    let events = Arc::new(StdMutex::new(Vec::new()));
-    let transport = MultipartTransport::success(events, MockResponse::text(StatusCode::OK, "ok"));
-    let client =
-        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-    let body = MultipartBody::new().bytes("payload", Bytes::from_static(b"xyz"));
-
-    let _ = client
-        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<Mixed>(
-            "MultipartMixed",
-            Method::POST,
-            "/multipart-mixed",
-            false,
-            ResolvedPolicy::default(),
-            body,
-        ))
-        .await?;
-
-    assert_eq!(transport.send_count(), 1);
-    let captured = transport.captured();
-    assert_eq!(captured.len(), 1);
-    assert!(
-        captured[0]
-            .content_type
-            .as_deref()
-            .expect("content type")
-            .starts_with("multipart/mixed; boundary=")
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn multipart_stream_part_is_not_polled_before_auth_collision_validation() {
     let events = Arc::new(StdMutex::new(Vec::new()));
     let polled = Arc::new(AtomicBool::new(false));
@@ -584,7 +552,7 @@ async fn multipart_stream_part_is_not_polled_before_auth_collision_validation() 
     );
 
     let err = client
-        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan(
             "MultipartAuthCollision",
             Method::POST,
             "/multipart-auth-collision",
@@ -622,7 +590,7 @@ async fn multipart_stream_part_is_not_polled_before_rate_limit_acquisition()
     );
 
     let _ = client
-        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan(
             "MultipartOrdering",
             Method::POST,
             "/multipart-ordering",
@@ -674,7 +642,7 @@ async fn multipart_request_is_not_retried_or_replayed() {
     };
 
     let err = client
-        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan(
             "MultipartNoReplay",
             Method::GET,
             "/multipart-no-replay",
@@ -709,7 +677,7 @@ async fn multipart_request_stream_limit_applies() {
     );
 
     let err = client
-        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan::<FormData>(
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan(
             "MultipartRequestLimit",
             Method::POST,
             "/multipart-request-limit",
@@ -745,48 +713,11 @@ async fn multipart_invalid_part_metadata_is_rejected_body_safely() {
         )),
     );
 
-    let err = RequestArgs::with_multipart_body::<FormData>(body)
+    let err = RequestArgs::with_multipart_body(body)
         .expect_err("invalid metadata should fail before transport");
     assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartName);
     assert!(!err.to_string().contains("bad\r\nname"));
     assert!(!polled.load(Ordering::SeqCst));
-    let _ = client;
-}
-
-#[tokio::test]
-async fn multipart_request_content_type_validation_is_body_free() {
-    #[derive(Debug, Default, Clone, Copy)]
-    struct BadMultipartFormat;
-
-    impl ContentType for BadMultipartFormat {
-        const CONTENT_TYPE: &'static str = "bad\nvalue";
-    }
-
-    impl MultipartFormat for BadMultipartFormat {}
-
-    let events = Arc::new(StdMutex::new(Vec::new()));
-    let transport =
-        MultipartTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
-    let client =
-        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-    let polled = Arc::new(AtomicBool::new(false));
-    let body = MultipartBody::new().stream(
-        "upload",
-        StreamBody::from_byte_stream(PollFlagStream::new(
-            polled.clone(),
-            Bytes::from_static(b"chunk"),
-        )),
-    );
-
-    let err = RequestArgs::with_multipart_body::<BadMultipartFormat>(body)
-        .expect_err("invalid multipart content type should fail before body encoding");
-    assert_eq!(
-        err.kind(),
-        MultipartBodyErrorKind::InvalidMultipartContentType
-    );
-    assert_eq!(err.to_string(), "multipart request content type is invalid");
-    assert!(!polled.load(Ordering::SeqCst));
-    assert_eq!(transport.send_count(), 0);
     let _ = client;
 }
 
@@ -800,8 +731,8 @@ async fn multipart_boundary_mismatch_is_rejected_before_transport() {
 
     let plan_body = MultipartBody::new().text("title", "one");
     let args_body = MultipartBody::new().text("title", "two");
-    let args = RequestArgs::with_multipart_body::<FormData>(args_body)
-        .expect("multipart body args should be valid");
+    let args =
+        RequestArgs::with_multipart_body(args_body).expect("multipart body args should be valid");
     let err = client
         .execute_plan::<concord_core::prelude::Text<String>>(RequestPlan {
             endpoint: EndpointPlan {
@@ -818,7 +749,7 @@ async fn multipart_boundary_mismatch_is_rejected_before_transport() {
                 ),
                 policy: ResolvedPolicy::default(),
                 body: BodyPlan::Multipart {
-                    content_type: plan_body.content_type::<FormData>(),
+                    content_type: plan_body.content_type(),
                     format: concord_core::internal::Format::Text,
                 },
                 response: ResponsePlan {

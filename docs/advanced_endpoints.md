@@ -58,25 +58,18 @@ The generated advanced surfaces are family-specific and keep runtime values free
 | `Text<String>` | yes | yes | `String` | yes | yes | no unless explicitly page-shaped |
 | custom buffered codec | yes | yes | decoded codec value | yes | yes | yes, if page-shaped |
 | `Stream<M>` | yes | yes | `StreamBody` / `StreamResponse<M>` | no | no | no |
-| `Records<T, F>` | yes | yes | `RecordBody<T>` / `RecordStream<T>` | no | no | no |
-| `Multipart<T, F>` | yes | yes | `MultipartBody` / `MultipartStream<T>` | no | no | no |
-| `Sse<T, C>` | no | yes | `SseStream<T>` | no | no | no |
+| `Multipart<T>` | yes | no | `MultipartBody` | no | no | no |
 | `NoContent` | no | yes | `()` | no body | no | no |
 | `Bytes` | no | yes | `bytes::Bytes` | yes | yes | no |
 
 - `ContentType` is the shared wire-content trait for buffered codec associated content markers and reserved endpoint I/O media markers.
-- Built-in markers include `JsonContentType`, `TextContentType`, `OctetStream`, `NdJson`, `FormData`, `Mixed`, and `EventStream`.
+- Built-in markers include `JsonContentType`, `TextContentType`, `OctetStream`, and `FormData`.
 - `Json<T>` is the ordinary buffered JSON codec. `Text<String>` is the ordinary buffered text codec.
 - `Stream<M>` uses `StreamBody` for request bodies and `StreamResponse<M>` for responses.
-- `Records<T, F>` uses `RecordBody<T>` for requests and `RecordStream<T>` for responses. Supported formats include `NdJson` and `Csv<Cfg>`; the built-in CSV configs are `CsvCommaDelim`, `CsvSemicolonDelim`, and `CsvTabDelim`.
-- Record streams can be consumed one record at a time with `next_record()`, or in explicit bounded batches with `next_batch(n)`. The caller chooses `n` at the usage site. Each batch contains up to `n` decoded records, `next_batch(n)` never returns an empty batch, `next_batch(0)` returns `InvalidParam`, batching does not change the endpoint contract, batching does not buffer the full response body, batching does not change transport chunking, and batched record consumption is useful for database bulk inserts, queue publish batches, file/indexing batches, or other sink-specific batching.
-- `Multipart<T>` defaults to `Multipart<T, FormData>` and uses `MultipartBody` for requests and `MultipartStream<T>` for responses. Explicit `Multipart<T, F>` remains supported, including `Mixed`.
-- `Sse<T>` defaults to `Sse<T, JsonSse>` and uses `SseStream<T>` for responses; SSE is response-only and `JsonSse` decodes event data, not the HTTP wire content type. Explicit `Sse<T, C>` remains supported.
+- `Multipart<T>` uses `MultipartBody` for request-side `multipart/form-data` construction through Concord's temporary streaming encoder; it is non-replayable.
 - `Bytes` is response-only, returns `bytes::Bytes`, uses the ordinary bounded buffered response path that materializes payloads in memory, and omits `Accept`; request-side `Bytes` remains invalid. Use `Stream<OctetStream>` for unbounded byte transfer.
 - `NoContent` is response-only, returns `()`, and omits `Accept`; request-side `NoContent` remains invalid. The core `NoContent` buffered codec intentionally omits request and response content headers.
-- Each family has a dedicated helper on pending requests: `.execute_stream()`, `.execute_records()`, `.execute_multipart()`, or `.execute_sse()`.
-- `.execute()` also routes through the family-specific execution path for these endpoint I/O shapes.
+- `Stream<M>` has the dedicated `.execute_stream()` helper; `.execute()` also returns its stream response.
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` are the codec-level override points for buffered codecs. `content_type()` and `accept()` are the convenience forms.
-- Retry policies remain available for ordinary HTTP endpoints, including buffered responses and supported stream/records/multipart/SSE response endpoints. Stream-like request bodies are not automatically replayed by retry unless a future replayable-body contract is introduced.
-- Pagination remains buffered-response-only and is rejected for `Stream`, `Records`, `Multipart`, `Sse`, and `NoContent` endpoint responses. `Bytes` rejects pagination.
-- Request-side SSE remains unsupported.
+- Retry policies remain available for ordinary HTTP endpoints. Stream-like request bodies are not automatically replayed by retry unless a future replayable-body contract is introduced.
+- Pagination remains buffered-response-only and is rejected for `Stream` and `NoContent` endpoint responses. `Bytes` rejects pagination.

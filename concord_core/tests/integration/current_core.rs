@@ -18,38 +18,28 @@ mod error_taxonomy;
 mod errors;
 #[path = "current_core/multipart.rs"]
 mod multipart;
-#[path = "current_core/multipart_response.rs"]
-mod multipart_response;
 #[path = "current_core/output_model.rs"]
 mod output_model;
 #[path = "current_core/pagination.rs"]
 mod pagination;
-#[path = "current_core/pending_request_streaming.rs"]
-mod pending_request_streaming;
 #[path = "current_core/public_api.rs"]
 mod public_api;
 #[path = "current_core/rate_limit.rs"]
 mod rate_limit;
 #[path = "current_core/rate_limit_runtime.rs"]
 mod rate_limit_runtime;
-#[path = "current_core/records.rs"]
-mod records;
 #[path = "current_core/redaction_matrix.rs"]
 mod redaction_matrix;
 #[path = "current_core/release_gate.rs"]
 mod release_gate;
 #[path = "current_core/request_entities.rs"]
 mod request_entities;
-#[path = "current_core/response_entities.rs"]
-mod response_entities;
 #[path = "current_core/retry_runtime.rs"]
 mod retry_runtime;
 #[path = "current_core/runtime_config.rs"]
 mod runtime_config;
 #[path = "current_core/runtime_order.rs"]
 mod runtime_order;
-#[path = "current_core/sse.rs"]
-mod sse;
 #[path = "current_core/stream_response.rs"]
 mod stream_response;
 #[path = "current_core/stream_runtime.rs"]

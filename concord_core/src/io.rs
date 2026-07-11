@@ -2,10 +2,7 @@ use crate::client::{ApiClient, ClientContext};
 use crate::codec::{BodyCodec, ContentType, DecodeContext, EncodeContext, ResponseCodec};
 use crate::endpoint::{BodyPlan, RequestArgs, RequestPlan, ResponsePlan};
 use crate::error::{ApiClientError, ErrorContext};
-use crate::media::EventStream;
-use crate::multipart::{MultipartBody, MultipartFormat};
-use crate::record::{RecordBody, RecordFormat};
-use crate::sse::SseCodec;
+use crate::multipart::MultipartBody;
 use crate::stream_body::StreamBody;
 use crate::stream_response::StreamResponse;
 use crate::transport::{BuiltResponse, DecodedResponse};
@@ -119,39 +116,9 @@ where
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct RecordRequest<Item, F>(PhantomData<fn() -> (Item, F)>);
+pub struct MultipartRequest;
 
-impl<Item, F> RequestEntity for RecordRequest<Item, F>
-where
-    Item: Send + 'static,
-    F: RecordFormat<Item>,
-{
-    type Input = RecordBody<Item>;
-
-    fn prepare(
-        input: Self::Input,
-        ctx: ErrorContext,
-    ) -> Result<PreparedRequestEntity, ApiClientError> {
-        let content_type = F::try_header_value()
-            .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?;
-        Ok(PreparedRequestEntity {
-            body_plan: BodyPlan::Records {
-                content_type,
-                format: crate::codec::Format::Text,
-            },
-            args: RequestArgs::with_record_body::<Item, F>(input),
-            replayability: Replayability::NonReplayable,
-        })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct MultipartRequest<F>(PhantomData<fn() -> F>);
-
-impl<F> RequestEntity for MultipartRequest<F>
-where
-    F: MultipartFormat,
-{
+impl RequestEntity for MultipartRequest {
     type Input = MultipartBody;
 
     fn prepare(
@@ -159,9 +126,9 @@ where
         ctx: ErrorContext,
     ) -> Result<PreparedRequestEntity, ApiClientError> {
         let content_type = input
-            .try_content_type::<F>()
+            .try_content_type()
             .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?;
-        let args = RequestArgs::with_multipart_body::<F>(input)
+        let args = RequestArgs::with_multipart_body(input)
             .map_err(|source| ApiClientError::codec_error(ctx.clone(), source))?;
         Ok(PreparedRequestEntity {
             body_plan: BodyPlan::Multipart {
@@ -403,126 +370,6 @@ where
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct RecordResponse<Item, F>(PhantomData<fn() -> (Item, F)>);
-
-impl<Item, F> ResponseEntity for RecordResponse<Item, F>
-where
-    Item: Send + 'static,
-    F: RecordFormat<Item>,
-{
-    type Output = crate::record::RecordStream<Item>;
-
-    fn plan(ctx: ErrorContext) -> Result<ResponseEntityPlan, ApiClientError> {
-        Ok(ResponseEntityPlan {
-            response_plan: ResponsePlan {
-                accept: Some(
-                    F::try_header_value()
-                        .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
-                ),
-                no_content: false,
-                format: crate::codec::Format::Text,
-            },
-            capabilities: ResponseEntityCapabilities {
-                supports_pagination: false,
-                is_streaming: true,
-                is_no_content: false,
-            },
-        })
-    }
-
-    fn execute<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
-    where
-        Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
-    {
-        Box::pin(async move { client.execute_record_response::<Item, F>(plan).await })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct MultipartResponse<Part, F>(PhantomData<fn() -> (Part, F)>);
-
-impl<Part, F> ResponseEntity for MultipartResponse<Part, F>
-where
-    Part: crate::multipart_response::MultipartDecodePart<F>,
-    F: MultipartFormat,
-{
-    type Output = crate::multipart_response::MultipartStream<Part>;
-
-    fn plan(ctx: ErrorContext) -> Result<ResponseEntityPlan, ApiClientError> {
-        Ok(ResponseEntityPlan {
-            response_plan: ResponsePlan {
-                accept: Some(
-                    F::try_header_value()
-                        .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
-                ),
-                no_content: false,
-                format: crate::codec::Format::Text,
-            },
-            capabilities: ResponseEntityCapabilities {
-                supports_pagination: false,
-                is_streaming: true,
-                is_no_content: false,
-            },
-        })
-    }
-
-    fn execute<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
-    where
-        Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
-    {
-        Box::pin(async move { client.execute_multipart_response::<Part, F>(plan).await })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct SseResponse<Event, C>(PhantomData<fn() -> (Event, C)>);
-
-impl<Event, C> ResponseEntity for SseResponse<Event, C>
-where
-    Event: Send + 'static,
-    C: SseCodec<Event>,
-{
-    type Output = crate::sse::SseStream<Event>;
-
-    fn plan(ctx: ErrorContext) -> Result<ResponseEntityPlan, ApiClientError> {
-        Ok(ResponseEntityPlan {
-            response_plan: ResponsePlan {
-                accept: Some(
-                    EventStream::try_header_value()
-                        .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
-                ),
-                no_content: false,
-                format: crate::codec::Format::Text,
-            },
-            capabilities: ResponseEntityCapabilities {
-                supports_pagination: false,
-                is_streaming: true,
-                is_no_content: false,
-            },
-        })
-    }
-
-    fn execute<'a, Cx, T>(
-        client: &'a ApiClient<Cx, T>,
-        plan: RequestPlan,
-    ) -> Pin<Box<dyn Future<Output = Result<Self::Output, ApiClientError>> + Send + 'a>>
-    where
-        Cx: ClientContext,
-        T: crate::transport::Transport + 'a,
-    {
-        Box::pin(async move { client.execute_sse_response::<Event, C>(plan).await })
-    }
-}
-
 async fn execute_buffered_codec_response<Cx, T, C>(
     client: &ApiClient<Cx, T>,
     plan: RequestPlan,
@@ -708,21 +555,15 @@ mod tests {
     use super::*;
     use crate::codec::text::Text;
     use crate::codec::{BodyCodec, ContentType, EncodeContext, EncodedBody, Format};
-    use crate::media::{EventStream, OctetStream, TextContentType};
-    use crate::multipart::{FormData, Mixed, MultipartBody};
-    use crate::multipart_response::RawResponsePart;
-    use crate::record::NdJson;
+    use crate::media::{OctetStream, TextContentType};
+    use crate::multipart::MultipartBody;
     use crate::transport::Transport;
     use http::{HeaderMap, Method, StatusCode};
+    #[cfg(feature = "json")]
     use serde::{Deserialize, Serialize};
 
     #[cfg(feature = "json")]
     use crate::media::JsonContentType;
-
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-    struct Payload {
-        id: u32,
-    }
 
     fn ctx() -> ErrorContext {
         ErrorContext {
@@ -945,17 +786,8 @@ mod tests {
     }
 
     #[test]
-    fn record_and_multipart_requests_prepare_stream_bodies() {
-        let record = RecordRequest::<Payload, NdJson>::prepare(
-            RecordBody::from_iter(vec![Payload { id: 1 }]),
-            ctx(),
-        )
-        .expect("record request");
-        assert!(matches!(record.body_plan, BodyPlan::Records { .. }));
-        assert!(record.args.body.is_stream());
-        assert_eq!(record.replayability, Replayability::NonReplayable);
-
-        let multipart = MultipartRequest::<FormData>::prepare(
+    fn multipart_request_prepares_stream_body() {
+        let multipart = MultipartRequest::prepare(
             MultipartBody::new().bytes("payload", Bytes::from_static(b"abc")),
             ctx(),
         )
@@ -1034,83 +866,6 @@ mod tests {
             out.extend_from_slice(&chunk);
         }
         assert_eq!(Bytes::from(out), Bytes::from_static(b"abcdef"));
-    }
-
-    #[tokio::test]
-    async fn record_response_adapter_executes_through_existing_record_path() {
-        let plan = RecordResponse::<Payload, NdJson>::plan(ctx()).expect("record response");
-        let transport = transport(StaticResponse {
-            status: StatusCode::OK,
-            headers: response_headers(Some(NdJson::CONTENT_TYPE)),
-            chunks: vec![Bytes::from_static(b"{\"id\":1}\n{\"id\":2}\n")],
-            content_length: None,
-        });
-        let client = ApiClient::<TestCx, _>::with_transport((), (), transport);
-        let mut response =
-            RecordResponse::<Payload, NdJson>::execute(&client, request_plan(plan.response_plan))
-                .await
-                .expect("record execute");
-        let mut out = Vec::new();
-        while let Some(item) = response.next_record().await.expect("record item") {
-            out.push(item.id);
-        }
-        assert_eq!(out, vec![1, 2]);
-    }
-
-    #[tokio::test]
-    async fn multipart_response_adapter_executes_through_existing_multipart_path() {
-        let plan =
-            MultipartResponse::<RawResponsePart, Mixed>::plan(ctx()).expect("multipart response");
-        let boundary = "concord-test-boundary";
-        let body = Bytes::from_static(
-            b"--concord-test-boundary\r\ncontent-type: text/plain\r\n\r\nhello\r\n--concord-test-boundary--\r\n",
-        );
-        let transport = transport(StaticResponse {
-            status: StatusCode::OK,
-            headers: response_headers(Some(&format!("multipart/mixed; boundary={boundary}"))),
-            chunks: vec![body],
-            content_length: None,
-        });
-        let client = ApiClient::<TestCx, _>::with_transport((), (), transport);
-        let mut response = MultipartResponse::<RawResponsePart, Mixed>::execute(
-            &client,
-            request_plan(plan.response_plan),
-        )
-        .await
-        .expect("multipart execute");
-        let part = response
-            .next_part()
-            .await
-            .expect("multipart part result")
-            .expect("multipart part");
-        assert_eq!(
-            part.content_type().and_then(|value| value.to_str().ok()),
-            Some("text/plain")
-        );
-    }
-
-    #[tokio::test]
-    async fn sse_response_adapter_executes_through_existing_sse_path() {
-        let plan = SseResponse::<Payload, crate::sse::JsonSse>::plan(ctx()).expect("sse");
-        let transport = transport(StaticResponse {
-            status: StatusCode::OK,
-            headers: response_headers(Some(EventStream::CONTENT_TYPE)),
-            chunks: vec![Bytes::from_static(b"data: {\"id\":1}\n\n")],
-            content_length: None,
-        });
-        let client = ApiClient::<TestCx, _>::with_transport((), (), transport);
-        let mut response = SseResponse::<Payload, crate::sse::JsonSse>::execute(
-            &client,
-            request_plan(plan.response_plan),
-        )
-        .await
-        .expect("sse execute");
-        let event = response
-            .next_event()
-            .await
-            .expect("sse event result")
-            .expect("sse event");
-        assert_eq!(event.data.id, 1);
     }
 
     #[cfg(feature = "json")]
@@ -1259,23 +1014,5 @@ mod tests {
             Some(OctetStream::try_header_value().expect("octet-stream"))
         );
         assert_eq!(plan.response_plan.format, crate::codec::Format::Binary);
-    }
-
-    #[test]
-    fn sse_response_reports_streaming_capabilities() {
-        let plan = SseResponse::<Payload, crate::sse::JsonSse>::plan(ctx()).expect("sse");
-        assert_eq!(
-            plan.capabilities,
-            ResponseEntityCapabilities {
-                supports_pagination: false,
-                is_streaming: true,
-                is_no_content: false,
-            }
-        );
-        assert_eq!(
-            plan.response_plan.accept,
-            Some(EventStream::try_header_value().expect("event stream"))
-        );
-        assert_eq!(plan.response_plan.format, crate::codec::Format::Text);
     }
 }

@@ -5,7 +5,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-concord_core = { path = "../concord_core", version = "0.1.0" }
+concord_core = { path = "../concord_core", version = "0.1.0", features = ["dangerous-raw-response"] }
 bytes = "1.12"
 http = "1.4"
 tokio = { version = "1.52", features = ["rt", "time", "io-util", "sync"] }

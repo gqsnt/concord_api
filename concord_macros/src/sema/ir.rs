@@ -119,26 +119,24 @@ pub struct BufferedCodecIo {
 
 /// Syntax-level request body classification used while deriving entity metadata.
 /// Runtime planning and execution must use [`RequestEntityPlanIr`].
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum ResolvedRequestBodyIo {
     None,
     BufferedCodec(BufferedCodecIo),
     RawStream { media_ty: Type },
-    Records { item_ty: Type, format_ty: Type },
-    Multipart { value_ty: Type, format_ty: Type },
+    Multipart { value_ty: Type },
 }
 
 /// Syntax-level response body classification used while deriving entity metadata.
 /// Runtime planning and execution must use [`ResponseEntityPlanIr`].
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum ResolvedResponseBodyIo {
     BufferedCodec(BufferedCodecIo),
     BufferedBytes,
     NoContent,
     RawStream { media_ty: Type },
-    Records { item_ty: Type, format_ty: Type },
-    Multipart { part_ty: Type, format_ty: Type },
-    Sse { event_ty: Type, codec_ty: Type },
 }
 
 #[derive(Debug)]

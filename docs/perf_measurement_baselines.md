@@ -118,17 +118,22 @@ Decision: defer. The retry scenario improved, but `many_query_params/32` regress
 the single-attempt `minimal_get` path did not improve. The decision rule therefore is not
 satisfied.
 
-## PR 13: CSV Footprint
+## Historical PR 13: CSV Footprint
 
 Tooling: historical report command, now retired.
 
-The no-default feature tree currently includes both `csv` and `csv-core`.
+The historical no-default dependency tree contained both `csv` and `csv-core` for CSV
+record support. The historical decision considered feature-gating that support to
+reduce the dependency tree. PR-01 instead removed CSV record support and both
+dependencies completely.
 
 | measurement | value |
 | --- | ---: |
 | no-default unique dependency lines | 68 |
-| no-default includes `csv` | yes |
-| no-default includes `csv-core` | yes |
+| historical no-default includes `csv` | yes |
+| historical no-default includes `csv-core` | yes |
+| current no-default includes `csv` | no |
+| current no-default includes `csv-core` | no |
 | `cargo check -p concord_core --no-default-features` | 5.09s |
 | `cargo check -p concord_core --no-default-features --features json` | 6.80s |
 | `cargo check -p concord_core --all-features` | 6.07s |
@@ -136,9 +141,10 @@ The no-default feature tree currently includes both `csv` and `csv-core`.
 Decision rule: proceed if gating meaningfully reduces the no-default compile time or
 dependency count. Otherwise document-and-accept.
 
-Decision: proceed on dependency footprint. `csv` and `csv-core` are present in the
-no-default tree, so feature-gating them would reduce the no-default dependency set. A
-true compile-time before/after remains for PR 13 implementation validation.
+Historical decision: consider feature-gating CSV record support. PR-01 removed the
+support and dependencies completely, so the current no-default tree contains neither
+dependency and no future feature-gating action remains. A true compile-time
+before/after remains historical PR-13 implementation validation.
 
 ## Raw Outputs
 

@@ -69,10 +69,6 @@ impl<M> StreamResponse<M> {
     pub fn into_body(self) -> Box<dyn TransportBody> {
         self.resp.body
     }
-
-    pub(crate) fn into_transport_response(self) -> TransportResponse {
-        self.resp
-    }
 }
 
 impl<M: ContentType> StreamResponse<M> {

@@ -16,11 +16,8 @@ Current marker types:
 
 - `JsonContentType`
 - `TextContentType`
-- `EventStream`
 - `OctetStream`
-- `NdJson`
 - `FormData`
-- `Mixed`
 
 Custom codecs implement the public codec traits and can be used in endpoint signatures or response lines.
 

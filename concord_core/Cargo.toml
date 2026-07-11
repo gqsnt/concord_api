@@ -9,8 +9,6 @@ reqwest = { workspace = true, optional = true, features = ["default-tls", "http2
 http.workspace = true
 bytes.workspace = true
 memchr.workspace = true
-csv = { workspace = true, optional = true }
-csv-core = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 base64.workspace = true
@@ -27,10 +25,9 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 
 
 [features]
-default = ["rate-limit-governor", "records-csv", "transport-reqwest"]
+default = ["rate-limit-governor", "transport-reqwest"]
 transport-reqwest = ["dep:reqwest"]
 json = []
-records-csv = ["dep:csv", "dep:csv-core"]
 gzip = ["transport-reqwest", "reqwest/gzip"]
 brotli = ["transport-reqwest", "reqwest/brotli"]
 deflate = ["transport-reqwest", "reqwest/deflate"]

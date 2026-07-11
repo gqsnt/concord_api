@@ -363,17 +363,6 @@ fn generated_rustdoc_includes_streaming_terminal_methods() {
             path ["streamed"]
             -> Stream<OctetStream>
 
-        GET Listed
-            path ["listed"]
-            -> Records<Item, NdJson>
-
-        GET Multiparted
-            path ["multiparted"]
-            -> Multipart<Part, Mixed>
-
-        GET Ssed
-            path ["ssed"]
-            -> Sse<Event>
     });
 
     assert_contains_all(
@@ -381,12 +370,6 @@ fn generated_rustdoc_includes_streaming_terminal_methods() {
         &[
             "#[doc=\"- Terminal: `.execute_stream().await` returns `::concord_core::advanced::StreamResponse<OctetStream>`\"]",
             "#[doc=\"- Metadata terminal: `.response().await` is unavailable; use `.execute_stream().await`.\"]",
-            "#[doc=\"- Terminal: `.execute_records().await` returns `::concord_core::advanced::RecordStream<Item>`\"]",
-            "#[doc=\"- Metadata terminal: `.response().await` is unavailable; use `.execute_records().await`.\"]",
-            "#[doc=\"- Terminal: `.execute_multipart().await` returns `::concord_core::advanced::MultipartStream<Part>`\"]",
-            "#[doc=\"- Metadata terminal: `.response().await` is unavailable; use `.execute_multipart().await`.\"]",
-            "#[doc=\"- Terminal: `.execute_sse().await` returns `::concord_core::advanced::SseStream<Event>`\"]",
-            "#[doc=\"- Metadata terminal: `.response().await` is unavailable; use `.execute_sse().await`.\"]",
         ],
     );
 }

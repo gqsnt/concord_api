@@ -1,5 +1,0 @@
-error: `Sse` is only valid as an endpoint response
- --> tests/trybuild/fail/codegen_contract/reserved_sse_request_invalid.rs:6:21
-  |
-6 |     POST Send(body: Sse<String>)
-  |                     ^^^^^^^^^^^

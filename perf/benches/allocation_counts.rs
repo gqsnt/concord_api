@@ -16,7 +16,7 @@ use futures_util::StreamExt;
 use http::{Method, StatusCode, header::HeaderValue};
 use perf::support::{
     AllocationSnapshot, CountingAllocator, EmptyBody, InMemoryAsyncRead, MockResponse,
-    MockTransport, auth_requirement, client, context, filled_bytes, request_plan,
+    MockTransport, auth_requirement, client, context, execute_raw_plan, filled_bytes, request_plan,
     reset_allocation_counts, runtime, snapshot_allocation_counts,
 };
 use std::alloc::System;
@@ -149,8 +149,7 @@ fn run_attempt_pipeline(rt: &Runtime) {
         |client| {
             Box::pin(async move {
                 let plan = base_plan("MinimalGet", "/perf/minimal-get");
-                let response = client
-                    .execute_plan_raw(plan)
+                let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report request");
                 black_box((response.status, response.body.len()));
@@ -165,8 +164,7 @@ fn run_attempt_pipeline(rt: &Runtime) {
         |client| {
             Box::pin(async move {
                 let plan = with_retry(base_plan("RetryOnce", "/perf/retry-once"), 2);
-                let response = client
-                    .execute_plan_raw(plan)
+                let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report retry");
                 black_box((response.status, response.body.len()));
@@ -183,8 +181,7 @@ fn run_auth_runtime(rt: &Runtime) {
         |client| {
             Box::pin(async move {
                 let plan = with_bearer_auth(base_plan("BearerAuth", "/perf/bearer-auth"));
-                let response = client
-                    .execute_plan_raw(plan)
+                let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report bearer auth");
                 black_box((response.status, response.body.len()));
@@ -230,8 +227,7 @@ fn run_redaction_hooks(rt: &Runtime) {
                     RequestArgs::empty(),
                     Replayability::Replayable,
                 );
-                let response = client
-                    .execute_plan_raw(plan)
+                let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report redaction hooks");
                 black_box((response.status, response.body.len()));
@@ -317,8 +313,7 @@ fn run_streaming_upload(rt: &Runtime) {
                     RequestArgs::with_stream_body(stream_body),
                     Replayability::NonReplayable,
                 );
-                let response = client
-                    .execute_plan_raw(plan)
+                let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report streaming upload");
                 black_box((response.status, response.body.len()));

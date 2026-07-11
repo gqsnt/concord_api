@@ -7,11 +7,9 @@ pub mod error;
 mod io;
 mod media;
 mod multipart;
-mod multipart_response;
 mod pagination;
 mod policy;
 mod rate_limit;
-mod record;
 mod redaction;
 mod request;
 mod response_classify;
@@ -20,7 +18,6 @@ pub mod runtime;
 mod runtime_hooks;
 mod runtime_state;
 mod secret;
-mod sse;
 mod stream_body;
 mod stream_response;
 mod timeout;
@@ -42,17 +39,14 @@ pub mod __private {
         RequestPlanView, ResolvedRoute, ResponsePlan, ResponseTerminalEndpoint, ReusableEndpoint,
     };
     pub use crate::io::{
-        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
-        NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,
-        RawStreamResponse, RecordRequest, RecordResponse, Replayability, RequestEntity,
-        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, ResponseEntityWithMeta,
-        SseResponse,
+        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, NoContentResponse,
+        NoRequestBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse, Replayability,
+        RequestEntity, ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
+        ResponseEntityWithMeta,
     };
     pub use crate::multipart::{
-        FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
-        MultipartFormat, RawPart,
+        FormData, MultipartBody, MultipartBodyError, MultipartBodyErrorKind, RawPart,
     };
-    pub use crate::multipart_response::{MultipartDecodePart, MultipartStream, RawResponsePart};
     #[doc(hidden)]
     pub use crate::pagination::{
         Control, CursorPagination, EndpointPagination, HasNextCursor, OffsetLimitPagination,
@@ -61,13 +55,7 @@ pub mod __private {
         ProgressKey,
     };
     pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
-    #[cfg(feature = "records-csv")]
-    pub use crate::record::{Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim};
-    pub use crate::record::{
-        NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
-    };
     pub use crate::retry::RetrySetting;
-    pub use crate::sse::{JsonSse, SseCodec, SseEvent, SseRawEvent, SseStream};
 }
 #[doc(hidden)]
 #[deprecated(note = "use concord_core::__private for generated-code internals")]
@@ -121,19 +109,16 @@ pub mod advanced {
     pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
     pub use crate::error::{ErrorContext, FxError, PaginationError, PaginationErrorKind};
     pub use crate::io::{
-        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, MultipartResponse,
-        NoContentResponse, NoRequestBody, PreparedRequestEntity, RawStreamRequest,
-        RawStreamResponse, RecordRequest, RecordResponse, Replayability, RequestEntity,
-        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, SseResponse,
+        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, NoContentResponse,
+        NoRequestBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse, Replayability,
+        RequestEntity, ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
     };
     pub use crate::media::{
-        EventStream, Jpeg, JsonContentType, Mp3, Mp4, OctetStream, Pdf, Png, TextContentType, Zip,
+        Jpeg, JsonContentType, Mp3, Mp4, OctetStream, Pdf, Png, TextContentType, Zip,
     };
     pub use crate::multipart::{
-        FormData, Mixed, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
-        MultipartFormat, RawPart,
+        FormData, MultipartBody, MultipartBodyError, MultipartBodyErrorKind, RawPart,
     };
-    pub use crate::multipart_response::{MultipartDecodePart, MultipartStream, RawResponsePart};
     pub use crate::pagination::{
         Control, CursorPagination, EndpointPagination, HasNextCursor, OffsetLimitPagination,
         PageAdvance, PageApply, PageDecision, PageItems, PagedPagination, PaginateBinding,
@@ -148,11 +133,6 @@ pub mod advanced {
         RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting, RateLimitWindow,
         RateLimiter, parse_retry_after,
     };
-    #[cfg(feature = "records-csv")]
-    pub use crate::record::{Csv, CsvCommaDelim, CsvConfig, CsvSemicolonDelim, CsvTabDelim};
-    pub use crate::record::{
-        NdJson, RecordBody, RecordDecoder, RecordEncoder, RecordFormat, RecordStream,
-    };
     pub use crate::retry::{
         ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,
         RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy,
@@ -164,7 +144,6 @@ pub mod advanced {
         TransportErrorHookContext,
     };
     pub use crate::runtime_state::ClientRuntimeState;
-    pub use crate::sse::{JsonSse, SseCodec, SseEvent, SseRawEvent, SseStream};
     pub use crate::stream_body::{BodySizeHint, StreamBody, StreamBodyError};
     pub use crate::stream_response::StreamResponse;
     #[cfg(feature = "transport-reqwest")]

@@ -52,31 +52,15 @@ fn examples_cover_v1_usage_surface() {
         "Text<",
         "Text<String>",
         "Stream<OctetStream>",
-        "Records<",
-        "Records<LogEntry, Csv<CsvCommaDelim>>",
         "Multipart<",
-        "Multipart<RawResponsePart, Mixed>",
-        "Sse<",
-        "Sse<Event, JsonSse>",
         "NoContent",
         "BytesResponse",
         "-> Bytes",
         "bytes::Bytes",
         "execute_stream",
-        "execute_records",
-        "execute_multipart",
-        "execute_sse",
-        "next_batch",
+        "execute_stream",
         "StreamBody",
-        "RecordBody",
         "MultipartBody",
-        "SseStream",
-        "CsvCommaDelim",
-        "CsvSemicolonDelim",
-        "CsvTabDelim",
-        "Mixed",
-        "JsonSse",
-        "next_batch(",
     ] {
         assert!(
             endpoint_io.contains(anchor),
@@ -85,19 +69,7 @@ fn examples_cover_v1_usage_surface() {
     }
 
     let endpoint_docs = read_repo_file("docs/advanced_endpoints.md");
-    for anchor in [
-        "ContentType",
-        "Stream<",
-        "Records<",
-        "Csv<Cfg>",
-        "Multipart<",
-        "Sse<",
-        "execute_stream",
-        "execute_records",
-        "execute_multipart",
-        "execute_sse",
-        "next_batch",
-    ] {
+    for anchor in ["ContentType", "Stream<", "Multipart<", "execute_stream"] {
         assert!(
             endpoint_docs.contains(anchor),
             "advanced endpoint docs should contain `{anchor}`"
@@ -105,7 +77,7 @@ fn examples_cover_v1_usage_surface() {
     }
 
     let customization = read_repo_file("docs/customization.md");
-    for anchor in ["try_content_type", "try_accept", "NoContent", "text/csv"] {
+    for anchor in ["try_content_type", "try_accept", "NoContent"] {
         assert!(
             customization.contains(anchor),
             "customization docs should contain `{anchor}`"

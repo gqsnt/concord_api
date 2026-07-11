@@ -7,7 +7,7 @@ use concord_core::internal::{BodyPlan, RequestArgs, RequestOverrides, RequestPla
 use concord_core::prelude::{ApiClientError, DebugLevel};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use http::{HeaderName, HeaderValue, Method, StatusCode};
-use perf::support::{MockResponse, MockTransport, client, configured_client, request_plan, runtime};
+use perf::support::{MockResponse, MockTransport, client, configured_client, execute_raw_plan, request_plan, runtime};
 use std::future::Future;
 use std::hint::black_box;
 use std::pin::Pin;
@@ -187,8 +187,7 @@ fn bench_case(c: &mut Criterion, name: &str, query: usize, req_headers: usize, r
                 (client, plan, sink)
             },
             |(client, plan, sink)| async move {
-                let response = client
-                    .execute_plan_raw(plan)
+                let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("redaction hooks bench");
                 black_box((response.status, sink.count.load(Ordering::Relaxed)));

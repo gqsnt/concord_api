@@ -455,7 +455,7 @@ fn mismatched_request_plan(
         BodyPlan::None | BodyPlan::Encoded { .. } => {
             concord_core::internal::Replayability::Replayable
         }
-        BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. } | BodyPlan::Records { .. } => {
+        BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. } => {
             concord_core::internal::Replayability::NonReplayable
         }
     };

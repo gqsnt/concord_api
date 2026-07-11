@@ -5,13 +5,10 @@ use crate::endpoint::{
     Endpoint, IntoEndpointPlan, PaginatedEndpoint, ResponseTerminalEndpoint, ReusableEndpoint,
 };
 use crate::error::{ApiClientError, ErrorContext, PaginationErrorKind};
-use crate::multipart_response::MultipartStream;
 use crate::pagination::{
     Control, PageAdvance, PageApply, PageItems, PaginationCaps, PaginationRuntime,
     PaginationTermination, ProgressKey,
 };
-use crate::record::RecordStream;
-use crate::sse::SseStream;
 use crate::stream_response::StreamResponse;
 use crate::timeout::TimeoutOverride;
 use std::cmp::Ordering;
@@ -194,51 +191,6 @@ where
 {
     #[inline]
     pub async fn execute_stream(self) -> Result<StreamResponse<M>, ApiClientError> {
-        let client = self.client;
-        let plan = self.request_plan()?;
-        E::execute(client, plan).await
-    }
-}
-
-impl<'a, Cx, E, T, Item> PendingRequest<'a, Cx, E, T>
-where
-    Cx: ClientContext + 'a,
-    E: IntoEndpointPlan<Cx> + Endpoint<Cx, Response = RecordStream<Item>> + 'a,
-    T: crate::transport::Transport + 'a,
-    Item: 'a,
-{
-    #[inline]
-    pub async fn execute_records(self) -> Result<RecordStream<Item>, ApiClientError> {
-        let client = self.client;
-        let plan = self.request_plan()?;
-        E::execute(client, plan).await
-    }
-}
-
-impl<'a, Cx, E, T, Part> PendingRequest<'a, Cx, E, T>
-where
-    Cx: ClientContext + 'a,
-    E: IntoEndpointPlan<Cx> + Endpoint<Cx, Response = MultipartStream<Part>> + 'a,
-    T: crate::transport::Transport + 'a,
-    Part: 'a,
-{
-    #[inline]
-    pub async fn execute_multipart(self) -> Result<MultipartStream<Part>, ApiClientError> {
-        let client = self.client;
-        let plan = self.request_plan()?;
-        E::execute(client, plan).await
-    }
-}
-
-impl<'a, Cx, E, T, Event> PendingRequest<'a, Cx, E, T>
-where
-    Cx: ClientContext + 'a,
-    E: IntoEndpointPlan<Cx> + Endpoint<Cx, Response = SseStream<Event>> + 'a,
-    T: crate::transport::Transport + 'a,
-    Event: 'a,
-{
-    #[inline]
-    pub async fn execute_sse(self) -> Result<SseStream<Event>, ApiClientError> {
         let client = self.client;
         let plan = self.request_plan()?;
         E::execute(client, plan).await

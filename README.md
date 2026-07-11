@@ -81,7 +81,7 @@ The `concord_examples` crate contains current examples for:
 - custom codecs
 - retry and rate-limit policy profiles
 - explicit endpoint requests
-- compile-checked endpoint I/O examples covering Json, Text, stream, records, multipart, SSE, NoContent, and Bytes surfaces
+- compile-checked endpoint I/O examples covering Json, Text, generic streams, multipart/form-data requests, NoContent, and Bytes surfaces
 - a compiled public DSL guide example in `concord_examples/src/docs_dsl.rs`
 - compiled advanced DSL syntax examples in `concord_examples/src/docs_advanced_dsl.rs`
 - a consolidated endpoint I/O example suite in `concord_examples/src/endpoint_io.rs`

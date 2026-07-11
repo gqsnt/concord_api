@@ -18,33 +18,9 @@ static MULTIPART_BOUNDARY_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FormData;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Mixed;
-
-pub trait MultipartFormat: ContentType + Send + Sync + 'static {
-    fn try_render_content_type(
-        boundary: &str,
-    ) -> Result<HeaderValue, http::header::InvalidHeaderValue> {
-        HeaderValue::from_str(&format!("{}; boundary={boundary}", Self::CONTENT_TYPE))
-    }
-
-    fn render_content_type(boundary: &str) -> HeaderValue {
-        Self::try_render_content_type(boundary)
-            .expect("built-in multipart content type and generated boundary must be valid")
-    }
-}
-
 impl ContentType for FormData {
     const CONTENT_TYPE: &'static str = "multipart/form-data";
 }
-
-impl MultipartFormat for FormData {}
-
-impl ContentType for Mixed {
-    const CONTENT_TYPE: &'static str = "multipart/mixed";
-}
-
-impl MultipartFormat for Mixed {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MultipartBodyErrorKind {
@@ -253,19 +229,16 @@ impl MultipartBody {
         self
     }
 
-    pub fn content_type<F: MultipartFormat>(&self) -> HeaderValue {
-        F::render_content_type(&self.boundary)
+    pub fn content_type(&self) -> HeaderValue {
+        HeaderValue::from_str(&format!("multipart/form-data; boundary={}", self.boundary))
+            .expect("generated multipart boundary must be valid")
     }
 
-    pub fn try_content_type<F: MultipartFormat>(
-        &self,
-    ) -> Result<HeaderValue, http::header::InvalidHeaderValue> {
-        F::try_render_content_type(&self.boundary)
+    pub fn try_content_type(&self) -> Result<HeaderValue, http::header::InvalidHeaderValue> {
+        HeaderValue::from_str(&format!("multipart/form-data; boundary={}", self.boundary))
     }
 
-    pub fn into_transport_body<F: MultipartFormat>(
-        self,
-    ) -> Result<TransportRequestBody, MultipartBodyError> {
+    pub fn into_transport_body(self) -> Result<TransportRequestBody, MultipartBodyError> {
         let MultipartBody { boundary, parts } = self;
         let prepared = PreparedMultipartBody::from_parts(boundary, parts)?;
         Ok(TransportRequestBody::Stream(TransportByteStream::new(
@@ -550,7 +523,7 @@ mod tests {
         let body = MultipartBody::new()
             .text("title", "hello")
             .bytes("file", Bytes::from_static(b"abc"));
-        let content_type = body.content_type::<FormData>();
+        let content_type = body.content_type();
         assert!(
             content_type
                 .to_str()
@@ -558,7 +531,7 @@ mod tests {
                 .starts_with("multipart/form-data; boundary=")
         );
 
-        let mut stream = match body.into_transport_body::<FormData>() {
+        let mut stream = match body.into_transport_body() {
             Ok(TransportRequestBody::Stream(stream)) => stream,
             other => panic!("unexpected multipart body: {other:?}"),
         };
@@ -581,37 +554,10 @@ mod tests {
     }
 
     #[test]
-    fn multipart_mixed_body_uses_mixed_content_type() {
-        let body = MultipartBody::new().bytes("payload", Bytes::from_static(b"xyz"));
-        let content_type = body.content_type::<Mixed>();
-        assert!(
-            content_type
-                .to_str()
-                .expect("multipart content type")
-                .starts_with("multipart/mixed; boundary=")
-        );
-    }
-
-    #[test]
-    fn multipart_try_content_type_rejects_invalid_custom_content_type() {
-        #[derive(Clone, Copy, Debug, Default)]
-        struct BadMultipart;
-
-        impl ContentType for BadMultipart {
-            const CONTENT_TYPE: &'static str = "bad\nvalue";
-        }
-
-        impl MultipartFormat for BadMultipart {}
-
-        let body = MultipartBody::new().bytes("payload", Bytes::from_static(b"xyz"));
-        assert!(body.try_content_type::<BadMultipart>().is_err());
-    }
-
-    #[test]
     fn multipart_invalid_metadata_is_rejected_body_safely() {
         let body = MultipartBody::new().text("bad\r\nname", "value");
         let err = body
-            .into_transport_body::<FormData>()
+            .into_transport_body()
             .expect_err("invalid name should fail");
         assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartName);
         assert!(!err.to_string().contains("bad\r\nname"));

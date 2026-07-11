@@ -3,8 +3,6 @@ mod endpoint_io_bytes;
 mod endpoint_io_custom_codec;
 mod endpoint_io_multipart;
 mod endpoint_io_no_content;
-mod endpoint_io_records;
-mod endpoint_io_sse;
 mod endpoint_io_stream;
 mod pagination;
 mod retry;

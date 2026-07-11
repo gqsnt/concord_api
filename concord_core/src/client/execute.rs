@@ -31,8 +31,6 @@ struct AuthRejectionStepCtx<'a, Cx: ClientContext, T: Transport> {
 enum AttemptFamily {
     Buffered { skip_body: bool },
     Stream { response_limit: Option<usize> },
-    Sse { response_limit: Option<usize> },
-    Multipart { response_limit: Option<usize> },
 }
 
 enum AttemptTransportSuccess {
@@ -320,9 +318,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     )
                     .await
                     .map(AttemptTransportSuccess::Buffered),
-                AttemptFamily::Stream { response_limit }
-                | AttemptFamily::Sse { response_limit }
-                | AttemptFamily::Multipart { response_limit } => self
+                AttemptFamily::Stream { response_limit } => self
                     .send_and_classify_transport_once(
                         built,
                         SendClassifyCtx {
@@ -612,168 +608,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(crate::stream_response::StreamResponse::new(
             resp,
             stream_response_limit,
-        ))
-    }
-    pub(crate) async fn execute_sse_response<Item, Codec>(
-        &self,
-        plan: RequestPlan,
-    ) -> Result<crate::sse::SseStream<Item>, ApiClientError>
-    where
-        Item: Send + 'static,
-        Codec: crate::sse::SseCodec<Item>,
-    {
-        let RequestPlan {
-            mut endpoint,
-            args,
-            overrides,
-            replayability,
-        } = plan;
-        let ctx = ErrorContext {
-            endpoint: endpoint.meta.name,
-            method: endpoint.meta.method.clone(),
-        };
-        if endpoint.response.accept.is_none() {
-            endpoint.response.accept = Some(
-                <crate::media::EventStream as crate::codec::ContentType>::try_header_value()
-                    .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
-            );
-        }
-        let (plan, mut args) = into_canonical_request_plan_view(RequestPlan {
-            endpoint,
-            args,
-            overrides,
-            replayability,
-        });
-        if plan.endpoint.pagination.is_some() {
-            return Err(ApiClientError::PolicyViolation {
-                ctx: ctx.clone(),
-                msg: "sse responses do not support pagination",
-            });
-        }
-        if plan.endpoint.response.no_content {
-            return Err(ApiClientError::PolicyViolation {
-                ctx: ctx.clone(),
-                msg: "sse responses cannot use a no-content response plan",
-            });
-        }
-        let dbg = plan
-            .overrides
-            .debug_level
-            .unwrap_or_else(|| self.debug_level());
-        let response_limit = self.runtime_state.max_stream_response_body_bytes();
-        let resp = match self
-            .drive_attempts(
-                &plan,
-                &mut args,
-                ctx.clone(),
-                dbg,
-                AttemptFamily::Sse { response_limit },
-            )
-            .await?
-        {
-            AttemptTransportSuccess::Transport(resp) => resp,
-            _ => unreachable!(),
-        };
-        if !Self::header_matches_media_type(resp.headers.get(CONTENT_TYPE), "text/event-stream") {
-            return Err(ApiClientError::response_contract(
-                ctx,
-                "sse response content type did not match expected media type",
-            ));
-        }
-        Ok(SseStream::new(resp, response_limit, Codec::decode_event))
-    }
-    pub(crate) async fn execute_record_response<Item, F>(
-        &self,
-        plan: RequestPlan,
-    ) -> Result<crate::record::RecordStream<Item>, ApiClientError>
-    where
-        Item: Send + 'static,
-        F: crate::record::RecordFormat<Item>,
-    {
-        let stream = self.execute_stream_response::<F>(plan).await?;
-        Ok(crate::record::RecordStream::new(
-            stream.into_transport_response(),
-            F::decoder(),
-        ))
-    }
-
-    pub(crate) async fn execute_multipart_response<PartT, Fmt>(
-        &self,
-        plan: RequestPlan,
-    ) -> Result<crate::multipart_response::MultipartStream<PartT>, ApiClientError>
-    where
-        PartT: crate::multipart_response::MultipartDecodePart<Fmt>,
-        Fmt: crate::multipart::MultipartFormat,
-    {
-        let RequestPlan {
-            mut endpoint,
-            args,
-            overrides,
-            replayability,
-        } = plan;
-        let ctx = ErrorContext {
-            endpoint: endpoint.meta.name,
-            method: endpoint.meta.method.clone(),
-        };
-        if endpoint.response.accept.is_none() {
-            endpoint.response.accept = Some(
-                <Fmt as crate::codec::ContentType>::try_header_value()
-                    .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
-            );
-        }
-        let (plan, mut args) = into_canonical_request_plan_view(RequestPlan {
-            endpoint,
-            args,
-            overrides,
-            replayability,
-        });
-        if plan.endpoint.pagination.is_some() {
-            return Err(ApiClientError::PolicyViolation {
-                ctx: ctx.clone(),
-                msg: "multipart responses do not support pagination",
-            });
-        }
-        if plan.endpoint.response.no_content {
-            return Err(ApiClientError::PolicyViolation {
-                ctx: ctx.clone(),
-                msg: "multipart responses cannot use a no-content response plan",
-            });
-        }
-        let dbg = plan
-            .overrides
-            .debug_level
-            .unwrap_or_else(|| self.debug_level());
-        let response_limit = self.runtime_state.max_stream_response_body_bytes();
-        let resp = match self
-            .drive_attempts(
-                &plan,
-                &mut args,
-                ctx.clone(),
-                dbg,
-                AttemptFamily::Multipart { response_limit },
-            )
-            .await?
-        {
-            AttemptTransportSuccess::Transport(resp) => resp,
-            _ => unreachable!(),
-        };
-        let boundary =
-            crate::multipart_response::parse_response_boundary::<Fmt>(&resp.headers, ctx.clone())?;
-        if let (Some(limit), Some(actual)) = (response_limit, resp.content_length)
-            && actual > limit as u64
-        {
-            return Err(ApiClientError::ResponseTooLarge {
-                ctx: ctx.clone(),
-                limit,
-                actual,
-            });
-        }
-        Ok(crate::multipart_response::MultipartStream::new(
-            resp,
-            boundary,
-            response_limit,
-            PartT::decode_headers,
-            PartT::decode_part,
         ))
     }
     async fn prepare_auth_plan(
