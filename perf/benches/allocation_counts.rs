@@ -5,11 +5,12 @@ use concord_core::advanced::{
     TransportResponse,
 };
 use concord_core::internal::{
-    PreparedBody,
-    ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan, };
+    ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
+    RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+};
 use concord_core::prelude::{
-    ApiClientError, Endpoint, PageItems, PaginatedEndpoint, PaginationTermination, ReusableEndpoint,
-    Text,
+    ApiClientError, Endpoint, PageItems, PaginatedEndpoint, PaginationTermination,
+    ReusableEndpoint, Text,
 };
 use futures_util::StreamExt;
 use http::{Method, StatusCode, header::HeaderValue};
@@ -47,7 +48,10 @@ fn success_transport() -> MockTransport {
 
 fn retry_transport() -> MockTransport {
     MockTransport::scripted(vec![
-        MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, Bytes::from_static(b"retry")),
+        MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Bytes::from_static(b"retry"),
+        ),
         MockResponse::text(StatusCode::OK, Bytes::from_static(b"ok")),
     ])
 }
@@ -68,10 +72,7 @@ where
 fn print_report(label: &str, counts: AllocationSnapshot) {
     println!(
         "allocation_counts/{label} allocs={} deallocs={} bytes_allocated={} bytes_deallocated={} report_only=true caveat=setup_teardown_excluded async_runtime_may_be_included",
-        counts.alloc_calls,
-        counts.dealloc_calls,
-        counts.bytes_allocated,
-        counts.bytes_deallocated,
+        counts.alloc_calls, counts.dealloc_calls, counts.bytes_allocated, counts.bytes_deallocated,
     );
 }
 
@@ -81,8 +82,7 @@ fn report_case_with_caveat<T, Setup, Run>(
     setup: Setup,
     mut run: Run,
     caveat: &'static str,
-)
-where
+) where
     Setup: FnOnce() -> T,
     for<'a> Run: FnMut(&'a mut T) -> Pin<Box<dyn Future<Output = ()> + 'a>>,
 {
@@ -92,10 +92,7 @@ where
     let counts = snapshot_allocation_counts();
     println!(
         "allocation_counts/{label} allocs={} deallocs={} bytes_allocated={} bytes_deallocated={} report_only=true caveat={caveat}",
-        counts.alloc_calls,
-        counts.dealloc_calls,
-        counts.bytes_allocated,
-        counts.bytes_deallocated,
+        counts.alloc_calls, counts.dealloc_calls, counts.bytes_allocated, counts.bytes_deallocated,
     );
     drop(state);
 }
@@ -116,16 +113,20 @@ fn sanity_check_counter() {
 }
 
 fn with_bearer_auth(mut plan: RequestPlan) -> RequestPlan {
-    plan.endpoint.policy.auth.requirements.push(auth_requirement(
-        concord_core::advanced::AuthPlacement::Bearer,
-        "bearer",
-    ));
+    plan.endpoint
+        .policy
+        .auth
+        .requirements
+        .push(auth_requirement(
+            concord_core::advanced::AuthPlacement::Bearer,
+            "bearer",
+        ));
     plan
 }
 
 fn with_retry(mut plan: RequestPlan, max_attempts: u32) -> RequestPlan {
-    plan.endpoint.policy.retry = concord_core::internal::RetrySetting::Config(
-        concord_core::advanced::RetryConfig {
+    plan.endpoint.policy.retry =
+        concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
             max_attempts,
             methods: vec![Method::GET],
             statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
@@ -133,8 +134,7 @@ fn with_retry(mut plan: RequestPlan, max_attempts: u32) -> RequestPlan {
             backoff: concord_core::advanced::RetryBackoff::None,
             respect_retry_after: false,
             idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
-        },
-    );
+        });
     plan
 }
 
@@ -346,7 +346,12 @@ fn run_rate_limit_governor(rt: &Runtime) {
     report_case_with_caveat(
         rt,
         "rate_limit_governor/empty_plan_context_and_acquire",
-        || (GovernorRateLimiter::new(), concord_core::advanced::RateLimitPlan::new()),
+        || {
+            (
+                GovernorRateLimiter::new(),
+                concord_core::advanced::RateLimitPlan::new(),
+            )
+        },
         |state| {
             let limiter = &state.0;
             let plan = &state.1;
@@ -432,7 +437,9 @@ impl PaginatedEndpoint<perf::support::PerfCx> for PaginationEndpoint {
     fn pagination_runtime(
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
-        Some(Box::new(PaginationRuntimeAdapter::<OffsetLimitPagination>::new()))
+        Some(Box::new(
+            PaginationRuntimeAdapter::<OffsetLimitPagination>::new(),
+        ))
     }
 }
 

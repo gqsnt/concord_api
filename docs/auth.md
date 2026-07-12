@@ -158,7 +158,7 @@ HTTP-status errors also store sanitized response headers only. That keeps cookie
 
 If a public query parameter already uses the same key as a query-auth credential, Concord rejects the request before transport with a typed auth configuration error. It does not append a duplicate credential query key or materialize the raw query-auth secret before reporting the collision.
 
-Header-auth placements reserve their header name as well. A public header that collides with a bearer, Basic, or custom header-auth header is rejected after auth inheritance has been applied to the final endpoint and before rate-limit acquisition or transport, and header-name matching is case-insensitive.
+Header-auth placements reserve their header name as well. After auth inheritance has been applied to the final endpoint, a public header that collides with bearer, Basic, or custom header auth is rejected by secret-free preflight before provider invocation, body production, rate-limit acquisition, or transport. Header-name matching is case-insensitive, and custom `Authorization` shares the bearer/Basic singleton target.
 
 The actual outbound request still contains the credential material required by the remote API. Redaction applies to debug output, diagnostics, and generated documentation, not to the request sent over transport.
 

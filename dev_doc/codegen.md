@@ -50,7 +50,7 @@ Auth endpoints that return credential material directly get acquisition helpers 
 
 Endpoint-backed auth-state handles are exposed under `auth_state().credential_name()` with fallible `set`, `clear`, and `is_set` methods. Acquisition helpers are named from the real generated public credential name.
 
-Generated auth preparation code resolves credential leases and receives an auth-only application request rather than `BuiltRequest`. Generated code calls core auth helpers that attach typed pending auth slots, then returns a prepared credential sidecar to the runtime so raw material can be inserted only when a `TransportRequest` is materialized immediately before send.
+Generated auth preparation code resolves credential leases and receives an auth-only application request already bound to the runtime slot emitted from semantic `AuthRequirement` placement. Core auth helpers validate and bind material without recreating placement. Raw material is inserted only when a `TransportRequest` is materialized immediately before send.
 
 Generated auth-var and helper paths must propagate lock and state failures as typed `AuthError` / `ApiClientError::Auth` values. They must not unwrap runtime auth locks or assume the state is available because the generated API owns the client.
 

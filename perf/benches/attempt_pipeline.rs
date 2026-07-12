@@ -1,12 +1,10 @@
 use bytes::Bytes;
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use concord_core::advanced::{
     AuthPlacement, NoopDebugSink, RateLimiter, RetryBackoff, RetryConfig, RetryIdempotency,
 };
-use concord_core::internal::{
-    PreparedBody,
-    RequestOverrides, RequestPlan, ResolvedPolicy, };
+use concord_core::internal::{PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy};
 use concord_core::prelude::DebugLevel;
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use http::{HeaderValue, Method, StatusCode, header::HeaderName};
 use perf::support::{
     CountingRateLimiter, MockResponse, MockTransport, auth_requirement, client, configured_client,
@@ -74,7 +72,10 @@ fn with_query_auth(mut plan: RequestPlan) -> RequestPlan {
         .policy
         .auth
         .requirements
-        .push(auth_requirement(AuthPlacement::Query("auth_token"), "query"));
+        .push(auth_requirement(
+            AuthPlacement::Query("auth_token"),
+            "query",
+        ));
     plan
 }
 
@@ -108,7 +109,10 @@ fn success_transport() -> MockTransport {
 
 fn retry_transport() -> MockTransport {
     MockTransport::scripted(vec![
-        MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, Bytes::from_static(b"retry")),
+        MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Bytes::from_static(b"retry"),
+        ),
         MockResponse::text(StatusCode::OK, Bytes::from_static(b"ok")),
     ])
 }
@@ -126,7 +130,10 @@ fn many_headers(c: &mut Criterion, rt: &Runtime) {
     bench_case(c, rt, "many_headers/32", || {
         let transport = success_transport();
         let client = client(transport);
-        let plan = with_headers(base_plan("ManyHeaders", Method::GET, "/perf/many-headers"), 32);
+        let plan = with_headers(
+            base_plan("ManyHeaders", Method::GET, "/perf/many-headers"),
+            32,
+        );
         (client, plan)
     });
 }
@@ -165,7 +172,10 @@ fn retry_configured_success(c: &mut Criterion, rt: &Runtime) {
     bench_case(c, rt, "retry_configured_but_success", || {
         let transport = success_transport();
         let client = client(transport);
-        let plan = with_retry(base_plan("RetryConfigured", Method::GET, "/perf/retry-configured"), 2);
+        let plan = with_retry(
+            base_plan("RetryConfigured", Method::GET, "/perf/retry-configured"),
+            2,
+        );
         (client, plan)
     });
 }

@@ -1,9 +1,9 @@
 use bytes::Bytes;
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use concord_core::advanced::{
     RateLimitPlan, RequestMeta, Transport, TransportRequest, TransportRequestBody,
 };
 use concord_core::auth::RequestExtensions;
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use http::{HeaderMap, Method, StatusCode};
 use perf::support::{MockResponse, MockTransport, filled_bytes, runtime};
 use std::hint::black_box;

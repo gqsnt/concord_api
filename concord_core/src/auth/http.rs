@@ -57,7 +57,16 @@ impl fmt::Debug for AuthHttpResponse {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthMode {
     SkipAuth,
-    UseAuth(AuthRequirementId),
+    UseAuth {
+        id: AuthRequirementId,
+        requirement: crate::auth::AuthRequirement,
+    },
+}
+
+impl AuthMode {
+    pub fn use_auth(id: AuthRequirementId, requirement: crate::auth::AuthRequirement) -> Self {
+        Self::UseAuth { id, requirement }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -126,13 +135,5 @@ pub trait AuthHttpExecutor: Send + Sync {
 
 #[derive(Clone, Debug, Default)]
 pub struct RequestExtensions {
-    pub sensitive_query_keys: Vec<String>,
-    pub pending_auth_slots: Vec<crate::auth::PendingAuthSlot>,
-}
-
-impl RequestExtensions {
-    #[inline]
-    pub(crate) fn replace_auth_extensions(&mut self, other: Self) {
-        *self = other;
-    }
+    pub auth_plan: crate::auth::AuthPlacementPlan,
 }

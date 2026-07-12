@@ -7,7 +7,9 @@ use concord_core::internal::{PreparedBody, RequestOverrides, RequestPlan, Resolv
 use concord_core::prelude::{ApiClientError, DebugLevel};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use http::{HeaderName, HeaderValue, Method, StatusCode};
-use perf::support::{MockResponse, MockTransport, client, configured_client, execute_raw_plan, request_plan, runtime};
+use perf::support::{
+    MockResponse, MockTransport, client, configured_client, execute_raw_plan, request_plan, runtime,
+};
 use std::future::Future;
 use std::hint::black_box;
 use std::pin::Pin;
@@ -77,8 +79,10 @@ impl RuntimeHooks for CountingHooks {
         ctx: PostResponseHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
-            self.count
-                .fetch_add(ctx.status.as_u16() as usize + ctx.headers.len(), Ordering::Relaxed);
+            self.count.fetch_add(
+                ctx.status.as_u16() as usize + ctx.headers.len(),
+                Ordering::Relaxed,
+            );
         })
     }
 }
@@ -157,7 +161,16 @@ fn response(headers: usize, mixed_case: bool) -> MockResponse {
     response
 }
 
-fn bench_case(c: &mut Criterion, name: &str, query: usize, req_headers: usize, resp_headers: usize, debug: DebugLevel, hooks: bool, mixed_case: bool) {
+fn bench_case(
+    c: &mut Criterion,
+    name: &str,
+    query: usize,
+    req_headers: usize,
+    resp_headers: usize,
+    debug: DebugLevel,
+    hooks: bool,
+    mixed_case: bool,
+) {
     let rt = runtime();
     c.bench_function(name, |b| {
         b.to_async(&rt).iter_batched(
@@ -200,13 +213,49 @@ fn redaction_hooks(c: &mut Criterion) {
     bench_case(c, "url_query/many", 64, 0, 0, DebugLevel::V, false, false);
     bench_case(c, "headers/small", 0, 4, 4, DebugLevel::VV, false, false);
     bench_case(c, "headers/many", 0, 64, 64, DebugLevel::VV, false, false);
-    bench_case(c, "headers/mixed_case", 0, 32, 32, DebugLevel::VV, false, true);
+    bench_case(
+        c,
+        "headers/mixed_case",
+        0,
+        32,
+        32,
+        DebugLevel::VV,
+        false,
+        true,
+    );
     bench_case(c, "debug/disabled", 8, 8, 8, DebugLevel::None, false, false);
     bench_case(c, "debug/v", 8, 8, 8, DebugLevel::V, false, false);
     bench_case(c, "debug/vv", 8, 8, 8, DebugLevel::VV, false, false);
-    bench_case(c, "hooks/noop_runtime", 8, 8, 8, DebugLevel::None, false, false);
-    bench_case(c, "hooks/counting_runtime", 8, 8, 8, DebugLevel::None, true, false);
-    bench_case(c, "hooks_debug/real_path_vv", 16, 16, 16, DebugLevel::VV, true, true);
+    bench_case(
+        c,
+        "hooks/noop_runtime",
+        8,
+        8,
+        8,
+        DebugLevel::None,
+        false,
+        false,
+    );
+    bench_case(
+        c,
+        "hooks/counting_runtime",
+        8,
+        8,
+        8,
+        DebugLevel::None,
+        true,
+        false,
+    );
+    bench_case(
+        c,
+        "hooks_debug/real_path_vv",
+        16,
+        16,
+        16,
+        DebugLevel::VV,
+        true,
+        true,
+    );
 }
 
 criterion_group!(benches, redaction_hooks);

@@ -89,15 +89,15 @@ pub mod advanced {
     pub use crate::auth::{
         AuthApplication, AuthApplicationRequest, AuthAppliedCredential, AuthAttemptSummary,
         AuthChallengePolicy, AuthDecision, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor,
-        AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode, AuthPlacement, AuthPlan,
-        AuthPreparationReuse, AuthProvenance, AuthRejectionDecision, AuthRequirement,
-        AuthRequirementId, AuthRetryReason, AuthStepPolicy, AuthUsageId, CredentialContext,
-        CredentialId, CredentialLease, CredentialMaterial, CredentialProvider, CredentialRef,
-        CredentialRefreshReason, CredentialSlot, InvalidateReason, ManualCredentialProvider,
-        PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential, PreparedInternalAuth,
-        SecretCredential, StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider,
-        apply_basic_credential, apply_secret_credential, auth_decision_for_status,
-        invalidate_rejected_credential, read_auth_lock, write_auth_lock,
+        AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode, AuthPlacement,
+        AuthPlacementPlan, AuthPlan, AuthPreparationReuse, AuthProvenance, AuthRejectionDecision,
+        AuthRequirement, AuthRequirementId, AuthRetryReason, AuthStepPolicy, AuthUsageId,
+        CredentialContext, CredentialId, CredentialLease, CredentialMaterial, CredentialProvider,
+        CredentialRef, CredentialRefreshReason, CredentialSlot, InvalidateReason,
+        ManualCredentialProvider, PlannedAuthPlacement, PlannedAuthSlot, PreparedAuthCredential,
+        PreparedInternalAuth, SecretCredential, StaticApiKeyProvider, StaticBasicProvider,
+        StaticBearerProvider, apply_basic_credential, apply_secret_credential,
+        auth_decision_for_status, invalidate_rejected_credential, read_auth_lock, write_auth_lock,
     };
     pub use crate::body::{BodyError, BodyErrorKind, DynBody, LimitedBody};
     pub use crate::codec::{

@@ -187,6 +187,7 @@ enum CapturedBody {
 struct CapturedRequest {
     debug: String,
     content_type: Option<String>,
+    authorization_present: bool,
     body: CapturedBody,
 }
 
@@ -262,6 +263,7 @@ impl Transport for StreamTransport {
                 .get(http::header::CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
+            let authorization_present = req.headers.contains_key(http::header::AUTHORIZATION);
             let body = match req.body {
                 TransportRequestBody::Empty => CapturedBody::Empty,
                 TransportRequestBody::Bytes(bytes) => CapturedBody::Bytes(bytes),
@@ -275,6 +277,7 @@ impl Transport for StreamTransport {
                 .push(CapturedRequest {
                     debug,
                     content_type,
+                    authorization_present,
                     body,
                 });
 
@@ -294,6 +297,54 @@ impl Transport for StreamTransport {
                 rate_limit: req.rate_limit,
                 body: Box::new(StaticBody::new(response.body)),
             })
+        })
+    }
+}
+
+#[derive(Clone)]
+struct OrderingAuthVars {
+    events: Arc<StdMutex<Vec<String>>>,
+}
+
+#[derive(Clone)]
+struct OrderingAuthCx;
+
+impl concord_core::prelude::ClientContext for OrderingAuthCx {
+    type Vars = ();
+    type AuthVars = OrderingAuthVars;
+    type AuthState = ();
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+    fn prepare_auth_requirement<'a>(
+        requirement: &'a concord_core::advanced::AuthRequirement,
+        request: &'a mut concord_core::advanced::AuthApplicationRequest<'_>,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a concord_core::advanced::RequestMeta,
+    ) -> concord_core::advanced::AuthFuture<
+        'a,
+        Result<concord_core::advanced::PreparedAuthCredential, concord_core::advanced::AuthError>,
+    > {
+        Box::pin(async move {
+            push_event(&auth.events, "provider");
+            let material = concord_core::prelude::ApiKey::new("ordering-secret");
+            let application =
+                concord_core::advanced::apply_secret_credential(request, requirement, &material)?;
+            Ok(concord_core::advanced::PreparedAuthCredential::new(
+                concord_core::advanced::AuthAppliedCredential {
+                    credential_id: requirement.credential.id.clone(),
+                    usage_id: requirement.usage_id.clone(),
+                    step_id: requirement.step_id,
+                    generation: Some(1),
+                    provenance: requirement.provenance.clone(),
+                },
+                application,
+            ))
         })
     }
 }
@@ -615,6 +666,103 @@ async fn stream_is_not_polled_before_auth_collision_validation() {
 }
 
 #[tokio::test]
+async fn auth_collision_does_not_invoke_replay_factory() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = StreamTransport::success(
+        events,
+        MockResponse::text(StatusCode::OK, "should-not-send"),
+    );
+    let client = ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars {
+            token: Some("token".to_string()),
+            identity: "anon",
+        },
+        transport.clone(),
+    );
+    let mut policy = auth_policy(AuthPlacement::Bearer);
+    policy.headers.insert(
+        http::header::AUTHORIZATION,
+        HeaderValue::from_static("public"),
+    );
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let mut plan = stream_request_plan(
+        "FactoryCollision",
+        Method::POST,
+        "/factory-collision",
+        policy,
+        StreamBody::from_bytes(Bytes::new()),
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    plan.body = PreparedBody::replay_factory(http_body::SizeHint::default(), None, move || {
+        observed.fetch_add(1, Ordering::SeqCst);
+        Ok(concord_core::advanced::DynBody::empty())
+    });
+
+    let error = client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await
+        .expect_err("collision must fail before factory production");
+
+    assert!(matches!(error, ApiClientError::Auth { .. }));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn provider_failure_does_not_produce_request_body() {
+    let transport = StreamTransport::success(
+        Arc::new(StdMutex::new(Vec::new())),
+        MockResponse::text(StatusCode::OK, "should-not-send"),
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let mut factory_plan = stream_request_plan(
+        "ProviderFailureFactory",
+        Method::POST,
+        "/provider-failure-factory",
+        auth_policy(AuthPlacement::Bearer),
+        StreamBody::from_bytes(Bytes::new()),
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    factory_plan.body =
+        PreparedBody::replay_factory(http_body::SizeHint::default(), None, move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(concord_core::advanced::DynBody::empty())
+        });
+
+    let error = client
+        .execute_plan::<concord_core::prelude::Text<String>>(factory_plan)
+        .await
+        .expect_err("missing credential must fail before body factory");
+    assert!(matches!(error, ApiClientError::Auth { .. }));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    let polled = Arc::new(AtomicBool::new(false));
+    let one_shot_plan = stream_request_plan(
+        "ProviderFailureOneShot",
+        Method::POST,
+        "/provider-failure-one-shot",
+        auth_policy(AuthPlacement::Bearer),
+        StreamBody::from_byte_stream(PollFlagStream::new(
+            polled.clone(),
+            Bytes::from_static(b"unconsumed"),
+        )),
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let error = client
+        .execute_plan::<concord_core::prelude::Text<String>>(one_shot_plan)
+        .await
+        .expect_err("missing credential must fail before one-shot body");
+    assert!(matches!(error, ApiClientError::Auth { .. }));
+    assert!(!polled.load(Ordering::SeqCst));
+    assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
 async fn stream_is_not_polled_before_rate_limit_acquisition() -> Result<(), ApiClientError> {
     let events = Arc::new(StdMutex::new(Vec::new()));
     let transport =
@@ -659,6 +807,66 @@ async fn stream_is_not_polled_before_rate_limit_acquisition() -> Result<(), ApiC
     assert!(build < rate_limit);
     assert!(rate_limit < transport);
     assert!(transport < stream_poll);
+    Ok(())
+}
+
+#[tokio::test]
+async fn provider_body_rate_limit_observers_and_transport_follow_approved_order()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport =
+        StreamTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let mut client = ApiClient::<OrderingAuthCx, _>::with_transport(
+        (),
+        OrderingAuthVars {
+            events: events.clone(),
+        },
+        transport.clone(),
+    );
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+        cfg.debug(DebugLevel::VV);
+    });
+    client.set_debug_sink(Arc::new(RecordingDebugSink::new(events.clone())));
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+    let factory_events = events.clone();
+    let mut plan = stream_request_plan(
+        "ApprovedAttemptOrder",
+        Method::GET,
+        "/approved-attempt-order",
+        auth_policy(AuthPlacement::Bearer),
+        StreamBody::from_bytes(Bytes::new()),
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    plan.body = PreparedBody::replay_factory(
+        http_body::SizeHint::default(),
+        Some(HeaderValue::from_static("application/octet-stream")),
+        move || {
+            push_event(&factory_events, "body_factory");
+            Ok(concord_core::advanced::DynBody::from_bytes(
+                Bytes::from_static(b"attempt-body"),
+            ))
+        },
+    );
+
+    client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await?;
+
+    let events = events.lock().expect("event log lock").clone();
+    let position = |needle: &str| {
+        events
+            .iter()
+            .position(|event| event == needle || event.starts_with(needle))
+            .unwrap_or_else(|| panic!("missing event `{needle}` in {events:?}"))
+    };
+    assert!(position("provider") < position("body_factory"));
+    assert!(position("body_factory") < position("rate_limit_acquire"));
+    assert!(position("rate_limit_acquire") < position("debug_request:"));
+    assert!(position("rate_limit_acquire") < position("hook_pre_send:"));
+    assert!(position("debug_request:") < position("transport"));
+    assert!(position("hook_pre_send:") < position("transport"));
+    assert!(transport.captured()[0].authorization_present);
     Ok(())
 }
 

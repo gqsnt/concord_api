@@ -26,17 +26,17 @@ Cloned clients share auth state. Runtime configuration uses clone-on-write, but 
 
 ## Request Auth Application
 
-Before rate-limit acquisition, the runtime resolves required credentials and attaches typed pending auth slots to the logical `BuiltRequest`. No auth application hook receives `BuiltRequest`: endpoint auth preparation and auth-internal preparation both receive an auth-only application request. That request can attach pending auth slots and mark auth query keys as sensitive, but it cannot mutate the logical URL, headers, body, timeout, retry, rate-limit, or metadata. Custom `ClientContext` implementations must use the core `apply_*_credential` helpers instead of writing auth values into request headers or query strings.
+Before provider invocation, the runtime derives a secret-free placement plan from resolved `AuthRequirement` values, registers sensitive query keys, and validates it against the public URL and headers. No auth application hook receives `BuiltRequest`: endpoint auth preparation and auth-internal preparation receive an auth-only application request already bound to a planned slot. It can bind compatible material but cannot create or change placement, add a header or query key, or mutate request metadata. Custom `ClientContext` implementations must use the core `apply_*_credential` helpers.
 
-A pending slot records the placement, credential id, usage id, generation, and provenance. It does not store raw credential material.
+A planned slot records placement, credential and usage identity, step identity, provenance, and a request-local binding identity. Credential generation remains preparation output rather than placement state. Neither structure stores raw credential material.
 
 Raw credential material is kept in a short-lived per-attempt sidecar and is inserted only when the runtime materializes a `TransportRequest` immediately before `Transport::send`. `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, runtime hooks, and debug sinks must never store raw auth material. Hook and debug metadata redaction applies before callback invocation, so sensitive headers and query values are not exposed through those surfaces.
 
 Page and custom pagination mutation happens before auth-collision validation, rate-limit acquisition, and transport materialization. The runtime uses the final mutated logical request as the input to safe metadata construction, then materializes raw auth only into `TransportRequest`.
 
-Query-auth materialization must reject a public query parameter that already uses the auth query key. Final endpoint auth validation happens after inheritance and before raw query-auth material is appended, rate-limit acquisition, and transport send, and the typed error may name the key but must not include the secret value.
+Query-auth preflight rejects a public query parameter that already uses the auth query key before provider invocation or body production. The typed error may name the key but must not include the public value, complete URL, or secret value.
 
-Header-auth materialization follows the same structural rule: public headers cannot silently collide with bearer, Basic, or custom auth headers, and header matching is case-insensitive. Final endpoint auth validation rejects those collisions after inheritance and before rate-limit acquisition and transport rather than overwriting the public header value.
+Header-auth preflight follows the same structural rule: public headers cannot silently collide with bearer, Basic, or custom auth headers, and header matching is case-insensitive. Custom `Authorization` placement shares the bearer/Basic singleton target. Malformed and duplicate runtime placement plans fail before providers.
 
 Custom transports receive the materialized `TransportRequest`, so they see real credentials at the send boundary. Transport implementations must not log the raw request.
 

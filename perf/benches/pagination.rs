@@ -2,8 +2,8 @@ use bytes::Bytes;
 use concord_core::advanced::{HasNextCursor, OffsetLimitPagination, PaginateBinding};
 use concord_core::advanced::{PaginationRuntimeAdapter, ProgressKey};
 use concord_core::internal::{
-    PreparedBody,
-    ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
+    RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
@@ -109,7 +109,9 @@ impl ReusableEndpoint<perf::support::PerfCx> for ItemsEndpoint {
                     .push(("limit".to_string(), self.count.to_string()));
             }
             Kind::Paged => {
-                policy.query.push(("page".to_string(), self.page.to_string()));
+                policy
+                    .query
+                    .push(("page".to_string(), self.page.to_string()));
                 policy
                     .query
                     .push(("per_page".to_string(), self.count.to_string()));
@@ -157,9 +159,9 @@ impl PaginatedEndpoint<perf::support::PerfCx> for ItemsEndpoint {
         &self,
     ) -> Option<Box<dyn concord_core::advanced::PaginationRuntime<Self, Self::Response>>> {
         match self.kind {
-            Kind::Offset => Some(Box::new(PaginationRuntimeAdapter::<
-                OffsetLimitPagination,
-            >::new())),
+            Kind::Offset => Some(Box::new(
+                PaginationRuntimeAdapter::<OffsetLimitPagination>::new(),
+            )),
             Kind::Paged => Some(Box::new(PaginationRuntimeAdapter::<PagedPagination>::new())),
             Kind::Cursor | Kind::NonProgress => Some(Box::new(PaginationRuntimeAdapter::<
                 CursorPagination<String>,
@@ -314,7 +316,10 @@ fn bench_non_progress(c: &mut Criterion) {
                     .collect()
                     .await
                     .expect_err("non-progress should fail");
-                black_box((err.pagination_error_kind(), format!("{:?}", ProgressKey::Str("x".into())).len()));
+                black_box((
+                    err.pagination_error_kind(),
+                    format!("{:?}", ProgressKey::Str("x".into())).len(),
+                ));
             },
             BatchSize::SmallInput,
         )
@@ -325,7 +330,10 @@ fn pagination(c: &mut Criterion) {
     for pages in [1usize, 10, 100] {
         bench_collect(
             c,
-            &format!("collect/offset/{pages}_page{}", if pages == 1 { "" } else { "s" }),
+            &format!(
+                "collect/offset/{pages}_page{}",
+                if pages == 1 { "" } else { "s" }
+            ),
             ItemsEndpoint::offset(1),
             pages,
         );
@@ -335,8 +343,18 @@ fn pagination(c: &mut Criterion) {
     bench_non_progress(c);
 
     if full_fixture_enabled() {
-        bench_collect(c, "collect/offset/1000_pages", ItemsEndpoint::offset(1), 1000);
-        bench_collect(c, "collect/cursor/1000_pages", ItemsEndpoint::cursor(1), 1000);
+        bench_collect(
+            c,
+            "collect/offset/1000_pages",
+            ItemsEndpoint::offset(1),
+            1000,
+        );
+        bench_collect(
+            c,
+            "collect/cursor/1000_pages",
+            ItemsEndpoint::cursor(1),
+            1000,
+        );
     }
 }
 

@@ -123,6 +123,19 @@ struct InternalAuthVars {
 #[derive(Clone)]
 struct InternalAuthCx;
 
+fn internal_auth_requirement() -> AuthRequirement {
+    AuthRequirement {
+        credential: concord_core::advanced::CredentialRef {
+            id: CredentialId::new("test", "internal"),
+        },
+        placement: AuthPlacement::Header("X-Internal-Custom"),
+        usage_id: AuthUsageId::new("internal-use"),
+        step_id: Some("internal"),
+        provenance: AuthProvenance::new("internal"),
+        challenge: Default::default(),
+    }
+}
+
 impl concord_core::prelude::ClientContext for InternalAuthCx {
     type Vars = ();
     type AuthVars = InternalAuthVars;
@@ -151,7 +164,10 @@ impl concord_core::prelude::ClientContext for InternalAuthCx {
                             .expect("auth url"),
                         headers: HeaderMap::new(),
                         body: concord_core::advanced::PreparedBody::empty(),
-                        mode: AuthMode::UseAuth(AuthRequirementId::new("test", "internal")),
+                        mode: AuthMode::use_auth(
+                            AuthRequirementId::new("test", "internal"),
+                            internal_auth_requirement(),
+                        ),
                         policy: AuthInternalPolicy::default(),
                     })
                     .await
@@ -165,16 +181,7 @@ impl concord_core::prelude::ClientContext for InternalAuthCx {
                 auth.entered.notify_waiters();
                 auth.pending.notified().await;
             }
-            let requirement = AuthRequirement {
-                credential: concord_core::advanced::CredentialRef {
-                    id: CredentialId::new("test", "internal"),
-                },
-                placement: AuthPlacement::Header("X-Internal-Custom"),
-                usage_id: AuthUsageId::new("internal-use"),
-                step_id: Some("internal"),
-                provenance: AuthProvenance::new("internal"),
-                challenge: Default::default(),
-            };
+            let requirement = internal_auth_requirement();
             let material = concord_core::prelude::ApiKey::new(auth.internal_secret.to_string());
             let application = apply_secret_credential(request, &requirement, &material)?;
             Ok(PreparedInternalAuth::from_application(application))
@@ -199,7 +206,10 @@ impl concord_core::prelude::ClientContext for InternalAuthCx {
                         .expect("auth url"),
                     headers: HeaderMap::new(),
                     body: concord_core::advanced::PreparedBody::empty(),
-                    mode: AuthMode::UseAuth(AuthRequirementId::new("test", "internal")),
+                    mode: AuthMode::use_auth(
+                        AuthRequirementId::new("test", "internal"),
+                        internal_auth_requirement(),
+                    ),
                     policy: AuthInternalPolicy::default(),
                 })
                 .await?;

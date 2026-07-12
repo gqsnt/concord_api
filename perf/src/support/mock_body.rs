@@ -115,9 +115,7 @@ mod tests {
 
     #[test]
     fn empty_body_returns_eof() {
-        let rt = Builder::new_current_thread()
-            .build()
-            .expect("test runtime");
+        let rt = Builder::new_current_thread().build().expect("test runtime");
         let mut body = EmptyBody;
         let chunk = rt.block_on(async { body.next_chunk().await.expect("empty body") });
         assert!(chunk.is_none());

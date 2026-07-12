@@ -1,8 +1,8 @@
 use crate::support::mock_body::{EmptyBody, FixedBody, chunked_bytes};
 use bytes::Bytes;
 use concord_core::advanced::{
-    RequestMeta, Transport, TransportBody, TransportError, TransportRequest,
-    TransportRequestBody, TransportResponse,
+    RequestMeta, Transport, TransportBody, TransportError, TransportRequest, TransportRequestBody,
+    TransportResponse,
 };
 use concord_core::auth::RequestExtensions;
 use http::{HeaderMap, HeaderValue, StatusCode};
@@ -279,7 +279,7 @@ fn safe_url_for_debug(url: &url::Url) -> String {
 }
 
 fn extensions_present(ext: &RequestExtensions) -> bool {
-    !ext.sensitive_query_keys.is_empty() || !ext.pending_auth_slots.is_empty()
+    !ext.auth_plan.sensitive_query_keys.is_empty() || !ext.auth_plan.slots.is_empty()
 }
 
 #[cfg(test)]
@@ -297,11 +297,13 @@ mod tests {
                 attempt: 3,
                 page_index: 1,
             },
-            url: url::Url::parse("https://example.com/path?token=SECRET_QUERY_VALUE")
-                .expect("url"),
+            url: url::Url::parse("https://example.com/path?token=SECRET_QUERY_VALUE").expect("url"),
             headers: {
                 let mut headers = HeaderMap::new();
-                headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer SECRET_HEADER"));
+                headers.insert(
+                    AUTHORIZATION,
+                    HeaderValue::from_static("Bearer SECRET_HEADER"),
+                );
                 headers.insert(
                     HeaderName::from_static("x-test"),
                     HeaderValue::from_static("value"),
@@ -311,8 +313,10 @@ mod tests {
             body: RecordedBody::Bytes { len: 16 },
             timeout: Some(std::time::Duration::from_secs(1)),
             extensions: RequestExtensions {
-                sensitive_query_keys: vec!["token".to_string()],
-                pending_auth_slots: Vec::new(),
+                auth_plan: concord_core::advanced::AuthPlacementPlan {
+                    sensitive_query_keys: vec!["token".to_string()],
+                    slots: Vec::new(),
+                },
             },
         };
 

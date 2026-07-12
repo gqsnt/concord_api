@@ -29,7 +29,7 @@ Profiles may extend other profiles; inheritance is resolved during semantic anal
 Generated endpoint code creates a request plan. The core runtime executes that plan with fixed ordering:
 
 ```text
-plan -> auth -> rate-limit -> transport -> classify -> retry -> decode
+public head -> auth preflight -> credentials -> attempt body -> rate-limit -> sanitized observers -> auth materialization -> transport -> classify -> retry -> decode
 ```
 
 The runtime receives resolved semantic data. It does not need to know the DSL syntax that produced the plan.

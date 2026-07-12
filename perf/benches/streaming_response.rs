@@ -1,8 +1,7 @@
 use concord_core::advanced::{OctetStream, RawStreamResponse, ResponseEntity};
 use concord_core::internal::{
-    PreparedBody,
-    EndpointMeta, EndpointPlan, RequestOverrides, RequestPlan,
-    ResolvedPolicy, ResolvedRoute,
+    EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy,
+    ResolvedRoute,
 };
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use http::{HeaderValue, Method, StatusCode};
@@ -12,7 +11,12 @@ use std::hint::black_box;
 fn request_plan(response: concord_core::advanced::ResponseEntityPlan) -> RequestPlan {
     RequestPlan {
         endpoint: EndpointPlan {
-            meta: EndpointMeta { name: "RawStreamBench", method: Method::GET, idempotent: true, facade_path: &[] },
+            meta: EndpointMeta {
+                name: "RawStreamBench",
+                method: Method::GET,
+                idempotent: true,
+                facade_path: &[],
+            },
             route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", "/perf/raw-stream"),
             policy: ResolvedPolicy::default(),
             response: response.response_plan,
@@ -25,24 +29,42 @@ fn request_plan(response: concord_core::advanced::ResponseEntityPlan) -> Request
 
 fn bench_raw(c: &mut Criterion, name: &str, chunks: usize, chunk_size: usize) {
     let rt = runtime();
-    c.bench_function(name, |b| b.to_async(&rt).iter_batched(
-        || {
-            let response = MockResponse::chunked(StatusCode::OK, (0..chunks).map(|idx| filled_bytes(chunk_size, (idx % 251) as u8)))
-                .with_header(http::header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
-            let entity = RawStreamResponse::<OctetStream>::plan(concord_core::advanced::ErrorContext { endpoint: "RawStreamBench", method: Method::GET }).expect("stream plan");
-            (client(MockTransport::repeating(response)), request_plan(entity))
-        },
-        |(client, plan)| async move {
-            let mut response = RawStreamResponse::<OctetStream>::execute(&client, plan).await.expect("stream response");
-            let mut bytes = 0usize;
-            while let Some(chunk) = response.next_chunk().await.expect("stream chunk") {
-                bytes += chunk.len();
-                black_box(chunk);
-            }
-            assert_eq!(bytes, chunks * chunk_size);
-        },
-        BatchSize::SmallInput,
-    ));
+    c.bench_function(name, |b| {
+        b.to_async(&rt).iter_batched(
+            || {
+                let response = MockResponse::chunked(
+                    StatusCode::OK,
+                    (0..chunks).map(|idx| filled_bytes(chunk_size, (idx % 251) as u8)),
+                )
+                .with_header(
+                    http::header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/octet-stream"),
+                );
+                let entity =
+                    RawStreamResponse::<OctetStream>::plan(concord_core::advanced::ErrorContext {
+                        endpoint: "RawStreamBench",
+                        method: Method::GET,
+                    })
+                    .expect("stream plan");
+                (
+                    client(MockTransport::repeating(response)),
+                    request_plan(entity),
+                )
+            },
+            |(client, plan)| async move {
+                let mut response = RawStreamResponse::<OctetStream>::execute(&client, plan)
+                    .await
+                    .expect("stream response");
+                let mut bytes = 0usize;
+                while let Some(chunk) = response.next_chunk().await.expect("stream chunk") {
+                    bytes += chunk.len();
+                    black_box(chunk);
+                }
+                assert_eq!(bytes, chunks * chunk_size);
+            },
+            BatchSize::SmallInput,
+        )
+    });
 }
 
 fn streaming_response(c: &mut Criterion) {

@@ -1,5 +1,5 @@
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use concord_core::advanced::{DynBody, StreamBody};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use perf::support::{
     ChunkedBodyStream, InMemoryAsyncRead, drain_transport_stream, filled_bytes, runtime,
 };

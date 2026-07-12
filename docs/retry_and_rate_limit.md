@@ -77,7 +77,7 @@ GET Search
 
 A response observer can translate provider headers into rate-limit observations. The callback sees a sanitized header view: sensitive names such as `Set-Cookie`, `WWW-Authenticate`, and token-like headers are redacted before callback access, while `Retry-After` and non-sensitive rate-limit headers remain available.
 
-Rate-limit acquisition happens after request planning, auth preparation, and auth collision validation, and before transport send. It is transport-metadata only. Rate-limit response observation is also metadata only and does not expose request body bytes, response body bytes, raw auth material, or raw sensitive response headers. Auth collision checks happen before rate-limit acquisition, hooks, debug, and transport side effects.
+Rate-limit acquisition happens after secret-free auth collision preflight, credential preparation, and physical-attempt body production, and before hooks, debug, auth materialization, or transport send. It is transport-metadata only. Rate-limit response observation is also metadata only and does not expose request body bytes, response body bytes, raw auth material, or raw sensitive response headers.
 
 Rate-limit response cooldowns are capped as well. The default maximum cooldown duration is finite and configured through runtime settings. The default governor runtime also keeps a fixed maximum number of stored cooldown entries. Remote `Retry-After` values above the configured duration cap fail closed before Concord stores or sleeps on the cooldown, and attempts to store a new distinct cooldown entry after the entry cap is reached fail closed instead of silently growing without bound. Expired cooldown entries are pruned before the entry cap is enforced. Custom rate-limit observers and response policies cannot force a cooldown above these bounds through the default governor runtime.
 
@@ -146,19 +146,20 @@ GET Unmetered
 
 The execution order is fixed:
 
-1. Build the logical request.
-2. Resolve required credentials and prepare auth material.
-3. Validate auth collisions against public query and header policy.
-4. Acquire rate-limit permits.
-5. Materialize `TransportRequest` with raw auth.
-6. Send the transport request.
-7. Classify the response or transport failure.
-8. Run response and error hooks.
-9. Observe rate-limit response metadata.
-10. Handle auth rejection and bounded auth refresh.
-11. Apply normal retry policy.
-12. Decode the endpoint response and return the decoded response entity output.
-13. Return the final value.
+1. Resolve the public request head and body metadata.
+2. Derive secret-free auth placements and validate collisions.
+3. Resolve credentials against the planned slots.
+4. Produce the physical-attempt body.
+5. Acquire rate-limit permits.
+6. Run sanitized hooks and debug output.
+7. Materialize `TransportRequest` with raw auth and immediately send it.
+8. Classify the response or transport failure.
+9. Run response and error hooks.
+10. Observe rate-limit response metadata.
+11. Handle auth rejection and bounded auth refresh.
+12. Apply normal retry policy.
+13. Decode the endpoint response and return the decoded response entity output.
+14. Return the final value.
 
 `#[cfg(feature = "dangerous-raw-response")] execute_raw_response()` follows the same planning, auth, rate-limit, transport, classification, hook, and retry path, then returns the classified raw response before endpoint decoding. It still obeys the configured response-body limit.
 

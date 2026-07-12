@@ -1,13 +1,53 @@
 // Client lifecycle phase modules intentionally share one private parent namespace.
 use super::*;
 
+pub(super) struct PublicRequestHead {
+    pub(super) meta: RequestMeta,
+    pub(super) url: url::Url,
+    pub(super) headers: http::HeaderMap,
+    pub(super) timeout: Option<std::time::Duration>,
+    pub(super) retry: RetrySetting,
+    pub(super) rate_limit: RateLimitPlan,
+    pub(super) extensions: crate::auth::RequestExtensions,
+}
+
+impl PublicRequestHead {
+    pub(super) fn apply_auth_preflight(
+        &mut self,
+        auth_plan: &crate::auth::AuthPlacementPlan,
+        ctx: &ErrorContext,
+    ) -> Result<(), ApiClientError> {
+        auth_plan
+            .validate_public_request(&self.headers, &self.url)
+            .map_err(|source| ApiClientError::Auth {
+                ctx: ctx.clone(),
+                source,
+            })?;
+        self.extensions.auth_plan = auth_plan.clone();
+        Ok(())
+    }
+
+    pub(super) fn finish(self, body: crate::io::AttemptBody) -> BuiltRequest {
+        BuiltRequest {
+            meta: self.meta,
+            url: self.url,
+            headers: self.headers,
+            body,
+            timeout: self.timeout,
+            retry: self.retry,
+            rate_limit: self.rate_limit,
+            extensions: self.extensions,
+        }
+    }
+}
+
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
-    pub(super) fn build_request_from_plan(
+    pub(super) fn resolve_public_request_head(
         &self,
         plan: &crate::endpoint::RequestPlanView,
-        body: &mut crate::io::PreparedBody,
+        body: &crate::io::PreparedBody,
         meta: RequestMeta,
-    ) -> Result<BuiltRequest, ApiClientError> {
+    ) -> Result<PublicRequestHead, ApiClientError> {
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
@@ -39,7 +79,23 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 msg: "request Content-Type conflicts with prepared body media type",
             }
         })?;
-        let body = body.produce_for_attempt().map_err(|error| {
+        Ok(PublicRequestHead {
+            meta,
+            url,
+            headers,
+            timeout,
+            retry,
+            rate_limit,
+            extensions: crate::auth::RequestExtensions::default(),
+        })
+    }
+
+    pub(super) fn produce_attempt_body(
+        &self,
+        body: &mut crate::io::PreparedBody,
+        ctx: &ErrorContext,
+    ) -> Result<crate::io::AttemptBody, ApiClientError> {
+        body.produce_for_attempt().map_err(|error| {
             let msg = match error.kind() {
                 crate::io::BodyProductionErrorKind::AlreadyConsumed => {
                     "one-shot request body has already been consumed"
@@ -50,17 +106,60 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 ctx: ctx.clone(),
                 msg,
             }
-        })?;
-
-        Ok(BuiltRequest {
-            meta,
-            url,
-            headers,
-            body,
-            timeout,
-            retry,
-            rate_limit,
-            extensions: Default::default(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collision_preflight_leaves_one_shot_body_unconsumed() {
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            http::header::AUTHORIZATION,
+            http::HeaderValue::from_static("public"),
+        );
+        let mut head = PublicRequestHead {
+            meta: RequestMeta {
+                endpoint: "PreflightOneShot",
+                method: http::Method::POST,
+                idempotent: false,
+                attempt: 0,
+                page_index: 0,
+            },
+            url: "https://example.com/items".parse().expect("url"),
+            headers,
+            timeout: None,
+            retry: RetrySetting::Off,
+            rate_limit: RateLimitPlan::new(),
+            extensions: Default::default(),
+        };
+        let auth_plan = crate::auth::AuthPlacementPlan::from_auth_plan(&crate::auth::AuthPlan {
+            requirements: vec![crate::auth::AuthRequirement {
+                credential: crate::auth::CredentialRef {
+                    id: crate::auth::CredentialId::new("test", "token"),
+                },
+                placement: crate::auth::AuthPlacement::Bearer,
+                usage_id: crate::auth::AuthUsageId::new("preflight-use"),
+                step_id: Some("preflight"),
+                provenance: crate::auth::AuthProvenance::new("preflight"),
+                challenge: Default::default(),
+            }],
+        })
+        .expect("placement plan");
+        let ctx = ErrorContext {
+            endpoint: "PreflightOneShot",
+            method: http::Method::POST,
+        };
+        let mut body = crate::io::PreparedBody::one_shot(crate::body::DynBody::empty(), None);
+
+        head.apply_auth_preflight(&auth_plan, &ctx)
+            .expect_err("collision must fail");
+        assert!(matches!(
+            body.produce_for_attempt(),
+            Ok(crate::io::AttemptBody::Dyn(_))
+        ));
     }
 }

@@ -118,13 +118,15 @@ Auth values are still caller-controlled if user code intentionally exposes them 
 Concord's runtime order is fixed at a high level:
 
 1. plan the request;
-2. check auth collisions and materialize auth requirements;
-3. acquire any rate-limit resources;
-4. run hooks, debug, and transport send logic;
-5. classify the response or transport failure;
-6. handle auth rejection;
-7. observe retry and rate-limit behavior;
-8. decode the endpoint response.
+2. derive secret-free auth placements and validate public collisions;
+3. acquire credentials and produce the attempt body;
+4. acquire any rate-limit resources;
+5. run sanitized hooks and debug output;
+6. materialize authentication and immediately invoke transport;
+7. classify the response or transport failure;
+8. handle auth rejection;
+9. observe retry and rate-limit behavior;
+10. decode the endpoint response.
 
 The exact implementation is intentionally internal, but the order above is the contract to rely on.
 

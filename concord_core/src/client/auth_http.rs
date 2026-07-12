@@ -101,6 +101,17 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     policy,
                 } = req;
 
+                validate_auth_internal_body(&mut headers, &body)?;
+                let auth_plan = match &mode {
+                    AuthMode::SkipAuth => crate::auth::AuthPlacementPlan::default(),
+                    AuthMode::UseAuth { requirement, .. } => {
+                        crate::auth::AuthPlacementPlan::from_auth_plan(&crate::auth::AuthPlan {
+                            requirements: vec![requirement.clone()],
+                        })?
+                    }
+                };
+                auth_plan.validate_public_request(&headers, &url)?;
+
                 let meta = RequestMeta {
                     endpoint: "<auth>",
                     method,
@@ -109,20 +120,18 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     page_index: 0,
                 };
 
-                validate_auth_internal_body(&mut headers, &body)?;
-                let mut base_request = BuiltRequest {
+                let base_request = super::build::PublicRequestHead {
                     meta,
                     url,
                     headers,
-                    body: crate::io::AttemptBody::Empty,
                     timeout: policy.timeout,
                     retry: RetrySetting::Inherit,
                     rate_limit: RateLimitPlan::new(),
-                    extensions: Default::default(),
+                    extensions: crate::auth::RequestExtensions { auth_plan },
                 };
 
                 fn make_built_request(
-                    base_request: &BuiltRequest,
+                    base_request: &super::build::PublicRequestHead,
                     body: &mut crate::io::PreparedBody,
                     attempt: u32,
                 ) -> Result<BuiltRequest, AuthError> {
@@ -145,27 +154,30 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                 let mut auth_materials = Vec::new();
                 match mode {
                     AuthMode::SkipAuth => {}
-                    AuthMode::UseAuth(requirement) => {
-                        let requirement_key = requirement.safe_fragment();
+                    AuthMode::UseAuth { id, requirement: _ } => {
+                        let requirement_key = id.safe_fragment();
                         let recursive = AUTH_INTERNAL_STACK.with(|stack| {
                             stack.borrow().iter().any(|item| item == &requirement_key)
                         });
                         if recursive {
                             return Err(AuthError::new(
                                 AuthErrorKind::RecursionDetected,
-                                format!(
-                                "internal auth recursion detected for requirement `{requirement}`"
-                            ),
-                        ));
-                    }
+                                format!("internal auth recursion detected for requirement `{id}`"),
+                            ));
+                        }
 
                         let auth_state_snapshot = self.client.try_auth_state()?;
                         let _stack_guard = AuthInternalStackGuard::push(requirement_key);
                         let applied = {
-                            let mut auth_request =
-                                crate::auth::AuthApplicationRequest::new(&mut base_request.extensions);
+                            let slot = base_request
+                                .extensions
+                                .auth_plan
+                                .slots
+                                .first()
+                                .expect("validated internal auth plan must contain one slot");
+                            let mut auth_request = crate::auth::AuthApplicationRequest::new(slot);
                             Cx::apply_internal_auth(
-                                &requirement,
+                                &id,
                                 &mut auth_request,
                                 self.client.vars(),
                                 self.client.auth_vars(),
@@ -174,7 +186,9 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                             )
                             .await
                         };
-                        auth_materials = applied?.materials;
+                        let applied = applied?;
+                        applied.validate_bindings(&base_request.extensions.auth_plan)?;
+                        auth_materials = applied.materials;
                     }
                 }
 
@@ -205,15 +219,14 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                             })?;
                     }
 
-                    let transport_req =
-                        crate::transport::materialize_transport_request(
-                            built,
-                            &auth_materials,
-                            None,
-                        )
-                        .map_err(|source| {
-                            AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
-                        })?;
+                    let transport_req = crate::transport::materialize_transport_request(
+                        built,
+                        &auth_materials,
+                        None,
+                    )
+                    .map_err(|source| {
+                        AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
+                    })?;
                     let resp = self.client.transport.send(transport_req).await;
                     let mut resp = match resp {
                         Ok(resp) => resp,
@@ -284,6 +297,82 @@ mod test {
     use bytes::Bytes;
     use http::HeaderValue;
     use std::sync::Arc;
+
+    fn internal_requirement() -> crate::auth::AuthRequirement {
+        crate::auth::AuthRequirement {
+            credential: crate::auth::CredentialRef {
+                id: crate::auth::CredentialId::new("test", "internal"),
+            },
+            placement: crate::auth::AuthPlacement::Header("X-Internal"),
+            usage_id: crate::auth::AuthUsageId::new("internal-use"),
+            step_id: Some("internal"),
+            provenance: crate::auth::AuthProvenance::new("internal"),
+            challenge: Default::default(),
+        }
+    }
+
+    #[derive(Clone)]
+    struct InternalPreflightCx;
+
+    impl crate::client::ClientContext for InternalPreflightCx {
+        type Vars = ();
+        type AuthVars = Arc<AtomicUsize>;
+        type AuthState = ();
+        const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+        const DOMAIN: &'static str = "example.com";
+
+        fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+
+        fn apply_internal_auth<'a>(
+            _id: &'a crate::auth::AuthRequirementId,
+            request: &'a mut crate::auth::AuthApplicationRequest<'_>,
+            _vars: &'a Self::Vars,
+            calls: &'a Self::AuthVars,
+            _auth_state: &'a Self::AuthState,
+            _executor: &'a dyn crate::auth::AuthHttpExecutor,
+        ) -> crate::auth::AuthFuture<
+            'a,
+            Result<crate::auth::PreparedInternalAuth, crate::auth::AuthError>,
+        > {
+            Box::pin(async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                let requirement = internal_requirement();
+                let material = crate::auth::ApiKey::new("internal-secret");
+                let application =
+                    crate::auth::apply_secret_credential(request, &requirement, &material)?;
+                Ok(crate::auth::PreparedInternalAuth::from_application(
+                    application,
+                ))
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct CountingTransport(Arc<AtomicUsize>);
+
+    impl crate::transport::Transport for CountingTransport {
+        fn send(
+            &self,
+            _req: crate::transport::TransportRequest,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<
+                            crate::transport::TransportResponse,
+                            crate::transport::TransportError,
+                        >,
+                    > + Send,
+            >,
+        > {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                Err(crate::transport::TransportError::with_kind(
+                    crate::transport::TransportErrorKind::Other,
+                    std::io::Error::other("unexpected transport invocation"),
+                ))
+            })
+        }
+    }
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
@@ -368,5 +457,40 @@ mod test {
         assert!(!rendered.contains("secret-auth-body"));
         assert!(!rendered.contains("application/json"));
         assert!(!rendered.contains("text/plain"));
+    }
+
+    #[tokio::test]
+    async fn internal_auth_collision_precedes_apply_internal_auth() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let sends = Arc::new(AtomicUsize::new(0));
+        let client = ApiClient::<InternalPreflightCx, _>::with_transport(
+            (),
+            calls.clone(),
+            CountingTransport(sends.clone()),
+        );
+        let executor = ClientAuthHttpExecutor { client: &client };
+        let mut headers = http::HeaderMap::new();
+        headers.insert("x-internal", HeaderValue::from_static("public"));
+
+        let error = crate::auth::AuthHttpExecutor::send(
+            &executor,
+            crate::auth::AuthHttpRequest {
+                method: http::Method::GET,
+                url: "https://auth.example.com/token".parse().expect("url"),
+                headers,
+                body: crate::io::PreparedBody::empty(),
+                mode: crate::auth::AuthMode::use_auth(
+                    crate::auth::AuthRequirementId::new("test", "internal"),
+                    internal_requirement(),
+                ),
+                policy: crate::auth::AuthInternalPolicy::default(),
+            },
+        )
+        .await
+        .expect_err("public internal-auth collision must fail");
+
+        assert_eq!(error.kind, AuthErrorKind::InvalidConfiguration);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(sends.load(Ordering::SeqCst), 0);
     }
 }

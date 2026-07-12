@@ -7,22 +7,24 @@
 The runtime order is:
 
 ```text
-1. build and validate the logical request
-2. resolve credentials and attach pending auth slots
+1. resolve the public request head and body metadata
+2. construct the secret-free authentication placement plan
 3. validate auth collisions against public query and header policy
-4. rate-limit acquire
-5. run pre_send hook
-6. materialize a send-only `TransportRequest`
-7. transport send
-8. on initial transport failure, run transport_error hook
-9. on HTTP response, run post_response hook
-10. rate-limit observation
-11. classify HTTP status
-12. handle auth rejection or retry decision where applicable
-13. read bounded response body for buffered responses
-14. decode endpoint response
-15. return decoded response entity output
-16. return
+4. acquire or refresh credentials and bind material to planned slots
+5. produce the body for the physical attempt
+6. rate-limit acquire
+7. run sanitized request debug and pre_send hooks
+8. materialize a send-only `TransportRequest`
+9. transport send
+10. on initial transport failure, run transport_error hook
+11. on HTTP response, run post_response hook
+12. rate-limit observation
+13. classify HTTP status
+14. handle auth rejection or retry decision where applicable
+15. read bounded response body for buffered responses
+16. decode endpoint response
+17. return decoded response entity output
+18. return
 ```
 
 This order is not user-configurable.
@@ -45,7 +47,7 @@ Credential slot generations are monotonic across empty, in-flight, ready, and fa
 
 Each `RequestPlan` owns one request-local `PreparedBody`. That capability owns media type, standard `SizeHint`, replayability, and one-shot state, and it produces the body for each physical attempt. Empty and immutable byte bodies are reusable, stream and multipart bodies are one-shot, and custom request entities can supply an explicit replay factory. No endpoint descriptor, request-plan view, retry state, or built request keeps an independent replayability or body-metadata authority.
 
-`BuiltRequest` is the logical request for one physical attempt. It contains public route, query, and header data plus typed pending auth slots and the body produced for that attempt, but it does not contain raw auth material. Request body bytes are not copied into debug, hook, rate-limit, retry, or error metadata.
+`BuiltRequest` is created only after public-head preflight, credential preparation, and attempt-body production. It contains public route, query, and header data, the unchanged secret-free placement plan, and the body produced for that attempt, but it does not contain raw auth material. Request body bytes are not copied into debug, hook, rate-limit, retry, or error metadata.
 
 Pagination drives one logical request per page and always checks page progress. The runtime records every logical request identity seen during a pagination run and returns a typed pagination error if a later page would reuse any previously seen identity instead of advancing.
 
@@ -61,7 +63,7 @@ Debug output must not include request or response body snippets, previews, or fo
 
 The deprecated dev body capture path is deliberately separate from debug sinks and hooks. It is opt-in, response-only, local-file-only, and skips protected auth-bearing requests by default.
 
-Auth preparation does not receive `BuiltRequest` directly. Endpoint auth preparation and auth-internal preparation both receive an auth-only application request that exposes only pending-slot attachment, so custom client contexts cannot insert raw auth into logical headers, query strings, body data, policy data, or request metadata during credential preparation.
+Auth preparation does not receive `BuiltRequest` directly. Endpoint auth preparation and auth-internal preparation receive an auth-only application request bound to one preplanned slot. Custom client contexts can bind compatible material but cannot choose placement, add query sensitivity, or insert raw auth into logical headers, query strings, body data, policy data, or request metadata.
 
 `TransportRequest` is materialized only immediately before `Transport::send`. It is the boundary where bearer values, arbitrary auth headers, query-auth values, and Basic auth headers are inserted. Concord drops it after send and does not store it in `BuiltResponse` or `DecodedResponse<T>`.
 

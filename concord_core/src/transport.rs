@@ -1,4 +1,4 @@
-use crate::auth::{PendingAuthPlacement, RequestExtensions};
+use crate::auth::{PlannedAuthPlacement, RequestExtensions};
 use crate::codec::CodecError;
 use crate::rate_limit::RateLimitPlan;
 use crate::retry::RetrySetting;
@@ -246,21 +246,10 @@ impl fmt::Debug for BuiltRequest {
 
 impl BuiltRequest {
     pub(crate) fn debug_url(&self) -> String {
-        let mut url = self.url.clone();
-        if self
-            .extensions
-            .pending_auth_slots
-            .iter()
-            .any(|slot| matches!(slot.placement, PendingAuthPlacement::Query(_)))
-        {
-            let mut pairs = url.query_pairs_mut();
-            for slot in &self.extensions.pending_auth_slots {
-                if let PendingAuthPlacement::Query(name) = &slot.placement {
-                    pairs.append_pair(name, "<redacted>");
-                }
-            }
-        }
-        crate::redaction::sanitize_url_for_debug(&url, self.extensions.sensitive_query_keys.iter())
+        crate::redaction::sanitize_url_for_debug(
+            &self.url,
+            self.extensions.auth_plan.sensitive_query_keys.iter(),
+        )
     }
 }
 
@@ -333,18 +322,18 @@ pub struct TransportRequest {
 impl fmt::Debug for TransportRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut headers = self.headers.clone();
-        for slot in &self.extensions.pending_auth_slots {
+        for slot in &self.extensions.auth_plan.slots {
             match &slot.placement {
-                PendingAuthPlacement::Bearer | PendingAuthPlacement::Basic => {
+                PlannedAuthPlacement::Bearer | PlannedAuthPlacement::Basic => {
                     headers.insert(
                         http::header::AUTHORIZATION,
                         http::HeaderValue::from_static("<redacted>"),
                     );
                 }
-                PendingAuthPlacement::Header(name) => {
+                PlannedAuthPlacement::Header(name) => {
                     headers.insert(name.clone(), http::HeaderValue::from_static("<redacted>"));
                 }
-                PendingAuthPlacement::Query(_) => {}
+                PlannedAuthPlacement::Query(_) => {}
             }
         }
         f.debug_struct("TransportRequest")
@@ -353,7 +342,7 @@ impl fmt::Debug for TransportRequest {
                 "url",
                 &crate::redaction::sanitize_url_for_debug(
                     &self.url,
-                    self.extensions.sensitive_query_keys.iter(),
+                    self.extensions.auth_plan.sensitive_query_keys.iter(),
                 ),
             )
             .field("headers", &crate::debug::SanitizedHeaders::new(&headers))
@@ -365,86 +354,8 @@ impl fmt::Debug for TransportRequest {
     }
 }
 
-pub(crate) struct AuthCollisionValidatedBuiltRequest(BuiltRequest);
-
-impl AuthCollisionValidatedBuiltRequest {
-    pub(crate) fn into_inner(self) -> BuiltRequest {
-        self.0
-    }
-}
-
-impl std::ops::Deref for AuthCollisionValidatedBuiltRequest {
-    type Target = BuiltRequest;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for AuthCollisionValidatedBuiltRequest {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-fn validate_auth_collisions_impl(built: &BuiltRequest) -> Result<(), crate::auth::AuthError> {
-    use http::header::AUTHORIZATION;
-
-    for slot in &built.extensions.pending_auth_slots {
-        match &slot.placement {
-            PendingAuthPlacement::Bearer => {
-                if built.headers.contains_key(AUTHORIZATION) {
-                    return Err(crate::auth::AuthError::new(
-                        crate::auth::AuthErrorKind::InvalidConfiguration,
-                        "bearer auth collides with an existing public Authorization header",
-                    ));
-                }
-            }
-            PendingAuthPlacement::Header(name) => {
-                if built.headers.contains_key(name) {
-                    return Err(crate::auth::AuthError::new(
-                        crate::auth::AuthErrorKind::InvalidConfiguration,
-                        format!("header auth key `{name}` collides with an existing public header"),
-                    ));
-                }
-            }
-            PendingAuthPlacement::Query(name) => {
-                if built
-                    .url
-                    .query_pairs()
-                    .any(|(existing, _)| existing == name.as_str())
-                {
-                    return Err(crate::auth::AuthError::new(
-                        crate::auth::AuthErrorKind::InvalidConfiguration,
-                        format!(
-                            "query auth key `{name}` collides with an existing public query parameter"
-                        ),
-                    ));
-                }
-            }
-            PendingAuthPlacement::Basic => {
-                if built.headers.contains_key(AUTHORIZATION) {
-                    return Err(crate::auth::AuthError::new(
-                        crate::auth::AuthErrorKind::InvalidConfiguration,
-                        "basic auth collides with an existing public Authorization header",
-                    ));
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub(crate) fn validate_auth_collisions(
+pub(crate) fn materialize_transport_request(
     built: BuiltRequest,
-) -> Result<AuthCollisionValidatedBuiltRequest, crate::auth::AuthError> {
-    validate_auth_collisions_impl(&built)?;
-    Ok(AuthCollisionValidatedBuiltRequest(built))
-}
-
-pub(crate) fn materialize_transport_request_validated(
-    built: AuthCollisionValidatedBuiltRequest,
     materials: &[crate::auth::AuthTransportMaterial],
     stream_request_limit: Option<usize>,
 ) -> Result<TransportRequest, crate::auth::AuthError> {
@@ -461,7 +372,6 @@ pub(crate) fn materialize_transport_request_validated(
         by_slot.insert(slot_id, material);
     }
 
-    let built = built.into_inner();
     let body = match built.body {
         crate::io::AttemptBody::Empty => TransportRequestBody::Empty,
         crate::io::AttemptBody::Bytes(bytes) => TransportRequestBody::Bytes(bytes),
@@ -480,7 +390,7 @@ pub(crate) fn materialize_transport_request_validated(
         extensions,
     };
 
-    for slot in &req.extensions.pending_auth_slots {
+    for slot in &req.extensions.auth_plan.slots {
         let Some(material) = by_slot.get(&slot.id).copied() else {
             return Err(crate::auth::AuthError::new(
                 crate::auth::AuthErrorKind::MissingCredential,
@@ -492,7 +402,7 @@ pub(crate) fn materialize_transport_request_validated(
         };
         match (&slot.placement, material) {
             (
-                PendingAuthPlacement::Bearer,
+                PlannedAuthPlacement::Bearer,
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
                 let value = format!("Bearer {}", secret.expose_secret());
@@ -505,7 +415,7 @@ pub(crate) fn materialize_transport_request_validated(
                 req.headers.insert(AUTHORIZATION, value);
             }
             (
-                PendingAuthPlacement::Header(name),
+                PlannedAuthPlacement::Header(name),
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
                 let value = HeaderValue::from_str(secret.expose_secret()).map_err(|_| {
@@ -517,7 +427,7 @@ pub(crate) fn materialize_transport_request_validated(
                 req.headers.insert(name.clone(), value);
             }
             (
-                PendingAuthPlacement::Query(name),
+                PlannedAuthPlacement::Query(name),
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
                 req.url
@@ -525,7 +435,7 @@ pub(crate) fn materialize_transport_request_validated(
                     .append_pair(name, secret.expose_secret());
             }
             (
-                PendingAuthPlacement::Basic,
+                PlannedAuthPlacement::Basic,
                 crate::auth::AuthTransportMaterial::Basic {
                     username, password, ..
                 },
@@ -564,15 +474,6 @@ pub(crate) fn materialize_transport_request_validated(
     }
 
     Ok(req)
-}
-
-pub(crate) fn materialize_transport_request(
-    built: BuiltRequest,
-    materials: &[crate::auth::AuthTransportMaterial],
-    stream_request_limit: Option<usize>,
-) -> Result<TransportRequest, crate::auth::AuthError> {
-    let validated = validate_auth_collisions(built)?;
-    materialize_transport_request_validated(validated, materials, stream_request_limit)
 }
 
 #[derive(Default)]

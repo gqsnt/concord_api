@@ -1,4 +1,5 @@
 // Client lifecycle phase modules intentionally share one private parent namespace.
+use super::build::PublicRequestHead;
 use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,45 +41,27 @@ enum AttemptTransportSuccess {
 
 struct CachedAuthPreparation {
     preparation: AuthPreparation,
-    extensions: crate::auth::RequestExtensions,
 }
 
 impl CachedAuthPreparation {
-    fn new(built: &BuiltRequest, preparation: AuthPreparation) -> Self {
-        Self {
-            preparation,
-            extensions: built.extensions.clone(),
-        }
+    fn new(preparation: AuthPreparation) -> Self {
+        Self { preparation }
     }
 
-    fn apply_to(&self, built: &mut BuiltRequest) -> &AuthPreparation {
-        // RequestExtensions only carries auth-preparation output (sensitive query keys
-        // and pending auth slots), so replacing the auth-owned extensions here is safe.
-        built
-            .extensions
-            .replace_auth_extensions(self.extensions.clone());
+    fn preparation(&self) -> &AuthPreparation {
         &self.preparation
     }
 }
 
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
-    fn build_attempt_request(
-        &self,
-        plan: &crate::endpoint::RequestPlanView,
-        body: &mut crate::io::PreparedBody,
-        meta: RequestMeta,
-    ) -> Result<BuiltRequest, ApiClientError> {
-        self.build_request_from_plan(plan, body, meta)
-    }
-
     async fn prepare_auth(
         &self,
         plan: &crate::endpoint::RequestPlanView,
         auth_state: &Cx::AuthState,
         executor: &dyn AuthHttpExecutor,
-        built: &mut BuiltRequest,
+        head: &PublicRequestHead,
     ) -> Result<AuthPreparation, ApiClientError> {
-        self.prepare_auth_plan(plan, auth_state, executor, built)
+        self.prepare_auth_plan(plan, auth_state, executor, head)
             .await
     }
 
@@ -243,6 +226,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 source,
             })?;
         let auth_http = ClientAuthHttpExecutor { client: self };
+        let mut auth_placement_plan: Option<crate::auth::AuthPlacementPlan> = None;
         let mut attempt_index: u32 = 0;
         let mut transport_retry_index: u32 = 0;
         let mut auth_retry_index: u32 = 0;
@@ -257,37 +241,41 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .endpoint
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
-            let mut built = self.build_attempt_request(plan, body, meta)?;
+            let mut head = self.resolve_public_request_head(plan, body, meta)?;
+            let auth_plan = match auth_placement_plan.as_ref() {
+                Some(existing) => existing,
+                None => auth_placement_plan.insert(
+                    crate::auth::AuthPlacementPlan::from_auth_plan(&plan.endpoint.policy.auth)
+                        .map_err(|source| ApiClientError::Auth {
+                            ctx: ctx.clone(),
+                            source,
+                        })?,
+                ),
+            };
+            head.apply_auth_preflight(auth_plan, &ctx)?;
             let auth_preparation = if cached_auth_preparation.is_none() {
                 Some(
-                    self.prepare_auth(plan, &auth_state_snapshot, &auth_http, &mut built)
+                    self.prepare_auth(plan, &auth_state_snapshot, &auth_http, &head)
                         .await?,
                 )
             } else {
                 None
             };
             let auth_attempt = if let Some(cache) = cached_auth_preparation.as_ref() {
-                cache.apply_to(&mut built)
+                cache.preparation()
             } else {
                 let prepared = auth_preparation
                     .as_ref()
                     .expect("prepared auth must exist when cache is absent");
                 if prepared.cache_policy.allows_request_local_reuse() {
-                    cached_auth_preparation =
-                        Some(CachedAuthPreparation::new(&built, prepared.clone()));
+                    cached_auth_preparation = Some(CachedAuthPreparation::new(prepared.clone()));
                 }
                 prepared
             };
-            let mut built =
-                crate::transport::validate_auth_collisions(built).map_err(|source| {
-                    ApiClientError::Auth {
-                        ctx: ctx.clone(),
-                        source,
-                    }
-                })?;
+            let attempt_body = self.produce_attempt_body(body, &ctx)?;
+            let mut built = head.finish(attempt_body);
             let url_str = built.debug_url();
 
-            self.debug_planned_request(dbg, plan, &built, &url_str);
             let retry_config = std::mem::take(&mut built.retry);
             let retry_request_headers =
                 self.retry_request_headers_snapshot(&retry_config, transport_retry_index, &built);
@@ -602,14 +590,21 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         plan: &crate::endpoint::RequestPlanView,
         auth_state: &Cx::AuthState,
         executor: &dyn AuthHttpExecutor,
-        built: &mut BuiltRequest,
+        head: &PublicRequestHead,
     ) -> Result<AuthPreparation, ApiClientError> {
         let mut summary = crate::auth::AuthAttemptSummary::default();
         let mut materials = Vec::new();
         let mut cacheable = !plan.endpoint.policy.auth.requirements.is_empty();
-        for requirement in &plan.endpoint.policy.auth.requirements {
-            let auth_meta = built.meta.clone();
-            let mut auth_request = crate::auth::AuthApplicationRequest::new(&mut built.extensions);
+        for (requirement, slot) in plan
+            .endpoint
+            .policy
+            .auth
+            .requirements
+            .iter()
+            .zip(&head.extensions.auth_plan.slots)
+        {
+            let auth_meta = head.meta.clone();
+            let mut auth_request = crate::auth::AuthApplicationRequest::new(slot);
             let prepared = Cx::prepare_auth_requirement(
                 requirement,
                 &mut auth_request,
@@ -622,12 +617,20 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .await
             .map_err(|source| ApiClientError::Auth {
                 ctx: ErrorContext {
-                    endpoint: built.meta.endpoint,
-                    method: built.meta.method.clone(),
+                    endpoint: head.meta.endpoint,
+                    method: head.meta.method.clone(),
                 },
                 source,
             })?;
-            attach_prepared_auth_generation(built, &prepared);
+            prepared
+                .validate_binding(slot)
+                .map_err(|source| ApiClientError::Auth {
+                    ctx: ErrorContext {
+                        endpoint: head.meta.endpoint,
+                        method: head.meta.method.clone(),
+                    },
+                    source,
+                })?;
             if prepared.reuse != crate::auth::AuthPreparationReuse::RequestLocal {
                 cacheable = false;
             }
@@ -745,17 +748,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         })
     }
 
-    fn debug_planned_request(
+    pub(super) fn debug_planned_request(
         &self,
         dbg: DebugLevel,
-        plan: &crate::endpoint::RequestPlanView,
         built: &BuiltRequest,
         url_str: &str,
     ) {
         if dbg.is_verbose() {
             self.debug_sink.request_start(
                 dbg,
-                &plan.endpoint.meta.method,
+                &built.meta.method,
                 url_str,
                 built.meta.endpoint,
                 built.meta.page_index,
@@ -797,19 +799,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             resp.status,
             &resp.body,
         );
-    }
-}
-
-fn attach_prepared_auth_generation(
-    request: &mut BuiltRequest,
-    prepared: &crate::auth::PreparedAuthCredential,
-) {
-    let slot_id = prepared.material.slot_id();
-    for slot in &mut request.extensions.pending_auth_slots {
-        if slot.id == slot_id {
-            slot.generation = prepared.applied.generation;
-            break;
-        }
     }
 }
 

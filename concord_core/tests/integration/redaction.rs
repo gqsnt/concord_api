@@ -147,6 +147,7 @@ mod query_auth_redaction {
         bearer: String,
         username: String,
         password: String,
+        prepares: Arc<AtomicUsize>,
     }
 
     #[derive(Clone)]
@@ -172,6 +173,7 @@ mod query_auth_redaction {
         ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>>
         {
             Box::pin(async move {
+                auth.prepares.fetch_add(1, Ordering::SeqCst);
                 let application = match requirement.placement {
                     AuthPlacement::Basic => {
                         let material =
@@ -335,6 +337,7 @@ mod query_auth_redaction {
             bearer: BEARER_SECRET.to_string(),
             username: BASIC_USERNAME_SECRET.to_string(),
             password: PASSWORD_SECRET.to_string(),
+            prepares: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -345,8 +348,8 @@ mod query_auth_redaction {
         let events = Arc::new(TokioMutex::new(Vec::new()));
         let transport = MockTransport::new(events, vec![MockResponse::text(status, "ok")]);
         let sent = transport.clone();
-        let mut client =
-            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        let auth = redaction_auth_vars();
+        let mut client = ApiClient::<RedactionCx, _>::with_transport((), auth, transport);
         let debug = Arc::new(UrlDebugSink::default());
         client.set_debug_sink(debug.clone());
 
@@ -780,7 +783,7 @@ mod query_auth_redaction {
         assert!(observed.contains("pre_send_url:https://example.com/text"));
         assert!(observed.contains("post_response_url:https://example.com/text"));
         assert!(observed.contains("visible=visible-query"));
-        assert!(observed.contains("api_key=<redacted>"));
+        assert!(!observed.contains("api_key="));
         assert!(observed.contains("pre_send_key:<redacted>"));
         assert!(observed.contains("pre_send_visible:visible-request"));
         assert!(observed.contains("post_response_cookie:<redacted>"));
@@ -891,7 +894,7 @@ mod query_auth_redaction {
 
         let debug_output = events.join("\n");
         assert_secret_absent(&debug_output, API_KEY_SECRET);
-        assert!(debug_output.contains("api_key=<redacted>"));
+        assert!(!debug_output.contains("api_key="));
         assert!(
             requests[0].url.as_str().contains(API_KEY_SECRET),
             "transport URL should retain the real query auth secret"
@@ -909,10 +912,8 @@ mod query_auth_redaction {
 
         let debug_output = events.join("\n");
         assert_secret_absent(&debug_output, API_KEY_SECRET);
-        assert!(
-            debug_output
-                .contains("response:false:https://example.com/text?page=2&api_key=<redacted>")
-        );
+        assert!(debug_output.contains("response:false:https://example.com/text?page=2"));
+        assert!(!debug_output.contains("api_key="));
         assert!(requests[0].url.as_str().contains(API_KEY_SECRET));
         Ok(())
     }
@@ -924,7 +925,7 @@ mod query_auth_redaction {
 
         let debug_output = events.join("\n");
         assert!(debug_output.contains("page=2"));
-        assert!(debug_output.contains("api_key=<redacted>"));
+        assert!(!debug_output.contains("api_key="));
         assert_secret_absent(&debug_output, API_KEY_SECRET);
         Ok(())
     }
@@ -935,7 +936,7 @@ mod query_auth_redaction {
             run_debug_request(policy_with_query_auth("API_KEY"), StatusCode::OK).await?;
 
         let debug_output = events.join("\n");
-        assert!(debug_output.contains("API_KEY=<redacted>"));
+        assert!(!debug_output.contains("API_KEY="));
         assert_secret_absent(&debug_output, API_KEY_SECRET);
         Ok(())
     }
@@ -954,8 +955,9 @@ mod query_auth_redaction {
             vec![MockResponse::text(StatusCode::OK, "should-not-send")],
         );
         let sent = transport.clone();
-        let mut client =
-            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        let auth = redaction_auth_vars();
+        let prepares = auth.prepares.clone();
+        let mut client = ApiClient::<RedactionCx, _>::with_transport((), auth, transport);
         let debug = Arc::new(UrlDebugSink::default());
         client.set_debug_sink(debug.clone());
 
@@ -970,6 +972,7 @@ mod query_auth_redaction {
         assert!(output.contains("api_key"));
         assert_secret_absent(&output, API_KEY_SECRET);
         assert_secret_absent(&output, "also-secret");
+        assert_eq!(prepares.load(Ordering::SeqCst), 0);
         assert_eq!(sent.requests().await.len(), 0);
     }
 
@@ -982,7 +985,7 @@ mod query_auth_redaction {
         .await?;
 
         let debug_output = events.join("\n");
-        assert!(debug_output.contains("x-private-provider-key=<redacted>"));
+        assert!(!debug_output.contains("x-private-provider-key="));
         assert!(debug_output.contains("page=2"));
         assert_secret_absent(&debug_output, API_KEY_SECRET);
         assert!(requests[0].url.as_str().contains(API_KEY_SECRET));
@@ -995,7 +998,7 @@ mod query_auth_redaction {
             run_debug_request(policy_with_query_auth("provider"), StatusCode::OK).await?;
 
         let debug_output = events.join("\n");
-        assert!(debug_output.contains("provider=<redacted>"));
+        assert!(!debug_output.contains("provider="));
         assert!(debug_output.contains("page=2"));
         assert_secret_absent(&debug_output, API_KEY_SECRET);
 
@@ -1083,8 +1086,9 @@ mod query_auth_redaction {
             vec![MockResponse::text(StatusCode::OK, "should-not-send")],
         );
         let sent = transport.clone();
-        let mut client =
-            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        let auth = redaction_auth_vars();
+        let prepares = auth.prepares.clone();
+        let mut client = ApiClient::<RedactionCx, _>::with_transport((), auth, transport);
         client.configure(|_| {});
         let mut policy = auth_policy(AuthPlacement::Bearer);
         policy.headers.insert(
@@ -1101,6 +1105,7 @@ mod query_auth_redaction {
         let output = format!("{err:?}\n{err}");
         assert!(output.contains("collides"));
         assert!(!output.contains(BEARER_SECRET));
+        assert_eq!(prepares.load(Ordering::SeqCst), 0);
         assert_eq!(sent.sent_count().await, 0);
     }
 
@@ -1112,8 +1117,9 @@ mod query_auth_redaction {
             vec![MockResponse::text(StatusCode::OK, "should-not-send")],
         );
         let sent = transport.clone();
-        let client =
-            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        let auth = redaction_auth_vars();
+        let prepares = auth.prepares.clone();
+        let client = ApiClient::<RedactionCx, _>::with_transport((), auth, transport);
         let mut client = client;
         client.configure(|_| {});
         let mut policy = auth_policy(AuthPlacement::Header("X-Api-Key"));
@@ -1131,6 +1137,7 @@ mod query_auth_redaction {
         let output = format!("{err:?}\n{err}");
         assert!(output.contains("collides"));
         assert!(!output.contains(API_KEY_SECRET));
+        assert_eq!(prepares.load(Ordering::SeqCst), 0);
         assert_eq!(sent.sent_count().await, 0);
     }
 
@@ -1142,8 +1149,9 @@ mod query_auth_redaction {
             vec![MockResponse::text(StatusCode::OK, "should-not-send")],
         );
         let sent = transport.clone();
-        let client =
-            ApiClient::<RedactionCx, _>::with_transport((), redaction_auth_vars(), transport);
+        let auth = redaction_auth_vars();
+        let prepares = auth.prepares.clone();
+        let client = ApiClient::<RedactionCx, _>::with_transport((), auth, transport);
         let mut client = client;
         client.configure(|_| {});
         let mut policy = auth_policy(AuthPlacement::Basic);
@@ -1162,7 +1170,42 @@ mod query_auth_redaction {
         assert!(output.contains("collides"));
         assert_secret_absent(&output, BASIC_USERNAME_SECRET);
         assert_secret_absent(&output, PASSWORD_SECRET);
+        assert_eq!(prepares.load(Ordering::SeqCst), 0);
         assert_eq!(sent.sent_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn malformed_and_duplicate_advanced_placements_fail_before_provider_invocation() {
+        for mut policy in [auth_policy(AuthPlacement::Header("invalid\nheader")), {
+            let mut policy = auth_policy(AuthPlacement::Bearer);
+            let mut duplicate = policy.auth.requirements[0].clone();
+            duplicate.placement = AuthPlacement::Header("authorization");
+            duplicate.usage_id = concord_core::advanced::AuthUsageId::new("duplicate-use");
+            policy.auth.requirements.push(duplicate);
+            policy
+        }] {
+            let events = Arc::new(TokioMutex::new(Vec::new()));
+            let transport = MockTransport::new(
+                events,
+                vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+            );
+            let sent = transport.clone();
+            let auth = redaction_auth_vars();
+            let prepares = auth.prepares.clone();
+            let client = ApiClient::<RedactionCx, _>::with_transport((), auth, transport);
+
+            let error = client
+                .request(RedactionEndpoint {
+                    policy: std::mem::take(&mut policy),
+                })
+                .response()
+                .await
+                .expect_err("invalid runtime placement plan must fail");
+
+            assert!(matches!(error, ApiClientError::Auth { .. }));
+            assert_eq!(prepares.load(Ordering::SeqCst), 0);
+            assert_eq!(sent.sent_count().await, 0);
+        }
     }
 
     #[tokio::test]
@@ -1192,9 +1235,8 @@ mod query_auth_redaction {
         let (output, requests) =
             run_transport_error_request(policy_with_query_auth("api_key")).await?;
 
-        assert!(
-            output.contains("transport_error:https://example.com/text?page=2&api_key=<redacted>")
-        );
+        assert!(output.contains("transport_error:https://example.com/text?page=2"));
+        assert!(!output.contains("api_key="));
         assert_secret_absent(&output, API_KEY_SECRET);
         assert!(requests[0].url.as_str().contains(API_KEY_SECRET));
         Ok(())
@@ -1206,9 +1248,8 @@ mod query_auth_redaction {
         let (output, requests) =
             run_transport_error_request(policy_with_query_auth("api_key")).await?;
 
-        assert!(
-            output.contains("transport_error:https://example.com/text?page=2&api_key=<redacted>")
-        );
+        assert!(output.contains("transport_error:https://example.com/text?page=2"));
+        assert!(!output.contains("api_key="));
         assert!(output.contains("transport_error_ctx:TransportErrorHookContext"));
         assert!(output.contains("transport_error_display:transport error: Connect"));
         assert!(output.contains("transport_error_debug:TransportError"));
@@ -1231,6 +1272,7 @@ mod query_auth_redaction {
                 bearer: String::new(),
                 username: String::new(),
                 password: String::new(),
+                prepares: Arc::new(AtomicUsize::new(0)),
             },
             transport,
         );
@@ -1258,6 +1300,7 @@ mod query_auth_redaction {
         #[derive(Clone)]
         struct RefreshAuthVars {
             prepares: Arc<AtomicUsize>,
+            order: Arc<Mutex<Vec<&'static str>>>,
         }
 
         #[derive(Clone)]
@@ -1284,6 +1327,7 @@ mod query_auth_redaction {
             {
                 Box::pin(async move {
                     let prepare_index = auth.prepares.fetch_add(1, Ordering::SeqCst);
+                    auth.order.lock().expect("order lock").push("provider");
                     let secret = if prepare_index == 0 {
                         REFRESH_SECRET_A
                     } else {
@@ -1329,7 +1373,9 @@ mod query_auth_redaction {
         }
 
         #[derive(Clone)]
-        struct RefreshEndpoint;
+        struct RefreshEndpoint {
+            order: Arc<Mutex<Vec<&'static str>>>,
+        }
 
         impl Endpoint<RefreshCx> for RefreshEndpoint {
             type Response = String;
@@ -1348,13 +1394,23 @@ mod query_auth_redaction {
                 &self,
                 _ctx: &ClientPlanContext<'_, RefreshCx>,
             ) -> Result<RequestPlan, ApiClientError> {
-                Ok(request_plan(
+                let mut plan = request_plan(
                     "RefreshRedaction",
                     Method::GET,
                     "/refresh",
                     auth_policy(AuthPlacement::Header("X-Custom")),
                     None,
-                ))
+                );
+                let order = self.order.clone();
+                plan.body = concord_core::advanced::PreparedBody::replay_factory(
+                    http_body::SizeHint::default(),
+                    None,
+                    move || {
+                        order.lock().expect("order lock").push("body_factory");
+                        Ok(concord_core::advanced::DynBody::empty())
+                    },
+                );
+                Ok(plan)
             }
         }
 
@@ -1367,10 +1423,12 @@ mod query_auth_redaction {
             ],
         );
         let sent = transport.clone();
+        let order = Arc::new(Mutex::new(Vec::new()));
         let mut client = ApiClient::<RefreshCx, _>::with_transport(
             (),
             RefreshAuthVars {
                 prepares: Arc::new(AtomicUsize::new(0)),
+                order: order.clone(),
             },
             transport,
         );
@@ -1378,11 +1436,17 @@ mod query_auth_redaction {
         client.set_debug_sink(debug.clone());
 
         let value = client
-            .request(RefreshEndpoint)
+            .request(RefreshEndpoint {
+                order: order.clone(),
+            })
             .debug_level(DebugLevel::VV)
             .response()
             .await?;
         assert_eq!(value.into_value(), "ok");
+        assert_eq!(
+            *order.lock().expect("order lock"),
+            ["provider", "body_factory", "provider", "body_factory"]
+        );
 
         let debug_output = debug.events().join("\n");
         assert_secret_absent(&debug_output, REFRESH_SECRET_A);
@@ -1391,12 +1455,8 @@ mod query_auth_redaction {
         let requests = sent.requests().await;
         assert_eq!(requests.len(), 2);
         assert_eq!(
-            requests[0].extensions.pending_auth_slots[0].generation,
-            Some(1)
-        );
-        assert_eq!(
-            requests[1].extensions.pending_auth_slots[0].generation,
-            Some(2)
+            requests[0].extensions.auth_plan, requests[1].extensions.auth_plan,
+            "credential refresh must reuse the unchanged placement plan"
         );
         assert_eq!(
             requests[0]
@@ -1433,6 +1493,19 @@ mod query_auth_redaction {
         #[derive(Clone)]
         struct InternalAuthCx;
 
+        fn internal_auth_requirement() -> AuthRequirement {
+            AuthRequirement {
+                credential: concord_core::advanced::CredentialRef {
+                    id: concord_core::advanced::CredentialId::new("test", "internal"),
+                },
+                placement: AuthPlacement::Header("X-Internal-Custom"),
+                usage_id: concord_core::advanced::AuthUsageId::new("internal-use"),
+                step_id: Some("internal"),
+                provenance: concord_core::advanced::AuthProvenance::new("internal"),
+                challenge: Default::default(),
+            }
+        }
+
         impl ClientContext for InternalAuthCx {
             type Vars = ();
             type AuthVars = InternalAuthVars;
@@ -1453,16 +1526,7 @@ mod query_auth_redaction {
             {
                 Box::pin(async move {
                     assert_eq!(requirement.name(), "internal");
-                    let requirement = AuthRequirement {
-                        credential: concord_core::advanced::CredentialRef {
-                            id: concord_core::advanced::CredentialId::new("test", "internal"),
-                        },
-                        placement: AuthPlacement::Header("X-Internal-Custom"),
-                        usage_id: concord_core::advanced::AuthUsageId::new("internal-use"),
-                        step_id: Some("internal"),
-                        provenance: concord_core::advanced::AuthProvenance::new("internal"),
-                        challenge: Default::default(),
-                    };
+                    let requirement = internal_auth_requirement();
                     let material = ApiKey::new(auth.internal_secret.clone());
                     let application = apply_secret_credential(request, &requirement, &material)?;
                     Ok(PreparedInternalAuth::from_application(application))
@@ -1488,7 +1552,10 @@ mod query_auth_redaction {
                                 .expect("auth url"),
                             headers: HeaderMap::new(),
                             body: concord_core::advanced::PreparedBody::empty(),
-                            mode: AuthMode::UseAuth(AuthRequirementId::new("test", "internal")),
+                            mode: AuthMode::use_auth(
+                                AuthRequirementId::new("test", "internal"),
+                                internal_auth_requirement(),
+                            ),
                             policy: AuthInternalPolicy::default(),
                         })
                         .await?;
@@ -1575,11 +1642,7 @@ mod query_auth_redaction {
             INTERNAL_AUTH_SECRET,
         );
         assert_secret_absent(&format!("{:?}", requests[1]), INTERNAL_AUTH_SECRET);
-        assert_eq!(requests[0].extensions.pending_auth_slots.len(), 1);
-        assert_eq!(
-            requests[0].extensions.pending_auth_slots[0].generation,
-            None
-        );
+        assert_eq!(requests[0].extensions.auth_plan.slots.len(), 1);
         Ok(())
     }
 

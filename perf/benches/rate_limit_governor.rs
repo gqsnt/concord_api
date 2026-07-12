@@ -1,14 +1,14 @@
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use futures_util::{FutureExt, future::join_all};
-use http::Method;
-use perf::support::{
-    context, multi_bucket_plan, response_context, response_headers, runtime, single_bucket_plan,
-};
 use concord_core::advanced::{
     GovernorRateLimiter, RateLimitKeyPart, RateLimitResponsePolicy, RateLimiter,
 };
 use concord_core::prelude::RateLimitObservation;
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use futures_util::{FutureExt, future::join_all};
+use http::Method;
 use http::StatusCode;
+use perf::support::{
+    context, multi_bucket_plan, response_context, response_headers, runtime, single_bucket_plan,
+};
 use std::env;
 use std::hint::black_box;
 use std::sync::Arc;
@@ -64,12 +64,7 @@ fn bench_acquire(c: &mut Criterion, name: &str, plan: concord_core::advanced::Ra
     });
 }
 
-fn bench_concurrent_acquire(
-    c: &mut Criterion,
-    name: &str,
-    unique_keys: bool,
-    tasks: usize,
-) {
+fn bench_concurrent_acquire(c: &mut Criterion, name: &str, unique_keys: bool, tasks: usize) {
     let runtime = runtime();
     c.bench_function(name, |b| {
         b.to_async(&runtime).iter_batched(
@@ -146,11 +141,8 @@ fn bench_cooldown_store(c: &mut Criterion) {
                         delay: Duration::from_micros(1),
                     },
                 ));
-                let plan = single_bucket_plan(
-                    "bench",
-                    "cooldown",
-                    vec![RateLimitKeyPart::endpoint()],
-                );
+                let plan =
+                    single_bucket_plan("bench", "cooldown", vec![RateLimitKeyPart::endpoint()]);
                 (limiter, plan)
             },
             move |(limiter, plan)| async move {
@@ -187,7 +179,10 @@ fn bench_cooldown_cardinality(c: &mut Criterion) {
                         single_bucket_plan(
                             "cooldown",
                             format!("below-cap-{idx}"),
-                            vec![RateLimitKeyPart::static_value("tenant", format!("tenant-{idx}"))],
+                            vec![RateLimitKeyPart::static_value(
+                                "tenant",
+                                format!("tenant-{idx}"),
+                            )],
                         )
                     })
                     .collect::<Vec<_>>();
@@ -225,7 +220,10 @@ fn bench_cooldown_cardinality(c: &mut Criterion) {
                         single_bucket_plan(
                             "cooldown",
                             format!("high-cardinality-{idx}"),
-                            vec![RateLimitKeyPart::static_value("tenant", format!("tenant-{idx}"))],
+                            vec![RateLimitKeyPart::static_value(
+                                "tenant",
+                                format!("tenant-{idx}"),
+                            )],
                         )
                     })
                     .collect::<Vec<_>>();
@@ -238,7 +236,13 @@ fn bench_cooldown_cardinality(c: &mut Criterion) {
             move |(limiter, plans, headers, urls)| async move {
                 for (plan, url) in plans.iter().zip(urls.iter()) {
                     let ctx = response_context(
-                        context("rate_limit_cooldown_high_cardinality", &METHOD, url, HOST, &plan),
+                        context(
+                            "rate_limit_cooldown_high_cardinality",
+                            &METHOD,
+                            url,
+                            HOST,
+                            &plan,
+                        ),
                         StatusCode::TOO_MANY_REQUESTS,
                         &headers,
                     );
@@ -263,7 +267,10 @@ fn bench_cooldown_cardinality(c: &mut Criterion) {
                         single_bucket_plan(
                             "cooldown",
                             format!("cap-fill-{idx}"),
-                            vec![RateLimitKeyPart::static_value("tenant", format!("tenant-{idx}"))],
+                            vec![RateLimitKeyPart::static_value(
+                                "tenant",
+                                format!("tenant-{idx}"),
+                            )],
                         )
                     })
                     .collect::<Vec<_>>();
@@ -316,8 +323,8 @@ fn bench_window_pruning(c: &mut Criterion) {
         let bench_runtime = bench_runtime.clone();
         b.iter_batched(
             move || {
-                let limiter = GovernorRateLimiter::new()
-                    .with_window_idle_ttl(Duration::from_secs(60));
+                let limiter =
+                    GovernorRateLimiter::new().with_window_idle_ttl(Duration::from_secs(60));
                 let hot_plan = single_bucket_plan(
                     "bench",
                     "hot-acquire",
@@ -351,7 +358,11 @@ fn bench_window_pruning(c: &mut Criterion) {
 }
 
 fn rate_limit_governor(c: &mut Criterion) {
-    bench_acquire(c, "empty_plan/acquire", concord_core::advanced::RateLimitPlan::new());
+    bench_acquire(
+        c,
+        "empty_plan/acquire",
+        concord_core::advanced::RateLimitPlan::new(),
+    );
     bench_acquire(
         c,
         "single_bucket_x1_window/acquire",

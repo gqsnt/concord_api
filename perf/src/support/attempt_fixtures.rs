@@ -45,10 +45,7 @@ impl ClientContext for PerfCx {
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
         _meta: &'a concord_core::advanced::RequestMeta,
-    ) -> concord_core::advanced::AuthFuture<
-        'a,
-        Result<PreparedAuthCredential, AuthError>,
-    > {
+    ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>> {
         Box::pin(async move {
             let token = auth.token.as_deref().ok_or_else(|| {
                 AuthError::new(AuthErrorKind::MissingCredential, "missing perf auth token")
@@ -142,7 +139,11 @@ impl RateLimiter for CountingRateLimiter {
 }
 
 pub fn client<T: Transport>(transport: T) -> ApiClient<PerfCx, T> {
-    configured_client(transport, DebugLevel::None, Arc::new(NoopRateLimiter::new()))
+    configured_client(
+        transport,
+        DebugLevel::None,
+        Arc::new(NoopRateLimiter::new()),
+    )
 }
 
 pub fn configured_client<T: Transport>(
@@ -170,9 +171,7 @@ pub struct RawPlanEndpoint {
     _not_reusable: PhantomData<Cell<()>>,
 }
 
-pub fn raw_plan_overrides(
-    plan: &RequestPlan,
-) -> Result<RequestOverrides, error::ApiClientError> {
+pub fn raw_plan_overrides(plan: &RequestPlan) -> Result<RequestOverrides, error::ApiClientError> {
     if plan.overrides.page_index != 0 {
         return Err(error::ApiClientError::PolicyViolation {
             ctx: error::ErrorContext {
@@ -248,6 +247,7 @@ pub async fn execute_raw_plan<T: Transport>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::support::{EmptyBody, MockResponse, MockTransport, runtime};
     use bytes::Bytes;
     use concord_core::advanced::{
         DebugSink, SanitizedHeaders, StreamBody, StreamBodyError, TransportError,
@@ -255,7 +255,6 @@ mod tests {
     };
     use futures_util::{StreamExt, stream};
     use std::sync::atomic::AtomicU8;
-    use crate::support::{EmptyBody, MockResponse, MockTransport, runtime};
 
     #[derive(Default)]
     struct RecordingDebugSink {
@@ -290,7 +289,8 @@ mod tests {
         fn send(
             &self,
             req: TransportRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>
+        {
             let chunks = self.chunks.clone();
             Box::pin(async move {
                 if let TransportRequestBody::Stream(mut body) = req.body {
@@ -319,7 +319,8 @@ mod tests {
         fn send(
             &self,
             _req: TransportRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>
+        {
             Box::pin(async {
                 Err(TransportError::with_kind(
                     TransportErrorKind::Connect,
@@ -368,11 +369,7 @@ mod tests {
             PreparedBody::empty(),
         );
 
-        let error = runtime().block_on(
-            client
-                .request(RawPlanEndpoint::new(plan))
-                .execute(),
-        );
+        let error = runtime().block_on(client.request(RawPlanEndpoint::new(plan)).execute());
 
         assert!(matches!(
             error,
@@ -404,7 +401,10 @@ mod tests {
             .expect("overridden raw response should succeed");
 
         let request = &transport.recorded_requests()[0];
-        assert_eq!(sink.request_level.load(Ordering::Relaxed), DebugLevel::V as u8);
+        assert_eq!(
+            sink.request_level.load(Ordering::Relaxed),
+            DebugLevel::V as u8
+        );
         assert_eq!(request.meta.attempt, 4);
         assert_eq!(request.timeout, Some(std::time::Duration::from_secs(17)));
     }
@@ -497,7 +497,10 @@ mod tests {
         );
 
         let error = runtime().block_on(execute_raw_plan(&client, plan));
-        assert!(matches!(error, Err(error::ApiClientError::Transport { .. })));
+        assert!(matches!(
+            error,
+            Err(error::ApiClientError::Transport { .. })
+        ));
     }
 }
 

@@ -3,13 +3,12 @@ use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthHttpExecutor,
     AuthPlacement, AuthPreparationReuse, AuthRequirement, CredentialContext, CredentialId,
     CredentialProvider, CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
-    PreparedAuthCredential, RequestMeta, RetryBackoff, RetryConfig, RetryIdempotency,
-    Transport, apply_secret_credential,
+    PreparedAuthCredential, RequestMeta, RetryBackoff, RetryConfig, RetryIdempotency, Transport,
+    apply_secret_credential,
 };
 use concord_core::internal::{
-    PreparedBody,
-    ClientPlanContext, RequestPlan, ResolvedPolicy, RetrySetting,
-    };
+    ClientPlanContext, PreparedBody, RequestPlan, ResolvedPolicy, RetrySetting,
+};
 use concord_core::prelude::{AccessToken, ApiClient, ClientContext, Endpoint, IntoEndpointPlan};
 use concord_core::{dangerous, error};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -18,8 +17,8 @@ use perf::support::{
     MockResponse, MockTransport, auth_requirement, client, execute_raw_plan, raw_plan_overrides,
     request_plan, runtime,
 };
-use std::hint::black_box;
 use std::future::Future;
+use std::hint::black_box;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -65,7 +64,10 @@ fn success_transport() -> MockTransport {
 
 fn retry_transport() -> MockTransport {
     MockTransport::scripted(vec![
-        MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, Bytes::from_static(b"retry")),
+        MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Bytes::from_static(b"retry"),
+        ),
         MockResponse::text(StatusCode::OK, Bytes::from_static(b"ok")),
     ])
 }
@@ -79,11 +81,9 @@ where
         let setup_plan = setup_plan.clone();
         b.to_async(&rt).iter_batched(
             move || (client(success_transport()), setup_plan()),
-            move |(client, plan)| {
-                async move {
-                    let response = execute_raw_plan(&client, plan).await.expect("auth bench");
-                    black_box((response.status, response.body.len()));
-                }
+            move |(client, plan)| async move {
+                let response = execute_raw_plan(&client, plan).await.expect("auth bench");
+                black_box((response.status, response.body.len()));
             },
             BatchSize::SmallInput,
         )
@@ -366,33 +366,27 @@ fn auth_runtime(c: &mut Criterion) {
     bench_success(c, "baseline/no_auth", || {
         base_plan("NoAuth", "/perf/no-auth")
     });
-    bench_success(
-        c,
-        "apply/bearer",
-        || with_auth(
+    bench_success(c, "apply/bearer", || {
+        with_auth(
             base_plan("BearerAuth", "/perf/bearer-auth"),
             AuthPlacement::Bearer,
             "bearer",
-        ),
-    );
-    bench_success(
-        c,
-        "apply/header",
-        || with_auth(
+        )
+    });
+    bench_success(c, "apply/header", || {
+        with_auth(
             base_plan("HeaderAuth", "/perf/header-auth"),
             AuthPlacement::Header("X-Api-Key"),
             "header",
-        ),
-    );
-    bench_success(
-        c,
-        "apply/query",
-        || with_auth(
+        )
+    });
+    bench_success(c, "apply/query", || {
+        with_auth(
             base_plan("QueryAuth", "/perf/query-auth"),
             AuthPlacement::Query("api_key"),
             "query",
-        ),
-    );
+        )
+    });
     bench_success(c, "apply/multiple_requirements", || {
         with_auth(
             with_auth(

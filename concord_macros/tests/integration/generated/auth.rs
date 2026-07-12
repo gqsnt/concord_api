@@ -474,13 +474,15 @@ async fn generated_static_basic_auth_reuses_preparation_across_transport_retry()
     assert_eq!(requests[1].meta.endpoint, "BasicRetry");
     let first_slot = requests[0]
         .extensions
-        .pending_auth_slots
+        .auth_plan
+        .slots
         .first()
         .expect("first request has prepared auth")
         .id;
     let second_slot = requests[1]
         .extensions
-        .pending_auth_slots
+        .auth_plan
+        .slots
         .first()
         .expect("retry request has prepared auth")
         .id;
@@ -688,19 +690,21 @@ async fn generated_static_basic_auth_reprepares_after_auth_rejection_invalidatio
     assert_eq!(requests.len(), 2);
     let first_slot = requests[0]
         .extensions
-        .pending_auth_slots
+        .auth_plan
+        .slots
         .first()
         .expect("first request has prepared auth")
         .id;
     let second_slot = requests[1]
         .extensions
-        .pending_auth_slots
+        .auth_plan
+        .slots
         .first()
         .expect("auth retry request has prepared auth")
         .id;
-    assert_ne!(
+    assert_eq!(
         first_slot, second_slot,
-        "auth rejection must invalidate cached preparation before retry"
+        "auth rejection refreshes material without rebuilding placement"
     );
     for req in &requests {
         assert_eq!(
@@ -742,19 +746,21 @@ async fn generated_oauth_prepares_each_transport_retry() {
     assert_eq!(requests[2].meta.endpoint, "OAuthRetry");
     let first_slot = requests[1]
         .extensions
-        .pending_auth_slots
+        .auth_plan
+        .slots
         .first()
         .expect("first protected request has prepared auth")
         .id;
     let second_slot = requests[2]
         .extensions
-        .pending_auth_slots
+        .auth_plan
+        .slots
         .first()
         .expect("retry protected request has prepared auth")
         .id;
-    assert_ne!(
+    assert_eq!(
         first_slot, second_slot,
-        "oauth credentials are not request-local reusable"
+        "credential re-preparation must reuse the request-local placement plan"
     );
     for req in &requests[1..] {
         assert_eq!(

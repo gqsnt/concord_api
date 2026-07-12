@@ -25,11 +25,11 @@ pub use materials::{AccessToken, ApiKey, BasicCredential};
 pub(crate) use plan::AuthTransportMaterial;
 pub use plan::{
     AuthApplication, AuthApplicationRequest, AuthAppliedCredential, AuthAttemptSummary,
-    AuthChallengePolicy, AuthDecision, AuthPlacement, AuthPlan, AuthPreparationReuse,
-    AuthRejectionDecision, AuthRequirement, AuthRetryReason, AuthSlotId, CredentialRef,
-    PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential, PreparedInternalAuth,
-    apply_basic_credential, apply_secret_credential, auth_decision_for_status,
-    invalidate_rejected_credential,
+    AuthChallengePolicy, AuthDecision, AuthPlacement, AuthPlacementPlan, AuthPlan,
+    AuthPreparationReuse, AuthRejectionDecision, AuthRequirement, AuthRetryReason, AuthSlotId,
+    CredentialRef, PlannedAuthPlacement, PlannedAuthSlot, PreparedAuthCredential,
+    PreparedInternalAuth, apply_basic_credential, apply_secret_credential,
+    auth_decision_for_status, invalidate_rejected_credential,
 };
 #[cfg(feature = "json")]
 pub use providers::OAuth2ClientCredentialsProvider;
