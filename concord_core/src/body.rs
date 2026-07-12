@@ -699,18 +699,12 @@ mod tests {
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
-    use std::task::{Wake, Waker};
+    use std::task::Waker;
     use tokio::io::ReadBuf;
 
-    struct NoopWake;
-
-    impl Wake for NoopWake {
-        fn wake(self: Arc<Self>) {}
-    }
-
     fn poll_with_waker<T>(poll: impl FnOnce(&mut Context<'_>) -> T) -> T {
-        let waker = Waker::from(Arc::new(NoopWake));
-        let mut cx = Context::from_waker(&waker);
+        let waker = Waker::noop();
+        let mut cx = Context::from_waker(waker);
         poll(&mut cx)
     }
 

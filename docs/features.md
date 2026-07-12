@@ -8,7 +8,7 @@ See [Security Model](security_model.md) for the consumer-facing boundary between
 
 | Crate | Default features | Optional features | Supported no-default build | Notes |
 | --- | --- | --- | --- | --- |
-| `concord_core` | `rate-limit-governor`, `transport-reqwest` | `json`, `gzip`, `brotli`, `deflate`, `cookies`, `multipart`, `rate-limit-governor`, `transport-reqwest`, `dangerous-raw-response`, `dangerous-dev-tools` | yes | `json` keeps the built-in JSON/auth helpers available without reqwest. `transport-reqwest` owns `ReqwestTransport`. `multipart` enables multipart request preparation via `reqwest::multipart` and does not require `transport-reqwest`. `dangerous-raw-response` enables the raw-response escape hatch and `dangerous-dev-tools` enables the dev-body-capture configuration API; neither feature enables the escape hatch by itself. `serde` and `serde_json` are always present in `concord_core`; `reqwest` is optional and only enters the build when `transport-reqwest` or a reqwest codec feature is enabled. When `rate-limit-governor` is off, the default limiter fails closed for non-empty declared plans and `NoopRateLimiter` is the explicit opt-out. |
+| `concord_core` | `default-tls`, `http2`, `rate-limit-governor` | `json`, `default-tls`, `http2`, `gzip`, `brotli`, `deflate`, `cookies`, `multipart`, `dangerous-raw-response`, `dangerous-dev-tools` | yes | `reqwest` is mandatory and required for the default transport. `new()` and `builder()` therefore build with a reqwest-backed transport even with `--no-default-features`. In no-default builds, only `stream` is guaranteed. `json` keeps the built-in JSON/auth helpers available in all builds. `default-tls`, `http2`, `gzip`, `brotli`, `deflate`, `cookies`, and `multipart` are optional reqwest transport capabilities; all of these are off in no-default mode. `dangerous-raw-response` enables the raw-response escape hatch and `dangerous-dev-tools` enables the dev-body-capture configuration API; neither feature enables the escape hatch by itself. `serde` and `serde_json` are always present in `concord_core`; `reqwest` is always on for transport and can be composed by optional transport capabilities. When `rate-limit-governor` is off, the default limiter fails closed for non-empty declared plans and `NoopRateLimiter` is the explicit opt-out. |
 | `concord_macros` | none | none | yes | Proc-macro crate. |
 | `concord_examples` | none | `dangerous-raw-response`, `dangerous-dev-tools` | no | Compile-checked examples depend on `concord_core` with `json` enabled and forward the dangerous escape-hatch features for example-specific compile checks; neither feature is enabled by default. |
 
@@ -19,9 +19,7 @@ The following focused commands are useful when diagnosing feature support:
 ```bash
 cargo check -p concord_core --no-default-features
 cargo check -p concord_core --no-default-features --features json
-cargo check -p concord_core --no-default-features --features transport-reqwest
 cargo check -p concord_core --no-default-features --features dangerous-dev-tools
-cargo check -p concord_core --no-default-features --features "transport-reqwest json"
 cargo check -p concord_core --all-features
 cargo test -p concord_core --no-default-features no_default_rate_limit
 cargo test -p concord_core --no-default-features --features json no_default_rate_limit
@@ -39,17 +37,17 @@ cargo check -p concord_examples --all-targets --all-features
 The dependency-tree invariants are documented here for focused diagnosis when
 feature ownership changes:
 
-- the `concord_core` default tree contains `rate-limit-governor` and omits optional HTTP codecs that are not enabled by default;
+- the `concord_core` default tree contains `default-tls`, `http2`, and `rate-limit-governor`;
+- `concord_core --no-default-features` keeps a reqwest-backed transport with `stream` and omits optional HTTP transport capabilities (`default-tls`, `http2`, `gzip`, `brotli`, `deflate`, `cookies`, and `multipart`);
 - the `concord_core --no-default-features` tree omits the default `governor` feature edge;
 - the `concord_macros` default and `--no-default-features` trees are identical and omit runtime-only crates such as `serde_json`.
 
 ## Dependency Ownership
 
-- `json` keeps the built-in JSON and OAuth2 auth helpers available in `concord_core` without pulling in reqwest.
-- `transport-reqwest` owns the reqwest-backed transport.
-- `multipart` enables multipart request preparation via reqwest multipart types.
+- `json` keeps the built-in JSON and OAuth2 auth helpers available in `concord_core` without adding reqwest transport capabilities like gzip/brotli/deflate/cookies.
+- `reqwest` is mandatory in `concord_core` and is the default transport dependency.
+- `default-tls`, `http2`, `gzip`, `brotli`, `deflate`, `cookies`, and `multipart` enable optional reqwest transport capabilities. `default-tls` and `http2` are enabled in default builds via default features.
 - `serde` and `serde_json` remain unconditional `concord_core` dependencies.
-- `reqwest` is optional and only appears when `transport-reqwest` or one of the reqwest codec feature flags is enabled.
 - `concord_macros` must not widen the runtime feature surface through its normal dependency tree.
 - `concord_examples` may enable richer core features because it is a compile-checked example crate.
 

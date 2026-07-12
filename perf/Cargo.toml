@@ -3,6 +3,7 @@ name = "perf"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+rust-version = "1.97"
 
 [dependencies]
 concord_core = { path = "../concord_core", version = "0.1.0", features = ["dangerous-raw-response"] }
@@ -10,6 +11,7 @@ bytes = "1.12"
 http = "1.4"
 http-body = "1.0"
 http-body-util = "0.1"
+reqwest = { version = "=0.13.4", default-features = false }
 tokio = { version = "1.52", features = ["rt", "time", "io-util", "sync"] }
 criterion = { version = "0.8.2", features = ["async_tokio"] }
 futures-core = "0.3.32"

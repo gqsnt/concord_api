@@ -2,10 +2,11 @@
 name = "concord_core"
 version = "0.1.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-reqwest = { workspace = true, optional = true, features = ["default-tls", "http2", "stream"] }
+reqwest = { workspace = true, features = ["stream"] }
 http.workspace = true
 bytes.workspace = true
 memchr.workspace = true
@@ -27,14 +28,15 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 
 
 [features]
-default = ["rate-limit-governor", "transport-reqwest"]
-transport-reqwest = ["dep:reqwest"]
+default = ["rate-limit-governor", "default-tls", "http2"]
 json = []
-gzip = ["transport-reqwest", "reqwest/gzip"]
-brotli = ["transport-reqwest", "reqwest/brotli"]
-deflate = ["transport-reqwest", "reqwest/deflate"]
-cookies = ["transport-reqwest", "reqwest/cookies"]
+gzip = ["reqwest/gzip"]
+brotli = ["reqwest/brotli"]
+deflate = ["reqwest/deflate"]
+cookies = ["reqwest/cookies"]
 multipart = ["reqwest/multipart"]
+default-tls = ["reqwest/default-tls"]
+http2 = ["reqwest/http2"]
 rate-limit-governor = ["dep:governor"]
 dangerous-raw-response = []
 dangerous-dev-tools = []

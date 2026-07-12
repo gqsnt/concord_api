@@ -162,7 +162,6 @@ pub mod advanced {
         DecodedResponse, DefaultTransport, DefaultTransportMarker, RequestExecutionContext,
         RequestMeta, Transport, TransportError, TransportErrorKind,
     };
-    #[cfg(feature = "transport-reqwest")]
     pub use crate::transport::{ReqwestClientBuildError, ReqwestTransport};
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,

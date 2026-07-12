@@ -447,7 +447,6 @@ impl Error for TransportError {
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl From<reqwest::Error> for TransportError {
     fn from(e: reqwest::Error) -> Self {
         let e = e.without_url();
@@ -470,7 +469,6 @@ impl From<crate::body::BodyError> for TransportError {
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 fn classify_reqwest_error(err: &reqwest::Error) -> TransportErrorKind {
     if err.is_timeout() {
         return TransportErrorKind::Timeout;
@@ -505,54 +503,22 @@ pub trait Transport: Send + Sync + 'static {
 #[doc(hidden)]
 pub trait DefaultTransportMarker: Transport + Clone {}
 
-#[cfg(feature = "transport-reqwest")]
 #[doc(hidden)]
 pub type DefaultTransport = ReqwestTransport;
 
-#[cfg(feature = "transport-reqwest")]
 impl DefaultTransportMarker for ReqwestTransport {}
 
-#[cfg(not(feature = "transport-reqwest"))]
-#[doc(hidden)]
-#[derive(Clone)]
-pub struct DefaultTransport(());
-
-#[cfg(not(feature = "transport-reqwest"))]
-impl Transport for DefaultTransport {
-    fn send(
-        &self,
-        _request: http::Request<crate::body::DynBody>,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<http::Response<crate::body::DynBody>, TransportError>>
-                + Send,
-        >,
-    > {
-        Box::pin(async move {
-            Err(TransportError::with_kind(
-                TransportErrorKind::Request,
-                std::io::Error::other(
-                    "default reqwest transport is disabled; enable the `transport-reqwest` feature",
-                ),
-            ))
-        })
-    }
-}
-
-#[cfg(feature = "transport-reqwest")]
 #[derive(Clone)]
 pub struct ReqwestTransport {
     client: reqwest::Client,
 }
 
 /// A sanitized managed-Reqwest client construction failure.
-#[cfg(feature = "transport-reqwest")]
 pub struct ReqwestClientBuildError {
     kind: TransportErrorKind,
     source: reqwest::Error,
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl ReqwestClientBuildError {
     fn from_reqwest(error: reqwest::Error) -> Self {
         let source = error.without_url();
@@ -568,7 +534,6 @@ impl ReqwestClientBuildError {
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl fmt::Display for ReqwestClientBuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -579,7 +544,6 @@ impl fmt::Display for ReqwestClientBuildError {
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl fmt::Debug for ReqwestClientBuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ReqwestClientBuildError")
@@ -588,14 +552,12 @@ impl fmt::Debug for ReqwestClientBuildError {
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl Error for ReqwestClientBuildError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&self.source)
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl ReqwestTransport {
     #[inline]
     pub fn new() -> Self {
@@ -627,14 +589,12 @@ impl ReqwestTransport {
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl Default for ReqwestTransport {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl Transport for ReqwestTransport {
     fn send(
         &self,
@@ -657,7 +617,6 @@ impl Transport for ReqwestTransport {
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 fn reqwest_request_from_http(
     request: http::Request<crate::body::DynBody>,
 ) -> Result<reqwest::Request, TransportError> {
@@ -671,18 +630,15 @@ fn reqwest_request_from_http(
     Ok(request)
 }
 
-#[cfg(feature = "transport-reqwest")]
 fn http_response_from_reqwest(response: reqwest::Response) -> http::Response<crate::body::DynBody> {
     let response: http::Response<reqwest::Body> = response.into();
     response.map(|body| crate::body::DynBody::from_body(SanitizedReqwestBody { inner: body }))
 }
 
-#[cfg(feature = "transport-reqwest")]
 struct SanitizedReqwestBody {
     inner: reqwest::Body,
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl http_body::Body for SanitizedReqwestBody {
     type Data = bytes::Bytes;
     type Error = crate::body::BodyError;
@@ -704,12 +660,11 @@ impl http_body::Body for SanitizedReqwestBody {
     }
 }
 
-#[cfg(feature = "transport-reqwest")]
 fn sanitized_reqwest_body_error(error: reqwest::Error) -> crate::body::BodyError {
     crate::body::BodyError::from(TransportError::from(error.without_url()))
 }
 
-#[cfg(all(test, feature = "transport-reqwest"))]
+#[cfg(test)]
 mod reqwest_transport_tests {
     use super::*;
     use bytes::Bytes;

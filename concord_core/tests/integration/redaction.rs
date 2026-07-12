@@ -7,7 +7,6 @@ mod query_auth_redaction {
         request_plan,
     };
     use bytes::Bytes;
-    #[cfg(feature = "transport-reqwest")]
     use concord_core::advanced::ReqwestTransport;
     use concord_core::advanced::{
         AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthErrorKind, AuthHttpRequest,
@@ -807,7 +806,6 @@ mod query_auth_redaction {
         Ok(())
     }
 
-    #[cfg(feature = "transport-reqwest")]
     #[tokio::test]
     async fn reqwest_transport_error_display_debug_and_source_strip_materialized_url_secret() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind local port");

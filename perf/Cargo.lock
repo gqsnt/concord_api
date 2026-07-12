@@ -1024,6 +1024,7 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
+ "reqwest",
  "tokio",
  "url",
 ]

@@ -29,8 +29,8 @@ Validated work falls into these groups:
   - PERF-PR 14 added local lookup indexes for facade/codegen resolution. **[implemented]**
   - PERF-PR 15 avoided duplicate `FacadeIr` construction. **[implemented]**
 - Build-footprint and feature work
-  - PERF-PR 16A produced the optional reqwest transport design report. **[implemented]**
-  - PERF-PR 16B implemented the optional reqwest feature split while keeping default users compatible. **[implemented]**
+- PERF-PR 16A produced the reqwest transport design report. **[implemented]**
+- PERF-PR 16B moved to a reqwest-split design that is now superseded by the mandatory-reqwest foundation alignment. **[implemented]**
 - Security-adjacent runtime cleanup
   - PERF-PR 10, 12, 13, 17, and 18 all kept sanitized surfaces intact while removing avoidable work. **[implemented]**
 
@@ -156,10 +156,9 @@ Current feature-state observations:
 
 - `cargo check -p concord_core --no-default-features` passed.
 - `cargo check -p concord_core --no-default-features --features json` passed.
-- `cargo check -p concord_core --no-default-features --features transport-reqwest` passed.
-- `cargo check -p concord_core --no-default-features --features "transport-reqwest json"` passed.
-- `cargo tree -p concord_core --no-default-features -i reqwest` reported that `reqwest` is absent by failing with `package ID specification 'reqwest' did not match any packages`.
-- `cargo tree -p concord_core --no-default-features --features transport-reqwest -i reqwest` showed `reqwest v0.13.3` under `concord_core`.
+- `cargo check -p concord_core --no-default-features` passed (with mandatory reqwest transport).
+- `cargo tree -p concord_core --no-default-features` shows the reqwest-backed default transport path.
+- `cargo tree -p concord_core -i reqwest` now resolves `reqwest v0.13.4` under `concord_core`.
 
 Historical footprint-report observations:
 
@@ -167,10 +166,8 @@ Historical footprint-report observations:
   - this historical observation came from a retired report command.
 - `perf package metadata summary: perf_present_in_packages: yes`
   - this historical observation came from a retired report command.
-- `no-default concord_core includes reqwest: no`
-  - this historical observation came from a retired report command.
-- `transport-reqwest concord_core includes reqwest: yes`
-  - this historical observation came from a retired report command.
+- `no-default concord_core includes reqwest: yes`
+  - this is the current behavior after mandatory reqwest alignment.
 - `serde_json present in concord_macros tree: yes`
   - this line comes from the historical report's plain `cargo tree -p concord_macros` capture. In this repository's current tree output, that capture includes a `[dev-dependencies]` section, so it sees `serde_json`; the normal `cargo tree -p concord_macros --edges normal,features` tree does not show `serde_json`
 - the historical report also emitted local build timing lines including `0.07s`, `1.44s`, `3.56s`, `1.76s`, and `9.77s`
@@ -235,7 +232,7 @@ The validated optimization series preserved the following:
 - no-governor fail-closed behavior remains intact for non-empty plans
 - debug, hooks, and public errors/source chains do not expose raw auth secrets or body bytes
 - pagination remains collect-only
-- the optional reqwest split preserves custom transports without reqwest
+- mandatory reqwest alignment preserves custom transport polymorphism while keeping `concord_core` reqwest-backed.
 - macro parser, normalization, sema, and codegen boundaries remain intact
 
 ## 8. Open Risks and Next Candidates
@@ -244,8 +241,7 @@ Current risks and caveats:
 
 - benchmark numbers are machine-local and will vary by machine, toolchain, and background load
 - Criterion does not provide allocation counts by itself
-- the optional reqwest feature matrix will need continued maintenance as the crate surface evolves
-- the doc-hidden `DefaultTransport` compatibility shim remains part of the reqwest optionality story
+- the reqwest capability feature matrix will need continued maintenance as the crate surface evolves
 - the request-local auth-preparation cache (PERF-PR 18) is implemented for generated retry-stable static credentials; OAuth2 and endpoint/manual credentials remain uncached by design
 - sensitive-name matching remains ASCII-case-insensitive by design
 

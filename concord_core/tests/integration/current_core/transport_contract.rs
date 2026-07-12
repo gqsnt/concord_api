@@ -682,7 +682,7 @@ async fn finalized_request_metadata_and_materialization_are_preserved_through_a_
     );
 }
 
-#[cfg(all(feature = "transport-reqwest", feature = "dangerous-raw-response"))]
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn default_reqwest_transport_does_not_follow_redirects_or_forward_auth_material() {
     let _guard = redirect_test_lock().lock().await;
@@ -770,7 +770,7 @@ async fn default_reqwest_transport_does_not_follow_redirects_or_forward_auth_mat
     assert!(second_requests.lock().await.is_empty());
 }
 
-#[cfg(all(feature = "transport-reqwest", feature = "dangerous-raw-response"))]
+#[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
 async fn managed_reqwest_builder_cannot_reenable_redirects_or_retries() {
     let _guard = redirect_test_lock().lock().await;
@@ -847,7 +847,6 @@ async fn managed_reqwest_builder_cannot_reenable_redirects_or_retries() {
         .expect("second redirect server should stop");
 }
 
-#[cfg(feature = "transport-reqwest")]
 #[test]
 fn api_client_managed_builder_returns_sanitized_build_error() {
     let result =

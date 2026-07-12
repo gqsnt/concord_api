@@ -13,7 +13,6 @@ pub struct ApiClient<Cx: ClientContext, T: Transport = DefaultTransport> {
     pub(super) runtime_state: Arc<ClientRuntimeState>,
 }
 
-#[cfg(feature = "transport-reqwest")]
 impl<Cx: ClientContext> ApiClient<Cx, DefaultTransport>
 where
     DefaultTransport: DefaultTransportMarker,

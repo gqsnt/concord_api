@@ -20,9 +20,7 @@ use crate::runtime_hooks::{
     HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
 };
 use crate::runtime_state::ClientRuntimeState;
-#[cfg(feature = "transport-reqwest")]
 use crate::transport::DefaultTransportMarker;
-#[cfg(feature = "transport-reqwest")]
 use crate::transport::ReqwestTransport;
 use crate::transport::{
     AttemptResponse, BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta,

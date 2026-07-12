@@ -240,18 +240,11 @@ mod tests {
     use super::*;
     use std::cell::Cell;
     use std::io;
-    use std::sync::Arc;
-    use std::task::{Context, Poll, Wake, Waker};
-
-    struct NoopWake;
-
-    impl Wake for NoopWake {
-        fn wake(self: Arc<Self>) {}
-    }
+    use std::task::{Context, Poll, Waker};
 
     fn poll_next(stream: &mut StreamByteSource) -> Poll<Option<Result<Bytes, StreamBodyError>>> {
-        let waker = Waker::from(Arc::new(NoopWake));
-        let mut cx = Context::from_waker(&waker);
+        let waker = Waker::noop();
+        let mut cx = Context::from_waker(waker);
         Pin::new(stream).poll_next(&mut cx)
     }
 
