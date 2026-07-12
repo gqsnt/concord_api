@@ -1,6 +1,7 @@
 use concord_core::advanced::{OctetStream, RawStreamResponse, ResponseEntity};
 use concord_core::internal::{
-    BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
+    PreparedBody,
+    EndpointMeta, EndpointPlan, RequestOverrides, RequestPlan,
     ResolvedPolicy, ResolvedRoute,
 };
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -14,13 +15,11 @@ fn request_plan(response: concord_core::advanced::ResponseEntityPlan) -> Request
             meta: EndpointMeta { name: "RawStreamBench", method: Method::GET, idempotent: true, facade_path: &[] },
             route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", "/perf/raw-stream"),
             policy: ResolvedPolicy::default(),
-            body: BodyPlan::None,
             response: response.response_plan,
             pagination: None,
         },
-        args: RequestArgs::empty(),
+        body: PreparedBody::empty(),
         overrides: RequestOverrides::default(),
-        replayability: concord_core::internal::Replayability::Replayable,
     }
 }
 

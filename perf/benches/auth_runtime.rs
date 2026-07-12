@@ -7,9 +7,9 @@ use concord_core::advanced::{
     Transport, apply_secret_credential,
 };
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, RequestArgs, RequestPlan, ResolvedPolicy, RetrySetting,
-    Replayability,
-};
+    PreparedBody,
+    ClientPlanContext, RequestPlan, ResolvedPolicy, RetrySetting,
+    };
 use concord_core::prelude::{AccessToken, ApiClient, ClientContext, Endpoint, IntoEndpointPlan};
 use concord_core::{dangerous, error};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
@@ -30,9 +30,7 @@ fn base_plan(name: &'static str, path: &'static str) -> RequestPlan {
         Method::GET,
         path,
         ResolvedPolicy::default(),
-        BodyPlan::None,
-        RequestArgs::empty(),
-        Replayability::Replayable,
+        PreparedBody::empty(),
     )
 }
 

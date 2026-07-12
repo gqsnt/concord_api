@@ -150,7 +150,7 @@ impl concord_core::prelude::ClientContext for InternalAuthCx {
                             .parse()
                             .expect("auth url"),
                         headers: HeaderMap::new(),
-                        body: concord_core::advanced::TransportRequestBody::Empty,
+                        body: concord_core::advanced::PreparedBody::empty(),
                         mode: AuthMode::UseAuth(AuthRequirementId::new("test", "internal")),
                         policy: AuthInternalPolicy::default(),
                     })
@@ -198,7 +198,7 @@ impl concord_core::prelude::ClientContext for InternalAuthCx {
                         .parse()
                         .expect("auth url"),
                     headers: HeaderMap::new(),
-                    body: concord_core::advanced::TransportRequestBody::Empty,
+                    body: concord_core::advanced::PreparedBody::empty(),
                     mode: AuthMode::UseAuth(AuthRequirementId::new("test", "internal")),
                     policy: AuthInternalPolicy::default(),
                 })

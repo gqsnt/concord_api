@@ -1,15 +1,15 @@
 use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, DebugSink, MultipartBody, MultipartBodyErrorKind, PostResponseHookContext,
-    PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
-    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks, StreamBody,
-    Transport, TransportBody, TransportError, TransportErrorKind, TransportRequest,
-    TransportRequestBody, TransportResponse,
+    AuthPlacement, DebugSink, ErrorContext, MultipartBody, MultipartRequest,
+    PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
+    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestEntity,
+    RuntimeHooks, StreamBody, Transport, TransportBody, TransportError, TransportErrorKind,
+    TransportRequest, TransportRequestBody, TransportResponse,
 };
 use concord_core::internal::{
-    BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
-    ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    EndpointMeta, EndpointPlan, RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute,
+    ResponsePlan,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use futures_core::Stream;
@@ -401,27 +401,15 @@ fn multipart_request_plan(
     policy: ResolvedPolicy,
     body: MultipartBody,
 ) -> RequestPlan {
-    let content_type = body.content_type();
-    multipart_request_plan_with_content_type(
-        name,
-        method,
-        path,
-        idempotent,
-        policy,
-        content_type,
+    let body = MultipartRequest::prepare(
         body,
+        ErrorContext {
+            endpoint: name,
+            method: method.clone(),
+        },
     )
-}
-
-fn multipart_request_plan_with_content_type(
-    name: &'static str,
-    method: Method,
-    path: &'static str,
-    idempotent: bool,
-    policy: ResolvedPolicy,
-    content_type: HeaderValue,
-    body: MultipartBody,
-) -> RequestPlan {
+    .expect("multipart body")
+    .body;
     RequestPlan {
         endpoint: EndpointPlan {
             meta: EndpointMeta {
@@ -432,10 +420,6 @@ fn multipart_request_plan_with_content_type(
             },
             route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
             policy,
-            body: BodyPlan::Multipart {
-                content_type,
-                format: concord_core::internal::Format::Text,
-            },
             response: ResponsePlan {
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
@@ -443,9 +427,8 @@ fn multipart_request_plan_with_content_type(
             },
             pagination: None,
         },
-        args: RequestArgs::with_multipart_body(body).expect("multipart body"),
+        body,
         overrides: RequestOverrides::default(),
-        replayability: concord_core::internal::Replayability::NonReplayable,
     }
 }
 
@@ -712,60 +695,60 @@ async fn multipart_invalid_part_metadata_is_rejected_body_safely() {
         )),
     );
 
-    let err = RequestArgs::with_multipart_body(body)
-        .expect_err("invalid metadata should fail before transport");
-    assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartName);
+    let err = MultipartRequest::prepare(
+        body,
+        ErrorContext {
+            endpoint: "InvalidMultipart",
+            method: Method::POST,
+        },
+    )
+    .expect_err("invalid metadata should fail before transport");
+    match &err {
+        ApiClientError::Codec { source, .. } => assert_eq!(
+            source
+                .downcast_ref::<concord_core::advanced::MultipartBodyError>()
+                .expect("multipart source")
+                .kind(),
+            concord_core::advanced::MultipartBodyErrorKind::InvalidPartName
+        ),
+        other => panic!("expected multipart codec error, got {other:?}"),
+    }
     assert!(!err.to_string().contains("bad\r\nname"));
     assert!(!polled.load(Ordering::SeqCst));
     let _ = client;
 }
 
 #[tokio::test]
-async fn multipart_boundary_mismatch_is_rejected_before_transport() {
+async fn multipart_content_type_conflict_is_rejected_before_body_polling_and_transport() {
     let events = Arc::new(StdMutex::new(Vec::new()));
-    let transport =
-        MultipartTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let transport = MultipartTransport::success(events, MockResponse::text(StatusCode::OK, "ok"));
     let client =
         ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-
-    let plan_body = MultipartBody::new().text("title", "one");
-    let args_body = MultipartBody::new().text("title", "two");
-    let args =
-        RequestArgs::with_multipart_body(args_body).expect("multipart body args should be valid");
+    let polled = Arc::new(AtomicBool::new(false));
+    let body = MultipartBody::new().stream(
+        "file",
+        StreamBody::from_byte_stream(PollFlagStream::new(
+            polled.clone(),
+            Bytes::from_static(b"multipart-secret"),
+        )),
+    );
+    let mut policy = ResolvedPolicy::default();
+    policy.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("multipart/form-data; boundary=wrong-boundary"),
+    );
     let err = client
-        .execute_plan::<concord_core::prelude::Text<String>>(RequestPlan {
-            endpoint: EndpointPlan {
-                meta: EndpointMeta {
-                    name: "MultipartBoundaryMismatch",
-                    method: Method::POST,
-                    idempotent: false,
-                    facade_path: &[],
-                },
-                route: ResolvedRoute::new(
-                    http::uri::Scheme::HTTPS,
-                    "example.com",
-                    "/multipart-boundary-mismatch",
-                ),
-                policy: ResolvedPolicy::default(),
-                body: BodyPlan::Multipart {
-                    content_type: plan_body.content_type(),
-                    format: concord_core::internal::Format::Text,
-                },
-                response: ResponsePlan {
-                    accept: Some(HeaderValue::from_static("text/plain")),
-                    no_content: false,
-                    format: concord_core::internal::Format::Text,
-                },
-                pagination: None,
-            },
-            args,
-            overrides: RequestOverrides::default(),
-            replayability: concord_core::internal::Replayability::NonReplayable,
-        })
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan(
+            "MultipartMediaConflict",
+            Method::POST,
+            "/multipart-media-conflict",
+            false,
+            policy,
+            body,
+        ))
         .await
-        .expect_err("boundary mismatch should fail before transport");
-
-    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
-    assert!(format!("{err}").contains("multipart content type must match multipart body boundary"));
+        .expect_err("multipart media conflict");
+    assert!(err.to_string().contains("Content-Type conflicts"));
+    assert!(!polled.load(Ordering::SeqCst));
     assert_eq!(transport.send_count(), 0);
 }

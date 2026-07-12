@@ -219,8 +219,7 @@ pub struct BuiltRequest {
     pub meta: RequestMeta,
     pub url: Url,
     pub headers: HeaderMap,
-    pub body: TransportRequestBody,
-    pub(crate) stream_size_hint: Option<crate::stream_body::BodySizeHint>,
+    pub(crate) body: crate::io::AttemptBody,
     pub timeout: Option<Duration>,
     pub retry: RetrySetting,
     pub rate_limit: RateLimitPlan,
@@ -237,7 +236,6 @@ impl fmt::Debug for BuiltRequest {
                 &crate::debug::SanitizedHeaders::new(&self.headers),
             )
             .field("body", &self.body)
-            .field("stream_size_hint", &self.stream_size_hint)
             .field("timeout", &self.timeout)
             .field("retry", &self.retry)
             .field("rate_limit", &self.rate_limit)
@@ -247,11 +245,6 @@ impl fmt::Debug for BuiltRequest {
 }
 
 impl BuiltRequest {
-    #[inline]
-    pub fn has_stream_body(&self) -> bool {
-        self.body.is_stream()
-    }
-
     pub(crate) fn debug_url(&self) -> String {
         let mut url = self.url.clone();
         if self
@@ -469,12 +462,19 @@ pub(crate) fn materialize_transport_request_validated(
     }
 
     let built = built.into_inner();
+    let body = match built.body {
+        crate::io::AttemptBody::Empty => TransportRequestBody::Empty,
+        crate::io::AttemptBody::Bytes(bytes) => TransportRequestBody::Bytes(bytes),
+        crate::io::AttemptBody::Dyn(body) => {
+            TransportRequestBody::Stream(TransportByteStream::new(body.into_data_stream()))
+        }
+    };
     let extensions = built.extensions;
     let mut req = TransportRequest {
         meta: built.meta,
         url: built.url,
         headers: built.headers,
-        body: built.body,
+        body,
         timeout: built.timeout,
         rate_limit: built.rate_limit,
         extensions,
@@ -729,6 +729,17 @@ impl From<reqwest::Error> for TransportError {
 impl From<CodecError> for TransportError {
     fn from(error: CodecError) -> Self {
         TransportError::with_kind(TransportErrorKind::Request, error)
+    }
+}
+
+impl From<crate::body::BodyError> for TransportError {
+    fn from(error: crate::body::BodyError) -> Self {
+        let kind = match error.kind() {
+            crate::body::BodyErrorKind::Io => TransportErrorKind::Io,
+            crate::body::BodyErrorKind::LimitExceeded => TransportErrorKind::Request,
+            _ => TransportErrorKind::Other,
+        };
+        Self::with_kind(kind, error)
     }
 }
 

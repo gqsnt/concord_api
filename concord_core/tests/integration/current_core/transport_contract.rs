@@ -8,9 +8,7 @@ use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
 use concord_core::advanced::{RetryBackoff, RetryConfig, RetryIdempotency, StreamBody};
 use concord_core::error::ErrorCategory;
-use concord_core::internal::{
-    BodyPlan, Format, Replayability, RequestArgs, RequestPlan, ResolvedPolicy, RetrySetting,
-};
+use concord_core::internal::{Format, PreparedBody, RequestPlan, ResolvedPolicy, RetrySetting};
 use concord_core::prelude::{ApiClient, ApiClientError, Endpoint, ReusableEndpoint, Text};
 use concord_core::transport::{TransportErrorKind, TransportRequestBody};
 use http::{HeaderValue, Method, StatusCode, header::CONTENT_TYPE};
@@ -132,19 +130,16 @@ impl ReusableEndpoint<TestCx> for TransportContractEndpoint {
         match &self.body {
             TransportBody::Empty => {}
             TransportBody::Bytes(body) => {
-                plan.endpoint.body = BodyPlan::Encoded {
-                    content_type: Some(HeaderValue::from_static("application/json")),
-                    format: Format::Text,
-                };
-                plan.args = RequestArgs::with_body_bytes(body.clone());
-                plan.replayability = Replayability::Replayable;
+                plan.body = PreparedBody::reusable_bytes(
+                    body.clone(),
+                    Some(HeaderValue::from_static("application/json")),
+                );
             }
             TransportBody::Stream(body) => {
-                plan.endpoint.body = BodyPlan::RawStream {
-                    content_type: HeaderValue::from_static("application/octet-stream"),
-                };
-                plan.args = RequestArgs::with_stream_body(StreamBody::from_bytes(body.clone()));
-                plan.replayability = Replayability::NonReplayable;
+                plan.body = PreparedBody::from_stream_body(
+                    StreamBody::from_bytes(body.clone()),
+                    Some(HeaderValue::from_static("application/octet-stream")),
+                );
             }
         }
         Ok(plan)
@@ -793,12 +788,10 @@ impl TransportContractEndpoint {
             None,
         );
         if let TransportBody::Bytes(body) = &self.body {
-            plan.endpoint.body = BodyPlan::Encoded {
-                content_type: Some(HeaderValue::from_static("application/json")),
-                format: Format::Text,
-            };
-            plan.args = RequestArgs::with_body_bytes(body.clone());
-            plan.replayability = Replayability::Replayable;
+            plan.body = PreparedBody::reusable_bytes(
+                body.clone(),
+                Some(HeaderValue::from_static("application/json")),
+            );
         }
         plan
     }

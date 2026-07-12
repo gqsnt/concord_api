@@ -35,13 +35,13 @@ pub mod __private {
         Encodes, Format, FormatType, ResponseCodec,
     };
     pub use crate::endpoint::{
-        BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, IntoEndpointPlan,
-        PaginatedEndpoint, PaginationMarker, RequestArgs, RequestOverrides, RequestPlan,
-        RequestPlanView, ResolvedRoute, ResponsePlan, ResponseTerminalEndpoint, ReusableEndpoint,
+        ClientPlanContext, EndpointMeta, EndpointPlan, IntoEndpointPlan, PaginatedEndpoint,
+        PaginationMarker, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute,
+        ResponsePlan, ResponseTerminalEndpoint, ReusableEndpoint,
     };
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, NoContentResponse,
-        NoRequestBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse, Replayability,
+        NoRequestBody, PreparedBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse,
         RequestEntity, ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
         ResponseEntityWithMeta,
     };
@@ -111,7 +111,7 @@ pub mod advanced {
     pub use crate::error::{ErrorContext, FxError, PaginationError, PaginationErrorKind};
     pub use crate::io::{
         BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, NoContentResponse,
-        NoRequestBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse, Replayability,
+        NoRequestBody, PreparedBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse,
         RequestEntity, ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
     };
     pub use crate::media::{

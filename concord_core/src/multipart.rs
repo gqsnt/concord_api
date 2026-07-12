@@ -1,7 +1,7 @@
 use crate::codec::CodecError;
 use crate::codec::ContentType;
 use crate::stream_body::StreamBody;
-use crate::transport::{TransportByteStream, TransportError, TransportRequestBody};
+use crate::transport::{TransportByteStream, TransportError};
 use bytes::Bytes;
 use futures_core::Stream;
 use http::HeaderValue;
@@ -238,12 +238,12 @@ impl MultipartBody {
         HeaderValue::from_str(&format!("multipart/form-data; boundary={}", self.boundary))
     }
 
-    pub fn into_transport_body(self) -> Result<TransportRequestBody, MultipartBodyError> {
+    pub(crate) fn into_dyn_body(self) -> Result<crate::body::DynBody, MultipartBodyError> {
         let MultipartBody { boundary, parts } = self;
         let prepared = PreparedMultipartBody::from_parts(boundary, parts)?;
-        Ok(TransportRequestBody::Stream(TransportByteStream::new(
+        Ok(crate::body::DynBody::from_byte_stream(
             MultipartEncodeStream::new(prepared),
-        )))
+        ))
     }
 }
 
@@ -492,21 +492,7 @@ fn is_valid_disposition_value(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::TransportError;
-    use std::sync::Arc;
-    use std::task::{Context, Poll, Wake, Waker};
-
-    struct NoopWake;
-
-    impl Wake for NoopWake {
-        fn wake(self: Arc<Self>) {}
-    }
-
-    fn poll_next(stream: &mut TransportByteStream) -> Poll<Option<Result<Bytes, TransportError>>> {
-        let waker = Waker::from(Arc::new(NoopWake));
-        let mut cx = Context::from_waker(&waker);
-        Pin::new(stream).poll_next(&mut cx)
-    }
+    use http_body_util::BodyExt;
 
     #[test]
     fn multipart_body_debug_is_body_free() {
@@ -518,8 +504,8 @@ mod tests {
         assert!(rendered.contains("MultipartBody"));
     }
 
-    #[test]
-    fn multipart_form_data_body_encodes_headers_and_streams_bytes() {
+    #[tokio::test]
+    async fn multipart_form_data_body_encodes_headers_and_streams_bytes() {
         let body = MultipartBody::new()
             .text("title", "hello")
             .bytes("file", Bytes::from_static(b"abc"));
@@ -531,20 +517,14 @@ mod tests {
                 .starts_with("multipart/form-data; boundary=")
         );
 
-        let mut stream = match body.into_transport_body() {
-            Ok(TransportRequestBody::Stream(stream)) => stream,
-            other => panic!("unexpected multipart body: {other:?}"),
-        };
-        let mut out = Vec::new();
-        loop {
-            match poll_next(&mut stream) {
-                Poll::Ready(Some(Ok(chunk))) => out.extend_from_slice(&chunk),
-                Poll::Ready(Some(Err(error))) => panic!("unexpected multipart error: {error}"),
-                Poll::Ready(None) => break,
-                Poll::Pending => continue,
-            }
-        }
-        let rendered = String::from_utf8(out).expect("multipart body should be utf-8");
+        let out = body
+            .into_dyn_body()
+            .expect("multipart body")
+            .collect()
+            .await
+            .expect("multipart encoding")
+            .to_bytes();
+        let rendered = String::from_utf8(out.to_vec()).expect("multipart body should be utf-8");
         assert!(rendered.contains("Content-Disposition: form-data; name=\"title\""));
         assert!(rendered.contains("Content-Disposition: form-data; name=\"file\""));
         assert!(rendered.contains("abc"));
@@ -556,9 +536,7 @@ mod tests {
     #[test]
     fn multipart_invalid_metadata_is_rejected_body_safely() {
         let body = MultipartBody::new().text("bad\r\nname", "value");
-        let err = body
-            .into_transport_body()
-            .expect_err("invalid name should fail");
+        let err = body.into_dyn_body().expect_err("invalid name should fail");
         assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartName);
         assert!(!err.to_string().contains("bad\r\nname"));
     }

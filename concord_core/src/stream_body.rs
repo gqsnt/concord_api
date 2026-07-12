@@ -1,6 +1,4 @@
-use crate::transport::{
-    TransportByteStream, TransportError, TransportErrorKind, TransportRequestBody,
-};
+use crate::transport::{TransportByteStream, TransportError, TransportErrorKind};
 use bytes::Bytes;
 use futures_core::Stream;
 use std::error::Error;
@@ -212,12 +210,8 @@ impl StreamBody {
         self.size_hint
     }
 
-    pub fn into_transport_stream(self) -> TransportByteStream {
+    pub(crate) fn into_transport_stream(self) -> TransportByteStream {
         self.stream
-    }
-
-    pub fn into_transport_body(self) -> TransportRequestBody {
-        TransportRequestBody::Stream(self.into_transport_stream())
     }
 }
 

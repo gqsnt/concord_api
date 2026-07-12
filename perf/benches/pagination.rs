@@ -2,8 +2,8 @@ use bytes::Bytes;
 use concord_core::advanced::{HasNextCursor, OffsetLimitPagination, PaginateBinding};
 use concord_core::advanced::{PaginationRuntimeAdapter, ProgressKey};
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestArgs,
-    RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    PreparedBody,
+    ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
@@ -137,7 +137,6 @@ impl ReusableEndpoint<perf::support::PerfCx> for ItemsEndpoint {
                     "/perf/pagination",
                 ),
                 policy,
-                body: BodyPlan::None,
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("text/plain")),
                     no_content: false,
@@ -145,9 +144,8 @@ impl ReusableEndpoint<perf::support::PerfCx> for ItemsEndpoint {
                 },
                 pagination: Some(PaginationMarker),
             },
-            args: RequestArgs::empty(),
+            body: PreparedBody::empty(),
             overrides: RequestOverrides::default(),
-            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }

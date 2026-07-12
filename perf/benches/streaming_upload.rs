@@ -1,5 +1,5 @@
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use concord_core::advanced::StreamBody;
+use concord_core::advanced::{DynBody, StreamBody};
 use perf::support::{
     ChunkedBodyStream, InMemoryAsyncRead, drain_transport_stream, filled_bytes, runtime,
 };
@@ -63,8 +63,10 @@ fn bench_async_read(c: &mut Criterion) {
                             chunk_size,
                         )
                         .expect("chunk size");
-                        let (bytes, chunks) =
-                            drain_transport_stream(body.into_transport_stream()).await;
+                        let (bytes, chunks) = drain_transport_stream(
+                            DynBody::from_stream_body(body).into_data_stream(),
+                        )
+                        .await;
                         black_box((bytes, chunks));
                     },
                     BatchSize::LargeInput,
@@ -92,8 +94,10 @@ fn bench_byte_stream(c: &mut Criterion) {
                     },
                     move |chunks| async move {
                         let body = StreamBody::from_byte_stream(ChunkedBodyStream::new(chunks));
-                        let (bytes, chunks) =
-                            drain_transport_stream(body.into_transport_stream()).await;
+                        let (bytes, chunks) = drain_transport_stream(
+                            DynBody::from_stream_body(body).into_data_stream(),
+                        )
+                        .await;
                         black_box((bytes, chunks));
                     },
                     BatchSize::LargeInput,

@@ -43,7 +43,9 @@ Credential acquisition is different from ordinary endpoint execution: `Credentia
 
 Credential slot generations are monotonic across empty, in-flight, ready, and failed states. Older auth rejection handling, older acquisition completion, or cancelled acquisition cleanup must not clear or overwrite newer credential material.
 
-`BuiltRequest` is the logical request. It contains public route, query, and header data plus typed pending auth slots, but it does not contain raw auth material. Request body bytes stay on the transport side of the boundary; they are not copied into debug, hook, rate-limit, retry, or error metadata.
+Each `RequestPlan` owns one request-local `PreparedBody`. That capability owns media type, standard `SizeHint`, replayability, and one-shot state, and it produces the body for each physical attempt. Empty and immutable byte bodies are reusable, stream and multipart bodies are one-shot, and custom request entities can supply an explicit replay factory. No endpoint descriptor, request-plan view, retry state, or built request keeps an independent replayability or body-metadata authority.
+
+`BuiltRequest` is the logical request for one physical attempt. It contains public route, query, and header data plus typed pending auth slots and the body produced for that attempt, but it does not contain raw auth material. Request body bytes are not copied into debug, hook, rate-limit, retry, or error metadata.
 
 Pagination drives one logical request per page and always checks page progress. The runtime records every logical request identity seen during a pagination run and returns a typed pagination error if a later page would reuse any previously seen identity instead of advancing.
 

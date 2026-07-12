@@ -11,7 +11,7 @@ use concord_core::advanced::{
     TransportRequestBody, TransportResponse, apply_basic_credential,
 };
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestArgs,
+    ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
     RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{
@@ -795,7 +795,6 @@ pub fn request_plan(
             },
             route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
             policy,
-            body: BodyPlan::None,
             response: ResponsePlan {
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
@@ -803,9 +802,8 @@ pub fn request_plan(
             },
             pagination,
         },
-        args: RequestArgs::default(),
+        body: PreparedBody::empty(),
         overrides: RequestOverrides::default(),
-        replayability: concord_core::internal::Replayability::Replayable,
     }
 }
 

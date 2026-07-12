@@ -8,8 +8,8 @@ use std::pin::Pin;
 pub mod plan;
 #[allow(unused_imports)]
 pub use plan::{
-    AttemptState, BodyPlan, EndpointMeta, EndpointPlan, PaginationMarker, RequestArgs,
-    RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute, ResponsePlan,
+    AttemptState, EndpointMeta, EndpointPlan, PaginationMarker, RequestOverrides, RequestPlan,
+    RequestPlanView, ResolvedRoute, ResponsePlan,
 };
 
 pub struct ClientPlanContext<'a, Cx: ClientContext> {

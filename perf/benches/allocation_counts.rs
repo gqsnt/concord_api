@@ -5,9 +5,8 @@ use concord_core::advanced::{
     TransportResponse,
 };
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestArgs,
-    RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan, Replayability,
-};
+    PreparedBody,
+    ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan, };
 use concord_core::prelude::{
     ApiClientError, Endpoint, PageItems, PaginatedEndpoint, PaginationTermination, ReusableEndpoint,
     Text,
@@ -35,9 +34,7 @@ fn base_plan(name: &'static str, path: &'static str) -> RequestPlan {
         Method::GET,
         path,
         ResolvedPolicy::default(),
-        BodyPlan::None,
-        RequestArgs::empty(),
-        Replayability::Replayable,
+        PreparedBody::empty(),
     )
 }
 
@@ -223,9 +220,7 @@ fn run_redaction_hooks(rt: &Runtime) {
                     Method::GET,
                     "/perf/redaction",
                     policy,
-                    BodyPlan::None,
-                    RequestArgs::empty(),
-                    Replayability::Replayable,
+                    PreparedBody::empty(),
                 );
                 let response = execute_raw_plan(&client, plan)
                     .await
@@ -306,11 +301,10 @@ fn run_streaming_upload(rt: &Runtime) {
                     Method::POST,
                     "/perf/streaming-upload",
                     ResolvedPolicy::default(),
-                    BodyPlan::RawStream {
-                        content_type: HeaderValue::from_static("application/octet-stream"),
-                    },
-                    RequestArgs::with_stream_body(stream_body),
-                    Replayability::NonReplayable,
+                    PreparedBody::from_stream_body(
+                        stream_body,
+                        Some(HeaderValue::from_static("application/octet-stream")),
+                    ),
                 );
                 let response = execute_raw_plan(&client, plan)
                     .await
@@ -419,7 +413,6 @@ impl ReusableEndpoint<perf::support::PerfCx> for PaginationEndpoint {
                     "/perf/pagination",
                 ),
                 policy: ResolvedPolicy::default(),
-                body: BodyPlan::None,
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("text/plain")),
                     no_content: false,
@@ -427,9 +420,8 @@ impl ReusableEndpoint<perf::support::PerfCx> for PaginationEndpoint {
                 },
                 pagination: Some(PaginationMarker),
             },
-            args: RequestArgs::empty(),
+            body: PreparedBody::empty(),
             overrides: RequestOverrides::default(),
-            replayability: Replayability::Replayable,
         })
     }
 }

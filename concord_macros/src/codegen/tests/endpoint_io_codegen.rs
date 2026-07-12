@@ -22,6 +22,8 @@ fn emit_uses_stream_request_and_response_codegen() {
             "RequestEntity",
             "RawStreamRequest",
             "prepare(",
+            "__prepared_request_entity.body",
+            "body: __prepared_body",
             "StreamResponse<OctetStream>",
             "ResponseEntity",
             "RawStreamResponse",
@@ -60,6 +62,8 @@ fn emit_uses_buffered_request_entity_codegen() {
             "RequestEntity",
             "EncodedRequest",
             "prepare(",
+            "__prepared_request_entity.body",
+            "body: __prepared_body",
             "CreateBody",
             "CreateResponse",
         ],
@@ -95,6 +99,8 @@ fn emit_uses_no_request_body_entity_codegen() {
             "NoRequestBody",
             "RequestEntity",
             "prepare(",
+            "__prepared_request_entity.body",
+            "body: __prepared_body",
             "StatusResponse",
         ],
     );
@@ -122,6 +128,8 @@ fn emit_uses_multipart_request_codegen() {
             "RequestEntity",
             "MultipartRequest",
             "prepare(",
+            "__prepared_request_entity.body",
+            "body: __prepared_body",
         ],
     );
     assert_not_contains_all(

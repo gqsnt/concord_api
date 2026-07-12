@@ -11,7 +11,6 @@ use super::http::{AuthHttpRequest, AuthInternalPolicy, AuthMode};
 #[cfg(feature = "json")]
 use crate::secret::SecretString;
 #[cfg(feature = "json")]
-use crate::transport::TransportRequestBody;
 #[cfg(feature = "json")]
 use base64::Engine;
 #[cfg(feature = "json")]
@@ -21,7 +20,7 @@ use bytes::Bytes;
 #[cfg(feature = "json")]
 use http::HeaderMap;
 #[cfg(feature = "json")]
-use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
+use http::header::{AUTHORIZATION, HeaderValue};
 #[cfg(feature = "json")]
 use serde::Deserialize;
 #[cfg(feature = "json")]
@@ -245,10 +244,6 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
                     AuthError::new(AuthErrorKind::InvalidConfiguration, "invalid client secret")
                 })?,
             );
-            headers.insert(
-                CONTENT_TYPE,
-                HeaderValue::from_static("application/x-www-form-urlencoded"),
-            );
 
             let body = {
                 let mut form = url::form_urlencoded::Serializer::new(String::new());
@@ -265,7 +260,12 @@ impl<Cx: ClientContext> CredentialProvider<Cx> for OAuth2ClientCredentialsProvid
                     method: http::Method::POST,
                     url: self.token_url.clone(),
                     headers,
-                    body: TransportRequestBody::from_bytes(Bytes::from(body.into_bytes())),
+                    body: crate::io::PreparedBody::reusable_bytes(
+                        Bytes::from(body.into_bytes()),
+                        Some(HeaderValue::from_static(
+                            "application/x-www-form-urlencoded",
+                        )),
+                    ),
                     mode: AuthMode::SkipAuth,
                     policy: AuthInternalPolicy::default(),
                 })

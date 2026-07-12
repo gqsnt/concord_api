@@ -7,8 +7,8 @@ use concord_core::advanced::{
     TransportBody, TransportError, TransportErrorKind, TransportRequest, TransportResponse,
 };
 use concord_core::internal::{
-    BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
-    ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy,
+    ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel, ErrorCategory};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -322,18 +322,9 @@ fn stream_response_plan(
     method: Method,
     path: &'static str,
     policy: ResolvedPolicy,
-    body: BodyPlan,
-    args: RequestArgs,
+    body: PreparedBody,
     accept: &'static str,
 ) -> RequestPlan {
-    let replayability = match &body {
-        BodyPlan::None | BodyPlan::Encoded { .. } => {
-            concord_core::internal::Replayability::Replayable
-        }
-        BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. } => {
-            concord_core::internal::Replayability::NonReplayable
-        }
-    };
     RequestPlan {
         endpoint: EndpointPlan {
             meta: EndpointMeta {
@@ -344,7 +335,6 @@ fn stream_response_plan(
             },
             route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
             policy,
-            body,
             response: ResponsePlan {
                 accept: Some(HeaderValue::from_static(accept)),
                 no_content: false,
@@ -352,9 +342,8 @@ fn stream_response_plan(
             },
             pagination: None,
         },
-        args,
+        body,
         overrides: RequestOverrides::default(),
-        replayability,
     }
 }
 
@@ -364,8 +353,7 @@ fn empty_response_plan(name: &'static str, path: &'static str) -> RequestPlan {
         Method::GET,
         path,
         ResolvedPolicy::default(),
-        BodyPlan::None,
-        RequestArgs::default(),
+        PreparedBody::empty(),
         "application/octet-stream",
     )
 }
@@ -843,8 +831,7 @@ async fn stream_response_auth_rejection_is_handled_before_body_exposure()
             Method::GET,
             "/raw-stream-auth",
             auth_policy(AuthPlacement::Bearer),
-            BodyPlan::None,
-            RequestArgs::default(),
+            PreparedBody::empty(),
             "application/octet-stream",
         ))
         .await?;
@@ -898,11 +885,10 @@ async fn buffered_request_body_stream_response_retries_before_body_exposure()
             Method::POST,
             "/raw-stream-retry",
             policy,
-            BodyPlan::Encoded {
-                content_type: Some(HeaderValue::from_static("application/octet-stream")),
-                format: concord_core::internal::Format::Text,
-            },
-            RequestArgs::with_body_bytes(Bytes::from_static(b"buffered-request")),
+            PreparedBody::reusable_bytes(
+                Bytes::from_static(b"buffered-request"),
+                Some(HeaderValue::from_static("application/octet-stream")),
+            ),
             "application/octet-stream",
         ))
         .await?;
@@ -939,12 +925,10 @@ async fn stream_request_body_stream_response_does_not_retry_or_replay() -> Resul
             Method::POST,
             "/raw-stream-no-replay",
             retry_policy_for_statuses(2, vec![StatusCode::INTERNAL_SERVER_ERROR]),
-            BodyPlan::RawStream {
-                content_type: HeaderValue::from_static("application/octet-stream"),
-            },
-            RequestArgs::with_stream_body(concord_core::advanced::StreamBody::from_bytes(
-                Bytes::from_static(b"stream-request"),
-            )),
+            PreparedBody::from_stream_body(
+                concord_core::advanced::StreamBody::from_bytes(Bytes::from_static(b"stream-request")),
+                Some(HeaderValue::from_static("application/octet-stream")),
+            ),
             "application/octet-stream",
         ))
         .await

@@ -3,7 +3,7 @@ use concord_core::advanced::{
     BodyCodec, CodecError, ContentType, EncodeContext, EncodedBody, ErrorContext, MultipartBody,
     MultipartRequest, NoRequestBody, OctetStream, RawStreamRequest, RequestEntity, StreamBody,
 };
-use concord_core::internal::{BodyPlan, Format, Replayability};
+use concord_core::internal::Format;
 use http::Method;
 use std::error::Error;
 use std::fmt;
@@ -64,9 +64,8 @@ fn ctx() -> ErrorContext {
 fn no_request_body_prepares_empty_body() {
     let prepared = NoRequestBody::prepare((), ctx()).expect("no request body");
 
-    assert!(matches!(prepared.body_plan, BodyPlan::None));
-    assert!(prepared.args.body.is_empty());
-    assert!(matches!(prepared.replayability, Replayability::Replayable));
+    assert!(prepared.body.is_replayable());
+    assert_eq!(prepared.body.size_hint().exact(), Some(0));
 }
 
 #[test]
@@ -78,26 +77,14 @@ fn encoded_request_prepares_buffered_bytes() {
         )
         .expect("encoded request");
 
-    match prepared.body_plan {
-        BodyPlan::Encoded {
-            content_type,
-            format,
-        } => {
-            let rendered = content_type
-                .as_ref()
-                .and_then(|value| value.to_str().ok())
-                .expect("text content type");
-            assert!(rendered.starts_with("text/plain"));
-            assert_eq!(format, Format::Text);
-        }
-        other => panic!("expected encoded body plan, got {other:?}"),
-    }
-    assert!(prepared.args.body.is_bytes());
-    assert_eq!(
-        prepared.args.body.as_bytes().map(|body| body.as_ref()),
-        Some(b"hello".as_slice())
-    );
-    assert!(matches!(prepared.replayability, Replayability::Replayable));
+    let rendered = prepared
+        .body
+        .media_type()
+        .and_then(|value| value.to_str().ok())
+        .expect("text content type");
+    assert!(rendered.starts_with("text/plain"));
+    assert_eq!(prepared.body.size_hint().exact(), Some(5));
+    assert!(prepared.body.is_replayable());
 }
 
 #[test]
@@ -108,20 +95,12 @@ fn raw_stream_request_prepares_stream_body() {
     )
     .expect("raw stream request");
 
-    match prepared.body_plan {
-        BodyPlan::RawStream { content_type } => {
-            assert_eq!(
-                content_type,
-                http::HeaderValue::from_static("application/octet-stream")
-            );
-        }
-        other => panic!("expected raw stream body plan, got {other:?}"),
-    }
-    assert!(prepared.args.body.is_stream());
-    assert!(matches!(
-        prepared.replayability,
-        Replayability::NonReplayable
-    ));
+    assert_eq!(
+        prepared.body.media_type(),
+        Some(&http::HeaderValue::from_static("application/octet-stream"))
+    );
+    assert!(!prepared.body.is_replayable());
+    assert_eq!(prepared.body.size_hint().exact(), Some(8));
 }
 
 #[test]
@@ -134,24 +113,13 @@ fn multipart_request_prepares_stream_body_and_content_type() {
     )
     .expect("multipart request");
 
-    match prepared.body_plan {
-        BodyPlan::Multipart {
-            content_type,
-            format,
-        } => {
-            let rendered = content_type
-                .to_str()
-                .expect("multipart content type should be valid");
-            assert!(rendered.starts_with("multipart/form-data; boundary="));
-            assert_eq!(format, Format::Text);
-        }
-        other => panic!("expected multipart body plan, got {other:?}"),
-    }
-    assert!(prepared.args.body.is_stream());
-    assert!(matches!(
-        prepared.replayability,
-        Replayability::NonReplayable
-    ));
+    let rendered = prepared
+        .body
+        .media_type()
+        .and_then(|value| value.to_str().ok())
+        .expect("multipart content type should be valid");
+    assert!(rendered.starts_with("multipart/form-data; boundary="));
+    assert!(!prepared.body.is_replayable());
 }
 
 #[test]

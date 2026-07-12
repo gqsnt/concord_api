@@ -4,8 +4,8 @@ use concord_core::advanced::{
     AuthPlacement, NoopDebugSink, RateLimiter, RetryBackoff, RetryConfig, RetryIdempotency,
 };
 use concord_core::internal::{
-    BodyPlan, RequestArgs, RequestOverrides, RequestPlan, ResolvedPolicy, Replayability,
-};
+    PreparedBody,
+    RequestOverrides, RequestPlan, ResolvedPolicy, };
 use concord_core::prelude::DebugLevel;
 use http::{HeaderValue, Method, StatusCode, header::HeaderName};
 use perf::support::{
@@ -22,9 +22,7 @@ fn base_plan(name: &'static str, method: Method, path: &'static str) -> RequestP
         method,
         path,
         ResolvedPolicy::default(),
-        BodyPlan::None,
-        RequestArgs::empty(),
-        Replayability::Replayable,
+        PreparedBody::empty(),
     )
 }
 

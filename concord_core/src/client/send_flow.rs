@@ -51,8 +51,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     err,
                 )
             })?;
-        if let (Some(limit), Some(hint)) = (stream_request_limit, built.stream_size_hint)
-            && let Some(actual) = hint.upper()
+        if built.body.is_stream()
+            && let Some(limit) = stream_request_limit
+            && let Some(actual) = built.body.size_hint().upper()
             && actual > limit as u64
         {
             return Err(ApiClientError::RequestBodyLimitExceeded {

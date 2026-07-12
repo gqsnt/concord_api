@@ -1,6 +1,5 @@
 use super::errors::AuthError;
 use super::future::AuthFuture;
-use crate::transport::TransportRequestBody;
 use bytes::Bytes;
 use http::{HeaderMap, Method, StatusCode};
 use std::fmt;
@@ -11,7 +10,7 @@ pub struct AuthHttpRequest {
     pub method: Method,
     pub url: Url,
     pub headers: HeaderMap,
-    pub body: TransportRequestBody,
+    pub body: crate::io::PreparedBody,
     pub mode: AuthMode,
     pub policy: AuthInternalPolicy,
 }

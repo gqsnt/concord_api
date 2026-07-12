@@ -9,8 +9,8 @@ use concord_core::advanced::{
 };
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
-    RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    ClientPlanContext, EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan,
+    ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{
     ApiClientError, Endpoint, RateLimitObservation, RateLimitObserver, ReusableEndpoint,
@@ -60,10 +60,6 @@ impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
                     "/observation-failure",
                 ),
                 policy: self.policy.clone(),
-                body: BodyPlan::Encoded {
-                    content_type: Some(HeaderValue::from_static("application/json")),
-                    format: concord_core::internal::Format::Text,
-                },
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("application/json")),
                     no_content: false,
@@ -71,9 +67,11 @@ impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
                 },
                 pagination: None,
             },
-            args: RequestArgs::with_body_bytes(self.request_body.clone()),
+            body: PreparedBody::reusable_bytes(
+                self.request_body.clone(),
+                Some(HeaderValue::from_static("application/json")),
+            ),
             overrides: RequestOverrides::default(),
-            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }
@@ -107,7 +105,6 @@ impl ReusableEndpoint<TestCx> for HostlessEndpoint {
                 },
                 route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "", "/hostless"),
                 policy: self.policy.clone(),
-                body: BodyPlan::None,
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("text/plain")),
                     no_content: false,
@@ -115,9 +112,8 @@ impl ReusableEndpoint<TestCx> for HostlessEndpoint {
                 },
                 pagination: None,
             },
-            args: RequestArgs::default(),
+            body: PreparedBody::empty(),
             overrides: RequestOverrides::default(),
-            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }

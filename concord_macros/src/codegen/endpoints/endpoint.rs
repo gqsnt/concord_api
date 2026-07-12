@@ -448,9 +448,7 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
                 },
                 ctx_err.clone(),
             )?;
-            let __body_plan = __prepared_request_entity.body_plan;
-            let __request_args = __prepared_request_entity.args;
-            let __replayability = __prepared_request_entity.replayability;
+            let __prepared_body = __prepared_request_entity.body;
         })
     } else {
         Ok(quote! {
@@ -459,9 +457,7 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
                     (),
                     ctx_err.clone(),
                 )?;
-            let __body_plan = __prepared_request_entity.body_plan;
-            let __request_args = __prepared_request_entity.args;
-            let __replayability = ::concord_core::__private::Replayability::Replayable;
+            let __prepared_body = __prepared_request_entity.body;
         })
     }
 }
@@ -518,13 +514,11 @@ fn endpoint_plan_impl(
                 },
                 route: __resolved_route,
                 policy: __resolved_policy,
-                body: __body_plan,
                 response: __response_plan,
                 pagination: __pagination_plan,
             },
-            args: __request_args,
+            body: __prepared_body,
             overrides: ::concord_core::__private::RequestOverrides::default(),
-            replayability: __replayability,
         })
     };
     if owned {

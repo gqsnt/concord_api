@@ -17,9 +17,7 @@ use concord_core::advanced::{
     TextContentType, TransportErrorKind,
 };
 use concord_core::error::ErrorCategory;
-use concord_core::internal::{
-    BodyPlan, Format, RequestArgs, RequestEntity, RequestPlan, ResponseEntity,
-};
+use concord_core::internal::{Format, PreparedBody, RequestEntity, RequestPlan, ResponseEntity};
 use concord_core::prelude::{ApiClientError, PaginationTermination, Text};
 use http::{HeaderName, HeaderValue, Method, StatusCode};
 use std::error::Error;
@@ -215,11 +213,10 @@ fn plan_with_body(
 ) -> RequestPlan {
     let mut plan = request_plan(name, method, path, policy, None);
     if let Some(body) = body {
-        plan.endpoint.body = BodyPlan::Encoded {
-            content_type: Some(HeaderValue::from_static("application/json")),
-            format: Format::Text,
-        };
-        plan.args = RequestArgs::with_body_bytes(Bytes::from_static(body.as_bytes()));
+        plan.body = PreparedBody::reusable_bytes(
+            Bytes::from_static(body.as_bytes()),
+            Some(HeaderValue::from_static("application/json")),
+        );
     }
     plan
 }

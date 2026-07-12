@@ -7,8 +7,8 @@ use concord_core::advanced::{
     TransportError, TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
 };
 use concord_core::internal::{
-    BodyPlan, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides, RequestPlan,
-    ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy,
+    ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use futures_core::Stream;
@@ -429,7 +429,6 @@ fn stream_request_plan(
             },
             route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
             policy,
-            body: BodyPlan::RawStream { content_type },
             response: ResponsePlan {
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
@@ -437,49 +436,8 @@ fn stream_request_plan(
             },
             pagination: None,
         },
-        args: RequestArgs::with_stream_body(body),
+        body: PreparedBody::from_stream_body(body, Some(content_type)),
         overrides: RequestOverrides::default(),
-        replayability: concord_core::internal::Replayability::NonReplayable,
-    }
-}
-
-fn mismatched_request_plan(
-    name: &'static str,
-    method: Method,
-    path: &'static str,
-    policy: ResolvedPolicy,
-    body: BodyPlan,
-    args: RequestArgs,
-) -> RequestPlan {
-    let replayability = match &body {
-        BodyPlan::None | BodyPlan::Encoded { .. } => {
-            concord_core::internal::Replayability::Replayable
-        }
-        BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. } => {
-            concord_core::internal::Replayability::NonReplayable
-        }
-    };
-    RequestPlan {
-        endpoint: EndpointPlan {
-            meta: EndpointMeta {
-                name,
-                method,
-                idempotent: false,
-                facade_path: &[],
-            },
-            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
-            policy,
-            body,
-            response: ResponsePlan {
-                accept: Some(HeaderValue::from_static("text/plain")),
-                no_content: false,
-                format: concord_core::internal::Format::Text,
-            },
-            pagination: None,
-        },
-        args,
-        overrides: RequestOverrides::default(),
-        replayability,
     }
 }
 
@@ -637,18 +595,16 @@ async fn stream_is_not_polled_before_auth_collision_validation() {
     );
 
     let err = client
-        .execute_plan::<concord_core::prelude::Text<String>>(mismatched_request_plan(
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
             "RawStreamCollision",
             Method::POST,
             "/raw-stream-collision",
             policy,
-            BodyPlan::RawStream {
-                content_type: HeaderValue::from_static("application/octet-stream"),
-            },
-            RequestArgs::with_stream_body(StreamBody::from_byte_stream(PollFlagStream::new(
+            StreamBody::from_byte_stream(PollFlagStream::new(
                 polled.clone(),
                 Bytes::from_static(b"chunk"),
-            ))),
+            )),
+            HeaderValue::from_static("application/octet-stream"),
         ))
         .await
         .expect_err("auth collision should fail before transport");
@@ -768,52 +724,6 @@ async fn stream_request_is_not_retried_after_auth_rejection() {
 
     assert_eq!(transport.send_count(), 1);
     assert!(matches!(err, ApiClientError::Auth { .. }));
-}
-
-#[tokio::test]
-async fn replayable_stream_body_plan_is_rejected_defensively() {
-    let events = Arc::new(StdMutex::new(Vec::new()));
-    let transport =
-        StreamTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
-    let client =
-        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-
-    let err = client
-        .execute_plan::<concord_core::prelude::Text<String>>(RequestPlan {
-            endpoint: EndpointPlan {
-                meta: EndpointMeta {
-                    name: "ReplayableStreamBody",
-                    method: Method::POST,
-                    idempotent: false,
-                    facade_path: &[],
-                },
-                route: ResolvedRoute::new(
-                    http::uri::Scheme::HTTPS,
-                    "example.com",
-                    "/replayable-stream-body",
-                ),
-                policy: ResolvedPolicy::default(),
-                body: BodyPlan::RawStream {
-                    content_type: HeaderValue::from_static("application/octet-stream"),
-                },
-                response: ResponsePlan {
-                    accept: Some(HeaderValue::from_static("text/plain")),
-                    no_content: false,
-                    format: concord_core::internal::Format::Text,
-                },
-                pagination: None,
-            },
-            args: RequestArgs::with_stream_body(StreamBody::from_bytes(Bytes::from_static(
-                b"replayable-stream",
-            ))),
-            overrides: RequestOverrides::default(),
-            replayability: concord_core::internal::Replayability::Replayable,
-        })
-        .await
-        .expect_err("replayable stream body plan should be rejected defensively");
-
-    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
-    assert_eq!(transport.send_count(), 0);
 }
 
 #[tokio::test]
@@ -940,52 +850,220 @@ async fn stream_request_is_counted_while_transport_consumes_it() {
 }
 
 #[tokio::test]
-async fn mismatched_body_plan_and_request_args_are_rejected() {
-    let cases = vec![
-        (
-            "RawStreamMissingBody",
-            BodyPlan::RawStream {
-                content_type: HeaderValue::from_static("application/octet-stream"),
-            },
-            RequestArgs::empty(),
-            "raw stream body plan requires a stream request body",
-        ),
-        (
-            "EncodedWithStreamBody",
-            BodyPlan::Encoded {
-                content_type: Some(HeaderValue::from_static("application/json")),
-                format: concord_core::internal::Format::Text,
-            },
-            RequestArgs::with_stream_body(StreamBody::from_bytes(Bytes::from_static(b"chunk"))),
-            "encoded request body plan requires buffered bytes",
-        ),
-        (
-            "NoneWithStreamBody",
-            BodyPlan::None,
-            RequestArgs::with_stream_body(StreamBody::from_bytes(Bytes::from_static(b"chunk"))),
-            "request body is not allowed for this endpoint",
-        ),
-    ];
+async fn buffered_bytes_are_not_subject_to_stream_request_limit() -> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = StreamTransport::success(events, MockResponse::text(StatusCode::OK, "ok"));
+    let mut client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client.configure(|cfg| {
+        cfg.max_stream_request_body_bytes(4);
+    });
+    let mut plan = stream_request_plan(
+        "BufferedAboveStreamLimit",
+        Method::POST,
+        "/buffered-above-stream-limit",
+        ResolvedPolicy::default(),
+        StreamBody::from_bytes(Bytes::new()),
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    plan.body = PreparedBody::reusable_bytes(
+        Bytes::from_static(b"buffered-body"),
+        Some(HeaderValue::from_static("application/octet-stream")),
+    );
 
-    for (name, body, args, expected) in cases {
-        let events = Arc::new(StdMutex::new(Vec::new()));
-        let transport = StreamTransport::success(events, MockResponse::text(StatusCode::OK, "ok"));
-        let client =
-            ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
-        let err = client
-            .execute_plan::<concord_core::prelude::Text<String>>(mismatched_request_plan(
-                name,
-                Method::POST,
-                "/mismatch",
-                ResolvedPolicy::default(),
-                body,
-                args,
+    client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await?;
+    assert_eq!(transport.send_count(), 1);
+    assert!(matches!(
+        &transport.captured()[0].body,
+        CapturedBody::Bytes(bytes) if bytes == &Bytes::from_static(b"buffered-body")
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn prepared_media_type_conflict_rejects_encoded_and_stream_bodies_before_polling() {
+    let conflicting_policy = || {
+        let mut policy = ResolvedPolicy::default();
+        policy.headers.insert(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain"),
+        );
+        policy
+    };
+
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport =
+        StreamTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    let mut encoded = stream_request_plan(
+        "EncodedMediaConflict",
+        Method::POST,
+        "/encoded-media-conflict",
+        conflicting_policy(),
+        StreamBody::from_bytes(Bytes::new()),
+        HeaderValue::from_static("application/json"),
+    );
+    encoded.body = PreparedBody::reusable_bytes(
+        Bytes::from_static(b"encoded"),
+        Some(HeaderValue::from_static("application/json")),
+    );
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(encoded)
+        .await
+        .expect_err("encoded conflict");
+    assert!(err.to_string().contains("Content-Type conflicts"));
+    assert_eq!(transport.send_count(), 0);
+
+    let polled = Arc::new(AtomicBool::new(false));
+    let stream = stream_request_plan(
+        "StreamMediaConflict",
+        Method::POST,
+        "/stream-media-conflict",
+        conflicting_policy(),
+        StreamBody::from_byte_stream(PollFlagStream::new(
+            polled.clone(),
+            Bytes::from_static(b"secret-stream"),
+        )),
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(stream)
+        .await
+        .expect_err("stream conflict");
+    assert!(err.to_string().contains("Content-Type conflicts"));
+    assert!(!polled.load(Ordering::SeqCst));
+    assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn matching_explicit_content_type_is_accepted() -> Result<(), ApiClientError> {
+    let mut policy = ResolvedPolicy::default();
+    policy.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = StreamTransport::success(events, MockResponse::text(StatusCode::OK, "ok"));
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    client
+        .execute_plan::<concord_core::prelude::Text<String>>(stream_request_plan(
+            "MatchingMediaType",
+            Method::POST,
+            "/matching-media-type",
+            policy,
+            StreamBody::from_bytes(Bytes::from_static(b"body")),
+            HeaderValue::from_static("application/octet-stream"),
+        ))
+        .await?;
+    assert_eq!(transport.send_count(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn replay_factory_runs_once_per_physical_attempt_while_one_shot_stays_single_use() {
+    let retry_policy = || {
+        let mut policy = stream_retry_policy();
+        if let concord_core::internal::RetrySetting::Config(config) = &mut policy.retry {
+            config.methods = vec![Method::PUT];
+            config.statuses = vec![StatusCode::INTERNAL_SERVER_ERROR];
+            config.transport_errors.clear();
+        }
+        policy
+    };
+    let response = MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry");
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = StreamTransport::success(events, response.clone());
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let mut hint = http_body::SizeHint::new();
+    hint.set_exact(12);
+    let mut plan = stream_request_plan(
+        "ReplayFactoryAttempts",
+        Method::PUT,
+        "/replay-factory-attempts",
+        retry_policy(),
+        StreamBody::from_bytes(Bytes::new()),
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    plan.endpoint.meta.idempotent = true;
+    plan.body = PreparedBody::replay_factory(
+        hint,
+        Some(HeaderValue::from_static("application/octet-stream")),
+        move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(concord_core::advanced::DynBody::from_bytes(
+                Bytes::from_static(b"factory-body"),
             ))
-            .await
-            .expect_err("body plan mismatch should fail");
+        },
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await
+        .expect_err("factory request exhausts retry response");
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(transport.send_count(), 2);
+    assert!(transport.captured().iter().all(|request| matches!(
+        &request.body,
+        CapturedBody::Stream(bytes) if bytes == &Bytes::from_static(b"factory-body")
+    )));
 
-        assert_eq!(transport.send_count(), 0);
-        assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
-        assert!(err.to_string().contains(expected), "{err}");
-    }
+    let one_shot_transport =
+        StreamTransport::success(Arc::new(StdMutex::new(Vec::new())), response);
+    let one_shot_client = ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        one_shot_transport.clone(),
+    );
+    let mut one_shot_plan = stream_request_plan(
+        "OneShotAttempts",
+        Method::PUT,
+        "/one-shot-attempts",
+        retry_policy(),
+        StreamBody::from_bytes(Bytes::from_static(b"one-shot-body")),
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    one_shot_plan.endpoint.meta.idempotent = true;
+    let err = one_shot_client
+        .execute_plan::<concord_core::prelude::Text<String>>(one_shot_plan)
+        .await
+        .expect_err("one-shot request is terminal");
+    assert!(matches!(err, ApiClientError::HttpStatus { .. }));
+    assert_eq!(one_shot_transport.send_count(), 1);
+}
+
+#[tokio::test]
+async fn replay_factory_failure_is_pre_transport_and_not_one_shot_exhaustion() {
+    let transport = StreamTransport::success(
+        Arc::new(StdMutex::new(Vec::new())),
+        MockResponse::text(StatusCode::OK, "ok"),
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    let mut plan = stream_request_plan(
+        "ReplayFactoryFailure",
+        Method::POST,
+        "/replay-factory-failure",
+        ResolvedPolicy::default(),
+        StreamBody::from_bytes(Bytes::new()),
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    plan.body = PreparedBody::replay_factory(http_body::SizeHint::new(), None, || {
+        Err(concord_core::advanced::BodyError::invalid_configuration())
+    });
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await
+        .expect_err("factory failure");
+    assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+    assert!(err.to_string().contains("request body factory failed"));
+    assert!(!err.to_string().contains("already been consumed"));
+    assert_eq!(transport.send_count(), 0);
 }

@@ -1,12 +1,7 @@
 #![allow(dead_code)]
 
-use crate::advanced::{MultipartBody, MultipartBodyError};
-use crate::multipart::MultipartBodyErrorKind;
 use crate::policy::ResolvedPolicy;
-use crate::stream_body::StreamBody;
 use crate::transport::RequestMeta;
-use crate::transport::TransportRequestBody;
-use bytes::Bytes;
 use http::HeaderValue;
 use http::Method;
 use std::fmt;
@@ -37,50 +32,8 @@ pub struct EndpointPlan {
     pub meta: EndpointMeta,
     pub route: ResolvedRoute,
     pub policy: ResolvedPolicy,
-    pub body: BodyPlan,
     pub response: ResponsePlan,
     pub pagination: Option<PaginationMarker>,
-}
-
-#[derive(Debug, Default)]
-pub struct RequestArgs {
-    pub body: TransportRequestBody,
-    pub(crate) stream_size_hint: Option<crate::stream_body::BodySizeHint>,
-    pub(crate) multipart_content_type: Option<HeaderValue>,
-}
-
-impl RequestArgs {
-    pub fn empty() -> Self {
-        Self::default()
-    }
-
-    pub fn with_body_bytes(body: Bytes) -> Self {
-        Self {
-            body: TransportRequestBody::from_bytes(body),
-            stream_size_hint: None,
-            multipart_content_type: None,
-        }
-    }
-
-    pub fn with_stream_body(body: StreamBody) -> Self {
-        let stream_size_hint = body.size_hint();
-        Self {
-            body: body.into_transport_body(),
-            stream_size_hint: Some(stream_size_hint),
-            multipart_content_type: None,
-        }
-    }
-
-    pub fn with_multipart_body(body: MultipartBody) -> Result<Self, MultipartBodyError> {
-        let multipart_content_type = body.try_content_type().map_err(|_| {
-            MultipartBodyError::new(MultipartBodyErrorKind::InvalidMultipartContentType)
-        })?;
-        Ok(Self {
-            body: body.into_transport_body()?,
-            stream_size_hint: None,
-            multipart_content_type: Some(multipart_content_type),
-        })
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -94,16 +47,14 @@ pub struct RequestOverrides {
 #[derive(Debug)]
 pub struct RequestPlan {
     pub endpoint: EndpointPlan,
-    pub args: RequestArgs,
+    pub body: crate::io::PreparedBody,
     pub overrides: RequestOverrides,
-    pub replayability: crate::io::Replayability,
 }
 
 #[derive(Clone, Debug)]
 pub struct RequestPlanView {
     pub endpoint: EndpointPlan,
     pub overrides: RequestOverrides,
-    pub replayability: crate::io::Replayability,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -142,23 +93,6 @@ impl ResolvedRoute {
             path: path.into(),
         }
     }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub enum BodyPlan {
-    #[default]
-    None,
-    Encoded {
-        content_type: Option<HeaderValue>,
-        format: crate::codec::Format,
-    },
-    RawStream {
-        content_type: HeaderValue,
-    },
-    Multipart {
-        content_type: HeaderValue,
-        format: crate::codec::Format,
-    },
 }
 
 #[derive(Clone)]

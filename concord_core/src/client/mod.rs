@@ -3,7 +3,7 @@ use crate::auth::{
     AuthMode, AuthRequirementId,
 };
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
-use crate::endpoint::{BodyPlan, ClientPlanContext, RequestPlan};
+use crate::endpoint::{ClientPlanContext, RequestPlan};
 use crate::error::{ApiClientError, ErrorContext};
 use crate::policy::Policy;
 use crate::rate_limit::{

@@ -65,10 +65,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     fn build_attempt_request(
         &self,
         plan: &crate::endpoint::RequestPlanView,
-        args: &mut crate::endpoint::RequestArgs,
+        body: &mut crate::io::PreparedBody,
         meta: RequestMeta,
     ) -> Result<BuiltRequest, ApiClientError> {
-        self.build_request_from_plan(plan, args, meta)
+        self.build_request_from_plan(plan, body, meta)
     }
 
     async fn prepare_auth(
@@ -223,14 +223,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn drive_attempts(
         &self,
         plan: &crate::endpoint::RequestPlanView,
-        args: &mut crate::endpoint::RequestArgs,
+        body: &mut crate::io::PreparedBody,
         ctx: ErrorContext,
         dbg: DebugLevel,
         family: AttemptFamily,
     ) -> Result<AttemptTransportSuccess, ApiClientError> {
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
-        let is_replayable = plan.replayability.is_replayable();
+        let is_replayable = body.is_replayable();
         if let RetrySetting::Config(config) = &plan.endpoint.policy.retry {
             config.validate(ctx.clone())?;
         }
@@ -257,7 +257,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .endpoint
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
-            let mut built = self.build_attempt_request(plan, args, meta)?;
+            let mut built = self.build_attempt_request(plan, body, meta)?;
             let auth_preparation = if cached_auth_preparation.is_none() {
                 Some(
                     self.prepare_auth(plan, &auth_state_snapshot, &auth_http, &mut built)
@@ -285,17 +285,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         source,
                     }
                 })?;
-            if is_replayable
-                && matches!(
-                    &built.body,
-                    crate::transport::TransportRequestBody::Stream(_)
-                )
-            {
-                return Err(ApiClientError::PolicyViolation {
-                    ctx: ctx.clone(),
-                    msg: "replayable request plan cannot use a non-replayable body plan",
-                });
-            }
             let url_str = built.debug_url();
 
             self.debug_planned_request(dbg, plan, &built, &url_str);
@@ -463,7 +452,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     where
         C: crate::codec::ResponseCodec,
     {
-        let (plan, mut args) = into_canonical_request_plan_view(plan);
+        let (plan, mut body) = into_canonical_request_plan_view(plan);
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
             method: plan.endpoint.meta.method.clone(),
@@ -475,7 +464,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let resp = match self
             .drive_attempts(
                 &plan,
-                &mut args,
+                &mut body,
                 ctx.clone(),
                 dbg,
                 AttemptFamily::Buffered {
@@ -511,7 +500,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         plan: RequestPlan,
         skip_body: bool,
     ) -> Result<BuiltResponse, ApiClientError> {
-        let (plan, mut args) = into_canonical_request_plan_view(plan);
+        let (plan, mut body) = into_canonical_request_plan_view(plan);
         let dbg = plan
             .overrides
             .debug_level
@@ -523,7 +512,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let resp = match self
             .drive_attempts(
                 &plan,
-                &mut args,
+                &mut body,
                 ctx,
                 dbg,
                 AttemptFamily::Buffered { skip_body },
@@ -547,9 +536,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     {
         let RequestPlan {
             mut endpoint,
-            args,
+            body,
             overrides,
-            replayability,
         } = plan;
         let ctx = ErrorContext {
             endpoint: endpoint.meta.name,
@@ -561,11 +549,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
             );
         }
-        let (plan, mut args) = into_canonical_request_plan_view(RequestPlan {
+        let (plan, mut body) = into_canonical_request_plan_view(RequestPlan {
             endpoint,
-            args,
+            body,
             overrides,
-            replayability,
         });
         if plan.endpoint.pagination.is_some() {
             return Err(ApiClientError::PolicyViolation {
@@ -587,7 +574,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let resp = match self
             .drive_attempts(
                 &plan,
-                &mut args,
+                &mut body,
                 ctx.clone(),
                 dbg,
                 AttemptFamily::Stream {
@@ -828,24 +815,19 @@ fn attach_prepared_auth_generation(
 
 fn into_canonical_request_plan_view(
     mut plan: RequestPlan,
-) -> (
-    crate::endpoint::RequestPlanView,
-    crate::endpoint::RequestArgs,
-) {
+) -> (crate::endpoint::RequestPlanView, crate::io::PreparedBody) {
     plan.endpoint.policy.rate_limit.canonicalize();
     let RequestPlan {
         endpoint,
-        args,
+        body,
         overrides,
-        replayability,
     } = plan;
     (
         crate::endpoint::RequestPlanView {
             endpoint,
             overrides,
-            replayability,
         },
-        args,
+        body,
     )
 }
 

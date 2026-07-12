@@ -7,8 +7,8 @@ use concord_core::advanced::{
 use concord_core::auth::{ApiKey, CredentialId, CredentialRef, apply_secret_credential};
 use concord_core::error;
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, Replayability, RequestArgs,
-    RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    ClientPlanContext, EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan,
+    ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClient, ClientContext, DebugLevel, Endpoint, IntoEndpointPlan};
 use http::{HeaderValue, Method, StatusCode};
@@ -253,7 +253,6 @@ mod tests {
         DebugSink, SanitizedHeaders, StreamBody, StreamBodyError, TransportError,
         TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
     };
-    use concord_core::internal::BodyPlan;
     use futures_util::{StreamExt, stream};
     use std::sync::atomic::AtomicU8;
     use crate::support::{EmptyBody, MockResponse, MockTransport, runtime};
@@ -342,9 +341,7 @@ mod tests {
             Method::GET,
             "/perf/raw-plan-adapter",
             ResolvedPolicy::default(),
-            BodyPlan::None,
-            RequestArgs::empty(),
-            Replayability::Replayable,
+            PreparedBody::empty(),
         );
 
         let response = runtime()
@@ -368,9 +365,7 @@ mod tests {
             Method::GET,
             "/perf/raw-plan-typed-attempt",
             ResolvedPolicy::default(),
-            BodyPlan::None,
-            RequestArgs::empty(),
-            Replayability::Replayable,
+            PreparedBody::empty(),
         );
 
         let error = runtime().block_on(
@@ -398,9 +393,7 @@ mod tests {
             Method::GET,
             "/perf/raw-plan-overrides",
             ResolvedPolicy::default(),
-            BodyPlan::None,
-            RequestArgs::empty(),
-            Replayability::Replayable,
+            PreparedBody::empty(),
         );
         plan.overrides.debug_level = Some(DebugLevel::V);
         plan.overrides.timeout = Some(std::time::Duration::from_secs(17));
@@ -425,9 +418,7 @@ mod tests {
             Method::GET,
             "/perf/raw-plan-page-index",
             ResolvedPolicy::default(),
-            BodyPlan::None,
-            RequestArgs::empty(),
-            Replayability::Replayable,
+            PreparedBody::empty(),
         );
         plan.overrides.page_index = 3;
 
@@ -449,9 +440,7 @@ mod tests {
             Method::GET,
             "/perf/raw-plan-direct-page-index",
             ResolvedPolicy::default(),
-            BodyPlan::None,
-            RequestArgs::empty(),
-            Replayability::Replayable,
+            PreparedBody::empty(),
         );
         plan.overrides.page_index = 9;
 
@@ -483,11 +472,10 @@ mod tests {
             Method::POST,
             "/perf/raw-plan-one-shot",
             ResolvedPolicy::default(),
-            BodyPlan::RawStream {
-                content_type: HeaderValue::from_static("application/octet-stream"),
-            },
-            RequestArgs::with_stream_body(StreamBody::from_byte_stream(stream)),
-            Replayability::NonReplayable,
+            PreparedBody::from_stream_body(
+                StreamBody::from_byte_stream(stream),
+                Some(HeaderValue::from_static("application/octet-stream")),
+            ),
         );
         plan.overrides.attempt = 2;
 
@@ -505,9 +493,7 @@ mod tests {
             Method::GET,
             "/perf/raw-plan-transport-failure",
             ResolvedPolicy::default(),
-            BodyPlan::None,
-            RequestArgs::empty(),
-            Replayability::Replayable,
+            PreparedBody::empty(),
         );
 
         let error = runtime().block_on(execute_raw_plan(&client, plan));
@@ -533,9 +519,7 @@ pub fn request_plan(
     method: Method,
     path: &'static str,
     policy: ResolvedPolicy,
-    body: BodyPlan,
-    args: RequestArgs,
-    replayability: Replayability,
+    body: PreparedBody,
 ) -> RequestPlan {
     let idempotent = method == Method::GET || method == Method::HEAD;
     let meta_method = method.clone();
@@ -549,7 +533,6 @@ pub fn request_plan(
             },
             route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
             policy,
-            body,
             response: ResponsePlan {
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
@@ -557,8 +540,7 @@ pub fn request_plan(
             },
             pagination: None,
         },
-        args,
+        body,
         overrides: RequestOverrides::default(),
-        replayability,
     }
 }

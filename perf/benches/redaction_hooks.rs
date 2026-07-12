@@ -3,7 +3,7 @@ use concord_core::advanced::{
     DebugSink, NoopRateLimiter, PostResponseHookContext, PreSendHookContext, RateLimiter,
     RuntimeHooks, SanitizedHeaders,
 };
-use concord_core::internal::{BodyPlan, RequestArgs, RequestOverrides, RequestPlan, ResolvedPolicy, Replayability};
+use concord_core::internal::{PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy};
 use concord_core::prelude::{ApiClientError, DebugLevel};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use http::{HeaderName, HeaderValue, Method, StatusCode};
@@ -128,9 +128,7 @@ fn plan(name: &'static str, query: usize, headers: usize, mixed_case: bool) -> R
         Method::GET,
         "/perf/redaction",
         policy,
-        BodyPlan::None,
-        RequestArgs::empty(),
-        Replayability::Replayable,
+        PreparedBody::empty(),
     )
 }
 

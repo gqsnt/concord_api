@@ -71,5 +71,5 @@ The generated advanced surfaces are family-specific and keep runtime values free
 - `NoContent` is response-only, returns `()`, and omits `Accept`; request-side `NoContent` remains invalid. The core `NoContent` buffered codec intentionally omits request and response content headers.
 - `Stream<M>` has the dedicated `.execute_stream()` helper; `.execute()` also returns its stream response.
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` are the codec-level override points for buffered codecs. `content_type()` and `accept()` are the convenience forms.
-- Retry policies remain available for ordinary HTTP endpoints. Stream-like request bodies are not automatically replayed by retry unless a future replayable-body contract is introduced.
+- Retry policies remain available for ordinary HTTP endpoints. Built-in stream and multipart request bodies are one-shot and are never retried. A custom `RequestEntity` must supply an explicit `PreparedBody` replay factory when it can genuinely construct a fresh body for every attempt.
 - Pagination remains buffered-response-only and is rejected for `Stream` and `NoContent` endpoint responses. `Bytes` rejects pagination.

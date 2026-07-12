@@ -251,9 +251,7 @@ where
                 method: Method::POST,
             },
         )?;
-        plan.endpoint.body = prepared.body_plan;
-        plan.args = prepared.args;
-        plan.replayability = prepared.replayability;
+        plan.body = prepared.body;
         Ok(plan)
     }
 }

@@ -5,7 +5,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     pub(super) fn build_request_from_plan(
         &self,
         plan: &crate::endpoint::RequestPlanView,
-        args: &mut crate::endpoint::RequestArgs,
+        body: &mut crate::io::PreparedBody,
         meta: RequestMeta,
     ) -> Result<BuiltRequest, ApiClientError> {
         let ctx = ErrorContext {
@@ -33,120 +33,30 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
 
         let mut headers = plan.endpoint.policy.headers.clone();
-        if !headers.contains_key(CONTENT_TYPE) {
-            match &plan.endpoint.body {
-                BodyPlan::Encoded { content_type, .. } => {
-                    if let Some(content_type) = content_type {
-                        headers.insert(CONTENT_TYPE, content_type.clone());
-                    }
-                }
-                BodyPlan::RawStream { content_type } => {
-                    headers.insert(CONTENT_TYPE, content_type.clone());
-                }
-                BodyPlan::Multipart { content_type, .. } => {
-                    headers.insert(CONTENT_TYPE, content_type.clone());
-                }
-                BodyPlan::None => {}
+        crate::io::apply_prepared_body_media_type(&mut headers, body).map_err(|()| {
+            ApiClientError::PolicyViolation {
+                ctx: ctx.clone(),
+                msg: "request Content-Type conflicts with prepared body media type",
             }
-        }
-
-        let body = match &plan.endpoint.body {
-            BodyPlan::None => match &args.body {
-                crate::transport::TransportRequestBody::Empty => {
-                    crate::transport::TransportRequestBody::Empty
+        })?;
+        let body = body.produce_for_attempt().map_err(|error| {
+            let msg = match error.kind() {
+                crate::io::BodyProductionErrorKind::AlreadyConsumed => {
+                    "one-shot request body has already been consumed"
                 }
-                crate::transport::TransportRequestBody::Bytes(_)
-                | crate::transport::TransportRequestBody::Stream(_) => {
-                    return Err(ApiClientError::PolicyViolation {
-                        ctx,
-                        msg: "request body is not allowed for this endpoint",
-                    });
-                }
-            },
-            BodyPlan::Encoded { .. } => match &args.body {
-                crate::transport::TransportRequestBody::Bytes(bytes) => {
-                    crate::transport::TransportRequestBody::from_bytes(bytes.clone())
-                }
-                crate::transport::TransportRequestBody::Empty
-                | crate::transport::TransportRequestBody::Stream(_) => {
-                    return Err(ApiClientError::PolicyViolation {
-                        ctx,
-                        msg: "encoded request body plan requires buffered bytes",
-                    });
-                }
-            },
-            BodyPlan::RawStream { .. } => match std::mem::replace(
-                &mut args.body,
-                crate::transport::TransportRequestBody::Empty,
-            ) {
-                crate::transport::TransportRequestBody::Stream(stream) => {
-                    crate::transport::TransportRequestBody::Stream(stream)
-                }
-                crate::transport::TransportRequestBody::Empty
-                | crate::transport::TransportRequestBody::Bytes(_) => {
-                    return Err(ApiClientError::PolicyViolation {
-                        ctx,
-                        msg: "raw stream body plan requires a stream request body",
-                    });
-                }
-            },
-            BodyPlan::Multipart { content_type, .. } => match std::mem::replace(
-                &mut args.body,
-                crate::transport::TransportRequestBody::Empty,
-            ) {
-                crate::transport::TransportRequestBody::Stream(stream) => {
-                    let Some(actual_content_type) = args.multipart_content_type.as_ref() else {
-                        return Err(ApiClientError::PolicyViolation {
-                            ctx,
-                            msg: "multipart body args are missing multipart content type metadata",
-                        });
-                    };
-                    if actual_content_type != content_type {
-                        return Err(ApiClientError::PolicyViolation {
-                            ctx,
-                            msg: "multipart content type must match multipart body boundary",
-                        });
-                    }
-                    if let Some(actual) = headers.get(CONTENT_TYPE) {
-                        if actual != content_type {
-                            return Err(ApiClientError::PolicyViolation {
-                                ctx,
-                                msg: "multipart content type must match multipart body boundary",
-                            });
-                        }
-                    } else {
-                        headers.insert(CONTENT_TYPE, content_type.clone());
-                    }
-                    crate::transport::TransportRequestBody::Stream(stream)
-                }
-                crate::transport::TransportRequestBody::Empty
-                | crate::transport::TransportRequestBody::Bytes(_) => {
-                    return Err(ApiClientError::PolicyViolation {
-                        ctx,
-                        msg: "multipart body plan requires a stream request body",
-                    });
-                }
-            },
-        };
-
-        if plan.replayability.is_replayable()
-            && matches!(
-                &plan.endpoint.body,
-                BodyPlan::RawStream { .. } | BodyPlan::Multipart { .. }
-            )
-        {
-            return Err(ApiClientError::PolicyViolation {
-                ctx,
-                msg: "replayable request plan cannot use a non-replayable body plan",
-            });
-        }
+                crate::io::BodyProductionErrorKind::FactoryFailure => "request body factory failed",
+            };
+            ApiClientError::PolicyViolation {
+                ctx: ctx.clone(),
+                msg,
+            }
+        })?;
 
         Ok(BuiltRequest {
             meta,
             url,
             headers,
             body,
-            stream_size_hint: std::mem::take(&mut args.stream_size_hint),
             timeout,
             retry,
             rate_limit,

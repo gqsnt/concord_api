@@ -14,7 +14,7 @@ use concord_core::advanced::{
 };
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, Format, RequestArgs, RequestPlan, ResolvedPolicy, ResolvedRoute,
+    ClientPlanContext, PreparedBody, RequestPlan, ResolvedPolicy, ResolvedRoute,
 };
 use concord_core::prelude::{
     ApiClient, ApiClientError, CursorPagination, DebugLevel, Endpoint, ReusableEndpoint,
@@ -899,12 +899,10 @@ async fn response_body_read_transport_error_is_sanitized() {
         body_read_failure_policy(),
         None,
     );
-    plan.endpoint.body = BodyPlan::Encoded {
-        content_type: Some(HeaderValue::from_static("application/json")),
-        format: Format::Text,
-    };
-    plan.args =
-        RequestArgs::with_body_bytes(Bytes::from_static(REQUEST_BODY_SENTINEL_PR77.as_bytes()));
+    plan.body = PreparedBody::reusable_bytes(
+        Bytes::from_static(REQUEST_BODY_SENTINEL_PR77.as_bytes()),
+        Some(HeaderValue::from_static("application/json")),
+    );
 
     let err = client
         .execute_plan::<concord_core::prelude::Text<String>>(plan)

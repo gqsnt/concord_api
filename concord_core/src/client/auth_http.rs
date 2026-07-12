@@ -51,6 +51,40 @@ impl Drop for AuthInternalStackGuard {
     }
 }
 
+fn validate_auth_internal_body(
+    headers: &mut http::HeaderMap,
+    body: &crate::io::PreparedBody,
+) -> Result<(), AuthError> {
+    if !body.supports_auth_internal_retries() {
+        return Err(AuthError::new(
+            AuthErrorKind::UnsupportedScheme,
+            "auth-internal request body category is not supported",
+        ));
+    }
+    crate::io::apply_prepared_body_media_type(headers, body).map_err(|()| {
+        AuthError::new(
+            AuthErrorKind::InvalidConfiguration,
+            "auth-internal Content-Type conflicts with prepared body media type",
+        )
+    })
+}
+
+fn produce_auth_internal_body(
+    body: &mut crate::io::PreparedBody,
+) -> Result<crate::io::AttemptBody, AuthError> {
+    body.produce_for_attempt().map_err(|error| {
+        let message = match error.kind() {
+            crate::io::BodyProductionErrorKind::AlreadyConsumed => {
+                "auth-internal one-shot request body was already consumed"
+            }
+            crate::io::BodyProductionErrorKind::FactoryFailure => {
+                "auth-internal request body factory failed"
+            }
+        };
+        AuthError::new(AuthErrorKind::AcquireFailed, message)
+    })
+}
+
 impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx, T> {
     fn send<'a>(
         &'a self,
@@ -61,8 +95,8 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                 let AuthHttpRequest {
                     method,
                     url,
-                    headers,
-                    body,
+                    mut headers,
+                    mut body,
                     mode,
                     policy,
                 } = req;
@@ -75,12 +109,12 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     page_index: 0,
                 };
 
+                validate_auth_internal_body(&mut headers, &body)?;
                 let mut base_request = BuiltRequest {
                     meta,
                     url,
                     headers,
-                    body,
-                    stream_size_hint: None,
+                    body: crate::io::AttemptBody::Empty,
                     timeout: policy.timeout,
                     retry: RetrySetting::Inherit,
                     rate_limit: RateLimitPlan::new(),
@@ -89,22 +123,10 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
 
                 fn make_built_request(
                     base_request: &BuiltRequest,
+                    body: &mut crate::io::PreparedBody,
                     attempt: u32,
                 ) -> Result<BuiltRequest, AuthError> {
-                    let body = match &base_request.body {
-                        crate::transport::TransportRequestBody::Empty => {
-                            crate::transport::TransportRequestBody::Empty
-                        }
-                        crate::transport::TransportRequestBody::Bytes(bytes) => {
-                            crate::transport::TransportRequestBody::from_bytes(bytes.clone())
-                        }
-                        crate::transport::TransportRequestBody::Stream(_) => {
-                            return Err(AuthError::new(
-                                AuthErrorKind::UnsupportedScheme,
-                                "stream auth request bodies are not supported yet",
-                            ));
-                        }
-                    };
+                    let body = produce_auth_internal_body(body)?;
                     Ok(BuiltRequest {
                         meta: RequestMeta {
                             attempt,
@@ -113,10 +135,9 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         url: base_request.url.clone(),
                         headers: base_request.headers.clone(),
                         body,
-                        stream_size_hint: None,
                         timeout: base_request.timeout,
-                        retry: base_request.retry.clone(),
-                        rate_limit: base_request.rate_limit.clone(),
+                        retry: RetrySetting::Inherit,
+                        rate_limit: RateLimitPlan::new(),
                         extensions: base_request.extensions.clone(),
                     })
                 }
@@ -160,7 +181,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                 let auth_url = base_request.url.as_str().to_string();
                 let mut attempt: u32 = 0;
                 loop {
-                    let built = make_built_request(&base_request, attempt)?;
+                    let built = make_built_request(&base_request, &mut body, attempt)?;
 
                     if policy.use_rate_limiter {
                         let _permit = self
@@ -260,6 +281,10 @@ fn next_auth_transport_attempt(attempt: u32) -> Result<u32, AuthError> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use bytes::Bytes;
+    use http::HeaderValue;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn auth_attempt_counter_overflow_returns_error() {
@@ -270,5 +295,78 @@ mod test {
             err.to_string()
                 .contains("auth transport attempt counter overflowed")
         );
+    }
+
+    #[test]
+    fn reusable_auth_body_produces_fresh_attempts() {
+        let mut body = crate::io::PreparedBody::reusable_bytes(
+            Bytes::from_static(b"auth-body"),
+            Some(HeaderValue::from_static(
+                "application/x-www-form-urlencoded",
+            )),
+        );
+        let mut headers = http::HeaderMap::new();
+
+        validate_auth_internal_body(&mut headers, &body).expect("body should be supported");
+        assert_eq!(
+            headers.get(http::header::CONTENT_TYPE),
+            Some(&HeaderValue::from_static(
+                "application/x-www-form-urlencoded"
+            ))
+        );
+
+        for _ in 0..2 {
+            match produce_auth_internal_body(&mut body).expect("attempt body") {
+                crate::io::AttemptBody::Bytes(bytes) => {
+                    assert_eq!(bytes, Bytes::from_static(b"auth-body"));
+                }
+                _ => panic!("reusable auth bytes must remain buffered attempt bytes"),
+            }
+        }
+    }
+
+    #[test]
+    fn unsupported_auth_bodies_are_rejected_without_production() {
+        let invocations = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&invocations);
+        let factory = crate::io::PreparedBody::replay_factory(
+            http_body::SizeHint::default(),
+            None,
+            move || {
+                observed.fetch_add(1, Ordering::SeqCst);
+                Ok(crate::body::DynBody::empty())
+            },
+        );
+        let mut headers = http::HeaderMap::new();
+
+        let error = validate_auth_internal_body(&mut headers, &factory)
+            .expect_err("auth replay factories are unsupported");
+        assert_eq!(error.kind, AuthErrorKind::UnsupportedScheme);
+        assert_eq!(invocations.load(Ordering::SeqCst), 0);
+
+        let one_shot = crate::io::PreparedBody::one_shot(crate::body::DynBody::empty(), None);
+        validate_auth_internal_body(&mut headers, &one_shot)
+            .expect_err("auth one-shot bodies are unsupported");
+    }
+
+    #[test]
+    fn auth_body_media_type_conflicts_are_rejected_safely() {
+        let body = crate::io::PreparedBody::reusable_bytes(
+            Bytes::from_static(b"secret-auth-body"),
+            Some(HeaderValue::from_static("application/json")),
+        );
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain"),
+        );
+
+        let error = validate_auth_internal_body(&mut headers, &body)
+            .expect_err("conflicting body media type must fail");
+        let rendered = format!("{error:?} {error}");
+        assert!(rendered.contains("conflicts with prepared body media type"));
+        assert!(!rendered.contains("secret-auth-body"));
+        assert!(!rendered.contains("application/json"));
+        assert!(!rendered.contains("text/plain"));
     }
 }

@@ -8,8 +8,8 @@ use bytes::Bytes;
 use concord_core::advanced::{RetryBackoff, RetryConfig, RetryIdempotency, StreamBody};
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, Format, Replayability, RequestArgs,
-    RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan, RetrySetting,
+    ClientPlanContext, EndpointMeta, EndpointPlan, Format, PreparedBody, RequestOverrides,
+    RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan, RetrySetting,
 };
 use concord_core::prelude::{ApiClientError, Endpoint, ReusableEndpoint};
 use http::{HeaderValue, Method, StatusCode};
@@ -36,22 +36,15 @@ enum AttemptBody {
 }
 
 impl AttemptBody {
-    fn plan_parts(&self) -> (BodyPlan, RequestArgs, Replayability) {
+    fn prepare(&self) -> PreparedBody {
         match self {
-            Self::Bytes(body) => (
-                BodyPlan::Encoded {
-                    content_type: Some(HeaderValue::from_static("application/json")),
-                    format: Format::Text,
-                },
-                RequestArgs::with_body_bytes(body.clone()),
-                Replayability::Replayable,
+            Self::Bytes(body) => PreparedBody::reusable_bytes(
+                body.clone(),
+                Some(HeaderValue::from_static("application/json")),
             ),
-            Self::Stream(body) => (
-                BodyPlan::RawStream {
-                    content_type: HeaderValue::from_static("application/octet-stream"),
-                },
-                RequestArgs::with_stream_body(StreamBody::from_bytes(body.clone())),
-                Replayability::NonReplayable,
+            Self::Stream(body) => PreparedBody::from_stream_body(
+                StreamBody::from_bytes(body.clone()),
+                Some(HeaderValue::from_static("application/octet-stream")),
             ),
         }
     }
@@ -77,7 +70,6 @@ impl AttemptEndpoint {
     }
 
     fn request_plan(&self) -> RequestPlan {
-        let (body, args, replayability) = self.body.plan_parts();
         RequestPlan {
             endpoint: EndpointPlan {
                 meta: EndpointMeta {
@@ -88,7 +80,6 @@ impl AttemptEndpoint {
                 },
                 route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", self.path),
                 policy: self.policy.clone(),
-                body,
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("text/plain")),
                     no_content: false,
@@ -96,9 +87,8 @@ impl AttemptEndpoint {
                 },
                 pagination: None,
             },
-            args,
+            body: self.body.prepare(),
             overrides: RequestOverrides::default(),
-            replayability,
         }
     }
 }

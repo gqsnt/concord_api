@@ -8,9 +8,7 @@ use concord_core::advanced::{
     RetryBackoff, RetryContext, RetryDecision, RetryIdempotency, RetryPolicy, StreamBody,
 };
 use concord_core::error::ErrorCategory;
-use concord_core::internal::{
-    BodyPlan, Format, Replayability, RequestArgs, ResolvedPolicy, RetrySetting,
-};
+use concord_core::internal::{PreparedBody, ResolvedPolicy, RetrySetting};
 use concord_core::prelude::ApiClientError;
 use http::{HeaderValue, Method, StatusCode};
 use std::sync::Arc;
@@ -38,12 +36,10 @@ fn retry_encoded_plan(
     idempotent: bool,
 ) -> concord_core::internal::RequestPlan {
     let mut plan = retry_plan(name, method, path, policy, idempotent);
-    plan.endpoint.body = BodyPlan::Encoded {
-        content_type: Some(HeaderValue::from_static("application/json")),
-        format: Format::Text,
-    };
-    plan.args = RequestArgs::with_body_bytes(Bytes::from_static(body));
-    plan.replayability = Replayability::Replayable;
+    plan.body = PreparedBody::reusable_bytes(
+        Bytes::from_static(body),
+        Some(HeaderValue::from_static("application/json")),
+    );
     plan
 }
 
@@ -56,11 +52,10 @@ fn retry_stream_plan(
     idempotent: bool,
 ) -> concord_core::internal::RequestPlan {
     let mut plan = retry_plan(name, method, path, policy, idempotent);
-    plan.endpoint.body = BodyPlan::RawStream {
-        content_type: HeaderValue::from_static("application/octet-stream"),
-    };
-    plan.args = RequestArgs::with_stream_body(StreamBody::from_bytes(Bytes::from_static(body)));
-    plan.replayability = Replayability::NonReplayable;
+    plan.body = PreparedBody::from_stream_body(
+        StreamBody::from_bytes(Bytes::from_static(body)),
+        Some(HeaderValue::from_static("application/octet-stream")),
+    );
     plan
 }
 

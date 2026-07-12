@@ -14,7 +14,7 @@ use concord_core::advanced::{
     TransportRequestBody, TransportResponse, apply_secret_credential,
 };
 use concord_core::error::ErrorContext;
-use concord_core::internal::{BodyPlan, Format, Replayability, RequestArgs, ResolvedPolicy};
+use concord_core::internal::{PreparedBody, ResolvedPolicy};
 use concord_core::prelude::{
     AccessToken, ApiClient, ApiClientError, ClientContext, CursorPagination, Endpoint,
     PaginationTermination, ReusableEndpoint,
@@ -1511,22 +1511,15 @@ impl ReusableEndpoint<TestCx> for BodyEndpoint {
             ResolvedPolicy::default(),
             None,
         );
-        plan.args = match &self.body {
-            BodyKind::Bytes(bytes) => {
-                plan.endpoint.body = BodyPlan::Encoded {
-                    content_type: Some(HeaderValue::from_static("application/json")),
-                    format: Format::Text,
-                };
-                plan.replayability = Replayability::Replayable;
-                RequestArgs::with_body_bytes(bytes.clone())
-            }
-            BodyKind::Stream(bytes) => {
-                plan.endpoint.body = BodyPlan::RawStream {
-                    content_type: HeaderValue::from_static("application/octet-stream"),
-                };
-                plan.replayability = Replayability::NonReplayable;
-                RequestArgs::with_stream_body(StreamBody::from_bytes(bytes.clone()))
-            }
+        plan.body = match &self.body {
+            BodyKind::Bytes(bytes) => PreparedBody::reusable_bytes(
+                bytes.clone(),
+                Some(HeaderValue::from_static("application/json")),
+            ),
+            BodyKind::Stream(bytes) => PreparedBody::from_stream_body(
+                StreamBody::from_bytes(bytes.clone()),
+                Some(HeaderValue::from_static("application/octet-stream")),
+            ),
         };
         Ok(plan)
     }

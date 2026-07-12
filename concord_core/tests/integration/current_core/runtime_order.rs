@@ -6,8 +6,8 @@ use concord_core::advanced::{
     RetryDecision, RetryPolicy, TransportErrorKind,
 };
 use concord_core::internal::{
-    BodyPlan, ClientPlanContext, EndpointMeta, EndpointPlan, RequestArgs, RequestOverrides,
-    RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    ClientPlanContext, EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan,
+    ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClientError, DebugLevel, Endpoint, ReusableEndpoint};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -56,10 +56,6 @@ impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
                     "/observation-failure",
                 ),
                 policy: self.policy.clone(),
-                body: BodyPlan::Encoded {
-                    content_type: Some(HeaderValue::from_static("application/json")),
-                    format: concord_core::internal::Format::Text,
-                },
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("application/json")),
                     no_content: false,
@@ -67,9 +63,11 @@ impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
                 },
                 pagination: None,
             },
-            args: RequestArgs::with_body_bytes(self.request_body.clone()),
+            body: PreparedBody::reusable_bytes(
+                self.request_body.clone(),
+                Some(HeaderValue::from_static("application/json")),
+            ),
             overrides: RequestOverrides::default(),
-            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }
@@ -118,7 +116,6 @@ impl ReusableEndpoint<TestCx> for UnsafeEndpoint {
                 },
                 route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", "/unsafe"),
                 policy: self.policy.clone(),
-                body: BodyPlan::None,
                 response: ResponsePlan {
                     accept: Some(http::HeaderValue::from_static("text/plain")),
                     no_content: false,
@@ -126,9 +123,8 @@ impl ReusableEndpoint<TestCx> for UnsafeEndpoint {
                 },
                 pagination: None,
             },
-            args: RequestArgs::default(),
+            body: PreparedBody::empty(),
             overrides: RequestOverrides::default(),
-            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }
@@ -163,10 +159,6 @@ impl ReusableEndpoint<TestCx> for BodyDebugEndpoint {
                 },
                 route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", "/body-debug"),
                 policy: self.policy.clone(),
-                body: BodyPlan::Encoded {
-                    content_type: Some(http::HeaderValue::from_static("text/plain")),
-                    format: concord_core::internal::Format::Text,
-                },
                 response: ResponsePlan {
                     accept: Some(http::HeaderValue::from_static("text/plain")),
                     no_content: false,
@@ -174,12 +166,14 @@ impl ReusableEndpoint<TestCx> for BodyDebugEndpoint {
                 },
                 pagination: None,
             },
-            args: RequestArgs::with_body_bytes(self.request_body.clone()),
+            body: PreparedBody::reusable_bytes(
+                self.request_body.clone(),
+                Some(http::HeaderValue::from_static("text/plain")),
+            ),
             overrides: RequestOverrides {
                 debug_level: Some(DebugLevel::VV),
                 ..Default::default()
             },
-            replayability: concord_core::internal::Replayability::Replayable,
         })
     }
 }
@@ -189,7 +183,7 @@ fn non_replayable_request_plan(
     method: Method,
     path: &'static str,
     policy: ResolvedPolicy,
-    body: BodyPlan,
+    body: PreparedBody,
 ) -> RequestPlan {
     let idempotent = matches!(method, Method::GET | Method::HEAD);
     RequestPlan {
@@ -202,7 +196,6 @@ fn non_replayable_request_plan(
             },
             route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
             policy,
-            body,
             response: ResponsePlan {
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
@@ -210,9 +203,8 @@ fn non_replayable_request_plan(
             },
             pagination: None,
         },
-        args: RequestArgs::default(),
+        body,
         overrides: RequestOverrides::default(),
-        replayability: concord_core::internal::Replayability::NonReplayable,
     }
 }
 
@@ -401,7 +393,7 @@ async fn non_replayable_request_plan_without_stream_body_does_not_retry() {
             Method::POST,
             "/non-replayable-plan",
             retry_policy(2),
-            BodyPlan::None,
+            PreparedBody::one_shot(concord_core::advanced::DynBody::empty(), None),
         ))
         .await
         .expect_err("non-replayable plan should not retry");
@@ -435,7 +427,7 @@ async fn non_replayable_request_plan_without_stream_body_does_not_auth_refresh()
             Method::POST,
             "/non-replayable-auth-plan",
             auth_policy(AuthPlacement::Bearer),
-            BodyPlan::None,
+            PreparedBody::one_shot(concord_core::advanced::DynBody::empty(), None),
         ))
         .await
         .expect_err("non-replayable plan should not auth-refresh");
