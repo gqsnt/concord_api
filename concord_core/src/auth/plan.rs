@@ -103,6 +103,15 @@ impl AuthPlacementPlan {
         headers: &http::HeaderMap,
         url: &url::Url,
     ) -> Result<(), crate::auth::AuthError> {
+        self.validate_public_request_with_reserved_headers(headers, url, &[])
+    }
+
+    pub(crate) fn validate_public_request_with_reserved_headers(
+        &self,
+        headers: &http::HeaderMap,
+        url: &url::Url,
+        reserved_headers: &[HeaderName],
+    ) -> Result<(), crate::auth::AuthError> {
         use http::header::AUTHORIZATION;
         for slot in &self.slots {
             match &slot.placement {
@@ -123,7 +132,9 @@ impl AuthPlacementPlan {
                     }
                 }
                 PlannedAuthPlacement::Header(name) => {
-                    if headers.contains_key(name) {
+                    if headers.contains_key(name)
+                        || reserved_headers.iter().any(|reserved| reserved == name)
+                    {
                         return Err(crate::auth::AuthError::new(
                             crate::auth::AuthErrorKind::InvalidConfiguration,
                             format!(

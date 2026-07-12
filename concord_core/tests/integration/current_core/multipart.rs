@@ -1,10 +1,11 @@
 use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, DebugSink, DynBody, ErrorContext, MultipartBody, MultipartRequest,
-    PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
-    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestEntity,
-    RuntimeHooks, StreamBody, Transport, TransportError, TransportErrorKind,
+    AuthPlacement, DebugSink, DynBody, ErrorContext, MultipartBody, MultipartReplayFactory,
+    MultipartRequest, PostResponseHookContext, PreSendHookContext, PreparedBody, RateLimitContext,
+    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+    RateLimiter, RequestEntity, RuntimeHooks, StreamBody, Transport, TransportError,
+    TransportErrorKind,
 };
 use concord_core::internal::{
     EndpointMeta, EndpointPlan, RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute,
@@ -395,6 +396,36 @@ fn multipart_request_plan(
     }
 }
 
+fn multipart_request_plan_from_prepared(
+    name: &'static str,
+    method: Method,
+    path: &'static str,
+    idempotent: bool,
+    policy: ResolvedPolicy,
+    body: PreparedBody,
+) -> RequestPlan {
+    RequestPlan {
+        endpoint: EndpointPlan {
+            meta: EndpointMeta {
+                name,
+                method,
+                idempotent,
+                facade_path: &[],
+            },
+            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
+            policy,
+            response: ResponsePlan {
+                accept: Some(HeaderValue::from_static("text/plain")),
+                no_content: false,
+                format: concord_core::internal::Format::Text,
+            },
+            pagination: None,
+        },
+        body,
+        overrides: RequestOverrides::default(),
+    }
+}
+
 #[tokio::test]
 async fn multipart_form_data_request_reaches_transport_and_is_body_free_in_debug()
 -> Result<(), ApiClientError> {
@@ -710,4 +741,185 @@ async fn multipart_content_type_conflict_is_rejected_before_body_polling_and_tra
     assert!(err.to_string().contains("Content-Type conflicts"));
     assert!(!polled.load(Ordering::SeqCst));
     assert_eq!(transport.send_count(), 0);
+}
+
+#[tokio::test]
+async fn multipart_replay_factory_is_invoked_for_each_transport_attempt_and_bodies_match_boundaries()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport = MultipartTransport::transport_error(
+        events.clone(),
+        MockResponse::text(StatusCode::OK, "ok"),
+        TransportErrorKind::Other,
+    );
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+
+    let policy = ResolvedPolicy {
+        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
+            max_attempts: 2,
+            methods: vec![Method::GET],
+            statuses: Vec::new(),
+            transport_errors: vec![TransportErrorKind::Other],
+            backoff: concord_core::advanced::RetryBackoff::None,
+            respect_retry_after: false,
+            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
+        }),
+        ..Default::default()
+    };
+
+    let factory_calls = Arc::new(AtomicUsize::new(0));
+    let prepared_factory = {
+        let factory_calls = factory_calls.clone();
+        MultipartReplayFactory::new(move || {
+            let attempt = factory_calls.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(MultipartBody::new().text("attempt", format!("attempt-{attempt}")))
+        })
+    };
+    let body = prepared_factory
+        .into_prepared_body()
+        .expect("prepared multipart replay factory body");
+
+    let plan = multipart_request_plan_from_prepared(
+        "MultipartReplayFactory",
+        Method::GET,
+        "/multipart-replay-factory",
+        true,
+        policy,
+        body,
+    );
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await
+        .expect_err("multipart replay should fail after retries");
+    assert_eq!(factory_calls.load(Ordering::SeqCst), 2);
+    assert_eq!(transport.send_count(), 2);
+    assert!(!err.to_string().contains("attempt-"));
+    let captured = transport.captured();
+    assert_eq!(captured.len(), 2);
+    let first = &captured[0];
+    let second = &captured[1];
+    let first_ct = first.content_type.as_deref().expect("content type");
+    let second_ct = second.content_type.as_deref().expect("content type");
+    assert!(first_ct.starts_with("multipart/form-data; boundary="));
+    assert!(second_ct.starts_with("multipart/form-data; boundary="));
+    let first_boundary = first_ct
+        .split_once("boundary=")
+        .expect("boundary")
+        .1
+        .to_string();
+    let second_boundary = second_ct
+        .split_once("boundary=")
+        .expect("boundary")
+        .1
+        .to_string();
+    let CapturedBody::Stream(first_body) = &first.body;
+    let CapturedBody::Stream(second_body) = &second.body;
+    let first_text =
+        String::from_utf8(first_body.clone().to_vec()).expect("multipart attempt one body bytes");
+    let second_text =
+        String::from_utf8(second_body.clone().to_vec()).expect("multipart attempt two body bytes");
+    assert!(first_text.contains("attempt-1"));
+    assert!(second_text.contains("attempt-2"));
+    assert!(first_text.contains(&first_boundary));
+    assert!(second_text.contains(&second_boundary));
+    assert!(first_text.ends_with(&format!("--{first_boundary}--\r\n")));
+    assert!(second_text.ends_with(&format!("--{second_boundary}--\r\n")));
+    Ok(())
+}
+
+#[tokio::test]
+async fn multipart_replay_factory_planning_or_media_conflict_does_not_invoke_factory()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport =
+        MultipartTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let client =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport.clone());
+    let factory_calls = Arc::new(AtomicUsize::new(0));
+    let prepared_body = {
+        let factory_calls = factory_calls.clone();
+        MultipartReplayFactory::new(move || {
+            factory_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(MultipartBody::new().text("title", "hello"))
+        })
+        .into_prepared_body()
+        .expect("prepared body")
+    };
+    let mut policy = ResolvedPolicy::default();
+    policy.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("multipart/form-data; boundary=explicit"),
+    );
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan_from_prepared(
+            "MultipartReplayConflict",
+            Method::POST,
+            "/multipart-replay-factory-conflict",
+            false,
+            policy,
+            prepared_body,
+        ))
+        .await
+        .expect_err("media conflict should fail before attempt");
+
+    assert!(err.to_string().contains("Content-Type conflicts"));
+    assert_eq!(factory_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(transport.send_count(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn multipart_dynamic_content_type_is_reserved_during_auth_preflight() {
+    let events = Arc::new(StdMutex::new(Vec::new()));
+    let transport =
+        MultipartTransport::success(events.clone(), MockResponse::text(StatusCode::OK, "ok"));
+    let mut client = ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars {
+            token: Some("provider-sentinel".to_string()),
+            identity: "anon",
+        },
+        transport.clone(),
+    );
+    client.configure(|cfg| {
+        cfg.rate_limiter(Arc::new(RecordingRateLimiter::new(events.clone())));
+    });
+    client.set_runtime_hooks(Arc::new(RecordingHooks::new(events.clone())));
+
+    let factory_calls = Arc::new(AtomicUsize::new(0));
+    let prepared = {
+        let factory_calls = factory_calls.clone();
+        MultipartReplayFactory::new(move || {
+            factory_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(MultipartBody::new().text("field", "value"))
+        })
+        .into_prepared_body()
+        .expect("multipart replay body")
+    };
+    let err = client
+        .execute_plan::<concord_core::prelude::Text<String>>(multipart_request_plan_from_prepared(
+            "MultipartDynamicContentTypeAuthCollision",
+            Method::GET,
+            "/multipart-dynamic-content-type-auth-collision",
+            true,
+            auth_policy(AuthPlacement::Header("Content-Type")),
+            prepared,
+        ))
+        .await
+        .expect_err("dynamic content type must reserve the header");
+
+    assert!(matches!(err, ApiClientError::Auth { .. }));
+    assert_eq!(factory_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(transport.send_count(), 0);
+    let events = events.lock().expect("events lock").clone();
+    assert!(!events.iter().any(|event| event == "rate_limit_acquire"));
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.starts_with("hook_pre_send:"))
+    );
+    assert!(!events.iter().any(|event| event == "transport"));
+    assert!(!err.to_string().contains("boundary="));
+    assert!(!err.to_string().contains("provider-sentinel"));
 }

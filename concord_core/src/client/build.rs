@@ -9,6 +9,7 @@ pub(super) struct PublicRequestHead {
     pub(super) retry: RetrySetting,
     pub(super) rate_limit: RateLimitPlan,
     pub(super) auth_plan: crate::auth::AuthPlacementPlan,
+    pub(super) reserved_headers: Vec<http::HeaderName>,
 }
 
 impl PublicRequestHead {
@@ -18,7 +19,11 @@ impl PublicRequestHead {
         ctx: &ErrorContext,
     ) -> Result<(), ApiClientError> {
         auth_plan
-            .validate_public_request(&self.headers, &self.url)
+            .validate_public_request_with_reserved_headers(
+                &self.headers,
+                &self.url,
+                &self.reserved_headers,
+            )
             .map_err(|source| ApiClientError::Auth {
                 ctx: ctx.clone(),
                 source,
@@ -39,11 +44,18 @@ impl PublicRequestHead {
             }
         })?;
         let stream_like = body.is_stream();
+        let mut headers = self.headers;
+        crate::io::apply_attempt_body_media_type(&mut headers, &body).map_err(|()| {
+            ApiClientError::PolicyViolation {
+                ctx: ctx.clone(),
+                msg: "request Content-Type conflicts with produced body media type",
+            }
+        })?;
         let mut message = http::Request::new(body.into_dyn_body());
         *message.method_mut() = self.meta.method.clone();
         *message.uri_mut() = uri;
         *message.version_mut() = http::Version::HTTP_11;
-        *message.headers_mut() = self.headers;
+        *message.headers_mut() = headers;
         message
             .extensions_mut()
             .insert(crate::transport::RequestExecutionContext {
@@ -106,6 +118,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             retry,
             rate_limit,
             auth_plan: crate::auth::AuthPlacementPlan::default(),
+            reserved_headers: if body.reserves_content_type() {
+                vec![http::header::CONTENT_TYPE]
+            } else {
+                Vec::new()
+            },
         })
     }
 
@@ -154,6 +171,7 @@ mod tests {
             retry: RetrySetting::Off,
             rate_limit: RateLimitPlan::new(),
             auth_plan: Default::default(),
+            reserved_headers: Vec::new(),
         };
         let auth_plan = crate::auth::AuthPlacementPlan::from_auth_plan(&crate::auth::AuthPlan {
             requirements: vec![crate::auth::AuthRequirement {

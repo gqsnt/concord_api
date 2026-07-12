@@ -1,8 +1,10 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    BodyCodec, CodecError, ContentType, EncodeContext, EncodedBody, ErrorContext, MultipartBody,
-    MultipartRequest, NoRequestBody, OctetStream, RawStreamRequest, RequestEntity, StreamBody,
+    BodyCodec, CodecError, ContentType, EncodeContext, EncodedBody, ErrorContext, NoRequestBody,
+    OctetStream, RawStreamRequest, RequestEntity, StreamBody,
 };
+#[cfg(feature = "multipart")]
+use concord_core::advanced::{MultipartBody, MultipartRequest};
 use concord_core::internal::Format;
 use http::Method;
 use std::error::Error;
@@ -104,6 +106,7 @@ fn raw_stream_request_prepares_stream_body() {
 }
 
 #[test]
+#[cfg(feature = "multipart")]
 fn multipart_request_prepares_stream_body_and_content_type() {
     let prepared = MultipartRequest::prepare(
         MultipartBody::new()

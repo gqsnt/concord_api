@@ -2,6 +2,7 @@ use crate::client::{ApiClient, ClientContext};
 use crate::codec::{BodyCodec, ContentType, DecodeContext, EncodeContext, ResponseCodec};
 use crate::endpoint::{RequestPlan, ResponsePlan};
 use crate::error::{ApiClientError, ErrorContext};
+#[cfg(feature = "multipart")]
 use crate::multipart::MultipartBody;
 use crate::stream_body::StreamBody;
 use crate::stream_response::StreamResponse;
@@ -15,12 +16,33 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 
 type BodyFactory = dyn Fn() -> Result<crate::body::DynBody, crate::body::BodyError> + Send + Sync;
+type MediaBodyFactory =
+    dyn Fn() -> Result<(crate::body::DynBody, HeaderValue), crate::body::BodyError> + Send + Sync;
+
+enum PreparedBodyMediaType {
+    Fixed(HeaderValue),
+    Dynamic,
+}
+
+impl PreparedBodyMediaType {
+    fn as_fixed(&self) -> Option<&HeaderValue> {
+        match self {
+            Self::Fixed(value) => Some(value),
+            Self::Dynamic => None,
+        }
+    }
+}
+
+enum ReplayFactory {
+    Fixed(std::sync::Arc<BodyFactory>),
+    Dynamic(std::sync::Arc<MediaBodyFactory>),
+}
 
 enum PreparedBodySource {
     Empty,
     ReusableBytes(Bytes),
     OneShot(Option<crate::body::DynBody>),
-    ReplayFactory(std::sync::Arc<BodyFactory>),
+    ReplayFactory(ReplayFactory),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,13 +98,14 @@ impl std::error::Error for BodyProductionError {}
 /// Request-local owner of request body production, metadata, and replayability.
 pub struct PreparedBody {
     source: PreparedBodySource,
-    media_type: Option<HeaderValue>,
+    media_type: Option<PreparedBodyMediaType>,
     size_hint: SizeHint,
 }
 
 pub(crate) struct ProducedBody {
     body: crate::body::DynBody,
     stream_like: bool,
+    media_type: Option<HeaderValue>,
 }
 
 impl ProducedBody {
@@ -93,6 +116,10 @@ impl ProducedBody {
     pub(crate) fn into_dyn_body(self) -> crate::body::DynBody {
         self.body
     }
+
+    pub(crate) fn media_type(&self) -> Option<&HeaderValue> {
+        self.media_type.as_ref()
+    }
 }
 
 impl fmt::Debug for ProducedBody {
@@ -100,6 +127,7 @@ impl fmt::Debug for ProducedBody {
         f.debug_struct("ProducedBody")
             .field("body", &self.body)
             .field("stream_like", &self.stream_like)
+            .field("has_media_type", &self.media_type.is_some())
             .finish()
     }
 }
@@ -117,7 +145,7 @@ impl PreparedBody {
         let size_hint = exact_size_hint(bytes.len() as u64);
         Self {
             source: PreparedBodySource::ReusableBytes(bytes),
-            media_type,
+            media_type: media_type.map(PreparedBodyMediaType::Fixed),
             size_hint,
         }
     }
@@ -126,7 +154,7 @@ impl PreparedBody {
         let size_hint = body.size_hint();
         Self {
             source: PreparedBodySource::OneShot(Some(body)),
-            media_type,
+            media_type: media_type.map(PreparedBodyMediaType::Fixed),
             size_hint,
         }
     }
@@ -140,8 +168,26 @@ impl PreparedBody {
         F: Fn() -> Result<crate::body::DynBody, crate::body::BodyError> + Send + Sync + 'static,
     {
         Self {
-            source: PreparedBodySource::ReplayFactory(std::sync::Arc::new(factory)),
-            media_type,
+            source: PreparedBodySource::ReplayFactory(ReplayFactory::Fixed(std::sync::Arc::new(
+                factory,
+            ))),
+            media_type: media_type.map(PreparedBodyMediaType::Fixed),
+            size_hint,
+        }
+    }
+
+    pub fn replay_factory_with_media<F>(size_hint: SizeHint, factory: F) -> Self
+    where
+        F: Fn() -> Result<(crate::body::DynBody, HeaderValue), crate::body::BodyError>
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self {
+            source: PreparedBodySource::ReplayFactory(ReplayFactory::Dynamic(std::sync::Arc::new(
+                factory,
+            ))),
+            media_type: Some(PreparedBodyMediaType::Dynamic),
             size_hint,
         }
     }
@@ -151,7 +197,13 @@ impl PreparedBody {
     }
 
     pub fn media_type(&self) -> Option<&HeaderValue> {
-        self.media_type.as_ref()
+        self.media_type
+            .as_ref()
+            .and_then(PreparedBodyMediaType::as_fixed)
+    }
+
+    pub(crate) fn reserves_content_type(&self) -> bool {
+        matches!(self.media_type, Some(PreparedBodyMediaType::Dynamic))
     }
 
     pub fn size_hint(&self) -> SizeHint {
@@ -180,24 +232,40 @@ impl PreparedBody {
             PreparedBodySource::Empty => Ok(ProducedBody {
                 body: crate::body::DynBody::empty(),
                 stream_like: false,
+                media_type: None,
             }),
             PreparedBodySource::ReusableBytes(bytes) => Ok(ProducedBody {
                 body: crate::body::DynBody::from_bytes(bytes.clone()),
                 stream_like: false,
+                media_type: self.media_type().cloned(),
             }),
             PreparedBodySource::OneShot(body) => body
                 .take()
                 .map(|body| ProducedBody {
                     body,
                     stream_like: true,
+                    media_type: self.media_type().cloned(),
                 })
                 .ok_or_else(BodyProductionError::already_consumed),
-            PreparedBodySource::ReplayFactory(factory) => factory()
-                .map(|body| ProducedBody {
-                    body: body.with_size_hint(size_hint),
-                    stream_like: true,
-                })
-                .map_err(BodyProductionError::factory_failure),
+            PreparedBodySource::ReplayFactory(factory) => match factory {
+                ReplayFactory::Fixed(factory) => factory()
+                    .map(|body| ProducedBody {
+                        body: body.with_size_hint(size_hint),
+                        stream_like: true,
+                        media_type: self.media_type().cloned(),
+                    })
+                    .map_err(BodyProductionError::factory_failure),
+                ReplayFactory::Dynamic(factory) => factory()
+                    .map(|(body, media_type)| ProducedBody {
+                        // The form owns its per-attempt hint.  In particular,
+                        // never replace it with a planning hint (which is
+                        // intentionally unknown for multipart replay).
+                        body,
+                        stream_like: true,
+                        media_type: Some(media_type),
+                    })
+                    .map_err(BodyProductionError::factory_failure),
+            },
         }
     }
 }
@@ -206,14 +274,44 @@ pub(crate) fn apply_prepared_body_media_type(
     headers: &mut http::HeaderMap,
     body: &PreparedBody,
 ) -> Result<(), ()> {
+    match body.media_type.as_ref() {
+        None | Some(PreparedBodyMediaType::Fixed(_)) => {
+            let media_type = body.media_type();
+            if let Some(media_type) = media_type {
+                if headers.contains_key(http::header::CONTENT_TYPE) {
+                    return (headers.get(http::header::CONTENT_TYPE) == Some(media_type))
+                        .then_some(())
+                        .ok_or(());
+                }
+                headers.insert(http::header::CONTENT_TYPE, media_type.clone());
+            }
+            Ok(())
+        }
+        Some(PreparedBodyMediaType::Dynamic) => {
+            if headers.contains_key(http::header::CONTENT_TYPE) {
+                Err(())
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+pub(crate) fn apply_attempt_body_media_type(
+    headers: &mut http::HeaderMap,
+    body: &ProducedBody,
+) -> Result<(), ()> {
     let Some(media_type) = body.media_type() else {
         return Ok(());
     };
-    if let Some(existing) = headers.get(http::header::CONTENT_TYPE) {
-        return (existing == media_type).then_some(()).ok_or(());
+    match headers.get(http::header::CONTENT_TYPE) {
+        Some(existing) if existing == media_type => Ok(()),
+        Some(_) => Err(()),
+        None => {
+            headers.insert(http::header::CONTENT_TYPE, media_type.clone());
+            Ok(())
+        }
     }
-    headers.insert(http::header::CONTENT_TYPE, media_type.clone());
-    Ok(())
 }
 
 impl fmt::Debug for PreparedBody {
@@ -316,8 +414,10 @@ where
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[cfg(feature = "multipart")]
 pub struct MultipartRequest;
 
+#[cfg(feature = "multipart")]
 impl RequestEntity for MultipartRequest {
     type Input = MultipartBody;
 
@@ -325,11 +425,8 @@ impl RequestEntity for MultipartRequest {
         input: Self::Input,
         ctx: ErrorContext,
     ) -> Result<PreparedRequestEntity, ApiClientError> {
-        let content_type = input
-            .try_content_type()
-            .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?;
-        let body = input
-            .into_dyn_body()
+        let (content_type, body) = input
+            .into_prepared()
             .map_err(|source| ApiClientError::codec_error(ctx.clone(), source))?;
         Ok(PreparedRequestEntity {
             body: PreparedBody::one_shot(body, Some(content_type)),
@@ -762,6 +859,7 @@ mod tests {
     use crate::codec::text::Text;
     use crate::codec::{BodyCodec, ContentType, EncodeContext, EncodedBody};
     use crate::media::{OctetStream, TextContentType};
+    #[cfg(feature = "multipart")]
     use crate::multipart::MultipartBody;
     use crate::transport::Transport;
     use http::{HeaderMap, Method, StatusCode};
@@ -993,6 +1091,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "multipart")]
     fn multipart_request_prepares_stream_body() {
         let multipart = MultipartRequest::prepare(
             MultipartBody::new().bytes("payload", Bytes::from_static(b"abc")),
@@ -1098,6 +1197,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "multipart")]
     async fn multipart_media_type_and_encoded_boundary_share_one_owner() {
         let mut prepared =
             MultipartRequest::prepare(MultipartBody::new().text("title", "hello"), ctx())

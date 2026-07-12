@@ -128,6 +128,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     retry: RetrySetting::Inherit,
                     rate_limit: RateLimitPlan::new(),
                     auth_plan,
+                    reserved_headers: Vec::new(),
                 };
 
                 fn make_built_request(
@@ -151,6 +152,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         retry: RetrySetting::Inherit,
                         rate_limit: RateLimitPlan::new(),
                         auth_plan: base_request.auth_plan.clone(),
+                        reserved_headers: base_request.reserved_headers.clone(),
                     };
                     head.finish(body, &ctx).map_err(|_| {
                         AuthError::new(

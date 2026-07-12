@@ -1,24 +1,20 @@
-use crate::codec::CodecError;
-use crate::codec::ContentType;
+use crate::body::BodyError;
+use crate::body::DynBody;
 use crate::stream_body::StreamBody;
-use crate::stream_body::StreamByteSource;
 use bytes::Bytes;
 use futures_core::Stream;
 use http::HeaderValue;
-use std::collections::VecDeque;
+use reqwest::multipart::{Form, Part};
 use std::error::Error;
 use std::fmt;
-use std::fmt::Write as _;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::task::{Context, Poll};
-
-static MULTIPART_BOUNDARY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FormData;
 
-impl ContentType for FormData {
+impl crate::codec::ContentType for FormData {
     const CONTENT_TYPE: &'static str = "multipart/form-data";
 }
 
@@ -35,7 +31,7 @@ pub struct MultipartBodyError {
 }
 
 impl MultipartBodyError {
-    pub(crate) fn new(kind: MultipartBodyErrorKind) -> Self {
+    fn new(kind: MultipartBodyErrorKind) -> Self {
         Self { kind }
     }
 
@@ -61,7 +57,7 @@ impl fmt::Display for MultipartBodyError {
                 "multipart part content type is invalid"
             }
             MultipartBodyErrorKind::InvalidMultipartContentType => {
-                "multipart request content type is invalid"
+                "multipart content type is invalid"
             }
         })
     }
@@ -86,7 +82,7 @@ impl RawPart {
             name: name.into(),
             file_name: None,
             content_type: None,
-            body: RawPartBody::Text(Bytes::from(value.into())),
+            body: RawPartBody::Text(value.into()),
         }
     }
 
@@ -148,7 +144,7 @@ impl fmt::Debug for RawPart {
 }
 
 enum RawPartBody {
-    Text(Bytes),
+    Text(String),
     Bytes(Bytes),
     Stream(StreamBody),
 }
@@ -164,7 +160,6 @@ impl RawPartBody {
 }
 
 pub struct MultipartBody {
-    boundary: String,
     parts: Vec<RawPart>,
 }
 
@@ -176,11 +171,7 @@ impl Default for MultipartBody {
 
 impl MultipartBody {
     pub fn new() -> Self {
-        let boundary_id = MULTIPART_BOUNDARY_COUNTER.fetch_add(1, Ordering::Relaxed);
-        Self {
-            boundary: format!("concord-multipart-{boundary_id}"),
-            parts: Vec::new(),
-        }
+        Self { parts: Vec::new() }
     }
 
     pub fn text(self, name: impl Into<String>, value: impl Into<String>) -> Self {
@@ -220,21 +211,78 @@ impl MultipartBody {
         self
     }
 
-    pub fn content_type(&self) -> HeaderValue {
-        HeaderValue::from_str(&format!("multipart/form-data; boundary={}", self.boundary))
-            .expect("generated multipart boundary must be valid")
+    pub(crate) fn into_prepared(self) -> Result<(HeaderValue, DynBody), MultipartBodyError> {
+        let form = self.into_form()?;
+        let boundary = form.boundary();
+        let media_type =
+            HeaderValue::from_str(&format!("multipart/form-data; boundary={boundary}")).map_err(
+                |_| MultipartBodyError::new(MultipartBodyErrorKind::InvalidMultipartContentType),
+            )?;
+
+        let stream = FormStream::new(form.into_stream());
+        let body = DynBody::from_byte_stream(stream);
+
+        Ok((media_type, body))
+    }
+}
+
+pub struct MultipartReplayFactory {
+    factory: Arc<dyn Fn() -> Result<MultipartBody, MultipartBodyError> + Send + Sync>,
+}
+
+impl MultipartReplayFactory {
+    pub fn new(
+        factory: impl Fn() -> Result<MultipartBody, MultipartBodyError> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            factory: Arc::new(factory),
+        }
     }
 
-    pub fn try_content_type(&self) -> Result<HeaderValue, http::header::InvalidHeaderValue> {
-        HeaderValue::from_str(&format!("multipart/form-data; boundary={}", self.boundary))
-    }
-
-    pub(crate) fn into_dyn_body(self) -> Result<crate::body::DynBody, MultipartBodyError> {
-        let MultipartBody { boundary, parts } = self;
-        let prepared = PreparedMultipartBody::from_parts(boundary, parts)?;
-        Ok(crate::body::DynBody::from_byte_stream(
-            MultipartEncodeStream::new(prepared),
+    pub fn into_prepared_body(self) -> Result<crate::io::PreparedBody, MultipartBodyError> {
+        // Multipart framing is owned by Reqwest and its aggregate size is not
+        // known until a form is produced.  Keep planning metadata unknown and
+        // use each produced body's own safe hint for the physical attempt.
+        let size_hint = http_body::SizeHint::new();
+        let factory = self.factory;
+        Ok(crate::io::PreparedBody::replay_factory_with_media(
+            size_hint,
+            move || {
+                let body =
+                    factory().map_err(|_| crate::body::BodyError::invalid_configuration())?;
+                let (media_type, body) = body
+                    .into_prepared()
+                    .map_err(|_| crate::body::BodyError::invalid_configuration())?;
+                Ok((body, media_type))
+            },
         ))
+    }
+}
+
+struct FormStream<S> {
+    inner: S,
+}
+
+impl<S> FormStream<S> {
+    fn new(inner: S) -> Self {
+        Self { inner }
+    }
+}
+
+impl<S> Stream for FormStream<S>
+where
+    S: futures_core::Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
+{
+    type Item = Result<Bytes, BodyError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.inner).poll_next(cx) {
+            Poll::Ready(Some(Ok(value))) => Poll::Ready(Some(Ok(value))),
+            Poll::Ready(Some(Err(_error))) => Poll::Ready(Some(Err(BodyError::input()))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -246,210 +294,45 @@ impl fmt::Debug for MultipartBody {
     }
 }
 
-struct PreparedMultipartBody {
-    boundary: String,
-    parts: Vec<PreparedPart>,
-}
-
-impl PreparedMultipartBody {
-    fn from_parts(boundary: String, parts: Vec<RawPart>) -> Result<Self, MultipartBodyError> {
-        let mut prepared = Vec::with_capacity(parts.len());
-        for part in parts {
-            validate_part_name(&part.name)?;
-            if let Some(file_name) = &part.file_name {
-                validate_part_file_name(file_name)?;
-            }
-            let content_type = match part.content_type {
-                Some(content_type) => Some(
-                    content_type
-                        .to_str()
-                        .map_err(|_| {
-                            MultipartBodyError::new(MultipartBodyErrorKind::InvalidPartContentType)
-                        })?
-                        .to_string(),
-                ),
-                None => None,
-            };
-            let body = match part.body {
-                RawPartBody::Text(text) => PreparedPartBody::Text(Some(text)),
-                RawPartBody::Bytes(bytes) => PreparedPartBody::Bytes(Some(bytes)),
-                RawPartBody::Stream(stream) => {
-                    PreparedPartBody::Stream(Some(stream.into_byte_stream()))
-                }
-            };
-            prepared.push(PreparedPart {
-                name: part.name,
-                file_name: part.file_name,
-                content_type,
-                body,
-            });
+fn build_part(part: RawPart) -> Result<(String, Part), MultipartBodyError> {
+    let name = part.name;
+    validate_part_name(&name)?;
+    let mut body = match part.body {
+        RawPartBody::Text(text) => Part::text(text),
+        RawPartBody::Bytes(bytes) => Part::stream(reqwest::Body::from(bytes)),
+        RawPartBody::Stream(stream) => {
+            let source = DynBody::from_stream_body(stream);
+            let body = reqwest::Body::wrap(source);
+            Part::stream(body)
         }
-        Ok(Self {
-            boundary,
-            parts: prepared,
-        })
+    };
+
+    if let Some(file_name) = part.file_name {
+        validate_part_file_name(&file_name)?;
+        body = body.file_name(file_name);
     }
+
+    if let Some(content_type) = part.content_type {
+        let content_type = content_type
+            .to_str()
+            .map_err(|_| MultipartBodyError::new(MultipartBodyErrorKind::InvalidPartContentType))?;
+        body = body
+            .mime_str(content_type)
+            .map_err(|_| MultipartBodyError::new(MultipartBodyErrorKind::InvalidPartContentType))?;
+    }
+
+    Ok((name, body))
 }
 
-struct PreparedPart {
-    name: String,
-    file_name: Option<String>,
-    content_type: Option<String>,
-    body: PreparedPartBody,
-}
-
-enum PreparedPartBody {
-    Text(Option<Bytes>),
-    Bytes(Option<Bytes>),
-    Stream(Option<StreamByteSource>),
-}
-
-struct MultipartEncodeStream {
-    boundary: String,
-    parts: VecDeque<PreparedPart>,
-    current: Option<ActivePart>,
-    closing_emitted: bool,
-}
-
-impl MultipartEncodeStream {
-    fn new(parts: PreparedMultipartBody) -> Self {
-        Self {
-            boundary: parts.boundary,
-            parts: parts.parts.into(),
-            current: None,
-            closing_emitted: false,
+impl MultipartBody {
+    fn into_form(self) -> Result<Form, MultipartBodyError> {
+        let mut form = Form::new();
+        for part in self.parts {
+            let (name, part) = build_part(part)?;
+            form = form.part(name, part);
         }
+        Ok(form)
     }
-}
-
-struct ActivePart {
-    header: Option<Bytes>,
-    body: ActiveBody,
-    trailer_pending: bool,
-}
-
-enum ActiveBody {
-    Text(Option<Bytes>),
-    Bytes(Option<Bytes>),
-    Stream {
-        stream: StreamByteSource,
-        done: bool,
-    },
-}
-
-impl ActivePart {
-    fn new(boundary: &str, part: PreparedPart) -> Result<Self, CodecError> {
-        Ok(Self {
-            header: Some(build_part_header(boundary, &part)?),
-            body: match part.body {
-                PreparedPartBody::Text(bytes) => ActiveBody::Text(bytes),
-                PreparedPartBody::Bytes(bytes) => ActiveBody::Bytes(bytes),
-                PreparedPartBody::Stream(stream) => ActiveBody::Stream {
-                    stream: stream
-                        .ok_or_else(|| CodecError::new("multipart request encoding failed"))?,
-                    done: false,
-                },
-            },
-            trailer_pending: false,
-        })
-    }
-}
-
-impl Stream for MultipartEncodeStream {
-    type Item = Result<Bytes, CodecError>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        loop {
-            if let Some(mut active) = this.current.take() {
-                if let Some(header) = active.header.take() {
-                    active.trailer_pending = true;
-                    this.current = Some(active);
-                    return Poll::Ready(Some(Ok(header)));
-                }
-
-                let result = match &mut active.body {
-                    ActiveBody::Text(bytes) | ActiveBody::Bytes(bytes) => bytes.take().map(Ok),
-                    ActiveBody::Stream { stream, done } => {
-                        if *done {
-                            None
-                        } else {
-                            match Pin::new(stream).poll_next(cx) {
-                                Poll::Pending => {
-                                    this.current = Some(active);
-                                    return Poll::Pending;
-                                }
-                                Poll::Ready(Some(Ok(bytes))) => Some(Ok(bytes)),
-                                Poll::Ready(Some(Err(_error))) => {
-                                    Some(Err(CodecError::new("multipart request encoding failed")))
-                                }
-                                Poll::Ready(None) => {
-                                    *done = true;
-                                    None
-                                }
-                            }
-                        }
-                    }
-                };
-
-                if let Some(result) = result {
-                    match result {
-                        Ok(bytes) => {
-                            this.current = Some(active);
-                            return Poll::Ready(Some(Ok(bytes)));
-                        }
-                        Err(error) => return Poll::Ready(Some(Err(error))),
-                    }
-                }
-
-                if active.trailer_pending {
-                    active.trailer_pending = false;
-                    this.current = None;
-                    return Poll::Ready(Some(Ok(Bytes::from_static(b"\r\n"))));
-                }
-
-                continue;
-            }
-
-            if let Some(part) = this.parts.pop_front() {
-                match ActivePart::new(&this.boundary, part) {
-                    Ok(active) => {
-                        this.current = Some(active);
-                        continue;
-                    }
-                    Err(error) => return Poll::Ready(Some(Err(error))),
-                }
-            }
-
-            if !this.closing_emitted {
-                this.closing_emitted = true;
-                let closing = Bytes::from(format!("--{}--\r\n", this.boundary));
-                return Poll::Ready(Some(Ok(closing)));
-            }
-            return Poll::Ready(None);
-        }
-    }
-}
-
-fn build_part_header(boundary: &str, part: &PreparedPart) -> Result<Bytes, CodecError> {
-    let mut out = String::new();
-    write!(&mut out, "--{boundary}\r\n").expect("writing to string cannot fail");
-    write!(
-        &mut out,
-        "Content-Disposition: form-data; name=\"{}\"",
-        part.name
-    )
-    .expect("writing to string cannot fail");
-    if let Some(file_name) = &part.file_name {
-        write!(&mut out, "; filename=\"{}\"", file_name).expect("writing to string cannot fail");
-    }
-    out.push_str("\r\n");
-    if let Some(content_type) = &part.content_type {
-        write!(&mut out, "Content-Type: {content_type}\r\n")
-            .expect("writing to string cannot fail");
-    }
-    out.push_str("\r\n");
-    Ok(Bytes::from(out))
 }
 
 fn validate_part_name(value: &str) -> Result<(), MultipartBodyError> {
@@ -476,14 +359,21 @@ fn is_valid_disposition_value(value: &str) -> bool {
     !value.is_empty()
         && value.is_ascii()
         && value.bytes().all(|byte| {
-            matches!(byte, 0x20..=0x7E) && !matches!(byte, b'\\' | b'"' | b'\r' | b'\n')
+            matches!(byte, 0x20..=0x7E) && !matches!(byte, b'\\' | b'\"' | b'\r' | b'\n')
         })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stream_body::StreamBody;
+    use crate::stream_body::StreamBodyError;
+    use futures_core::Stream;
+    use http_body::Body as _;
     use http_body_util::BodyExt;
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
 
     #[test]
     fn multipart_body_debug_is_body_free() {
@@ -500,17 +390,14 @@ mod tests {
         let body = MultipartBody::new()
             .text("title", "hello")
             .bytes("file", Bytes::from_static(b"abc"));
-        let content_type = body.content_type();
-        assert!(
-            content_type
-                .to_str()
-                .expect("multipart content type")
-                .starts_with("multipart/form-data; boundary=")
-        );
+        let (media_type, prepared_body) = body.into_prepared().expect("multipart body");
+        let content_type = media_type.to_str().expect("multipart content type");
+        let boundary = content_type
+            .strip_prefix("multipart/form-data; boundary=")
+            .expect("multipart boundary");
+        assert!(content_type.starts_with("multipart/form-data; boundary="));
 
-        let out = body
-            .into_dyn_body()
-            .expect("multipart body")
+        let out = prepared_body
             .collect()
             .await
             .expect("multipart encoding")
@@ -520,15 +407,131 @@ mod tests {
         assert!(rendered.contains("Content-Disposition: form-data; name=\"file\""));
         assert!(rendered.contains("abc"));
         assert!(rendered.contains("\r\n"));
-        assert!(rendered.ends_with("\r\n"));
-        assert!(rendered.contains("--concord-multipart-"));
+        assert!(rendered.contains(&format!("--{boundary}")));
+        assert!(rendered.ends_with(&format!("--{boundary}--\r\n")));
+    }
+
+    #[tokio::test]
+    async fn multipart_replay_planning_keeps_size_unknown_and_uses_each_body_hint() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let factory_calls = calls.clone();
+        let mut prepared = MultipartReplayFactory::new(move || {
+            factory_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(MultipartBody::new().text("field", "non-empty"))
+        })
+        .into_prepared_body()
+        .expect("replay body");
+
+        assert_eq!(prepared.size_hint().exact(), None);
+        let first = prepared.produce_for_attempt().expect("first attempt");
+        let first_body = first.into_dyn_body();
+        assert_ne!(first_body.size_hint().exact(), Some(0));
+        let first_bytes = first_body.collect().await.expect("first body").to_bytes();
+        assert!(!first_bytes.is_empty());
+
+        let second = prepared.produce_for_attempt().expect("second attempt");
+        let second_body = second.into_dyn_body();
+        assert_ne!(second_body.size_hint().exact(), Some(0));
+        let second_bytes = second_body.collect().await.expect("second body").to_bytes();
+        assert!(!second_bytes.is_empty());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
     #[test]
     fn multipart_invalid_metadata_is_rejected_body_safely() {
         let body = MultipartBody::new().text("bad\r\nname", "value");
-        let err = body.into_dyn_body().expect_err("invalid name should fail");
+        let err = body.into_prepared().expect_err("invalid name should fail");
         assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartName);
         assert!(!err.to_string().contains("bad\r\nname"));
+    }
+
+    #[tokio::test]
+    async fn multipart_file_name_is_preserved_in_encoded_body() {
+        let filename = "report.json";
+        let body = MultipartBody::new().bytes_with(
+            "upload",
+            Some(filename.to_string()),
+            Some(http::HeaderValue::from_static("application/json")),
+            Bytes::from_static(b"{}"),
+        );
+        let (media_type, prepared_body) = body.into_prepared().expect("multipart body");
+        let content_type = media_type.to_str().expect("multipart content type");
+        let boundary = content_type
+            .strip_prefix("multipart/form-data; boundary=")
+            .expect("multipart boundary");
+        let out = prepared_body
+            .collect()
+            .await
+            .expect("multipart collection")
+            .to_bytes();
+        let rendered = String::from_utf8(out.to_vec()).expect("multipart body");
+        assert!(rendered.contains(&format!("filename=\"{filename}\"")));
+        assert!(rendered.contains("Content-Type: application/json"));
+        assert!(rendered.contains(&format!("--{boundary}--")));
+    }
+
+    #[test]
+    fn multipart_invalid_file_name_is_rejected_body_safely() {
+        let err = MultipartBody::new()
+            .bytes_with(
+                "upload",
+                Some("bad\\name".to_string()),
+                Some(http::HeaderValue::from_static("application/json")),
+                Bytes::from_static(b"{}"),
+            )
+            .into_prepared()
+            .expect_err("invalid file name should fail");
+        assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartFileName);
+        assert!(!err.to_string().contains("bad\\name"));
+    }
+
+    #[test]
+    fn multipart_invalid_content_type_is_rejected_body_safely() {
+        let err = MultipartBody::new()
+            .bytes_with(
+                "upload",
+                None,
+                Some(http::HeaderValue::from_static("not a mime")),
+                Bytes::from_static(b"{}"),
+            )
+            .into_prepared()
+            .expect_err("invalid part content type should fail");
+        assert_eq!(err.kind(), MultipartBodyErrorKind::InvalidPartContentType);
+        assert!(!err.to_string().contains("not a mime"));
+    }
+
+    struct ErrorStream {
+        polled: bool,
+    }
+
+    impl Stream for ErrorStream {
+        type Item = Result<Bytes, StreamBodyError>;
+
+        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            if self.polled {
+                Poll::Ready(None)
+            } else {
+                self.polled = true;
+                Poll::Ready(Some(Err(StreamBodyError::io(io::Error::other(
+                    "multipart stream producer failure",
+                )))))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn multipart_stream_part_error_maps_to_sanitized_body_error() {
+        let body = MultipartBody::new().stream(
+            "upload",
+            StreamBody::from_byte_stream(ErrorStream { polled: false }),
+        );
+        let (_media_type, prepared_body) = body.into_prepared().expect("multipart body");
+        let err = prepared_body
+            .collect()
+            .await
+            .expect_err("multipart stream failure");
+        let rendered = format!("{err}");
+        assert!(rendered.contains("body"));
+        assert!(!rendered.contains("multipart stream producer failure"));
     }
 }

@@ -8,7 +8,7 @@ See [Security Model](security_model.md) for the consumer-facing boundary between
 
 | Crate | Default features | Optional features | Supported no-default build | Notes |
 | --- | --- | --- | --- | --- |
-| `concord_core` | `rate-limit-governor`, `transport-reqwest` | `json`, `gzip`, `brotli`, `deflate`, `cookies`, `multipart`, `rate-limit-governor`, `transport-reqwest`, `dangerous-raw-response`, `dangerous-dev-tools` | yes | `json` keeps the built-in JSON/auth helpers available without reqwest. `transport-reqwest` owns `ReqwestTransport` and the reqwest transport codec features. `dangerous-raw-response` enables the raw-response escape hatch and `dangerous-dev-tools` enables the dev-body-capture configuration API; neither feature enables the escape hatch by itself. `serde` and `serde_json` are always present in `concord_core`; `reqwest` is optional and only enters the build when `transport-reqwest` or a reqwest codec feature is enabled. When `rate-limit-governor` is off, the default limiter fails closed for non-empty declared plans and `NoopRateLimiter` is the explicit opt-out. |
+| `concord_core` | `rate-limit-governor`, `transport-reqwest` | `json`, `gzip`, `brotli`, `deflate`, `cookies`, `multipart`, `rate-limit-governor`, `transport-reqwest`, `dangerous-raw-response`, `dangerous-dev-tools` | yes | `json` keeps the built-in JSON/auth helpers available without reqwest. `transport-reqwest` owns `ReqwestTransport`. `multipart` enables multipart request preparation via `reqwest::multipart` and does not require `transport-reqwest`. `dangerous-raw-response` enables the raw-response escape hatch and `dangerous-dev-tools` enables the dev-body-capture configuration API; neither feature enables the escape hatch by itself. `serde` and `serde_json` are always present in `concord_core`; `reqwest` is optional and only enters the build when `transport-reqwest` or a reqwest codec feature is enabled. When `rate-limit-governor` is off, the default limiter fails closed for non-empty declared plans and `NoopRateLimiter` is the explicit opt-out. |
 | `concord_macros` | none | none | yes | Proc-macro crate. |
 | `concord_examples` | none | `dangerous-raw-response`, `dangerous-dev-tools` | no | Compile-checked examples depend on `concord_core` with `json` enabled and forward the dangerous escape-hatch features for example-specific compile checks; neither feature is enabled by default. |
 
@@ -46,7 +46,8 @@ feature ownership changes:
 ## Dependency Ownership
 
 - `json` keeps the built-in JSON and OAuth2 auth helpers available in `concord_core` without pulling in reqwest.
-- `transport-reqwest` owns the reqwest-backed transport and the reqwest codec features.
+- `transport-reqwest` owns the reqwest-backed transport.
+- `multipart` enables multipart request preparation via reqwest multipart types.
 - `serde` and `serde_json` remain unconditional `concord_core` dependencies.
 - `reqwest` is optional and only appears when `transport-reqwest` or one of the reqwest codec feature flags is enabled.
 - `concord_macros` must not widen the runtime feature surface through its normal dependency tree.

@@ -46,6 +46,7 @@ mod tests {
             OctetStream::try_header_value().expect("valid content type"),
             http::HeaderValue::from_static("application/octet-stream")
         );
+        #[cfg(feature = "multipart")]
         assert_eq!(
             crate::multipart::FormData::try_header_value().expect("valid content type"),
             http::HeaderValue::from_static("multipart/form-data")
@@ -76,6 +77,7 @@ mod tests {
             OctetStream::try_header_value().expect("valid content type"),
             http::HeaderValue::from_static("application/octet-stream")
         );
+        #[cfg(feature = "multipart")]
         assert_eq!(
             crate::multipart::FormData::try_header_value().expect("valid content type"),
             http::HeaderValue::from_static("multipart/form-data")

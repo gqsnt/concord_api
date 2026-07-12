@@ -23,7 +23,7 @@ url.workspace = true
 
 [dev-dependencies]
 bytes.workspace = true
-concord_core = { path = "../concord_core", version = "0.1.0", features = ["json"] }
+concord_core = { path = "../concord_core", version = "0.1.0", features = ["json", "multipart"] }
 concord_test_support = { path = "../concord_test_support", version = "0.1.0" }
 http.workspace = true
 http-body.workspace = true

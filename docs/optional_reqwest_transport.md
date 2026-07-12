@@ -25,14 +25,14 @@ Current report-only observations:
 ### Where `reqwest` is declared
 
 - Workspace dependency: [`Cargo.toml`](../Cargo.toml)
-- `concord_core` direct dependency with transport codec features: [`concord_core/Cargo.toml`](../concord_core/Cargo.toml)
+- `concord_core` direct dependency with transport and multipart codec features: [`concord_core/Cargo.toml`](../concord_core/Cargo.toml)
 - `concord_examples` no longer depends on `reqwest` directly: [`concord_examples/Cargo.toml`](../concord_examples/Cargo.toml)
 
 `concord_test_support` does not depend on `reqwest` directly.
 
 ### Which crates depend on it
 
-- `concord_core` depends on `reqwest` optionally for `ReqwestTransport`, default client construction, and HTTP codec integration when `transport-reqwest` is enabled.
+- `concord_core` depends on `reqwest` optionally for `ReqwestTransport`, default client construction, and HTTP codec integration when `transport-reqwest` is enabled; multipart request construction is also available through the `multipart` feature without requiring the transport feature.
 - `concord_examples` no longer depends on `reqwest` directly.
 - `concord_test_support` currently does not.
 
@@ -94,9 +94,10 @@ Recommended shape for the later implementation PR:
 
 Interaction with existing features:
 
-- `json` should continue to toggle the reqwest JSON integration, but it must do so through the reqwest transport feature instead of assuming reqwest is always present.
+- `json` should continue to toggle the reqwest JSON integration, and should depend on the reqwest transport feature without assuming reqwest is always present.
 - `rate-limit-governor` should remain independent.
-- other HTTP codec features (`gzip`, `brotli`, `deflate`, `cookies`, `multipart`) should become reqwest-transport capabilities rather than unconditional core dependencies.
+- other HTTP codec features (`gzip`, `brotli`, `deflate`, `cookies`) should remain associated with the reqwest transport feature.
+- `multipart` should remain independent from the transport feature and enable multipart request construction through reqwest multipart APIs.
 
 ## Compatibility Plan
 

@@ -16,6 +16,7 @@ mod entity_errors;
 mod error_taxonomy;
 #[path = "current_core/errors.rs"]
 mod errors;
+#[cfg(feature = "multipart")]
 #[path = "current_core/multipart.rs"]
 mod multipart;
 #[path = "current_core/output_model.rs"]

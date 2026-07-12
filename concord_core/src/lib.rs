@@ -7,6 +7,7 @@ mod endpoint;
 pub mod error;
 mod io;
 mod media;
+#[cfg(feature = "multipart")]
 mod multipart;
 mod pagination;
 mod policy;
@@ -39,14 +40,17 @@ pub mod __private {
         PaginationMarker, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute,
         ResponsePlan, ResponseTerminalEndpoint, ReusableEndpoint,
     };
+    #[cfg(feature = "multipart")]
+    pub use crate::io::MultipartRequest;
     pub use crate::io::{
-        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, NoContentResponse,
-        NoRequestBody, PreparedBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse,
-        RequestEntity, ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
-        ResponseEntityWithMeta,
+        BufferedResponse, BytesResponse, EncodedRequest, NoContentResponse, NoRequestBody,
+        PreparedBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse, RequestEntity,
+        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, ResponseEntityWithMeta,
     };
+    #[cfg(feature = "multipart")]
     pub use crate::multipart::{
-        FormData, MultipartBody, MultipartBodyError, MultipartBodyErrorKind, RawPart,
+        FormData, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
+        MultipartReplayFactory, RawPart,
     };
     #[doc(hidden)]
     pub use crate::pagination::{
@@ -109,16 +113,20 @@ pub mod advanced {
     };
     pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
     pub use crate::error::{ErrorContext, FxError, PaginationError, PaginationErrorKind};
+    #[cfg(feature = "multipart")]
+    pub use crate::io::MultipartRequest;
     pub use crate::io::{
-        BufferedResponse, BytesResponse, EncodedRequest, MultipartRequest, NoContentResponse,
-        NoRequestBody, PreparedBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse,
-        RequestEntity, ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
+        BufferedResponse, BytesResponse, EncodedRequest, NoContentResponse, NoRequestBody,
+        PreparedBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse, RequestEntity,
+        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
     };
     pub use crate::media::{
         Jpeg, JsonContentType, Mp3, Mp4, OctetStream, Pdf, Png, TextContentType, Zip,
     };
+    #[cfg(feature = "multipart")]
     pub use crate::multipart::{
-        FormData, MultipartBody, MultipartBodyError, MultipartBodyErrorKind, RawPart,
+        FormData, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
+        MultipartReplayFactory, RawPart,
     };
     pub use crate::pagination::{
         Control, CursorPagination, EndpointPagination, HasNextCursor, OffsetLimitPagination,
