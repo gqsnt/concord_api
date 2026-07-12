@@ -1,8 +1,7 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    GovernorRateLimiter, NoopDebugSink, NoopRateLimiter, OffsetLimitPagination, PaginateBinding,
-    PaginationRuntimeAdapter, RateLimiter, StreamBody, Transport, TransportError, TransportRequest,
-    TransportResponse,
+    DynBody, GovernorRateLimiter, NoopDebugSink, NoopRateLimiter, OffsetLimitPagination,
+    PaginateBinding, PaginationRuntimeAdapter, RateLimiter, StreamBody, Transport, TransportError,
 };
 use concord_core::internal::{
     ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
@@ -12,11 +11,10 @@ use concord_core::prelude::{
     ApiClientError, Endpoint, PageItems, PaginatedEndpoint, PaginationTermination,
     ReusableEndpoint, Text,
 };
-use futures_util::StreamExt;
 use http::{Method, StatusCode, header::HeaderValue};
 use perf::support::{
-    AllocationSnapshot, CountingAllocator, EmptyBody, InMemoryAsyncRead, MockResponse,
-    MockTransport, auth_requirement, client, context, execute_raw_plan, filled_bytes, request_plan,
+    AllocationSnapshot, CountingAllocator, InMemoryAsyncRead, MockResponse, MockTransport,
+    auth_requirement, client, context, execute_raw_plan, filled_bytes, request_plan,
     reset_allocation_counts, runtime, snapshot_allocation_counts,
 };
 use std::alloc::System;
@@ -149,7 +147,7 @@ fn run_attempt_pipeline(rt: &Runtime) {
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report request");
-                black_box((response.status, response.body.len()));
+                black_box((response.status(), response.body().len()));
             })
         },
     );
@@ -164,7 +162,7 @@ fn run_attempt_pipeline(rt: &Runtime) {
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report retry");
-                black_box((response.status, response.body.len()));
+                black_box((response.status(), response.body().len()));
             })
         },
     );
@@ -181,7 +179,7 @@ fn run_auth_runtime(rt: &Runtime) {
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report bearer auth");
-                black_box((response.status, response.body.len()));
+                black_box((response.status(), response.body().len()));
             })
         },
     );
@@ -225,7 +223,7 @@ fn run_redaction_hooks(rt: &Runtime) {
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report redaction hooks");
-                black_box((response.status, response.body.len()));
+                black_box((response.status(), response.body().len()));
             })
         },
     );
@@ -237,41 +235,24 @@ struct DrainingTransport;
 impl Transport for DrainingTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         Box::pin(async move {
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout: _,
-                rate_limit,
-                extensions: _,
-            } = req;
-
-            let drained_bytes = match body {
-                concord_core::transport::TransportRequestBody::Empty => 0usize,
-                concord_core::transport::TransportRequestBody::Bytes(bytes) => bytes.len(),
-                concord_core::transport::TransportRequestBody::Stream(mut stream) => {
-                    let mut total = 0usize;
-                    while let Some(chunk) = stream.next().await {
-                        let chunk = chunk.expect("allocation report stream should not fail");
-                        total += chunk.len();
-                    }
-                    total
-                }
-            };
-
-            Ok(TransportResponse {
-                meta,
-                url,
-                status: StatusCode::OK,
-                headers,
-                content_length: Some(drained_bytes as u64),
-                rate_limit,
-                body: Box::new(EmptyBody),
-            })
+            use http_body_util::BodyExt as _;
+            let drained_bytes = req
+                .into_body()
+                .collect()
+                .await
+                .expect("allocation report stream should not fail")
+                .to_bytes()
+                .len();
+            let mut response = http::Response::new(DynBody::empty());
+            *response.status_mut() = StatusCode::OK;
+            response.headers_mut().insert(
+                http::header::CONTENT_LENGTH,
+                HeaderValue::from_str(&drained_bytes.to_string()).expect("length"),
+            );
+            Ok(response)
         })
     }
 }
@@ -309,7 +290,7 @@ fn run_streaming_upload(rt: &Runtime) {
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("allocation report streaming upload");
-                black_box((response.status, response.body.len()));
+                black_box((response.status(), response.body().len()));
             })
         },
     );

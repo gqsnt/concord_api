@@ -2,7 +2,7 @@
 use super::*;
 
 #[derive(Clone)]
-pub struct ApiClient<Cx: ClientContext, T: Transport + Clone = DefaultTransport> {
+pub struct ApiClient<Cx: ClientContext, T: Transport = DefaultTransport> {
     pub(super) transport: T,
     pub(super) vars: Cx::Vars,
     pub(super) auth_vars: Cx::AuthVars,
@@ -308,12 +308,12 @@ mod tests {
     impl Transport for PoisonTransport {
         fn send(
             &self,
-            _req: crate::transport::TransportRequest,
+            _req: http::Request<crate::body::DynBody>,
         ) -> ::std::pin::Pin<
             Box<
                 dyn ::std::future::Future<
                         Output = Result<
-                            crate::transport::TransportResponse,
+                            http::Response<crate::body::DynBody>,
                             crate::transport::TransportError,
                         >,
                     > + Send,

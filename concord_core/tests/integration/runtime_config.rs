@@ -1,4 +1,4 @@
-use concord_core::advanced::{Transport, TransportError, TransportRequest, TransportResponse};
+use concord_core::advanced::{DynBody, Transport, TransportError};
 use concord_core::prelude::{ApiClient, ClientContext, DebugLevel};
 use std::future::Future;
 use std::pin::Pin;
@@ -12,8 +12,8 @@ struct NoopTransport;
 impl Transport for NoopTransport {
     fn send(
         &self,
-        _req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        _req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         Box::pin(async move {
             Err(TransportError::with_kind(
                 concord_core::advanced::TransportErrorKind::Request,

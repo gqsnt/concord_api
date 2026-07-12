@@ -1,6 +1,4 @@
 use concord_core::{advanced, prelude};
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 #[test]
@@ -9,7 +7,6 @@ fn public_v1_surface_compiles() {
     fn uses_endpoint<E: prelude::Endpoint<super::common::TestCx>>() {}
     fn uses_client_context<Cx: prelude::ClientContext>() {}
     fn uses_transport<T: advanced::Transport>() {}
-    fn uses_body<B: advanced::TransportBody>() {}
     fn uses_standard_body<B: http_body::Body<Data = bytes::Bytes, Error = advanced::BodyError>>() {}
     fn uses_rate_limiter<L: advanced::RateLimiter>() {}
     fn uses_hooks<H: advanced::RuntimeHooks>() {}
@@ -24,7 +21,6 @@ fn public_v1_surface_compiles() {
     uses_endpoint::<super::common::TextEndpoint>();
     uses_client_context::<super::common::TestCx>();
     uses_transport::<super::common::MockTransport>();
-    uses_body::<EmptyBody>();
     uses_standard_body::<advanced::DynBody>();
     uses_rate_limiter::<advanced::NoopRateLimiter>();
     uses_hooks::<advanced::NoopRuntimeHooks>();
@@ -32,15 +28,13 @@ fn public_v1_surface_compiles() {
     uses_page_items::<Vec<String>>();
     uses_next_cursor::<Vec<String>>();
 
-    uses_type::<advanced::TransportRequest>();
-    uses_type::<advanced::TransportRequestBody>();
-    uses_type::<advanced::TransportByteStream>();
-    uses_type::<advanced::TransportResponse>();
+    uses_type::<http::Request<advanced::DynBody>>();
+    uses_type::<http::Response<advanced::DynBody>>();
     uses_type::<advanced::TransportError>();
     uses_type::<advanced::TransportErrorKind>();
     uses_type::<advanced::StreamBody>();
     uses_type::<advanced::StreamBodyError>();
-    uses_type::<advanced::BodySizeHint>();
+    uses_type::<http_body::SizeHint>();
     uses_type::<advanced::DynBody>();
     uses_type::<advanced::BodyError>();
     uses_type::<advanced::BodyErrorKind>();
@@ -61,20 +55,6 @@ fn public_v1_surface_compiles() {
     uses_type::<advanced::AuthError>();
     uses_type::<prelude::PaginationTermination>();
     uses_type::<concord_core::internal::ResolvedPolicy>();
-}
-
-struct EmptyBody;
-
-impl advanced::TransportBody for EmptyBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<Option<bytes::Bytes>, advanced::TransportError>> + Send + 'a,
-        >,
-    > {
-        Box::pin(async { Ok(None) })
-    }
 }
 
 #[test]

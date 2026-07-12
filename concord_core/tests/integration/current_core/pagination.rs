@@ -888,7 +888,7 @@ async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), A
 
     let raw = client.request(endpoint).execute_raw_response().await?;
 
-    assert_eq!(raw.body, Bytes::from_static(b"raw-page-1"));
+    assert_eq!(raw.body(), &Bytes::from_static(b"raw-page-1"));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].meta.page_index, 0);

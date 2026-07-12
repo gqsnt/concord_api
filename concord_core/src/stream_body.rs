@@ -1,6 +1,6 @@
-use crate::transport::{TransportByteStream, TransportError, TransportErrorKind};
 use bytes::Bytes;
 use futures_core::Stream;
+use http_body::SizeHint;
 use std::error::Error;
 use std::fmt;
 use std::pin::Pin;
@@ -9,57 +9,6 @@ use tokio::fs::File;
 use tokio::io::{AsyncRead, ReadBuf};
 
 const DEFAULT_CHUNK_SIZE: usize = 8 * 1024;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BodySizeHint {
-    lower: u64,
-    upper: Option<u64>,
-}
-
-impl BodySizeHint {
-    pub const fn unknown() -> Self {
-        Self {
-            lower: 0,
-            upper: None,
-        }
-    }
-
-    pub const fn exact(len: u64) -> Self {
-        Self {
-            lower: len,
-            upper: Some(len),
-        }
-    }
-
-    pub const fn at_least(lower: u64) -> Self {
-        Self { lower, upper: None }
-    }
-
-    pub fn between(lower: u64, upper: u64) -> Result<Self, StreamBodyError> {
-        if upper < lower {
-            return Err(StreamBodyError::size_hint());
-        }
-        Ok(Self {
-            lower,
-            upper: Some(upper),
-        })
-    }
-
-    pub const fn lower(self) -> u64 {
-        self.lower
-    }
-
-    pub const fn upper(self) -> Option<u64> {
-        self.upper
-    }
-
-    pub const fn exact_len(self) -> Option<u64> {
-        match self.upper {
-            Some(upper) if upper == self.lower => Some(upper),
-            _ => None,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StreamBodyErrorKind {
@@ -134,29 +83,20 @@ impl From<std::io::Error> for StreamBodyError {
     }
 }
 
-impl From<StreamBodyError> for TransportError {
-    fn from(error: StreamBodyError) -> Self {
-        let kind = match error.kind {
-            StreamBodyErrorKind::Io => TransportErrorKind::Io,
-            StreamBodyErrorKind::InvalidChunkSize | StreamBodyErrorKind::SizeHint => {
-                TransportErrorKind::Request
-            }
-            StreamBodyErrorKind::Transport => TransportErrorKind::Other,
-        };
-        TransportError::with_kind(kind, error)
-    }
-}
+pub(crate) type StreamByteSource =
+    Pin<Box<dyn Stream<Item = Result<Bytes, StreamBodyError>> + Send + 'static>>;
 
 pub struct StreamBody {
-    stream: TransportByteStream,
-    size_hint: BodySizeHint,
+    stream: StreamByteSource,
+    size_hint: SizeHint,
 }
 
 impl StreamBody {
     pub fn from_bytes(bytes: Bytes) -> Self {
-        let size_hint = BodySizeHint::exact(bytes.len() as u64);
+        let mut size_hint = SizeHint::new();
+        size_hint.set_exact(bytes.len() as u64);
         Self {
-            stream: TransportByteStream::new(OnceBytesStream::new(bytes)),
+            stream: Box::pin(OnceBytesStream::new(bytes)),
             size_hint,
         }
     }
@@ -166,8 +106,8 @@ impl StreamBody {
         S: Stream<Item = Result<Bytes, StreamBodyError>> + Send + 'static,
     {
         Self {
-            stream: TransportByteStream::new(stream),
-            size_hint: BodySizeHint::unknown(),
+            stream: Box::pin(stream),
+            size_hint: SizeHint::new(),
         }
     }
 
@@ -187,30 +127,31 @@ impl StreamBody {
         R: AsyncRead + Send + 'static,
     {
         Ok(Self {
-            stream: TransportByteStream::new(AsyncReadByteStream::new(reader, chunk_size)?),
-            size_hint: BodySizeHint::unknown(),
+            stream: Box::pin(AsyncReadByteStream::new(reader, chunk_size)?),
+            size_hint: SizeHint::new(),
         })
     }
 
     pub async fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, StreamBodyError> {
         let file = File::open(path).await?;
-        let size_hint = BodySizeHint::exact(file.metadata().await?.len());
+        let mut size_hint = SizeHint::new();
+        size_hint.set_exact(file.metadata().await?.len());
         Ok(Self {
-            stream: TransportByteStream::new(AsyncReadByteStream::new(file, DEFAULT_CHUNK_SIZE)?),
+            stream: Box::pin(AsyncReadByteStream::new(file, DEFAULT_CHUNK_SIZE)?),
             size_hint,
         })
     }
 
-    pub fn with_size_hint(mut self, hint: BodySizeHint) -> Self {
+    pub fn with_size_hint(mut self, hint: SizeHint) -> Self {
         self.size_hint = hint;
         self
     }
 
-    pub fn size_hint(&self) -> BodySizeHint {
-        self.size_hint
+    pub fn size_hint(&self) -> SizeHint {
+        self.size_hint.clone()
     }
 
-    pub(crate) fn into_transport_stream(self) -> TransportByteStream {
+    pub(crate) fn into_byte_stream(self) -> StreamByteSource {
         self.stream
     }
 }
@@ -297,7 +238,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::TransportError;
     use std::cell::Cell;
     use std::io;
     use std::sync::Arc;
@@ -309,7 +249,7 @@ mod tests {
         fn wake(self: Arc<Self>) {}
     }
 
-    fn poll_next(stream: &mut TransportByteStream) -> Poll<Option<Result<Bytes, TransportError>>> {
+    fn poll_next(stream: &mut StreamByteSource) -> Poll<Option<Result<Bytes, StreamBodyError>>> {
         let waker = Waker::from(Arc::new(NoopWake));
         let mut cx = Context::from_waker(&waker);
         Pin::new(stream).poll_next(&mut cx)
@@ -319,10 +259,10 @@ mod tests {
     fn stream_body_from_bytes_yields_chunks_and_hides_payload_in_debug() {
         let sentinel = Bytes::from_static(b"SECRET_STREAM_BODY_SENTINEL_MUST_NOT_APPEAR");
         let body = StreamBody::from_bytes(sentinel.clone());
-        assert_eq!(body.size_hint().exact_len(), Some(sentinel.len() as u64));
+        assert_eq!(body.size_hint().exact(), Some(sentinel.len() as u64));
         assert!(!format!("{:?}", body).contains("SECRET_STREAM_BODY_SENTINEL_MUST_NOT_APPEAR"));
 
-        let mut stream = body.into_transport_stream();
+        let mut stream = body.into_byte_stream();
         match poll_next(&mut stream) {
             Poll::Ready(Some(Ok(bytes))) => assert_eq!(bytes, sentinel),
             other => panic!("unexpected stream poll result: {other:?}"),
@@ -336,7 +276,7 @@ mod tests {
         let body = StreamBody::from_byte_stream(ErrorStream::new(StreamBodyError::transport(
             std::io::Error::other(String::from_utf8_lossy(&sentinel).to_string()),
         )));
-        let mut stream = body.into_transport_stream();
+        let mut stream = body.into_byte_stream();
         let error = match poll_next(&mut stream) {
             Poll::Ready(Some(Err(error))) => error,
             other => panic!("unexpected stream poll result: {other:?}"),
@@ -354,7 +294,7 @@ mod tests {
     #[test]
     fn stream_body_accepts_send_not_sync_streams() {
         let body = StreamBody::from_byte_stream(SendOnlyStream::new());
-        let mut stream = body.into_transport_stream();
+        let mut stream = body.into_byte_stream();
         match poll_next(&mut stream) {
             Poll::Ready(Some(Ok(bytes))) => assert_eq!(bytes, Bytes::from_static(b"chunk")),
             other => panic!("unexpected stream poll result: {other:?}"),
@@ -362,29 +302,29 @@ mod tests {
     }
 
     #[test]
-    fn body_size_hint_constructors_are_consistent() {
-        let unknown = BodySizeHint::unknown();
+    fn standard_body_size_hints_are_consistent() {
+        let unknown = SizeHint::new();
         assert_eq!(unknown.lower(), 0);
         assert_eq!(unknown.upper(), None);
-        assert_eq!(unknown.exact_len(), None);
+        assert_eq!(unknown.exact(), None);
 
-        let exact = BodySizeHint::exact(7);
+        let exact = SizeHint::with_exact(7);
         assert_eq!(exact.lower(), 7);
         assert_eq!(exact.upper(), Some(7));
-        assert_eq!(exact.exact_len(), Some(7));
+        assert_eq!(exact.exact(), Some(7));
 
-        let at_least = BodySizeHint::at_least(9);
+        let mut at_least = SizeHint::new();
+        at_least.set_lower(9);
         assert_eq!(at_least.lower(), 9);
         assert_eq!(at_least.upper(), None);
-        assert_eq!(at_least.exact_len(), None);
+        assert_eq!(at_least.exact(), None);
 
-        let between = BodySizeHint::between(3, 8).expect("valid size hint");
+        let mut between = SizeHint::new();
+        between.set_lower(3);
+        between.set_upper(8);
         assert_eq!(between.lower(), 3);
         assert_eq!(between.upper(), Some(8));
-        assert_eq!(between.exact_len(), None);
-
-        let error = BodySizeHint::between(5, 4).expect_err("invalid range should fail");
-        assert_eq!(error.kind(), StreamBodyErrorKind::SizeHint);
+        assert_eq!(between.exact(), None);
     }
 
     #[test]
@@ -420,8 +360,8 @@ mod tests {
 
     async fn drain_stream_body(
         body: StreamBody,
-    ) -> Result<(usize, usize, Vec<u8>), TransportError> {
-        let mut stream = body.into_transport_stream();
+    ) -> Result<(usize, usize, Vec<u8>), StreamBodyError> {
+        let mut stream = body.into_byte_stream();
         let mut total_bytes = 0usize;
         let mut total_chunks = 0usize;
         let mut collected = Vec::new();
@@ -504,7 +444,7 @@ mod tests {
 
         let display = error.to_string();
         let debug = format!("{error:?}");
-        assert!(display.contains("transport error"));
+        assert!(display.contains("stream body"));
         assert!(!display.contains(sentinel));
         assert!(!debug.contains(sentinel));
         assert!(!error_chain_contains(&error, sentinel));
@@ -525,10 +465,10 @@ mod tests {
         std::fs::write(&path, sentinel).expect("write temp file");
 
         let body = StreamBody::from_file(&path).await.expect("file body");
-        assert_eq!(body.size_hint().exact_len(), Some(sentinel.len() as u64));
+        assert_eq!(body.size_hint().exact(), Some(sentinel.len() as u64));
         assert!(!format!("{:?}", body).contains("SECRET_STREAM_BODY_SENTINEL_MUST_NOT_APPEAR"));
 
-        let mut stream = body.into_transport_stream();
+        let mut stream = body.into_byte_stream();
         let mut collected = Vec::new();
         loop {
             match poll_next(&mut stream) {

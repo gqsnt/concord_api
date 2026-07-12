@@ -1,12 +1,12 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    DebugSink, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, SanitizedHeaders, Transport, TransportBody,
-    TransportError, TransportRequest, TransportRequestBody, TransportResponse,
+    DebugSink, DynBody, RateLimitContext, RateLimitFuture, RateLimitPermit,
+    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, SanitizedHeaders, Transport,
+    TransportError,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use concord_macros::api;
-use http::{HeaderMap, Method, StatusCode};
+use http::{Method, StatusCode};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
@@ -185,16 +185,14 @@ struct FlagBody {
     polled: Arc<AtomicBool>,
 }
 
-impl TransportBody for FlagBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        let polled = self.polled.clone();
-        let chunk = self.chunks.pop_front();
-        Box::pin(async move {
-            polled.store(true, Ordering::SeqCst);
-            Ok(chunk)
-        })
+impl futures_core::Stream for FlagBody {
+    type Item = Result<Bytes, concord_core::advanced::BodyError>;
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.polled.store(true, Ordering::SeqCst);
+        std::task::Poll::Ready(self.chunks.pop_front().map(Ok))
     }
 }
 
@@ -264,8 +262,8 @@ impl NoContentTransport {
 impl Transport for NoContentTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let transport = self.clone();
         Box::pin(async move {
             transport
@@ -275,16 +273,16 @@ impl Transport for NoContentTransport {
                 .push("transport".to_string());
             transport.send_count.fetch_add(1, Ordering::SeqCst);
             let accept = req
-                .headers
+                .headers()
                 .get(http::header::ACCEPT)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
             let content_type = req
-                .headers
+                .headers()
                 .get(http::header::CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
-            let body_empty = matches!(req.body, TransportRequestBody::Empty);
+            let body_empty = http_body::Body::size_hint(req.body()).exact() == Some(0);
             transport
                 .requests
                 .lock()
@@ -301,19 +299,12 @@ impl Transport for NoContentTransport {
                 .expect("responses lock")
                 .pop_front()
                 .expect("response fixture");
-            let headers = HeaderMap::new();
-            Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
-                status: response.status,
-                headers,
-                content_length: Some(response.body.iter().map(|chunk| chunk.len() as u64).sum()),
-                rate_limit: req.rate_limit,
-                body: Box::new(FlagBody {
-                    chunks: response.body,
-                    polled: response.poll_flag,
-                }),
-            })
+            let mut result = http::Response::new(DynBody::from_byte_stream(FlagBody {
+                chunks: response.body,
+                polled: response.poll_flag,
+            }));
+            *result.status_mut() = response.status;
+            Ok(result)
         })
     }
 }

@@ -201,7 +201,7 @@ fn bench_case(
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("redaction hooks bench");
-                black_box((response.status, sink.count.load(Ordering::Relaxed)));
+                black_box((response.status(), sink.count.load(Ordering::Relaxed)));
             },
             BatchSize::SmallInput,
         )

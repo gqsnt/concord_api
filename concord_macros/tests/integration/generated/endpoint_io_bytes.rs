@@ -1,7 +1,5 @@
 use bytes::Bytes;
-use concord_core::advanced::{
-    Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
-};
+use concord_core::advanced::{DynBody, RequestExecutionContext, Transport, TransportError};
 use concord_core::error::ErrorCategory;
 use concord_core::prelude::ApiClientError;
 use concord_core::transport::RequestMeta;
@@ -78,11 +76,11 @@ impl RecordingBytesTransport {
 impl Transport for RecordingBytesTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         self.send_count.fetch_add(1, Ordering::SeqCst);
         let accept = req
-            .headers
+            .headers()
             .get(http::header::ACCEPT)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
@@ -90,8 +88,13 @@ impl Transport for RecordingBytesTransport {
             .lock()
             .expect("request lock")
             .push(CapturedRequest {
-                meta: req.meta.clone(),
-                method: req.meta.method.clone(),
+                meta: req
+                    .extensions()
+                    .get::<RequestExecutionContext>()
+                    .expect("context")
+                    .meta
+                    .clone(),
+                method: req.method().clone(),
                 accept,
             });
 
@@ -104,15 +107,20 @@ impl Transport for RecordingBytesTransport {
                     chunks,
                     content_length,
                     polls,
-                } => Ok(TransportResponse {
-                    meta: req.meta,
-                    url: req.url,
-                    status,
-                    headers,
-                    content_length,
-                    rate_limit: req.rate_limit,
-                    body: Box::new(PollingBody::new(chunks, polls)),
-                }),
+                } => {
+                    let mut response = http::Response::new(DynBody::from_byte_stream(
+                        PollingBody::new(chunks, polls),
+                    ));
+                    *response.status_mut() = status;
+                    *response.headers_mut() = headers;
+                    if let Some(length) = content_length {
+                        response.headers_mut().insert(
+                            http::header::CONTENT_LENGTH,
+                            HeaderValue::from_str(&length.to_string()).expect("length"),
+                        );
+                    }
+                    Ok(response)
+                }
             }
         })
     }
@@ -132,18 +140,17 @@ impl PollingBody {
     }
 }
 
-impl TransportBody for PollingBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        let polls = self.polls.clone();
+impl futures_core::Stream for PollingBody {
+    type Item = Result<Bytes, concord_core::advanced::BodyError>;
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
         let chunk = self.chunks.pop_front();
-        Box::pin(async move {
-            if chunk.is_some() {
-                polls.fetch_add(1, Ordering::SeqCst);
-            }
-            Ok(chunk)
-        })
+        if chunk.is_some() {
+            self.polls.fetch_add(1, Ordering::SeqCst);
+        }
+        std::task::Poll::Ready(chunk.map(Ok))
     }
 }
 

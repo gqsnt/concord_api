@@ -14,7 +14,7 @@ The runtime order is:
 5. produce the body for the physical attempt
 6. rate-limit acquire
 7. run sanitized request debug and pre_send hooks
-8. materialize a send-only `TransportRequest`
+8. materialize a send-only `http::Request<DynBody>`
 9. transport send
 10. on initial transport failure, run transport_error hook
 11. on HTTP response, run post_response hook
@@ -65,7 +65,7 @@ The deprecated dev body capture path is deliberately separate from debug sinks a
 
 Auth preparation does not receive `BuiltRequest` directly. Endpoint auth preparation and auth-internal preparation receive an auth-only application request bound to one preplanned slot. Custom client contexts can bind compatible material but cannot choose placement, add query sensitivity, or insert raw auth into logical headers, query strings, body data, policy data, or request metadata.
 
-`TransportRequest` is materialized only immediately before `Transport::send`. It is the boundary where bearer values, arbitrary auth headers, query-auth values, and Basic auth headers are inserted. Concord drops it after send and does not store it in `BuiltResponse` or `DecodedResponse<T>`.
+`http::Request<DynBody>` is materialized only immediately before `Transport::send`. It is the boundary where bearer values, arbitrary auth headers, query-auth values, and Basic auth headers are inserted. Concord drops it after send and does not store it in `BuiltResponse` or `DecodedResponse<T>`.
 
 Rate-limit keying is strict. A bucket keyed by `[host]` requires the logical request URL to have a host and fails before permit acquisition or transport if it does not.
 
@@ -98,5 +98,3 @@ Runtime order is covered by characterization tests in `concord_core`.
 Endpoint concurrency tests use deterministic gates and explicit arrival counts rather than short sleeps. Timeouts in those tests are deadlock guards, not timing assertions.
 
 Cancellation tests use the same deterministic harness to abort requests after a known phase entry. The supported proofs are phase-local cleanup, no late decode, no late page advancement, and no leaked body or auth material in safe metadata.
-
-

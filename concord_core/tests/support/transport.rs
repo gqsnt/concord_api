@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use concord_core::advanced::{
     RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, Transport, TransportBody, TransportError,
-    TransportErrorKind, TransportRequest, TransportResponse,
+    RateLimitResponseContext, RateLimiter, RequestExecutionContext, Transport, TransportError,
+    TransportErrorKind,
 };
 use concord_core::prelude::ApiClientError;
 use http::{HeaderMap, StatusCode};
@@ -55,27 +55,40 @@ impl MockTransport {
 impl Transport for MockTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<concord_core::advanced::DynBody>,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        http::Response<concord_core::advanced::DynBody>,
+                        TransportError,
+                    >,
+                > + Send,
+        >,
+    > {
         let response = self.next();
         let events = self.events.clone();
         Box::pin(async move {
-            events.record(format!("transport_send:{}", req.meta.endpoint));
+            let endpoint = req
+                .extensions()
+                .get::<RequestExecutionContext>()
+                .map(|context| context.meta.endpoint)
+                .unwrap_or("<missing>");
+            events.record(format!("transport_send:{endpoint}"));
             let response = response.ok_or_else(|| {
                 TransportError::with_kind(
                     TransportErrorKind::Other,
                     std::io::Error::other("mock transport exhausted"),
                 )
             })?;
-            Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
-                status: StatusCode::from_u16(response.status).expect("valid mock status"),
-                headers: response.headers,
-                content_length: Some(response.body.len() as u64),
-                rate_limit: req.rate_limit,
-                body: Box::new(StaticBody::new(Bytes::from(response.body))),
-            })
+            let mut result = http::Response::builder()
+                .status(StatusCode::from_u16(response.status).expect("valid mock status"))
+                .body(concord_core::advanced::DynBody::from_bytes(Bytes::from(
+                    response.body,
+                )))
+                .expect("mock response");
+            *result.headers_mut() = response.headers;
+            Ok(result)
         })
     }
 }
@@ -94,24 +107,6 @@ impl MockResponse {
             headers: HeaderMap::new(),
             body: body.into(),
         }
-    }
-}
-
-struct StaticBody {
-    next: Option<Bytes>,
-}
-
-impl StaticBody {
-    fn new(body: Bytes) -> Self {
-        Self { next: Some(body) }
-    }
-}
-
-impl TransportBody for StaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.next.take()) })
     }
 }
 

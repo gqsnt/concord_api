@@ -7,11 +7,10 @@ use bytes::Bytes;
 use concord_core::advanced::{
     AuthAppliedCredential, AuthDecision, AuthError, AuthFuture, AuthPlacement, AuthRequirement,
     AuthStepPolicy, CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason,
-    CredentialSlot, OctetStream, PreparedAuthCredential, RateLimitBucketUse, RateLimitContext,
-    RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
+    CredentialSlot, DynBody, OctetStream, PreparedAuthCredential, RateLimitBucketUse,
+    RateLimitContext, RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
     RateLimitResponseContext, RateLimiter, RawStreamResponse, RequestMeta, ResponseEntity,
-    StreamBody, Transport, TransportBody, TransportError, TransportErrorKind, TransportRequest,
-    TransportRequestBody, TransportResponse, apply_secret_credential,
+    StreamBody, Transport, TransportError, TransportErrorKind, apply_secret_credential,
 };
 use concord_core::error::ErrorContext;
 use concord_core::internal::{PreparedBody, ResolvedPolicy};
@@ -57,7 +56,7 @@ fn assert_bearer_auth_header_not_contains(request: &CapturedTransportRequest, se
 
 fn assert_bytes_body(request: &CapturedTransportRequest, expected: &[u8]) {
     match &request.body {
-        TransportRequestBody::Bytes(bytes) => {
+        CapturedBody::Bytes(bytes) => {
             assert!(
                 bytes.as_ref() == expected,
                 "request body bytes did not match the expected value"
@@ -69,8 +68,8 @@ fn assert_bytes_body(request: &CapturedTransportRequest, expected: &[u8]) {
 
 fn assert_stream_body(request: &CapturedTransportRequest) {
     assert!(
-        matches!(request.body, TransportRequestBody::Stream(_)),
-        "expected stream request body"
+        request.body.as_bytes().is_some(),
+        "expected a consumed standard request body"
     );
 }
 
@@ -1782,18 +1781,6 @@ impl CredentialProvider<SingleFlightCx> for ControlledTokenProvider {
     }
 }
 
-struct RoutedStaticBody {
-    body: Option<Bytes>,
-}
-
-impl TransportBody for RoutedStaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.body.take()) })
-    }
-}
-
 #[derive(Clone)]
 struct RoutedTransport {
     gate: PhaseGate,
@@ -1834,33 +1821,17 @@ impl RoutedTransport {
 impl Transport for RoutedTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let gate = self.gate.clone();
         let events = self.events.clone();
         let routes = self.routes.clone();
         let requests = self.requests.clone();
         Box::pin(async move {
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout,
-                rate_limit,
-                extensions,
-            } = req;
-            let path = url.path().to_string();
+            let captured = capture_request(req).await?;
+            let path = captured.url.path().to_string();
             events.lock().await.push(format!("transport_send:{path}"));
-            requests.lock().await.push(CapturedTransportRequest {
-                meta: meta.clone(),
-                url: url.clone(),
-                headers: headers.clone(),
-                body,
-                timeout,
-                rate_limit: rate_limit.clone(),
-                extensions: extensions.clone(),
-            });
+            requests.lock().await.push(captured);
             gate.enter("transport_send").await;
             let outcome = routes
                 .lock()
@@ -1877,22 +1848,7 @@ impl Transport for RoutedTransport {
                     ));
                 }
             };
-            Ok(TransportResponse {
-                meta,
-                url,
-                status: response.status,
-                headers: response.headers,
-                content_length: response.content_length.or_else(|| {
-                    response
-                        .chunks
-                        .is_none()
-                        .then_some(response.body.len() as u64)
-                }),
-                rate_limit,
-                body: Box::new(RoutedStaticBody {
-                    body: Some(response.body),
-                }),
-            })
+            Ok(standard_response(response))
         })
     }
 }

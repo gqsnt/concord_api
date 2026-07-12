@@ -1,7 +1,5 @@
 use bytes::Bytes;
-use concord_core::advanced::{
-    RateLimitPlan, Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
-};
+use concord_core::advanced::{DynBody, RequestExecutionContext, Transport, TransportError};
 use concord_macros::api;
 use http::{HeaderMap, StatusCode};
 use std::collections::VecDeque;
@@ -93,40 +91,31 @@ impl RecordingTransport {
 impl Transport for RecordingTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let requests = self.requests.clone();
         let responses = self.responses.clone();
         Box::pin(async move {
+            let context = req
+                .extensions()
+                .get::<RequestExecutionContext>()
+                .cloned()
+                .expect("context");
+            let url = req.uri().to_string().parse().expect("URL");
             requests
                 .lock()
                 .expect("requests lock")
                 .push(RecordedRequest {
-                    meta: req.meta.clone(),
-                    url: req.url.clone(),
+                    meta: context.meta,
+                    url,
                 });
             let response = responses.lock().expect("responses lock").pop_front();
             let response = response.expect("expected retry response fixture");
-            Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
-                status: response.status,
-                headers: response.headers,
-                content_length: Some(response.body.len() as u64),
-                rate_limit: RateLimitPlan::default(),
-                body: Box::new(StaticBody(Some(response.body))),
-            })
+            let mut result = http::Response::new(DynBody::from_bytes(response.body));
+            *result.status_mut() = response.status;
+            *result.headers_mut() = response.headers;
+            Ok(result)
         })
-    }
-}
-
-struct StaticBody(Option<Bytes>);
-
-impl TransportBody for StaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.0.take()) })
     }
 }
 

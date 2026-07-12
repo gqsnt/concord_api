@@ -36,7 +36,7 @@ enum AttemptFamily {
 
 enum AttemptTransportSuccess {
     Buffered(BuiltResponse),
-    Transport(TransportResponse),
+    Transport(AttemptResponse),
 }
 
 struct CachedAuthPreparation {
@@ -192,12 +192,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         crate::retry::RetryIdempotency::Header(_)
                     ) =>
             {
-                Some(built.headers.clone())
+                Some(built.message.headers().clone())
             }
             RetrySetting::Inherit
                 if retry_count < self.runtime_state.retry_policy().max_retries() =>
             {
-                Some(built.headers.clone())
+                Some(built.message.headers().clone())
             }
             _ => None,
         }
@@ -273,7 +273,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 prepared
             };
             let attempt_body = self.produce_attempt_body(body, &ctx)?;
-            let mut built = head.finish(attempt_body);
+            let mut built = head.finish(attempt_body, &ctx)?;
             let url_str = built.debug_url();
 
             let retry_config = std::mem::take(&mut built.retry);
@@ -316,10 +316,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Ok(resp) => {
                     let (response_status, response_meta, response_headers) = match &resp {
                         AttemptTransportSuccess::Buffered(resp) => {
-                            (resp.status, &resp.meta, &resp.headers)
+                            (resp.status(), resp.meta(), resp.headers())
                         }
                         AttemptTransportSuccess::Transport(resp) => {
-                            (resp.status, &resp.meta, &resp.headers)
+                            (resp.status(), &resp.context.meta, resp.headers())
                         }
                     };
                     match self
@@ -355,6 +355,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         &err,
                         ApiClientError::ResponseTooLarge { .. }
                             | ApiClientError::ResponseBodyLimitExceeded { .. }
+                            | ApiClientError::ResponseBody { .. }
+                            | ApiClientError::Decode { .. }
+                            | ApiClientError::Codec { .. }
                     ) {
                         return Err(err);
                     }
@@ -466,7 +469,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         };
         #[cfg(feature = "dangerous-dev-tools")]
         self.maybe_capture_dev_response_body(&plan, &resp);
-        self.debug_planned_response(dbg, &resp, resp.url.as_str());
+        self.debug_planned_response(dbg, &resp, resp.url().as_str());
         Self::decode_planned_response::<C>(&plan, resp, ctx.clone())
     }
     pub(crate) async fn execute_plan_raw(
@@ -512,7 +515,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         };
         #[cfg(feature = "dangerous-dev-tools")]
         self.maybe_capture_dev_response_body(&plan, &resp);
-        self.debug_planned_response(dbg, &resp, resp.url.as_str());
+        self.debug_planned_response(dbg, &resp, resp.url().as_str());
         Ok(resp)
     }
     pub(crate) async fn execute_stream_response<M>(
@@ -574,7 +577,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             AttemptTransportSuccess::Transport(resp) => resp,
             _ => unreachable!(),
         };
-        if !Self::header_matches_media_type(resp.headers.get(CONTENT_TYPE), M::CONTENT_TYPE) {
+        if !Self::header_matches_media_type(resp.headers().get(CONTENT_TYPE), M::CONTENT_TYPE) {
             return Err(ApiClientError::response_contract(
                 ctx,
                 "stream response content type did not match expected media type",
@@ -601,7 +604,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .auth
             .requirements
             .iter()
-            .zip(&head.extensions.auth_plan.slots)
+            .zip(&head.auth_plan.slots)
         {
             let auth_meta = head.meta.clone();
             let mut auth_request = crate::auth::AuthApplicationRequest::new(slot);
@@ -715,35 +718,44 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         C: crate::codec::ResponseCodec,
     {
         let no_content = plan.endpoint.response.no_content || C::is_no_content();
-        if resp.meta.method == http::Method::HEAD && !no_content {
+        if resp.meta().method == http::Method::HEAD && !no_content {
             return Err(ApiClientError::HeadRequiresNoContent { ctx });
         }
         if matches!(
-            resp.status,
+            resp.status(),
             StatusCode::NO_CONTENT | StatusCode::RESET_CONTENT
         ) && !no_content
         {
             return Err(ApiClientError::NoContentStatusRequiresNoContent {
                 ctx: ctx.clone(),
-                status: resp.status,
+                status: resp.status(),
             });
         }
         let content_type = resp
-            .headers
+            .headers()
             .get(http::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok());
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let status = resp.status();
+        let (message, response_context) = resp.into_parts();
+        let (parts, body) = message.into_parts();
         let value = C::decode(
-            resp.body.clone(),
-            crate::codec::DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
+            body,
+            crate::codec::DecodeContext::new(
+                ctx.endpoint,
+                &ctx.method,
+                status,
+                content_type.as_deref(),
+            ),
         )
         .map_err(|_| {
-            ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
+            ApiClientError::response_body_decode_error(ctx.clone(), status, content_type.as_deref())
         })?;
         Ok(DecodedResponse {
-            meta: resp.meta,
-            url: resp.url,
-            status: resp.status,
-            headers: resp.headers,
+            meta: response_context.meta,
+            url: response_context.request_url,
+            status,
+            headers: parts.headers,
             value,
         })
     }
@@ -755,28 +767,31 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         url_str: &str,
     ) {
         if dbg.is_verbose() {
+            let request_context = built.context();
             self.debug_sink.request_start(
                 dbg,
-                &built.meta.method,
+                &request_context.meta.method,
                 url_str,
-                built.meta.endpoint,
-                built.meta.page_index,
+                request_context.meta.endpoint,
+                request_context.meta.page_index,
             );
         }
         if dbg.is_very_verbose() {
-            self.debug_sink
-                .request_headers(dbg, crate::debug::SanitizedHeaders::new(&built.headers));
+            self.debug_sink.request_headers(
+                dbg,
+                crate::debug::SanitizedHeaders::new(built.message.headers()),
+            );
         }
     }
 
     fn debug_planned_response(&self, dbg: DebugLevel, resp: &BuiltResponse, url_str: &str) {
         if dbg.is_verbose() {
             self.debug_sink
-                .response_status(dbg, resp.status, url_str, true);
+                .response_status(dbg, resp.status(), url_str, true);
         }
         if dbg.is_very_verbose() {
             self.debug_sink
-                .response_headers(dbg, crate::debug::SanitizedHeaders::new(&resp.headers));
+                .response_headers(dbg, crate::debug::SanitizedHeaders::new(resp.headers()));
         }
     }
 
@@ -796,8 +811,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         capture.capture_response(
             plan.endpoint.meta.name,
             &plan.endpoint.meta.method,
-            resp.status,
-            &resp.body,
+            resp.status(),
+            resp.body(),
         );
     }
 }

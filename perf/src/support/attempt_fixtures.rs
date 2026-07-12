@@ -247,13 +247,13 @@ pub async fn execute_raw_plan<T: Transport>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::support::{EmptyBody, MockResponse, MockTransport, runtime};
+    use crate::support::{MockResponse, MockTransport, runtime};
     use bytes::Bytes;
     use concord_core::advanced::{
-        DebugSink, SanitizedHeaders, StreamBody, StreamBodyError, TransportError,
-        TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
+        DebugSink, DynBody, SanitizedHeaders, StreamBody, StreamBodyError, TransportError,
+        TransportErrorKind,
     };
-    use futures_util::{StreamExt, stream};
+    use futures_util::stream;
     use std::sync::atomic::AtomicU8;
 
     #[derive(Default)]
@@ -288,26 +288,19 @@ mod tests {
     impl Transport for BodyConsumingTransport {
         fn send(
             &self,
-            req: TransportRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>
+            req: http::Request<DynBody>,
+        ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>>
         {
             let chunks = self.chunks.clone();
             Box::pin(async move {
-                if let TransportRequestBody::Stream(mut body) = req.body {
-                    while let Some(chunk) = body.next().await {
-                        chunk?;
+                use http_body_util::BodyExt as _;
+                let mut body = req.into_body();
+                while let Some(frame) = body.frame().await {
+                    if frame?.data_ref().is_some() {
                         chunks.fetch_add(1, Ordering::Relaxed);
                     }
                 }
-                Ok(TransportResponse {
-                    meta: req.meta,
-                    url: req.url,
-                    status: StatusCode::OK,
-                    headers: http::HeaderMap::new(),
-                    content_length: Some(0),
-                    rate_limit: req.rate_limit,
-                    body: Box::new(EmptyBody),
-                })
+                Ok(http::Response::new(DynBody::empty()))
             })
         }
     }
@@ -318,8 +311,8 @@ mod tests {
     impl Transport for FailingTransport {
         fn send(
             &self,
-            _req: TransportRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>
+            _req: http::Request<DynBody>,
+        ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>>
         {
             Box::pin(async {
                 Err(TransportError::with_kind(
@@ -349,8 +342,8 @@ mod tests {
             .block_on(execute_raw_plan(&client, plan))
             .expect("raw response should succeed");
 
-        assert_eq!(response.status, StatusCode::OK);
-        assert_eq!(response.body.as_ref(), b"ok");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.body().as_ref(), b"ok");
         let requests = transport.recorded_requests();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].meta.endpoint, "RawPlanAdapter");

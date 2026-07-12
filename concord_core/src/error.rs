@@ -49,6 +49,12 @@ pub enum ApiClientError {
     #[error("{ctx}: response body exceeded limit {limit} bytes while reading")]
     ResponseBodyLimitExceeded { ctx: ErrorContext, limit: usize },
 
+    #[error("{ctx}: response body read failed ({kind:?})")]
+    ResponseBody {
+        ctx: ErrorContext,
+        kind: crate::body::BodyErrorKind,
+    },
+
     #[error(
         "{ctx}: stream request body exceeded configured size limit {limit} bytes (seen {actual} bytes)"
     )]
@@ -165,6 +171,11 @@ impl Debug for ApiClientError {
                 .debug_struct("ResponseBodyLimitExceeded")
                 .field("ctx", ctx)
                 .field("limit", limit)
+                .finish(),
+            Self::ResponseBody { ctx, kind } => f
+                .debug_struct("ResponseBody")
+                .field("ctx", ctx)
+                .field("kind", kind)
                 .finish(),
             Self::RequestBodyLimitExceeded { ctx, limit, actual } => f
                 .debug_struct("RequestBodyLimitExceeded")
@@ -388,13 +399,13 @@ impl ApiClientError {
     }
 
     #[inline]
-    pub(crate) fn response_body_read_transport_error(
+    pub(crate) fn response_body_error(
         ctx: ErrorContext,
-        source: crate::transport::TransportError,
+        source: crate::body::BodyError,
     ) -> ApiClientError {
-        ApiClientError::Transport {
+        ApiClientError::ResponseBody {
             ctx,
-            source: crate::transport::TransportError::response_body_read(source.kind()),
+            kind: source.kind(),
         }
     }
 
@@ -474,6 +485,7 @@ impl ApiClientError {
             | ApiClientError::Transport { ctx, .. }
             | ApiClientError::ResponseTooLarge { ctx, .. }
             | ApiClientError::ResponseBodyLimitExceeded { ctx, .. }
+            | ApiClientError::ResponseBody { ctx, .. }
             | ApiClientError::RequestBodyLimitExceeded { ctx, .. }
             | ApiClientError::HttpStatus { ctx, .. }
             | ApiClientError::Decode { ctx, .. }
@@ -504,7 +516,8 @@ impl ApiClientError {
             }
             ApiClientError::Transport { .. } => ErrorCategory::Transport,
             ApiClientError::ResponseTooLarge { .. }
-            | ApiClientError::ResponseBodyLimitExceeded { .. } => ErrorCategory::Decode,
+            | ApiClientError::ResponseBodyLimitExceeded { .. }
+            | ApiClientError::ResponseBody { .. } => ErrorCategory::Decode,
             ApiClientError::RequestBodyLimitExceeded { .. } => ErrorCategory::Config,
             ApiClientError::HttpStatus { rate_limit, .. } if rate_limit.is_some() => {
                 ErrorCategory::RateLimit

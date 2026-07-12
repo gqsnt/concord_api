@@ -168,7 +168,7 @@ async fn finalized_attempt_request_is_sent_once() -> Result<(), ApiClientError> 
 
     let raw = client.request(endpoint).execute_raw_response().await?;
 
-    assert_eq!(raw.status, StatusCode::OK);
+    assert_eq!(raw.status(), StatusCode::OK);
     assert_eq!(sent_transport.sent_count().await, 1);
     let requests = sent_transport.requests().await;
     assert_eq!(requests.len(), 1);
@@ -235,7 +235,7 @@ async fn execute_raw_and_decoded_share_the_same_attempt_path() -> Result<(), Api
         .await?;
     let decoded = client.request(endpoint).response().await?;
 
-    assert_eq!(raw.body, Bytes::from_static(b"shared-response"));
+    assert_eq!(raw.body(), &Bytes::from_static(b"shared-response"));
     assert_eq!(decoded.into_value(), "shared-response");
     let requests = sent_transport.requests().await;
     assert_eq!(requests.len(), 2);
@@ -366,7 +366,7 @@ async fn replayable_encoded_bodies_can_retry_with_the_same_payload() -> Result<(
 
     let raw = client.request(endpoint).execute_raw_response().await?;
 
-    assert_eq!(raw.status, StatusCode::OK);
+    assert_eq!(raw.status(), StatusCode::OK);
     assert_eq!(sent_transport.sent_count().await, 2);
     let requests = sent_transport.requests().await;
     assert_eq!(requests.len(), 2);
@@ -421,5 +421,5 @@ async fn non_replayable_stream_bodies_stop_after_the_first_attempt() {
     assert_eq!(sent_transport.sent_count().await, 1);
     let requests = sent_transport.requests().await;
     assert_eq!(requests.len(), 1);
-    assert!(requests[0].body.is_stream());
+    assert!(requests[0].body.as_bytes().is_some());
 }

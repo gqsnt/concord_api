@@ -93,7 +93,7 @@ where
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("benchmark request");
-                black_box((response.status, response.body.len()));
+                black_box((response.status(), response.body().len()));
             },
             BatchSize::SmallInput,
         )

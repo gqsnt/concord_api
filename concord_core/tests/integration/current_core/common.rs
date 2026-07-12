@@ -2,13 +2,13 @@ use bytes::Bytes;
 use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
     AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BufferedResponse, CodecError,
-    CursorPagination, DecodeContext, OffsetLimitPagination, PagedPagination, PaginateBinding,
-    PaginationRuntimeAdapter, PostResponseHookContext, PreSendHookContext, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RequestMeta, ResponseCodec, ResponseEntity, RetryContext, RetryDecision,
-    RetryPolicy, RuntimeHooks, TextContentType, Transport, TransportBody, TransportByteStream,
-    TransportError, TransportErrorHookContext, TransportErrorKind, TransportRequest,
-    TransportRequestBody, TransportResponse, apply_basic_credential,
+    CursorPagination, DecodeContext, DynBody, OffsetLimitPagination, PagedPagination,
+    PaginateBinding, PaginationRuntimeAdapter, PostResponseHookContext, PreSendHookContext,
+    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter, RequestExecutionContext, RequestMeta, ResponseCodec,
+    ResponseEntity, RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, TextContentType,
+    Transport, TransportError, TransportErrorHookContext, TransportErrorKind,
+    apply_basic_credential,
 };
 use concord_core::internal::{
     ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
@@ -33,31 +33,63 @@ pub struct CapturedTransportRequest {
     pub meta: RequestMeta,
     pub url: url::Url,
     pub headers: HeaderMap,
-    pub body: TransportRequestBody,
+    pub body: CapturedBody,
     pub timeout: Option<Duration>,
-    pub rate_limit: concord_core::advanced::RateLimitPlan,
-    pub extensions: concord_core::auth::RequestExtensions,
+    pub auth_plan: concord_core::advanced::AuthPlacementPlan,
+}
+
+pub enum CapturedBody {
+    Empty,
+    Bytes(Bytes),
+}
+
+impl CapturedBody {
+    pub fn as_bytes(&self) -> Option<&Bytes> {
+        match self {
+            Self::Bytes(bytes) => Some(bytes),
+            _ => None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn is_bytes(&self) -> bool {
+        matches!(self, Self::Bytes(_))
+    }
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Empty)
+    }
 }
 
 impl fmt::Debug for CapturedTransportRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let body = match &self.body {
-            TransportRequestBody::Empty => TransportRequestBody::Empty,
-            TransportRequestBody::Bytes(bytes) => TransportRequestBody::from_bytes(bytes.clone()),
-            TransportRequestBody::Stream(_) => {
-                TransportRequestBody::Stream(TransportByteStream::new(EmptyDebugStream))
+        let mut headers = self.headers.clone();
+        for slot in &self.auth_plan.slots {
+            let name = match &slot.placement {
+                concord_core::advanced::PlannedAuthPlacement::Bearer
+                | concord_core::advanced::PlannedAuthPlacement::Basic => {
+                    Some(http::header::AUTHORIZATION.clone())
+                }
+                concord_core::advanced::PlannedAuthPlacement::Header(name) => Some(name.clone()),
+                concord_core::advanced::PlannedAuthPlacement::Query(_) => None,
+            };
+            if let Some(name) = name {
+                headers.insert(name, HeaderValue::from_static("<redacted>"));
             }
+        }
+        let body = match &self.body {
+            CapturedBody::Empty => "<empty>".to_string(),
+            CapturedBody::Bytes(bytes) => format!("<{} bytes>", bytes.len()),
         };
-        let temp = TransportRequest {
-            meta: self.meta.clone(),
-            url: self.url.clone(),
-            headers: self.headers.clone(),
-            body,
-            timeout: self.timeout,
-            rate_limit: self.rate_limit.clone(),
-            extensions: self.extensions.clone(),
-        };
-        write!(f, "{temp:?}")
+        f.debug_struct("CapturedTransportRequest")
+            .field("meta", &self.meta)
+            .field("url", &"<redacted>")
+            .field(
+                "headers",
+                &concord_core::advanced::SanitizedHeaders::new(&headers),
+            )
+            .field("body", &body)
+            .field("timeout", &self.timeout)
+            .finish()
     }
 }
 
@@ -68,17 +100,40 @@ pub struct CapturedTransportRequestSnapshot {
     pub headers: HeaderMap,
 }
 
-struct EmptyDebugStream;
-
-impl futures_core::Stream for EmptyDebugStream {
-    type Item = Result<Bytes, TransportError>;
-
-    fn poll_next(
-        self: Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        std::task::Poll::Ready(None)
-    }
+pub async fn capture_request(
+    req: http::Request<DynBody>,
+) -> Result<CapturedTransportRequest, TransportError> {
+    use http_body_util::BodyExt as _;
+    let (parts, body) = req.into_parts();
+    let context = parts
+        .extensions
+        .get::<RequestExecutionContext>()
+        .cloned()
+        .expect("transport request context");
+    let auth_plan = parts
+        .extensions
+        .get::<concord_core::advanced::AuthPlacementPlan>()
+        .cloned()
+        .unwrap_or_default();
+    let url = parts.uri.to_string().parse().expect("absolute request URI");
+    let bytes = body
+        .collect()
+        .await
+        .map_err(TransportError::new)?
+        .to_bytes();
+    let body = if bytes.is_empty() {
+        CapturedBody::Empty
+    } else {
+        CapturedBody::Bytes(bytes)
+    };
+    Ok(CapturedTransportRequest {
+        meta: context.meta,
+        url,
+        headers: parts.headers,
+        body,
+        timeout: context.timeout,
+        auth_plan,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -1171,6 +1226,29 @@ impl MockResponse {
     }
 }
 
+pub fn standard_response(response: MockResponse) -> http::Response<DynBody> {
+    let mut builder = http::Response::builder().status(response.status);
+    *builder.headers_mut().expect("response headers") = response.headers;
+    if let Some(length) = response.content_length.or_else(|| {
+        response
+            .chunks
+            .is_none()
+            .then_some(response.body.len() as u64)
+    }) {
+        builder.headers_mut().expect("response headers").insert(
+            http::header::CONTENT_LENGTH,
+            HeaderValue::from_str(&length.to_string()).expect("content length"),
+        );
+    }
+    let chunks = response.chunks.unwrap_or_else(|| vec![response.body]);
+    builder
+        .body(DynBody::from_byte_stream(ChunkBody {
+            chunks: chunks.into(),
+            read_count: response.read_count,
+        }))
+        .expect("standard response")
+}
+
 impl MockTransport {
     pub fn new(events: Arc<Mutex<Vec<String>>>, responses: Vec<MockResponse>) -> Self {
         Self::with_outcomes(events, responses.into_iter().map(Into::into).collect())
@@ -1197,31 +1275,14 @@ impl MockTransport {
 impl Transport for MockTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let outcomes = self.outcomes.clone();
         let events = self.events.clone();
         let requests = self.requests.clone();
         Box::pin(async move {
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout,
-                rate_limit,
-                extensions,
-            } = req;
             events.lock().await.push("transport".to_string());
-            requests.lock().await.push(CapturedTransportRequest {
-                meta: meta.clone(),
-                url: url.clone(),
-                headers: headers.clone(),
-                body,
-                timeout,
-                rate_limit: rate_limit.clone(),
-                extensions: extensions.clone(),
-            });
+            requests.lock().await.push(capture_request(req).await?);
             let outcome = outcomes
                 .lock()
                 .await
@@ -1236,30 +1297,7 @@ impl Transport for MockTransport {
                     ));
                 }
             };
-            Ok(TransportResponse {
-                meta,
-                url,
-                status: response.status,
-                headers: response.headers,
-                content_length: response.content_length.or_else(|| {
-                    response
-                        .chunks
-                        .is_none()
-                        .then_some(response.body.len() as u64)
-                }),
-                rate_limit,
-                body: if let Some(chunks) = response.chunks {
-                    Box::new(ChunkBody {
-                        chunks: chunks.into(),
-                        read_count: response.read_count.clone(),
-                    })
-                } else {
-                    Box::new(StaticBody {
-                        body: Some(response.body),
-                        read_count: response.read_count.clone(),
-                    })
-                },
-            })
+            Ok(standard_response(response))
         })
     }
 }
@@ -1320,33 +1358,16 @@ impl GateTransport {
 impl Transport for GateTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let outcomes = self.outcomes.clone();
         let events = self.events.clone();
         let requests = self.requests.clone();
         let arrived = self.arrived.clone();
         let mut release = self.release.subscribe();
         Box::pin(async move {
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout,
-                rate_limit,
-                extensions,
-            } = req;
             events.lock().await.push("transport".to_string());
-            requests.lock().await.push(CapturedTransportRequest {
-                meta: meta.clone(),
-                url: url.clone(),
-                headers: headers.clone(),
-                body,
-                timeout,
-                rate_limit: rate_limit.clone(),
-                extensions: extensions.clone(),
-            });
+            requests.lock().await.push(capture_request(req).await?);
             let outcome = outcomes
                 .lock()
                 .await
@@ -1369,51 +1390,7 @@ impl Transport for GateTransport {
                     ));
                 }
             };
-            Ok(TransportResponse {
-                meta,
-                url,
-                status: response.status,
-                headers: response.headers,
-                content_length: response.content_length.or_else(|| {
-                    response
-                        .chunks
-                        .is_none()
-                        .then_some(response.body.len() as u64)
-                }),
-                rate_limit,
-                body: if let Some(chunks) = response.chunks {
-                    Box::new(ChunkBody {
-                        chunks: chunks.into(),
-                        read_count: response.read_count.clone(),
-                    })
-                } else {
-                    Box::new(StaticBody {
-                        body: Some(response.body),
-                        read_count: response.read_count.clone(),
-                    })
-                },
-            })
-        })
-    }
-}
-
-struct StaticBody {
-    body: Option<Bytes>,
-    read_count: Option<Arc<AtomicUsize>>,
-}
-
-impl TransportBody for StaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move {
-            let chunk = self.body.take();
-            if chunk.is_some()
-                && let Some(read_count) = &self.read_count
-            {
-                read_count.fetch_add(1, AtomicOrdering::Relaxed);
-            }
-            Ok(chunk)
+            Ok(standard_response(response))
         })
     }
 }
@@ -1423,19 +1400,20 @@ struct ChunkBody {
     read_count: Option<Arc<AtomicUsize>>,
 }
 
-impl TransportBody for ChunkBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move {
-            let chunk = self.chunks.pop_front();
-            if chunk.is_some()
-                && let Some(read_count) = &self.read_count
-            {
-                read_count.fetch_add(1, AtomicOrdering::Relaxed);
-            }
-            Ok(chunk)
-        })
+impl futures_core::Stream for ChunkBody {
+    type Item = Result<Bytes, concord_core::advanced::BodyError>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let chunk = self.chunks.pop_front();
+        if chunk.is_some()
+            && let Some(read_count) = &self.read_count
+        {
+            read_count.fetch_add(1, AtomicOrdering::Relaxed);
+        }
+        std::task::Poll::Ready(chunk.map(Ok))
     }
 }
 
@@ -2052,34 +2030,17 @@ impl GateableTransport {
 impl Transport for GateableTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let gate = self.gate.clone();
         let outcomes = self.outcomes.clone();
         let events = self.events.clone();
         let requests = self.requests.clone();
         let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
         Box::pin(async move {
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout,
-                rate_limit,
-                extensions,
-            } = req;
             let _drop_token = drop_token;
             events.lock().await.push("transport_send_start".to_string());
-            requests.lock().await.push(CapturedTransportRequest {
-                meta: meta.clone(),
-                url: url.clone(),
-                headers: headers.clone(),
-                body,
-                timeout,
-                rate_limit: rate_limit.clone(),
-                extensions: extensions.clone(),
-            });
+            requests.lock().await.push(capture_request(req).await?);
             gate.enter("transport_send").await;
             let outcome = outcomes
                 .lock()
@@ -2095,30 +2056,7 @@ impl Transport for GateableTransport {
                     ));
                 }
             };
-            Ok(TransportResponse {
-                meta,
-                url,
-                status: response.status,
-                headers: response.headers,
-                content_length: response.content_length.or_else(|| {
-                    response
-                        .chunks
-                        .is_none()
-                        .then_some(response.body.len() as u64)
-                }),
-                rate_limit,
-                body: if let Some(chunks) = response.chunks {
-                    Box::new(ChunkBody {
-                        chunks: chunks.into(),
-                        read_count: response.read_count.clone(),
-                    })
-                } else {
-                    Box::new(StaticBody {
-                        body: Some(response.body),
-                        read_count: response.read_count.clone(),
-                    })
-                },
-            })
+            Ok(standard_response(response))
         })
     }
 }
@@ -2171,8 +2109,8 @@ impl GateableBodyTransport {
 impl Transport for GateableBodyTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let gate = self.gate.clone();
         let events = self.events.clone();
         let chunks = self.chunks.clone();
@@ -2180,51 +2118,26 @@ impl Transport for GateableBodyTransport {
         let read_count = self.read_count.clone();
         let drop_probe = self.drop_probe.clone();
         Box::pin(async move {
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout,
-                rate_limit,
-                extensions,
-            } = req;
             events.lock().await.push("transport_send_start".to_string());
-            requests.lock().await.push(CapturedTransportRequest {
-                meta: meta.clone(),
-                url: url.clone(),
-                headers: headers.clone(),
-                body,
-                timeout,
-                rate_limit: rate_limit.clone(),
-                extensions: extensions.clone(),
-            });
+            requests.lock().await.push(capture_request(req).await?);
             let body_chunks = chunks
                 .lock()
                 .await
                 .pop_front()
                 .expect("gateable body response should be available");
-            Ok(TransportResponse {
-                meta,
-                url,
-                status: StatusCode::OK,
-                headers: {
-                    let mut h = HeaderMap::new();
-                    h.insert(
-                        http::header::CONTENT_TYPE,
-                        HeaderValue::from_static("text/plain"),
-                    );
-                    h
-                },
-                content_length: None,
-                rate_limit,
-                body: Box::new(GateableBody {
-                    gate,
-                    chunks: body_chunks,
-                    read_count,
-                    _drop_token: drop_probe.map(|probe| probe.token()),
-                }),
-            })
+            let mut response = http::Response::new(DynBody::from_byte_stream(GateableBody {
+                gate,
+                chunks: body_chunks,
+                read_count,
+                _drop_token: drop_probe.map(|probe| probe.token()),
+                pending: None,
+            }));
+            *response.status_mut() = StatusCode::OK;
+            response.headers_mut().insert(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_static("text/plain"),
+            );
+            Ok(response)
         })
     }
 }
@@ -2234,22 +2147,31 @@ struct GateableBody {
     chunks: VecDeque<Bytes>,
     read_count: Arc<AtomicUsize>,
     _drop_token: Option<DropProbeToken>,
+    pending: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 
-impl TransportBody for GateableBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move {
-            if self.chunks.front().is_some() {
-                self.gate.enter("body_chunk").await;
+impl futures_core::Stream for GateableBody {
+    type Item = Result<Bytes, concord_core::advanced::BodyError>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        if self.chunks.front().is_some() && self.pending.is_none() {
+            let gate = self.gate.clone();
+            self.pending = Some(Box::pin(async move { gate.enter("body_chunk").await }));
+        }
+        if let Some(pending) = &mut self.pending {
+            if pending.as_mut().poll(cx).is_pending() {
+                return std::task::Poll::Pending;
             }
-            let chunk = self.chunks.pop_front();
-            if chunk.is_some() {
-                self.read_count.fetch_add(1, AtomicOrdering::SeqCst);
-            }
-            Ok(chunk)
-        })
+            self.pending = None;
+        }
+        let chunk = self.chunks.pop_front();
+        if chunk.is_some() {
+            self.read_count.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+        std::task::Poll::Ready(chunk.map(Ok))
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::codec::CodecError;
 use crate::codec::ContentType;
 use crate::stream_body::StreamBody;
-use crate::transport::{TransportByteStream, TransportError};
+use crate::stream_body::StreamByteSource;
 use bytes::Bytes;
 use futures_core::Stream;
 use http::HeaderValue;
@@ -70,15 +70,6 @@ impl fmt::Display for MultipartBodyError {
 impl Error for MultipartBodyError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         None
-    }
-}
-
-impl From<MultipartBodyError> for TransportError {
-    fn from(error: MultipartBodyError) -> Self {
-        TransportError::with_kind(
-            crate::transport::TransportErrorKind::Request,
-            CodecError::new(error.to_string()),
-        )
     }
 }
 
@@ -283,7 +274,7 @@ impl PreparedMultipartBody {
                 RawPartBody::Text(text) => PreparedPartBody::Text(Some(text)),
                 RawPartBody::Bytes(bytes) => PreparedPartBody::Bytes(Some(bytes)),
                 RawPartBody::Stream(stream) => {
-                    PreparedPartBody::Stream(Some(stream.into_transport_stream()))
+                    PreparedPartBody::Stream(Some(stream.into_byte_stream()))
                 }
             };
             prepared.push(PreparedPart {
@@ -310,7 +301,7 @@ struct PreparedPart {
 enum PreparedPartBody {
     Text(Option<Bytes>),
     Bytes(Option<Bytes>),
-    Stream(Option<TransportByteStream>),
+    Stream(Option<StreamByteSource>),
 }
 
 struct MultipartEncodeStream {
@@ -341,7 +332,7 @@ enum ActiveBody {
     Text(Option<Bytes>),
     Bytes(Option<Bytes>),
     Stream {
-        stream: TransportByteStream,
+        stream: StreamByteSource,
         done: bool,
     },
 }

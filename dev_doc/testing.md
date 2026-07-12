@@ -112,9 +112,9 @@ organization instead of weakening the contract.
 
 These tests protect runtime order and should be extended before runtime behavior is refactored.
 
-Auth and redaction tests must cover arbitrary auth names, not only conventional names such as `Authorization` or `api_key`. Basic auth usernames declared as `secret` are secret material too. When auth handling changes, verify that `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, debug sinks, and errors do not contain raw auth material, while the materialized `TransportRequest` still carries real credentials at `Transport::send`.
+Auth and redaction tests must cover arbitrary auth names, not only conventional names such as `Authorization` or `api_key`. Basic auth usernames declared as `secret` are secret material too. When auth handling changes, verify that `BuiltRequest`, `BuiltResponse`, `DecodedResponse<T>`, debug sinks, and errors do not contain raw auth material, while the materialized `http::Request<DynBody>` still carries real credentials at `Transport::send`.
 
-Auth preparation boundary tests should verify behavior at the sealed auth boundary: raw material stays out of logical request, debug, and error surfaces and reaches only `TransportRequest` at send time.
+Auth preparation boundary tests should verify behavior at the sealed auth boundary: raw material stays out of logical request, debug, and error surfaces and reaches only `http::Request<DynBody>` at send time.
 
 Runtime strictness tests should reject invented policy values and silent saturation through observable behavior. Rate-limit `[host]` keys must fail explicitly when the logical URL has no host. Request and auth attempt counters should return typed overflow errors instead of saturating.
 

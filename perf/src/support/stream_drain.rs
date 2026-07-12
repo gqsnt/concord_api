@@ -1,22 +1,26 @@
 use bytes::Bytes;
-use concord_core::advanced::{TransportBody, TransportError};
+use concord_core::advanced::{DynBody, TransportError};
 use futures_core::Stream;
 use futures_util::{StreamExt, pin_mut};
 use std::hint::black_box;
 
-pub async fn drain_transport_body(body: &mut dyn TransportBody) -> (usize, usize) {
+pub async fn drain_dyn_body(body: &mut DynBody) -> (usize, usize) {
+    use http_body_util::BodyExt as _;
     let mut total_bytes = 0usize;
     let mut total_chunks = 0usize;
     loop {
         match body
-            .next_chunk()
+            .frame()
             .await
+            .transpose()
             .expect("benchmark body should not fail")
         {
-            Some(bytes) => {
-                total_bytes += bytes.len();
-                total_chunks += 1;
-                black_box(bytes);
+            Some(frame) => {
+                if let Ok(bytes) = frame.into_data() {
+                    total_bytes += bytes.len();
+                    total_chunks += 1;
+                    black_box(bytes);
+                }
             }
             None => break,
         }

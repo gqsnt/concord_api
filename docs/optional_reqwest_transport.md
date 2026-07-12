@@ -119,7 +119,7 @@ Concrete steps for the implementation PR:
 1. Add a `transport-reqwest` feature in `concord_core/Cargo.toml`.
 2. Move the `reqwest` dependency and reqwest-specific feature flags under that feature.
 3. Gate `ReqwestTransport`, `default_reqwest_client()`, and `with_reqwest_client(...)` behind the new feature.
-4. Keep `Transport`, `TransportRequest`, `TransportResponse`, `with_transport(...)`, and custom transport support always available.
+4. Keep `Transport`, `http::Request<DynBody>`, `http::Response<DynBody>`, `with_transport(...)`, and custom transport support always available.
 5. Update any default transport aliases or generated-client convenience constructors so they compile both with and without the feature.
 6. Split or gate tests that directly exercise reqwest transport behavior.
 7. Update docs/examples that mention the default reqwest transport.

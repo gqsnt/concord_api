@@ -1,7 +1,5 @@
 use bytes::Bytes;
-use concord_core::advanced::{
-    RateLimitPlan, Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
-};
+use concord_core::advanced::{DynBody, RequestExecutionContext, Transport, TransportError};
 use concord_core::error::ErrorCategory;
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -151,43 +149,24 @@ struct RecordedRequest {
 enum RecordedBody {
     Empty,
     Bytes(Bytes),
-    Stream,
-}
-
-struct EmptyDebugStream;
-
-impl futures_core::Stream for EmptyDebugStream {
-    type Item = Result<Bytes, TransportError>;
-
-    fn poll_next(
-        self: Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        std::task::Poll::Ready(None)
-    }
 }
 
 impl std::fmt::Debug for RecordedRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let body = match &self.body {
-            RecordedBody::Empty => concord_core::advanced::TransportRequestBody::Empty,
-            RecordedBody::Bytes(body) => {
-                concord_core::advanced::TransportRequestBody::from_bytes(body.clone())
-            }
-            RecordedBody::Stream => concord_core::advanced::TransportRequestBody::Stream(
-                concord_core::advanced::TransportByteStream::new(EmptyDebugStream),
-            ),
+            RecordedBody::Empty => "<empty>".to_string(),
+            RecordedBody::Bytes(bytes) => format!("<{} bytes>", bytes.len()),
         };
-        let temp = TransportRequest {
-            meta: self.meta.clone(),
-            url: self.url.clone(),
-            headers: self.headers.clone(),
-            body,
-            timeout: self.timeout,
-            rate_limit: RateLimitPlan::default(),
-            extensions: concord_core::auth::RequestExtensions::default(),
-        };
-        write!(f, "{temp:?}")
+        f.debug_struct("RecordedRequest")
+            .field("meta", &self.meta)
+            .field("url", &"<redacted>")
+            .field(
+                "headers",
+                &concord_core::advanced::SanitizedHeaders::new(&self.headers),
+            )
+            .field("body", &body)
+            .field("timeout", &self.timeout)
+            .finish()
     }
 }
 
@@ -208,35 +187,41 @@ impl RecordingTransport {
 impl Transport for RecordingTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let responses = self.responses.clone();
         let requests = self.requests.clone();
         Box::pin(async move {
-            let body = match req.body {
-                concord_core::advanced::TransportRequestBody::Empty => RecordedBody::Empty,
-                concord_core::advanced::TransportRequestBody::Bytes(body) => {
-                    RecordedBody::Bytes(body)
-                }
-                concord_core::advanced::TransportRequestBody::Stream(_) => RecordedBody::Stream,
+            use http_body_util::BodyExt as _;
+            let (parts, body) = req.into_parts();
+            let context = parts
+                .extensions
+                .get::<RequestExecutionContext>()
+                .cloned()
+                .expect("context");
+            let url = parts.uri.to_string().parse().expect("URL");
+            let bytes = body
+                .collect()
+                .await
+                .map_err(TransportError::new)?
+                .to_bytes();
+            let body = if bytes.is_empty() {
+                RecordedBody::Empty
+            } else {
+                RecordedBody::Bytes(bytes)
             };
             requests.lock().await.push(RecordedRequest {
-                meta: req.meta.clone(),
-                url: req.url.clone(),
-                headers: req.headers.clone(),
+                meta: context.meta,
+                url,
+                headers: parts.headers,
                 body,
-                timeout: req.timeout,
+                timeout: context.timeout,
             });
             let response = responses.lock().await.pop_front().expect("test response");
-            Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
-                status: response.status,
-                headers: response.headers,
-                content_length: Some(response.body.len() as u64),
-                rate_limit: RateLimitPlan::default(),
-                body: Box::new(StaticBody(Some(response.body))),
-            })
+            let mut result = http::Response::new(DynBody::from_bytes(response.body));
+            *result.status_mut() = response.status;
+            *result.headers_mut() = response.headers;
+            Ok(result)
         })
     }
 }
@@ -276,14 +261,4 @@ fn assert_query_values(request: &RecordedRequest, key: &str, expected: &[&str]) 
         .map(|(_, value)| value.into_owned())
         .collect();
     assert_eq!(values, expected);
-}
-
-struct StaticBody(Option<Bytes>);
-
-impl TransportBody for StaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.0.take()) })
-    }
 }

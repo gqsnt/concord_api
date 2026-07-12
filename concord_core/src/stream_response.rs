@@ -1,41 +1,26 @@
+use crate::body::{BodyError, BodyErrorKind, DynBody};
 use crate::codec::ContentType;
 use crate::error::{ApiClientError, ErrorContext};
-use crate::transport::{
-    StreamBodyLimitError, StreamLimitDirection, TransportBody, TransportError, TransportErrorKind,
-    TransportResponse,
-};
+use crate::transport::{AttemptResponse, TransportError, TransportErrorKind};
 use bytes::Bytes;
-use http::{HeaderMap, StatusCode};
+use http::{HeaderMap, StatusCode, Version, header::CONTENT_LENGTH};
+use http_body_util::BodyExt as _;
 use std::fmt;
 use std::marker::PhantomData;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
 
 pub struct StreamResponse<M> {
-    resp: TransportResponse,
+    resp: AttemptResponse,
     _media: PhantomData<fn() -> M>,
 }
 
 impl<M> StreamResponse<M> {
-    pub(crate) fn new(resp: TransportResponse, limit: Option<usize>) -> Self {
-        let TransportResponse {
-            meta,
-            url,
-            status,
-            headers,
-            content_length,
-            rate_limit,
-            body,
-        } = resp;
-        let resp = TransportResponse {
-            body: Box::new(LimitedTransportBody::new(body, meta.clone(), limit)),
-            meta,
-            url,
-            status,
-            headers,
-            content_length,
-            rate_limit,
-        };
+    pub(crate) fn new(mut resp: AttemptResponse, limit: Option<usize>) -> Self {
+        if let Some(limit) = limit {
+            let body = std::mem::replace(resp.message.body_mut(), DynBody::empty());
+            *resp.message.body_mut() = body.limited(limit as u64);
+        }
         Self {
             resp,
             _media: PhantomData,
@@ -43,31 +28,42 @@ impl<M> StreamResponse<M> {
     }
 
     pub fn meta(&self) -> &crate::transport::RequestMeta {
-        &self.resp.meta
+        &self.resp.context.meta
     }
 
     pub fn url(&self) -> &url::Url {
-        &self.resp.url
+        &self.resp.context.request_url
     }
 
     pub fn status(&self) -> StatusCode {
-        self.resp.status
+        self.resp.message.status()
+    }
+
+    pub fn version(&self) -> Version {
+        self.resp.message.version()
     }
 
     pub fn headers(&self) -> &HeaderMap {
-        &self.resp.headers
+        self.resp.message.headers()
+    }
+
+    pub fn extensions(&self) -> &http::Extensions {
+        self.resp.message.extensions()
     }
 
     pub fn content_length(&self) -> Option<u64> {
-        self.resp.content_length
+        self.headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse().ok())
     }
 
     pub fn rate_limit(&self) -> &crate::rate_limit::RateLimitPlan {
-        &self.resp.rate_limit
+        &self.resp.context.rate_limit
     }
 
-    pub fn into_body(self) -> Box<dyn TransportBody> {
-        self.resp.body
+    pub fn into_body(self) -> DynBody {
+        self.resp.message.into_body()
     }
 }
 
@@ -78,11 +74,22 @@ impl<M: ContentType> StreamResponse<M> {
 
     pub async fn next_chunk(&mut self) -> Result<Option<Bytes>, ApiClientError> {
         let ctx = self.error_context();
-        self.resp
-            .body
-            .next_chunk()
-            .await
-            .map_err(|source| Self::sanitize_body_error(ctx, source))
+        loop {
+            let Some(frame) = self
+                .resp
+                .message
+                .body_mut()
+                .frame()
+                .await
+                .transpose()
+                .map_err(|source| Self::sanitize_body_error(ctx.clone(), source))?
+            else {
+                return Ok(None);
+            };
+            if let Ok(data) = frame.into_data() {
+                return Ok(Some(data));
+            }
+        }
     }
 
     pub async fn write_to_file(&mut self, path: impl AsRef<Path>) -> Result<(), ApiClientError> {
@@ -115,21 +122,19 @@ impl<M: ContentType> StreamResponse<M> {
 impl<M> StreamResponse<M> {
     fn error_context(&self) -> ErrorContext {
         ErrorContext {
-            endpoint: self.resp.meta.endpoint,
-            method: self.resp.meta.method.clone(),
+            endpoint: self.resp.context.meta.endpoint,
+            method: self.resp.context.meta.method.clone(),
         }
     }
 
-    fn sanitize_body_error(ctx: ErrorContext, source: TransportError) -> ApiClientError {
-        if let Some(limit_error) = source.source_error().downcast_ref::<StreamBodyLimitError>()
-            && matches!(limit_error.direction, StreamLimitDirection::Response)
-        {
+    fn sanitize_body_error(ctx: ErrorContext, source: BodyError) -> ApiClientError {
+        if source.kind() == BodyErrorKind::LimitExceeded {
             return ApiClientError::ResponseBodyLimitExceeded {
                 ctx,
-                limit: limit_error.limit,
+                limit: source.limit().unwrap_or_default() as usize,
             };
         }
-        Self::transport_error(ctx, source.kind(), "stream response body read failed")
+        ApiClientError::response_body_error(ctx, source)
     }
 
     fn io_error(ctx: ErrorContext, msg: &'static str, source: std::io::Error) -> ApiClientError {
@@ -159,79 +164,45 @@ impl<M> StreamResponse<M> {
 impl<M: ContentType> fmt::Debug for StreamResponse<M> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StreamResponse")
-            .field("meta", &self.resp.meta)
+            .field("meta", self.meta())
             .field(
                 "url",
-                &crate::redaction::sanitize_url_for_debug(&self.resp.url, [] as [&str; 0]),
+                &crate::redaction::sanitize_url_for_debug(self.url(), [] as [&str; 0]),
             )
-            .field("status", &self.resp.status)
+            .field("status", &self.status())
+            .field("version", &self.version())
             .field(
                 "headers",
-                &crate::debug::SanitizedHeaders::new(&self.resp.headers),
+                &crate::debug::SanitizedHeaders::new(self.headers()),
             )
-            .field("content_length", &self.resp.content_length)
-            .field("rate_limit", &self.resp.rate_limit)
+            .field("content_length", &self.content_length())
+            .field("rate_limit", self.rate_limit())
             .field("body", &"<stream>")
             .field("media_type", &M::CONTENT_TYPE)
             .finish()
     }
 }
 
-struct LimitedTransportBody {
-    body: Box<dyn TransportBody>,
-    limit: Option<usize>,
-    seen: usize,
-    meta: crate::transport::RequestMeta,
-    exhausted: bool,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl LimitedTransportBody {
-    fn new(
-        body: Box<dyn TransportBody>,
-        meta: crate::transport::RequestMeta,
-        limit: Option<usize>,
-    ) -> Self {
-        Self {
-            body,
-            limit,
-            seen: 0,
-            meta,
-            exhausted: false,
-        }
-    }
-}
-
-impl TransportBody for LimitedTransportBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>,
-    > {
-        Box::pin(async move {
-            if self.exhausted {
-                return Ok(None);
+    #[test]
+    fn streaming_body_failures_keep_the_safe_body_kind() {
+        let error = StreamResponse::<()>::sanitize_body_error(
+            ErrorContext {
+                endpoint: "StreamBodyFailure",
+                method: http::Method::GET,
+            },
+            BodyError::input(),
+        );
+        assert!(matches!(
+            error,
+            ApiClientError::ResponseBody {
+                kind: BodyErrorKind::Input,
+                ..
             }
-            let Some(chunk) = self.body.next_chunk().await? else {
-                self.exhausted = true;
-                return Ok(None);
-            };
-            if let Some(limit) = self.limit {
-                let next_seen = self.seen.saturating_add(chunk.len());
-                if next_seen > limit {
-                    self.exhausted = true;
-                    return Err(TransportError::with_kind(
-                        TransportErrorKind::Request,
-                        StreamBodyLimitError {
-                            meta: self.meta.clone(),
-                            direction: StreamLimitDirection::Response,
-                            limit,
-                            seen: next_seen,
-                        },
-                    ));
-                }
-                self.seen = next_seen;
-            }
-            Ok(Some(chunk))
-        })
+        ));
+        assert!(!error.to_string().contains("producer"));
     }
 }

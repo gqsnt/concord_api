@@ -71,7 +71,7 @@ fn validate_auth_internal_body(
 
 fn produce_auth_internal_body(
     body: &mut crate::io::PreparedBody,
-) -> Result<crate::io::AttemptBody, AuthError> {
+) -> Result<crate::io::ProducedBody, AuthError> {
     body.produce_for_attempt().map_err(|error| {
         let message = match error.kind() {
             crate::io::BodyProductionErrorKind::AlreadyConsumed => {
@@ -127,7 +127,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     timeout: policy.timeout,
                     retry: RetrySetting::Inherit,
                     rate_limit: RateLimitPlan::new(),
-                    extensions: crate::auth::RequestExtensions { auth_plan },
+                    auth_plan,
                 };
 
                 fn make_built_request(
@@ -136,18 +136,27 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     attempt: u32,
                 ) -> Result<BuiltRequest, AuthError> {
                     let body = produce_auth_internal_body(body)?;
-                    Ok(BuiltRequest {
+                    let ctx = ErrorContext {
+                        endpoint: "<auth>",
+                        method: base_request.meta.method.clone(),
+                    };
+                    let head = super::build::PublicRequestHead {
                         meta: RequestMeta {
                             attempt,
                             ..base_request.meta.clone()
                         },
                         url: base_request.url.clone(),
                         headers: base_request.headers.clone(),
-                        body,
                         timeout: base_request.timeout,
                         retry: RetrySetting::Inherit,
                         rate_limit: RateLimitPlan::new(),
-                        extensions: base_request.extensions.clone(),
+                        auth_plan: base_request.auth_plan.clone(),
+                    };
+                    head.finish(body, &ctx).map_err(|_| {
+                        AuthError::new(
+                            AuthErrorKind::InvalidConfiguration,
+                            "auth-internal request URI is invalid",
+                        )
                     })
                 }
 
@@ -170,7 +179,6 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         let _stack_guard = AuthInternalStackGuard::push(requirement_key);
                         let applied = {
                             let slot = base_request
-                                .extensions
                                 .auth_plan
                                 .slots
                                 .first()
@@ -187,7 +195,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                             .await
                         };
                         let applied = applied?;
-                        applied.validate_bindings(&base_request.extensions.auth_plan)?;
+                        applied.validate_bindings(&base_request.auth_plan)?;
                         auth_materials = applied.materials;
                     }
                 }
@@ -204,12 +212,12 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                             .rate_limiter()
                             .acquire(RateLimitContext {
                                 endpoint: "<auth>",
-                                method: &built.meta.method,
+                                method: &built.context().meta.method,
                                 url: &auth_url,
-                                url_host: built.url.host_str(),
+                                url_host: built.message.uri().host(),
                                 attempt,
                                 page_index: 0,
-                                idempotent: built.meta.idempotent,
+                                idempotent: built.context().meta.idempotent,
                                 max_cooldown: self.client.runtime_state.max_rate_limit_cooldown(),
                                 plan: &built.rate_limit,
                             })
@@ -228,7 +236,7 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         AuthError::new(AuthErrorKind::AcquireFailed, source.to_string())
                     })?;
                     let resp = self.client.transport.send(transport_req).await;
-                    let mut resp = match resp {
+                    let resp = match resp {
                         Ok(resp) => resp,
                         Err(source) => {
                             if attempt >= policy.max_transport_retries {
@@ -242,23 +250,25 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         }
                     };
 
+                    let (parts, mut response_body) = resp.into_parts();
+                    let content_length = parts
+                        .headers
+                        .get(http::header::CONTENT_LENGTH)
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(|value| value.parse().ok());
                     let body = match read_body_all_limited(
-                        resp.body.as_mut(),
-                        resp.content_length,
+                        &mut response_body,
+                        content_length,
                         Some(policy.max_body_bytes),
                     )
                     .await
                     {
                         Ok(body) => body,
-                        Err(BodyReadError::Transport(source)) => {
-                            if attempt >= policy.max_transport_retries {
-                                return Err(AuthError::new(
-                                    AuthErrorKind::AcquireFailed,
-                                    source.to_string(),
-                                ));
-                            }
-                            attempt = next_auth_transport_attempt(attempt)?;
-                            continue;
+                        Err(BodyReadError::Body(source)) => {
+                            return Err(AuthError::new(
+                                AuthErrorKind::ResponseBody,
+                                format!("auth response body read failed ({:?})", source.kind()),
+                            ));
                         }
                         Err(source @ BodyReadError::ContentLengthTooLarge { .. })
                         | Err(source @ BodyReadError::LimitExceeded { .. }) => {
@@ -267,8 +277,8 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                     };
 
                     return Ok(AuthHttpResponse {
-                        status: resp.status,
-                        headers: resp.headers,
+                        status: parts.status,
+                        headers: parts.headers,
                         body,
                     });
                 }
@@ -295,8 +305,11 @@ fn next_auth_transport_attempt(attempt: u32) -> Result<u32, AuthError> {
 mod test {
     use super::*;
     use bytes::Bytes;
+    use futures_core::Stream;
     use http::HeaderValue;
+    use std::pin::Pin;
     use std::sync::Arc;
+    use std::task::{Context, Poll};
 
     fn internal_requirement() -> crate::auth::AuthRequirement {
         crate::auth::AuthRequirement {
@@ -353,12 +366,12 @@ mod test {
     impl crate::transport::Transport for CountingTransport {
         fn send(
             &self,
-            _req: crate::transport::TransportRequest,
+            _req: http::Request<crate::body::DynBody>,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
                         Output = Result<
-                            crate::transport::TransportResponse,
+                            http::Response<crate::body::DynBody>,
                             crate::transport::TransportError,
                         >,
                     > + Send,
@@ -370,6 +383,47 @@ mod test {
                     crate::transport::TransportErrorKind::Other,
                     std::io::Error::other("unexpected transport invocation"),
                 ))
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct ResponseBodyFailingTransport(Arc<AtomicUsize>);
+
+    struct SingleErrorBody(bool);
+
+    impl Stream for SingleErrorBody {
+        type Item = Result<Bytes, crate::body::BodyError>;
+
+        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            if self.0 {
+                self.0 = false;
+                Poll::Ready(Some(Err(crate::body::BodyError::input())))
+            } else {
+                Poll::Ready(None)
+            }
+        }
+    }
+
+    impl crate::transport::Transport for ResponseBodyFailingTransport {
+        fn send(
+            &self,
+            _req: http::Request<crate::body::DynBody>,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<
+                            http::Response<crate::body::DynBody>,
+                            crate::transport::TransportError,
+                        >,
+                    > + Send,
+            >,
+        > {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                Ok(http::Response::new(crate::body::DynBody::from_byte_stream(
+                    SingleErrorBody(true),
+                )))
             })
         }
     }
@@ -386,8 +440,8 @@ mod test {
         );
     }
 
-    #[test]
-    fn reusable_auth_body_produces_fresh_attempts() {
+    #[tokio::test]
+    async fn reusable_auth_body_produces_fresh_attempts() {
         let mut body = crate::io::PreparedBody::reusable_bytes(
             Bytes::from_static(b"auth-body"),
             Some(HeaderValue::from_static(
@@ -405,12 +459,12 @@ mod test {
         );
 
         for _ in 0..2 {
-            match produce_auth_internal_body(&mut body).expect("attempt body") {
-                crate::io::AttemptBody::Bytes(bytes) => {
-                    assert_eq!(bytes, Bytes::from_static(b"auth-body"));
-                }
-                _ => panic!("reusable auth bytes must remain buffered attempt bytes"),
-            }
+            let produced = produce_auth_internal_body(&mut body).expect("attempt body");
+            let bytes = http_body_util::BodyExt::collect(produced.into_dyn_body())
+                .await
+                .expect("body")
+                .to_bytes();
+            assert_eq!(bytes, Bytes::from_static(b"auth-body"));
         }
     }
 
@@ -492,5 +546,39 @@ mod test {
         assert_eq!(error.kind, AuthErrorKind::InvalidConfiguration);
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert_eq!(sends.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn auth_internal_response_body_error_is_terminal() {
+        let sends = Arc::new(AtomicUsize::new(0));
+        let client = ApiClient::<InternalPreflightCx, _>::with_transport(
+            (),
+            Arc::new(AtomicUsize::new(0)),
+            ResponseBodyFailingTransport(sends.clone()),
+        );
+        let executor = ClientAuthHttpExecutor { client: &client };
+        let error = crate::auth::AuthHttpExecutor::send(
+            &executor,
+            crate::auth::AuthHttpRequest {
+                method: http::Method::POST,
+                url: "https://auth.example.com/token".parse().expect("url"),
+                headers: http::HeaderMap::new(),
+                body: crate::io::PreparedBody::reusable_bytes(
+                    Bytes::from_static(b"auth-body"),
+                    None,
+                ),
+                mode: crate::auth::AuthMode::SkipAuth,
+                policy: crate::auth::AuthInternalPolicy {
+                    max_transport_retries: 2,
+                    ..Default::default()
+                },
+            },
+        )
+        .await
+        .expect_err("post-header auth body failure must not retry");
+
+        assert_eq!(error.kind, AuthErrorKind::ResponseBody);
+        assert_eq!(sends.load(Ordering::SeqCst), 1);
+        assert!(!format!("{error:?} {error}").contains("auth-body"));
     }
 }

@@ -48,9 +48,8 @@ buffering queue, and body construction is lazy.
 
 `LimitedBody` is the reusable frame-aware limiter. It counts bytes in data
 frames, leaves trailers uncounted and unchanged, and becomes terminal after a
-typed over-limit error. The legacy transport byte-stream bridge remains in
-place until the later transport migration; it cannot represent trailers and
-must not be treated as the standard body path.
+typed over-limit error. Custom transports receive this frame-aware body
+directly through standard HTTP requests and responses.
 
 ## Test Artifacts
 

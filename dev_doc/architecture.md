@@ -22,9 +22,9 @@ Macros own syntax. Any new keyword, stanza, or DSL diagnostic belongs in `concor
 
 Core owns runtime behavior. Auth application, retry, rate-limit acquisition, transport, decode, and pagination execution live in `concord_core`.
 
-Auth rejection is a bounded runtime substage: transport metadata is classified first, hooks and rate-limit observe that transport metadata, then auth rejection handling runs before the normal retry decision. The accepted request-order invariants keep raw auth confined to `TransportRequest` and keep debug, hook, retry, and rate-limit metadata on the final sanitized logical request.
+Auth rejection is a bounded runtime substage: transport metadata is classified first, hooks and rate-limit observe that transport metadata, then auth rejection handling runs before the normal retry decision. The accepted request-order invariants keep raw auth confined to `http::Request<DynBody>` and keep debug, hook, retry, and rate-limit metadata on the final sanitized logical request.
 
-Pagination and page-request mutation belong in the logical-request phase before auth-collision validation, rate limiting, and transport materialization. Raw auth must remain confined to `TransportRequest`.
+Pagination and page-request mutation belong in the logical-request phase before auth-collision validation, rate limiting, and transport materialization. Raw auth must remain confined to `http::Request<DynBody>`.
 
 Code generation consumes resolved semantic data, not raw syntax. If codegen needs to know whether something came from `defaults { ... }` versus `default { ... }`, that is usually a design smell. Sema should resolve aliases, inheritance, profile names, and merge rules before codegen.
 

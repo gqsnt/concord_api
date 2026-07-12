@@ -3,7 +3,8 @@
 mod query_auth_redaction {
     use super::super::current_core::common::{
         CapturedTransportRequest, MockResponse, MockTransport, auth_policy,
-        buffered_endpoint_execute, buffered_endpoint_response_terminal, request_plan,
+        buffered_endpoint_execute, buffered_endpoint_response_terminal, capture_request,
+        request_plan,
     };
     use bytes::Bytes;
     #[cfg(feature = "transport-reqwest")]
@@ -11,15 +12,13 @@ mod query_auth_redaction {
     use concord_core::advanced::{
         AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
         AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
-        AuthRequirementId, AuthRetryReason, DebugSink, DecodedResponse, PreparedInternalAuth,
-        RequestMeta, RuntimeHooks, SanitizedHeaders, Transport, TransportError,
-        TransportErrorHookContext, TransportRequest, TransportResponse, apply_basic_credential,
-        apply_secret_credential,
+        AuthRequirementId, AuthRetryReason, DebugSink, DecodedResponse, DynBody,
+        PreparedInternalAuth, RequestMeta, RuntimeHooks, SanitizedHeaders, Transport,
+        TransportError, TransportErrorHookContext, apply_basic_credential, apply_secret_credential,
     };
     #[cfg(feature = "json")]
     use concord_core::advanced::{CredentialProvider, OAuth2ClientCredentialsProvider};
     use concord_core::advanced::{PreparedAuthCredential, RateLimitPlan};
-    use concord_core::auth::RequestExtensions;
     #[cfg(feature = "dangerous-raw-response")]
     use concord_core::dangerous::BuiltResponse;
     use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
@@ -390,29 +389,12 @@ mod query_auth_redaction {
     impl Transport for FailingTransport {
         fn send(
             &self,
-            req: TransportRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>
+            req: http::Request<DynBody>,
+        ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>>
         {
             let requests = self.requests.clone();
             Box::pin(async move {
-                let TransportRequest {
-                    meta,
-                    url,
-                    headers,
-                    body,
-                    timeout,
-                    rate_limit,
-                    extensions,
-                } = req;
-                requests.lock().await.push(CapturedTransportRequest {
-                    meta,
-                    url,
-                    headers,
-                    body,
-                    timeout,
-                    rate_limit,
-                    extensions,
-                });
+                requests.lock().await.push(capture_request(req).await?);
                 Err(TransportError::with_kind(
                     concord_core::advanced::TransportErrorKind::Connect,
                     std::io::Error::other("redaction transport failure"),
@@ -447,22 +429,23 @@ mod query_auth_redaction {
     #[test]
     fn response_header_debug_redacts_sensitive_names_case_insensitively() {
         let headers = sensitive_header_map();
-        let response = BuiltResponse {
-            meta: RequestMeta {
+        let mut message = http::Response::new(Bytes::from_static(b"body"));
+        *message.status_mut() = StatusCode::UNAUTHORIZED;
+        *message.headers_mut() = headers;
+        let response = BuiltResponse::from_http(
+            message,
+            RequestMeta {
                 endpoint: "HeaderRedaction",
                 method: Method::GET,
                 idempotent: true,
                 attempt: 0,
                 page_index: 0,
             },
-            url: "https://example.com/items?api_key=SECRET_QUERY_IN_URL"
+            "https://example.com/items?api_key=SECRET_QUERY_IN_URL"
                 .parse()
                 .expect("url"),
-            status: StatusCode::UNAUTHORIZED,
-            headers,
-            body: Bytes::from_static(b"body"),
-            rate_limit: RateLimitPlan::default(),
-        };
+            RateLimitPlan::default(),
+        );
 
         let output = format!("{response:?}");
         assert_all_secrets_absent(&output, &sensitive_header_sentinels());
@@ -503,19 +486,20 @@ mod query_auth_redaction {
             attempt: 2,
             page_index: 3,
         };
-        let built = BuiltResponse {
-            meta: meta.clone(),
-            url: "https://example.com/debug?api_key=SECRET_RESPONSE_QUERY"
+        let mut message = http::Response::new(Bytes::from_static(b"SECRET_BODY_NOT_RENDERED"));
+        *message.status_mut() = StatusCode::OK;
+        *message.headers_mut() = sensitive_header_map();
+        let built = BuiltResponse::from_http(
+            message,
+            meta.clone(),
+            "https://example.com/debug?api_key=SECRET_RESPONSE_QUERY"
                 .parse()
                 .expect("url"),
-            status: StatusCode::OK,
-            headers: sensitive_header_map(),
-            body: Bytes::from_static(b"SECRET_BODY_NOT_RENDERED"),
-            rate_limit: RateLimitPlan::default(),
-        };
+            RateLimitPlan::default(),
+        );
         let decoded = DecodedResponse {
             meta,
-            url: built.url.clone(),
+            url: built.url().clone(),
             status: StatusCode::OK,
             headers: sensitive_header_map(),
             value: "visible-value",
@@ -843,24 +827,23 @@ mod query_auth_redaction {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind local port");
         let port = listener.local_addr().expect("local addr").port();
         drop(listener);
-        let url = format!("http://127.0.0.1:{port}/items?api_key={QUERY_TRANSPORT_SECRET}")
-            .parse()
-            .expect("url");
-        let req = TransportRequest {
-            meta: RequestMeta {
-                endpoint: "ReqwestFailure",
-                method: Method::GET,
-                idempotent: true,
-                attempt: 0,
-                page_index: 0,
-            },
-            url,
-            headers: HeaderMap::new(),
-            body: concord_core::advanced::TransportRequestBody::Empty,
-            timeout: Some(Duration::from_secs(1)),
-            rate_limit: RateLimitPlan::default(),
-            extensions: RequestExtensions::default(),
-        };
+        let url: url::Url =
+            format!("http://127.0.0.1:{port}/items?api_key={QUERY_TRANSPORT_SECRET}")
+                .parse()
+                .expect("url");
+        let mut req = http::Request::new(DynBody::empty());
+        *req.uri_mut() = url.as_str().parse().expect("URI");
+        req.extensions_mut()
+            .insert(concord_core::advanced::RequestExecutionContext {
+                meta: RequestMeta {
+                    endpoint: "ReqwestFailure",
+                    method: Method::GET,
+                    idempotent: true,
+                    attempt: 0,
+                    page_index: 0,
+                },
+                timeout: Some(Duration::from_secs(1)),
+            });
         let err = match ReqwestTransport::new(
             reqwest::Client::builder()
                 .build()
@@ -1455,7 +1438,7 @@ mod query_auth_redaction {
         let requests = sent.requests().await;
         assert_eq!(requests.len(), 2);
         assert_eq!(
-            requests[0].extensions.auth_plan, requests[1].extensions.auth_plan,
+            requests[0].auth_plan, requests[1].auth_plan,
             "credential refresh must reuse the unchanged placement plan"
         );
         assert_eq!(
@@ -1638,11 +1621,11 @@ mod query_auth_redaction {
         assert_eq!(internal_header, INTERNAL_AUTH_SECRET);
         assert_secret_absent(&format!("{:?}", requests[0]), INTERNAL_AUTH_SECRET);
         assert_secret_absent(
-            &format!("{:?}", requests[0].extensions),
+            &format!("{:?}", requests[0].auth_plan),
             INTERNAL_AUTH_SECRET,
         );
         assert_secret_absent(&format!("{:?}", requests[1]), INTERNAL_AUTH_SECRET);
-        assert_eq!(requests[0].extensions.auth_plan.slots.len(), 1);
+        assert_eq!(requests[0].auth_plan.slots.len(), 1);
         Ok(())
     }
 

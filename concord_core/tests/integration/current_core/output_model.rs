@@ -71,9 +71,9 @@ async fn execute_raw_returns_classified_raw_response() -> Result<(), ApiClientEr
         .execute_raw_response()
         .await?;
 
-    assert_eq!(response.status, StatusCode::OK);
-    assert_eq!(response.meta.endpoint, "Text");
-    assert_eq!(response.url.as_str(), "https://example.com/text");
-    assert_eq!(response.body, Bytes::from_static(b"raw"));
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.meta().endpoint, "Text");
+    assert_eq!(response.url().as_str(), "https://example.com/text");
+    assert_eq!(response.body(), &Bytes::from_static(b"raw"));
     Ok(())
 }

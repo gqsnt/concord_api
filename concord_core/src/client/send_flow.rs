@@ -26,15 +26,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
         stream_request_limit: Option<usize>,
-    ) -> Result<TransportResponse, ApiClientError> {
+    ) -> Result<AttemptResponse, ApiClientError> {
+        let request_context = built.context();
         let rate_limit_meta = RateLimitContext {
-            endpoint: built.meta.endpoint,
-            method: &built.meta.method,
+            endpoint: request_context.meta.endpoint,
+            method: &request_context.meta.method,
             url: send_ctx.url_str,
-            url_host: built.url.host_str(),
-            attempt: built.meta.attempt,
-            page_index: built.meta.page_index,
-            idempotent: built.meta.idempotent,
+            url_host: built.message.uri().host(),
+            attempt: request_context.meta.attempt,
+            page_index: request_context.meta.page_index,
+            idempotent: request_context.meta.idempotent,
             max_cooldown: self.runtime_state.max_rate_limit_cooldown(),
             plan: &built.rate_limit,
         };
@@ -51,9 +52,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     err,
                 )
             })?;
-        if built.body.is_stream()
+        if built.stream_like
             && let Some(limit) = stream_request_limit
-            && let Some(actual) = built.body.size_hint().upper()
+            && let Some(actual) = http_body::Body::size_hint(built.message.body()).upper()
             && actual > limit as u64
         {
             return Err(ApiClientError::RequestBodyLimitExceeded {
@@ -63,19 +64,20 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             });
         }
         self.debug_planned_request(send_ctx.dbg, &built, send_ctx.url_str);
+        let request_context = built.context();
         let pre_send_meta = HookMeta {
-            endpoint: built.meta.endpoint,
-            method: &built.meta.method,
+            endpoint: request_context.meta.endpoint,
+            method: &request_context.meta.method,
             url: send_ctx.url_str,
-            attempt: built.meta.attempt,
-            page_index: built.meta.page_index,
-            idempotent: built.meta.idempotent,
+            attempt: request_context.meta.attempt,
+            page_index: request_context.meta.page_index,
+            idempotent: request_context.meta.idempotent,
         };
         self.runtime_state
             .hooks()
             .pre_send(PreSendHookContext {
                 meta: pre_send_meta,
-                headers: crate::debug::SanitizedHeaders::new(&built.headers),
+                headers: crate::debug::SanitizedHeaders::new(built.message.headers()),
             })
             .await?;
         self.send_built_request(
@@ -130,13 +132,20 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         auth_materials: &[crate::auth::AuthTransportMaterial],
         ctx: &ErrorContext,
         stream_request_limit: Option<usize>,
-    ) -> Result<TransportResponse, ApiClientError> {
-        let endpoint = built.meta.endpoint;
-        let method = built.meta.method.clone();
-        let attempt = built.meta.attempt;
-        let page_index = built.meta.page_index;
-        let idempotent = built.meta.idempotent;
-        let request_url = built.url.clone();
+    ) -> Result<AttemptResponse, ApiClientError> {
+        let request_context = built.context();
+        let endpoint = request_context.meta.endpoint;
+        let method = request_context.meta.method.clone();
+        let attempt = request_context.meta.attempt;
+        let page_index = request_context.meta.page_index;
+        let idempotent = request_context.meta.idempotent;
+        let request_url = url::Url::parse(built.message.uri().to_string().as_str())
+            .expect("built request URI was validated during construction");
+        let response_context = crate::transport::ResponseContext {
+            meta: request_context.meta.clone(),
+            request_url,
+            rate_limit: built.rate_limit.clone(),
+        };
         let transport_req = crate::transport::materialize_transport_request(
             built,
             auth_materials,
@@ -148,33 +157,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         })?;
 
         match self.transport.send(transport_req).await {
-            Ok(mut resp) => {
-                resp.url = request_url;
-                Ok(resp)
-            }
+            Ok(message) => Ok(AttemptResponse {
+                message,
+                context: response_context,
+            }),
             Err(e) => {
-                if let Some(_codec_error) =
-                    e.source_error().downcast_ref::<crate::codec::CodecError>()
-                {
-                    return Err(ApiClientError::Codec {
-                        ctx: ctx.clone(),
-                        source: Box::new(crate::codec::CodecError::new(
-                            "request body encoding failed",
-                        )),
-                    });
-                }
-                if let Some(limit_error) = e
-                    .source_error()
-                    .downcast_ref::<crate::transport::StreamBodyLimitError>()
-                    && matches!(
-                        limit_error.direction,
-                        crate::transport::StreamLimitDirection::Request
-                    )
+                if let Some(body_error) = e.body_error()
+                    && body_error.kind() == crate::body::BodyErrorKind::LimitExceeded
                 {
                     return Err(ApiClientError::RequestBodyLimitExceeded {
                         ctx: ctx.clone(),
-                        limit: limit_error.limit,
-                        actual: limit_error.seen as u64,
+                        limit: body_error.limit().unwrap_or_default() as usize,
+                        actual: body_error.observed().unwrap_or_default(),
                     });
                 }
                 let hook_meta = HookMeta {
@@ -205,7 +199,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn classify_transport_response(
         &self,
-        mut resp: TransportResponse,
+        resp: AttemptResponse,
         skip_body: bool,
         dbg: DebugLevel,
         dbg_verbose: bool,
@@ -216,35 +210,37 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
         let rate_limit_action = self.observe_rate_limit_response(observe_ctx, ctx).await?;
-        match classify_status(resp.status) {
+        match classify_status(resp.status()) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
                     self.debug_sink
-                        .response_status(dbg, resp.status, url_str, false);
+                        .response_status(dbg, resp.status(), url_str, false);
                     self.debug_sink
-                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(&resp.headers));
+                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(resp.headers()));
                 }
                 Err(ApiClientError::HttpStatus {
                     ctx: ctx.clone(),
-                    status: resp.status,
-                    headers: Box::new(crate::redaction::sanitize_header_map(&resp.headers)),
+                    status: resp.status(),
+                    headers: Box::new(crate::redaction::sanitize_header_map(resp.headers())),
                     rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
                         .then_some(Box::new(rate_limit_action)),
                 })
             }
             ResponseClass::Success => {
+                let (parts, mut body) = resp.message.into_parts();
+                let content_length = content_length(&parts.headers);
                 let bytes = if skip_body {
                     Bytes::new()
                 } else {
                     read_body_all_limited(
-                        resp.body.as_mut(),
-                        resp.content_length,
+                        &mut body,
+                        content_length,
                         self.runtime_state.max_response_body_bytes(),
                     )
                     .await
                     .map_err(|e| match e {
-                        BodyReadError::Transport(source) => {
-                            ApiClientError::response_body_read_transport_error(ctx.clone(), source)
+                        BodyReadError::Body(source) => {
+                            ApiClientError::response_body_error(ctx.clone(), source)
                         }
                         BodyReadError::ContentLengthTooLarge { limit, actual } => {
                             ApiClientError::ResponseTooLarge {
@@ -261,14 +257,10 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         }
                     })?
                 };
-                Ok(BuiltResponse {
-                    meta: resp.meta,
-                    url: resp.url,
-                    status: resp.status,
-                    headers: resp.headers,
-                    body: bytes,
-                    rate_limit: resp.rate_limit,
-                })
+                Ok(BuiltResponse::new(
+                    http::Response::from_parts(parts, bytes),
+                    resp.context,
+                ))
             }
         }
     }
@@ -303,7 +295,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
         response_limit: Option<usize>,
-    ) -> Result<TransportResponse, ApiClientError> {
+    ) -> Result<AttemptResponse, ApiClientError> {
         let transport_resp = self
             .acquire_rate_limit_and_send(
                 built,
@@ -328,29 +320,29 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn observe_and_classify_transport_response(
         &self,
-        resp: TransportResponse,
+        resp: AttemptResponse,
         dbg: DebugLevel,
         dbg_verbose: bool,
         _dbg_vv: bool,
         url_str: &str,
         ctx: &ErrorContext,
         response_limit: Option<usize>,
-    ) -> Result<TransportResponse, ApiClientError> {
+    ) -> Result<AttemptResponse, ApiClientError> {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
         let rate_limit_action = self.observe_rate_limit_response(observe_ctx, ctx).await?;
-        match classify_status(resp.status) {
+        match classify_status(resp.status()) {
             ResponseClass::HttpStatusError => {
                 if dbg_verbose {
                     self.debug_sink
-                        .response_status(dbg, resp.status, url_str, false);
+                        .response_status(dbg, resp.status(), url_str, false);
                     self.debug_sink
-                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(&resp.headers));
+                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(resp.headers()));
                 }
                 Err(ApiClientError::HttpStatus {
                     ctx: ctx.clone(),
-                    status: resp.status,
-                    headers: Box::new(crate::redaction::sanitize_header_map(&resp.headers)),
+                    status: resp.status(),
+                    headers: Box::new(crate::redaction::sanitize_header_map(resp.headers())),
                     rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
                         .then_some(Box::new(rate_limit_action)),
                 })
@@ -358,11 +350,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             ResponseClass::Success => {
                 if dbg_verbose {
                     self.debug_sink
-                        .response_status(dbg, resp.status, url_str, true);
+                        .response_status(dbg, resp.status(), url_str, true);
                     self.debug_sink
-                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(&resp.headers));
+                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(resp.headers()));
                 }
-                if let (Some(limit), Some(actual)) = (response_limit, resp.content_length)
+                if let (Some(limit), Some(actual)) =
+                    (response_limit, content_length(resp.headers()))
                     && actual > limit as u64
                 {
                     return Err(ApiClientError::ResponseTooLarge {
@@ -377,20 +370,20 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     pub(super) fn response_observation_ctx<'a>(
-        resp: &'a TransportResponse,
+        resp: &'a AttemptResponse,
         url_str: &'a str,
     ) -> ResponseObservationCtx<'a> {
         ResponseObservationCtx {
-            endpoint: resp.meta.endpoint,
-            method: &resp.meta.method,
+            endpoint: resp.context.meta.endpoint,
+            method: &resp.context.meta.method,
             url: url_str,
-            url_host: resp.url.host_str(),
-            attempt: resp.meta.attempt,
-            page_index: resp.meta.page_index,
-            idempotent: resp.meta.idempotent,
-            plan: &resp.rate_limit,
-            status: resp.status,
-            headers: &resp.headers,
+            url_host: resp.context.request_url.host_str(),
+            attempt: resp.context.meta.attempt,
+            page_index: resp.context.meta.page_index,
+            idempotent: resp.context.meta.idempotent,
+            plan: &resp.context.rate_limit,
+            status: resp.status(),
+            headers: resp.headers(),
         }
     }
 
@@ -404,6 +397,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .map(|base| base.trim().eq_ignore_ascii_case(expected))
             .unwrap_or(false)
     }
+}
+
+fn content_length(headers: &http::HeaderMap) -> Option<u64> {
+    headers
+        .get(http::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
 }
 
 fn wrap_rate_limit_error(

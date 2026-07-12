@@ -1,10 +1,10 @@
 use super::common::{TestAuthVars, TestCx, auth_policy, retry_policy_for_statuses};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, ContentType, DebugSink, OctetStream, PostResponseHookContext,
+    AuthPlacement, ContentType, DebugSink, DynBody, OctetStream, PostResponseHookContext,
     PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
     RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks, Transport,
-    TransportBody, TransportError, TransportErrorKind, TransportRequest, TransportResponse,
+    TransportError, TransportErrorKind,
 };
 use concord_core::internal::{
     EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy,
@@ -245,8 +245,8 @@ impl StreamTransport {
 impl Transport for StreamTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        _req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let events = self.events.clone();
         let responses = self.responses.clone();
         let send_count = self.send_count.clone();
@@ -264,15 +264,16 @@ impl Transport for StreamTransport {
                 )
             })?;
             let body = ChunkBody::new(events.clone(), response.chunks, response.poll_flag);
-            Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
-                status: response.status,
-                headers: response.headers,
-                content_length: response.content_length,
-                rate_limit: req.rate_limit,
-                body: Box::new(body),
-            })
+            let mut result = http::Response::new(DynBody::from_byte_stream(body));
+            *result.status_mut() = response.status;
+            *result.headers_mut() = response.headers;
+            if let Some(length) = response.content_length {
+                result.headers_mut().insert(
+                    http::header::CONTENT_LENGTH,
+                    HeaderValue::from_str(&length.to_string()).expect("content length"),
+                );
+            }
+            Ok(result)
         })
     }
 }
@@ -297,23 +298,21 @@ impl ChunkBody {
     }
 }
 
-impl TransportBody for ChunkBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        let events = self.events.clone();
-        let poll_flag = self.poll_flag.clone();
-        let chunk = self.chunks.pop_front();
-        Box::pin(async move {
-            if let Some(flag) = poll_flag {
-                flag.store(true, Ordering::SeqCst);
-            }
-            events
-                .lock()
-                .expect("events lock")
-                .push("stream_chunk_poll".to_string());
-            Ok(chunk)
-        })
+impl futures_core::Stream for ChunkBody {
+    type Item = Result<Bytes, concord_core::advanced::BodyError>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        if let Some(flag) = &self.poll_flag {
+            flag.store(true, Ordering::SeqCst);
+        }
+        self.events
+            .lock()
+            .expect("events lock")
+            .push("stream_chunk_poll".to_string());
+        std::task::Poll::Ready(self.chunks.pop_front().map(Ok))
     }
 }
 

@@ -18,7 +18,7 @@ pub use errors::{
 pub use future::AuthFuture;
 pub use http::{
     AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode,
-    AuthRequirementId, RequestExtensions,
+    AuthRequirementId,
 };
 pub use ids::{AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential};

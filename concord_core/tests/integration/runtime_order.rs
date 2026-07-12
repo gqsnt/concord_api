@@ -1,4 +1,4 @@
-use concord_core::advanced::{RateLimitPlan, TransportRequest, TransportRequestBody};
+use concord_core::advanced::{DynBody, RequestExecutionContext};
 use concord_core::transport::RequestMeta;
 
 use crate::support;
@@ -20,12 +20,14 @@ async fn mock_transport_records_send_events() {
         .await
         .expect("mock response");
 
-    assert_eq!(response.status, http::StatusCode::OK);
+    assert_eq!(response.status(), http::StatusCode::OK);
     support::assert_event_order(&transport.events.snapshot(), &["transport_send:Ping"]);
 }
 
-fn request(endpoint: &'static str) -> TransportRequest {
-    TransportRequest {
+fn request(endpoint: &'static str) -> http::Request<DynBody> {
+    let mut request = http::Request::new(DynBody::empty());
+    *request.uri_mut() = "https://example.com/test".parse().expect("valid URI");
+    request.extensions_mut().insert(RequestExecutionContext {
         meta: RequestMeta {
             endpoint,
             method: http::Method::GET,
@@ -33,11 +35,7 @@ fn request(endpoint: &'static str) -> TransportRequest {
             attempt: 0,
             page_index: 0,
         },
-        url: "https://example.com/test".parse().expect("valid url"),
-        headers: http::HeaderMap::new(),
-        body: TransportRequestBody::Empty,
         timeout: None,
-        rate_limit: RateLimitPlan::new(),
-        extensions: Default::default(),
-    }
+    });
+    request
 }

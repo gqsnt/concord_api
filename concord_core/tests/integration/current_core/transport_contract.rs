@@ -1,7 +1,7 @@
 #![allow(dead_code, unused_imports)]
 
 use super::common::{
-    GateTransport, MockOutcome, MockResponse, MockTransport, TestAuthVars, TestCx,
+    CapturedBody, GateTransport, MockOutcome, MockResponse, MockTransport, TestAuthVars, TestCx,
     buffered_endpoint_execute, buffered_endpoint_response_terminal, client, request_plan,
 };
 use crate::support::assert_error_chain_does_not_contain_any;
@@ -10,8 +10,8 @@ use concord_core::advanced::{RetryBackoff, RetryConfig, RetryIdempotency, Stream
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{Format, PreparedBody, RequestPlan, ResolvedPolicy, RetrySetting};
 use concord_core::prelude::{ApiClient, ApiClientError, Endpoint, ReusableEndpoint, Text};
-use concord_core::transport::{TransportErrorKind, TransportRequestBody};
-use http::{HeaderValue, Method, StatusCode, header::CONTENT_TYPE};
+use concord_core::transport::TransportErrorKind;
+use http::{HeaderMap, HeaderValue, Method, StatusCode, header::CONTENT_TYPE};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -35,7 +35,7 @@ fn redirect_test_lock() -> &'static tokio::sync::Mutex<()> {
 }
 
 #[derive(Clone)]
-enum TransportBody {
+enum FixtureBody {
     Empty,
     Bytes(Bytes),
     Stream(Bytes),
@@ -47,7 +47,7 @@ struct TransportContractEndpoint {
     method: Method,
     path: &'static str,
     policy: ResolvedPolicy,
-    body: TransportBody,
+    body: FixtureBody,
 }
 
 impl TransportContractEndpoint {
@@ -56,7 +56,7 @@ impl TransportContractEndpoint {
         method: Method,
         path: &'static str,
         policy: ResolvedPolicy,
-        body: TransportBody,
+        body: FixtureBody,
     ) -> Self {
         Self {
             name,
@@ -78,7 +78,7 @@ impl TransportContractEndpoint {
             method,
             path,
             policy,
-            TransportBody::Bytes(Bytes::from_static(b"{\"transport\":true}")),
+            FixtureBody::Bytes(Bytes::from_static(b"{\"transport\":true}")),
         )
     }
 
@@ -93,7 +93,7 @@ impl TransportContractEndpoint {
             method,
             path,
             policy,
-            TransportBody::Stream(Bytes::from_static(b"stream-contract")),
+            FixtureBody::Stream(Bytes::from_static(b"stream-contract")),
         )
     }
 
@@ -103,8 +103,247 @@ impl TransportContractEndpoint {
         path: &'static str,
         policy: ResolvedPolicy,
     ) -> Self {
-        Self::new(name, method, path, policy, TransportBody::Empty)
+        Self::new(name, method, path, policy, FixtureBody::Empty)
     }
+}
+
+#[derive(Clone, Debug)]
+struct SafeRequestExtension(&'static str);
+
+#[derive(Clone, Debug)]
+struct SafeResponseExtension(&'static str);
+
+struct FrameStream {
+    frames: std::collections::VecDeque<http_body::Frame<Bytes>>,
+}
+
+impl futures_core::Stream for FrameStream {
+    type Item = Result<http_body::Frame<Bytes>, concord_core::advanced::BodyError>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::task::Poll::Ready(self.frames.pop_front().map(Ok))
+    }
+}
+
+#[derive(Clone)]
+struct StandardContractTransport {
+    sends: Arc<AtomicUsize>,
+}
+
+impl concord_core::advanced::Transport for StandardContractTransport {
+    fn send(
+        &self,
+        mut request: http::Request<concord_core::advanced::DynBody>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        http::Response<concord_core::advanced::DynBody>,
+                        concord_core::advanced::TransportError,
+                    >,
+                > + Send,
+        >,
+    > {
+        use http_body::Body as _;
+        use http_body_util::BodyExt as _;
+
+        self.sends.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            assert_eq!(request.method(), Method::PATCH);
+            assert_eq!(request.uri(), "https://example.com/contract?public=1");
+            assert_eq!(request.version(), http::Version::HTTP_2);
+            assert_eq!(request.headers().get("x-public").unwrap(), "visible");
+            assert_eq!(
+                request
+                    .extensions()
+                    .get::<SafeRequestExtension>()
+                    .unwrap()
+                    .0,
+                "request-extension"
+            );
+            assert_eq!(request.body().size_hint().exact(), Some(3));
+
+            let data = request
+                .body_mut()
+                .frame()
+                .await
+                .expect("request data")?
+                .into_data()
+                .expect("data frame");
+            assert_eq!(data, Bytes::from_static(b"abc"));
+            let trailers = request
+                .body_mut()
+                .frame()
+                .await
+                .expect("request trailers")?
+                .into_trailers()
+                .expect("trailer frame");
+            assert_eq!(trailers.get("x-request-trailer").unwrap(), "done");
+
+            let mut response_trailers = HeaderMap::new();
+            response_trailers.insert("x-response-trailer", HeaderValue::from_static("done"));
+            let response_body = concord_core::advanced::DynBody::from_frame_stream(FrameStream {
+                frames: vec![
+                    http_body::Frame::data(Bytes::from_static(b"xyz")),
+                    http_body::Frame::trailers(response_trailers),
+                ]
+                .into(),
+            })
+            .with_size_hint(http_body::SizeHint::with_exact(3));
+            let mut response = http::Response::new(response_body);
+            *response.status_mut() = StatusCode::CREATED;
+            *response.version_mut() = http::Version::HTTP_3;
+            response
+                .headers_mut()
+                .insert("x-response", HeaderValue::from_static("visible"));
+            response
+                .extensions_mut()
+                .insert(SafeResponseExtension("response-extension"));
+            Ok(response)
+        })
+    }
+}
+
+#[tokio::test]
+async fn standard_custom_transport_preserves_messages_frames_trailers_hints_and_extensions() {
+    use http_body::Body as _;
+    use http_body_util::BodyExt as _;
+
+    let mut request_trailers = HeaderMap::new();
+    request_trailers.insert("x-request-trailer", HeaderValue::from_static("done"));
+    let body = concord_core::advanced::DynBody::from_frame_stream(FrameStream {
+        frames: vec![
+            http_body::Frame::data(Bytes::from_static(b"abc")),
+            http_body::Frame::trailers(request_trailers),
+        ]
+        .into(),
+    })
+    .with_size_hint(http_body::SizeHint::with_exact(3));
+    let mut request = http::Request::new(body);
+    *request.method_mut() = Method::PATCH;
+    *request.uri_mut() = "https://example.com/contract?public=1"
+        .parse()
+        .expect("URI");
+    *request.version_mut() = http::Version::HTTP_2;
+    request
+        .headers_mut()
+        .insert("x-public", HeaderValue::from_static("visible"));
+    request
+        .extensions_mut()
+        .insert(SafeRequestExtension("request-extension"));
+
+    let sends = Arc::new(AtomicUsize::new(0));
+    let transport = StandardContractTransport {
+        sends: sends.clone(),
+    };
+    let mut response = concord_core::advanced::Transport::send(&transport, request)
+        .await
+        .expect("standard transport response");
+
+    assert_eq!(sends.load(Ordering::SeqCst), 1);
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_eq!(response.version(), http::Version::HTTP_3);
+    assert_eq!(response.headers().get("x-response").unwrap(), "visible");
+    assert_eq!(
+        response
+            .extensions()
+            .get::<SafeResponseExtension>()
+            .unwrap()
+            .0,
+        "response-extension"
+    );
+    assert_eq!(response.body().size_hint().exact(), Some(3));
+    assert_eq!(
+        response
+            .body_mut()
+            .frame()
+            .await
+            .expect("response data")
+            .expect("body result")
+            .into_data()
+            .expect("data frame"),
+        Bytes::from_static(b"xyz")
+    );
+    let trailers = response
+        .body_mut()
+        .frame()
+        .await
+        .expect("response trailers")
+        .expect("body result")
+        .into_trailers()
+        .expect("trailer frame");
+    assert_eq!(trailers.get("x-response-trailer").unwrap(), "done");
+}
+
+#[derive(Clone, Debug)]
+struct UnsupportedCapability;
+
+struct PollFlagStream {
+    polled: Arc<AtomicBool>,
+}
+
+impl futures_core::Stream for PollFlagStream {
+    type Item = Result<Bytes, concord_core::advanced::BodyError>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.polled.store(true, Ordering::SeqCst);
+        std::task::Poll::Ready(None)
+    }
+}
+
+#[derive(Clone)]
+struct CapabilityRejectingTransport;
+
+impl concord_core::advanced::Transport for CapabilityRejectingTransport {
+    fn send(
+        &self,
+        request: http::Request<concord_core::advanced::DynBody>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        http::Response<concord_core::advanced::DynBody>,
+                        concord_core::advanced::TransportError,
+                    >,
+                > + Send,
+        >,
+    > {
+        Box::pin(async move {
+            if request
+                .extensions()
+                .get::<UnsupportedCapability>()
+                .is_some()
+            {
+                return Err(concord_core::advanced::TransportError::with_kind(
+                    TransportErrorKind::Request,
+                    std::io::Error::other("unsupported request capability"),
+                ));
+            }
+            Ok(http::Response::new(concord_core::advanced::DynBody::empty()))
+        })
+    }
+}
+
+#[tokio::test]
+async fn custom_transport_rejects_unsupported_extension_before_body_polling() {
+    let polled = Arc::new(AtomicBool::new(false));
+    let mut request = http::Request::new(concord_core::advanced::DynBody::from_byte_stream(
+        PollFlagStream {
+            polled: polled.clone(),
+        },
+    ));
+    request.extensions_mut().insert(UnsupportedCapability);
+
+    concord_core::advanced::Transport::send(&CapabilityRejectingTransport, request)
+        .await
+        .expect_err("unsupported capability must fail");
+    assert!(!polled.load(Ordering::SeqCst));
 }
 
 impl Endpoint<TestCx> for TransportContractEndpoint {
@@ -128,14 +367,14 @@ impl ReusableEndpoint<TestCx> for TransportContractEndpoint {
             None,
         );
         match &self.body {
-            TransportBody::Empty => {}
-            TransportBody::Bytes(body) => {
+            FixtureBody::Empty => {}
+            FixtureBody::Bytes(body) => {
                 plan.body = PreparedBody::reusable_bytes(
                     body.clone(),
                     Some(HeaderValue::from_static("application/json")),
                 );
             }
-            TransportBody::Stream(body) => {
+            FixtureBody::Stream(body) => {
                 plan.body = PreparedBody::from_stream_body(
                     StreamBody::from_bytes(body.clone()),
                     Some(HeaderValue::from_static("application/octet-stream")),
@@ -229,7 +468,7 @@ fn assert_query_pairs(url: &url::Url, expected: &[(&str, &str)]) {
     }
 }
 
-fn assert_bytes_body(body: &TransportRequestBody, expected: &[u8]) {
+fn assert_bytes_body(body: &CapturedBody, expected: &[u8]) {
     match body.as_bytes() {
         Some(actual) if actual.as_ref() == expected => {}
         Some(_) => panic!("transport body bytes did not match the expected payload"),
@@ -439,7 +678,7 @@ async fn finalized_request_metadata_and_materialization_are_preserved_through_a_
 
     let raw = handle.await.expect("request task should complete");
     assert_eq!(
-        raw.expect("transport request should succeed").status,
+        raw.expect("transport request should succeed").status(),
         StatusCode::OK
     );
 }
@@ -592,8 +831,8 @@ async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
         .await
         .expect("caller-owned reqwest client should follow redirects");
 
-    assert_eq!(response.status, StatusCode::OK);
-    assert_eq!(response.body.as_ref(), b"redirected");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.body().as_ref(), b"redirected");
     assert_eq!(first_hits.load(Ordering::SeqCst), 1);
     assert_eq!(second_hits.load(Ordering::SeqCst), 1);
     assert_eq!(first_requests.lock().await.len(), 1);
@@ -611,8 +850,7 @@ async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
 
 #[cfg(feature = "dangerous-raw-response")]
 #[tokio::test]
-async fn stream_request_body_remains_non_replayable_at_the_transport_boundary()
--> Result<(), ApiClientError> {
+async fn stream_request_body_reaches_the_standard_transport_once() -> Result<(), ApiClientError> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -629,7 +867,7 @@ async fn stream_request_body_remains_non_replayable_at_the_transport_boundary()
 
     let response = client.request(endpoint).execute_raw_response().await?;
 
-    assert_eq!(response.status, StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(sent.sent_count().await, 1);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
@@ -638,8 +876,7 @@ async fn stream_request_body_remains_non_replayable_at_the_transport_boundary()
     assert_eq!(request.meta.method, Method::POST);
     assert_eq!(request.meta.attempt, 0);
     assert_eq!(request.meta.page_index, 0);
-    assert!(request.body.is_stream());
-    assert!(request.body.as_bytes().is_none());
+    assert!(request.body.as_bytes().is_some());
     assert_header_value(
         &request.headers,
         CONTENT_TYPE.as_str(),
@@ -663,7 +900,7 @@ async fn response_metadata_is_preserved_on_raw_and_decoded_surfaces() -> Result<
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
     let endpoint = TransportContractEndpoint::empty(
-        "TransportResponse",
+        "StandardResponse",
         Method::GET,
         "/transport/response",
         ResolvedPolicy::default(),
@@ -676,21 +913,21 @@ async fn response_metadata_is_preserved_on_raw_and_decoded_surfaces() -> Result<
         decoded.url().as_str(),
         "https://example.com/transport/response"
     );
-    assert_eq!(decoded.meta().endpoint, "TransportResponse");
+    assert_eq!(decoded.meta().endpoint, "StandardResponse");
     assert_eq!(decoded.meta().method, Method::GET);
     assert_eq!(decoded.meta().attempt, 0);
     assert_eq!(decoded.meta().page_index, 0);
     assert_eq!(decoded.value(), "decoded-value");
 
     let raw = client.request(endpoint).execute_raw_response().await?;
-    assert_eq!(raw.status, StatusCode::OK);
-    assert_eq!(raw.headers[CONTENT_TYPE], "text/plain");
-    assert_eq!(raw.url.as_str(), "https://example.com/transport/response");
-    assert_eq!(raw.meta.endpoint, "TransportResponse");
-    assert_eq!(raw.meta.method, Method::GET);
-    assert_eq!(raw.meta.attempt, 0);
-    assert_eq!(raw.meta.page_index, 0);
-    assert_eq!(raw.body, Bytes::from_static(b"raw-value"));
+    assert_eq!(raw.status(), StatusCode::OK);
+    assert_eq!(raw.headers()[CONTENT_TYPE], "text/plain");
+    assert_eq!(raw.url().as_str(), "https://example.com/transport/response");
+    assert_eq!(raw.meta().endpoint, "StandardResponse");
+    assert_eq!(raw.meta().method, Method::GET);
+    assert_eq!(raw.meta().attempt, 0);
+    assert_eq!(raw.meta().page_index, 0);
+    assert_eq!(raw.body(), &Bytes::from_static(b"raw-value"));
     assert_eq!(sent.sent_count().await, 2);
     Ok(())
 }
@@ -787,7 +1024,7 @@ impl TransportContractEndpoint {
             self.policy.clone(),
             None,
         );
-        if let TransportBody::Bytes(body) = &self.body {
+        if let FixtureBody::Bytes(body) = &self.body {
             plan.body = PreparedBody::reusable_bytes(
                 body.clone(),
                 Some(HeaderValue::from_static("application/json")),

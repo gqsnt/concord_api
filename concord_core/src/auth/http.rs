@@ -132,8 +132,3 @@ pub trait AuthHttpExecutor: Send + Sync {
         req: AuthHttpRequest,
     ) -> AuthFuture<'a, Result<AuthHttpResponse, AuthError>>;
 }
-
-#[derive(Clone, Debug, Default)]
-pub struct RequestExtensions {
-    pub auth_plan: crate::auth::AuthPlacementPlan,
-}

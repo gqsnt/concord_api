@@ -800,7 +800,7 @@ async fn execute_raw_cancellation_matches_raw_contract() {
         .await
         .expect("later raw task should join")
         .expect("later raw request should complete");
-    assert_eq!(raw.status, StatusCode::OK);
+    assert_eq!(raw.status(), StatusCode::OK);
     assert_eq!(transport.sent_count().await, 2);
     assert_events_do_not_contain(&events, &body_sentinels()).await;
 }
@@ -867,7 +867,7 @@ async fn execute_raw_cancellation_during_rate_limit_acquire_does_not_send_transp
         .await
         .expect("later raw task should join")
         .expect("later raw request should complete");
-    assert_eq!(raw.status, StatusCode::OK);
+    assert_eq!(raw.status(), StatusCode::OK);
     assert_eq!(rate_limiter.acquire_started.load(AtomicOrdering::SeqCst), 2);
     assert_eq!(transport.sent_count().await, 1);
 }

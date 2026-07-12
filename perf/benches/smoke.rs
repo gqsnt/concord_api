@@ -1,16 +1,16 @@
 use bytes::Bytes;
-use concord_core::advanced::{
-    RateLimitPlan, RequestMeta, Transport, TransportRequest, TransportRequestBody,
-};
-use concord_core::auth::RequestExtensions;
+use concord_core::advanced::{DynBody, RequestExecutionContext, RequestMeta, Transport};
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use http::{HeaderMap, Method, StatusCode};
+use http::{Method, StatusCode};
 use perf::support::{MockResponse, MockTransport, filled_bytes, runtime};
 use std::hint::black_box;
 use url::Url;
 
-fn build_request(url: &Url, body: Bytes) -> TransportRequest {
-    TransportRequest {
+fn build_request(url: &Url, body: Bytes) -> http::Request<DynBody> {
+    let mut request = http::Request::new(DynBody::from_bytes(body));
+    *request.method_mut() = Method::POST;
+    *request.uri_mut() = url.as_str().parse().expect("URI");
+    request.extensions_mut().insert(RequestExecutionContext {
         meta: RequestMeta {
             endpoint: "perf_smoke",
             method: Method::POST,
@@ -18,13 +18,9 @@ fn build_request(url: &Url, body: Bytes) -> TransportRequest {
             attempt: 0,
             page_index: 0,
         },
-        url: url.clone(),
-        headers: HeaderMap::new(),
-        body: TransportRequestBody::from_bytes(body),
         timeout: None,
-        rate_limit: RateLimitPlan::new(),
-        extensions: RequestExtensions::default(),
-    }
+    });
+    request
 }
 
 fn smoke(c: &mut Criterion) {
@@ -48,12 +44,11 @@ fn smoke(c: &mut Criterion) {
                         .send(request)
                         .await
                         .expect("mock transport response");
-                    let chunk = response
-                        .body
-                        .next_chunk()
+                    let frame = http_body_util::BodyExt::frame(response.body_mut())
                         .await
+                        .expect("response frame")
                         .expect("response body read");
-                    black_box(chunk.expect("response chunk"));
+                    black_box(frame.into_data().expect("response data frame"));
                 }
             },
             BatchSize::SmallInput,

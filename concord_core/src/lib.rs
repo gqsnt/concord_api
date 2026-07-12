@@ -145,14 +145,13 @@ pub mod advanced {
         TransportErrorHookContext,
     };
     pub use crate::runtime_state::ClientRuntimeState;
-    pub use crate::stream_body::{BodySizeHint, StreamBody, StreamBodyError};
+    pub use crate::stream_body::{StreamBody, StreamBodyError};
     pub use crate::stream_response::StreamResponse;
     #[cfg(feature = "transport-reqwest")]
     pub use crate::transport::ReqwestTransport;
     pub use crate::transport::{
-        DecodedResponse, DefaultTransport, DefaultTransportMarker, RequestMeta, Transport,
-        TransportBody, TransportByteStream, TransportError, TransportErrorKind, TransportRequest,
-        TransportRequestBody, TransportResponse,
+        DecodedResponse, DefaultTransport, DefaultTransportMarker, RequestExecutionContext,
+        RequestMeta, Transport, TransportError, TransportErrorKind,
     };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,

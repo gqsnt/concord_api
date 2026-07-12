@@ -1,15 +1,13 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    BodyCodec, CodecError, ContentType, DecodeContext, EncodeContext, EncodedBody, ResponseCodec,
-    Transport, TransportBody, TransportError, TransportRequest, TransportRequestBody,
-    TransportResponse,
+    BodyCodec, CodecError, ContentType, DecodeContext, DynBody, EncodeContext, EncodedBody,
+    ResponseCodec, Transport, TransportError,
 };
 use concord_core::prelude::{ApiClientError, Json};
 use concord_macros::api;
-use futures_core::Stream;
 use http::{HeaderMap, HeaderValue, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::future::{Future, poll_fn};
+use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -190,35 +188,26 @@ impl RecordingTransport {
 impl Transport for RecordingTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let transport = self.clone();
         Box::pin(async move {
             transport.send_count.fetch_add(1, Ordering::SeqCst);
-            let debug = format!("{req:?}");
+            let debug = "Request { body: <body>, .. }".to_string();
             let content_type = req
-                .headers
+                .headers()
                 .get(http::header::CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
             let accept = req
-                .headers
+                .headers()
                 .get(http::header::ACCEPT)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
-            let body = match req.body {
-                TransportRequestBody::Empty => Bytes::new(),
-                TransportRequestBody::Bytes(body) => body,
-                TransportRequestBody::Stream(mut stream) => {
-                    let mut out = Vec::new();
-                    while let Some(chunk) = poll_fn(|cx| Pin::new(&mut stream).poll_next(cx)).await
-                    {
-                        let chunk = chunk?;
-                        out.extend_from_slice(&chunk);
-                    }
-                    Bytes::from(out)
-                }
-            };
+            let body = http_body_util::BodyExt::collect(req.into_body())
+                .await
+                .map_err(TransportError::new)?
+                .to_bytes();
             transport
                 .requests
                 .lock()
@@ -237,15 +226,10 @@ impl Transport for RecordingTransport {
                         http::header::CONTENT_TYPE,
                         HeaderValue::from_static("application/json"),
                     );
-                    Ok(TransportResponse {
-                        meta: req.meta,
-                        url: req.url,
-                        status,
-                        headers,
-                        content_length: Some(body.len() as u64),
-                        rate_limit: req.rate_limit,
-                        body: Box::new(StaticBody(Some(body))),
-                    })
+                    let mut response = http::Response::new(DynBody::from_bytes(body));
+                    *response.status_mut() = status;
+                    *response.headers_mut() = headers;
+                    Ok(response)
                 }
                 ResponseFixture::Text {
                     status,
@@ -257,28 +241,13 @@ impl Transport for RecordingTransport {
                         http::header::CONTENT_TYPE,
                         HeaderValue::from_static(content_type),
                     );
-                    Ok(TransportResponse {
-                        meta: req.meta,
-                        url: req.url,
-                        status,
-                        headers,
-                        content_length: Some(body.len() as u64),
-                        rate_limit: req.rate_limit,
-                        body: Box::new(StaticBody(Some(body))),
-                    })
+                    let mut response = http::Response::new(DynBody::from_bytes(body));
+                    *response.status_mut() = status;
+                    *response.headers_mut() = headers;
+                    Ok(response)
                 }
             }
         })
-    }
-}
-
-struct StaticBody(Option<Bytes>);
-
-impl TransportBody for StaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.0.take()) })
     }
 }
 

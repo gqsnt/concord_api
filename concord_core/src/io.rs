@@ -80,42 +80,45 @@ pub struct PreparedBody {
     size_hint: SizeHint,
 }
 
-pub(crate) enum AttemptBody {
+pub(crate) struct ProducedBody {
+    body: crate::body::DynBody,
+    stream_like: bool,
+    category: ProducedBodyCategory,
+}
+
+/// Ephemeral category metadata for a body that has been produced for one
+/// physical attempt. This is deliberately not replayability state: it only
+/// tells the private Reqwest bridge whether an otherwise empty body may be
+/// omitted without changing request semantics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProducedBodyCategory {
     Empty,
-    Bytes(Bytes),
-    Dyn(crate::body::DynBody),
+    ReusableBytes,
+    OneShot,
+    ReplayFactory,
 }
 
-impl AttemptBody {
+impl ProducedBody {
     pub(crate) fn is_stream(&self) -> bool {
-        matches!(self, Self::Dyn(_))
+        self.stream_like
     }
 
-    pub(crate) fn size_hint(&self) -> SizeHint {
-        match self {
-            Self::Empty => exact_size_hint(0),
-            Self::Bytes(bytes) => exact_size_hint(bytes.len() as u64),
-            Self::Dyn(body) => body.size_hint(),
-        }
+    pub(crate) fn category(&self) -> ProducedBodyCategory {
+        self.category
     }
 
-    #[cfg(test)]
     pub(crate) fn into_dyn_body(self) -> crate::body::DynBody {
-        match self {
-            Self::Empty => crate::body::DynBody::empty(),
-            Self::Bytes(bytes) => crate::body::DynBody::from_bytes(bytes),
-            Self::Dyn(body) => body,
-        }
+        self.body
     }
 }
 
-impl fmt::Debug for AttemptBody {
+impl fmt::Debug for ProducedBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("<empty>"),
-            Self::Bytes(bytes) => write!(f, "<{} bytes>", bytes.len()),
-            Self::Dyn(body) => body.fmt(f),
-        }
+        f.debug_struct("ProducedBody")
+            .field("body", &self.body)
+            .field("stream_like", &self.stream_like)
+            .field("category", &self.category)
+            .finish()
     }
 }
 
@@ -189,17 +192,33 @@ impl PreparedBody {
         )
     }
 
-    pub(crate) fn produce_for_attempt(&mut self) -> Result<AttemptBody, BodyProductionError> {
+    pub(crate) fn produce_for_attempt(&mut self) -> Result<ProducedBody, BodyProductionError> {
         let size_hint = self.size_hint.clone();
         match &mut self.source {
-            PreparedBodySource::Empty => Ok(AttemptBody::Empty),
-            PreparedBodySource::ReusableBytes(bytes) => Ok(AttemptBody::Bytes(bytes.clone())),
+            PreparedBodySource::Empty => Ok(ProducedBody {
+                body: crate::body::DynBody::empty(),
+                stream_like: false,
+                category: ProducedBodyCategory::Empty,
+            }),
+            PreparedBodySource::ReusableBytes(bytes) => Ok(ProducedBody {
+                body: crate::body::DynBody::from_bytes(bytes.clone()),
+                stream_like: false,
+                category: ProducedBodyCategory::ReusableBytes,
+            }),
             PreparedBodySource::OneShot(body) => body
                 .take()
-                .map(AttemptBody::Dyn)
+                .map(|body| ProducedBody {
+                    body,
+                    stream_like: true,
+                    category: ProducedBodyCategory::OneShot,
+                })
                 .ok_or_else(BodyProductionError::already_consumed),
             PreparedBodySource::ReplayFactory(factory) => factory()
-                .map(|body| AttemptBody::Dyn(body.with_size_hint(size_hint)))
+                .map(|body| ProducedBody {
+                    body: body.with_size_hint(size_hint),
+                    stream_like: true,
+                    category: ProducedBodyCategory::ReplayFactory,
+                })
                 .map_err(BodyProductionError::factory_failure),
         }
     }
@@ -670,31 +689,35 @@ where
 {
     let ctx = validate_buffered_response(&resp, C::is_no_content())?;
     let content_type = resp
-        .headers
+        .headers()
         .get(http::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok());
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let status = resp.status();
+    let (message, context) = resp.into_parts();
+    let (parts, body) = message.into_parts();
     let value = if C::is_no_content() {
         C::decode(
             Bytes::new(),
-            DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
+            DecodeContext::new(ctx.endpoint, &ctx.method, status, content_type.as_deref()),
         )
         .map_err(|_| {
-            ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
+            ApiClientError::response_body_decode_error(ctx.clone(), status, content_type.as_deref())
         })?
     } else {
         C::decode(
-            resp.body.clone(),
-            DecodeContext::new(ctx.endpoint, &ctx.method, resp.status, content_type),
+            body,
+            DecodeContext::new(ctx.endpoint, &ctx.method, status, content_type.as_deref()),
         )
         .map_err(|_| {
-            ApiClientError::response_body_decode_error(ctx.clone(), resp.status, content_type)
+            ApiClientError::response_body_decode_error(ctx.clone(), status, content_type.as_deref())
         })?
     };
     Ok(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
+        meta: context.meta,
+        url: context.request_url,
+        status,
+        headers: parts.headers,
         value,
     })
 }
@@ -703,12 +726,15 @@ fn decode_bytes_response_with_meta(
     resp: BuiltResponse,
 ) -> Result<DecodedResponse<Bytes>, ApiClientError> {
     let _ctx = validate_buffered_response(&resp, false)?;
+    let status = resp.status();
+    let (message, context) = resp.into_parts();
+    let (parts, body) = message.into_parts();
     Ok(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
-        value: resp.body,
+        meta: context.meta,
+        url: context.request_url,
+        status,
+        headers: parts.headers,
+        value: body,
     })
 }
 
@@ -716,11 +742,14 @@ fn decode_no_content_response_with_meta(
     resp: BuiltResponse,
 ) -> Result<DecodedResponse<()>, ApiClientError> {
     let _ctx = validate_buffered_response(&resp, true)?;
+    let status = resp.status();
+    let (message, context) = resp.into_parts();
+    let (parts, _) = message.into_parts();
     Ok(DecodedResponse {
-        meta: resp.meta,
-        url: resp.url,
-        status: resp.status,
-        headers: resp.headers,
+        meta: context.meta,
+        url: context.request_url,
+        status,
+        headers: parts.headers,
         value: (),
     })
 }
@@ -730,20 +759,20 @@ fn validate_buffered_response(
     no_content: bool,
 ) -> Result<ErrorContext, ApiClientError> {
     let ctx = ErrorContext {
-        endpoint: resp.meta.endpoint,
-        method: resp.meta.method.clone(),
+        endpoint: resp.meta().endpoint,
+        method: resp.meta().method.clone(),
     };
-    if resp.meta.method == http::Method::HEAD && !no_content {
+    if resp.meta().method == http::Method::HEAD && !no_content {
         return Err(ApiClientError::HeadRequiresNoContent { ctx });
     }
     if matches!(
-        resp.status,
+        resp.status(),
         http::StatusCode::NO_CONTENT | http::StatusCode::RESET_CONTENT
     ) && !no_content
     {
         return Err(ApiClientError::NoContentStatusRequiresNoContent {
             ctx: ctx.clone(),
-            status: resp.status,
+            status: resp.status(),
         });
     }
     Ok(ctx)
@@ -854,34 +883,6 @@ mod tests {
         content_length: Option<u64>,
     }
 
-    struct ChunkBody {
-        chunks: std::collections::VecDeque<Bytes>,
-    }
-
-    impl ChunkBody {
-        fn new(chunks: Vec<Bytes>) -> Self {
-            Self {
-                chunks: chunks.into(),
-            }
-        }
-    }
-
-    impl crate::transport::TransportBody for ChunkBody {
-        fn next_chunk<'a>(
-            &'a mut self,
-        ) -> std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = Result<Option<Bytes>, crate::transport::TransportError>,
-                    > + Send
-                    + 'a,
-            >,
-        > {
-            let chunk = self.chunks.pop_front();
-            Box::pin(async move { Ok(chunk) })
-        }
-    }
-
     impl StaticTransport {
         fn new(response: StaticResponse) -> Self {
             Self { response }
@@ -891,12 +892,12 @@ mod tests {
     impl Transport for StaticTransport {
         fn send(
             &self,
-            req: crate::transport::TransportRequest,
+            _req: http::Request<crate::body::DynBody>,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
                         Output = Result<
-                            crate::transport::TransportResponse,
+                            http::Response<crate::body::DynBody>,
                             crate::transport::TransportError,
                         >,
                     > + Send,
@@ -904,15 +905,18 @@ mod tests {
         > {
             let response = self.response.clone();
             Box::pin(async move {
-                Ok(crate::transport::TransportResponse {
-                    meta: req.meta,
-                    url: req.url,
-                    status: response.status,
-                    headers: response.headers,
-                    content_length: response.content_length,
-                    rate_limit: req.rate_limit,
-                    body: Box::new(ChunkBody::new(response.chunks)),
-                })
+                let mut builder = http::Response::builder().status(response.status);
+                *builder.headers_mut().expect("headers") = response.headers;
+                if let Some(length) = response.content_length {
+                    builder.headers_mut().expect("headers").insert(
+                        http::header::CONTENT_LENGTH,
+                        http::HeaderValue::from_str(&length.to_string()).expect("length"),
+                    );
+                }
+                let bytes = Bytes::from(response.chunks.concat());
+                builder
+                    .body(crate::body::DynBody::from_bytes(bytes))
+                    .map_err(crate::transport::TransportError::new)
             })
         }
     }

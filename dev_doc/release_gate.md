@@ -86,9 +86,9 @@ DebugLevel
 Endpoint
 ClientContext
 Transport
-TransportRequest
-TransportResponse
-TransportBody
+http::Request<DynBody>
+http::Response<DynBody>
+DynBody
 TransportError
 TransportErrorKind
 RateLimiter

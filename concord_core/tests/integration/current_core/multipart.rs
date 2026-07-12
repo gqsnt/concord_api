@@ -1,18 +1,16 @@
 use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, DebugSink, ErrorContext, MultipartBody, MultipartRequest,
+    AuthPlacement, DebugSink, DynBody, ErrorContext, MultipartBody, MultipartRequest,
     PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
     RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestEntity,
-    RuntimeHooks, StreamBody, Transport, TransportBody, TransportError, TransportErrorKind,
-    TransportRequest, TransportRequestBody, TransportResponse,
+    RuntimeHooks, StreamBody, Transport, TransportError, TransportErrorKind,
 };
 use concord_core::internal::{
     EndpointMeta, EndpointPlan, RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute,
     ResponsePlan,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
-use futures_core::Stream;
 use http::{HeaderValue, Method, StatusCode};
 use std::collections::VecDeque;
 use std::future::Future;
@@ -179,8 +177,6 @@ impl RuntimeHooks for RecordingHooks {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum CapturedBody {
-    Empty,
-    Bytes(Bytes),
     Stream(Bytes),
 }
 
@@ -237,8 +233,8 @@ impl MultipartTransport {
 impl Transport for MultipartTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let events = self.events.clone();
         let captured = self.captured.clone();
         let response = self.response.clone();
@@ -246,16 +242,8 @@ impl Transport for MultipartTransport {
         let send_count = self.send_count.clone();
         Box::pin(async move {
             send_count.fetch_add(1, Ordering::SeqCst);
-            let debug = format!("{req:?}");
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout: _timeout,
-                rate_limit,
-                extensions: _extensions,
-            } = req;
+            let debug = "Request { body: <body>, .. }".to_string();
+            let (parts, body) = req.into_parts();
             events
                 .lock()
                 .expect("multipart transport events lock")
@@ -264,17 +252,12 @@ impl Transport for MultipartTransport {
                 .lock()
                 .expect("multipart transport events lock")
                 .push(format!("transport_debug:{debug}"));
-            let content_type = headers
+            let content_type = parts
+                .headers
                 .get(http::header::CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
-            let body = match body {
-                TransportRequestBody::Empty => CapturedBody::Empty,
-                TransportRequestBody::Bytes(bytes) => CapturedBody::Bytes(bytes),
-                TransportRequestBody::Stream(stream) => {
-                    CapturedBody::Stream(collect_stream(stream, &events).await?)
-                }
-            };
+            let body = CapturedBody::Stream(collect_stream(body, &events).await?);
             captured
                 .lock()
                 .expect("captured lock")
@@ -291,34 +274,11 @@ impl Transport for MultipartTransport {
                 ));
             }
 
-            Ok(TransportResponse {
-                meta,
-                url,
-                status: response.status,
-                headers: response.headers,
-                content_length: response.content_length,
-                rate_limit,
-                body: Box::new(StaticBody::new(response.body)),
-            })
+            let mut result = http::Response::new(DynBody::from_bytes(response.body));
+            *result.status_mut() = response.status;
+            *result.headers_mut() = response.headers;
+            Ok(result)
         })
-    }
-}
-
-struct StaticBody {
-    next: Option<Bytes>,
-}
-
-impl StaticBody {
-    fn new(body: Bytes) -> Self {
-        Self { next: Some(body) }
-    }
-}
-
-impl TransportBody for StaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.next.take()) })
     }
 }
 
@@ -372,21 +332,24 @@ impl futures_core::Stream for RecordingChunkStream {
 }
 
 async fn collect_stream(
-    mut stream: concord_core::advanced::TransportByteStream,
+    mut stream: DynBody,
     events: &Arc<StdMutex<Vec<String>>>,
 ) -> Result<Bytes, TransportError> {
     let mut out = Vec::new();
     loop {
-        let next = std::future::poll_fn(|cx| Pin::new(&mut stream).poll_next(cx)).await;
+        let next = http_body_util::BodyExt::frame(&mut stream).await;
         match next {
-            Some(Ok(chunk)) => {
+            Some(Ok(frame)) => {
+                let Ok(chunk) = frame.into_data() else {
+                    continue;
+                };
                 events
                     .lock()
                     .expect("multipart transport events lock")
                     .push("multipart_part_poll".to_string());
                 out.extend_from_slice(&chunk);
             }
-            Some(Err(error)) => return Err(error),
+            Some(Err(error)) => return Err(TransportError::new(error)),
             None => break,
         }
     }
@@ -476,18 +439,14 @@ async fn multipart_form_data_request_reaches_transport_and_is_body_free_in_debug
         .as_deref()
         .and_then(|value| value.split("; boundary=").nth(1))
         .expect("multipart boundary");
-    match &captured[0].body {
-        CapturedBody::Stream(bytes) => {
-            let rendered = String::from_utf8(bytes.clone().to_vec()).expect("multipart body");
-            assert!(rendered.contains(&format!("--{boundary}\r\n")));
-            assert!(rendered.contains("Content-Disposition: form-data; name=\"title\""));
-            assert!(rendered.contains("Content-Disposition: form-data; name=\"file\""));
-            assert!(rendered.contains("abc"));
-            assert!(rendered.contains("\r\n"));
-            assert!(rendered.ends_with(&format!("--{boundary}--\r\n")));
-        }
-        other => panic!("expected stream body, got {other:?}"),
-    }
+    let CapturedBody::Stream(bytes) = &captured[0].body;
+    let rendered = String::from_utf8(bytes.clone().to_vec()).expect("multipart body");
+    assert!(rendered.contains(&format!("--{boundary}\r\n")));
+    assert!(rendered.contains("Content-Disposition: form-data; name=\"title\""));
+    assert!(rendered.contains("Content-Disposition: form-data; name=\"file\""));
+    assert!(rendered.contains("abc"));
+    assert!(rendered.contains("\r\n"));
+    assert!(rendered.ends_with(&format!("--{boundary}--\r\n")));
     assert!(
         !captured[0]
             .debug

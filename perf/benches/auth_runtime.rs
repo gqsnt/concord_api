@@ -83,7 +83,7 @@ where
             move || (client(success_transport()), setup_plan()),
             move |(client, plan)| async move {
                 let response = execute_raw_plan(&client, plan).await.expect("auth bench");
-                black_box((response.status, response.body.len()));
+                black_box((response.status(), response.body().len()));
             },
             BatchSize::SmallInput,
         )
@@ -133,7 +133,7 @@ fn bench_repeated_credential(c: &mut Criterion) {
                 let response = execute_raw_plan(&client, plan)
                     .await
                     .expect("auth retry bench");
-                black_box((response.status, response.body.len()));
+                black_box((response.status(), response.body().len()));
             },
             BatchSize::SmallInput,
         )
@@ -156,7 +156,7 @@ fn bench_cached_preparation(c: &mut Criterion) {
                 let response = execute_slot_raw_plan(&client, plan)
                     .await
                     .expect("slot auth retry bench");
-                black_box((response.status, response.body.len()));
+                black_box((response.status(), response.body().len()));
             },
             BatchSize::SmallInput,
         )
@@ -355,7 +355,7 @@ fn bench_cached_slot(c: &mut Criterion) {
                 )
                 .await
                 .expect("slot cached request");
-                black_box((first.status, second.status));
+                black_box((first.status(), second.status()));
             },
             BatchSize::SmallInput,
         )

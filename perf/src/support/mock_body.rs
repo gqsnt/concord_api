@@ -1,9 +1,8 @@
 use bytes::Bytes;
-use concord_core::advanced::{StreamBodyError, TransportBody, TransportError};
+use concord_core::advanced::{DynBody, StreamBodyError};
 use futures_core::Stream;
 use std::collections::VecDeque;
 use std::fmt;
-use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -36,11 +35,9 @@ impl fmt::Debug for EmptyBody {
     }
 }
 
-impl TransportBody for EmptyBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(None) })
+impl EmptyBody {
+    pub fn into_dyn_body(self) -> DynBody {
+        DynBody::empty()
     }
 }
 
@@ -67,11 +64,9 @@ impl fmt::Debug for FixedBody {
     }
 }
 
-impl TransportBody for FixedBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.body.take()) })
+impl FixedBody {
+    pub fn into_dyn_body(mut self) -> DynBody {
+        DynBody::from_bytes(self.body.take().unwrap_or_default())
     }
 }
 
@@ -116,9 +111,14 @@ mod tests {
     #[test]
     fn empty_body_returns_eof() {
         let rt = Builder::new_current_thread().build().expect("test runtime");
-        let mut body = EmptyBody;
-        let chunk = rt.block_on(async { body.next_chunk().await.expect("empty body") });
-        assert!(chunk.is_none());
+        let body = EmptyBody.into_dyn_body();
+        let bytes = rt.block_on(async {
+            http_body_util::BodyExt::collect(body)
+                .await
+                .expect("empty body")
+                .to_bytes()
+        });
+        assert!(bytes.is_empty());
     }
 
     #[test]

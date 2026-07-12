@@ -1,10 +1,8 @@
-use crate::support::mock_body::{EmptyBody, FixedBody, chunked_bytes};
+use crate::support::mock_body::{ChunkedBodyStream, chunked_bytes};
 use bytes::Bytes;
 use concord_core::advanced::{
-    RequestMeta, Transport, TransportBody, TransportError, TransportRequest, TransportRequestBody,
-    TransportResponse,
+    AuthPlacementPlan, DynBody, RequestExecutionContext, RequestMeta, Transport, TransportError,
 };
-use concord_core::auth::RequestExtensions;
 use http::{HeaderMap, HeaderValue, StatusCode};
 use std::collections::VecDeque;
 use std::fmt;
@@ -41,7 +39,6 @@ enum MockResponseBody {
 pub enum RecordedBody {
     Empty,
     Bytes { len: usize },
-    Stream,
 }
 
 #[derive(Clone)]
@@ -51,7 +48,7 @@ pub struct RecordedRequest {
     pub headers: HeaderMap,
     pub body: RecordedBody,
     pub timeout: Option<std::time::Duration>,
-    pub extensions: RequestExtensions,
+    pub auth_plan: AuthPlacementPlan,
 }
 
 impl fmt::Debug for MockResponse {
@@ -72,7 +69,7 @@ impl fmt::Debug for RecordedRequest {
             .field("header_count", &self.headers.len())
             .field("body", &self.body)
             .field("timeout", &self.timeout)
-            .field("extensions_present", &extensions_present(&self.extensions))
+            .field("auth_plan_present", &auth_plan_present(&self.auth_plan))
             .finish()
     }
 }
@@ -143,26 +140,25 @@ impl MockResponse {
         }
     }
 
-    fn into_parts(self) -> (StatusCode, HeaderMap, Box<dyn TransportBody>, Option<u64>) {
+    fn into_response(self) -> http::Response<DynBody> {
         let content_length = Some(self.body_len() as u64);
-        let body: Box<dyn TransportBody> = match self.body {
-            MockResponseBody::Empty => Box::new(EmptyBody),
-            MockResponseBody::Bytes(bytes) => Box::new(FixedBody::new(bytes)),
-            MockResponseBody::Chunks(chunks) => Box::new(ChunkedTransportBody { chunks }),
+        let body = match self.body {
+            MockResponseBody::Empty => DynBody::empty(),
+            MockResponseBody::Bytes(bytes) => DynBody::from_bytes(bytes),
+            MockResponseBody::Chunks(chunks) => {
+                DynBody::from_byte_stream(ChunkedBodyStream::new(chunks))
+            }
         };
-        (self.status, self.headers, body, content_length)
-    }
-}
-
-struct ChunkedTransportBody {
-    chunks: VecDeque<Bytes>,
-}
-
-impl TransportBody for ChunkedTransportBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.chunks.pop_front()) })
+        let mut response = http::Response::new(body);
+        *response.status_mut() = self.status;
+        *response.headers_mut() = self.headers;
+        if let Some(length) = content_length {
+            response.headers_mut().insert(
+                http::header::CONTENT_LENGTH,
+                HeaderValue::from_str(&length.to_string()).expect("length"),
+            );
+        }
+        response
     }
 }
 
@@ -207,30 +203,40 @@ impl MockTransport {
 impl Transport for MockTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let state = self.state.clone();
         Box::pin(async move {
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout,
-                rate_limit,
-                extensions,
-            } = req;
+            use http_body_util::BodyExt as _;
+            let (parts, body) = req.into_parts();
+            let context = parts
+                .extensions
+                .get::<RequestExecutionContext>()
+                .cloned()
+                .expect("context");
+            let auth_plan = parts
+                .extensions
+                .get::<AuthPlacementPlan>()
+                .cloned()
+                .unwrap_or_default();
+            let url = parts.uri.to_string().parse().expect("URL");
+            let bytes = body
+                .collect()
+                .await
+                .map_err(TransportError::new)?
+                .to_bytes();
+            let recorded_body = if bytes.is_empty() {
+                RecordedBody::Empty
+            } else {
+                RecordedBody::Bytes { len: bytes.len() }
+            };
             let recorded = RecordedRequest {
-                meta: meta.clone(),
-                url: url.clone(),
-                headers: headers.clone(),
-                body: match &body {
-                    TransportRequestBody::Empty => RecordedBody::Empty,
-                    TransportRequestBody::Bytes(bytes) => RecordedBody::Bytes { len: bytes.len() },
-                    TransportRequestBody::Stream(_) => RecordedBody::Stream,
-                },
-                timeout,
-                extensions: extensions.clone(),
+                meta: context.meta,
+                url,
+                headers: parts.headers,
+                body: recorded_body,
+                timeout: context.timeout,
+                auth_plan,
             };
 
             let response = {
@@ -245,17 +251,7 @@ impl Transport for MockTransport {
                 }
             };
 
-            let (status, headers, body, content_length) = response.into_parts();
-
-            Ok(TransportResponse {
-                meta,
-                url,
-                status,
-                headers,
-                content_length,
-                rate_limit,
-                body,
-            })
+            Ok(response.into_response())
         })
     }
 }
@@ -278,8 +274,8 @@ fn safe_url_for_debug(url: &url::Url) -> String {
     }
 }
 
-fn extensions_present(ext: &RequestExtensions) -> bool {
-    !ext.auth_plan.sensitive_query_keys.is_empty() || !ext.auth_plan.slots.is_empty()
+fn auth_plan_present(plan: &AuthPlacementPlan) -> bool {
+    !plan.sensitive_query_keys.is_empty() || !plan.slots.is_empty()
 }
 
 #[cfg(test)]
@@ -312,11 +308,9 @@ mod tests {
             },
             body: RecordedBody::Bytes { len: 16 },
             timeout: Some(std::time::Duration::from_secs(1)),
-            extensions: RequestExtensions {
-                auth_plan: concord_core::advanced::AuthPlacementPlan {
-                    sensitive_query_keys: vec!["token".to_string()],
-                    slots: Vec::new(),
-                },
+            auth_plan: concord_core::advanced::AuthPlacementPlan {
+                sensitive_query_keys: vec!["token".to_string()],
+                slots: Vec::new(),
             },
         };
 
@@ -340,12 +334,17 @@ mod tests {
     #[test]
     fn empty_response_body_is_eof() {
         let response = MockResponse::empty(StatusCode::NO_CONTENT);
-        let (_, _, mut body, _) = response.into_parts();
+        let body = response.into_response().into_body();
 
         let rt = tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("test runtime");
-        let chunk = rt.block_on(async { body.next_chunk().await.expect("empty body") });
-        assert!(chunk.is_none());
+        let bytes = rt.block_on(async {
+            http_body_util::BodyExt::collect(body)
+                .await
+                .expect("empty body")
+                .to_bytes()
+        });
+        assert!(bytes.is_empty());
     }
 }

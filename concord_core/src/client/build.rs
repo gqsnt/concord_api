@@ -8,7 +8,7 @@ pub(super) struct PublicRequestHead {
     pub(super) timeout: Option<std::time::Duration>,
     pub(super) retry: RetrySetting,
     pub(super) rate_limit: RateLimitPlan,
-    pub(super) extensions: crate::auth::RequestExtensions,
+    pub(super) auth_plan: crate::auth::AuthPlacementPlan,
 }
 
 impl PublicRequestHead {
@@ -23,21 +23,42 @@ impl PublicRequestHead {
                 ctx: ctx.clone(),
                 source,
             })?;
-        self.extensions.auth_plan = auth_plan.clone();
+        self.auth_plan = auth_plan.clone();
         Ok(())
     }
 
-    pub(super) fn finish(self, body: crate::io::AttemptBody) -> BuiltRequest {
-        BuiltRequest {
-            meta: self.meta,
-            url: self.url,
-            headers: self.headers,
-            body,
-            timeout: self.timeout,
+    pub(super) fn finish(
+        self,
+        body: crate::io::ProducedBody,
+        ctx: &ErrorContext,
+    ) -> Result<BuiltRequest, ApiClientError> {
+        let uri = self.url.as_str().parse::<http::Uri>().map_err(|_| {
+            ApiClientError::PolicyViolation {
+                ctx: ctx.clone(),
+                msg: "resolved request URI is invalid",
+            }
+        })?;
+        let stream_like = body.is_stream();
+        let body_category = body.category();
+        let mut message = http::Request::new(body.into_dyn_body());
+        *message.method_mut() = self.meta.method.clone();
+        *message.uri_mut() = uri;
+        *message.version_mut() = http::Version::HTTP_11;
+        *message.headers_mut() = self.headers;
+        message
+            .extensions_mut()
+            .insert(crate::transport::RequestExecutionContext {
+                meta: self.meta,
+                timeout: self.timeout,
+            });
+        message.extensions_mut().insert(self.auth_plan);
+        Ok(BuiltRequest {
+            message,
             retry: self.retry,
             rate_limit: self.rate_limit,
-            extensions: self.extensions,
-        }
+            stream_like,
+            body_category,
+        })
     }
 }
 
@@ -86,7 +107,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             timeout,
             retry,
             rate_limit,
-            extensions: crate::auth::RequestExtensions::default(),
+            auth_plan: crate::auth::AuthPlacementPlan::default(),
         })
     }
 
@@ -94,7 +115,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         body: &mut crate::io::PreparedBody,
         ctx: &ErrorContext,
-    ) -> Result<crate::io::AttemptBody, ApiClientError> {
+    ) -> Result<crate::io::ProducedBody, ApiClientError> {
         body.produce_for_attempt().map_err(|error| {
             let msg = match error.kind() {
                 crate::io::BodyProductionErrorKind::AlreadyConsumed => {
@@ -134,7 +155,7 @@ mod tests {
             timeout: None,
             retry: RetrySetting::Off,
             rate_limit: RateLimitPlan::new(),
-            extensions: Default::default(),
+            auth_plan: Default::default(),
         };
         let auth_plan = crate::auth::AuthPlacementPlan::from_auth_plan(&crate::auth::AuthPlan {
             requirements: vec![crate::auth::AuthRequirement {
@@ -157,9 +178,6 @@ mod tests {
 
         head.apply_auth_preflight(&auth_plan, &ctx)
             .expect_err("collision must fail");
-        assert!(matches!(
-            body.produce_for_attempt(),
-            Ok(crate::io::AttemptBody::Dyn(_))
-        ));
+        assert!(body.produce_for_attempt().is_ok());
     }
 }

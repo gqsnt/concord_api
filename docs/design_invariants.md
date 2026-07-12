@@ -59,15 +59,14 @@ Runtime diagnostics are metadata-only for bodies. Debug sinks, stderr debug logs
 The standard body foundation uses `DynBody` over `BoxBody<Bytes, BodyError>`.
 It preserves data and trailer frames, keeps construction lazy, supports
 Send-only sources through safe exclusive polling, and uses one reusable
-frame-aware limiter that counts data bytes but not trailers. The legacy
-transport byte-stream bridge is intentionally temporary until the transport
-contract migration.
+frame-aware limiter that counts data bytes but not trailers. The common
+transport contract preserves that standard body and its frames directly.
 
 The deprecated dev body capture path is separate from debug sinks, hooks, stderr debug output, public errors, retry metadata, and rate-limit metadata. It is gated behind `dangerous-dev-tools`, disabled by default, and writes raw selected response bytes without redaction only when explicitly configured. It never captures request bodies and is intended only for controlled local debugging.
 
 See [Security Model](security_model.md) for the consumer-facing boundary between safe, advanced, and dangerous surfaces.
 
-Protected auth material is applied only when the runtime materializes `TransportRequest`. Logical request state, debug surfaces, hooks, retry contexts, rate-limit contexts, and error contexts must remain free of raw auth material.
+Protected auth material is applied only when the runtime materializes `http::Request<DynBody>`. Logical request state, debug surfaces, hooks, retry contexts, rate-limit contexts, and error contexts must remain free of raw auth material.
 
 Pagination is a typed runtime state machine. Page loops must either make deterministic progress, stop explicitly, or return a typed pagination error. Repeated logical page identities are treated as non-progress and fail instead of silently looping.
 

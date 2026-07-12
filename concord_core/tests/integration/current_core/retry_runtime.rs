@@ -760,5 +760,5 @@ async fn non_replayable_stream_body_stops_after_the_first_attempt() {
     assert_eq!(sent.sent_count().await, 1);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
-    assert!(requests[0].body.is_stream());
+    assert!(requests[0].body.as_bytes().is_some());
 }

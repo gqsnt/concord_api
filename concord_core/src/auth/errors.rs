@@ -46,6 +46,7 @@ pub enum AuthErrorKind {
     RecursionDetected,
     ProviderRejected,
     ResponseTooLarge,
+    ResponseBody,
     StateUnavailable,
     InvalidConfiguration,
 }

@@ -23,10 +23,10 @@ use crate::runtime_state::ClientRuntimeState;
 use crate::transport::DefaultTransportMarker;
 #[cfg(feature = "transport-reqwest")]
 use crate::transport::ReqwestTransport;
-use crate::transport::{BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta};
 use crate::transport::{
-    DefaultTransport, Transport, TransportBody, TransportError, TransportResponse,
+    AttemptResponse, BuiltRequest, BuiltResponse, DecodedResponse, RequestMeta,
 };
+use crate::transport::{DefaultTransport, Transport};
 use crate::types::RouteBuilder;
 use bytes::Bytes;
 use http::StatusCode;
@@ -39,7 +39,7 @@ use std::time::Duration;
 
 #[derive(Debug)]
 enum BodyReadError {
-    Transport(TransportError),
+    Body(crate::body::BodyError),
     ContentLengthTooLarge { limit: usize, actual: u64 },
     LimitExceeded { limit: usize },
 }
@@ -47,7 +47,7 @@ enum BodyReadError {
 impl fmt::Display for BodyReadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BodyReadError::Transport(source) => write!(f, "{source}"),
+            BodyReadError::Body(source) => write!(f, "{source}"),
             BodyReadError::ContentLengthTooLarge { limit, actual } => {
                 write!(
                     f,
@@ -66,14 +66,14 @@ impl fmt::Display for BodyReadError {
 
 impl std::error::Error for BodyReadError {}
 
-impl From<TransportError> for BodyReadError {
-    fn from(value: TransportError) -> Self {
-        BodyReadError::Transport(value)
+impl From<crate::body::BodyError> for BodyReadError {
+    fn from(value: crate::body::BodyError) -> Self {
+        BodyReadError::Body(value)
     }
 }
 
 async fn read_body_all_limited(
-    body: &mut dyn TransportBody,
+    body: &mut crate::body::DynBody,
     content_length: Option<u64>,
     limit: Option<usize>,
 ) -> Result<Bytes, BodyReadError> {
@@ -102,7 +102,11 @@ async fn read_body_all_limited(
     };
 
     let mut buf = bytes::BytesMut::with_capacity(cap);
-    while let Some(chunk) = body.next_chunk().await? {
+    while let Some(frame) = http_body_util::BodyExt::frame(body).await {
+        let frame = frame?;
+        let Ok(chunk) = frame.into_data() else {
+            continue;
+        };
         if let Some(limit) = limit {
             let next_len = buf
                 .len()

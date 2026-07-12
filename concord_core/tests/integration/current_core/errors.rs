@@ -2,15 +2,15 @@ use super::common::{
     CapturedTransportRequest, CursorItems, CursorItemsEndpoint, MockOutcome, MockResponse,
     MockTransport, ObservationRateLimiter, ObservationRuntimeHooks, PaginationVariant,
     TestAuthVars, TestCx, TextEndpoint, auth_policy, buffered_endpoint_execute,
-    buffered_endpoint_response_terminal, client, request_plan, retry_policy,
+    buffered_endpoint_response_terminal, capture_request, client, request_plan, retry_policy,
     retry_policy_for_statuses,
 };
 use crate::support::assert_text_does_not_contain_any;
 use bytes::Bytes;
 use concord_core::advanced::{
-    DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
+    DebugSink, DynBody, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
     RateLimitKeyPart, RateLimitPermit, RateLimitWindow, RateLimiter, RouteBuilder, Transport,
-    TransportBody, TransportError, TransportErrorKind, TransportRequest, TransportResponse,
+    TransportError, TransportErrorKind,
 };
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{
@@ -277,18 +277,16 @@ impl std::error::Error for LeakyResponseBodyReadError {}
 
 struct FailingResponseBody;
 
-impl TransportBody for FailingResponseBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>,
-    > {
-        Box::pin(async move {
-            Err(TransportError::with_kind(
-                TransportErrorKind::Request,
-                LeakyResponseBodyReadError(RESPONSE_BODY_READ_SENTINEL_PR77),
-            ))
-        })
+impl futures_core::Stream for FailingResponseBody {
+    type Item = Result<Bytes, LeakyResponseBodyReadError>;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        std::task::Poll::Ready(Some(Err(LeakyResponseBodyReadError(
+            RESPONSE_BODY_READ_SENTINEL_PR77,
+        ))))
     }
 }
 
@@ -317,44 +315,25 @@ impl BodyReadFailingTransport {
 impl Transport for BodyReadFailingTransport {
     fn send(
         &self,
-        req: TransportRequest,
+        req: http::Request<DynBody>,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<TransportResponse, TransportError>> + Send>,
+        Box<
+            dyn std::future::Future<Output = Result<http::Response<DynBody>, TransportError>>
+                + Send,
+        >,
     > {
         let requests = self.requests.clone();
         Box::pin(async move {
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout,
-                rate_limit,
-                extensions,
-            } = req;
-            requests.lock().await.push(CapturedTransportRequest {
-                meta: meta.clone(),
-                url: url.clone(),
-                headers: headers.clone(),
-                body,
-                timeout,
-                rate_limit: rate_limit.clone(),
-                extensions: extensions.clone(),
-            });
+            requests.lock().await.push(capture_request(req).await?);
             let mut response_headers = HeaderMap::new();
             response_headers.insert(
                 http::header::CONTENT_TYPE,
                 HeaderValue::from_static("text/plain"),
             );
-            Ok(TransportResponse {
-                meta,
-                url,
-                status: StatusCode::OK,
-                headers: response_headers,
-                content_length: None,
-                rate_limit,
-                body: Box::new(FailingResponseBody),
-            })
+            let mut response = http::Response::new(DynBody::from_byte_stream(FailingResponseBody));
+            *response.status_mut() = StatusCode::OK;
+            *response.headers_mut() = response_headers;
+            Ok(response)
         })
     }
 }
@@ -880,7 +859,7 @@ async fn transport_error_is_distinct_from_http_status_error() {
 }
 
 #[tokio::test]
-async fn response_body_read_transport_error_is_sanitized() {
+async fn response_body_error_is_terminal_and_sanitized() {
     let transport = BodyReadFailingTransport::new();
     let sent = transport.clone();
     let client: ApiClient<TestCx, BodyReadFailingTransport> = ApiClient::with_transport(
@@ -894,14 +873,25 @@ async fn response_body_read_transport_error_is_sanitized() {
 
     let mut plan = request_plan(
         "ResponseBodyRead",
-        Method::POST,
+        Method::GET,
         "/response-body-read",
         body_read_failure_policy(),
         None,
     );
-    plan.body = PreparedBody::reusable_bytes(
-        Bytes::from_static(REQUEST_BODY_SENTINEL_PR77.as_bytes()),
+    plan.endpoint.policy.retry = retry_policy(2).retry;
+    let factory_calls = Arc::new(AtomicUsize::new(0));
+    let factory_calls_for_body = factory_calls.clone();
+    let mut hint = http_body::SizeHint::new();
+    hint.set_exact(REQUEST_BODY_SENTINEL_PR77.len() as u64);
+    plan.body = PreparedBody::replay_factory(
+        hint,
         Some(HeaderValue::from_static("application/json")),
+        move || {
+            factory_calls_for_body.fetch_add(1, Ordering::SeqCst);
+            Ok(DynBody::from_bytes(Bytes::from_static(
+                REQUEST_BODY_SENTINEL_PR77.as_bytes(),
+            )))
+        },
     );
 
     let err = client
@@ -909,11 +899,18 @@ async fn response_body_read_transport_error_is_sanitized() {
         .await
         .expect_err("response body read failure should surface");
 
-    assert!(matches!(err, ApiClientError::Transport { .. }));
-    assert_eq!(err.category(), ErrorCategory::Transport);
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBody {
+            kind: concord_core::advanced::BodyErrorKind::Input,
+            ..
+        }
+    ));
+    assert_eq!(err.category(), ErrorCategory::Decode);
     assert_eq!(err.context().endpoint, "ResponseBodyRead");
-    assert_eq!(err.context().method, Method::POST);
+    assert_eq!(err.context().method, Method::GET);
     assert_eq!(sent.sent_count().await, 1);
+    assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
     let request = &requests[0];
@@ -941,22 +938,10 @@ async fn response_body_read_transport_error_is_sanitized() {
     assert!(!rendered.contains(REQUEST_BODY_SENTINEL_PR77));
     assert!(!rendered.contains(HEADER_SECRET_SENTINEL_PR77));
     assert!(!rendered.contains(RESPONSE_BODY_READ_SENTINEL_PR77));
-    match &err {
-        ApiClientError::Transport { source, .. } => {
-            assert_eq!(source.kind(), TransportErrorKind::Request);
-            assert!(source.to_string().contains("response body read failed"));
-            assert!(
-                !source
-                    .to_string()
-                    .contains(RESPONSE_BODY_READ_SENTINEL_PR77)
-            );
-            assert_text_does_not_contain_any(
-                &format!("{source:?}\n{source:#?}"),
-                &[RESPONSE_BODY_READ_SENTINEL_PR77],
-            );
-        }
-        _ => panic!("expected transport error"),
-    }
+    assert_text_does_not_contain_any(
+        &format!("{err:?}\n{err:#?}"),
+        &[RESPONSE_BODY_READ_SENTINEL_PR77],
+    );
     assert_error_safe(&err);
 }
 

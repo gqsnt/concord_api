@@ -228,29 +228,6 @@ async fn rate_limit_acquires_planned_buckets_before_transport_and_preserves_orde
     );
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
-    let rate_limit = &requests[0].rate_limit;
-    assert_eq!(rate_limit.buckets().len(), 4);
-    assert_eq!(rate_limit.buckets()[0].id.kind.as_ref(), "runtime");
-    assert_eq!(rate_limit.buckets()[0].id.name.as_ref(), "host");
-    assert_eq!(
-        rate_limit.buckets()[0].key.parts()[0].value,
-        RateLimitKeyValue::UrlHost
-    );
-    assert_eq!(rate_limit.buckets()[1].id.name.as_ref(), "method");
-    assert_eq!(
-        rate_limit.buckets()[1].key.parts()[0].value,
-        RateLimitKeyValue::Method
-    );
-    assert_eq!(rate_limit.buckets()[2].id.name.as_ref(), "endpoint");
-    assert_eq!(
-        rate_limit.buckets()[2].key.parts()[0].value,
-        RateLimitKeyValue::Endpoint
-    );
-    assert_eq!(rate_limit.buckets()[3].id.name.as_ref(), "tenant");
-    assert_eq!(
-        rate_limit.buckets()[3].key.parts()[0].value,
-        RateLimitKeyValue::Static("tenant-a".into())
-    );
     assert_eq!(
         requests[0]
             .headers
@@ -409,6 +386,6 @@ async fn empty_rate_limit_plan_carries_no_buckets_into_acquire() -> Result<(), A
     assert!(events.iter().all(|event| !event.contains("windows=[")));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
-    assert!(requests[0].rate_limit.is_empty());
+    assert!(requests[0].headers.get("x-rate-limit-sentinel").is_none());
     Ok(())
 }

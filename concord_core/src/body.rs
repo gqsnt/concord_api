@@ -1,4 +1,4 @@
-use crate::stream_body::{AsyncReadByteStream, BodySizeHint, StreamBody, StreamBodyErrorKind};
+use crate::stream_body::{AsyncReadByteStream, StreamBody, StreamBodyErrorKind};
 use crate::transport::{TransportError, TransportErrorKind};
 use bytes::Bytes;
 use futures_core::Stream;
@@ -258,7 +258,7 @@ impl DynBody {
     /// Converts the legacy stream body while retaining its useful size hint.
     pub fn from_stream_body(body: StreamBody) -> Self {
         let hint = body.size_hint();
-        Self::from_byte_stream(body.into_transport_stream()).with_size_hint(to_http_hint(hint))
+        Self::from_byte_stream(body.into_byte_stream()).with_size_hint(hint)
     }
 
     /// Applies an explicit standard size hint without polling the body.
@@ -617,15 +617,6 @@ fn exact_hint(length: u64) -> SizeHint {
     hint
 }
 
-fn to_http_hint(hint: BodySizeHint) -> SizeHint {
-    let mut result = SizeHint::new();
-    result.set_lower(hint.lower());
-    if let Some(upper) = hint.upper() {
-        result.set_upper(upper);
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -964,16 +955,18 @@ mod tests {
     }
 
     #[test]
-    fn legacy_stream_body_hint_decreases_during_progression() {
-        let legacy_hint = BodySizeHint::between(3, 8).expect("valid legacy hint");
-        let legacy = StreamBody::from_byte_stream(OneShotBytes::<
+    fn stream_body_hint_decreases_during_progression() {
+        let mut hint = SizeHint::new();
+        hint.set_lower(3);
+        hint.set_upper(8);
+        let stream = StreamBody::from_byte_stream(OneShotBytes::<
             crate::stream_body::StreamBodyError,
         >::new(vec![
             Ok(Bytes::from_static(b"ab")),
             Ok(Bytes::from_static(b"cdef")),
         ]))
-        .with_size_hint(legacy_hint);
-        let mut body = DynBody::from_stream_body(legacy);
+        .with_size_hint(hint);
+        let mut body = DynBody::from_stream_body(stream);
         assert_eq!(body.size_hint().lower(), 3);
         assert_eq!(body.size_hint().upper(), Some(8));
         assert!(matches!(poll_frame(&mut body), Poll::Ready(Some(Ok(_)))));

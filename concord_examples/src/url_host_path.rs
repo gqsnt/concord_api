@@ -1,10 +1,10 @@
 #![allow(unused_imports)]
 
 use concord_core::advanced::{
-    DebugSink, PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
-    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks,
-    SanitizedHeaders, Transport, TransportBody, TransportError, TransportRequest,
-    TransportRequestBody, TransportResponse,
+    DebugSink, DynBody, PostResponseHookContext, PreSendHookContext, RateLimitContext,
+    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+    RateLimiter, RequestExecutionContext, RuntimeHooks, SanitizedHeaders, Transport,
+    TransportError,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -71,7 +71,6 @@ struct RecordedRequest {
     meta: concord_core::transport::RequestMeta,
     url: url::Url,
     headers: http::HeaderMap,
-    body: TransportRequestBody,
     timeout: Option<std::time::Duration>,
 }
 
@@ -97,39 +96,31 @@ impl RecordingTransport {
 impl Transport for RecordingTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let records = self.records.clone();
         let requests = self.requests.clone();
         Box::pin(async move {
-            records.push(format!("transport:{}", req.url.as_str()));
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout,
-                ..
-            } = req;
+            let (parts, _body) = req.into_parts();
+            let context = parts
+                .extensions
+                .get::<RequestExecutionContext>()
+                .cloned()
+                .expect("context");
+            let url: url::Url = parts.uri.to_string().parse().expect("URL");
+            records.push(format!("transport:{}", url.as_str()));
             requests
                 .lock()
                 .expect("transport requests lock")
                 .push(RecordedRequest {
-                    meta: meta.clone(),
+                    meta: context.meta,
                     url: url.clone(),
-                    headers,
-                    body,
-                    timeout,
+                    headers: parts.headers,
+                    timeout: context.timeout,
                 });
-            Ok(TransportResponse {
-                meta,
-                url,
-                status: StatusCode::OK,
-                headers: HeaderMap::new(),
-                content_length: Some(4),
-                rate_limit: Default::default(),
-                body: Box::new(StaticBody(Some(bytes::Bytes::from_static(b"\"ok\"")))),
-            })
+            Ok(http::Response::new(DynBody::from_bytes(
+                bytes::Bytes::from_static(b"\"ok\""),
+            )))
         })
     }
 }
@@ -257,17 +248,6 @@ impl DebugSink for RecordingDebugSink {
     }
 
     fn response_headers(&self, _dbg: DebugLevel, _headers: SanitizedHeaders<'_>) {}
-}
-
-struct StaticBody(Option<bytes::Bytes>);
-
-impl TransportBody for StaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<bytes::Bytes>, TransportError>> + Send + 'a>>
-    {
-        Box::pin(async move { Ok(self.0.take()) })
-    }
 }
 
 fn configure_client(

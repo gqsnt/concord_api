@@ -11,23 +11,18 @@ use std::time::Duration;
 pub enum RecordedBody {
     Empty,
     Bytes(Bytes),
-    Stream,
 }
 
 impl RecordedBody {
     pub fn as_bytes(&self) -> Option<&Bytes> {
         match self {
             Self::Bytes(bytes) => Some(bytes),
-            Self::Empty | Self::Stream => None,
+            Self::Empty => None,
         }
     }
 
     pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
-    }
-
-    pub fn is_stream(&self) -> bool {
-        matches!(self, Self::Stream)
     }
 }
 
@@ -90,18 +85,6 @@ impl MockReply {
     pub fn with_body(mut self, body: Bytes) -> Self {
         self.body = body;
         self
-    }
-}
-
-struct OneShotBody {
-    chunk: Option<Bytes>,
-}
-
-impl TransportBody for OneShotBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.chunk.take()) })
     }
 }
 
@@ -222,21 +205,43 @@ impl Drop for MockHandle {
 impl concord_core::advanced::Transport for MockTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<concord_core::advanced::DynBody>,
+    ) -> Pin<
+        Box<
+            dyn Future<
+                    Output = Result<
+                        http::Response<concord_core::advanced::DynBody>,
+                        TransportError,
+                    >,
+                > + Send,
+        >,
+    > {
         let st = self.st.clone();
         Box::pin(async move {
-            // record
+            use http_body_util::BodyExt as _;
+            let (parts, body) = req.into_parts();
+            let context = parts
+                .extensions
+                .get::<RequestExecutionContext>()
+                .cloned()
+                .expect("transport request context");
+            let url = parts.uri.to_string().parse().expect("absolute request URI");
+            let bytes = body
+                .collect()
+                .await
+                .map_err(TransportError::new)?
+                .to_bytes();
+            let recorded_body = if bytes.is_empty() {
+                RecordedBody::Empty
+            } else {
+                RecordedBody::Bytes(bytes)
+            };
             st.recorded.lock().unwrap().push(RecordedRequest {
-                meta: req.meta.clone(),
-                url: req.url.clone(),
-                headers: req.headers.clone(),
-                body: match req.body {
-                    TransportRequestBody::Empty => RecordedBody::Empty,
-                    TransportRequestBody::Bytes(body) => RecordedBody::Bytes(body),
-                    TransportRequestBody::Stream(_) => RecordedBody::Stream,
-                },
-                timeout: req.timeout,
+                meta: context.meta,
+                url,
+                headers: parts.headers,
+                body: recorded_body,
+                timeout: context.timeout,
             });
 
             // pop reply
@@ -251,17 +256,11 @@ impl concord_core::advanced::Transport for MockTransport {
                 })
             };
 
-            Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
-                status: reply.status,
-                headers: reply.headers,
-                content_length: Some(reply.body.len() as u64),
-                rate_limit: req.rate_limit,
-                body: Box::new(OneShotBody {
-                    chunk: Some(reply.body),
-                }),
-            })
+            let mut response =
+                http::Response::new(concord_core::advanced::DynBody::from_bytes(reply.body));
+            *response.status_mut() = reply.status;
+            *response.headers_mut() = reply.headers;
+            Ok(response)
         })
     }
 }

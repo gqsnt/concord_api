@@ -1,17 +1,16 @@
 use super::common::{MockResponse, TestAuthVars, TestCx, auth_policy};
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, BodySizeHint, DebugSink, PostResponseHookContext, PreSendHookContext,
+    AuthPlacement, DebugSink, DynBody, PostResponseHookContext, PreSendHookContext,
     RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, RuntimeHooks, StreamBody, Transport, TransportBody,
-    TransportError, TransportErrorKind, TransportRequest, TransportRequestBody, TransportResponse,
+    RateLimitResponseContext, RateLimiter, RuntimeHooks, StreamBody, Transport, TransportError,
+    TransportErrorKind,
 };
 use concord_core::internal::{
     EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy,
     ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
-use futures_core::Stream;
 use http::{HeaderValue, Method, StatusCode};
 use std::collections::VecDeque;
 use std::future::Future;
@@ -180,7 +179,6 @@ impl RuntimeHooks for RecordingHooks {
 enum CapturedBody {
     Empty,
     Bytes(Bytes),
-    Stream(Bytes),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -240,8 +238,8 @@ impl StreamTransport {
 impl Transport for StreamTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         let events = self.events.clone();
         let captured = self.captured.clone();
         let response = self.response.clone();
@@ -249,7 +247,7 @@ impl Transport for StreamTransport {
         let send_count = self.send_count.clone();
         Box::pin(async move {
             send_count.fetch_add(1, Ordering::SeqCst);
-            let debug = format!("{req:?}");
+            let debug = "Request { body: <body>, .. }".to_string();
             events
                 .lock()
                 .expect("stream transport events lock")
@@ -259,17 +257,16 @@ impl Transport for StreamTransport {
                 .expect("stream transport events lock")
                 .push(format!("transport_debug:{debug}"));
             let content_type = req
-                .headers
+                .headers()
                 .get(http::header::CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
-            let authorization_present = req.headers.contains_key(http::header::AUTHORIZATION);
-            let body = match req.body {
-                TransportRequestBody::Empty => CapturedBody::Empty,
-                TransportRequestBody::Bytes(bytes) => CapturedBody::Bytes(bytes),
-                TransportRequestBody::Stream(stream) => {
-                    CapturedBody::Stream(collect_stream(stream, &events).await?)
-                }
+            let authorization_present = req.headers().contains_key(http::header::AUTHORIZATION);
+            let bytes = collect_stream(req.into_body(), &events).await?;
+            let body = if bytes.is_empty() {
+                CapturedBody::Empty
+            } else {
+                CapturedBody::Bytes(bytes)
             };
             captured
                 .lock()
@@ -288,15 +285,10 @@ impl Transport for StreamTransport {
                 ));
             }
 
-            Ok(TransportResponse {
-                meta: req.meta,
-                url: req.url,
-                status: response.status,
-                headers: response.headers,
-                content_length: Some(response.body.len() as u64),
-                rate_limit: req.rate_limit,
-                body: Box::new(StaticBody::new(response.body)),
-            })
+            let mut result = http::Response::new(DynBody::from_bytes(response.body));
+            *result.status_mut() = response.status;
+            *result.headers_mut() = response.headers;
+            Ok(result)
         })
     }
 }
@@ -346,24 +338,6 @@ impl concord_core::prelude::ClientContext for OrderingAuthCx {
                 application,
             ))
         })
-    }
-}
-
-struct StaticBody {
-    next: Option<Bytes>,
-}
-
-impl StaticBody {
-    fn new(body: Bytes) -> Self {
-        Self { next: Some(body) }
-    }
-}
-
-impl TransportBody for StaticBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { Ok(self.next.take()) })
     }
 }
 
@@ -437,21 +411,24 @@ impl futures_core::Stream for PollFlagStream {
 }
 
 async fn collect_stream(
-    mut stream: concord_core::advanced::TransportByteStream,
+    mut stream: DynBody,
     events: &Arc<StdMutex<Vec<String>>>,
 ) -> Result<Bytes, TransportError> {
     let mut out = Vec::new();
     loop {
-        let next = std::future::poll_fn(|cx| Pin::new(&mut stream).poll_next(cx)).await;
+        let next = http_body_util::BodyExt::frame(&mut stream).await;
         match next {
-            Some(Ok(chunk)) => {
+            Some(Ok(frame)) => {
+                let Ok(chunk) = frame.into_data() else {
+                    continue;
+                };
                 events
                     .lock()
                     .expect("stream transport events lock")
                     .push("stream_poll".to_string());
                 out.extend_from_slice(&chunk);
             }
-            Some(Err(error)) => return Err(error),
+            Some(Err(error)) => return Err(TransportError::new(error)),
             None => break,
         }
     }
@@ -543,7 +520,7 @@ async fn raw_stream_request_reaches_transport_and_decodes_response() -> Result<(
         Some("application/octet-stream")
     );
     match &captured[0].body {
-        CapturedBody::Stream(bytes) => assert_eq!(bytes, &sentinel),
+        CapturedBody::Bytes(bytes) => assert_eq!(bytes, &sentinel),
         other => panic!("expected stream body, got {other:?}"),
     }
     assert!(
@@ -612,7 +589,7 @@ async fn stream_request_debug_and_observation_surfaces_are_body_free() {
             .contains("SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR")
     );
     match &captured[0].body {
-        CapturedBody::Stream(bytes) => assert_eq!(bytes, &sentinel),
+        CapturedBody::Bytes(bytes) => assert_eq!(bytes, &sentinel),
         other => panic!("expected stream body, got {other:?}"),
     }
     assert!(!format!("{err:?}").contains("SECRET_STREAM_REQUEST_SENTINEL_MUST_NOT_APPEAR"));
@@ -959,7 +936,7 @@ async fn stream_request_size_hint_exceeds_limit_before_transport() {
                 polled.clone(),
                 Bytes::from_static(b"chunk"),
             ))
-            .with_size_hint(BodySizeHint::exact(5)),
+            .with_size_hint(http_body::SizeHint::with_exact(5)),
             HeaderValue::from_static("application/octet-stream"),
         ))
         .await
@@ -1010,7 +987,7 @@ async fn stream_request_is_counted_while_transport_consumes_it() {
                 Bytes::from_static(b"abcd"),
                 Bytes::from_static(b"efgh"),
             ]))
-            .with_size_hint(BodySizeHint::unknown()),
+            .with_size_hint(http_body::SizeHint::default()),
             HeaderValue::from_static("application/octet-stream"),
         ))
         .await;
@@ -1220,7 +1197,7 @@ async fn replay_factory_runs_once_per_physical_attempt_while_one_shot_stays_sing
     assert_eq!(transport.send_count(), 2);
     assert!(transport.captured().iter().all(|request| matches!(
         &request.body,
-        CapturedBody::Stream(bytes) if bytes == &Bytes::from_static(b"factory-body")
+        CapturedBody::Bytes(bytes) if bytes == &Bytes::from_static(b"factory-body")
     )));
 
     let one_shot_transport =

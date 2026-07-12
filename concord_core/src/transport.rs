@@ -1,13 +1,10 @@
-use crate::auth::{PlannedAuthPlacement, RequestExtensions};
-use crate::codec::CodecError;
+use crate::auth::PlannedAuthPlacement;
 use crate::rate_limit::RateLimitPlan;
 use crate::retry::RetrySetting;
 use bytes::Bytes;
-use futures_core::Stream;
 use http::{HeaderMap, Method, StatusCode};
 use std::fmt;
 use std::future::Future;
-use std::marker::PhantomData;
 use std::pin::Pin;
 use std::time::Duration;
 use url::Url;
@@ -23,262 +20,170 @@ pub struct RequestMeta {
     pub page_index: u32,
 }
 
-#[derive(Default)]
-pub enum TransportRequestBody {
-    #[default]
-    Empty,
-    Bytes(bytes::Bytes),
-    Stream(TransportByteStream),
-}
-
-impl TransportRequestBody {
-    #[inline]
-    pub fn empty() -> Self {
-        Self::Empty
-    }
-
-    #[inline]
-    pub fn from_bytes(bytes: bytes::Bytes) -> Self {
-        Self::Bytes(bytes)
-    }
-
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        matches!(self, Self::Empty)
-    }
-
-    #[inline]
-    pub fn is_bytes(&self) -> bool {
-        matches!(self, Self::Bytes(_))
-    }
-
-    #[inline]
-    pub fn is_stream(&self) -> bool {
-        matches!(self, Self::Stream(_))
-    }
-
-    #[inline]
-    pub fn as_bytes(&self) -> Option<&bytes::Bytes> {
-        match self {
-            Self::Bytes(bytes) => Some(bytes),
-            Self::Empty | Self::Stream(_) => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum StreamLimitDirection {
-    Request,
-    Response,
-}
-
-#[derive(Debug)]
-pub(crate) struct StreamBodyLimitError {
-    pub(crate) meta: RequestMeta,
-    pub(crate) direction: StreamLimitDirection,
-    pub(crate) limit: usize,
-    pub(crate) seen: usize,
-}
-
-impl fmt::Display for StreamBodyLimitError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let direction = match self.direction {
-            StreamLimitDirection::Request => "request",
-            StreamLimitDirection::Response => "response",
-        };
-        write!(
-            f,
-            "{} {} stream body exceeded configured size limit {} bytes (seen {} bytes)",
-            self.meta.method, direction, self.limit, self.seen
-        )
-    }
-}
-
-impl Error for StreamBodyLimitError {}
-
-impl fmt::Debug for TransportRequestBody {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => f.write_str("<empty>"),
-            Self::Bytes(bytes) => write!(f, "<{} bytes>", bytes.len()),
-            Self::Stream(_) => f.write_str("<stream>"),
-        }
-    }
-}
-
-pub struct TransportByteStream {
-    inner: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, TransportError>> + Send>>,
-    limit: Option<StreamByteLimit>,
-}
-
-impl TransportByteStream {
-    pub fn new<S, E>(stream: S) -> Self
-    where
-        S: Stream<Item = Result<bytes::Bytes, E>> + Send + 'static,
-        E: Into<TransportError> + Send + 'static,
-    {
-        Self {
-            inner: Box::pin(MapIntoTransportErrorStream::<S, E> {
-                inner: Box::pin(stream),
-                _marker: PhantomData,
-            }),
-            limit: None,
-        }
-    }
-
-    pub(crate) fn with_limit(mut self, limit: usize, meta: RequestMeta) -> Self {
-        self.limit = Some(StreamByteLimit {
-            meta,
-            direction: StreamLimitDirection::Request,
-            limit,
-            seen: 0,
-            exceeded: false,
-        });
-        self
-    }
-}
-
-impl fmt::Debug for TransportByteStream {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("<stream>")
-    }
-}
-
-impl Stream for TransportByteStream {
-    type Item = Result<bytes::Bytes, TransportError>;
-
-    fn poll_next(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        if this.limit.as_ref().is_some_and(|limit| limit.exceeded) {
-            return std::task::Poll::Ready(None);
-        }
-        match this.inner.as_mut().poll_next(cx) {
-            std::task::Poll::Ready(Some(Ok(bytes))) => {
-                if let Some(limit) = this.limit.as_mut() {
-                    let next_seen = limit.seen.saturating_add(bytes.len());
-                    if next_seen > limit.limit {
-                        limit.exceeded = true;
-                        let error = StreamBodyLimitError {
-                            meta: limit.meta.clone(),
-                            direction: limit.direction,
-                            limit: limit.limit,
-                            seen: next_seen,
-                        };
-                        return std::task::Poll::Ready(Some(Err(TransportError::with_kind(
-                            TransportErrorKind::Request,
-                            error,
-                        ))));
-                    }
-                    limit.seen = next_seen;
-                }
-                std::task::Poll::Ready(Some(Ok(bytes)))
-            }
-            other => other,
-        }
-    }
-}
-
-struct StreamByteLimit {
-    meta: RequestMeta,
-    direction: StreamLimitDirection,
-    limit: usize,
-    seen: usize,
-    exceeded: bool,
-}
-
-struct MapIntoTransportErrorStream<S, E> {
-    inner: Pin<Box<S>>,
-    _marker: PhantomData<fn() -> E>,
-}
-
-impl<S, E> Stream for MapIntoTransportErrorStream<S, E>
-where
-    S: Stream<Item = Result<bytes::Bytes, E>> + Send + 'static,
-    E: Into<TransportError> + Send + 'static,
-{
-    type Item = Result<bytes::Bytes, TransportError>;
-
-    fn poll_next(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let this = self.get_mut();
-        match this.inner.as_mut().poll_next(cx) {
-            std::task::Poll::Ready(Some(Ok(bytes))) => std::task::Poll::Ready(Some(Ok(bytes))),
-            std::task::Poll::Ready(Some(Err(err))) => std::task::Poll::Ready(Some(Err(err.into()))),
-            std::task::Poll::Ready(None) => std::task::Poll::Ready(None),
-            std::task::Poll::Pending => std::task::Poll::Pending,
-        }
-    }
-}
-
-pub struct BuiltRequest {
+#[derive(Clone, Debug)]
+pub struct RequestExecutionContext {
     pub meta: RequestMeta,
-    pub url: Url,
-    pub headers: HeaderMap,
-    pub(crate) body: crate::io::AttemptBody,
     pub timeout: Option<Duration>,
-    pub retry: RetrySetting,
-    pub rate_limit: RateLimitPlan,
-    pub extensions: RequestExtensions,
+}
+
+pub(crate) struct BuiltRequest {
+    pub(crate) message: http::Request<crate::body::DynBody>,
+    pub(crate) retry: RetrySetting,
+    pub(crate) rate_limit: RateLimitPlan,
+    pub(crate) stream_like: bool,
+    pub(crate) body_category: crate::io::ProducedBodyCategory,
 }
 
 impl fmt::Debug for BuiltRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BuiltRequest")
-            .field("meta", &self.meta)
+            .field("meta", &self.context().meta)
             .field("url", &self.debug_url())
             .field(
                 "headers",
-                &crate::debug::SanitizedHeaders::new(&self.headers),
+                &crate::debug::SanitizedHeaders::new(self.message.headers()),
             )
-            .field("body", &self.body)
-            .field("timeout", &self.timeout)
+            .field("version", &self.message.version())
+            .field("body", &self.message.body())
+            .field("timeout", &self.context().timeout)
             .field("retry", &self.retry)
             .field("rate_limit", &self.rate_limit)
-            .field("extensions", &self.extensions)
+            .field("stream_like", &self.stream_like)
+            .field("body_category", &self.body_category)
             .finish()
     }
 }
 
 impl BuiltRequest {
     pub(crate) fn debug_url(&self) -> String {
-        crate::redaction::sanitize_url_for_debug(
-            &self.url,
-            self.extensions.auth_plan.sensitive_query_keys.iter(),
-        )
+        let url = Url::parse(&self.message.uri().to_string())
+            .unwrap_or_else(|_| Url::parse("http://invalid.invalid/").expect("static URL"));
+        let sensitive = self
+            .message
+            .extensions()
+            .get::<crate::auth::AuthPlacementPlan>()
+            .map(|plan| plan.sensitive_query_keys.iter());
+        crate::redaction::sanitize_url_for_debug(&url, sensitive.into_iter().flatten())
+    }
+
+    pub(crate) fn context(&self) -> &RequestExecutionContext {
+        self.message
+            .extensions()
+            .get::<RequestExecutionContext>()
+            .expect("built request context is installed during construction")
     }
 }
 
-#[derive(Clone)]
 pub struct BuiltResponse {
-    pub meta: RequestMeta,
-    pub url: Url,
-    pub status: StatusCode,
-    pub headers: HeaderMap,
-    pub body: bytes::Bytes,
-    pub rate_limit: RateLimitPlan,
+    message: http::Response<bytes::Bytes>,
+    context: ResponseContext,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ResponseContext {
+    pub(crate) meta: RequestMeta,
+    pub(crate) request_url: Url,
+    pub(crate) rate_limit: RateLimitPlan,
+}
+
+pub(crate) struct AttemptResponse {
+    pub(crate) message: http::Response<crate::body::DynBody>,
+    pub(crate) context: ResponseContext,
+}
+
+impl AttemptResponse {
+    pub(crate) fn status(&self) -> StatusCode {
+        self.message.status()
+    }
+
+    pub(crate) fn headers(&self) -> &HeaderMap {
+        self.message.headers()
+    }
 }
 
 impl fmt::Debug for BuiltResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BuiltResponse")
-            .field("meta", &self.meta)
+            .field("meta", &self.context.meta)
             .field(
                 "url",
-                &crate::redaction::sanitize_url_for_debug(&self.url, [] as [&str; 0]),
+                &crate::redaction::sanitize_url_for_debug(
+                    &self.context.request_url,
+                    [] as [&str; 0],
+                ),
             )
-            .field("status", &self.status)
+            .field("status", &self.message.status())
+            .field("version", &self.message.version())
             .field(
                 "headers",
-                &crate::debug::SanitizedHeaders::new(&self.headers),
+                &crate::debug::SanitizedHeaders::new(self.message.headers()),
             )
-            .field("body", &format!("<{} bytes>", self.body.len()))
-            .field("rate_limit", &self.rate_limit)
+            .field("body", &format!("<{} bytes>", self.message.body().len()))
+            .field("rate_limit", &self.context.rate_limit)
             .finish()
+    }
+}
+
+impl BuiltResponse {
+    pub(crate) fn new(message: http::Response<Bytes>, context: ResponseContext) -> Self {
+        Self { message, context }
+    }
+
+    /// Wraps a standard buffered response with safe request execution context.
+    pub fn from_http(
+        message: http::Response<Bytes>,
+        meta: RequestMeta,
+        request_url: Url,
+        rate_limit: RateLimitPlan,
+    ) -> Self {
+        Self::new(
+            message,
+            ResponseContext {
+                meta,
+                request_url,
+                rate_limit,
+            },
+        )
+    }
+
+    pub fn meta(&self) -> &RequestMeta {
+        &self.context.meta
+    }
+
+    pub fn url(&self) -> &Url {
+        &self.context.request_url
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.message.status()
+    }
+
+    pub fn version(&self) -> http::Version {
+        self.message.version()
+    }
+
+    pub fn headers(&self) -> &HeaderMap {
+        self.message.headers()
+    }
+
+    pub fn extensions(&self) -> &http::Extensions {
+        self.message.extensions()
+    }
+
+    pub fn body(&self) -> &Bytes {
+        self.message.body()
+    }
+
+    pub fn rate_limit(&self) -> &RateLimitPlan {
+        &self.context.rate_limit
+    }
+
+    pub fn into_body(self) -> Bytes {
+        self.message.into_body()
+    }
+
+    pub(crate) fn into_parts(self) -> (http::Response<Bytes>, ResponseContext) {
+        (self.message, self.context)
     }
 }
 
@@ -309,56 +214,11 @@ impl<T: fmt::Debug> fmt::Debug for DecodedResponse<T> {
     }
 }
 
-pub struct TransportRequest {
-    pub meta: RequestMeta,
-    pub url: Url,
-    pub headers: HeaderMap,
-    pub body: TransportRequestBody,
-    pub timeout: Option<Duration>,
-    pub rate_limit: RateLimitPlan,
-    pub extensions: RequestExtensions,
-}
-
-impl fmt::Debug for TransportRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut headers = self.headers.clone();
-        for slot in &self.extensions.auth_plan.slots {
-            match &slot.placement {
-                PlannedAuthPlacement::Bearer | PlannedAuthPlacement::Basic => {
-                    headers.insert(
-                        http::header::AUTHORIZATION,
-                        http::HeaderValue::from_static("<redacted>"),
-                    );
-                }
-                PlannedAuthPlacement::Header(name) => {
-                    headers.insert(name.clone(), http::HeaderValue::from_static("<redacted>"));
-                }
-                PlannedAuthPlacement::Query(_) => {}
-            }
-        }
-        f.debug_struct("TransportRequest")
-            .field("meta", &self.meta)
-            .field(
-                "url",
-                &crate::redaction::sanitize_url_for_debug(
-                    &self.url,
-                    self.extensions.auth_plan.sensitive_query_keys.iter(),
-                ),
-            )
-            .field("headers", &crate::debug::SanitizedHeaders::new(&headers))
-            .field("body", &self.body)
-            .field("timeout", &self.timeout)
-            .field("rate_limit", &self.rate_limit)
-            .field("extensions", &self.extensions)
-            .finish()
-    }
-}
-
 pub(crate) fn materialize_transport_request(
     built: BuiltRequest,
     materials: &[crate::auth::AuthTransportMaterial],
     stream_request_limit: Option<usize>,
-) -> Result<TransportRequest, crate::auth::AuthError> {
+) -> Result<http::Request<crate::body::DynBody>, crate::auth::AuthError> {
     use base64::Engine;
     use http::header::{AUTHORIZATION, HeaderValue};
     use std::collections::HashMap;
@@ -372,25 +232,19 @@ pub(crate) fn materialize_transport_request(
         by_slot.insert(slot_id, material);
     }
 
-    let body = match built.body {
-        crate::io::AttemptBody::Empty => TransportRequestBody::Empty,
-        crate::io::AttemptBody::Bytes(bytes) => TransportRequestBody::Bytes(bytes),
-        crate::io::AttemptBody::Dyn(body) => {
-            TransportRequestBody::Stream(TransportByteStream::new(body.into_data_stream()))
-        }
-    };
-    let extensions = built.extensions;
-    let mut req = TransportRequest {
-        meta: built.meta,
-        url: built.url,
-        headers: built.headers,
-        body,
-        timeout: built.timeout,
-        rate_limit: built.rate_limit,
-        extensions,
-    };
+    let BuiltRequest {
+        mut message,
+        stream_like,
+        body_category,
+        ..
+    } = built;
+    let auth_plan = message
+        .extensions()
+        .get::<crate::auth::AuthPlacementPlan>()
+        .cloned()
+        .unwrap_or_default();
 
-    for slot in &req.extensions.auth_plan.slots {
+    for slot in &auth_plan.slots {
         let Some(material) = by_slot.get(&slot.id).copied() else {
             return Err(crate::auth::AuthError::new(
                 crate::auth::AuthErrorKind::MissingCredential,
@@ -412,7 +266,7 @@ pub(crate) fn materialize_transport_request(
                         "invalid bearer header value",
                     )
                 })?;
-                req.headers.insert(AUTHORIZATION, value);
+                message.headers_mut().insert(AUTHORIZATION, value);
             }
             (
                 PlannedAuthPlacement::Header(name),
@@ -424,15 +278,26 @@ pub(crate) fn materialize_transport_request(
                         "invalid auth header value",
                     )
                 })?;
-                req.headers.insert(name.clone(), value);
+                message.headers_mut().insert(name.clone(), value);
             }
             (
                 PlannedAuthPlacement::Query(name),
                 crate::auth::AuthTransportMaterial::Secret { secret, .. },
             ) => {
-                req.url
-                    .query_pairs_mut()
+                let mut url = Url::parse(&message.uri().to_string()).map_err(|_| {
+                    crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::InvalidConfiguration,
+                        "request URI could not accept query authentication",
+                    )
+                })?;
+                url.query_pairs_mut()
                     .append_pair(name, secret.expose_secret());
+                *message.uri_mut() = url.as_str().parse().map_err(|_| {
+                    crate::auth::AuthError::new(
+                        crate::auth::AuthErrorKind::InvalidConfiguration,
+                        "materialized authentication URI is invalid",
+                    )
+                })?;
             }
             (
                 PlannedAuthPlacement::Basic,
@@ -451,7 +316,7 @@ pub(crate) fn materialize_transport_request(
                         "invalid basic header value",
                     )
                 })?;
-                req.headers.insert(AUTHORIZATION, value);
+                message.headers_mut().insert(AUTHORIZATION, value);
             }
             _ => {
                 return Err(crate::auth::AuthError::new(
@@ -465,29 +330,14 @@ pub(crate) fn materialize_transport_request(
         }
     }
 
-    if let (Some(limit), TransportRequestBody::Stream(stream)) =
-        (stream_request_limit, &mut req.body)
-    {
-        let meta = req.meta.clone();
-        let stream = std::mem::replace(stream, TransportByteStream::new(EmptyStream));
-        req.body = TransportRequestBody::Stream(stream.with_limit(limit, meta));
+    if stream_like && let Some(limit) = stream_request_limit {
+        let body = std::mem::replace(message.body_mut(), crate::body::DynBody::empty());
+        *message.body_mut() = body.limited(limit as u64);
     }
 
-    Ok(req)
-}
+    message.extensions_mut().insert(body_category);
 
-#[derive(Default)]
-struct EmptyStream;
-
-impl Stream for EmptyStream {
-    type Item = Result<bytes::Bytes, TransportError>;
-
-    fn poll_next(
-        self: Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        std::task::Poll::Ready(None)
-    }
+    Ok(message)
 }
 
 impl<T> DecodedResponse<T> {
@@ -538,17 +388,6 @@ pub struct TransportError {
     source: crate::error::FxError,
 }
 
-#[derive(Debug)]
-struct ResponseBodyReadError;
-
-impl fmt::Display for ResponseBodyReadError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("response body read failed")
-    }
-}
-
-impl Error for ResponseBodyReadError {}
-
 impl TransportError {
     #[inline]
     pub fn new(e: impl Error + Send + Sync + 'static) -> Self {
@@ -570,14 +409,6 @@ impl TransportError {
     }
 
     #[inline]
-    pub(crate) fn response_body_read(kind: TransportErrorKind) -> Self {
-        Self {
-            kind,
-            source: Box::new(ResponseBodyReadError),
-        }
-    }
-
-    #[inline]
     pub fn kind(&self) -> TransportErrorKind {
         self.kind
     }
@@ -586,17 +417,20 @@ impl TransportError {
     pub fn source_error(&self) -> &(dyn Error + Send + Sync + 'static) {
         &*self.source
     }
+
+    pub(crate) fn body_error(&self) -> Option<crate::body::BodyError> {
+        let mut source: &(dyn Error + 'static) = &*self.source;
+        loop {
+            if let Some(error) = source.downcast_ref::<crate::body::BodyError>() {
+                return Some(*error);
+            }
+            source = source.source()?;
+        }
+    }
 }
 
 impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self
-            .source
-            .downcast_ref::<ResponseBodyReadError>()
-            .is_some()
-        {
-            return write!(f, "transport error: response body read failed");
-        }
         write!(f, "transport error: {:?}", self.kind)
     }
 }
@@ -624,12 +458,6 @@ impl From<reqwest::Error> for TransportError {
             kind,
             source: Box::new(e),
         }
-    }
-}
-
-impl From<CodecError> for TransportError {
-    fn from(error: CodecError) -> Self {
-        TransportError::with_kind(TransportErrorKind::Request, error)
     }
 }
 
@@ -686,32 +514,22 @@ fn classify_reqwest_error(err: &reqwest::Error) -> TransportErrorKind {
     TransportErrorKind::Other
 }
 
-pub trait TransportBody: Send + 'static {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>>;
-}
-
-pub struct TransportResponse {
-    pub meta: RequestMeta,
-    pub url: Url,
-    pub status: StatusCode,
-    pub headers: HeaderMap,
-    pub content_length: Option<u64>,
-    pub rate_limit: RateLimitPlan,
-    pub body: Box<dyn TransportBody>,
-}
-
 /// Injectable transport layer.
 ///
 /// Contract:
-/// - Must honor `TransportRequest` fields (url/headers/body/timeout) as appropriate.
+/// - One call represents one physical send.
+/// - Request and response heads use standard HTTP message ownership.
 /// - Must not leak a concrete HTTP client type in its public surface.
-pub trait Transport: Send + Clone + Sync + 'static {
+pub trait Transport: Send + Sync + 'static {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>>;
+        request: http::Request<crate::body::DynBody>,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<http::Response<crate::body::DynBody>, TransportError>>
+                + Send,
+        >,
+    >;
 }
 
 #[doc(hidden)]
@@ -733,8 +551,13 @@ pub struct DefaultTransport(());
 impl Transport for DefaultTransport {
     fn send(
         &self,
-        _req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        _request: http::Request<crate::body::DynBody>,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<http::Response<crate::body::DynBody>, TransportError>>
+                + Send,
+        >,
+    > {
         Box::pin(async move {
             Err(TransportError::with_kind(
                 TransportErrorKind::Request,
@@ -766,174 +589,174 @@ impl ReqwestTransport {
 }
 
 #[cfg(feature = "transport-reqwest")]
-struct ReqwestBody {
-    resp: reqwest::Response,
-}
-
-#[cfg(feature = "transport-reqwest")]
-impl TransportBody for ReqwestBody {
-    fn next_chunk<'a>(
-        &'a mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<Option<Bytes>, TransportError>> + Send + 'a>> {
-        Box::pin(async move { self.resp.chunk().await.map_err(TransportError::from) })
-    }
-}
-
-#[cfg(feature = "transport-reqwest")]
 impl Transport for ReqwestTransport {
     fn send(
         &self,
-        req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        request: http::Request<crate::body::DynBody>,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<http::Response<crate::body::DynBody>, TransportError>>
+                + Send,
+        >,
+    > {
         let client = self.client.clone();
         Box::pin(async move {
-            let TransportRequest {
-                meta,
-                url,
-                headers,
-                body,
-                timeout,
-                rate_limit,
-                ..
-            } = req;
-            // reqwest needs an owned Url; we keep a copy for returning meta.
-            let url_for_resp = url.clone();
-            let method = meta.method.clone();
-            let mut rb = client.request(method, url).headers(headers);
-            match body {
-                TransportRequestBody::Empty => {}
-                TransportRequestBody::Bytes(b) => {
-                    rb = rb.body(b);
-                }
-                TransportRequestBody::Stream(stream) => {
-                    rb = rb.body(reqwest::Body::wrap_stream(stream));
-                }
+            let timeout = request
+                .extensions()
+                .get::<RequestExecutionContext>()
+                .and_then(|context| context.timeout);
+            let body_category = request
+                .extensions()
+                .get::<crate::io::ProducedBodyCategory>()
+                .copied()
+                // Requests constructed by a custom caller do not have a
+                // prepared-body category. Preserve their body rather than
+                // silently omitting it.
+                .unwrap_or(crate::io::ProducedBodyCategory::OneShot);
+            let (parts, body) = request.into_parts();
+            let url = Url::parse(&parts.uri.to_string())
+                .map_err(|error| TransportError::with_kind(TransportErrorKind::Request, error))?;
+            let mut rb = client
+                .request(parts.method, url)
+                .version(parts.version)
+                .headers(parts.headers);
+            if reqwest_bridge_attaches_body(body_category, &body) {
+                rb = rb.body(reqwest::Body::wrap_stream(body.into_data_stream()));
             }
             if let Some(t) = timeout {
                 rb = rb.timeout(t);
             }
             let resp = rb.send().await.map_err(TransportError::from)?;
             let status = resp.status();
+            let version = resp.version();
             let headers = resp.headers().clone();
-            let content_length = resp.content_length();
-            Ok(TransportResponse {
-                meta,
-                url: url_for_resp,
-                status,
-                headers,
-                content_length,
-                rate_limit,
-                body: Box::new(ReqwestBody { resp }),
-            })
+            let body = crate::body::DynBody::from_byte_stream(resp.bytes_stream());
+            let mut response = http::Response::new(body);
+            *response.status_mut() = status;
+            *response.version_mut() = version;
+            *response.headers_mut() = headers;
+            Ok(response)
         })
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[cfg(feature = "transport-reqwest")]
+fn reqwest_bridge_attaches_body(
+    category: crate::io::ProducedBodyCategory,
+    body: &crate::body::DynBody,
+) -> bool {
+    !matches!(
+        category,
+        crate::io::ProducedBodyCategory::Empty | crate::io::ProducedBodyCategory::ReusableBytes
+    ) || !http_body::Body::is_end_stream(body)
+}
+
+#[cfg(all(test, feature = "transport-reqwest"))]
+mod reqwest_bridge_tests {
     use super::*;
-    use std::cell::Cell;
-    use std::sync::Arc;
-    use std::task::{Context, Poll, Wake, Waker};
+    use bytes::Bytes;
+    use futures_core::Stream;
+    use http_body::SizeHint;
+    use std::pin::Pin;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use std::task::{Context, Poll};
 
-    struct NoopWake;
-
-    impl Wake for NoopWake {
-        fn wake(self: Arc<Self>) {}
+    struct PollProbe {
+        polled: Arc<AtomicBool>,
+        error: bool,
     }
 
-    #[test]
-    fn transport_request_body_debug_is_safe() {
-        let sentinel = Bytes::from_static(b"SECRET_BODY_SENTINEL_MUST_NOT_APPEAR");
-        let empty = format!("{:?}", TransportRequestBody::Empty);
-        let bytes = format!("{:?}", TransportRequestBody::from_bytes(sentinel.clone()));
-        let stream = format!(
-            "{:?}",
-            TransportRequestBody::Stream(TransportByteStream::new(TransportErrorStream::error(
-                sentinel.clone()
-            )))
-        );
-
-        assert!(!empty.contains("SECRET_BODY_SENTINEL_MUST_NOT_APPEAR"));
-        assert!(!bytes.contains("SECRET_BODY_SENTINEL_MUST_NOT_APPEAR"));
-        assert!(!stream.contains("SECRET_BODY_SENTINEL_MUST_NOT_APPEAR"));
-        assert_eq!(bytes, format!("<{} bytes>", sentinel.len()));
-        assert_eq!(empty, "<empty>");
-        assert_eq!(stream, "<stream>");
-    }
-
-    #[test]
-    fn transport_byte_stream_propagates_errors_without_payload_leak() {
-        let sentinel = Bytes::from_static(b"SECRET_STREAM_ERROR_SENTINEL_MUST_NOT_APPEAR");
-        let mut stream = Box::pin(TransportByteStream::new(TransportErrorStream::error(
-            sentinel.clone(),
-        )));
-        let waker = Waker::from(Arc::new(NoopWake));
-        let mut cx = Context::from_waker(&waker);
-
-        match Stream::poll_next(stream.as_mut(), &mut cx) {
-            Poll::Ready(Some(Err(err))) => {
-                assert!(err.to_string().contains("transport error"));
-                assert!(
-                    !err.to_string()
-                        .contains("SECRET_STREAM_ERROR_SENTINEL_MUST_NOT_APPEAR")
-                );
-            }
-            other => panic!("unexpected stream poll result: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn transport_byte_stream_accepts_send_not_sync_stream() {
-        let mut stream = Box::pin(TransportByteStream::new(SendOnlyStream::new()));
-        let waker = Waker::from(Arc::new(NoopWake));
-        let mut cx = Context::from_waker(&waker);
-
-        match Stream::poll_next(stream.as_mut(), &mut cx) {
-            Poll::Ready(Some(Ok(bytes))) => assert_eq!(bytes, Bytes::from_static(b"chunk")),
-            other => panic!("unexpected stream poll result: {other:?}"),
-        }
-    }
-
-    struct TransportErrorStream {
-        item: Option<Result<Bytes, TransportError>>,
-    }
-
-    impl TransportErrorStream {
-        fn error(sentinel: Bytes) -> Self {
-            Self {
-                item: Some(Err(TransportError::new(std::io::Error::other(
-                    String::from_utf8_lossy(&sentinel).to_string(),
-                )))),
-            }
-        }
-    }
-
-    impl Stream for TransportErrorStream {
-        type Item = Result<Bytes, TransportError>;
-
-        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            Poll::Ready(self.item.take())
-        }
-    }
-
-    struct SendOnlyStream {
-        chunk: Cell<Option<Result<Bytes, TransportError>>>,
-    }
-
-    impl SendOnlyStream {
-        fn new() -> Self {
-            Self {
-                chunk: Cell::new(Some(Ok(Bytes::from_static(b"chunk")))),
-            }
-        }
-    }
-
-    impl Stream for SendOnlyStream {
-        type Item = Result<Bytes, TransportError>;
+    impl Stream for PollProbe {
+        type Item = Result<Bytes, crate::body::BodyError>;
 
         fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            Poll::Ready(self.chunk.take())
+            self.polled.store(true, Ordering::SeqCst);
+            if self.error {
+                Poll::Ready(Some(Err(crate::body::BodyError::input())))
+            } else {
+                Poll::Ready(None)
+            }
         }
+    }
+
+    fn exact_zero_hint() -> SizeHint {
+        let mut hint = SizeHint::new();
+        hint.set_exact(0);
+        hint
+    }
+
+    #[test]
+    fn reqwest_bridge_omits_only_known_empty_categories() {
+        let mut empty = crate::io::PreparedBody::empty();
+        let empty = empty.produce_for_attempt().expect("empty body");
+        let category = empty.category();
+        assert!(!reqwest_bridge_attaches_body(
+            category,
+            &empty.into_dyn_body()
+        ));
+
+        let mut bytes = crate::io::PreparedBody::reusable_bytes(Bytes::new(), None);
+        let bytes = bytes.produce_for_attempt().expect("reusable bytes");
+        let category = bytes.category();
+        assert!(!reqwest_bridge_attaches_body(
+            category,
+            &bytes.into_dyn_body()
+        ));
+    }
+
+    #[test]
+    fn reqwest_bridge_attaches_zero_one_shot_and_factory_without_polling() {
+        let one_shot_polled = Arc::new(AtomicBool::new(false));
+        let one_shot = crate::body::DynBody::from_byte_stream(PollProbe {
+            polled: one_shot_polled.clone(),
+            error: false,
+        })
+        .with_size_hint(exact_zero_hint());
+        let mut one_shot = crate::io::PreparedBody::one_shot(one_shot, None);
+        let one_shot = one_shot.produce_for_attempt().expect("one-shot body");
+        let category = one_shot.category();
+        assert!(reqwest_bridge_attaches_body(
+            category,
+            &one_shot.into_dyn_body()
+        ));
+        assert!(!one_shot_polled.load(Ordering::SeqCst));
+
+        let factory_polled = Arc::new(AtomicBool::new(false));
+        let factory_probe = factory_polled.clone();
+        let mut factory =
+            crate::io::PreparedBody::replay_factory(exact_zero_hint(), None, move || {
+                Ok(crate::body::DynBody::from_byte_stream(PollProbe {
+                    polled: factory_probe.clone(),
+                    error: false,
+                }))
+            });
+        let factory = factory.produce_for_attempt().expect("factory body");
+        let category = factory.category();
+        assert!(reqwest_bridge_attaches_body(
+            category,
+            &factory.into_dyn_body()
+        ));
+        assert!(!factory_polled.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn reqwest_bridge_does_not_discard_zero_error_body_or_poll_it() {
+        let polled = Arc::new(AtomicBool::new(false));
+        let body = crate::body::DynBody::from_byte_stream(PollProbe {
+            polled: polled.clone(),
+            error: true,
+        })
+        .with_size_hint(exact_zero_hint());
+        let mut prepared = crate::io::PreparedBody::one_shot(body, None);
+        let produced = prepared.produce_for_attempt().expect("one-shot error body");
+        let category = produced.category();
+        assert!(reqwest_bridge_attaches_body(
+            category,
+            &produced.into_dyn_body()
+        ));
+        assert!(!polled.load(Ordering::SeqCst));
     }
 }

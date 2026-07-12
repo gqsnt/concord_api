@@ -1,4 +1,4 @@
-use concord_core::advanced::{Transport, TransportError, TransportRequest, TransportResponse};
+use concord_core::advanced::{DynBody, Transport, TransportError};
 use concord_core::prelude::*;
 use concord_macros::api;
 use std::future::Future;
@@ -15,8 +15,8 @@ struct FailingTransport;
 impl Transport for FailingTransport {
     fn send(
         &self,
-        _req: TransportRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send>> {
+        _req: http::Request<DynBody>,
+    ) -> Pin<Box<dyn Future<Output = Result<http::Response<DynBody>, TransportError>> + Send>> {
         Box::pin(async {
             Err(TransportError::new(std::io::Error::other(
                 "intentional test transport",
