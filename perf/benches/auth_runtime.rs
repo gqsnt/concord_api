@@ -3,7 +3,7 @@ use concord_core::advanced::{
     AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthHttpExecutor,
     AuthPlacement, AuthPreparationReuse, AuthRequirement, CredentialContext, CredentialId,
     CredentialProvider, CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
-    PreparedAuthCredential, RequestMeta, RetryBackoff, RetryConfig, RetryIdempotency, Transport,
+    PreparedAuthCredential, RequestMeta, RetryConfig, RetryIdempotency, Transport,
     apply_secret_credential,
 };
 use concord_core::internal::{
@@ -48,7 +48,6 @@ fn with_retry(mut plan: RequestPlan) -> RequestPlan {
         methods: vec![Method::GET],
         statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
         transport_errors: Vec::new(),
-        backoff: RetryBackoff::None,
         respect_retry_after: false,
         idempotency: RetryIdempotency::SafeMethodsOnly,
     });

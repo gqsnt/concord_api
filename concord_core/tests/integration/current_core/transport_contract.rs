@@ -6,7 +6,7 @@ use super::common::{
 };
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
-use concord_core::advanced::{RetryBackoff, RetryConfig, RetryIdempotency, StreamBody};
+use concord_core::advanced::{RetryConfig, RetryIdempotency, StreamBody};
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{Format, PreparedBody, RequestPlan, ResolvedPolicy, RetrySetting};
 use concord_core::prelude::{ApiClient, ApiClientError, Endpoint, ReusableEndpoint, Text};
@@ -414,7 +414,6 @@ fn retry_contract_policy() -> ResolvedPolicy {
             methods: vec![Method::GET],
             statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
             transport_errors: Vec::new(),
-            backoff: RetryBackoff::None,
             respect_retry_after: true,
             idempotency: RetryIdempotency::SafeMethodsOnly,
         }),

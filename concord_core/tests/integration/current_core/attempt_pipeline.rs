@@ -5,7 +5,7 @@ use super::common::{
     buffered_endpoint_response_terminal, client,
 };
 use bytes::Bytes;
-use concord_core::advanced::{RetryBackoff, RetryConfig, RetryIdempotency, StreamBody};
+use concord_core::advanced::{RetryConfig, RetryIdempotency, StreamBody};
 use concord_core::error::ErrorCategory;
 use concord_core::internal::{
     ClientPlanContext, EndpointMeta, EndpointPlan, Format, PreparedBody, RequestOverrides,
@@ -134,7 +134,6 @@ fn replayable_policy() -> ResolvedPolicy {
             methods: vec![Method::PUT],
             statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
             transport_errors: Vec::new(),
-            backoff: RetryBackoff::None,
             respect_retry_after: true,
             idempotency: RetryIdempotency::SafeMethodsOnly,
         }),

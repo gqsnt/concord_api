@@ -190,18 +190,34 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     }
 
     #[inline]
-    pub fn max_auth_retries(&self) -> u32 {
-        self.runtime_state.max_auth_retries()
+    pub fn max_attempts(&self) -> u32 {
+        self.runtime_state.max_attempts()
     }
 
     #[inline]
-    pub fn set_max_auth_retries(&mut self, max_auth_retries: u32) {
-        Arc::make_mut(&mut self.runtime_state).set_max_auth_retries(max_auth_retries);
+    pub fn set_max_attempts(&mut self, max_attempts: u32) {
+        Arc::make_mut(&mut self.runtime_state).set_max_attempts(max_attempts);
     }
 
     #[inline]
-    pub fn with_max_auth_retries(mut self, max_auth_retries: u32) -> Self {
-        Arc::make_mut(&mut self.runtime_state).set_max_auth_retries(max_auth_retries);
+    pub fn with_max_attempts(mut self, max_attempts: u32) -> Self {
+        Arc::make_mut(&mut self.runtime_state).set_max_attempts(max_attempts);
+        self
+    }
+
+    #[inline]
+    pub fn respect_retry_after(&self) -> bool {
+        self.runtime_state.respect_retry_after()
+    }
+
+    #[inline]
+    pub fn set_respect_retry_after(&mut self, enabled: bool) {
+        Arc::make_mut(&mut self.runtime_state).set_respect_retry_after(enabled);
+    }
+
+    #[inline]
+    pub fn with_respect_retry_after(mut self, enabled: bool) -> Self {
+        Arc::make_mut(&mut self.runtime_state).set_respect_retry_after(enabled);
         self
     }
 
@@ -254,10 +270,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             hooks: self.runtime_state.hooks().clone(),
             rate_limiter: self.runtime_state.rate_limiter().clone(),
             retry_policy: self.runtime_state.retry_policy().clone(),
-            auth: crate::runtime::AuthRuntimeConfig {
-                max_retries: self.runtime_state.max_auth_retries(),
-                max_retry_delay: self.runtime_state.max_retry_delay(),
-            },
+            max_attempts: self.runtime_state.max_attempts(),
+            respect_retry_after: self.runtime_state.respect_retry_after(),
             max_rate_limit_cooldown: self.runtime_state.max_rate_limit_cooldown(),
             pagination_detect_loops: self.pagination_detect_loops,
             debug: crate::runtime::DebugConfig {

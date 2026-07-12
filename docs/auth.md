@@ -45,7 +45,7 @@ OAuth2 client-credentials token URLs must be HTTPS URLs with a host. Userinfo an
 
 Before the first protected request, Concord sends a token request to `token_url` using `POST`, `Authorization: Basic base64(client_id:client_secret)`, `Content-Type: application/x-www-form-urlencoded`, and a body containing `grant_type=client_credentials` plus `scope` when configured. A successful token response becomes `AccessToken` material. Protected requests then materialize `Authorization: Bearer <access_token>` only at the transport boundary.
 
-Valid OAuth tokens are reused through the credential slot. A protected `401` invalidates the applied token generation and reacquires a token within the runtime auth retry budget before retrying the protected request. Token endpoint failures stop the protected request before it is sent. OAuth client secrets, access tokens, and refresh tokens are redacted from debug output and errors.
+Valid OAuth tokens are reused through the credential slot. A protected `401` may invalidate the applied token generation and reacquire a token before retrying when the credential is refreshable, the request body is replayable, and the effective absolute attempt cap has remaining capacity. The default `max_attempts = 1` permits no resend. Token endpoint failures stop the protected request before it is sent. OAuth client secrets, access tokens, and refresh tokens are redacted from debug output and errors.
 
 Unsupported OAuth token-type failures are reported with a sanitized message. Public diagnostics do not render the raw remote `token_type`, access token, refresh token, or response body contents from the token endpoint.
 
@@ -122,9 +122,9 @@ Cloned clients share auth state. Runtime configuration uses clone-on-write, but 
 
 ## Rejection And Refresh
 
-By default, protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized` or `403 Forbidden`.
+Protected requests may refresh runtime-reacquirable credentials after `401 Unauthorized` or `403 Forbidden` when the credential is refreshable, the body is replayable, and the request has remaining absolute attempt capacity. The default `max_attempts = 1` permits no authentication resend.
 
-Credential refresh is bounded by the client runtime `max_auth_retries` setting.
+Credential refresh resends consume the protected request’s absolute `RetryConfig::max_attempts` budget; there is no separate authentication retry ceiling.
 
 Default rejection behavior:
 
@@ -137,7 +137,7 @@ Default rejection behavior:
 
 | retry | invalidate | Observed behavior |
 | --- | --- | --- |
-| `true` | `true` | Default refresh path. Concord invalidates the applied generation and retries the protected request when the credential can be reacquired. |
+| `true` | `true` | Refresh path when the credential can be reacquired, the body is replayable, and the absolute attempt cap admits another send. |
 | `true` | `false` | Concord retries the protected request without first clearing the applied generation. |
 | `false` | `true` | Concord invalidates the applied generation and returns a terminal auth rejection for the current request. |
 | `false` | `false` | Concord returns a terminal auth rejection and leaves the applied generation untouched. |

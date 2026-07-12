@@ -1,7 +1,7 @@
 mod config;
 
 #[allow(deprecated)]
-pub use config::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};
+pub use config::{DebugConfig, RuntimeConfig};
 
 #[cfg(feature = "dangerous-dev-tools")]
 #[allow(deprecated)]

@@ -42,3 +42,21 @@ fn retry_diagnostics_reject_duplicate_retry_profiles() {
 
     assert_error_contains(&err, "duplicate retry profile `read`");
 }
+
+#[test]
+fn retry_diagnostics_reject_attempts_outside_absolute_range() {
+    for value in ["0", "4"] {
+        let source = format!(
+            r#"
+            api! {{
+                client Api {{
+                    base "https://example.com"
+                    retry read {{ max_attempts {value} }}
+                }}
+            }}
+            "#
+        );
+        let err = analyze_err(&source);
+        assert_error_contains(&err, "retry max_attempts must be between 1 and 3");
+    }
+}

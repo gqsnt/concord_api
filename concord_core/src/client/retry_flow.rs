@@ -33,36 +33,39 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         config: &RetrySetting,
         ctx: &RetryContext<'_>,
-        retry_count: u32,
+        _retry_count: u32,
     ) -> Result<Option<std::time::Duration>, ApiClientError> {
-        let decision = if let RetrySetting::Config(config) = config {
-            if retry_count >= config.max_retries() {
-                return Ok(None);
-            }
-            config.try_decide(ctx)?
+        let (decision, respect_retry_after) = if let RetrySetting::Config(config) = config {
+            (config.try_decide(ctx)?, config.respect_retry_after)
         } else if matches!(config, RetrySetting::Inherit) {
-            if retry_count >= self.runtime_state.retry_policy().max_retries() {
-                return Ok(None);
-            }
-            self.runtime_state
-                .retry_policy()
-                .should_retry_checked(ctx)?
+            (
+                self.runtime_state
+                    .retry_policy()
+                    .should_retry_checked(ctx)?,
+                self.runtime_state.respect_retry_after(),
+            )
         } else {
             return Ok(None);
         };
 
         Ok(match decision {
             RetryDecision::Stop => None,
-            RetryDecision::Retry => Some(std::time::Duration::ZERO),
-            RetryDecision::RetryAfter(delay) => {
+            RetryDecision::Retry if respect_retry_after => {
+                let Some(headers) = ctx.response_headers else {
+                    return Ok(Some(std::time::Duration::ZERO));
+                };
+                let Some(delay) = crate::rate_limit::parse_retry_after(headers) else {
+                    return Ok(Some(std::time::Duration::ZERO));
+                };
                 validate_capped_retry_delay(
                     ctx,
                     delay,
-                    self.runtime_state.max_retry_delay(),
-                    "retry delay exceeds configured maximum",
+                    self.runtime_state.max_rate_limit_cooldown(),
+                    "retry Retry-After duration exceeds configured maximum",
                 )?;
                 Some(delay)
             }
+            RetryDecision::Retry => Some(std::time::Duration::ZERO),
         })
     }
 }

@@ -23,10 +23,10 @@ Common configuration methods include:
 - `debug_sink(...)`
 - `rate_limiter(...)`
 - `retry_policy(...)`
+- `max_attempts(...)` (inherited retry cap, `1..=3`)
+- `respect_retry_after(...)`
 - `runtime_hooks(...)`
 - `pagination_detect_loops(...)`
-- `max_auth_retries(...)`
-- `max_retry_delay(...)`
 - `max_rate_limit_cooldown(...)`
 - `max_response_body_bytes(...)`
 - `no_response_body_limit()`
@@ -42,9 +42,9 @@ Common configuration methods include:
 | `runtime_hooks` | no-op hooks |
 | `rate_limiter` | default rate limiter for the enabled feature set |
 | `retry_policy` | no retry |
-| `max_auth_retries` | `8` |
+| `max_attempts` | `1` |
+| `respect_retry_after` | `false` |
 | `pagination_detect_loops` | `true` |
-| `max_retry_delay` | `Duration::from_secs(60)` |
 | `max_rate_limit_cooldown` | `Duration::from_secs(60)` |
 | `max_response_body_bytes` | `Some(16 * 1024 * 1024)` |
 | `dev_body_capture` | disabled, feature-gated behind `dangerous-dev-tools` |
@@ -70,9 +70,9 @@ Debug sinks and runtime hooks are metadata-only observers. They receive sanitize
 
 The transport boundary is unchanged. The runtime still materializes raw request headers, query auth, and bodies only when building the `http::Request<DynBody>` that goes to the transport implementation. Auth collision checks happen before rate-limit acquisition, hooks, debug, and transport side effects.
 
-Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run after response classification, hook observation, rate-limit observation, and auth rejection handling, and before endpoint response decoding. They do not see body bytes or raw auth material.
+Retry customization follows the same boundary: retry decisions are transport/status decisions only, and they run after response classification, hook observation, rate-limit observation, and auth rejection handling, and before endpoint response decoding. They do not see body bytes or raw auth material. For inherited retry settings, `max_attempts(...)` independently supplies the absolute cap; the classifier never owns it.
 
-Retry delays are capped by `max_retry_delay(...)`, and rate-limit response cooldown durations are capped by `max_rate_limit_cooldown(...)`. The default governor runtime also bounds the number of stored cooldown entries and fails closed if storing a new distinct cooldown would exceed that entry cap after expired entries are pruned. Advanced callers that need a different fixed cooldown-entry cap can install an explicitly configured governor limiter through `rate_limiter(...)`:
+Server-directed `Retry-After` delays are enabled for inherited retry settings with `respect_retry_after(...)` and bounded by `max_rate_limit_cooldown(...)`; endpoint retry profiles use their own `retry_after` opt-in. Ordinary retries never add a client-generated delay. The default governor runtime also bounds the number of stored cooldown entries and fails closed if storing a new distinct cooldown would exceed that entry cap after expired entries are pruned. Advanced callers that need a different fixed cooldown-entry cap can install an explicitly configured governor limiter through `rate_limiter(...)`:
 
 ```rust
 use concord_core::advanced::GovernorRateLimiter;

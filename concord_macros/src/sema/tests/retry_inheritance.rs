@@ -23,7 +23,7 @@ fn retry_inheritance_applies_client_scope_endpoint_layers() {
                 }
 
                 retry endpoint_retry {
-                    max_attempts 4
+                    max_attempts 3
                     methods [PUT]
                     on [502]
                 }
@@ -63,7 +63,7 @@ fn retry_inheritance_applies_client_scope_endpoint_layers() {
     let Some(RetryResolved::Set(endpoint_retry)) = &endpoint.policy.endpoint.retry else {
         panic!("expected endpoint retry");
     };
-    assert_eq!(endpoint_retry.max_attempts, 4);
+    assert_eq!(endpoint_retry.max_attempts, 3);
     assert_eq!(endpoint_retry.statuses, vec![502]);
 }
 
@@ -76,7 +76,7 @@ fn retry_inheritance_explicit_default_retry_overrides_default_behavior_retry() {
                 base "https://example.com"
 
                 retry from_behavior {
-                    max_attempts 5
+                    max_attempts 3
                     methods [GET]
                 }
 
@@ -178,7 +178,7 @@ fn retry_patches_materialize_inherited_and_after_clear() {
 
                     profile patch_after_clear {
                         retry {
-                            max_attempts 7
+                            max_attempts 3
                         }
                     }
                 }
@@ -249,7 +249,7 @@ fn retry_patches_materialize_inherited_and_after_clear() {
     let Some(RetryResolved::Set(endpoint_retry)) = &reenabled_endpoint.policy.endpoint.retry else {
         panic!("expected patch after clear to re-enable retry");
     };
-    assert_eq!(endpoint_retry.max_attempts, 7);
+    assert_eq!(endpoint_retry.max_attempts, 3);
     assert!(endpoint_retry.methods.is_empty());
     assert!(endpoint_retry.statuses.is_empty());
 }

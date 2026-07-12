@@ -476,7 +476,6 @@ fn stream_retry_policy() -> ResolvedPolicy {
             methods: Vec::new(),
             statuses: Vec::new(),
             transport_errors: vec![TransportErrorKind::Other],
-            backoff: concord_core::advanced::RetryBackoff::None,
             respect_retry_after: false,
             idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
         }),

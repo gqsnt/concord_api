@@ -852,9 +852,6 @@ fn retry_doc_lines(retry: &RetryConfigResolved) -> Vec<String> {
     if retry.respect_retry_after {
         lines.push("retry-after: yes".to_string());
     }
-    if !matches!(retry.backoff, RetryBackoffResolved::None) {
-        lines.push("backoff: configured".to_string());
-    }
     match &retry.idempotency {
         RetryIdempotencyResolved::SafeMethodsOnly => {
             lines.push("idempotency: safe methods only".to_string());

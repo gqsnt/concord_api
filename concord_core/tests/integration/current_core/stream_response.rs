@@ -877,7 +877,6 @@ async fn buffered_request_body_stream_response_retries_before_body_exposure()
             methods: vec![Method::POST],
             statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
             transport_errors: Vec::new(),
-            backoff: concord_core::advanced::RetryBackoff::None,
             respect_retry_after: true,
             idempotency: concord_core::advanced::RetryIdempotency::Header(retry_header),
         }),

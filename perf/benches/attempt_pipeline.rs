@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthPlacement, NoopDebugSink, RateLimiter, RetryBackoff, RetryConfig, RetryIdempotency,
+    AuthPlacement, NoopDebugSink, RateLimiter, RetryConfig, RetryIdempotency,
 };
 use concord_core::internal::{PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy};
 use concord_core::prelude::DebugLevel;
@@ -51,7 +51,6 @@ fn with_retry(mut plan: RequestPlan, max_attempts: u32) -> RequestPlan {
         methods: vec![Method::GET],
         statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
         transport_errors: Vec::new(),
-        backoff: RetryBackoff::None,
         respect_retry_after: false,
         idempotency: RetryIdempotency::SafeMethodsOnly,
     });

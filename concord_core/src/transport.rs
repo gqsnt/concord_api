@@ -16,6 +16,9 @@ pub struct RequestMeta {
     pub endpoint: &'static str,
     pub method: Method,
     pub idempotent: bool,
+    /// Zero-based metadata index derived from the request-local physical
+    /// attempt count. The first `Transport::send` is physical attempt 1;
+    /// this legacy metadata field remains 0 for that send.
     pub attempt: u32,
     pub page_index: u32,
 }

@@ -22,21 +22,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static DEV_BODY_CAPTURE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
-pub struct AuthRuntimeConfig {
-    pub(crate) max_retries: u32,
-    pub(crate) max_retry_delay: Duration,
-}
-
-impl Default for AuthRuntimeConfig {
-    fn default() -> Self {
-        Self {
-            max_retries: 8,
-            max_retry_delay: Duration::from_secs(60),
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct DebugConfig {
     pub(crate) level: DebugLevel,
     pub(crate) sink: Arc<dyn DebugSink>,
@@ -139,7 +124,8 @@ pub struct RuntimeConfig {
     pub(crate) hooks: Arc<dyn RuntimeHooks>,
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) retry_policy: Arc<dyn RetryPolicy>,
-    pub(crate) auth: AuthRuntimeConfig,
+    pub(crate) max_attempts: u32,
+    pub(crate) respect_retry_after: bool,
     pub(crate) max_rate_limit_cooldown: Duration,
     pub(crate) pagination_detect_loops: bool,
     pub(crate) debug: DebugConfig,
@@ -157,7 +143,8 @@ impl Default for RuntimeConfig {
             hooks: Arc::new(NoopRuntimeHooks),
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
-            auth: AuthRuntimeConfig::default(),
+            max_attempts: 1,
+            respect_retry_after: false,
             max_rate_limit_cooldown: Duration::from_secs(60),
             pagination_detect_loops: true,
             debug: DebugConfig::default(),
@@ -217,15 +204,18 @@ impl RuntimeConfig {
         self
     }
 
+    /// Sets the absolute cap used when an endpoint inherits the runtime
+    /// classifier. Invalid values are rejected when that configuration is
+    /// applied to a request; the value is never clamped.
     #[inline]
-    pub fn max_auth_retries(&mut self, max: u32) -> &mut Self {
-        self.auth.max_retries = max;
+    pub fn max_attempts(&mut self, max_attempts: u32) -> &mut Self {
+        self.max_attempts = max_attempts;
         self
     }
 
     #[inline]
-    pub fn max_retry_delay(&mut self, max_delay: Duration) -> &mut Self {
-        self.auth.max_retry_delay = max_delay;
+    pub fn respect_retry_after(&mut self, enabled: bool) -> &mut Self {
+        self.respect_retry_after = enabled;
         self
     }
 
@@ -291,13 +281,13 @@ mod tests {
     fn runtime_config_defaults_snapshot() {
         let cfg = RuntimeConfig::default();
 
-        assert_eq!(cfg.auth.max_retries, 8);
+        assert_eq!(cfg.max_attempts, 1);
+        assert!(!cfg.respect_retry_after);
         assert!(cfg.pagination_detect_loops);
         assert_eq!(cfg.debug.level, DebugLevel::None);
         assert_eq!(cfg.max_response_body_bytes, Some(16 * 1024 * 1024));
         assert_eq!(cfg.max_stream_request_body_bytes, Some(16 * 1024 * 1024));
         assert_eq!(cfg.max_stream_response_body_bytes, Some(16 * 1024 * 1024));
-        assert_eq!(cfg.auth.max_retry_delay, Duration::from_secs(60));
         assert_eq!(cfg.max_rate_limit_cooldown, Duration::from_secs(60));
         #[cfg(feature = "dangerous-dev-tools")]
         assert!(cfg.dev_body_capture.is_none());

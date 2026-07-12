@@ -44,14 +44,16 @@ Custom transports receive the materialized `http::Request<DynBody>`, so they see
 
 Auth rejection handling runs after response classification but before normal retry. If configured, the runtime can invalidate rejected credential material and perform bounded auth refresh before retrying the protected request for credentials the runtime can reacquire.
 
-The v1 default policy is:
+The v1 rejection classification is:
 
-- `401 Unauthorized`: invalidate the applied credential and retry after refresh for refreshable or runtime-reacquirable credentials.
-- `403 Forbidden`: invalidate the applied credential and retry after refresh for refreshable or runtime-reacquirable credentials.
+- `401 Unauthorized`: invalidate the applied credential and request refresh for refreshable or runtime-reacquirable credentials when the request has replayable body capacity remaining.
+- `403 Forbidden`: invalidate the applied credential and request refresh for refreshable or runtime-reacquirable credentials when the request has replayable body capacity remaining.
+
+The effective absolute attempt cap controls whether the refresh resend can occur. Its default is `max_attempts = 1`, so the default permits no resend; there is no separate authentication retry budget.
 
 Endpoint-backed credentials are manual from the protected request's point of view. A protected `401` can invalidate the applied endpoint-backed generation, but protected request retry does not automatically call the auth endpoint again; callers must explicitly reacquire through the auth endpoint before sending another protected call.
 
-Credential refresh is bounded by the client runtime `max_auth_retries` setting. The runtime must not loop indefinitely on repeated auth rejection.
+Credential refresh resends use the protected request’s absolute `max_attempts` cap. The runtime must not loop indefinitely on repeated auth rejection, and authentication does not have a separate retry ceiling.
 
 `AuthChallengePolicy::NeverRefresh` is part of the advanced core API. When a requirement uses it, auth rejection does not invalidate or retry for `401` or `403`. It is not exposed as public DSL syntax in v1.
 

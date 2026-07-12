@@ -32,7 +32,6 @@ fn emit_retry_config(config: &RetryConfigResolved) -> TokenStream2 {
     let transport_errors = config.transport_errors.iter().map(|kind| {
         quote! { ::concord_core::transport::TransportErrorKind::#kind }
     });
-    let backoff = emit_retry_backoff(&config.backoff);
     let respect_retry_after = config.respect_retry_after;
     let idempotency = emit_retry_idempotency(&config.idempotency);
 
@@ -42,16 +41,9 @@ fn emit_retry_config(config: &RetryConfigResolved) -> TokenStream2 {
             methods: ::std::vec![ #( #methods ),* ],
             statuses: ::std::vec![ #( #statuses ),* ],
             transport_errors: ::std::vec![ #( #transport_errors ),* ],
-            backoff: #backoff,
             respect_retry_after: #respect_retry_after,
             idempotency: #idempotency,
         }
-    }
-}
-
-fn emit_retry_backoff(backoff: &RetryBackoffResolved) -> TokenStream2 {
-    match backoff {
-        RetryBackoffResolved::None => quote! { ::concord_core::advanced::RetryBackoff::None },
     }
 }
 

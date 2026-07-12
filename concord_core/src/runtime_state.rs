@@ -10,8 +10,8 @@ pub struct ClientRuntimeState {
     hooks: Arc<dyn RuntimeHooks>,
     rate_limiter: Arc<dyn RateLimiter>,
     retry_policy: Arc<dyn RetryPolicy>,
-    max_auth_retries: u32,
-    max_retry_delay: Duration,
+    max_attempts: u32,
+    respect_retry_after: bool,
     max_rate_limit_cooldown: Duration,
     max_response_body_bytes: Option<usize>,
     max_stream_request_body_bytes: Option<usize>,
@@ -34,8 +34,8 @@ impl ClientRuntimeState {
             hooks: config.hooks,
             rate_limiter: config.rate_limiter,
             retry_policy: config.retry_policy,
-            max_auth_retries: config.auth.max_retries,
-            max_retry_delay: config.auth.max_retry_delay,
+            max_attempts: config.max_attempts,
+            respect_retry_after: config.respect_retry_after,
             max_rate_limit_cooldown: config.max_rate_limit_cooldown,
             max_response_body_bytes: config.max_response_body_bytes,
             max_stream_request_body_bytes: config.max_stream_request_body_bytes,
@@ -71,23 +71,23 @@ impl ClientRuntimeState {
     }
 
     #[inline]
-    pub fn max_auth_retries(&self) -> u32 {
-        self.max_auth_retries
+    pub fn max_attempts(&self) -> u32 {
+        self.max_attempts
     }
 
     #[inline]
-    pub fn set_max_auth_retries(&mut self, max_auth_retries: u32) {
-        self.max_auth_retries = max_auth_retries;
+    pub fn set_max_attempts(&mut self, max_attempts: u32) {
+        self.max_attempts = max_attempts;
     }
 
     #[inline]
-    pub fn max_retry_delay(&self) -> Duration {
-        self.max_retry_delay
+    pub fn respect_retry_after(&self) -> bool {
+        self.respect_retry_after
     }
 
     #[inline]
-    pub fn set_max_retry_delay(&mut self, max_retry_delay: Duration) {
-        self.max_retry_delay = max_retry_delay;
+    pub fn set_respect_retry_after(&mut self, enabled: bool) {
+        self.respect_retry_after = enabled;
     }
 
     #[inline]

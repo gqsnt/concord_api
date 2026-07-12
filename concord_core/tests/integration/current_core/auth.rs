@@ -1446,7 +1446,7 @@ async fn auth_never_refresh_does_not_retry_or_invalidate_forbidden() {
 }
 
 #[tokio::test]
-async fn max_auth_retries_zero_behavior_characterized() {
+async fn absolute_attempt_cap_one_stops_auth_refresh() {
     for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
         let harness = RotatingPolicyAuthHarness::new(
             AuthStepPolicy::default(),
@@ -1455,18 +1455,19 @@ async fn max_auth_retries_zero_behavior_characterized() {
         );
         let retry_events = Arc::new(Mutex::new(Vec::new()));
         let mut client = harness.client(vec![MockResponse::text(status, "rejected")]);
-        client.set_max_auth_retries(0);
         client.set_retry_policy(Arc::new(RecordingRetryPolicy::new(
             retry_events.clone(),
             RetryDecision::Retry,
             8,
         )));
 
+        let mut endpoint = harness.endpoint(status);
+        endpoint.policy.retry = retry_policy_for_statuses(1, vec![status]).retry;
         let err = client
-            .request(harness.endpoint(status))
+            .request(endpoint)
             .response()
             .await
-            .expect_err("zero auth retry budget should stop refresh attempts");
+            .expect_err("a one-send attempt cap should stop refresh attempts");
 
         assert_eq!(
             err.category(),
@@ -1511,26 +1512,25 @@ async fn max_auth_retries_zero_behavior_characterized() {
 }
 
 #[tokio::test]
-async fn auth_retry_respects_max_auth_retries() {
+async fn auth_refresh_respects_absolute_attempt_cap() {
     for status in [StatusCode::UNAUTHORIZED, StatusCode::FORBIDDEN] {
         let harness = RotatingPolicyAuthHarness::new(
             AuthStepPolicy::default(),
             AuthChallengePolicy::Default,
             vec!["token-1".to_string(), "token-2".to_string()],
         );
-        let mut client = harness.client(vec![
+        let client = harness.client(vec![
             MockResponse::text(status, "expired-1"),
             MockResponse::text(status, "expired-2"),
             MockResponse::text(StatusCode::OK, "should-not-send"),
         ]);
-        client.set_max_auth_retries(1);
 
         let err = client
             .request(harness.endpoint(status))
             .response()
             .await
             .expect_err(
-                "auth retry budget should stop repeated refresh attempts with an auth error",
+                "the absolute attempt cap should stop repeated refresh attempts with an auth error",
             );
 
         assert_eq!(
@@ -2500,24 +2500,21 @@ impl RotatingPolicyAuthHarness {
         responses: Vec<MockResponse>,
     ) -> concord_core::prelude::ApiClient<RotatingPolicyAuthCx, MockTransport> {
         let transport = MockTransport::new(self.events.clone(), responses);
-        let mut client =
-            concord_core::prelude::ApiClient::<RotatingPolicyAuthCx, _>::with_transport(
-                (),
-                RotatingPolicyAuthVars {
-                    tokens: Arc::new(Mutex::new(VecDeque::from(self.tokens.clone()))),
-                    policy: self.policy,
-                    events: self.events.clone(),
-                },
-                transport.clone(),
-            );
-        client.set_max_auth_retries(8);
-        client
+        concord_core::prelude::ApiClient::<RotatingPolicyAuthCx, _>::with_transport(
+            (),
+            RotatingPolicyAuthVars {
+                tokens: Arc::new(Mutex::new(VecDeque::from(self.tokens.clone()))),
+                policy: self.policy,
+                events: self.events.clone(),
+            },
+            transport.clone(),
+        )
     }
 
     fn endpoint(&self, retry_status: StatusCode) -> TextEndpoint {
         let mut policy = auth_policy(AuthPlacement::Bearer);
         policy.auth.requirements[0].challenge = self.challenge;
-        policy.retry = retry_policy_for_statuses(1, vec![retry_status]).retry;
+        policy.retry = retry_policy_for_statuses(2, vec![retry_status]).retry;
         TextEndpoint {
             policy,
             ..Default::default()
@@ -2564,7 +2561,7 @@ impl PolicyAuthHarness {
         responses: Vec<MockResponse>,
     ) -> concord_core::prelude::ApiClient<PolicyAuthCx, MockTransport> {
         let transport = MockTransport::new(self.events.clone(), responses);
-        let mut client = concord_core::prelude::ApiClient::<PolicyAuthCx, _>::with_transport(
+        concord_core::prelude::ApiClient::<PolicyAuthCx, _>::with_transport(
             (),
             PolicyAuthVars {
                 token: "token".to_string(),
@@ -2572,15 +2569,13 @@ impl PolicyAuthHarness {
                 events: self.events.clone(),
             },
             transport.clone(),
-        );
-        client.set_max_auth_retries(8);
-        client
+        )
     }
 
     fn endpoint(&self, retry_status: StatusCode) -> TextEndpoint {
         let mut policy = auth_policy(AuthPlacement::Bearer);
         policy.auth.requirements[0].challenge = self.challenge;
-        policy.retry = retry_policy_for_statuses(1, vec![retry_status]).retry;
+        policy.retry = retry_policy_for_statuses(2, vec![retry_status]).retry;
         TextEndpoint {
             policy,
             ..Default::default()
@@ -2854,16 +2849,17 @@ async fn endpoint_backed_auth_slot_acquires_and_applies_the_credential()
         vec![MockResponse::text(StatusCode::OK, "slot-ok")],
     );
     let sent_transport = transport.clone();
-    let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+    let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
         (),
         SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone()),
         transport,
     );
-    client.set_max_auth_retries(8);
 
+    let mut policy = auth_policy(AuthPlacement::Bearer);
+    policy.retry = concord_core::internal::RetrySetting::Inherit;
     let decoded = client
         .request(TextEndpoint {
-            policy: auth_policy(AuthPlacement::Bearer),
+            policy,
             ..Default::default()
         })
         .response()
@@ -2899,12 +2895,11 @@ async fn endpoint_backed_auth_slot_acquire_failure_is_typed_and_contextual() {
         vec![MockResponse::text(StatusCode::OK, "unused")],
     );
     let sent_transport = transport.clone();
-    let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+    let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
         (),
         SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone()),
         transport,
     );
-    client.set_max_auth_retries(8);
 
     let err = client
         .request(TextEndpoint {
@@ -2949,12 +2944,11 @@ async fn auth_rejection_stale_invalidation_cannot_clear_newer_generation()
             ],
         );
         let sent_transport = transport.clone();
-        let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+        let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
             (),
             SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone()),
             transport,
         );
-        client.set_max_auth_retries(8);
         let client = Arc::new(client);
 
         let request = TextEndpoint {

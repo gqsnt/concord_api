@@ -81,6 +81,7 @@ mod basic_helper_contract {
 
         GET BasicMe
             path ["basic-me"]
+            retry once
             auth basic login
             -> Json<User>
 
@@ -149,6 +150,7 @@ mod o_auth_helper_contract {
 
         GET OAuthMe
             path ["oauth-me"]
+            retry once
             auth bearer oauth
             -> Json<User>
 

@@ -1123,6 +1123,14 @@ pub fn auth_policy(placement: AuthPlacement) -> ResolvedPolicy {
                 challenge: Default::default(),
             }],
         },
+        retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
+            max_attempts: 2,
+            methods: vec![Method::GET],
+            statuses: Vec::new(),
+            transport_errors: Vec::new(),
+            respect_retry_after: false,
+            idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
+        }),
         ..Default::default()
     }
 }
@@ -1138,7 +1146,6 @@ pub fn retry_policy_for_statuses(max_attempts: u32, statuses: Vec<StatusCode>) -
             methods: vec![Method::GET],
             statuses,
             transport_errors: Vec::new(),
-            backoff: concord_core::advanced::RetryBackoff::None,
             respect_retry_after: true,
             idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
         }),
@@ -1156,7 +1163,6 @@ pub fn retry_policy_for_transport_errors(
             methods: vec![Method::GET],
             statuses: Vec::new(),
             transport_errors,
-            backoff: concord_core::advanced::RetryBackoff::None,
             respect_retry_after: true,
             idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
         }),
@@ -1502,24 +1508,19 @@ impl RateLimiter for ObservationRateLimiter {
 pub struct RecordingRetryPolicy {
     pub events: Arc<Mutex<Vec<String>>>,
     pub decision: RetryDecision,
-    pub max_retries: u32,
 }
 
 impl RecordingRetryPolicy {
-    pub fn new(events: Arc<Mutex<Vec<String>>>, decision: RetryDecision, max_retries: u32) -> Self {
-        Self {
-            events,
-            decision,
-            max_retries,
-        }
+    pub fn new(
+        events: Arc<Mutex<Vec<String>>>,
+        decision: RetryDecision,
+        _attempt_budget_fixture: u32,
+    ) -> Self {
+        Self { events, decision }
     }
 }
 
 impl RetryPolicy for RecordingRetryPolicy {
-    fn max_retries(&self) -> u32 {
-        self.max_retries
-    }
-
     fn should_retry_checked(
         &self,
         ctx: &RetryContext<'_>,

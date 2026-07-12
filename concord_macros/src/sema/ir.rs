@@ -403,7 +403,6 @@ pub struct RetryConfigResolved {
     pub methods: Vec<Ident>,
     pub statuses: Vec<u16>,
     pub transport_errors: Vec<Ident>,
-    pub backoff: RetryBackoffResolved,
     pub respect_retry_after: bool,
     pub idempotency: RetryIdempotencyResolved,
 }
@@ -415,7 +414,6 @@ impl Default for RetryConfigResolved {
             methods: Vec::new(),
             statuses: Vec::new(),
             transport_errors: Vec::new(),
-            backoff: RetryBackoffResolved::None,
             respect_retry_after: false,
             idempotency: RetryIdempotencyResolved::SafeMethodsOnly,
         }
@@ -430,11 +428,6 @@ pub struct RetryPatchResolved {
     pub transport_errors: Option<Vec<Ident>>,
     pub respect_retry_after: Option<bool>,
     pub idempotency: Option<RetryIdempotencyResolved>,
-}
-
-#[derive(Debug, Clone)]
-pub enum RetryBackoffResolved {
-    None,
 }
 
 #[derive(Debug, Clone)]

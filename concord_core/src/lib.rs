@@ -143,11 +143,11 @@ pub mod advanced {
         RateLimiter, parse_retry_after,
     };
     pub use crate::retry::{
-        ConfiguredRetryPolicy, NoRetryPolicy, RetryBackoff, RetryConfig, RetryContext,
+        ConfiguredRetryPolicy, NoRetryPolicy, RetryClassifierConfig, RetryConfig, RetryContext,
         RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy,
     };
     #[allow(deprecated)]
-    pub use crate::runtime::{AuthRuntimeConfig, DebugConfig, RuntimeConfig};
+    pub use crate::runtime::{DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{
         HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext, RuntimeHooks,
         TransportErrorHookContext,

@@ -129,7 +129,6 @@ fn with_retry(mut plan: RequestPlan, max_attempts: u32) -> RequestPlan {
             methods: vec![Method::GET],
             statuses: vec![StatusCode::INTERNAL_SERVER_ERROR],
             transport_errors: Vec::new(),
-            backoff: concord_core::advanced::RetryBackoff::None,
             respect_retry_after: false,
             idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
         });

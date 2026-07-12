@@ -33,11 +33,11 @@ The buffered response path applies the common frame-aware limiter before bounded
 
 ## Retry And Rate Limit Interaction
 
-Retry policy is bounded by configuration. `RetryConfig::max_attempts` counts the initial send, and retry delay decisions are capped by `max_retry_delay(...)`. Retry decisions can use fixed backoff, exponential backoff, and `Retry-After` response headers when `retry_after` is enabled, as implemented in `concord_core/src/retry.rs` and applied in `concord_core/src/client/retry_flow.rs`.
+Retry policy is bounded by configuration. `RetryConfig::max_attempts` is the absolute physical-send cap, counts the initial send, and accepts only `1..=3`. Policies classify outcomes; ordinary retries do not add a client-generated delay. Opted-in server-directed `Retry-After` response headers are bounded by `max_rate_limit_cooldown(...)` and are applied centrally in `concord_core/src/client/retry_flow.rs`.
 
 Rate-limit response handling can also store cooldowns from provider metadata, including `Retry-After`, through the default governor runtime. Those cooldowns are capped by `max_rate_limit_cooldown(...)`. When an HTTP status error already produced a rate-limit action whose delay was stored for the limiter, `drive_attempts` zeroes the normal retry delay before the next attempt. That avoids waiting once in the rate limiter and again in retry sleep.
 
-Auth retries are separately bounded by `max_auth_retries(...)`. Auth rejection handling invalidates request-local auth preparation before retrying so refreshed credentials are prepared before the next attempt.
+Authentication refresh resends consume the same `RetryConfig::max_attempts` capacity as transport and status retries. Auth rejection handling invalidates request-local auth preparation before retrying so refreshed credentials are prepared before the next attempt.
 
 With the `rate-limit-governor` feature enabled, the default limiter enforces declared plans. Without that feature, the default limiter fails closed for non-empty rate-limit plans. Empty plans still pass. Install `NoopRateLimiter` explicitly when you intentionally want to opt out of enforcement.
 

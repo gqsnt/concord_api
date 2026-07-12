@@ -36,9 +36,11 @@ Flat `retry` and `rate_limit` profile declarations remain valid. `policies { ...
 
 `max_attempts` is the total number of send tries, including the first send. `retry_after` honors `Retry-After` response headers for retryable statuses.
 
+When an endpoint uses inherited retry settings, `RuntimeConfig::max_attempts(...)` independently supplies the absolute cap and defaults to one. A custom `RetryPolicy` only classifies an outcome as `Stop` or `Retry`; it cannot own or report a ceiling. `RuntimeConfig::respect_retry_after(...)` is the inherited-policy opt-in for bounded server-directed timing.
+
 Retry is a bounded transport/status decision layer. Retry decisions happen after transport-response metadata observation and auth rejection handling, and before endpoint decode. Retry does not handle decode failures.
 
-Retry delays are capped. The default maximum retry delay is finite and configured through runtime settings. Invalid, overflowing, or over-cap retry delays return a typed configuration error rather than panicking or sleeping. Remote `Retry-After` values, fixed backoff, exponential backoff, and custom retry policies all fail closed if they request a delay above the configured cap.
+Retry policy only classifies an outcome as stop or retry. Ordinary retries do not sleep. When `retry_after` is enabled, a valid server-directed `Retry-After` value may delay an otherwise admitted additional attempt, bounded by `max_rate_limit_cooldown(...)`; malformed or unsafe values do not create a delay. Rate-limit handling shares that same admissible wait so one server signal cannot cause two sleeps.
 
 ```rust
 retry read {

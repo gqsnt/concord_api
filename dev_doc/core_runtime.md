@@ -75,15 +75,15 @@ Semantic numeric state uses explicit failure instead of silent saturation. Reque
 
 Runtime state access should fail explicitly instead of panicking. Request execution maps poisoned auth state, rate-limit window state, cooldown state, and other required runtime state into typed auth or runtime-state errors.
 
-Auth rejection handling happens after response classification but before the normal retry decision. Bounded auth refresh is the first recovery path for configured auth rejection responses.
+Auth rejection handling happens after response classification but before the normal retry decision. Bounded auth refresh is the first recovery path for configured auth rejection responses, but only when the effective absolute attempt cap has capacity; the default cap of one permits no refresh resend.
 
 Auth locks are not held across credential endpoint I/O or token endpoint I/O. Slot state transitions mark an in-flight generation before network work, and completion stores material only if the slot still expects that generation.
 
 Retry exhaustion returns the final transport or status error that caused the retry loop to stop, with retry context attached through safe diagnostics. It does not replace the final failure with a generic retry error.
 
-Endpoint response bodies are read into memory only through the bounded body reader. The default runtime limit is 16 MiB, `Content-Length` is checked before reading when present, and chunked or unknown-length bodies are checked cumulatively while reading.
+Endpoint response bodies are read into memory only through the common frame-aware bounded body reader. The default runtime limit is 16 MiB; only the body’s contractual size hint may reject before polling, while every delivered data frame is counted cumulatively.
 
-Runtime configuration is client-owned. `RuntimeConfig::default()` starts with no debug output, no-op hooks, no retry policy, the feature-selected default rate limiter, `max_auth_retries = 8`, pagination loop detection enabled, a 16 MiB endpoint response-body limit, and disabled dev body capture. Client configuration is applied before endpoint policy and pending-request overrides. Pending-request overrides cover request options such as debug level, timeout, and attempt; v1 has no per-request override for body limit, hooks, rate limiter, retry policy, or auth retry budget.
+Runtime configuration is client-owned. `RuntimeConfig::default()` starts with no debug output, no-op hooks, no retry policy, the feature-selected default rate limiter, a 60-second rate-limit cooldown cap, pagination loop detection enabled, a 16 MiB endpoint response-body limit, and disabled dev body capture. Client configuration is applied before endpoint policy and pending-request overrides. Pending-request overrides cover request options such as debug level, timeout, and attempt; absolute retry capacity is supplied by endpoint retry configuration and has no separate authentication budget.
 
 Runtime configuration is clone-on-write, but auth state is shared across cloned clients. Changing runtime config on one clone does not retroactively change another clone, while auth-state mutation on one clone can be observed by other clones that share the same auth-state handle. Credential isolation requires a separate client instance or separate auth state, not just `clone()`.
 

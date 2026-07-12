@@ -25,7 +25,6 @@ struct AuthRejectionStepCtx<'a, Cx: ClientContext, T: Transport> {
     auth_attempt: &'a crate::auth::AuthAttemptSummary,
     error_ctx: &'a ErrorContext,
     is_replayable: bool,
-    max_auth_retries: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -89,8 +88,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     async fn handle_auth_rejection_step(
         &self,
         ctx: AuthRejectionStepCtx<'_, Cx, T>,
-        auth_retry_index: &mut u32,
-        attempt_index: &mut u32,
+        attempts_used: u32,
+        max_attempts: u32,
     ) -> Result<AuthRejectionStep, ApiClientError> {
         if !ctx.is_replayable && Self::is_protected_auth_rejection(ctx.plan, ctx.status) {
             return Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
@@ -115,17 +114,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         ctx.error_ctx,
                     )));
                 }
-                if *auth_retry_index >= ctx.max_auth_retries {
-                    return Ok(AuthRejectionStep::Fail(Self::auth_retry_budget_exhausted(
+                if attempts_used >= max_attempts {
+                    return Ok(AuthRejectionStep::Fail(Self::auth_attempt_cap_exhausted(
                         ctx.error_ctx,
-                        ctx.max_auth_retries,
                     )));
                 }
-                // Keep counter mutation here so both classified-response and HttpStatus
-                // paths preserve the same order. Cache invalidation stays at the caller
-                // because the auth summary may borrow from the request-local cache.
-                *auth_retry_index = next_attempt_counter(*auth_retry_index, ctx.error_ctx)?;
-                *attempt_index = next_attempt_counter(*attempt_index, ctx.error_ctx)?;
                 Ok(AuthRejectionStep::Retry)
             }
             AuthRejectionOutcome::Terminal => Ok(AuthRejectionStep::Fail(
@@ -142,12 +135,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         }
     }
 
-    fn auth_retry_budget_exhausted(ctx: &ErrorContext, max_auth_retries: u32) -> ApiClientError {
+    fn auth_attempt_cap_exhausted(ctx: &ErrorContext) -> ApiClientError {
         ApiClientError::Auth {
             ctx: ctx.clone(),
             source: AuthError::new(
                 AuthErrorKind::ProviderRejected,
-                format!("auth retry budget exhausted (max_auth_retries={max_auth_retries})"),
+                "maximum request attempts exhausted before authentication refresh",
             ),
         }
     }
@@ -170,23 +163,16 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         Ok(Some(delay))
     }
 
-    fn retry_may_run(&self, retry_config: &RetrySetting, retry_count: u32) -> bool {
-        match retry_config {
-            RetrySetting::Config(config) => retry_count < config.max_retries(),
-            RetrySetting::Inherit => retry_count < self.runtime_state.retry_policy().max_retries(),
-            RetrySetting::Off => false,
-        }
-    }
-
     fn retry_request_headers_snapshot(
         &self,
         retry_config: &RetrySetting,
-        retry_count: u32,
+        attempts_used: u32,
+        max_attempts: u32,
         built: &BuiltRequest,
     ) -> Option<http::HeaderMap> {
         match retry_config {
             RetrySetting::Config(config)
-                if retry_count < config.max_retries()
+                if attempts_used < max_attempts
                     && matches!(
                         &config.idempotency,
                         crate::retry::RetryIdempotency::Header(_)
@@ -194,9 +180,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             {
                 Some(built.message.headers().clone())
             }
-            RetrySetting::Inherit
-                if retry_count < self.runtime_state.retry_policy().max_retries() =>
-            {
+            RetrySetting::Inherit if attempts_used < max_attempts => {
                 Some(built.message.headers().clone())
             }
             _ => None,
@@ -217,8 +201,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         if let RetrySetting::Config(config) = &plan.endpoint.policy.retry {
             config.validate(ctx.clone())?;
         }
+        let max_attempts = match &plan.endpoint.policy.retry {
+            RetrySetting::Config(config) => config.max_attempts,
+            RetrySetting::Inherit => self.runtime_state.max_attempts(),
+            RetrySetting::Off => 1,
+        };
+        crate::retry::validate_max_attempts(max_attempts, ctx.clone())?;
         let base_attempt: u32 = plan.overrides.attempt;
-        let max_auth_retries = self.runtime_state.max_auth_retries();
         let auth_state_snapshot = self
             .try_auth_state()
             .map_err(|source| ApiClientError::Auth {
@@ -227,16 +216,17 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             })?;
         let auth_http = ClientAuthHttpExecutor { client: self };
         let mut auth_placement_plan: Option<crate::auth::AuthPlacementPlan> = None;
-        let mut attempt_index: u32 = 0;
-        let mut transport_retry_index: u32 = 0;
-        let mut auth_retry_index: u32 = 0;
+        // One authoritative request-local count. It is incremented only at
+        // the physical Transport::send invocation in send_flow. Existing
+        // RequestMeta/HookMeta attempt values are derived zero-based indexes.
+        let mut attempts_used: u32 = 0;
         // Request-local auth preparation cache.
         // It is reused across transport/status retries and cleared when auth
         // response handling asks for a refreshed credential state.
         let mut cached_auth_preparation: Option<CachedAuthPreparation> = None;
 
         loop {
-            let current_attempt = checked_attempt(base_attempt, attempt_index, &ctx)?;
+            let current_attempt = checked_attempt(base_attempt, attempts_used, &ctx)?;
             let meta = plan
                 .endpoint
                 .meta
@@ -277,8 +267,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let url_str = built.debug_url();
 
             let retry_config = std::mem::take(&mut built.retry);
-            let retry_request_headers =
-                self.retry_request_headers_snapshot(&retry_config, transport_retry_index, &built);
+            let retry_request_headers = self.retry_request_headers_snapshot(
+                &retry_config,
+                attempts_used,
+                max_attempts,
+                &built,
+            );
             let send_result = match family {
                 AttemptFamily::Buffered { skip_body: _ } => self
                     .send_and_classify_once(
@@ -291,6 +285,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             error_ctx: &ctx,
                             auth_materials: &auth_attempt.materials,
                         },
+                        &mut attempts_used,
                     )
                     .await
                     .map(AttemptTransportSuccess::Buffered),
@@ -305,6 +300,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             error_ctx: &ctx,
                             auth_materials: &auth_attempt.materials,
                         },
+                        &mut attempts_used,
                     )
                     .await
                     .map(AttemptTransportSuccess::Transport),
@@ -332,10 +328,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                                 auth_attempt: &auth_attempt.summary,
                                 error_ctx: &ctx,
                                 is_replayable,
-                                max_auth_retries,
                             },
-                            &mut auth_retry_index,
-                            &mut attempt_index,
+                            attempts_used,
+                            max_attempts,
                         )
                         .await?
                     {
@@ -393,10 +388,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                                     auth_attempt: &auth_attempt.summary,
                                     error_ctx: &ctx,
                                     is_replayable,
-                                    max_auth_retries,
                                 },
-                                &mut auth_retry_index,
-                                &mut attempt_index,
+                                attempts_used,
+                                max_attempts,
                             )
                             .await?
                         {
@@ -411,9 +405,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     if !is_replayable {
                         return Err(err);
                     }
-                    if !self.retry_may_run(&retry_config, transport_retry_index) {
-                        return Err(err);
-                    }
                     let outcome = Self::retry_outcome_from_error(&err);
                     let response_headers = Self::retry_response_headers_from_error(&err);
                     let empty_request_headers = http::HeaderMap::new();
@@ -425,24 +416,27 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         method: &plan.endpoint.meta.method,
                         url: &url_str,
                         attempt: current_attempt,
-                        retry_count: transport_retry_index,
+                        retry_count: attempts_used.saturating_sub(1),
                         page_index: plan.overrides.page_index,
                         idempotent: plan.endpoint.meta.idempotent,
-                        max_delay: self.runtime_state.max_retry_delay(),
+                        max_delay: self.runtime_state.max_rate_limit_cooldown(),
                         request_headers,
                         response_headers,
                         outcome,
                     };
                     let Some(delay) =
-                        self.decide_retry(&err, &retry_config, &retry_ctx, transport_retry_index)?
+                        self.decide_retry(&err, &retry_config, &retry_ctx, attempts_used)?
                     else {
                         return Err(err);
                     };
+                    // Classification remains observable at the terminal
+                    // absolute cap, but it cannot admit another send.
+                    if attempts_used >= max_attempts {
+                        return Err(err);
+                    }
                     if !delay.is_zero() {
                         tokio::time::sleep(delay).await;
                     }
-                    transport_retry_index = next_attempt_counter(transport_retry_index, &ctx)?;
-                    attempt_index = next_attempt_counter(attempt_index, &ctx)?;
                 }
             }
         }
@@ -871,15 +865,6 @@ fn checked_attempt(
         })
 }
 
-fn next_attempt_counter(attempt: u32, ctx: &ErrorContext) -> Result<u32, ApiClientError> {
-    attempt
-        .checked_add(1)
-        .ok_or_else(|| ApiClientError::PolicyViolation {
-            ctx: ctx.clone(),
-            msg: "request attempt counter overflowed",
-        })
-}
-
 #[cfg(test)]
 mod attempt_counter_tests {
     use super::*;
@@ -890,13 +875,6 @@ mod attempt_counter_tests {
             endpoint: "Overflow",
             method: http::Method::GET,
         };
-        let err = next_attempt_counter(u32::MAX, &ctx)
-            .expect_err("overflowing attempt counter should fail");
-        assert!(
-            err.to_string()
-                .contains("request attempt counter overflowed")
-        );
-
         let err = checked_attempt(u32::MAX, 1, &ctx)
             .expect_err("overflowing base plus attempt should fail");
         assert!(

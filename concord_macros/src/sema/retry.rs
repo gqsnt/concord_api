@@ -181,10 +181,10 @@ impl ProfileValue for RetryPatchResolved {
 
 pub(super) fn resolve_retry_max_attempts(lit: &syn::LitInt) -> Result<u32> {
     let max_attempts = lit.base10_parse::<u32>()?;
-    if max_attempts == 0 {
+    if !(1..=3).contains(&max_attempts) {
         return Err(syn::Error::new(
             lit.span(),
-            "retry max_attempts must be at least 1",
+            "retry max_attempts must be between 1 and 3",
         ));
     }
     Ok(max_attempts)

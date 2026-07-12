@@ -26,6 +26,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
         stream_request_limit: Option<usize>,
+        attempts_used: &mut u32,
     ) -> Result<AttemptResponse, ApiClientError> {
         let request_context = built.context();
         let rate_limit_meta = RateLimitContext {
@@ -86,6 +87,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             send_ctx.auth_materials,
             send_ctx.error_ctx,
             stream_request_limit,
+            attempts_used,
         )
         .await
     }
@@ -132,6 +134,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         auth_materials: &[crate::auth::AuthTransportMaterial],
         ctx: &ErrorContext,
         stream_request_limit: Option<usize>,
+        attempts_used: &mut u32,
     ) -> Result<AttemptResponse, ApiClientError> {
         let request_context = built.context();
         let endpoint = request_context.meta.endpoint;
@@ -156,6 +159,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             source,
         })?;
 
+        *attempts_used = attempts_used.checked_add(1).ok_or_else(|| {
+            ApiClientError::invalid_param(ctx.clone(), "request attempt counter overflowed")
+        })?;
         match self.transport.send(transport_req).await {
             Ok(message) => Ok(AttemptResponse {
                 message,
@@ -222,12 +228,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
+        attempts_used: &mut u32,
     ) -> Result<AttemptResponse, ApiClientError> {
         let transport_resp = self
             .acquire_rate_limit_and_send(
                 built,
                 send_ctx,
                 self.runtime_state.max_stream_request_body_bytes(),
+                attempts_used,
             )
             .await?;
         self.classify_transport_response(
@@ -245,12 +253,14 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
+        attempts_used: &mut u32,
     ) -> Result<AttemptResponse, ApiClientError> {
         let transport_resp = self
             .acquire_rate_limit_and_send(
                 built,
                 send_ctx,
                 self.runtime_state.max_stream_request_body_bytes(),
+                attempts_used,
             )
             .await?;
         self.observe_and_classify_transport_response(

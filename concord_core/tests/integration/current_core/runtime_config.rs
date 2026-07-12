@@ -10,7 +10,7 @@ use bytes::Bytes;
 use concord_core::advanced::{
     DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
     RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimitWindow, RateLimiter, RetryBackoff, RuntimeHooks,
+    RateLimitResponseContext, RateLimitWindow, RateLimiter, RuntimeHooks,
 };
 use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
@@ -55,44 +55,6 @@ async fn client_config_applies_to_requests() {
     ));
     assert_eq!(body_reads(&read_count), 1);
     assert_eq!(transport_events(&events).await, vec!["transport"]);
-}
-
-#[tokio::test]
-async fn client_config_overrides_retry_delay_cap() {
-    const RESPONSE_SENTINEL: &str = "PRSEC7_RUNTIME_CONFIG_RETRY_SENTINEL";
-
-    let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![
-            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, RESPONSE_SENTINEL),
-            MockResponse::text(StatusCode::OK, "should-not-send"),
-        ],
-    );
-    let sent = transport.clone();
-    let mut client = client(TestAuthVars::default(), transport);
-    client.configure(|cfg| {
-        cfg.max_retry_delay(Duration::from_secs(1));
-    });
-
-    let mut policy = retry_policy(2);
-    if let concord_core::internal::RetrySetting::Config(config) = &mut policy.retry {
-        config.backoff = RetryBackoff::Fixed(Duration::from_secs(2));
-    }
-
-    let err = client
-        .request(TextEndpoint {
-            policy,
-            ..Default::default()
-        })
-        .response()
-        .await
-        .expect_err("retry delay cap override should fail closed");
-
-    assert_eq!(err.category(), concord_core::error::ErrorCategory::Config);
-    assert!(err.to_string().contains("configured maximum"));
-    assert_eq!(sent.sent_count().await, 1);
-    assert_error_chain_does_not_contain_any(&err, &[RESPONSE_SENTINEL]);
 }
 
 #[tokio::test]
