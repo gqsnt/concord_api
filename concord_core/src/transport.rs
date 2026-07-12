@@ -31,7 +31,6 @@ pub(crate) struct BuiltRequest {
     pub(crate) retry: RetrySetting,
     pub(crate) rate_limit: RateLimitPlan,
     pub(crate) stream_like: bool,
-    pub(crate) body_category: crate::io::ProducedBodyCategory,
 }
 
 impl fmt::Debug for BuiltRequest {
@@ -49,7 +48,6 @@ impl fmt::Debug for BuiltRequest {
             .field("retry", &self.retry)
             .field("rate_limit", &self.rate_limit)
             .field("stream_like", &self.stream_like)
-            .field("body_category", &self.body_category)
             .finish()
     }
 }
@@ -235,7 +233,6 @@ pub(crate) fn materialize_transport_request(
     let BuiltRequest {
         mut message,
         stream_like,
-        body_category,
         ..
     } = built;
     let auth_plan = message
@@ -334,8 +331,6 @@ pub(crate) fn materialize_transport_request(
         let body = std::mem::replace(message.body_mut(), crate::body::DynBody::empty());
         *message.body_mut() = body.limited(limit as u64);
     }
-
-    message.extensions_mut().insert(body_category);
 
     Ok(message)
 }
@@ -452,8 +447,8 @@ impl Error for TransportError {
 #[cfg(feature = "transport-reqwest")]
 impl From<reqwest::Error> for TransportError {
     fn from(e: reqwest::Error) -> Self {
-        let kind = classify_reqwest_error(&e);
         let e = e.without_url();
+        let kind = classify_reqwest_error(&e);
         Self {
             kind,
             source: Box::new(e),
@@ -478,35 +473,7 @@ fn classify_reqwest_error(err: &reqwest::Error) -> TransportErrorKind {
         return TransportErrorKind::Timeout;
     }
     if err.is_connect() {
-        let msg = err.to_string().to_ascii_lowercase();
-        if msg.contains("dns")
-            || msg.contains("name or service not known")
-            || msg.contains("failed to lookup address information")
-            || msg.contains("no such host")
-        {
-            return TransportErrorKind::Dns;
-        }
-        if msg.contains("tls")
-            || msg.contains("ssl")
-            || msg.contains("handshake")
-            || msg.contains("certificate")
-        {
-            return TransportErrorKind::Tls;
-        }
         return TransportErrorKind::Connect;
-    }
-    let mut current: Option<&(dyn Error + 'static)> = err.source();
-    while let Some(cause) = current {
-        if let Some(ioe) = cause.downcast_ref::<std::io::Error>() {
-            if matches!(
-                ioe.kind(),
-                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
-            ) {
-                return TransportErrorKind::Timeout;
-            }
-            return TransportErrorKind::Io;
-        }
-        current = cause.source();
     }
     if err.is_request() {
         return TransportErrorKind::Request;
@@ -575,16 +542,92 @@ pub struct ReqwestTransport {
     client: reqwest::Client,
 }
 
+/// A sanitized managed-Reqwest client construction failure.
+#[cfg(feature = "transport-reqwest")]
+pub struct ReqwestClientBuildError {
+    kind: TransportErrorKind,
+    source: reqwest::Error,
+}
+
+#[cfg(feature = "transport-reqwest")]
+impl ReqwestClientBuildError {
+    fn from_reqwest(error: reqwest::Error) -> Self {
+        let source = error.without_url();
+        Self {
+            kind: classify_reqwest_error(&source),
+            source,
+        }
+    }
+
+    /// Returns the safe structural category of the client-build failure.
+    pub fn kind(&self) -> TransportErrorKind {
+        self.kind
+    }
+}
+
+#[cfg(feature = "transport-reqwest")]
+impl fmt::Display for ReqwestClientBuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "managed reqwest client construction failed ({:?})",
+            self.kind
+        )
+    }
+}
+
+#[cfg(feature = "transport-reqwest")]
+impl fmt::Debug for ReqwestClientBuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReqwestClientBuildError")
+            .field("kind", &self.kind)
+            .finish()
+    }
+}
+
+#[cfg(feature = "transport-reqwest")]
+impl Error for ReqwestClientBuildError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
 #[cfg(feature = "transport-reqwest")]
 impl ReqwestTransport {
     #[inline]
-    pub fn new(client: reqwest::Client) -> Self {
-        Self { client }
+    pub fn new() -> Self {
+        Self::from_managed_build(Self::try_new())
     }
 
-    #[inline]
-    pub fn client(&self) -> &reqwest::Client {
-        &self.client
+    pub fn try_new() -> Result<Self, ReqwestClientBuildError> {
+        Self::with_builder(|builder| builder)
+    }
+
+    /// Applies caller-selected client-wide settings before Concord installs
+    /// its non-negotiable retry and redirect policies.
+    pub fn with_builder(
+        configure: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder,
+    ) -> Result<Self, ReqwestClientBuildError> {
+        let client = configure(reqwest::Client::builder())
+            .retry(reqwest::retry::never())
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(ReqwestClientBuildError::from_reqwest)?;
+        Ok(Self { client })
+    }
+
+    fn from_managed_build(result: Result<Self, ReqwestClientBuildError>) -> Self {
+        match result {
+            Ok(transport) => transport,
+            Err(_) => panic!("managed reqwest client construction failed"),
+        }
+    }
+}
+
+#[cfg(feature = "transport-reqwest")]
+impl Default for ReqwestTransport {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -601,62 +644,76 @@ impl Transport for ReqwestTransport {
     > {
         let client = self.client.clone();
         Box::pin(async move {
-            let timeout = request
-                .extensions()
-                .get::<RequestExecutionContext>()
-                .and_then(|context| context.timeout);
-            let body_category = request
-                .extensions()
-                .get::<crate::io::ProducedBodyCategory>()
-                .copied()
-                // Requests constructed by a custom caller do not have a
-                // prepared-body category. Preserve their body rather than
-                // silently omitting it.
-                .unwrap_or(crate::io::ProducedBodyCategory::OneShot);
-            let (parts, body) = request.into_parts();
-            let url = Url::parse(&parts.uri.to_string())
-                .map_err(|error| TransportError::with_kind(TransportErrorKind::Request, error))?;
-            let mut rb = client
-                .request(parts.method, url)
-                .version(parts.version)
-                .headers(parts.headers);
-            if reqwest_bridge_attaches_body(body_category, &body) {
-                rb = rb.body(reqwest::Body::wrap_stream(body.into_data_stream()));
-            }
-            if let Some(t) = timeout {
-                rb = rb.timeout(t);
-            }
-            let resp = rb.send().await.map_err(TransportError::from)?;
-            let status = resp.status();
-            let version = resp.version();
-            let headers = resp.headers().clone();
-            let body = crate::body::DynBody::from_byte_stream(resp.bytes_stream());
-            let mut response = http::Response::new(body);
-            *response.status_mut() = status;
-            *response.version_mut() = version;
-            *response.headers_mut() = headers;
-            Ok(response)
+            let request = reqwest_request_from_http(request)?;
+            let response = client
+                .execute(request)
+                .await
+                .map_err(TransportError::from)?;
+            Ok(http_response_from_reqwest(response))
         })
     }
 }
 
 #[cfg(feature = "transport-reqwest")]
-fn reqwest_bridge_attaches_body(
-    category: crate::io::ProducedBodyCategory,
-    body: &crate::body::DynBody,
-) -> bool {
-    !matches!(
-        category,
-        crate::io::ProducedBodyCategory::Empty | crate::io::ProducedBodyCategory::ReusableBytes
-    ) || !http_body::Body::is_end_stream(body)
+fn reqwest_request_from_http(
+    request: http::Request<crate::body::DynBody>,
+) -> Result<reqwest::Request, TransportError> {
+    let timeout = request
+        .extensions()
+        .get::<RequestExecutionContext>()
+        .and_then(|context| context.timeout);
+    let mut request = reqwest::Request::try_from(request.map(reqwest::Body::wrap))
+        .map_err(TransportError::from)?;
+    *request.timeout_mut() = timeout;
+    Ok(request)
+}
+
+#[cfg(feature = "transport-reqwest")]
+fn http_response_from_reqwest(response: reqwest::Response) -> http::Response<crate::body::DynBody> {
+    let response: http::Response<reqwest::Body> = response.into();
+    response.map(|body| crate::body::DynBody::from_body(SanitizedReqwestBody { inner: body }))
+}
+
+#[cfg(feature = "transport-reqwest")]
+struct SanitizedReqwestBody {
+    inner: reqwest::Body,
+}
+
+#[cfg(feature = "transport-reqwest")]
+impl http_body::Body for SanitizedReqwestBody {
+    type Data = bytes::Bytes;
+    type Error = crate::body::BodyError;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        http_body::Body::poll_frame(Pin::new(&mut self.inner), cx)
+            .map(|frame| frame.map(|result| result.map_err(sanitized_reqwest_body_error)))
+    }
+
+    fn is_end_stream(&self) -> bool {
+        http_body::Body::is_end_stream(&self.inner)
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        http_body::Body::size_hint(&self.inner)
+    }
+}
+
+#[cfg(feature = "transport-reqwest")]
+fn sanitized_reqwest_body_error(error: reqwest::Error) -> crate::body::BodyError {
+    crate::body::BodyError::from(TransportError::from(error.without_url()))
 }
 
 #[cfg(all(test, feature = "transport-reqwest"))]
-mod reqwest_bridge_tests {
+mod reqwest_transport_tests {
     use super::*;
     use bytes::Bytes;
     use futures_core::Stream;
-    use http_body::SizeHint;
+    use http_body::{Body as _, Frame, SizeHint};
+    use http_body_util::BodyExt as _;
+    use std::collections::VecDeque;
     use std::pin::Pin;
     use std::sync::{
         Arc,
@@ -664,99 +721,221 @@ mod reqwest_bridge_tests {
     };
     use std::task::{Context, Poll};
 
-    struct PollProbe {
-        polled: Arc<AtomicBool>,
-        error: bool,
-    }
+    #[derive(Clone, Debug)]
+    struct RequestMarker(&'static str);
+
+    #[derive(Clone, Debug)]
+    struct ResponseMarker(&'static str);
+
+    struct PollProbe(Arc<AtomicBool>);
 
     impl Stream for PollProbe {
         type Item = Result<Bytes, crate::body::BodyError>;
 
         fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            self.polled.store(true, Ordering::SeqCst);
-            if self.error {
-                Poll::Ready(Some(Err(crate::body::BodyError::input())))
-            } else {
-                Poll::Ready(None)
-            }
+            self.0.store(true, Ordering::SeqCst);
+            Poll::Ready(None)
         }
     }
 
-    fn exact_zero_hint() -> SizeHint {
-        let mut hint = SizeHint::new();
-        hint.set_exact(0);
-        hint
+    struct FrameSequence {
+        frames: VecDeque<Result<Frame<Bytes>, crate::body::BodyError>>,
+    }
+
+    impl Stream for FrameSequence {
+        type Item = Result<Frame<Bytes>, crate::body::BodyError>;
+
+        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Ready(self.frames.pop_front())
+        }
+    }
+
+    fn failing_builder(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+        builder.user_agent("invalid\r\nhttps://proxy-user:PROXY_SECRET@example.test")
+    }
+
+    fn managed_build_error() -> ReqwestClientBuildError {
+        match ReqwestTransport::with_builder(failing_builder) {
+            Ok(_) => panic!("invalid default header should fail client construction"),
+            Err(error) => error,
+        }
+    }
+
+    fn source_chain(error: &(dyn Error + 'static)) -> String {
+        let mut rendered = String::new();
+        let mut current = Some(error);
+        while let Some(source) = current {
+            rendered.push_str(&format!("{source}\n{source:?}\n"));
+            current = source.source();
+        }
+        rendered
     }
 
     #[test]
-    fn reqwest_bridge_omits_only_known_empty_categories() {
-        let mut empty = crate::io::PreparedBody::empty();
-        let empty = empty.produce_for_attempt().expect("empty body");
-        let category = empty.category();
-        assert!(!reqwest_bridge_attaches_body(
-            category,
-            &empty.into_dyn_body()
-        ));
-
-        let mut bytes = crate::io::PreparedBody::reusable_bytes(Bytes::new(), None);
-        let bytes = bytes.produce_for_attempt().expect("reusable bytes");
-        let category = bytes.category();
-        assert!(!reqwest_bridge_attaches_body(
-            category,
-            &bytes.into_dyn_body()
-        ));
-    }
-
-    #[test]
-    fn reqwest_bridge_attaches_zero_one_shot_and_factory_without_polling() {
-        let one_shot_polled = Arc::new(AtomicBool::new(false));
-        let one_shot = crate::body::DynBody::from_byte_stream(PollProbe {
-            polled: one_shot_polled.clone(),
-            error: false,
-        })
-        .with_size_hint(exact_zero_hint());
-        let mut one_shot = crate::io::PreparedBody::one_shot(one_shot, None);
-        let one_shot = one_shot.produce_for_attempt().expect("one-shot body");
-        let category = one_shot.category();
-        assert!(reqwest_bridge_attaches_body(
-            category,
-            &one_shot.into_dyn_body()
-        ));
-        assert!(!one_shot_polled.load(Ordering::SeqCst));
-
-        let factory_polled = Arc::new(AtomicBool::new(false));
-        let factory_probe = factory_polled.clone();
-        let mut factory =
-            crate::io::PreparedBody::replay_factory(exact_zero_hint(), None, move || {
-                Ok(crate::body::DynBody::from_byte_stream(PollProbe {
-                    polled: factory_probe.clone(),
-                    error: false,
-                }))
-            });
-        let factory = factory.produce_for_attempt().expect("factory body");
-        let category = factory.category();
-        assert!(reqwest_bridge_attaches_body(
-            category,
-            &factory.into_dyn_body()
-        ));
-        assert!(!factory_polled.load(Ordering::SeqCst));
-    }
-
-    #[test]
-    fn reqwest_bridge_does_not_discard_zero_error_body_or_poll_it() {
+    fn whole_request_conversion_preserves_head_extensions_timeout_and_laziness() {
         let polled = Arc::new(AtomicBool::new(false));
-        let body = crate::body::DynBody::from_byte_stream(PollProbe {
-            polled: polled.clone(),
-            error: true,
-        })
-        .with_size_hint(exact_zero_hint());
-        let mut prepared = crate::io::PreparedBody::one_shot(body, None);
-        let produced = prepared.produce_for_attempt().expect("one-shot error body");
-        let category = produced.category();
-        assert!(reqwest_bridge_attaches_body(
-            category,
-            &produced.into_dyn_body()
-        ));
+        let mut request = http::Request::new(crate::body::DynBody::from_byte_stream(PollProbe(
+            polled.clone(),
+        )));
+        *request.method_mut() = Method::POST;
+        *request.uri_mut() = "http://example.test/items?public=ok".parse().expect("URI");
+        *request.version_mut() = http::Version::HTTP_2;
+        request
+            .headers_mut()
+            .insert("x-request", http::HeaderValue::from_static("present"));
+        request.extensions_mut().insert(RequestMarker("request"));
+        request.extensions_mut().insert(RequestExecutionContext {
+            meta: RequestMeta {
+                endpoint: "ReqwestWholeRequest",
+                method: Method::POST,
+                idempotent: false,
+                attempt: 3,
+                page_index: 2,
+            },
+            timeout: Some(Duration::from_secs(7)),
+        });
+
+        let request = reqwest_request_from_http(request).expect("whole conversion should work");
+        assert_eq!(request.method(), Method::POST);
+        assert_eq!(request.version(), http::Version::HTTP_2);
+        assert_eq!(
+            request.headers().get("x-request"),
+            Some(&http::HeaderValue::from_static("present"))
+        );
+        assert_eq!(request.timeout(), Some(&Duration::from_secs(7)));
+        let request = http::Request::<reqwest::Body>::try_from(request)
+            .expect("standard request conversion should be reversible");
+        assert_eq!(request.uri(), "http://example.test/items?public=ok");
+        assert_eq!(
+            request
+                .extensions()
+                .get::<RequestMarker>()
+                .map(|marker| marker.0),
+            Some("request")
+        );
         assert!(!polled.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn request_body_wrap_preserves_frames_trailers_and_hint() {
+        let trailers = {
+            let mut trailers = http::HeaderMap::new();
+            trailers.insert("x-trailer", http::HeaderValue::from_static("present"));
+            trailers
+        };
+        let mut hint = SizeHint::new();
+        hint.set_exact(4);
+        let body = crate::body::DynBody::from_frame_stream(FrameSequence {
+            frames: VecDeque::from([
+                Ok(Frame::data(Bytes::from_static(b"data"))),
+                Ok(Frame::trailers(trailers)),
+            ]),
+        })
+        .with_size_hint(hint);
+        let mut request = http::Request::new(body);
+        *request.method_mut() = Method::POST;
+        *request.uri_mut() = "http://example.test/upload".parse().expect("URI");
+
+        let request = reqwest_request_from_http(request).expect("whole conversion should work");
+        let request = http::Request::<reqwest::Body>::try_from(request)
+            .expect("standard request conversion should be reversible");
+        assert_eq!(request.body().size_hint().exact(), Some(4));
+        let collected = request.into_body().collect().await.expect("request body");
+        assert_eq!(
+            collected
+                .trailers()
+                .and_then(|trailers| trailers.get("x-trailer"))
+                .and_then(|value| value.to_str().ok()),
+            Some("present")
+        );
+        assert_eq!(collected.to_bytes(), Bytes::from_static(b"data"));
+    }
+
+    #[tokio::test]
+    async fn whole_response_conversion_preserves_head_frames_trailers_and_hint() {
+        let trailers = {
+            let mut trailers = http::HeaderMap::new();
+            trailers.insert("x-trailer", http::HeaderValue::from_static("present"));
+            trailers
+        };
+        let mut hint = SizeHint::new();
+        hint.set_exact(4);
+        let body = crate::body::DynBody::from_frame_stream(FrameSequence {
+            frames: VecDeque::from([
+                Ok(Frame::data(Bytes::from_static(b"data"))),
+                Ok(Frame::trailers(trailers)),
+            ]),
+        })
+        .with_size_hint(hint);
+        let mut response = http::Response::new(reqwest::Body::wrap(body));
+        *response.status_mut() = StatusCode::CREATED;
+        *response.version_mut() = http::Version::HTTP_2;
+        response
+            .headers_mut()
+            .insert("x-response", http::HeaderValue::from_static("present"));
+        response.extensions_mut().insert(ResponseMarker("response"));
+
+        let response = http_response_from_reqwest(reqwest::Response::from(response));
+        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(response.version(), http::Version::HTTP_2);
+        assert_eq!(
+            response.headers().get("x-response"),
+            Some(&http::HeaderValue::from_static("present"))
+        );
+        assert_eq!(
+            response
+                .extensions()
+                .get::<ResponseMarker>()
+                .map(|marker| marker.0),
+            Some("response")
+        );
+        assert_eq!(response.body().size_hint().exact(), Some(4));
+        let collected = response.into_body().collect().await.expect("response body");
+        assert_eq!(
+            collected
+                .trailers()
+                .and_then(|trailers| trailers.get("x-trailer"))
+                .and_then(|value| value.to_str().ok()),
+            Some("present")
+        );
+        assert_eq!(collected.to_bytes(), Bytes::from_static(b"data"));
+    }
+
+    #[test]
+    fn managed_builder_failures_are_structural_and_url_free() {
+        let error = managed_build_error();
+        let _: Result<ReqwestTransport, ReqwestClientBuildError> = Err(error);
+        let error = managed_build_error();
+        let diagnostics = format!("{error}\n{error:?}\n{}", source_chain(&error));
+        for sentinel in [
+            "https://proxy-user:PROXY_SECRET@example.test",
+            "proxy-user",
+            "PROXY_SECRET",
+            "example.test",
+        ] {
+            assert!(
+                !diagnostics.contains(sentinel),
+                "managed construction diagnostics leaked {sentinel}: {diagnostics}"
+            );
+        }
+        assert!(diagnostics.contains("managed reqwest client construction failed"));
+    }
+
+    #[test]
+    fn infallible_constructor_panic_is_static_and_drops_build_error() {
+        let error = managed_build_error();
+        let panic = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            ReqwestTransport::from_managed_build(Err(error))
+        })) {
+            Ok(_) => panic!("infallible constructor helper must panic"),
+            Err(panic) => panic,
+        };
+        let message = panic
+            .downcast_ref::<&str>()
+            .map(|value| (*value).to_string())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .expect("panic message should be static text");
+        assert_eq!(message, "managed reqwest client construction failed");
+        assert!(!message.contains("PROXY_SECRET"));
     }
 }

@@ -45,7 +45,7 @@ Current report-only observations:
 - `concord_core/src/client/api.rs`
   - `ApiClient<Cx, T>` defaults `T` to `ReqwestTransport`
   - `ApiClient::<Cx>::new(...)` constructs the default reqwest-backed client
-  - `with_reqwest_client(...)` wraps a caller-owned `reqwest::Client`
+  - `with_reqwest_builder(...)` configures a Concord-owned managed client
 - `concord_core/src/lib.rs`
   - reexports `ReqwestTransport` through `advanced` and `prelude`
 - `concord_core/src/client/mod.rs`
@@ -59,8 +59,8 @@ Examples and tests:
 
 - `concord_examples/Cargo.toml` enables `reqwest`
 - `concord_examples/src/url_host_path.rs` and the other checked examples use `new_with_transport(...)` heavily and are transport-agnostic at the API level
-- `concord_core/tests/integration/current_core/transport_contract.rs` uses `ReqwestTransport` and `with_reqwest_client(...)`
-- `concord_core/tests/integration/redaction.rs` uses `ReqwestTransport` and `reqwest::Client::builder()`
+- `concord_core/tests/integration/current_core/transport_contract.rs` uses the managed Reqwest builder path
+- `concord_core/tests/integration/redaction.rs` exercises managed `ReqwestTransport` error redaction
 
 Docs:
 
@@ -83,7 +83,7 @@ Recommended shape for the later implementation PR:
   - the `reqwest` dependency
   - `ReqwestTransport`
   - `ApiClient::<Cx>::new(...)`
-  - `with_reqwest_client(...)`
+  - `with_reqwest_builder(...)`
   - reqwest-specific helper exports
 - default behavior:
   - `transport-reqwest` stays enabled by default so current callers keep working
@@ -110,7 +110,7 @@ The implementation PR should preserve the following:
 - examples/tests that require reqwest stay feature-correct by explicitly enabling the transport feature or by moving into reqwest-gated test targets
 - generated API shape should not depend on reqwest except where the default transport convenience is explicitly selected
 
-That means the implementation needs a compatibility layer around the current `ApiClient::<Cx, ReqwestTransport>::new(...)` and `with_reqwest_client(...)` path, not just a dependency toggle.
+That means the implementation keeps `ApiClient::<Cx, ReqwestTransport>::new(...)` and provides a managed builder path, not caller-owned client injection.
 
 ## Future PR 16B Implementation Plan
 
@@ -118,7 +118,7 @@ Concrete steps for the implementation PR:
 
 1. Add a `transport-reqwest` feature in `concord_core/Cargo.toml`.
 2. Move the `reqwest` dependency and reqwest-specific feature flags under that feature.
-3. Gate `ReqwestTransport`, `default_reqwest_client()`, and `with_reqwest_client(...)` behind the new feature.
+3. Gate `ReqwestTransport` and `with_reqwest_builder(...)` behind the transport feature.
 4. Keep `Transport`, `http::Request<DynBody>`, `http::Response<DynBody>`, `with_transport(...)`, and custom transport support always available.
 5. Update any default transport aliases or generated-client convenience constructors so they compile both with and without the feature.
 6. Split or gate tests that directly exercise reqwest transport behavior.

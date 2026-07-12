@@ -26,7 +26,7 @@ Default-feature callers can use `new()`, `builder()`, or `new_with_transport(...
 let api = minimal_api::MinimalApi::new_with_transport(transport);
 ```
 
-Concord's default reqwest transport disables redirects. That keeps auth material on the original request instead of letting reqwest forward it to a redirected location. If you enable `transport-reqwest` and pass a caller-owned reqwest client through `with_reqwest_client(...)`, redirect, proxy, TLS, cookie, and similar reqwest policies stay under caller control.
+Concord's managed reqwest transport disables redirects and Reqwest retries. That keeps auth material on the original request and leaves endpoint retries under Concord's runtime. With `transport-reqwest`, `with_reqwest_builder(...)` permits client-wide proxy, TLS identity, cookie, and similar configuration while Concord retains those invariants.
 
 When you configure runtime hooks or debug sinks, those callbacks receive sanitized metadata views. Sensitive request and response headers and sensitive query values are redacted before callback invocation, and neither surface receives request or response body bytes or raw secret material. High-volume debug can add measurable overhead.
 

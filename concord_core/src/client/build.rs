@@ -39,7 +39,6 @@ impl PublicRequestHead {
             }
         })?;
         let stream_like = body.is_stream();
-        let body_category = body.category();
         let mut message = http::Request::new(body.into_dyn_body());
         *message.method_mut() = self.meta.method.clone();
         *message.uri_mut() = uri;
@@ -57,7 +56,6 @@ impl PublicRequestHead {
             retry: self.retry,
             rate_limit: self.rate_limit,
             stream_like,
-            body_category,
         })
     }
 }

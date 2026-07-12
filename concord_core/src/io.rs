@@ -83,28 +83,11 @@ pub struct PreparedBody {
 pub(crate) struct ProducedBody {
     body: crate::body::DynBody,
     stream_like: bool,
-    category: ProducedBodyCategory,
-}
-
-/// Ephemeral category metadata for a body that has been produced for one
-/// physical attempt. This is deliberately not replayability state: it only
-/// tells the private Reqwest bridge whether an otherwise empty body may be
-/// omitted without changing request semantics.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ProducedBodyCategory {
-    Empty,
-    ReusableBytes,
-    OneShot,
-    ReplayFactory,
 }
 
 impl ProducedBody {
     pub(crate) fn is_stream(&self) -> bool {
         self.stream_like
-    }
-
-    pub(crate) fn category(&self) -> ProducedBodyCategory {
-        self.category
     }
 
     pub(crate) fn into_dyn_body(self) -> crate::body::DynBody {
@@ -117,7 +100,6 @@ impl fmt::Debug for ProducedBody {
         f.debug_struct("ProducedBody")
             .field("body", &self.body)
             .field("stream_like", &self.stream_like)
-            .field("category", &self.category)
             .finish()
     }
 }
@@ -198,26 +180,22 @@ impl PreparedBody {
             PreparedBodySource::Empty => Ok(ProducedBody {
                 body: crate::body::DynBody::empty(),
                 stream_like: false,
-                category: ProducedBodyCategory::Empty,
             }),
             PreparedBodySource::ReusableBytes(bytes) => Ok(ProducedBody {
                 body: crate::body::DynBody::from_bytes(bytes.clone()),
                 stream_like: false,
-                category: ProducedBodyCategory::ReusableBytes,
             }),
             PreparedBodySource::OneShot(body) => body
                 .take()
                 .map(|body| ProducedBody {
                     body,
                     stream_like: true,
-                    category: ProducedBodyCategory::OneShot,
                 })
                 .ok_or_else(BodyProductionError::already_consumed),
             PreparedBodySource::ReplayFactory(factory) => factory()
                 .map(|body| ProducedBody {
                     body: body.with_size_hint(size_hint),
                     stream_like: true,
-                    category: ProducedBodyCategory::ReplayFactory,
                 })
                 .map_err(BodyProductionError::factory_failure),
         }

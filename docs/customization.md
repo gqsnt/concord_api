@@ -6,7 +6,7 @@ See [Security Model](security_model.md) for how `prelude`, `advanced`, and `dang
 
 Use these extension points when the protocol is part of your API contract. Do not use them to change runtime pipeline order or to bypass redaction.
 
-Custom transports are an advanced caller-owned security boundary. Concord's default reqwest transport disables redirects, but `with_reqwest_client(...)` hands redirect, proxy, TLS, cookie, and other reqwest client policies to the caller. Both the default constructor and `with_reqwest_client(...)` require the `transport-reqwest` feature; `with_transport(...)` remains available without reqwest.
+Custom transports are an advanced caller-owned security boundary. Concord's managed reqwest transport disables redirects and Reqwest retries after applying optional client-wide builder configuration. Use `with_reqwest_builder(...)` for TLS identity, proxy, cookie, and similar managed client configuration; it cannot re-enable those transport invariants. The default constructor and managed builder path require `transport-reqwest`; `with_transport(...)` remains available without reqwest.
 
 Runtime hooks and debug sinks also sit on a security boundary. They receive sanitized metadata views, not raw header maps, and they never receive request or response body bytes or raw auth material. `pre_send` runs after rate-limit acquisition and before raw auth transport materialization, `post_response` runs after an HTTP response is received and before response body read and endpoint decode, and `transport_error` only observes initial transport-send failures. Sensitive header names and sensitive query values are redacted before callback invocation. High-volume debug can add measurable overhead.
 

@@ -773,7 +773,7 @@ async fn default_reqwest_transport_does_not_follow_redirects_or_forward_auth_mat
 
 #[cfg(all(feature = "transport-reqwest", feature = "dangerous-raw-response"))]
 #[tokio::test]
-async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
+async fn managed_reqwest_builder_cannot_reenable_redirects_or_retries() {
     let _guard = redirect_test_lock().lock().await;
     let first_requests = Arc::new(Mutex::new(Vec::new()));
     let second_requests = Arc::new(Mutex::new(Vec::new()));
@@ -806,37 +806,37 @@ async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
 
     std::thread::sleep(Duration::from_millis(50));
 
-    let reqwest_client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .expect("caller-owned client should build");
-    let client = ApiClient::<RedirectCx, _>::with_reqwest_client(
+    let client = ApiClient::<RedirectCx, _>::with_reqwest_builder(
         (),
         TestAuthVars {
             token: Some("redirect-secret".to_string()),
             identity: "anon",
         },
-        reqwest_client,
-    );
+        |builder| {
+            builder
+                .redirect(reqwest::redirect::Policy::limited(5))
+                .retry(reqwest::retry::for_host("127.0.0.1"))
+        },
+    )
+    .expect("managed client should build");
     let endpoint = RedirectEndpoint {
-        name: "RedirectCallerOwned",
+        name: "RedirectManagedBuilder",
         path: "/protected",
         policy: redirect_policy(),
         host: REDIRECT_CUSTOM_HOST,
     };
 
-    let response = client
+    let err = client
         .request(endpoint)
         .execute_raw_response()
         .await
-        .expect("caller-owned reqwest client should follow redirects");
+        .expect_err("managed Reqwest transport must not follow redirects");
 
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.body().as_ref(), b"redirected");
+    assert_eq!(err.http_status(), Some(StatusCode::FOUND));
     assert_eq!(first_hits.load(Ordering::SeqCst), 1);
-    assert_eq!(second_hits.load(Ordering::SeqCst), 1);
+    assert_eq!(second_hits.load(Ordering::SeqCst), 0);
     assert_eq!(first_requests.lock().await.len(), 1);
-    assert_eq!(second_requests.lock().await.len(), 1);
+    assert!(second_requests.lock().await.is_empty());
 
     first_shutdown.store(true, Ordering::SeqCst);
     second_shutdown.store(true, Ordering::SeqCst);
@@ -846,6 +846,24 @@ async fn with_reqwest_client_keeps_caller_owned_redirect_policy() {
     second_server
         .join()
         .expect("second redirect server should stop");
+}
+
+#[cfg(feature = "transport-reqwest")]
+#[test]
+fn api_client_managed_builder_returns_sanitized_build_error() {
+    let result =
+        ApiClient::<TestCx, _>::with_reqwest_builder((), TestAuthVars::default(), |builder| {
+            builder.user_agent("invalid\r\nhttps://proxy-user:PROXY_SECRET@example.test")
+        });
+    let error = match result {
+        Ok(_) => panic!("invalid client builder configuration must fail"),
+        Err(error) => error,
+    };
+    let diagnostics = format!("{error}\n{error:?}");
+    assert!(diagnostics.contains("managed reqwest client construction failed"));
+    assert!(!diagnostics.contains("proxy-user"));
+    assert!(!diagnostics.contains("PROXY_SECRET"));
+    assert!(!diagnostics.contains("example.test"));
 }
 
 #[cfg(feature = "dangerous-raw-response")]

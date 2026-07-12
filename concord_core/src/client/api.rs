@@ -19,23 +19,22 @@ where
     DefaultTransport: DefaultTransportMarker,
 {
     pub fn new(vars: Cx::Vars, auth_vars: Cx::AuthVars) -> Self {
-        Self::with_reqwest_client(vars, auth_vars, default_reqwest_client())
+        Self::with_transport(vars, auth_vars, ReqwestTransport::new())
     }
-    pub fn with_reqwest_client(
+
+    /// Configures the managed Reqwest client without allowing callers to
+    /// replace Concord's retry and redirect invariants.
+    pub fn with_reqwest_builder(
         vars: Cx::Vars,
         auth_vars: Cx::AuthVars,
-        client: reqwest::Client,
-    ) -> Self {
-        Self::with_transport(vars, auth_vars, ReqwestTransport::new(client))
+        configure: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder,
+    ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
+        Ok(Self::with_transport(
+            vars,
+            auth_vars,
+            ReqwestTransport::with_builder(configure)?,
+        ))
     }
-}
-
-#[cfg(feature = "transport-reqwest")]
-fn default_reqwest_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .expect("reqwest default client should build with redirects disabled")
 }
 
 impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {

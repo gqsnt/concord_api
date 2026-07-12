@@ -147,12 +147,12 @@ pub mod advanced {
     pub use crate::runtime_state::ClientRuntimeState;
     pub use crate::stream_body::{StreamBody, StreamBodyError};
     pub use crate::stream_response::StreamResponse;
-    #[cfg(feature = "transport-reqwest")]
-    pub use crate::transport::ReqwestTransport;
     pub use crate::transport::{
         DecodedResponse, DefaultTransport, DefaultTransportMarker, RequestExecutionContext,
         RequestMeta, Transport, TransportError, TransportErrorKind,
     };
+    #[cfg(feature = "transport-reqwest")]
+    pub use crate::transport::{ReqwestClientBuildError, ReqwestTransport};
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,
     };

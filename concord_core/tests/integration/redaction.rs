@@ -14,7 +14,8 @@ mod query_auth_redaction {
         AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
         AuthRequirementId, AuthRetryReason, DebugSink, DecodedResponse, DynBody,
         PreparedInternalAuth, RequestMeta, RuntimeHooks, SanitizedHeaders, Transport,
-        TransportError, TransportErrorHookContext, apply_basic_credential, apply_secret_credential,
+        TransportError, TransportErrorHookContext, TransportErrorKind, apply_basic_credential,
+        apply_secret_credential,
     };
     #[cfg(feature = "json")]
     use concord_core::advanced::{CredentialProvider, OAuth2ClientCredentialsProvider};
@@ -842,20 +843,14 @@ mod query_auth_redaction {
                     attempt: 0,
                     page_index: 0,
                 },
-                timeout: Some(Duration::from_secs(1)),
+                timeout: None,
             });
-        let err = match ReqwestTransport::new(
-            reqwest::Client::builder()
-                .build()
-                .expect("reqwest client should build"),
-        )
-        .send(req)
-        .await
-        {
+        let err = match ReqwestTransport::new().send(req).await {
             Ok(_) => panic!("closed local port should fail"),
             Err(err) => err,
         };
 
+        assert_eq!(err.kind(), TransportErrorKind::Connect);
         let source_output = format!("{}\n{:?}", err.source_error(), err.source_error());
         let api_err = ApiClientError::Transport {
             ctx: concord_core::advanced::ErrorContext {
