@@ -254,7 +254,6 @@ impl Transport for MultipartTransport {
                 body,
                 timeout: _timeout,
                 rate_limit,
-                transport_auth: _transport_auth,
                 extensions: _extensions,
             } = req;
             events

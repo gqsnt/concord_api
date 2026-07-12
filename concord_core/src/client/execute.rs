@@ -279,7 +279,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 prepared
             };
             let mut built =
-                crate::transport::validate_transport_auth_collisions(built).map_err(|source| {
+                crate::transport::validate_auth_collisions(built).map_err(|source| {
                     ApiClientError::Auth {
                         ctx: ctx.clone(),
                         source,

@@ -127,8 +127,6 @@ client ExampleApi {
 
 This is equivalent to writing `secret` and `credential` directly in the client block. Auth use clauses such as `auth bearer session` do not belong in `auth { ... }`; they belong in default, scopes, endpoints, or profiles.
 
-`auth certificate` is an attachment form for client-certificate credential material. The DSL does not provide a certificate constructor in v1. Use endpoint-backed or runtime-provided credential material when certificate auth is needed.
-
 ### Policies
 
 Retry and rate-limit profile declarations, plus policy observers, can be grouped under `policies { ... }`.
@@ -437,8 +435,6 @@ Endpoint output is exactly the decoded response entity output. Profile names als
 
 ### Auth Keyword Reference
 
-`auth certificate` is an attachment form for client-certificate credential material. The DSL does not provide a certificate constructor in v1. Use endpoint-backed or runtime-provided credential material when certificate auth is needed.
-
 Protected-request refresh profile treats `401 Unauthorized` and `403 Forbidden` as refreshable rejection statuses when the credential can be reacquired. Refresh tries are bounded by `max_auth_retries`.
 
 Secret-bearing auth values are redacted from debug and display output, diagnostics, and generated documentation.
@@ -529,7 +525,7 @@ auth {
 }
 ```
 
-Basic, OAuth2 client-credentials, endpoint-backed, and certificate credential material follow the same boundary: secret inputs are consumed inside credential declarations, while public request-shaping expressions cannot read them directly.
+Basic, OAuth2 client-credentials, and endpoint-backed credential material follow the same boundary: secret inputs are consumed inside credential declarations, while public request-shaping expressions cannot read them directly.
 
 Auth attachments:
 
@@ -538,7 +534,6 @@ auth bearer session
 auth header "X-Api-Key" = api
 auth query "api_key" = api
 auth basic login
-auth certificate client_cert
 ```
 
 ### Retry

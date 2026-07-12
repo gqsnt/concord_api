@@ -23,7 +23,6 @@ fn build_request(url: &Url, body: Bytes) -> TransportRequest {
         body: TransportRequestBody::from_bytes(body),
         timeout: None,
         rate_limit: RateLimitPlan::new(),
-        transport_auth: None,
         extensions: RequestExtensions::default(),
     }
 }

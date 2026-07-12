@@ -185,7 +185,6 @@ impl std::fmt::Debug for RecordedRequest {
             body,
             timeout: self.timeout,
             rate_limit: RateLimitPlan::default(),
-            transport_auth: None,
             extensions: concord_core::auth::RequestExtensions::default(),
         };
         write!(f, "{temp:?}")

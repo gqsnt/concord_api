@@ -13,7 +13,6 @@ fn endpoint_backed_credentials_resolve_target_and_output_shape() {
                 credential access_token = endpoint auth_api::LoginForToken
                 credential api_key = endpoint auth_api::LoginForApiKey
                 credential basic_credential = endpoint auth_api::LoginForBasic
-                credential client_certificate = endpoint auth_api::GetCertificate
                 credential unknown_shape = endpoint auth_api::LoginForUnknown
             }
 
@@ -31,10 +30,6 @@ fn endpoint_backed_credentials_resolve_target_and_output_shape() {
                 POST LoginForBasic
                     path ["basic"]
                     -> Json<BasicCredential>
-
-                GET GetCertificate
-                    path ["certificate"]
-                    -> Json<ClientCertificate>
 
                 GET LoginForUnknown
                     path ["unknown"]
@@ -87,19 +82,6 @@ fn endpoint_backed_credentials_resolve_target_and_output_shape() {
             assert_eq!(target.endpoint.to_string(), "LoginForBasic");
             assert_eq!(ty_string(output_ty), "BasicCredential");
             assert_eq!(*material_shape, AuthMaterialShapeIr::Basic);
-        }
-        other => panic!("expected endpoint-backed credential, got {other:?}"),
-    }
-
-    match &credential_by_name(&api, "client_certificate").kind {
-        AuthCredentialKindIr::Endpoint {
-            target,
-            output_ty,
-            material_shape,
-        } => {
-            assert_eq!(target.endpoint.to_string(), "GetCertificate");
-            assert_eq!(ty_string(output_ty), "ClientCertificate");
-            assert_eq!(*material_shape, AuthMaterialShapeIr::Certificate);
         }
         other => panic!("expected endpoint-backed credential, got {other:?}"),
     }

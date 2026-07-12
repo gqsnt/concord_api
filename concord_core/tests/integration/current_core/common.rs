@@ -36,7 +36,6 @@ pub struct CapturedTransportRequest {
     pub body: TransportRequestBody,
     pub timeout: Option<Duration>,
     pub rate_limit: concord_core::advanced::RateLimitPlan,
-    pub transport_auth: Option<concord_core::advanced::TransportAuth>,
     pub extensions: concord_core::auth::RequestExtensions,
 }
 
@@ -56,7 +55,6 @@ impl fmt::Debug for CapturedTransportRequest {
             body,
             timeout: self.timeout,
             rate_limit: self.rate_limit.clone(),
-            transport_auth: self.transport_auth.clone(),
             extensions: self.extensions.clone(),
         };
         write!(f, "{temp:?}")
@@ -171,7 +169,7 @@ impl ClientContext for TestCx {
                         &material,
                     )?
                 }
-                AuthPlacement::Basic | AuthPlacement::Certificate => {
+                AuthPlacement::Basic => {
                     return Err(AuthError::new(
                         AuthErrorKind::UnsupportedScheme,
                         "test context supports bearer/header/query auth only",
@@ -984,12 +982,6 @@ impl ClientContext for ObservationAuthCx {
                     let material = BasicCredential::new(username.to_string(), password.to_string());
                     apply_basic_credential(request, requirement, &material)?
                 }
-                AuthPlacement::Certificate => {
-                    return Err(AuthError::new(
-                        AuthErrorKind::UnsupportedScheme,
-                        "observation test context does not use certificate auth",
-                    ));
-                }
             };
             let applied = AuthAppliedCredential {
                 credential_id: requirement.credential.id.clone(),
@@ -1220,7 +1212,6 @@ impl Transport for MockTransport {
                 body,
                 timeout,
                 rate_limit,
-                transport_auth,
                 extensions,
             } = req;
             events.lock().await.push("transport".to_string());
@@ -1231,7 +1222,6 @@ impl Transport for MockTransport {
                 body,
                 timeout,
                 rate_limit: rate_limit.clone(),
-                transport_auth: transport_auth.clone(),
                 extensions: extensions.clone(),
             });
             let outcome = outcomes
@@ -1347,7 +1337,6 @@ impl Transport for GateTransport {
                 body,
                 timeout,
                 rate_limit,
-                transport_auth,
                 extensions,
             } = req;
             events.lock().await.push("transport".to_string());
@@ -1358,7 +1347,6 @@ impl Transport for GateTransport {
                 body,
                 timeout,
                 rate_limit: rate_limit.clone(),
-                transport_auth: transport_auth.clone(),
                 extensions: extensions.clone(),
             });
             let outcome = outcomes
@@ -2081,7 +2069,6 @@ impl Transport for GateableTransport {
                 body,
                 timeout,
                 rate_limit,
-                transport_auth,
                 extensions,
             } = req;
             let _drop_token = drop_token;
@@ -2093,7 +2080,6 @@ impl Transport for GateableTransport {
                 body,
                 timeout,
                 rate_limit: rate_limit.clone(),
-                transport_auth: transport_auth.clone(),
                 extensions: extensions.clone(),
             });
             gate.enter("transport_send").await;
@@ -2203,7 +2189,6 @@ impl Transport for GateableBodyTransport {
                 body,
                 timeout,
                 rate_limit,
-                transport_auth,
                 extensions,
             } = req;
             events.lock().await.push("transport_send_start".to_string());
@@ -2214,7 +2199,6 @@ impl Transport for GateableBodyTransport {
                 body,
                 timeout,
                 rate_limit: rate_limit.clone(),
-                transport_auth: transport_auth.clone(),
                 extensions: extensions.clone(),
             });
             let body_chunks = chunks

@@ -59,7 +59,7 @@ At each attachment site, behavior is applied before explicit local clauses. That
 - Auth uses append in inherited and source order.
 - Query and header operations preserve order after resolution.
 
-Final endpoint auth requirements are validated after inheritance and behavior expansion, using the materialization target as the collision key. Header targets compare case-insensitively, query targets compare by exact key, bearer/basic/custom `Authorization` header auth share the singleton `Authorization` target, and certificate auth uses a singleton certificate slot.
+Final endpoint auth requirements are validated after inheritance and behavior expansion, using the materialization target as the collision key. Header targets compare case-insensitively, query targets compare by exact key, and bearer/basic/custom `Authorization` header auth share the singleton `Authorization` target.
 
 ## Behavior Expansion
 

@@ -192,7 +192,7 @@ async fn auth_rejection_errors_are_raw_secret_free() {
                     AuthPlacement::Bearer => bearer_sentinel.to_string(),
                     AuthPlacement::Query(_) => query_sentinel.to_string(),
                     AuthPlacement::Header(_) => header_sentinel.to_string(),
-                    AuthPlacement::Basic | AuthPlacement::Certificate => unreachable!(),
+                    AuthPlacement::Basic => unreachable!(),
                 }),
                 identity: "user-a",
             },
@@ -2162,7 +2162,7 @@ impl ClientContext for RecordingAuthCx {
                         &material,
                     )?
                 }
-                AuthPlacement::Basic | AuthPlacement::Certificate => {
+                AuthPlacement::Basic => {
                     return Err(AuthError::new(
                         AuthErrorKind::UnsupportedScheme,
                         "test context supports bearer/header/query auth only",

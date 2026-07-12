@@ -1855,7 +1855,6 @@ impl Transport for RoutedTransport {
                 body,
                 timeout,
                 rate_limit,
-                transport_auth,
                 extensions,
             } = req;
             let path = url.path().to_string();
@@ -1867,7 +1866,6 @@ impl Transport for RoutedTransport {
                 body,
                 timeout,
                 rate_limit: rate_limit.clone(),
-                transport_auth: transport_auth.clone(),
                 extensions: extensions.clone(),
             });
             gate.enter("transport_send").await;

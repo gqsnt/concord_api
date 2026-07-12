@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    ClientCertificate, RateLimitPlan, Transport, TransportAuth, TransportBody, TransportError,
-    TransportRequest, TransportResponse,
+    RateLimitPlan, Transport, TransportBody, TransportError, TransportRequest, TransportResponse,
 };
 use concord_core::prelude::*;
 use concord_macros::api;
@@ -29,9 +28,6 @@ use self::basic_endpoint_helper_contract::{
     BasicEndpointHelperApi, BasicEndpointHelperApiAcquireAsBasicSessionExt,
 };
 use self::basic_helper_contract::BasicHelperApi;
-use self::certificate_endpoint_helper_contract::{
-    CertificateEndpointHelperApi, CertificateEndpointHelperApiAcquireAsCertSessionExt,
-};
 use self::o_auth_helper_contract::OAuthHelperApi;
 use self::policy_merge_helper_contract::PolicyMergeHelperApi;
 
@@ -127,34 +123,6 @@ mod basic_endpoint_helper_contract {
     }
 
     pub(super) use basic_endpoint_helper_api::BasicEndpointHelperApi;
-}
-
-mod certificate_endpoint_helper_contract {
-    #![allow(unused_imports)]
-    use super::*;
-
-    api! {
-        client CertificateEndpointHelperApi {
-            base "https://example.com"
-            credential cert_session = endpoint auth_api::GetCertificate
-        }
-
-        scope auth_api {
-            POST GetCertificate(body: Json<LoginRequest>)
-                path ["cert"]
-                -> Json<ClientCertificate>
-        }
-
-        scope protected {
-            auth certificate cert_session
-
-            GET CertificateMe
-                path ["certificate-me"]
-                -> Json<User>
-        }
-    }
-
-    pub(super) use certificate_endpoint_helper_api::CertificateEndpointHelperApi;
 }
 
 mod o_auth_helper_contract {
@@ -444,46 +412,6 @@ async fn endpoint_backed_basic_credential_materializes_basic_authorization() {
     let debug_output = format!("{:?}", requests[1]);
     assert!(!debug_output.contains("endpoint-user"));
     assert!(!debug_output.contains("endpoint-password"));
-}
-
-#[tokio::test]
-async fn endpoint_backed_certificate_credential_materializes_transport_auth() {
-    const IDENTITY_ID: &str = "endpoint-certificate-identity";
-
-    let transport = RecordingTransport::new(vec![
-        ResponseFixture::json(r#"{"identity_id":"endpoint-certificate-identity"}"#),
-        ResponseFixture::json(r#"{"name":"Ada"}"#),
-    ]);
-    let sent = transport.clone();
-    let api = CertificateEndpointHelperApi::new_with_transport(transport);
-
-    api.auth_api()
-        .get_certificate(LoginRequest {
-            username: "ada".to_string(),
-        })
-        .acquire_as_cert_session()
-        .await
-        .expect("certificate session acquisition succeeds");
-
-    let user = api
-        .protected()
-        .certificate_me()
-        .execute()
-        .await
-        .expect("protected request succeeds");
-    assert_eq!(user.name, "Ada");
-
-    let requests = sent.requests().await;
-    assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].meta.endpoint, "auth_api::GetCertificate");
-    assert_eq!(requests[1].meta.endpoint, "protected::CertificateMe");
-    assert_eq!(
-        requests[1].transport_auth,
-        Some(TransportAuth::ClientCertificate {
-            identity_id: IDENTITY_ID.to_string(),
-        })
-    );
-    assert!(!format!("{:?}", requests[1]).contains(IDENTITY_ID));
 }
 
 #[tokio::test]
@@ -894,7 +822,6 @@ struct RecordedRequest {
     body: RecordedBody,
     timeout: Option<std::time::Duration>,
     rate_limit: RateLimitPlan,
-    transport_auth: Option<TransportAuth>,
     extensions: concord_core::auth::RequestExtensions,
 }
 
@@ -932,7 +859,6 @@ impl std::fmt::Debug for RecordedRequest {
             body,
             timeout: self.timeout,
             rate_limit: self.rate_limit.clone(),
-            transport_auth: self.transport_auth.clone(),
             extensions: self.extensions.clone(),
         };
         write!(f, "{temp:?}")
@@ -989,7 +915,6 @@ impl Transport for RecordingTransport {
                 body,
                 timeout: req.timeout,
                 rate_limit: req.rate_limit.clone(),
-                transport_auth: req.transport_auth.clone(),
                 extensions: req.extensions.clone(),
             });
             let response = responses.lock().await.pop_front().expect("test response");

@@ -290,12 +290,6 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
                         quote! { ::concord_core::advanced::AuthPreparationReuse::Never },
                     )
                 }
-                AuthMaterialShapeIr::Certificate => {
-                    (
-                        quote! { ::concord_core::advanced::apply_certificate_credential(request, requirement, &lease.value)? },
-                        quote! { ::concord_core::advanced::AuthPreparationReuse::Never },
-                    )
-                }
                 AuthMaterialShapeIr::AccessToken
                 | AuthMaterialShapeIr::SecretValue
                 | AuthMaterialShapeIr::Unknown => {

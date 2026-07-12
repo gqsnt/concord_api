@@ -58,8 +58,5 @@ pub enum AuthUseKind {
     Basic {
         credential: Ident,
     },
-    Certificate {
-        credential: Ident,
-    },
 }
 

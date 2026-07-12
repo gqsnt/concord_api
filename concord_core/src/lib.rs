@@ -91,14 +91,13 @@ pub mod advanced {
         AuthChallengePolicy, AuthDecision, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor,
         AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode, AuthPlacement, AuthPlan,
         AuthPreparationReuse, AuthProvenance, AuthRejectionDecision, AuthRequirement,
-        AuthRequirementId, AuthRetryReason, AuthStepPolicy, AuthUsageId, ClientCertificate,
-        CredentialContext, CredentialId, CredentialLease, CredentialMaterial, CredentialProvider,
-        CredentialRef, CredentialRefreshReason, CredentialSlot, InvalidateReason,
-        ManualCredentialProvider, PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential,
-        PreparedInternalAuth, SecretCredential, StaticApiKeyProvider, StaticBasicProvider,
-        StaticBearerProvider, apply_basic_credential, apply_certificate_credential,
-        apply_secret_credential, auth_decision_for_status, invalidate_rejected_credential,
-        read_auth_lock, write_auth_lock,
+        AuthRequirementId, AuthRetryReason, AuthStepPolicy, AuthUsageId, CredentialContext,
+        CredentialId, CredentialLease, CredentialMaterial, CredentialProvider, CredentialRef,
+        CredentialRefreshReason, CredentialSlot, InvalidateReason, ManualCredentialProvider,
+        PendingAuthPlacement, PendingAuthSlot, PreparedAuthCredential, PreparedInternalAuth,
+        SecretCredential, StaticApiKeyProvider, StaticBasicProvider, StaticBearerProvider,
+        apply_basic_credential, apply_secret_credential, auth_decision_for_status,
+        invalidate_rejected_credential, read_auth_lock, write_auth_lock,
     };
     pub use crate::body::{BodyError, BodyErrorKind, DynBody, LimitedBody};
     pub use crate::codec::{
@@ -152,8 +151,8 @@ pub mod advanced {
     pub use crate::transport::ReqwestTransport;
     pub use crate::transport::{
         DecodedResponse, DefaultTransport, DefaultTransportMarker, RequestMeta, Transport,
-        TransportAuth, TransportBody, TransportByteStream, TransportError, TransportErrorKind,
-        TransportRequest, TransportRequestBody, TransportResponse,
+        TransportBody, TransportByteStream, TransportError, TransportErrorKind, TransportRequest,
+        TransportRequestBody, TransportResponse,
     };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,

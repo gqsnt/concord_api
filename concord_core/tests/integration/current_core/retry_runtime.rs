@@ -293,7 +293,7 @@ async fn unconfigured_transport_error_does_not_retry() {
 
 #[tokio::test]
 async fn transport_error_exhaustion_redacts_request_sentinel_and_reports_context() {
-    const AUTH_SENTINEL: &str = "PR18_RETRY_TRANSPORT_AUTH_SENTINEL";
+    const AUTH_SENTINEL: &str = "PR18_RETRY_AUTH_SENTINEL";
 
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::with_outcomes(

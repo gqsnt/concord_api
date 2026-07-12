@@ -1039,7 +1039,6 @@ fn doc_auth_requirement(auth: &AuthRequirementIr) -> String {
             format!("query `{}` = `{}`", key.value(), auth.credential)
         }
         AuthPlacementIr::Basic => format!("basic `{}`", auth.credential),
-        AuthPlacementIr::Certificate => format!("certificate `{}`", auth.credential),
     }
 }
 

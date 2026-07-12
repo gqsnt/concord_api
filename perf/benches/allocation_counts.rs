@@ -252,7 +252,6 @@ impl Transport for DrainingTransport {
                 body,
                 timeout: _,
                 rate_limit,
-                transport_auth: _,
                 extensions: _,
             } = req;
 

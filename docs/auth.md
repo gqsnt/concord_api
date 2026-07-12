@@ -33,12 +33,9 @@ auth header "X-Upstream-Key" = upstream
 auth query "api_key" = upstream
 auth bearer session
 auth basic login
-auth certificate client_cert
 ```
 
 Inherited auth applies to every endpoint below the layer where it is declared.
-
-`auth certificate` is an advanced attachment form for client-certificate material. The DSL does not provide a public certificate credential constructor in v1; use endpoint-backed or runtime-provided credential material when certificate auth is needed.
 
 OAuth2 client-credentials auth uses the `oauth2_client { ... }` credential declaration and is normally attached as bearer auth.
 
@@ -105,7 +102,7 @@ let me = api.protected().me().await?;
 
 Protected calls fail before transport if a required endpoint-backed credential has not been acquired.
 
-Endpoint-backed material can be `AccessToken`, `BasicCredential`, or `ClientCertificate` when attached to the matching auth placement. For bearer auth, the endpoint should return `AccessToken` directly.
+Endpoint-backed material can be `AccessToken` or `BasicCredential` when attached to the matching auth placement. For bearer auth, the endpoint should return `AccessToken` directly.
 
 ## Auth State
 

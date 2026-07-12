@@ -111,22 +111,6 @@ impl BasicCredential {
 
 impl CredentialMaterial for BasicCredential {}
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct ClientCertificate {
-    pub identity_id: String,
-}
-
-impl ClientCertificate {
-    #[inline]
-    pub fn new(identity_id: impl Into<String>) -> Self {
-        Self {
-            identity_id: identity_id.into(),
-        }
-    }
-}
-
-impl CredentialMaterial for ClientCertificate {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

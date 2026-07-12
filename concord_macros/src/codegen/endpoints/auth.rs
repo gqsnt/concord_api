@@ -48,8 +48,5 @@ fn emit_auth_placement(placement: &AuthPlacementIr) -> TokenStream2 {
             quote! { ::concord_core::advanced::AuthPlacement::Query(#key) }
         }
         AuthPlacementIr::Basic => quote! { ::concord_core::advanced::AuthPlacement::Basic },
-        AuthPlacementIr::Certificate => {
-            quote! { ::concord_core::advanced::AuthPlacement::Certificate }
-        }
     }
 }

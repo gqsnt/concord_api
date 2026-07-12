@@ -58,7 +58,7 @@ impl ClientContext for PerfCx {
                     let material = ApiKey::new(token.to_string());
                     apply_secret_credential(request, requirement, &material)?
                 }
-                AuthPlacement::Basic | AuthPlacement::Certificate => {
+                AuthPlacement::Basic => {
                     return Err(AuthError::new(
                         AuthErrorKind::UnsupportedScheme,
                         "perf context only uses bearer/header/query auth",

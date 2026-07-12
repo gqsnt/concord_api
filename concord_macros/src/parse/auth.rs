@@ -235,12 +235,9 @@ fn parse_auth_use_kind(input: ParseStream<'_>) -> Result<AuthUseKind> {
         "basic" => Ok(AuthUseKind::Basic {
             credential: input.parse()?,
         }),
-        "certificate" => Ok(AuthUseKind::Certificate {
-            credential: input.parse()?,
-        }),
         _ => Err(syn::Error::new(
             usage.span(),
-            "unknown auth usage; expected `bearer credential`, `header \"Name\" = credential`, `query \"name\" = credential`, `basic credential`, or `certificate credential`",
+            "unknown auth usage; expected `bearer credential`, `header \"Name\" = credential`, `query \"name\" = credential`, or `basic credential`",
         )),
     }
 }

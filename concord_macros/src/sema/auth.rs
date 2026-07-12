@@ -188,9 +188,7 @@ pub(super) fn reject_duplicate_auth_materialization_keys(uses: &[NormAuthUse]) -
                     ));
                 }
             }
-            AuthUseKind::Bearer { .. }
-            | AuthUseKind::Basic { .. }
-            | AuthUseKind::Certificate { .. } => {}
+            AuthUseKind::Bearer { .. } | AuthUseKind::Basic { .. } => {}
         }
     }
 
@@ -226,9 +224,6 @@ pub(super) fn resolve_auth_use_kind(
         AuthUseKind::Basic { credential } => AuthUseKindIr::Basic {
             credential: credential.clone(),
         },
-        AuthUseKind::Certificate { credential } => AuthUseKindIr::Certificate {
-            credential: credential.clone(),
-        },
     };
     Ok(AuthUseIr { kind, provenance })
 }
@@ -238,8 +233,7 @@ pub(super) fn auth_use_credential_ident(u: &AuthUseKind) -> &Ident {
         AuthUseKind::Bearer { credential }
         | AuthUseKind::Header { credential, .. }
         | AuthUseKind::Query { credential, .. }
-        | AuthUseKind::Basic { credential }
-        | AuthUseKind::Certificate { credential } => credential,
+        | AuthUseKind::Basic { credential } => credential,
     }
 }
 
@@ -252,7 +246,6 @@ pub(super) enum AuthMaterializationTargetKey {
     Header(String),
     Query(String),
     Authorization,
-    Certificate,
 }
 
 impl AuthMaterializationTargetKey {
@@ -261,7 +254,6 @@ impl AuthMaterializationTargetKey {
             AuthMaterializationTargetKey::Header(name) => format!("header `{name}`"),
             AuthMaterializationTargetKey::Query(key) => format!("query `{key}`"),
             AuthMaterializationTargetKey::Authorization => "Authorization".to_string(),
-            AuthMaterializationTargetKey::Certificate => "certificate".to_string(),
         }
     }
 }
@@ -282,7 +274,6 @@ pub(super) fn final_auth_materialization_target(
         AuthPlacementIr::Bearer | AuthPlacementIr::Basic => {
             AuthMaterializationTargetKey::Authorization
         }
-        AuthPlacementIr::Certificate => AuthMaterializationTargetKey::Certificate,
     }
 }
 
@@ -373,7 +364,6 @@ pub(super) fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) 
             )
         }
         AuthUseKind::Basic { .. } => matches!(shape, AuthMaterialShapeIr::Basic),
-        AuthUseKind::Certificate { .. } => matches!(shape, AuthMaterialShapeIr::Certificate),
     };
 
     if fits {
@@ -404,13 +394,6 @@ pub(super) fn validate_auth_usage_fit(u: &AuthUseKind, cred: &AuthCredentialIr) 
                 cred.name
             ),
         )),
-        AuthUseKind::Certificate { credential } => Err(syn::Error::new(
-            credential.span(),
-            format!(
-                "CertificateAuth requires ClientCertificate material; `{}` does not fit",
-                cred.name
-            ),
-        )),
     }
 }
 
@@ -431,7 +414,6 @@ pub(crate) fn materialize_auth_requirement(
             (AuthPlacementIr::Query { key: key.clone() }, credential)
         }
         AuthUseKindIr::Basic { credential } => (AuthPlacementIr::Basic, credential),
-        AuthUseKindIr::Certificate { credential } => (AuthPlacementIr::Certificate, credential),
     };
     AuthRequirementIr {
         credential: credential.clone(),
@@ -468,7 +450,6 @@ pub(super) fn auth_usage_id(kind: &AuthUseKindIr) -> &'static str {
         AuthUseKindIr::Header { .. } => "header",
         AuthUseKindIr::Query { .. } => "query",
         AuthUseKindIr::Basic { .. } => "basic",
-        AuthUseKindIr::Certificate { .. } => "certificate",
     }
 }
 
@@ -491,7 +472,6 @@ pub(super) fn shape_from_type(ty: &Type) -> AuthMaterialShapeIr {
         "AccessToken" => AuthMaterialShapeIr::AccessToken,
         "ApiKey" => AuthMaterialShapeIr::SecretValue,
         "BasicCredential" => AuthMaterialShapeIr::Basic,
-        "ClientCertificate" => AuthMaterialShapeIr::Certificate,
         _ => AuthMaterialShapeIr::Unknown,
     }
 }

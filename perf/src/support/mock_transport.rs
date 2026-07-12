@@ -1,7 +1,7 @@
 use crate::support::mock_body::{EmptyBody, FixedBody, chunked_bytes};
 use bytes::Bytes;
 use concord_core::advanced::{
-    RequestMeta, Transport, TransportAuth, TransportBody, TransportError, TransportRequest,
+    RequestMeta, Transport, TransportBody, TransportError, TransportRequest,
     TransportRequestBody, TransportResponse,
 };
 use concord_core::auth::RequestExtensions;
@@ -44,11 +44,6 @@ pub enum RecordedBody {
     Stream,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RecordedTransportAuth {
-    Certificate { identity_id_len: usize },
-}
-
 #[derive(Clone)]
 pub struct RecordedRequest {
     pub meta: RequestMeta,
@@ -56,7 +51,6 @@ pub struct RecordedRequest {
     pub headers: HeaderMap,
     pub body: RecordedBody,
     pub timeout: Option<std::time::Duration>,
-    pub transport_auth: Option<RecordedTransportAuth>,
     pub extensions: RequestExtensions,
 }
 
@@ -78,7 +72,6 @@ impl fmt::Debug for RecordedRequest {
             .field("header_count", &self.headers.len())
             .field("body", &self.body)
             .field("timeout", &self.timeout)
-            .field("transport_auth_present", &self.transport_auth.is_some())
             .field("extensions_present", &extensions_present(&self.extensions))
             .finish()
     }
@@ -225,7 +218,6 @@ impl Transport for MockTransport {
                 body,
                 timeout,
                 rate_limit,
-                transport_auth,
                 extensions,
             } = req;
             let recorded = RecordedRequest {
@@ -238,13 +230,6 @@ impl Transport for MockTransport {
                     TransportRequestBody::Stream(_) => RecordedBody::Stream,
                 },
                 timeout,
-                transport_auth: transport_auth.as_ref().map(|auth| match auth {
-                    TransportAuth::ClientCertificate { identity_id } => {
-                        RecordedTransportAuth::Certificate {
-                            identity_id_len: identity_id.len(),
-                        }
-                    }
-                }),
                 extensions: extensions.clone(),
             };
 
@@ -325,9 +310,6 @@ mod tests {
             },
             body: RecordedBody::Bytes { len: 16 },
             timeout: Some(std::time::Duration::from_secs(1)),
-            transport_auth: Some(RecordedTransportAuth::Certificate {
-                identity_id_len: 12,
-            }),
             extensions: RequestExtensions {
                 sensitive_query_keys: vec!["token".to_string()],
                 pending_auth_slots: Vec::new(),
@@ -339,7 +321,6 @@ mod tests {
         assert!(!debug.contains("SECRET_HEADER"));
         assert!(!debug.contains("token="));
         assert!(debug.contains("header_count"));
-        assert!(debug.contains("transport_auth_present"));
     }
 
     #[test]

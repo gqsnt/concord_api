@@ -165,7 +165,6 @@ pub enum AuthMaterialShapeIr {
     AccessToken,
     SecretValue,
     Basic,
-    Certificate,
     Unknown,
 }
 
@@ -253,7 +252,6 @@ pub enum AuthPlacementIr {
     Header { name: LitStr },
     Query { key: LitStr },
     Basic,
-    Certificate,
 }
 
 #[derive(Debug, Clone)]
@@ -272,7 +270,6 @@ pub enum AuthUseKindIr {
     Header { header: LitStr, credential: Ident },
     Query { key: LitStr, credential: Ident },
     Basic { credential: Ident },
-    Certificate { credential: Ident },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

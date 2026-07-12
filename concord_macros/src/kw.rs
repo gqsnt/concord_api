@@ -35,7 +35,6 @@ syn::custom_keyword!(idempotency);
 syn::custom_keyword!(header);
 syn::custom_keyword!(bearer);
 syn::custom_keyword!(basic);
-syn::custom_keyword!(certificate);
 syn::custom_keyword!(api_key);
 syn::custom_keyword!(access_token);
 syn::custom_keyword!(endpoint);

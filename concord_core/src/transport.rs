@@ -334,7 +334,6 @@ pub struct TransportRequest {
     pub body: TransportRequestBody,
     pub timeout: Option<Duration>,
     pub rate_limit: RateLimitPlan,
-    pub transport_auth: Option<TransportAuth>,
     pub extensions: RequestExtensions,
 }
 
@@ -352,7 +351,7 @@ impl fmt::Debug for TransportRequest {
                 PendingAuthPlacement::Header(name) => {
                     headers.insert(name.clone(), http::HeaderValue::from_static("<redacted>"));
                 }
-                PendingAuthPlacement::Query(_) | PendingAuthPlacement::Certificate => {}
+                PendingAuthPlacement::Query(_) => {}
             }
         }
         f.debug_struct("TransportRequest")
@@ -368,28 +367,8 @@ impl fmt::Debug for TransportRequest {
             .field("body", &self.body)
             .field("timeout", &self.timeout)
             .field("rate_limit", &self.rate_limit)
-            .field("transport_auth", &self.transport_auth)
             .field("extensions", &self.extensions)
             .finish()
-    }
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub enum TransportAuth {
-    ClientCertificate { identity_id: String },
-}
-
-impl fmt::Debug for TransportAuth {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ClientCertificate { identity_id } => f
-                .debug_struct("ClientCertificate")
-                .field(
-                    "identity_id",
-                    &format_args!("<redacted:{}>", identity_id.len()),
-                )
-                .finish(),
-        }
     }
 }
 
@@ -415,9 +394,7 @@ impl std::ops::DerefMut for AuthCollisionValidatedBuiltRequest {
     }
 }
 
-fn validate_transport_auth_collisions_impl(
-    built: &BuiltRequest,
-) -> Result<(), crate::auth::AuthError> {
+fn validate_auth_collisions_impl(built: &BuiltRequest) -> Result<(), crate::auth::AuthError> {
     use http::header::AUTHORIZATION;
 
     for slot in &built.extensions.pending_auth_slots {
@@ -460,17 +437,16 @@ fn validate_transport_auth_collisions_impl(
                     ));
                 }
             }
-            PendingAuthPlacement::Certificate => {}
         }
     }
 
     Ok(())
 }
 
-pub(crate) fn validate_transport_auth_collisions(
+pub(crate) fn validate_auth_collisions(
     built: BuiltRequest,
 ) -> Result<AuthCollisionValidatedBuiltRequest, crate::auth::AuthError> {
-    validate_transport_auth_collisions_impl(&built)?;
+    validate_auth_collisions_impl(&built)?;
     Ok(AuthCollisionValidatedBuiltRequest(built))
 }
 
@@ -487,8 +463,7 @@ pub(crate) fn materialize_transport_request_validated(
     for material in materials {
         let slot_id = match material {
             crate::auth::AuthTransportMaterial::Secret { slot_id, .. }
-            | crate::auth::AuthTransportMaterial::Basic { slot_id, .. }
-            | crate::auth::AuthTransportMaterial::Certificate { slot_id, .. } => *slot_id,
+            | crate::auth::AuthTransportMaterial::Basic { slot_id, .. } => *slot_id,
         };
         by_slot.insert(slot_id, material);
     }
@@ -502,7 +477,6 @@ pub(crate) fn materialize_transport_request_validated(
         body: built.body,
         timeout: built.timeout,
         rate_limit: built.rate_limit,
-        transport_auth: None,
         extensions,
     };
 
@@ -569,14 +543,6 @@ pub(crate) fn materialize_transport_request_validated(
                 })?;
                 req.headers.insert(AUTHORIZATION, value);
             }
-            (
-                PendingAuthPlacement::Certificate,
-                crate::auth::AuthTransportMaterial::Certificate { identity_id, .. },
-            ) => {
-                req.transport_auth = Some(TransportAuth::ClientCertificate {
-                    identity_id: identity_id.clone(),
-                });
-            }
             _ => {
                 return Err(crate::auth::AuthError::new(
                     crate::auth::AuthErrorKind::UnsupportedScheme,
@@ -605,7 +571,7 @@ pub(crate) fn materialize_transport_request(
     materials: &[crate::auth::AuthTransportMaterial],
     stream_request_limit: Option<usize>,
 ) -> Result<TransportRequest, crate::auth::AuthError> {
-    let validated = validate_transport_auth_collisions(built)?;
+    let validated = validate_auth_collisions(built)?;
     materialize_transport_request_validated(validated, materials, stream_request_limit)
 }
 
@@ -782,8 +748,8 @@ fn classify_reqwest_error(err: &reqwest::Error) -> TransportErrorKind {
         }
         if msg.contains("tls")
             || msg.contains("ssl")
-            || msg.contains("certificate")
             || msg.contains("handshake")
+            || msg.contains("certificate")
         {
             return TransportErrorKind::Tls;
         }
@@ -916,20 +882,8 @@ impl Transport for ReqwestTransport {
                 body,
                 timeout,
                 rate_limit,
-                transport_auth,
                 ..
             } = req;
-            if matches!(
-                transport_auth,
-                Some(TransportAuth::ClientCertificate { .. })
-            ) {
-                return Err(TransportError::with_kind(
-                    TransportErrorKind::Request,
-                    std::io::Error::other(
-                        "ReqwestTransport does not support per-request client certificate auth",
-                    ),
-                ));
-            }
             // reqwest needs an owned Url; we keep a copy for returning meta.
             let url_for_resp = url.clone();
             let method = meta.method.clone();

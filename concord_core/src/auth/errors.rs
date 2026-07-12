@@ -47,7 +47,6 @@ pub enum AuthErrorKind {
     ProviderRejected,
     ResponseTooLarge,
     StateUnavailable,
-    CertificateUnavailable,
     InvalidConfiguration,
 }
 

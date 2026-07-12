@@ -6,16 +6,15 @@ mod query_auth_redaction {
         buffered_endpoint_execute, buffered_endpoint_response_terminal, request_plan,
     };
     use bytes::Bytes;
-    use concord_core::advanced::ClientCertificate;
     #[cfg(feature = "transport-reqwest")]
     use concord_core::advanced::ReqwestTransport;
     use concord_core::advanced::{
         AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
         AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
         AuthRequirementId, AuthRetryReason, DebugSink, DecodedResponse, PreparedInternalAuth,
-        RequestMeta, RuntimeHooks, SanitizedHeaders, Transport, TransportAuth, TransportError,
+        RequestMeta, RuntimeHooks, SanitizedHeaders, Transport, TransportError,
         TransportErrorHookContext, TransportRequest, TransportResponse, apply_basic_credential,
-        apply_certificate_credential, apply_secret_credential,
+        apply_secret_credential,
     };
     #[cfg(feature = "json")]
     use concord_core::advanced::{CredentialProvider, OAuth2ClientCredentialsProvider};
@@ -43,7 +42,6 @@ mod query_auth_redaction {
     const PASSWORD_SECRET: &str = "LEAK_SENTINEL_PASSWORD_789";
     const REFRESH_SECRET_A: &str = "LEAK_SENTINEL_REFRESH_A";
     const REFRESH_SECRET_B: &str = "LEAK_SENTINEL_REFRESH_B";
-    const CERTIFICATE_ID: &str = "LEAK_SENTINEL_CERTIFICATE_ID";
     const INTERNAL_AUTH_SECRET: &str = "LEAK_SENTINEL_INTERNAL_AUTH";
     const QUERY_TRANSPORT_SECRET: &str = "LEAK_SENTINEL_QUERY_TRANSPORT";
     #[cfg(feature = "json")]
@@ -196,12 +194,6 @@ mod query_auth_redaction {
                         }
                         let material = ApiKey::new(auth.api_key.clone());
                         apply_secret_credential(request, requirement, &material)?
-                    }
-                    AuthPlacement::Certificate => {
-                        return Err(AuthError::new(
-                            AuthErrorKind::UnsupportedScheme,
-                            "redaction test context does not use certificate auth",
-                        ));
                     }
                 };
                 let applied = AuthAppliedCredential {
@@ -407,7 +399,6 @@ mod query_auth_redaction {
                     body,
                     timeout,
                     rate_limit,
-                    transport_auth,
                     extensions,
                 } = req;
                 requests.lock().await.push(CapturedTransportRequest {
@@ -417,7 +408,6 @@ mod query_auth_redaction {
                     body,
                     timeout,
                     rate_limit,
-                    transport_auth,
                     extensions,
                 });
                 Err(TransportError::with_kind(
@@ -866,7 +856,6 @@ mod query_auth_redaction {
             body: concord_core::advanced::TransportRequestBody::Empty,
             timeout: Some(Duration::from_secs(1)),
             rate_limit: RateLimitPlan::default(),
-            transport_auth: None,
             extensions: RequestExtensions::default(),
         };
         let err = match ReqwestTransport::new(
@@ -1428,116 +1417,6 @@ mod query_auth_redaction {
             assert_secret_absent(&debug_output, REFRESH_SECRET_A);
             assert_secret_absent(&debug_output, REFRESH_SECRET_B);
         }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn certificate_auth_material_reaches_transport_request_only() -> Result<(), ApiClientError>
-    {
-        #[derive(Clone)]
-        struct CertificateAuthVars {
-            identity_id: String,
-        }
-
-        #[derive(Clone)]
-        struct CertificateCx;
-
-        impl ClientContext for CertificateCx {
-            type Vars = ();
-            type AuthVars = CertificateAuthVars;
-            type AuthState = ();
-            const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
-            const DOMAIN: &'static str = "example.com";
-
-            fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
-
-            fn prepare_auth_requirement<'a>(
-                requirement: &'a AuthRequirement,
-                request: &'a mut AuthApplicationRequest<'_>,
-                _vars: &'a Self::Vars,
-                auth: &'a Self::AuthVars,
-                _auth_state: &'a Self::AuthState,
-                _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-                _meta: &'a RequestMeta,
-            ) -> concord_core::advanced::AuthFuture<'a, Result<PreparedAuthCredential, AuthError>>
-            {
-                Box::pin(async move {
-                    let material = ClientCertificate::new(auth.identity_id.clone());
-                    let application =
-                        apply_certificate_credential(request, requirement, &material)?;
-                    let applied = AuthAppliedCredential {
-                        credential_id: requirement.credential.id.clone(),
-                        usage_id: requirement.usage_id.clone(),
-                        step_id: requirement.step_id,
-                        generation: Some(7),
-                        provenance: requirement.provenance.clone(),
-                    };
-                    Ok(PreparedAuthCredential::new(applied, application))
-                })
-            }
-        }
-
-        #[derive(Clone)]
-        struct CertificateEndpoint;
-
-        impl Endpoint<CertificateCx> for CertificateEndpoint {
-            type Response = String;
-
-            buffered_endpoint_execute!(CertificateCx, concord_core::prelude::Text<String>);
-        }
-
-        buffered_endpoint_response_terminal!(
-            CertificateEndpoint,
-            CertificateCx,
-            concord_core::prelude::Text<String>
-        );
-
-        impl ReusableEndpoint<CertificateCx> for CertificateEndpoint {
-            fn plan(
-                &self,
-                _ctx: &ClientPlanContext<'_, CertificateCx>,
-            ) -> Result<RequestPlan, ApiClientError> {
-                Ok(request_plan(
-                    "CertificateRedaction",
-                    Method::GET,
-                    "/certificate",
-                    auth_policy(AuthPlacement::Certificate),
-                    None,
-                ))
-            }
-        }
-
-        let events = Arc::new(TokioMutex::new(Vec::new()));
-        let transport = MockTransport::new(events, vec![MockResponse::text(StatusCode::OK, "ok")]);
-        let sent = transport.clone();
-        let client = ApiClient::<CertificateCx, _>::with_transport(
-            (),
-            CertificateAuthVars {
-                identity_id: CERTIFICATE_ID.to_string(),
-            },
-            transport,
-        );
-
-        client
-            .request(CertificateEndpoint)
-            .response()
-            .await?
-            .into_value();
-
-        let requests = sent.requests().await;
-        assert_eq!(requests.len(), 1);
-        assert_eq!(
-            requests[0].transport_auth,
-            Some(TransportAuth::ClientCertificate {
-                identity_id: CERTIFICATE_ID.to_string()
-            })
-        );
-        assert_eq!(
-            requests[0].extensions.pending_auth_slots[0].generation,
-            Some(7)
-        );
-        assert_secret_absent(&format!("{:?}", requests[0]), CERTIFICATE_ID);
 
         Ok(())
     }

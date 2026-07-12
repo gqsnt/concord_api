@@ -38,7 +38,6 @@ fn request(endpoint: &'static str) -> TransportRequest {
         body: TransportRequestBody::Empty,
         timeout: None,
         rate_limit: RateLimitPlan::new(),
-        transport_auth: None,
         extensions: Default::default(),
     }
 }

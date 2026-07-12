@@ -32,7 +32,6 @@ pub enum PendingAuthPlacement {
     Header(HeaderName),
     Query(String),
     Basic,
-    Certificate,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -98,19 +97,13 @@ pub(crate) enum AuthTransportMaterial {
         username: SecretString,
         password: SecretString,
     },
-    Certificate {
-        slot_id: AuthSlotId,
-        identity_id: String,
-    },
 }
 
 impl AuthTransportMaterial {
     #[inline]
     pub(crate) fn slot_id(&self) -> AuthSlotId {
         match self {
-            Self::Secret { slot_id, .. }
-            | Self::Basic { slot_id, .. }
-            | Self::Certificate { slot_id, .. } => *slot_id,
+            Self::Secret { slot_id, .. } | Self::Basic { slot_id, .. } => *slot_id,
         }
     }
 }
@@ -128,17 +121,6 @@ impl fmt::Debug for AuthTransportMaterial {
                 .field("slot_id", slot_id)
                 .field("username", &"<redacted>")
                 .field("password", &"<redacted>")
-                .finish(),
-            Self::Certificate {
-                slot_id,
-                identity_id,
-            } => f
-                .debug_struct("AuthTransportMaterial::Certificate")
-                .field("slot_id", slot_id)
-                .field(
-                    "identity_id",
-                    &format_args!("<redacted:{}>", identity_id.len()),
-                )
                 .finish(),
         }
     }
@@ -236,7 +218,6 @@ pub enum AuthPlacement {
     Header(&'static str),
     Query(&'static str),
     Basic,
-    Certificate,
 }
 
 impl fmt::Debug for AuthPlacement {
@@ -246,7 +227,6 @@ impl fmt::Debug for AuthPlacement {
             Self::Header(name) => f.debug_tuple("Header").field(name).finish(),
             Self::Query(name) => f.debug_tuple("Query").field(name).finish(),
             Self::Basic => f.write_str("Basic"),
-            Self::Certificate => f.write_str("Certificate"),
         }
     }
 }
@@ -254,9 +234,7 @@ impl fmt::Debug for AuthPlacement {
 impl PartialEq for AuthPlacement {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Bearer, Self::Bearer)
-            | (Self::Basic, Self::Basic)
-            | (Self::Certificate, Self::Certificate) => true,
+            (Self::Bearer, Self::Bearer) | (Self::Basic, Self::Basic) => true,
             (Self::Header(a), Self::Header(b)) | (Self::Query(a), Self::Query(b)) => a == b,
             _ => false,
         }
@@ -429,35 +407,6 @@ pub fn apply_basic_credential(
             slot_id,
             username: material.username.clone(),
             password: material.password.clone(),
-        },
-    })
-}
-
-pub fn apply_certificate_credential(
-    request: &mut AuthApplicationRequest<'_>,
-    requirement: &AuthRequirement,
-    material: &crate::auth::ClientCertificate,
-) -> Result<AuthApplication, crate::auth::AuthError> {
-    if !matches!(requirement.placement, AuthPlacement::Certificate) {
-        return Err(crate::auth::AuthError::new(
-            crate::auth::AuthErrorKind::UnsupportedScheme,
-            "certificate credential requires certificate auth placement",
-        ));
-    }
-    let slot_id = AuthSlotId::next()?;
-    request.push_pending_slot(PendingAuthSlot {
-        id: slot_id,
-        credential: requirement.credential.clone(),
-        usage_id: requirement.usage_id.clone(),
-        step_id: requirement.step_id,
-        generation: None,
-        provenance: requirement.provenance.clone(),
-        placement: PendingAuthPlacement::Certificate,
-    });
-    Ok(AuthApplication {
-        material: AuthTransportMaterial::Certificate {
-            slot_id,
-            identity_id: material.identity_id.clone(),
         },
     })
 }

@@ -330,7 +330,6 @@ impl Transport for BodyReadFailingTransport {
                 body,
                 timeout,
                 rate_limit,
-                transport_auth,
                 extensions,
             } = req;
             requests.lock().await.push(CapturedTransportRequest {
@@ -340,7 +339,6 @@ impl Transport for BodyReadFailingTransport {
                 body,
                 timeout,
                 rate_limit: rate_limit.clone(),
-                transport_auth: transport_auth.clone(),
                 extensions: extensions.clone(),
             });
             let mut response_headers = HeaderMap::new();
