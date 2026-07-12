@@ -29,7 +29,7 @@ an unknown hint while files report their metadata length.
 
 Each limit has an explicit opt-out method: `no_response_body_limit()`, `no_stream_request_body_limit()`, and `no_stream_response_body_limit()`. Raising a limit allows larger payloads through that path; disabling a limit removes the byte cap for that path.
 
-The buffered body reader has an additional allocation safety property. In `read_body_all_limited`, when `no_response_body_limit()` disables the response-body limit, an unverified `Content-Length` is not allowed to choose an arbitrarily large initial allocation. The initial buffer guess is clamped and honest larger bodies grow through normal buffer growth while reading.
+The buffered response path applies the common frame-aware limiter before bounded collection. When `no_response_body_limit()` disables the response-body limit, an unverified `Content-Length` does not become an allocation or limit authority; collection grows through normal buffer growth while reading.
 
 ## Retry And Rate Limit Interaction
 

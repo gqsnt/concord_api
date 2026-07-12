@@ -35,7 +35,7 @@ enum AttemptFamily {
 }
 
 enum AttemptTransportSuccess {
-    Buffered(BuiltResponse),
+    Buffered(AttemptResponse),
     Transport(AttemptResponse),
 }
 
@@ -280,10 +280,9 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             let retry_request_headers =
                 self.retry_request_headers_snapshot(&retry_config, transport_retry_index, &built);
             let send_result = match family {
-                AttemptFamily::Buffered { skip_body } => self
+                AttemptFamily::Buffered { skip_body: _ } => self
                     .send_and_classify_once(
                         built,
-                        skip_body,
                         SendClassifyCtx {
                             dbg,
                             dbg_verbose,
@@ -295,7 +294,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     )
                     .await
                     .map(AttemptTransportSuccess::Buffered),
-                AttemptFamily::Stream { response_limit } => self
+                AttemptFamily::Stream { response_limit: _ } => self
                     .send_and_classify_transport_once(
                         built,
                         SendClassifyCtx {
@@ -306,7 +305,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             error_ctx: &ctx,
                             auth_materials: &auth_attempt.materials,
                         },
-                        response_limit,
                     )
                     .await
                     .map(AttemptTransportSuccess::Transport),
@@ -316,7 +314,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 Ok(resp) => {
                     let (response_status, response_meta, response_headers) = match &resp {
                         AttemptTransportSuccess::Buffered(resp) => {
-                            (resp.status(), resp.meta(), resp.headers())
+                            (resp.status(), &resp.context.meta, resp.headers())
                         }
                         AttemptTransportSuccess::Transport(resp) => {
                             (resp.status(), &resp.context.meta, resp.headers())
@@ -348,7 +346,21 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                         AuthRejectionStep::Fail(err) => return Err(err),
                         AuthRejectionStep::NotProtected => {}
                     }
-                    return Ok(resp);
+                    return Ok(match (family, resp) {
+                        (
+                            AttemptFamily::Buffered { .. },
+                            AttemptTransportSuccess::Buffered(resp),
+                        ) => AttemptTransportSuccess::Buffered(resp),
+                        (
+                            AttemptFamily::Stream { response_limit },
+                            AttemptTransportSuccess::Transport(resp),
+                        ) => AttemptTransportSuccess::Transport(Self::limit_response_body(
+                            resp,
+                            response_limit,
+                            &ctx,
+                        )?),
+                        _ => unreachable!("attempt response family changed during classification"),
+                    });
                 }
                 Err(err) => {
                     if matches!(
@@ -467,6 +479,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             AttemptTransportSuccess::Buffered(resp) => resp,
             _ => unreachable!(),
         };
+        let resp = Self::buffer_response(
+            resp,
+            plan.endpoint.response.no_content,
+            self.runtime_state.max_response_body_bytes(),
+            &ctx,
+        )
+        .await?;
         #[cfg(feature = "dangerous-dev-tools")]
         self.maybe_capture_dev_response_body(&plan, &resp);
         self.debug_planned_response(dbg, &resp, resp.url().as_str());
@@ -504,7 +523,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .drive_attempts(
                 &plan,
                 &mut body,
-                ctx,
+                ctx.clone(),
                 dbg,
                 AttemptFamily::Buffered { skip_body },
             )
@@ -513,6 +532,13 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             AttemptTransportSuccess::Buffered(resp) => resp,
             _ => unreachable!(),
         };
+        let resp = Self::buffer_response(
+            resp,
+            skip_body,
+            self.runtime_state.max_response_body_bytes(),
+            &ctx,
+        )
+        .await?;
         #[cfg(feature = "dangerous-dev-tools")]
         self.maybe_capture_dev_response_body(&plan, &resp);
         self.debug_planned_response(dbg, &resp, resp.url().as_str());
@@ -583,10 +609,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 "stream response content type did not match expected media type",
             ));
         }
-        Ok(crate::stream_response::StreamResponse::new(
-            resp,
-            stream_response_limit,
-        ))
+        Ok(crate::stream_response::StreamResponse::new(resp))
     }
     async fn prepare_auth_plan(
         &self,

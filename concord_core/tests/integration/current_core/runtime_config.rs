@@ -49,8 +49,11 @@ async fn client_config_applies_to_requests() {
         .await
         .expect_err("client body limit should reject 5-byte response");
 
-    assert_response_too_large(&err);
-    assert_eq!(body_reads(&read_count), 0);
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
+    assert_eq!(body_reads(&read_count), 1);
     assert_eq!(transport_events(&events).await, vec!["transport"]);
 }
 
@@ -338,8 +341,11 @@ async fn execute_raw_uses_same_runtime_safety_config() {
         .await
         .expect_err("execute_raw_response should enforce the runtime body limit");
 
-    assert_response_too_large(&err);
-    assert_eq!(body_reads(&read_count), 0);
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
+    assert_eq!(body_reads(&read_count), 1);
     let event_snapshot = transport_events(&events).await;
     assert!(event_snapshot.contains(&"rate_acquire".to_string()));
     assert!(event_snapshot.contains(&"hook_pre_send:raw".to_string()));
@@ -434,15 +440,18 @@ async fn no_response_body_limit_reads_honest_large_body_completely() {
 }
 
 #[tokio::test]
-async fn default_body_limit_rejects_content_length_over_16_mib() {
+async fn default_body_limit_counts_actual_body_even_with_understated_content_length() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let read_count = Arc::new(AtomicUsize::new(0));
     let transport = MockTransport::new(
         events.clone(),
         vec![
-            MockResponse::text(StatusCode::OK, Bytes::from_static(b"irrelevant"))
-                .with_content_length(Some(16 * 1024 * 1024 + 1))
-                .with_read_count(read_count.clone()),
+            MockResponse::text(
+                StatusCode::OK,
+                Bytes::from(vec![b'a'; 16 * 1024 * 1024 + 1]),
+            )
+            .with_content_length(Some(1))
+            .with_read_count(read_count.clone()),
         ],
     );
     let client = client(TestAuthVars::default(), transport);
@@ -451,10 +460,13 @@ async fn default_body_limit_rejects_content_length_over_16_mib() {
         .request(TextEndpoint::default())
         .response()
         .await
-        .expect_err("the default response body limit should reject an oversize Content-Length");
+        .expect_err("the default response body limit should reject an oversize actual body");
 
-    assert_response_too_large(&err);
-    assert_eq!(body_reads(&read_count), 0);
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
+    assert_eq!(body_reads(&read_count), 1);
     assert_eq!(transport_events(&events).await, vec!["transport"]);
 }
 

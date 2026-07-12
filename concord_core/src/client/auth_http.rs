@@ -252,31 +252,25 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
                         }
                     };
 
-                    let (parts, mut response_body) = resp.into_parts();
-                    let content_length = parts
-                        .headers
-                        .get(http::header::CONTENT_LENGTH)
-                        .and_then(|value| value.to_str().ok())
-                        .and_then(|value| value.parse().ok());
-                    let body = match read_body_all_limited(
-                        &mut response_body,
-                        content_length,
+                    let (parts, response_body) = resp.into_parts();
+                    let response_body = crate::body::limit_response_body(
+                        response_body,
                         Some(policy.max_body_bytes),
                     )
-                    .await
-                    {
-                        Ok(body) => body,
-                        Err(BodyReadError::Body(source)) => {
-                            return Err(AuthError::new(
-                                AuthErrorKind::ResponseBody,
-                                format!("auth response body read failed ({:?})", source.kind()),
-                            ));
-                        }
-                        Err(source @ BodyReadError::ContentLengthTooLarge { .. })
-                        | Err(source @ BodyReadError::LimitExceeded { .. }) => {
-                            return Err(auth_body_too_large_error(source));
-                        }
-                    };
+                    .map_err(auth_body_limit_error)?;
+                    let body = crate::body::collect_body(response_body)
+                        .await
+                        .map_err(|source| {
+                            if source.kind() == crate::body::BodyErrorKind::LimitExceeded {
+                                auth_body_limit_error(source)
+                            } else {
+                                AuthError::new(
+                                    AuthErrorKind::ResponseBody,
+                                    format!("auth response body read failed ({:?})", source.kind()),
+                                )
+                            }
+                        })?
+                        .to_bytes();
 
                     return Ok(AuthHttpResponse {
                         status: parts.status,
@@ -290,8 +284,14 @@ impl<Cx: ClientContext, T: Transport> AuthHttpExecutor for ClientAuthHttpExecuto
     }
 }
 
-fn auth_body_too_large_error(error: BodyReadError) -> AuthError {
-    AuthError::new(AuthErrorKind::ResponseTooLarge, error.to_string())
+fn auth_body_limit_error(error: crate::body::BodyError) -> AuthError {
+    AuthError::new(
+        AuthErrorKind::ResponseTooLarge,
+        format!(
+            "auth response body exceeded configured limit {} bytes",
+            error.limit().unwrap_or_default()
+        ),
+    )
 }
 
 fn next_auth_transport_attempt(attempt: u32) -> Result<u32, AuthError> {

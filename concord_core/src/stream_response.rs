@@ -10,17 +10,18 @@ use std::marker::PhantomData;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
 
+/// A data-only response façade over the runtime's already-limited body.
+///
+/// `next_chunk` and `write_to_file` intentionally skip trailer frames. Requesting
+/// this type is the explicit data-only conversion; trailers remain available on
+/// the frame-aware body until this façade consumes them.
 pub struct StreamResponse<M> {
     resp: AttemptResponse,
     _media: PhantomData<fn() -> M>,
 }
 
 impl<M> StreamResponse<M> {
-    pub(crate) fn new(mut resp: AttemptResponse, limit: Option<usize>) -> Self {
-        if let Some(limit) = limit {
-            let body = std::mem::replace(resp.message.body_mut(), DynBody::empty());
-            *resp.message.body_mut() = body.limited(limit as u64);
-        }
+    pub(crate) fn new(resp: AttemptResponse) -> Self {
         Self {
             resp,
             _media: PhantomData,

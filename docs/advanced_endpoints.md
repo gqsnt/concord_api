@@ -71,6 +71,7 @@ The generated advanced surfaces are family-specific and keep runtime values free
 - `Bytes` is response-only, returns `bytes::Bytes`, uses the ordinary bounded buffered response path that materializes payloads in memory, and omits `Accept`; request-side `Bytes` remains invalid. Use `Stream<OctetStream>` for unbounded byte transfer.
 - `NoContent` is response-only, returns `()`, and omits `Accept`; request-side `NoContent` remains invalid. The core `NoContent` buffered codec intentionally omits request and response content headers.
 - `Stream<M>` has the dedicated `.execute_stream()` helper; `.execute()` also returns its stream response.
+- `StreamResponse<M>` is a data-only façade over the already-limited frame-aware response body; `next_chunk()` and `write_to_file()` skip trailer frames as the explicit data-only conversion.
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` are the codec-level override points for buffered codecs. `content_type()` and `accept()` are the convenience forms.
 - Retry policies remain available for ordinary HTTP endpoints. Built-in stream and multipart request bodies are one-shot and are not retried unless a replaying factory is provided. A custom `RequestEntity` must supply an explicit `PreparedBody` replay factory when it can genuinely construct a fresh body for every attempt.
 - Pagination remains buffered-response-only and is rejected for `Stream` and `NoContent` endpoint responses. `Bytes` rejects pagination.

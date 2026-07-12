@@ -605,7 +605,8 @@ async fn stream_response_no_content_plan_is_rejected_before_transport() {
 }
 
 #[tokio::test]
-async fn stream_response_content_length_exceeds_limit_before_body_polling() {
+async fn stream_response_overstated_content_length_does_not_reject_small_body()
+-> Result<(), ApiClientError> {
     let events = Arc::new(StdMutex::new(Vec::new()));
     let polled = Arc::new(AtomicBool::new(false));
     let transport = StreamTransport::new(
@@ -613,7 +614,7 @@ async fn stream_response_content_length_exceeds_limit_before_body_polling() {
         vec![
             ResponseFixture::octet_stream(
                 StatusCode::OK,
-                vec![Bytes::from_static(b"hello"), Bytes::from_static(b"world")],
+                vec![Bytes::from_static(b"hello"), Bytes::from_static(b"!")],
             )
             .content_length(Some(16))
             .with_flag(polled.clone()),
@@ -625,20 +626,24 @@ async fn stream_response_content_length_exceeds_limit_before_body_polling() {
         cfg.max_stream_response_body_bytes(8);
     });
 
-    let err = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
+    let mut response = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(&client, empty_response_plan(
             "RawStreamResponseLimit",
             "/raw-stream-response-limit",
         ))
-        .await
-        .expect_err("content length above limit should fail before body exposure");
+        .await?;
 
-    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
-    assert!(!polled.load(Ordering::SeqCst));
-    assert_eq!(transport.send_count(), 1);
-    assert!(
-        err.to_string()
-            .contains("response Content-Length 16 exceeds limit 8 bytes")
+    assert_eq!(
+        response.next_chunk().await?.as_deref(),
+        Some(b"hello".as_slice())
     );
+    assert_eq!(
+        response.next_chunk().await?.as_deref(),
+        Some(b"!".as_slice())
+    );
+    assert_eq!(response.next_chunk().await?, None);
+    assert!(polled.load(Ordering::SeqCst));
+    assert_eq!(transport.send_count(), 1);
+    Ok(())
 }
 
 #[tokio::test]

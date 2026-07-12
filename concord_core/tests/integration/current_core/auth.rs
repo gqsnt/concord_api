@@ -1643,9 +1643,11 @@ async fn oauth_client_credentials_token_response_above_limit_fails() {
     let transport = MockTransport::new(
         events,
         vec![
-            MockResponse::text(StatusCode::OK, "{}").with_content_length(Some(
-                (AuthInternalPolicy::DEFAULT_MAX_BODY_BYTES + 1) as u64,
-            )),
+            MockResponse::text(
+                StatusCode::OK,
+                Bytes::from(vec![b'a'; AuthInternalPolicy::DEFAULT_MAX_BODY_BYTES + 1]),
+            )
+            .with_content_length(Some(1)),
         ],
     );
     let client = auth_http_client(transport, AuthHttpLimitVars::oauth());

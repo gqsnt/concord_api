@@ -481,7 +481,7 @@ async fn error_taxonomy_variant_snapshot() {
             ErrorCategory::HttpStatus,
         ),
         (
-            "content-length body limit",
+            "safe body-hint limit",
             ApiClientError::ResponseTooLarge {
                 ctx: ctx.clone(),
                 limit: 4,
@@ -1253,7 +1253,10 @@ async fn body_limit_errors_are_distinguishable_and_safe() {
         };
 
         match name {
-            "content-length" => assert!(matches!(err, ApiClientError::ResponseTooLarge { .. })),
+            "content-length" => assert!(matches!(
+                err,
+                ApiClientError::ResponseBodyLimitExceeded { .. }
+            )),
             "streaming" => assert!(matches!(
                 err,
                 ApiClientError::ResponseBodyLimitExceeded { .. }
@@ -1266,7 +1269,7 @@ async fn body_limit_errors_are_distinguishable_and_safe() {
         assert_observers_safe(&Arc::new(Mutex::new(events))).await;
     }
 
-    assert_eq!(body_read_count(&content_length_reads), 0);
+    assert_eq!(body_read_count(&content_length_reads), 1);
     assert_eq!(body_read_count(&streaming_reads), 2);
 }
 
@@ -1384,9 +1387,12 @@ async fn execute_raw_error_taxonomy_matches_documented_behavior() {
         .execute_raw_response()
         .await
         .expect_err("raw body limit should still be enforced");
-    assert!(matches!(body_err, ApiClientError::ResponseTooLarge { .. }));
+    assert!(matches!(
+        body_err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
     assert_eq!(body_err.category(), ErrorCategory::Decode);
-    assert_eq!(body_read_count(&response_reads), 0);
+    assert_eq!(body_read_count(&response_reads), 1);
 
     let status_err = raw_client
         .request(TextEndpoint {

@@ -200,77 +200,29 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
     pub(super) async fn classify_transport_response(
         &self,
         resp: AttemptResponse,
-        skip_body: bool,
         dbg: DebugLevel,
         dbg_verbose: bool,
         _dbg_vv: bool,
         url_str: &str,
         ctx: &ErrorContext,
-    ) -> Result<BuiltResponse, ApiClientError> {
-        let observe_ctx = Self::response_observation_ctx(&resp, url_str);
-        self.run_post_response_hook(observe_ctx).await;
-        let rate_limit_action = self.observe_rate_limit_response(observe_ctx, ctx).await?;
-        match classify_status(resp.status()) {
-            ResponseClass::HttpStatusError => {
-                if dbg_verbose {
-                    self.debug_sink
-                        .response_status(dbg, resp.status(), url_str, false);
-                    self.debug_sink
-                        .response_headers(dbg, crate::debug::SanitizedHeaders::new(resp.headers()));
-                }
-                Err(ApiClientError::HttpStatus {
-                    ctx: ctx.clone(),
-                    status: resp.status(),
-                    headers: Box::new(crate::redaction::sanitize_header_map(resp.headers())),
-                    rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
-                        .then_some(Box::new(rate_limit_action)),
-                })
-            }
-            ResponseClass::Success => {
-                let (parts, mut body) = resp.message.into_parts();
-                let content_length = content_length(&parts.headers);
-                let bytes = if skip_body {
-                    Bytes::new()
-                } else {
-                    read_body_all_limited(
-                        &mut body,
-                        content_length,
-                        self.runtime_state.max_response_body_bytes(),
-                    )
-                    .await
-                    .map_err(|e| match e {
-                        BodyReadError::Body(source) => {
-                            ApiClientError::response_body_error(ctx.clone(), source)
-                        }
-                        BodyReadError::ContentLengthTooLarge { limit, actual } => {
-                            ApiClientError::ResponseTooLarge {
-                                ctx: ctx.clone(),
-                                limit,
-                                actual,
-                            }
-                        }
-                        BodyReadError::LimitExceeded { limit } => {
-                            ApiClientError::ResponseBodyLimitExceeded {
-                                ctx: ctx.clone(),
-                                limit,
-                            }
-                        }
-                    })?
-                };
-                Ok(BuiltResponse::new(
-                    http::Response::from_parts(parts, bytes),
-                    resp.context,
-                ))
-            }
-        }
+    ) -> Result<AttemptResponse, ApiClientError> {
+        self.observe_and_classify_transport_response(
+            resp,
+            dbg,
+            dbg_verbose,
+            _dbg_vv,
+            url_str,
+            ctx,
+            false,
+        )
+        .await
     }
 
     pub(super) async fn send_and_classify_once(
         &self,
         built: BuiltRequest,
-        skip_body: bool,
         send_ctx: SendClassifyCtx<'_>,
-    ) -> Result<BuiltResponse, ApiClientError> {
+    ) -> Result<AttemptResponse, ApiClientError> {
         let transport_resp = self
             .acquire_rate_limit_and_send(
                 built,
@@ -280,7 +232,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .await?;
         self.classify_transport_response(
             transport_resp,
-            skip_body,
             send_ctx.dbg,
             send_ctx.dbg_verbose,
             send_ctx.dbg_vv,
@@ -294,7 +245,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         &self,
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
-        response_limit: Option<usize>,
     ) -> Result<AttemptResponse, ApiClientError> {
         let transport_resp = self
             .acquire_rate_limit_and_send(
@@ -310,13 +260,12 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             send_ctx.dbg_vv,
             send_ctx.url_str,
             send_ctx.error_ctx,
-            response_limit,
+            true,
         )
         .await
     }
 
-    // Streaming classification mirrors the buffered path so hook, rate-limit,
-    // and debug ordering stays explicit at the call site.
+    // All response families use this metadata-only classification path.
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn observe_and_classify_transport_response(
         &self,
@@ -326,7 +275,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         _dbg_vv: bool,
         url_str: &str,
         ctx: &ErrorContext,
-        response_limit: Option<usize>,
+        emit_success_debug: bool,
     ) -> Result<AttemptResponse, ApiClientError> {
         let observe_ctx = Self::response_observation_ctx(&resp, url_str);
         self.run_post_response_hook(observe_ctx).await;
@@ -348,25 +297,82 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 })
             }
             ResponseClass::Success => {
-                if dbg_verbose {
+                if emit_success_debug && dbg_verbose {
                     self.debug_sink
                         .response_status(dbg, resp.status(), url_str, true);
                     self.debug_sink
                         .response_headers(dbg, crate::debug::SanitizedHeaders::new(resp.headers()));
                 }
-                if let (Some(limit), Some(actual)) =
-                    (response_limit, content_length(resp.headers()))
-                    && actual > limit as u64
-                {
-                    return Err(ApiClientError::ResponseTooLarge {
-                        ctx: ctx.clone(),
-                        limit,
-                        actual,
-                    });
-                }
                 Ok(resp)
             }
         }
+    }
+
+    pub(super) fn limit_response_body(
+        resp: AttemptResponse,
+        limit: Option<usize>,
+        ctx: &ErrorContext,
+    ) -> Result<AttemptResponse, ApiClientError> {
+        let AttemptResponse { message, context } = resp;
+        let (parts, body) = message.into_parts();
+        let body = crate::body::limit_response_body(body, limit).map_err(|source| {
+            if source.kind() == crate::body::BodyErrorKind::LimitExceeded {
+                ApiClientError::ResponseTooLarge {
+                    ctx: ctx.clone(),
+                    limit: source.limit().unwrap_or_default() as usize,
+                    actual: source.observed().unwrap_or_default(),
+                }
+            } else {
+                ApiClientError::response_body_error(ctx.clone(), source)
+            }
+        })?;
+        Ok(AttemptResponse {
+            message: http::Response::from_parts(parts, body),
+            context,
+        })
+    }
+
+    pub(super) async fn buffer_response(
+        resp: AttemptResponse,
+        skip_body: bool,
+        limit: Option<usize>,
+        ctx: &ErrorContext,
+    ) -> Result<BuiltResponse, ApiClientError> {
+        let AttemptResponse { message, context } = resp;
+        let (parts, body) = message.into_parts();
+        let bytes = if skip_body {
+            bytes::Bytes::new()
+        } else {
+            let body = crate::body::limit_response_body(body, limit).map_err(|source| {
+                if source.kind() == crate::body::BodyErrorKind::LimitExceeded {
+                    ApiClientError::ResponseTooLarge {
+                        ctx: ctx.clone(),
+                        limit: source.limit().unwrap_or_default() as usize,
+                        actual: source.observed().unwrap_or_default(),
+                    }
+                } else {
+                    ApiClientError::response_body_error(ctx.clone(), source)
+                }
+            })?;
+            let collected = crate::body::collect_body(body).await.map_err(|source| {
+                if source.kind() == crate::body::BodyErrorKind::LimitExceeded {
+                    ApiClientError::ResponseBodyLimitExceeded {
+                        ctx: ctx.clone(),
+                        limit: source.limit().unwrap_or_default() as usize,
+                    }
+                } else {
+                    ApiClientError::response_body_error(ctx.clone(), source)
+                }
+            })?;
+            // `Collected` retains trailers until this explicit buffered/data-only
+            // boundary. BuiltResponse intentionally preserves the existing public
+            // buffered raw-response shape as bytes.
+            collected.to_bytes()
+        };
+        Ok(BuiltResponse::new(
+            http::Response::from_parts(parts, bytes),
+            context,
+        ))
     }
 
     pub(super) fn response_observation_ctx<'a>(
@@ -397,13 +403,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .map(|base| base.trim().eq_ignore_ascii_case(expected))
             .unwrap_or(false)
     }
-}
-
-fn content_length(headers: &http::HeaderMap) -> Option<u64> {
-    headers
-        .get(http::header::CONTENT_LENGTH)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse().ok())
 }
 
 fn wrap_rate_limit_error(

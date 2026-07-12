@@ -2041,7 +2041,7 @@ async fn runtime_config_applies_debug_rate_limit_transport_and_pagination_loop_d
 }
 
 #[tokio::test]
-async fn response_content_length_above_limit_fails_before_decode() {
+async fn response_content_length_does_not_bypass_body_limit() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let transport = MockTransport::new(
         events,
@@ -2056,15 +2056,11 @@ async fn response_content_length_above_limit_fails_before_decode() {
         .request(TextEndpoint::default())
         .response()
         .await
-        .expect_err("known content length above limit should fail");
+        .expect_err("actual body above limit should fail while reading");
 
     assert!(matches!(
         err,
-        ApiClientError::ResponseTooLarge {
-            limit: 4,
-            actual: 9,
-            ..
-        }
+        ApiClientError::ResponseBodyLimitExceeded { limit: 4, .. }
     ));
 }
 
@@ -2127,7 +2123,7 @@ async fn response_below_limit_succeeds() -> Result<(), ApiClientError> {
 }
 
 #[tokio::test]
-async fn content_length_over_limit_rejects_before_body_read() {
+async fn content_length_over_limit_is_checked_while_reading() {
     const RESPONSE_SENTINEL: &str = "PR74_CONTENT_LENGTH_OVER_LIMIT_SENTINEL";
 
     let events = Arc::new(Mutex::new(Vec::new()));
@@ -2159,17 +2155,13 @@ async fn content_length_over_limit_rejects_before_body_read() {
         })
         .response()
         .await
-        .expect_err("known content length above limit should fail before reading body");
+        .expect_err("actual body above limit should fail while reading");
 
     assert!(matches!(
         err,
-        ApiClientError::ResponseTooLarge {
-            limit: 4,
-            actual: 5,
-            ..
-        }
+        ApiClientError::ResponseBodyLimitExceeded { limit: 4, .. }
     ));
-    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(body_reads(&read_count), 1);
     assert_eq!(sent_transport.sent_count().await, 1);
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event == "pre_send"));
@@ -2292,13 +2284,9 @@ async fn rate_limit_response_context_remains_body_free() {
 
     assert!(matches!(
         err,
-        ApiClientError::ResponseTooLarge {
-            limit: 4,
-            actual: 5,
-            ..
-        }
+        ApiClientError::ResponseBodyLimitExceeded { limit: 4, .. }
     ));
-    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(body_reads(&read_count), 1);
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
     assert!(events.iter().any(|event| event.starts_with("rate_status:")));
@@ -2313,7 +2301,7 @@ async fn debug_hooks_never_receive_body_bytes_on_body_errors() {
     let cases = [
         (
             MockResponse::text(StatusCode::OK, RESPONSE_SENTINEL).with_content_length(Some(5)),
-            0usize,
+            1usize,
         ),
         (
             MockResponse::text(StatusCode::OK, Bytes::new())
@@ -2354,8 +2342,7 @@ async fn debug_hooks_never_receive_body_bytes_on_body_errors() {
 
         assert!(matches!(
             err,
-            ApiClientError::ResponseTooLarge { .. }
-                | ApiClientError::ResponseBodyLimitExceeded { .. }
+            ApiClientError::ResponseBodyLimitExceeded { .. }
         ));
         assert!(!err.to_string().contains(RESPONSE_SENTINEL));
         assert!(!format!("{err:?}").contains(RESPONSE_SENTINEL));
@@ -2396,13 +2383,9 @@ async fn body_limit_plus_one_fails() {
 
     assert!(matches!(
         err,
-        ApiClientError::ResponseTooLarge {
-            limit: 4,
-            actual: 5,
-            ..
-        }
+        ApiClientError::ResponseBodyLimitExceeded { limit: 4, .. }
     ));
-    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(body_reads(&read_count), 1);
     assert!(!err.to_string().contains("abcde"));
 }
 
@@ -2453,7 +2436,7 @@ async fn response_too_large_does_not_decode() {
     let transport = MockTransport::new(
         events,
         vec![
-            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xff"))
+            MockResponse::text(StatusCode::OK, Bytes::from_static(b"\xffx"))
                 .with_content_length(Some(8)),
         ],
     );
@@ -2468,7 +2451,10 @@ async fn response_too_large_does_not_decode() {
         .await
         .expect_err("body limit should fail before utf-8 decode");
 
-    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
     assert!(!err.to_string().contains("utf-8"));
 }
 
@@ -2487,7 +2473,10 @@ async fn response_limit_applies() {
         .await
         .expect_err("response limit applies");
 
-    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
 }
 
 #[tokio::test]
@@ -2523,14 +2512,10 @@ async fn body_limit_error_does_not_trigger_ordinary_retry() {
 
     assert!(matches!(
         err,
-        ApiClientError::ResponseTooLarge {
-            limit: 4,
-            actual: 5,
-            ..
-        }
+        ApiClientError::ResponseBodyLimitExceeded { limit: 4, .. }
     ));
     assert_eq!(sent_transport.sent_count().await, 1);
-    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(body_reads(&read_count), 1);
     assert!(!err.to_string().contains(RESPONSE_SENTINEL));
 }
 
@@ -2565,14 +2550,10 @@ async fn execute_raw_body_limit_behavior_characterized() {
 
     assert!(matches!(
         err,
-        ApiClientError::ResponseTooLarge {
-            limit: 4,
-            actual: 5,
-            ..
-        }
+        ApiClientError::ResponseBodyLimitExceeded { limit: 4, .. }
     ));
     assert_eq!(sent_transport.sent_count().await, 1);
-    assert_eq!(body_reads(&read_count), 0);
+    assert_eq!(body_reads(&read_count), 1);
     assert!(!err.to_string().contains(RESPONSE_SENTINEL));
 }
 

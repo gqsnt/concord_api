@@ -521,7 +521,10 @@ async fn concurrent_clone_reconfigure_does_not_affect_in_flight_request() {
         .await
         .expect("request task should complete")
         .expect_err("in-flight request should keep the original body limit");
-    assert!(matches!(err, ApiClientError::ResponseTooLarge { .. }));
+    assert!(matches!(
+        err,
+        ApiClientError::ResponseBodyLimitExceeded { .. }
+    ));
 
     let later = reconfigured_client
         .request(TextEndpoint::default())

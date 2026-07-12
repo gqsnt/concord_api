@@ -39,7 +39,7 @@ pub enum ApiClientError {
         source: crate::transport::TransportError,
     },
 
-    #[error("{ctx}: response Content-Length {actual} exceeds limit {limit} bytes")]
+    #[error("{ctx}: response body size hint {actual} exceeds limit {limit} bytes")]
     ResponseTooLarge {
         ctx: ErrorContext,
         limit: usize,
