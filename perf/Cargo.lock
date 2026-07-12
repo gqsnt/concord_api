@@ -218,6 +218,8 @@ dependencies = [
  "futures-core",
  "governor",
  "http",
+ "http-body",
+ "http-body-util",
  "httpdate",
  "memchr",
  "reqwest",

@@ -10,6 +10,7 @@ fn public_v1_surface_compiles() {
     fn uses_client_context<Cx: prelude::ClientContext>() {}
     fn uses_transport<T: advanced::Transport>() {}
     fn uses_body<B: advanced::TransportBody>() {}
+    fn uses_standard_body<B: http_body::Body<Data = bytes::Bytes, Error = advanced::BodyError>>() {}
     fn uses_rate_limiter<L: advanced::RateLimiter>() {}
     fn uses_hooks<H: advanced::RuntimeHooks>() {}
     fn uses_debug_sink<S: advanced::DebugSink>() {}
@@ -24,6 +25,7 @@ fn public_v1_surface_compiles() {
     uses_client_context::<super::common::TestCx>();
     uses_transport::<super::common::MockTransport>();
     uses_body::<EmptyBody>();
+    uses_standard_body::<advanced::DynBody>();
     uses_rate_limiter::<advanced::NoopRateLimiter>();
     uses_hooks::<advanced::NoopRuntimeHooks>();
     uses_debug_sink::<advanced::NoopDebugSink>();
@@ -39,6 +41,10 @@ fn public_v1_surface_compiles() {
     uses_type::<advanced::StreamBody>();
     uses_type::<advanced::StreamBodyError>();
     uses_type::<advanced::BodySizeHint>();
+    uses_type::<advanced::DynBody>();
+    uses_type::<advanced::BodyError>();
+    uses_type::<advanced::BodyErrorKind>();
+    uses_type::<advanced::LimitedBody<advanced::DynBody>>();
     uses_type::<advanced::OctetStream>();
     uses_type::<advanced::Mp3>();
     uses_type::<advanced::Mp4>();

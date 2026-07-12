@@ -56,6 +56,13 @@ Raw parser syntax may represent rejected forms so diagnostics can point at the r
 
 Runtime diagnostics are metadata-only for bodies. Debug sinks, stderr debug logs, runtime hooks, and callback-style diagnostics must not receive live request or response body bytes, even truncated or formatted previews.
 
+The standard body foundation uses `DynBody` over `BoxBody<Bytes, BodyError>`.
+It preserves data and trailer frames, keeps construction lazy, supports
+Send-only sources through safe exclusive polling, and uses one reusable
+frame-aware limiter that counts data bytes but not trailers. The legacy
+transport byte-stream bridge is intentionally temporary until the transport
+contract migration.
+
 The deprecated dev body capture path is separate from debug sinks, hooks, stderr debug output, public errors, retry metadata, and rate-limit metadata. It is gated behind `dangerous-dev-tools`, disabled by default, and writes raw selected response bytes without redaction only when explicitly configured. It never captures request bodies and is intended only for controlled local debugging.
 
 See [Security Model](security_model.md) for the consumer-facing boundary between safe, advanced, and dangerous surfaces.

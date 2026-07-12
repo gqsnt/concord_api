@@ -19,6 +19,8 @@ httpdate.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt", "sync", "time"] }
 governor = { workspace = true, optional = true }
 futures-core.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }

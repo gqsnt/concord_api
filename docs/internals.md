@@ -32,6 +32,26 @@ Endpoint::plan -> RequestPlan -> execute_plan
 
 The core runtime is syntax-neutral. It executes request plans with fixed ordering for auth preparation, rate limiting, transport, response classification, retry, and decoding.
 
+## Standard Body Foundation
+
+`concord_core::advanced::DynBody` is the future common body substrate. It is a
+`BoxBody<Bytes, BodyError>` and preserves data frames, trailer frames, frame
+order, truthful `SizeHint` values, and `is_end_stream`. Empty and buffered
+bodies use the upstream `http-body-util` primitives.
+
+`BodyError` is the typed body error authority. Its `Debug`, `Display`, and
+source chain expose only safe categories and bounded limit metadata; producer
+messages and body bytes are never retained. Send-only inputs use a safe
+exclusive-poll adapter that holds a standard-library mutex only during the
+synchronous poll operation. It does not use `unsafe`, a forwarding task, or a
+buffering queue, and body construction is lazy.
+
+`LimitedBody` is the reusable frame-aware limiter. It counts bytes in data
+frames, leaves trailers uncounted and unchanged, and becomes terminal after a
+typed over-limit error. The legacy transport byte-stream bridge remains in
+place until the later transport migration; it cannot represent trailers and
+must not be treated as the standard body path.
+
 ## Test Artifacts
 
 Runtime behavior is covered by focused `concord_core` tests and end-to-end generated-client tests in `concord_examples/tests/`.

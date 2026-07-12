@@ -247,7 +247,7 @@ impl Stream for OnceBytesStream {
     }
 }
 
-struct AsyncReadByteStream<R> {
+pub(crate) struct AsyncReadByteStream<R> {
     reader: Pin<Box<R>>,
     buffer: Vec<u8>,
     eof: bool,
@@ -257,7 +257,7 @@ impl<R> AsyncReadByteStream<R>
 where
     R: AsyncRead + Send + 'static,
 {
-    fn new(reader: R, chunk_size: usize) -> Result<Self, StreamBodyError> {
+    pub(crate) fn new(reader: R, chunk_size: usize) -> Result<Self, StreamBodyError> {
         if chunk_size == 0 {
             return Err(StreamBodyError::invalid_chunk_size());
         }

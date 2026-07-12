@@ -90,6 +90,14 @@ The following surfaces are metadata-only or body-free by design:
 
 Body-size limit failures remain typed and body-free. Diagnostic surfaces may mention the failing endpoint, status, limit, or safe header metadata, but they do not receive raw body bytes.
 
+The standard `DynBody` path preserves HTTP data and trailer frames while using
+`Bytes` and the redacted `BodyError` type. Send-only streams and readers are
+adapted with safe exclusive synchronous polling; no unsafe trait adaptation,
+background forwarding task, or unbounded queue is involved. Its reusable
+frame-aware limiter counts data bytes only, so trailer fields do not consume a
+byte budget. Legacy transport conversion is temporary and remains a
+byte-stream-only boundary until the transport migration.
+
 The dangerous surfaces are the exception:
 
 - raw response execution can expose raw response body bytes through the returned built response;

@@ -14,6 +14,13 @@ Raw stream responses are guarded by the configured stream response limit. The li
 
 ## Body Limits
 
+The advanced standard-body `LimitedBody` applies a single frame-aware counter
+without collecting the body or spawning a forwarding task. It preserves chunk
+boundaries and trailers, checks additions for overflow, and stops immediately
+when a data frame would exceed the limit. `DynBody` reader adapters use the
+existing 8 KiB default and bounded per-reader buffers; generic readers report
+an unknown hint while files report their metadata length.
+
 `RuntimeConfig::default()` sets three finite body limits, each to `16 * 1024 * 1024`, as defined in `concord_core/src/runtime/config.rs` and carried into `ClientRuntimeState` in `concord_core/src/runtime_state.rs`:
 
 - `max_response_body_bytes(...)` protects buffered endpoint responses and raw execution responses.

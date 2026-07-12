@@ -6,6 +6,13 @@ See [Security Model](security_model.md) for the safe diagnostic boundary and the
 
 `Display`, `Debug`, and `source()` diagnostics are safe metadata surfaces. They must not contain request body bytes, response body bytes, raw bearer tokens, query auth values, header auth values, Basic usernames or passwords, or secret values. Debug sinks, runtime hooks, rate-limit contexts, and retry contexts follow the same boundary. A custom transport or user-authored codec error can still log or return unsafe text if the integration writes it; Concord does not add body or auth material to those diagnostics itself.
 
+The advanced standard body foundation uses the typed `BodyError` taxonomy.
+It records only a safe category (`I/O`, input, configuration, exclusive-poll,
+limit, or other) plus bounded numeric limit metadata when applicable. It does
+not retain arbitrary producer errors as a source, so body contents, producer
+messages, credentials, and sensitive URLs cannot appear through its ordinary
+diagnostics. `DynBody` construction and inspection are also non-polling.
+
 ## Taxonomy
 
 | Failure class | Public error variant or kind | Happens before or after transport | Body read? | Retry? | Diagnostic safety notes |

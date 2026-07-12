@@ -1,4 +1,5 @@
 pub mod auth;
+mod body;
 mod client;
 mod codec;
 mod debug;
@@ -99,6 +100,7 @@ pub mod advanced {
         apply_secret_credential, auth_decision_for_status, invalidate_rejected_credential,
         read_auth_lock, write_auth_lock,
     };
+    pub use crate::body::{BodyError, BodyErrorKind, DynBody, LimitedBody};
     pub use crate::codec::{
         BodyCodec, CodecError, ContentType, DecodeContext, EncodeContext, EncodedBody,
         ResponseCodec,
