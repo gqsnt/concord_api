@@ -1,14 +1,13 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
-    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BufferedResponse, CodecError,
-    CursorPagination, DecodeContext, DynBody, OffsetLimitPagination, PagedPagination,
-    PaginateBinding, PaginationRuntimeAdapter, PostResponseHookContext, PreSendHookContext,
-    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, RequestExecutionContext, RequestMeta, ResponseCodec,
-    ResponseEntity, RetryContext, RetryDecision, RetryPolicy, RuntimeHooks, TextContentType,
-    Transport, TransportError, TransportErrorHookContext, TransportErrorKind,
-    apply_basic_credential,
+    AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthErrorKind, AuthPlacement,
+    AuthProvenance, AuthRequirement, AuthUsageId, BufferedResponse, CodecError, CursorPagination,
+    DecodeContext, DynBody, OffsetLimitPagination, PagedPagination, PaginateBinding,
+    PaginationRuntimeAdapter, PostResponseHookContext, PreSendHookContext, RateLimitContext,
+    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
+    RateLimiter, RequestExecutionContext, RequestMeta, ResponseCodec, ResponseEntity, RetryContext,
+    RetryDecision, RetryPolicy, RuntimeHooks, TextContentType, Transport, TransportError,
+    TransportErrorHookContext, TransportErrorKind, apply_basic_credential,
 };
 use concord_core::internal::{
     ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
@@ -27,7 +26,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
-use tokio::sync::{Mutex, Notify, watch};
+use tokio::sync::{Mutex, Notify, Semaphore, watch};
 
 pub struct CapturedTransportRequest {
     pub meta: RequestMeta,
@@ -245,36 +244,51 @@ impl ClientContext for TestCx {
         })
     }
 
-    fn handle_auth_response<'a>(
-        requirement: &'a AuthRequirement,
-        applied: &'a AuthAppliedCredential,
+    fn plan_auth_response(
+        requirement: &AuthRequirement,
+        applied: &AuthAppliedCredential,
+        _vars: &Self::Vars,
+        auth: &Self::AuthVars,
+        _meta: &RequestMeta,
+        status: StatusCode,
+        _headers: &HeaderMap,
+    ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
+        if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+            && matches!(auth.identity, "refresh" | "refresh-error")
+        {
+            return Ok(concord_core::advanced::AuthRejectionAction::refresh(
+                requirement,
+                applied,
+                concord_core::advanced::AuthRetryReason::Unauthorized,
+                None,
+            ));
+        }
+        Ok(concord_core::advanced::AuthRejectionAction::terminal(
+            requirement,
+            applied,
+            None,
+        ))
+    }
+
+    fn apply_refresh_auth_action<'a>(
+        action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
         _vars: &'a Self::Vars,
         auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
         _meta: &'a RequestMeta,
-        status: StatusCode,
-        _headers: &'a HeaderMap,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
+        _status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
         Box::pin(async move {
-            if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
-                if auth.identity == "refresh" {
-                    return Ok(AuthDecision::RetryAfterRefresh {
-                        credential: requirement.credential.clone(),
-                        generation: applied.generation,
-                        reason: concord_core::advanced::AuthRetryReason::Unauthorized,
-                    });
-                }
-                if auth.identity == "refresh-error" {
-                    return Err(AuthError::new(
-                        AuthErrorKind::ProviderRejected,
-                        "auth refresh failed",
-                    ));
-                }
-                Ok(AuthDecision::Fail)
-            } else {
-                Ok(AuthDecision::Continue)
+            if action.requests_refresh() && auth.identity == "refresh-error" {
+                return Err(AuthError::new(
+                    AuthErrorKind::ProviderRejected,
+                    "auth refresh failed",
+                ));
             }
+            Ok(())
         })
     }
 }
@@ -937,6 +951,8 @@ pub struct ObservationAuthVars {
     pub password: Option<String>,
     pub identity: &'static str,
     pub events: Arc<Mutex<Vec<String>>>,
+    pub terminal_gate: Option<Arc<Semaphore>>,
+    pub terminal_started: Option<Arc<Semaphore>>,
 }
 
 impl ObservationAuthVars {
@@ -951,6 +967,8 @@ impl ObservationAuthVars {
             password: None,
             identity,
             events,
+            terminal_gate: None,
+            terminal_started: None,
         }
     }
 
@@ -966,6 +984,8 @@ impl ObservationAuthVars {
             password: Some(password.into()),
             identity,
             events,
+            terminal_gate: None,
+            terminal_started: None,
         }
     }
 }
@@ -1050,34 +1070,75 @@ impl ClientContext for ObservationAuthCx {
         })
     }
 
-    fn handle_auth_response<'a>(
-        requirement: &'a AuthRequirement,
-        applied: &'a AuthAppliedCredential,
+    fn plan_auth_response(
+        requirement: &AuthRequirement,
+        applied: &AuthAppliedCredential,
+        _vars: &Self::Vars,
+        auth: &Self::AuthVars,
+        _meta: &RequestMeta,
+        status: StatusCode,
+        _headers: &HeaderMap,
+    ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
+        if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+            && auth.identity == "refresh"
+        {
+            return Ok(concord_core::advanced::AuthRejectionAction::refresh(
+                requirement,
+                applied,
+                concord_core::advanced::AuthRetryReason::Unauthorized,
+                None,
+            ));
+        }
+        Ok(concord_core::advanced::AuthRejectionAction::terminal(
+            requirement,
+            applied,
+            None,
+        ))
+    }
+
+    fn apply_terminal_auth_action<'a>(
+        _action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _meta: &'a RequestMeta,
+        status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
+        let events = auth.events.clone();
+        Box::pin(async move {
+            events.lock().await.push(format!("auth_rejection:{status}"));
+            events.lock().await.push("auth_fail".to_string());
+            if let Some(started) = auth.terminal_started.as_ref() {
+                started.add_permits(1);
+            }
+            if let Some(gate) = auth.terminal_gate.as_ref() {
+                let _permit = gate
+                    .acquire()
+                    .await
+                    .expect("terminal auth release semaphore must remain open");
+            }
+            Ok(())
+        })
+    }
+
+    fn apply_refresh_auth_action<'a>(
+        _action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
         _vars: &'a Self::Vars,
         auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
         _meta: &'a RequestMeta,
         status: StatusCode,
-        _headers: &'a HeaderMap,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
         let events = auth.events.clone();
         Box::pin(async move {
-            if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
-                events.lock().await.push(format!("auth_rejection:{status}"));
-                if auth.identity == "refresh" {
-                    events.lock().await.push("auth_retry".to_string());
-                    return Ok(AuthDecision::RetryAfterRefresh {
-                        credential: requirement.credential.clone(),
-                        generation: applied.generation,
-                        reason: concord_core::advanced::AuthRetryReason::Unauthorized,
-                    });
-                }
-                events.lock().await.push("auth_fail".to_string());
-                Ok(AuthDecision::Fail)
-            } else {
-                Ok(AuthDecision::Continue)
-            }
+            events.lock().await.push(format!("auth_rejection:{status}"));
+            events.lock().await.push("auth_retry".to_string());
+            Ok(())
         })
     }
 }
@@ -1651,7 +1712,14 @@ impl RuntimeHooks for RecordingRuntimeHooks {
 }
 
 pub fn client(auth: TestAuthVars, transport: MockTransport) -> ApiClient<TestCx, MockTransport> {
-    ApiClient::with_transport((), auth, transport)
+    let mut client = ApiClient::with_transport((), auth, transport);
+    client.configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
+    client
 }
 
 pub fn configure_runtime<Cx: ClientContext, T: Transport>(
@@ -1659,6 +1727,10 @@ pub fn configure_runtime<Cx: ClientContext, T: Transport>(
     limiter: Option<Arc<dyn RateLimiter>>,
 ) {
     client.configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
         cfg.debug(concord_core::prelude::DebugLevel::V);
         cfg.pagination_detect_loops(true);
         if let Some(limiter) = limiter {

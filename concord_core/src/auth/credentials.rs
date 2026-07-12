@@ -463,8 +463,23 @@ where
         reason: InvalidateReason,
     ) -> Result<(), AuthError> {
         let provider = self.provider_ref()?;
+        let current = self.invalidate_generation_state(generation)?;
+        provider.invalidate(ctx, current.as_ref(), reason).await
+    }
 
-        let current = {
+    /// Invalidates only the local slot state. This is intentionally separate
+    /// from provider invalidation so terminal response handling cannot access
+    /// an executor or initiate network/provider work.
+    pub fn invalidate_generation_local(&self, generation: Option<u64>) -> Result<(), AuthError> {
+        let _ = self.invalidate_generation_state(generation)?;
+        Ok(())
+    }
+
+    fn invalidate_generation_state(
+        &self,
+        generation: Option<u64>,
+    ) -> Result<Option<P::Credential>, AuthError> {
+        Ok({
             let mut inner = lock_slot_inner(&self.inner);
             match &mut inner.state {
                 CredentialSlotState::Valid {
@@ -504,8 +519,7 @@ where
                 }
                 _ => None,
             }
-        };
-        provider.invalidate(ctx, current.as_ref(), reason).await
+        })
     }
 
     pub async fn set_manual(&self, value: P::Credential) -> Result<(), AuthError> {

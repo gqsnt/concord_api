@@ -5,10 +5,10 @@ use super::common::*;
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthAppliedCredential, AuthDecision, AuthError, AuthFuture, AuthPlacement, AuthRequirement,
-    AuthStepPolicy, CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason,
-    CredentialSlot, DynBody, OctetStream, PreparedAuthCredential, RateLimitBucketUse,
-    RateLimitContext, RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
+    AuthAppliedCredential, AuthError, AuthFuture, AuthPlacement, AuthRequirement, AuthStepPolicy,
+    CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason, CredentialSlot,
+    DynBody, OctetStream, PreparedAuthCredential, RateLimitBucketUse, RateLimitContext,
+    RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
     RateLimitResponseContext, RateLimiter, RawStreamResponse, RequestMeta, ResponseEntity,
     StreamBody, Transport, TransportError, TransportErrorKind, apply_secret_credential,
 };
@@ -100,11 +100,14 @@ async fn identical_concurrent_get_requests_are_not_coalesced() -> Result<(), Api
         ],
     );
     let sent = transport.clone();
-    let client = Arc::new(ApiClient::<TestCx, _>::with_transport(
-        (),
-        TestAuthVars::default(),
-        transport,
-    ));
+    let mut client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
+    let client = Arc::new(client);
 
     let a = spawn_text_request(client.clone(), TextEndpoint::default());
     let b = spawn_text_request(client, TextEndpoint::default());
@@ -134,11 +137,8 @@ async fn identical_concurrent_post_requests_are_not_coalesced() -> Result<(), Ap
         ],
     );
     let sent = transport.clone();
-    let client = Arc::new(ApiClient::<TestCx, _>::with_transport(
-        (),
-        TestAuthVars::default(),
-        transport,
-    ));
+    let client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
+    let client = Arc::new(client);
     let endpoint = TextEndpoint {
         method: http::Method::POST,
         ..Default::default()
@@ -218,11 +218,14 @@ async fn retry_still_applies_per_non_coalesced_request() -> Result<(), ApiClient
         ],
     );
     let sent = transport.clone();
-    let client = Arc::new(ApiClient::<TestCx, _>::with_transport(
-        (),
-        TestAuthVars::default(),
-        transport,
-    ));
+    let mut client = ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
+    let client = Arc::new(client);
     let endpoint = TextEndpoint {
         policy: retry_policy(2),
         ..Default::default()
@@ -235,13 +238,13 @@ async fn retry_still_applies_per_non_coalesced_request() -> Result<(), ApiClient
     assert_eq!(sent.sent_count().await, 2);
     sent.release_all();
 
-    let mut values = vec![
-        a.await.expect("request task panicked")?,
-        b.await.expect("request task panicked")?,
+    let results = [
+        a.await.expect("request task panicked"),
+        b.await.expect("request task panicked"),
     ];
-    values.sort();
-    assert_eq!(values, vec!["first".to_string(), "second".to_string()]);
-    assert_eq!(sent.sent_count().await, 4);
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(results.iter().filter(|result| result.is_err()).count(), 1);
+    assert_eq!(sent.sent_count().await, 3);
     Ok(())
 }
 
@@ -1667,20 +1670,6 @@ impl ClientContext for SingleFlightCx {
             };
             Ok(PreparedAuthCredential::new(applied, application))
         })
-    }
-
-    fn handle_auth_response<'a>(
-        _requirement: &'a AuthRequirement,
-        _applied: &'a AuthAppliedCredential,
-        _vars: &'a Self::Vars,
-        _auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-        _meta: &'a RequestMeta,
-        _status: StatusCode,
-        _headers: &'a HeaderMap,
-    ) -> AuthFuture<'a, Result<AuthDecision, AuthError>> {
-        Box::pin(async { Ok(AuthDecision::Continue) })
     }
 }
 

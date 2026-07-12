@@ -27,6 +27,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         send_ctx: SendClassifyCtx<'_>,
         stream_request_limit: Option<usize>,
         attempts_used: &mut u32,
+        admission: Option<AdmissionPermit>,
+        origin: &OriginHandle,
     ) -> Result<AttemptResponse, ApiClientError> {
         let request_context = built.context();
         let rate_limit_meta = RateLimitContext {
@@ -88,6 +90,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             send_ctx.error_ctx,
             stream_request_limit,
             attempts_used,
+            admission,
+            origin,
         )
         .await
     }
@@ -127,6 +131,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn send_built_request(
         &self,
         built: BuiltRequest,
@@ -135,6 +140,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         ctx: &ErrorContext,
         stream_request_limit: Option<usize>,
         attempts_used: &mut u32,
+        mut admission: Option<AdmissionPermit>,
+        origin: &OriginHandle,
     ) -> Result<AttemptResponse, ApiClientError> {
         let request_context = built.context();
         let endpoint = request_context.meta.endpoint;
@@ -159,10 +166,24 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             source,
         })?;
 
+        if *attempts_used > 0 && admission.is_none() {
+            return Err(ApiClientError::PolicyViolation {
+                ctx: ctx.clone(),
+                msg: "retry admission permit missing",
+            });
+        }
+        if let Some(permit) = admission.as_mut() {
+            permit.commit();
+        }
+        let original_attempt = *attempts_used == 0;
         *attempts_used = attempts_used.checked_add(1).ok_or_else(|| {
             ApiClientError::invalid_param(ctx.clone(), "request attempt counter overflowed")
         })?;
-        match self.transport.send(transport_req).await {
+        let transport_result = self.transport.send(transport_req).await;
+        if original_attempt {
+            origin.deposit_original();
+        }
+        match transport_result {
             Ok(message) => Ok(AttemptResponse {
                 message,
                 context: response_context,
@@ -229,6 +250,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
         attempts_used: &mut u32,
+        admission: Option<AdmissionPermit>,
+        origin: &OriginHandle,
     ) -> Result<AttemptResponse, ApiClientError> {
         let transport_resp = self
             .acquire_rate_limit_and_send(
@@ -236,6 +259,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 send_ctx,
                 self.runtime_state.max_stream_request_body_bytes(),
                 attempts_used,
+                admission,
+                origin,
             )
             .await?;
         self.classify_transport_response(
@@ -254,6 +279,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
         built: BuiltRequest,
         send_ctx: SendClassifyCtx<'_>,
         attempts_used: &mut u32,
+        admission: Option<AdmissionPermit>,
+        origin: &OriginHandle,
     ) -> Result<AttemptResponse, ApiClientError> {
         let transport_resp = self
             .acquire_rate_limit_and_send(
@@ -261,6 +288,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 send_ctx,
                 self.runtime_state.max_stream_request_body_bytes(),
                 attempts_used,
+                admission,
+                origin,
             )
             .await?;
         self.observe_and_classify_transport_response(

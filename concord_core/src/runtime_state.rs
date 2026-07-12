@@ -1,5 +1,6 @@
 use crate::rate_limit::RateLimiter;
 use crate::retry::RetryPolicy;
+use crate::retry_admission::RetryAdmissionRegistry;
 use crate::runtime::RuntimeConfig;
 use crate::runtime_hooks::RuntimeHooks;
 use std::sync::Arc;
@@ -10,6 +11,7 @@ pub struct ClientRuntimeState {
     hooks: Arc<dyn RuntimeHooks>,
     rate_limiter: Arc<dyn RateLimiter>,
     retry_policy: Arc<dyn RetryPolicy>,
+    retry_admission: RetryAdmissionRegistry,
     max_attempts: u32,
     respect_retry_after: bool,
     max_rate_limit_cooldown: Duration,
@@ -34,6 +36,7 @@ impl ClientRuntimeState {
             hooks: config.hooks,
             rate_limiter: config.rate_limiter,
             retry_policy: config.retry_policy,
+            retry_admission: config.retry_admission,
             max_attempts: config.max_attempts,
             respect_retry_after: config.respect_retry_after,
             max_rate_limit_cooldown: config.max_rate_limit_cooldown,
@@ -68,6 +71,11 @@ impl ClientRuntimeState {
     #[inline]
     pub fn set_retry_policy(&mut self, retry_policy: Arc<dyn RetryPolicy>) {
         self.retry_policy = retry_policy;
+    }
+
+    #[inline]
+    pub(crate) fn retry_admission(&self) -> &RetryAdmissionRegistry {
+        &self.retry_admission
     }
 
     #[inline]

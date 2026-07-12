@@ -1,6 +1,7 @@
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::rate_limit::{DefaultRateLimiter, RateLimiter};
 use crate::retry::{NoRetryPolicy, RetryPolicy};
+use crate::retry_admission::RetryAdmissionRegistry;
 use crate::runtime_hooks::{NoopRuntimeHooks, RuntimeHooks};
 use std::sync::Arc;
 use std::time::Duration;
@@ -124,6 +125,7 @@ pub struct RuntimeConfig {
     pub(crate) hooks: Arc<dyn RuntimeHooks>,
     pub(crate) rate_limiter: Arc<dyn RateLimiter>,
     pub(crate) retry_policy: Arc<dyn RetryPolicy>,
+    pub(crate) retry_admission: RetryAdmissionRegistry,
     pub(crate) max_attempts: u32,
     pub(crate) respect_retry_after: bool,
     pub(crate) max_rate_limit_cooldown: Duration,
@@ -143,6 +145,7 @@ impl Default for RuntimeConfig {
             hooks: Arc::new(NoopRuntimeHooks),
             rate_limiter: Arc::new(DefaultRateLimiter::default()),
             retry_policy: Arc::new(NoRetryPolicy),
+            retry_admission: RetryAdmissionRegistry::global(),
             max_attempts: 1,
             respect_retry_after: false,
             max_rate_limit_cooldown: Duration::from_secs(60),
@@ -201,6 +204,16 @@ impl RuntimeConfig {
     #[inline]
     pub fn retry_policy(&mut self, policy: Arc<dyn RetryPolicy>) -> &mut Self {
         self.retry_policy = policy;
+        self
+    }
+
+    /// Replaces the advanced retry-admission registry.
+    ///
+    /// Normal configurations use the process-wide registry. A private
+    /// registry is useful for deterministic tests or isolated embeddings.
+    #[inline]
+    pub fn retry_admission(&mut self, registry: RetryAdmissionRegistry) -> &mut Self {
+        self.retry_admission = registry;
         self
     }
 

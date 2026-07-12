@@ -360,23 +360,41 @@ fn emit_client_auth_prepare_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
     }
 }
 
-fn emit_client_auth_response_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
+fn emit_client_auth_plan_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
     let client_ns = LitStr::new(&resolved_api.client_name.to_string(), resolved_api.client_name.span());
     let arms = resolved_api.client_auth_credentials.iter().map(|c| {
-        let name = &c.name;
-        let name_lit = LitStr::new(&name.to_string(), name.span());
-        let retry_after_refresh = match &c.kind {
-            AuthCredentialKindIr::Endpoint { .. } => quote! {},
+        let name_lit = LitStr::new(&c.name.to_string(), c.name.span());
+        let decision_plan = match &c.kind {
+            AuthCredentialKindIr::Endpoint { .. } => quote! {
+                ::core::result::Result::Ok(
+                    ::concord_core::advanced::AuthRejectionAction::terminal(
+                        requirement,
+                        applied,
+                        decision.invalidate_reason,
+                    )
+                )
+            },
             AuthCredentialKindIr::ApiKey { .. }
             | AuthCredentialKindIr::StaticBearer { .. }
             | AuthCredentialKindIr::Basic { .. }
             | AuthCredentialKindIr::OAuth2ClientCredentials { .. } => quote! {
                 if let ::core::option::Option::Some(retry_reason) = decision.retry_reason {
-                    return ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::RetryAfterRefresh {
-                        credential: requirement.credential.clone(),
-                        generation: applied.generation,
-                        reason: retry_reason,
-                    });
+                    ::core::result::Result::Ok(
+                        ::concord_core::advanced::AuthRejectionAction::refresh(
+                            requirement,
+                            applied,
+                            retry_reason,
+                            decision.invalidate_reason,
+                        )
+                    )
+                } else {
+                    ::core::result::Result::Ok(
+                        ::concord_core::advanced::AuthRejectionAction::terminal(
+                            requirement,
+                            applied,
+                            decision.invalidate_reason,
+                        )
+                    )
                 }
             },
         };
@@ -390,25 +408,101 @@ fn emit_client_auth_response_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
                         ::concord_core::advanced::AuthStepPolicy::default(),
                     )
                 {
-                    if let ::core::option::Option::Some(invalidate_reason) = decision.invalidate_reason {
-                        ::concord_core::advanced::invalidate_rejected_credential(
-                            auth_state.#name.as_ref(),
-                            vars,
-                            auth,
-                            auth_state,
-                            executor,
+                    #decision_plan
+                } else {
+                    ::core::result::Result::Ok(
+                        ::concord_core::advanced::AuthRejectionAction::terminal(
+                            requirement,
                             applied,
-                            invalidate_reason,
-                        ).await?;
-                    }
-                    #retry_after_refresh
+                            ::core::option::Option::None,
+                        )
+                    )
                 }
-                return ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::Continue);
             }
         }
     });
     quote! {
-        fn handle_auth_response<'a>(
+        fn plan_auth_response(
+            requirement: &::concord_core::advanced::AuthRequirement,
+            applied: &::concord_core::advanced::AuthAppliedCredential,
+            _vars: &Self::Vars,
+            _auth: &Self::AuthVars,
+            _meta: &::concord_core::advanced::RequestMeta,
+            status: ::http::StatusCode,
+            _headers: &::http::HeaderMap,
+        ) -> ::core::result::Result<::concord_core::advanced::AuthRejectionAction, ::concord_core::advanced::AuthError> {
+            match (requirement.credential.id.namespace(), requirement.credential.id.name()) {
+                #( #arms, )*
+                _ => ::core::result::Result::Ok(
+                    ::concord_core::advanced::AuthRejectionAction::terminal(
+                        requirement,
+                        applied,
+                        ::core::option::Option::None,
+                    )
+                ),
+            }
+        }
+    }
+}
+
+fn emit_client_auth_apply_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
+    let client_ns = LitStr::new(&resolved_api.client_name.to_string(), resolved_api.client_name.span());
+    let arms = resolved_api.client_auth_credentials.iter().map(|c| {
+        let name = &c.name;
+        let name_lit = LitStr::new(&name.to_string(), name.span());
+        quote! {
+            (#client_ns, #name_lit) => {
+                if action.matches(requirement, applied) {
+                    if let ::core::option::Option::Some(invalidate_reason) = action.invalidate_reason() {
+                        ::concord_core::advanced::invalidate_rejected_credential_local(
+                            auth_state.#name.as_ref(),
+                            applied,
+                        )?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    });
+    let refresh_arms = resolved_api.client_auth_credentials.iter().map(|c| {
+        let name = &c.name;
+        let name_lit = LitStr::new(&name.to_string(), name.span());
+        quote! {
+            (#client_ns, #name_lit) => {
+                if action.matches(requirement, applied) {
+                    if let ::core::option::Option::Some(invalidate_reason) = action.invalidate_reason() {
+                        ::concord_core::advanced::invalidate_rejected_credential(
+                            auth_state.#name.as_ref(), vars, auth, auth_state,
+                            executor, applied, invalidate_reason,
+                        ).await?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    });
+    quote! {
+        fn apply_terminal_auth_action<'a>(
+            action: &'a ::concord_core::advanced::AuthRejectionAction,
+            requirement: &'a ::concord_core::advanced::AuthRequirement,
+            applied: &'a ::concord_core::advanced::AuthAppliedCredential,
+            vars: &'a Self::Vars,
+            auth: &'a Self::AuthVars,
+            auth_state: &'a Self::AuthState,
+            _meta: &'a ::concord_core::advanced::RequestMeta,
+            _status: ::http::StatusCode,
+        ) -> ::concord_core::advanced::AuthFuture<'a, ::core::result::Result<(), ::concord_core::advanced::AuthError>> {
+            let _ = (vars, auth);
+            ::std::boxed::Box::pin(async move {
+                match (requirement.credential.id.namespace(), requirement.credential.id.name()) {
+                    #( #arms, )*
+                    _ => Ok(()),
+                }
+            })
+        }
+
+        fn apply_refresh_auth_action<'a>(
+            action: &'a ::concord_core::advanced::AuthRejectionAction,
             requirement: &'a ::concord_core::advanced::AuthRequirement,
             applied: &'a ::concord_core::advanced::AuthAppliedCredential,
             vars: &'a Self::Vars,
@@ -416,19 +510,23 @@ fn emit_client_auth_response_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
             auth_state: &'a Self::AuthState,
             executor: &'a dyn ::concord_core::advanced::AuthHttpExecutor,
             _meta: &'a ::concord_core::advanced::RequestMeta,
-            status: ::http::StatusCode,
-            _headers: &'a ::http::HeaderMap,
-        ) -> ::concord_core::advanced::AuthFuture<'a, ::core::result::Result<::concord_core::advanced::AuthDecision, ::concord_core::advanced::AuthError>> {
+            _status: ::http::StatusCode,
+        ) -> ::concord_core::advanced::AuthFuture<'a, ::core::result::Result<(), ::concord_core::advanced::AuthError>> {
             ::std::boxed::Box::pin(async move {
                 match (requirement.credential.id.namespace(), requirement.credential.id.name()) {
-                    #( #arms, )*
-                    _ => ::core::result::Result::Ok(::concord_core::advanced::AuthDecision::Continue),
+                    #( #refresh_arms, )*
+                    _ => Ok(()),
                 }
             })
         }
     }
 }
 
+/*
+    The generated apply methods above deliberately separate local terminal
+    invalidation from refresh-capable application. Keep the implementation
+    emitted here rather than retaining the old unconstrained response hook.
+*/
 struct ClientContextEmit<'a> {
     scheme: &'a TokenStream2,
     domain: &'a LitStr,
@@ -454,7 +552,8 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
     let base_policy = emit_policy_fn_base(policy);
     let (auth_state_assoc_ty, init_auth_state) = emit_client_auth_state_init(resolved_api, auth_state_ty);
     let prepare_auth_requirement = emit_client_auth_prepare_fn(resolved_api);
-    let handle_auth_response = emit_client_auth_response_fn(resolved_api);
+    let auth_plan = emit_client_auth_plan_fn(resolved_api);
+    let auth_apply = emit_client_auth_apply_fn(resolved_api);
 
     quote! {
         #[derive(Clone)]
@@ -476,7 +575,9 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
 
             #prepare_auth_requirement
 
-            #handle_auth_response
+            #auth_plan
+
+            #auth_apply
 
             fn base_policy(
                 vars: &Self::Vars,

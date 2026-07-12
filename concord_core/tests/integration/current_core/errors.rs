@@ -1128,7 +1128,7 @@ async fn retry_exhaustion_returns_documented_final_error_and_safe_diagnostics() 
 
     assert!(matches!(err, ApiClientError::HttpStatus { .. }));
     assert_eq!(err.category(), ErrorCategory::HttpStatus);
-    assert_eq!(transport.sent_count().await, 3);
+    assert_eq!(transport.sent_count().await, 2);
     assert_error_safe(&err);
     assert_observers_safe(&events).await;
 }

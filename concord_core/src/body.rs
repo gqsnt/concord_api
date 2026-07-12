@@ -317,6 +317,49 @@ pub(crate) async fn collect_body(
     BodyExt::collect(body).await
 }
 
+/// Keeps the resolved attempt origin active for the lifetime of a response
+/// body. The lease is deliberately outside the response head and is therefore
+/// preserved by every frame-aware body adapter that wraps this body.
+pub(crate) fn retain_origin(
+    body: DynBody,
+    origin: crate::retry_admission::OriginHandle,
+) -> DynBody {
+    DynBody::from_body(OriginLeasedBody {
+        inner: body,
+        origin: Some(origin),
+    })
+}
+
+struct OriginLeasedBody {
+    inner: DynBody,
+    origin: Option<crate::retry_admission::OriginHandle>,
+}
+
+impl Body for OriginLeasedBody {
+    type Data = Bytes;
+    type Error = BodyError;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = self.as_mut().get_mut();
+        let result = Pin::new(&mut this.inner).poll_frame(cx);
+        if matches!(result, Poll::Ready(None) | Poll::Ready(Some(Err(_)))) {
+            this.origin.take();
+        }
+        result
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
+
 impl fmt::Debug for DynBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DynBody")

@@ -2,17 +2,26 @@
 use super::build::PublicRequestHead;
 use super::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AuthRejectionOutcome {
-    NotProtected,
-    Retry,
-    Terminal,
+enum AuthRejectionStep {
+    Retry(AdmissionPermit),
+    Fail(ApiClientError),
 }
 
-enum AuthRejectionStep {
-    NotProtected,
-    Retry,
-    Fail(ApiClientError),
+#[derive(Clone)]
+struct AuthResendIntent {
+    rejection_plan: crate::auth::AuthRejectionPlan,
+    status: StatusCode,
+    response_meta: RequestMeta,
+    auth_attempt: crate::auth::AuthAttemptSummary,
+    error_ctx: ErrorContext,
+}
+
+enum PendingResend {
+    Ordinary {
+        error: ApiClientError,
+        delay: Duration,
+    },
+    Auth(AuthResendIntent),
 }
 
 struct AuthRejectionStepCtx<'a, Cx: ClientContext, T: Transport> {
@@ -20,9 +29,9 @@ struct AuthRejectionStepCtx<'a, Cx: ClientContext, T: Transport> {
     auth_state: &'a Cx::AuthState,
     auth_http: &'a ClientAuthHttpExecutor<'a, Cx, T>,
     response_meta: &'a RequestMeta,
-    status: StatusCode,
-    headers: &'a http::HeaderMap,
     auth_attempt: &'a crate::auth::AuthAttemptSummary,
+    rejection_plan: &'a crate::auth::AuthRejectionPlan,
+    status: StatusCode,
     error_ctx: &'a ErrorContext,
     is_replayable: bool,
 }
@@ -64,17 +73,82 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             .await
     }
 
-    async fn handle_auth_rejection(
+    fn classify_auth_rejection(
         &self,
-        ctx: AuthRejectionCtx<'_, Cx, T>,
-    ) -> Result<AuthRejectionOutcome, ApiClientError> {
+        ctx: AuthRejectionCtx<'_>,
+    ) -> Result<Option<crate::auth::AuthRejectionPlan>, ApiClientError> {
         if !Self::is_protected_auth_rejection(ctx.plan, ctx.status) {
-            return Ok(AuthRejectionOutcome::NotProtected);
+            return Ok(None);
         }
-        if self.auth_retry_requested(ctx).await? {
-            return Ok(AuthRejectionOutcome::Retry);
+        let mut aggregate = crate::auth::AuthRejectionPlan::default();
+        for applied in &ctx.auth_attempt.applied {
+            let Some(requirement) = ctx
+                .plan
+                .endpoint
+                .policy
+                .auth
+                .requirements
+                .iter()
+                .find(|req| {
+                    req.credential.id == applied.credential_id
+                        && req.usage_id == applied.usage_id
+                        && req.step_id == applied.step_id
+                })
+            else {
+                return Err(Self::auth_plan_mismatch(
+                    ctx.meta,
+                    "authentication requirement use was not applied",
+                ));
+            };
+            let action = Cx::plan_auth_response(
+                requirement,
+                applied,
+                self.vars(),
+                self.auth_vars(),
+                ctx.meta,
+                ctx.status,
+                ctx.headers,
+            )
+            .map_err(|source| ApiClientError::Auth {
+                ctx: ErrorContext {
+                    endpoint: ctx.meta.endpoint,
+                    method: ctx.meta.method.clone(),
+                },
+                source,
+            })?;
+            if !action.matches(requirement, applied) {
+                return Err(Self::auth_plan_mismatch(
+                    ctx.meta,
+                    "authentication rejection action did not match its planning pair",
+                ));
+            }
+            if aggregate
+                .actions()
+                .iter()
+                .any(|existing| existing.matches(requirement, applied))
+            {
+                return Err(Self::auth_plan_mismatch(
+                    ctx.meta,
+                    "duplicate authentication rejection action for one applied use",
+                ));
+            }
+            aggregate.append_validated(action);
         }
-        Ok(AuthRejectionOutcome::Terminal)
+        if aggregate.actions().is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(aggregate))
+        }
+    }
+
+    fn auth_plan_mismatch(meta: &RequestMeta, message: &'static str) -> ApiClientError {
+        ApiClientError::Auth {
+            ctx: ErrorContext {
+                endpoint: meta.endpoint,
+                method: meta.method.clone(),
+            },
+            source: AuthError::new(AuthErrorKind::InvalidConfiguration, message),
+        }
     }
 
     fn is_protected_auth_rejection(
@@ -85,47 +159,118 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             && !plan.endpoint.policy.auth.requirements.is_empty()
     }
 
-    async fn handle_auth_rejection_step(
+    async fn apply_auth_rejection_step(
         &self,
         ctx: AuthRejectionStepCtx<'_, Cx, T>,
-        attempts_used: u32,
-        max_attempts: u32,
+        admission: Option<AdmissionPermit>,
     ) -> Result<AuthRejectionStep, ApiClientError> {
-        if !ctx.is_replayable && Self::is_protected_auth_rejection(ctx.plan, ctx.status) {
+        if !ctx.is_replayable && ctx.rejection_plan.requests_refresh() {
             return Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
                 ctx.error_ctx,
             )));
         }
-        match self
-            .handle_auth_rejection(AuthRejectionCtx {
-                plan: ctx.plan,
-                auth_state: ctx.auth_state,
-                auth_http: ctx.auth_http,
-                meta: ctx.response_meta,
-                status: ctx.status,
-                headers: ctx.headers,
-                auth_attempt: ctx.auth_attempt,
-            })
-            .await?
-        {
-            AuthRejectionOutcome::Retry => {
-                if !ctx.is_replayable {
-                    return Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
-                        ctx.error_ctx,
-                    )));
-                }
-                if attempts_used >= max_attempts {
-                    return Ok(AuthRejectionStep::Fail(Self::auth_attempt_cap_exhausted(
-                        ctx.error_ctx,
-                    )));
-                }
-                Ok(AuthRejectionStep::Retry)
-            }
-            AuthRejectionOutcome::Terminal => Ok(AuthRejectionStep::Fail(
-                Self::auth_challenge_rejected(ctx.error_ctx),
-            )),
-            AuthRejectionOutcome::NotProtected => Ok(AuthRejectionStep::NotProtected),
+        if ctx.rejection_plan.requests_refresh() && admission.is_none() {
+            return Ok(AuthRejectionStep::Fail(Self::auth_attempt_cap_exhausted(
+                ctx.error_ctx,
+            )));
         }
+        self.apply_auth_rejection_plan(&ctx).await?;
+        if ctx.rejection_plan.requests_refresh() {
+            match admission {
+                Some(admission) => Ok(AuthRejectionStep::Retry(admission)),
+                None => Ok(AuthRejectionStep::Fail(Self::auth_attempt_cap_exhausted(
+                    ctx.error_ctx,
+                ))),
+            }
+        } else {
+            Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
+                ctx.error_ctx,
+            )))
+        }
+    }
+
+    async fn apply_auth_rejection_plan(
+        &self,
+        ctx: &AuthRejectionStepCtx<'_, Cx, T>,
+    ) -> Result<(), ApiClientError> {
+        let requirements = &ctx.plan.endpoint.policy.auth.requirements;
+        let applied = &ctx.auth_attempt.applied;
+        let mut bindings = Vec::with_capacity(ctx.rejection_plan.actions().len());
+
+        // Resolve every action before applying any of them. A stale or
+        // ambiguous aggregate therefore cannot partially mutate credentials.
+        for (action_index, action) in ctx.rejection_plan.actions().iter().enumerate() {
+            let binding = applied
+                .iter()
+                .enumerate()
+                .find_map(|(applied_index, applied)| {
+                    requirements
+                        .iter()
+                        .enumerate()
+                        .find(|(_, requirement)| {
+                            requirement.credential.id == applied.credential_id
+                                && requirement.usage_id == applied.usage_id
+                                && requirement.step_id == applied.step_id
+                                && action.matches(requirement, applied)
+                        })
+                        .map(|(requirement_index, _)| {
+                            (action_index, requirement_index, applied_index)
+                        })
+                });
+            let Some(binding) = binding else {
+                return Err(ApiClientError::Auth {
+                    ctx: ErrorContext {
+                        endpoint: ctx.response_meta.endpoint,
+                        method: ctx.response_meta.method.clone(),
+                    },
+                    source: AuthError::new(
+                        AuthErrorKind::InvalidConfiguration,
+                        "authentication rejection plan no longer matches the applied credential",
+                    ),
+                });
+            };
+            bindings.push(binding);
+        }
+
+        for (action_index, requirement_index, applied_index) in bindings {
+            let action = &ctx.rejection_plan.actions()[action_index];
+            let requirement = &requirements[requirement_index];
+            let applied = &applied[applied_index];
+            let result = if action.requests_refresh() {
+                Cx::apply_refresh_auth_action(
+                    action,
+                    requirement,
+                    applied,
+                    self.vars(),
+                    self.auth_vars(),
+                    ctx.auth_state,
+                    ctx.auth_http,
+                    ctx.response_meta,
+                    ctx.status,
+                )
+                .await
+            } else {
+                Cx::apply_terminal_auth_action(
+                    action,
+                    requirement,
+                    applied,
+                    self.vars(),
+                    self.auth_vars(),
+                    ctx.auth_state,
+                    ctx.response_meta,
+                    ctx.status,
+                )
+                .await
+            };
+            result.map_err(|source| ApiClientError::Auth {
+                ctx: ErrorContext {
+                    endpoint: ctx.response_meta.endpoint,
+                    method: ctx.response_meta.method.clone(),
+                },
+                source,
+            })?;
+        }
+        Ok(())
     }
 
     fn auth_challenge_rejected(ctx: &ErrorContext) -> ApiClientError {
@@ -216,6 +361,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             })?;
         let auth_http = ClientAuthHttpExecutor { client: self };
         let mut auth_placement_plan: Option<crate::auth::AuthPlacementPlan> = None;
+        let mut pending_resend: Option<PendingResend> = None;
         // One authoritative request-local count. It is incremented only at
         // the physical Transport::send invocation in send_flow. Existing
         // RequestMeta/HookMeta attempt values are derived zero-based indexes.
@@ -232,6 +378,11 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 .meta
                 .request_meta(current_attempt, plan.overrides.page_index);
             let mut head = self.resolve_public_request_head(plan, body, meta)?;
+            let origin_key =
+                OriginKey::from_url(&head.url).map_err(|_| ApiClientError::PolicyViolation {
+                    ctx: ctx.clone(),
+                    msg: "request origin is invalid or unsupported",
+                })?;
             let auth_plan = match auth_placement_plan.as_ref() {
                 Some(existing) => existing,
                 None => auth_placement_plan.insert(
@@ -243,6 +394,61 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                 ),
             };
             head.apply_auth_preflight(auth_plan, &ctx)?;
+            // The handle is scoped to this resolved attempt. A retry whose
+            // public request resolves to another origin therefore cannot
+            // spend or deposit against the previous origin.
+            let origin_handle = self.runtime_state.retry_admission().track(origin_key);
+            let origin = &origin_handle;
+
+            let mut attempt_admission = None;
+            if let Some(resend) = pending_resend.take() {
+                match resend {
+                    PendingResend::Ordinary { error, delay } => {
+                        if !is_replayable || attempts_used >= max_attempts {
+                            return Err(error);
+                        }
+                        let Some(admission) = origin.reserve() else {
+                            return Err(error);
+                        };
+                        if !delay.is_zero() {
+                            tokio::time::sleep(delay).await;
+                        }
+                        attempt_admission = Some(admission);
+                    }
+                    PendingResend::Auth(intent) => {
+                        let fallback = Self::auth_challenge_rejected(&intent.error_ctx);
+                        if !is_replayable || attempts_used >= max_attempts {
+                            return Err(fallback);
+                        }
+                        let Some(admission) = origin.reserve() else {
+                            return Err(fallback);
+                        };
+                        let step = self
+                            .apply_auth_rejection_step(
+                                AuthRejectionStepCtx {
+                                    plan,
+                                    auth_state: &auth_state_snapshot,
+                                    auth_http: &auth_http,
+                                    response_meta: &intent.response_meta,
+                                    auth_attempt: &intent.auth_attempt,
+                                    rejection_plan: &intent.rejection_plan,
+                                    status: intent.status,
+                                    error_ctx: &intent.error_ctx,
+                                    is_replayable,
+                                },
+                                Some(admission),
+                            )
+                            .await?;
+                        match step {
+                            AuthRejectionStep::Retry(admission) => {
+                                cached_auth_preparation = None;
+                                attempt_admission = Some(admission);
+                            }
+                            AuthRejectionStep::Fail(err) => return Err(err),
+                        }
+                    }
+                }
+            }
             let auth_preparation = if cached_auth_preparation.is_none() {
                 Some(
                     self.prepare_auth(plan, &auth_state_snapshot, &auth_http, &head)
@@ -286,6 +492,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             auth_materials: &auth_attempt.materials,
                         },
                         &mut attempts_used,
+                        attempt_admission.take(),
+                        origin,
                     )
                     .await
                     .map(AttemptTransportSuccess::Buffered),
@@ -301,6 +509,8 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             auth_materials: &auth_attempt.materials,
                         },
                         &mut attempts_used,
+                        attempt_admission.take(),
+                        origin,
                     )
                     .await
                     .map(AttemptTransportSuccess::Transport),
@@ -316,32 +526,55 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             (resp.status(), &resp.context.meta, resp.headers())
                         }
                     };
-                    match self
-                        .handle_auth_rejection_step(
-                            AuthRejectionStepCtx {
-                                plan,
-                                auth_state: &auth_state_snapshot,
-                                auth_http: &auth_http,
-                                response_meta,
+                    let classification = self.classify_auth_rejection(AuthRejectionCtx {
+                        plan,
+                        meta: response_meta,
+                        status: response_status,
+                        headers: response_headers,
+                        auth_attempt: &auth_attempt.summary,
+                    })?;
+                    match classification {
+                        Some(rejection_plan) if rejection_plan.requests_refresh() => {
+                            if !is_replayable {
+                                return Err(Self::auth_challenge_rejected(&ctx));
+                            }
+                            if attempts_used >= max_attempts {
+                                return Err(Self::auth_attempt_cap_exhausted(&ctx));
+                            }
+                            pending_resend = Some(PendingResend::Auth(AuthResendIntent {
+                                rejection_plan,
                                 status: response_status,
-                                headers: response_headers,
-                                auth_attempt: &auth_attempt.summary,
-                                error_ctx: &ctx,
-                                is_replayable,
-                            },
-                            attempts_used,
-                            max_attempts,
-                        )
-                        .await?
-                    {
-                        AuthRejectionStep::Retry => {
-                            cached_auth_preparation = None;
+                                response_meta: response_meta.clone(),
+                                auth_attempt: auth_attempt.summary.clone(),
+                                error_ctx: ctx.clone(),
+                            }));
                             continue;
                         }
-                        AuthRejectionStep::Fail(err) => return Err(err),
-                        AuthRejectionStep::NotProtected => {}
+                        Some(rejection_plan) => match self
+                            .apply_auth_rejection_step(
+                                AuthRejectionStepCtx {
+                                    plan,
+                                    auth_state: &auth_state_snapshot,
+                                    auth_http: &auth_http,
+                                    response_meta,
+                                    auth_attempt: &auth_attempt.summary,
+                                    rejection_plan: &rejection_plan,
+                                    status: response_status,
+                                    error_ctx: &ctx,
+                                    is_replayable,
+                                },
+                                None,
+                            )
+                            .await?
+                        {
+                            AuthRejectionStep::Fail(err) => return Err(err),
+                            AuthRejectionStep::Retry(_) => {
+                                return Err(Self::auth_challenge_rejected(&ctx));
+                            }
+                        },
+                        None => {}
                     }
-                    return Ok(match (family, resp) {
+                    let resp = match (family, resp) {
                         (
                             AttemptFamily::Buffered { .. },
                             AttemptTransportSuccess::Buffered(resp),
@@ -355,6 +588,20 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             &ctx,
                         )?),
                         _ => unreachable!("attempt response family changed during classification"),
+                    };
+                    return Ok(match resp {
+                        AttemptTransportSuccess::Buffered(resp) => {
+                            AttemptTransportSuccess::Buffered(Self::retain_response_origin(
+                                resp,
+                                origin_handle,
+                            ))
+                        }
+                        AttemptTransportSuccess::Transport(resp) => {
+                            AttemptTransportSuccess::Transport(Self::retain_response_origin(
+                                resp,
+                                origin_handle,
+                            ))
+                        }
                     });
                 }
                 Err(err) => {
@@ -376,30 +623,53 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                             .endpoint
                             .meta
                             .request_meta(current_attempt, plan.overrides.page_index);
-                        match self
-                            .handle_auth_rejection_step(
-                                AuthRejectionStepCtx {
-                                    plan,
-                                    auth_state: &auth_state_snapshot,
-                                    auth_http: &auth_http,
-                                    response_meta: &response_meta,
+                        let classification = self.classify_auth_rejection(AuthRejectionCtx {
+                            plan,
+                            meta: &response_meta,
+                            status: *status,
+                            headers: headers.as_ref(),
+                            auth_attempt: &auth_attempt.summary,
+                        })?;
+                        match classification {
+                            Some(rejection_plan) if rejection_plan.requests_refresh() => {
+                                if !is_replayable {
+                                    return Err(Self::auth_challenge_rejected(&ctx));
+                                }
+                                if attempts_used >= max_attempts {
+                                    return Err(Self::auth_attempt_cap_exhausted(&ctx));
+                                }
+                                pending_resend = Some(PendingResend::Auth(AuthResendIntent {
+                                    rejection_plan,
                                     status: *status,
-                                    headers: headers.as_ref(),
-                                    auth_attempt: &auth_attempt.summary,
-                                    error_ctx: &ctx,
-                                    is_replayable,
-                                },
-                                attempts_used,
-                                max_attempts,
-                            )
-                            .await?
-                        {
-                            AuthRejectionStep::Retry => {
-                                cached_auth_preparation = None;
+                                    response_meta,
+                                    auth_attempt: auth_attempt.summary.clone(),
+                                    error_ctx: ctx.clone(),
+                                }));
                                 continue;
                             }
-                            AuthRejectionStep::Fail(err) => return Err(err),
-                            AuthRejectionStep::NotProtected => {}
+                            Some(rejection_plan) => match self
+                                .apply_auth_rejection_step(
+                                    AuthRejectionStepCtx {
+                                        plan,
+                                        auth_state: &auth_state_snapshot,
+                                        auth_http: &auth_http,
+                                        response_meta: &response_meta,
+                                        auth_attempt: &auth_attempt.summary,
+                                        rejection_plan: &rejection_plan,
+                                        status: *status,
+                                        error_ctx: &ctx,
+                                        is_replayable,
+                                    },
+                                    None,
+                                )
+                                .await?
+                            {
+                                AuthRejectionStep::Fail(err) => return Err(err),
+                                AuthRejectionStep::Retry(_) => {
+                                    return Err(Self::auth_challenge_rejected(&ctx));
+                                }
+                            },
+                            None => {}
                         }
                     }
                     if !is_replayable {
@@ -434,11 +704,18 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
                     if attempts_used >= max_attempts {
                         return Err(err);
                     }
-                    if !delay.is_zero() {
-                        tokio::time::sleep(delay).await;
-                    }
+                    pending_resend = Some(PendingResend::Ordinary { error: err, delay });
                 }
             }
+        }
+    }
+
+    fn retain_response_origin(resp: AttemptResponse, origin: OriginHandle) -> AttemptResponse {
+        let AttemptResponse { message, context } = resp;
+        let (parts, body) = message.into_parts();
+        AttemptResponse {
+            message: http::Response::from_parts(parts, crate::body::retain_origin(body, origin)),
+            context,
         }
     }
 
@@ -668,62 +945,6 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             materials,
             cache_policy,
         })
-    }
-
-    async fn auth_retry_requested(
-        &self,
-        ctx: AuthRejectionCtx<'_, Cx, T>,
-    ) -> Result<bool, ApiClientError> {
-        for applied in &ctx.auth_attempt.applied {
-            let Some(requirement) = ctx
-                .plan
-                .endpoint
-                .policy
-                .auth
-                .requirements
-                .iter()
-                .find(|req| {
-                    req.credential.id == applied.credential_id && req.step_id == applied.step_id
-                })
-            else {
-                continue;
-            };
-            match Cx::handle_auth_response(
-                requirement,
-                applied,
-                self.vars(),
-                self.auth_vars(),
-                ctx.auth_state,
-                ctx.auth_http,
-                ctx.meta,
-                ctx.status,
-                ctx.headers,
-            )
-            .await
-            .map_err(|source| ApiClientError::Auth {
-                ctx: ErrorContext {
-                    endpoint: ctx.meta.endpoint,
-                    method: ctx.meta.method.clone(),
-                },
-                source,
-            })? {
-                AuthDecision::Continue => {}
-                AuthDecision::RetryAfterRefresh { .. } => return Ok(true),
-                AuthDecision::Fail => {
-                    return Err(ApiClientError::Auth {
-                        ctx: ErrorContext {
-                            endpoint: ctx.meta.endpoint,
-                            method: ctx.meta.method.clone(),
-                        },
-                        source: AuthError::new(
-                            AuthErrorKind::ProviderRejected,
-                            "auth challenge rejected",
-                        ),
-                    });
-                }
-            }
-        }
-        Ok(false)
     }
 
     fn decode_planned_response<C>(

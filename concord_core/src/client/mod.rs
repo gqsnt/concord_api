@@ -1,6 +1,6 @@
 use crate::auth::{
-    AuthDecision, AuthError, AuthErrorKind, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse,
-    AuthMode, AuthRequirementId,
+    AuthError, AuthErrorKind, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthMode,
+    AuthRequirementId,
 };
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::endpoint::{ClientPlanContext, RequestPlan};
@@ -15,6 +15,7 @@ use crate::retry::{
     RetryContext, RetryDecision, RetryOutcome, RetryPolicy, RetrySetting,
     validate_capped_retry_delay,
 };
+use crate::retry_admission::{AdmissionPermit, OriginHandle, OriginKey};
 use crate::runtime_hooks::{
     HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
 };

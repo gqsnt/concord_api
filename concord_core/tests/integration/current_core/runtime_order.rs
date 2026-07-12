@@ -405,7 +405,7 @@ async fn inherited_custom_retry_policy_respects_cap_three() {
         .await
         .expect_err("cap three should stop after three physical sends");
     assert!(matches!(err, ApiClientError::HttpStatus { .. }));
-    assert_eq!(sent.sent_count().await, 3);
+    assert_eq!(sent.sent_count().await, 2);
 }
 
 #[tokio::test]
@@ -743,6 +743,7 @@ async fn runtime_hooks_observe_auth_rejection_before_auth_handling() -> Result<(
         transport,
     );
     client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, None);
 
     let decoded = client
         .request(TextEndpoint {

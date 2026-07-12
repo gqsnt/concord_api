@@ -1,10 +1,12 @@
-use super::common::{TestAuthVars, TestCx, auth_policy, retry_policy_for_statuses};
+use super::common::{
+    MockResponse, MockTransport, TestAuthVars, TestCx, auth_policy, retry_policy_for_statuses,
+};
 use bytes::Bytes;
 use concord_core::advanced::{
     AuthPlacement, ContentType, DebugSink, DynBody, OctetStream, PostResponseHookContext,
     PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
-    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks, Transport,
-    TransportError, TransportErrorKind,
+    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RetryAdmissionRegistry,
+    RuntimeHooks, Transport, TransportError, TransportErrorKind,
 };
 use concord_core::internal::{
     EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy,
@@ -324,6 +326,18 @@ fn stream_response_plan(
     body: PreparedBody,
     accept: &'static str,
 ) -> RequestPlan {
+    stream_response_plan_on_host(name, method, "example.com", path, policy, body, accept)
+}
+
+fn stream_response_plan_on_host(
+    name: &'static str,
+    method: Method,
+    host: &'static str,
+    path: &'static str,
+    policy: ResolvedPolicy,
+    body: PreparedBody,
+    accept: &'static str,
+) -> RequestPlan {
     RequestPlan {
         endpoint: EndpointPlan {
             meta: EndpointMeta {
@@ -332,7 +346,7 @@ fn stream_response_plan(
                 idempotent: matches!(method, Method::GET | Method::HEAD),
                 facade_path: &[],
             },
-            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
+            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, host, path),
             policy,
             response: ResponsePlan {
                 accept: Some(HeaderValue::from_static(accept)),
@@ -412,6 +426,148 @@ async fn raw_stream_response_returns_metadata_and_chunks() -> Result<(), ApiClie
     assert_eq!(collected, b"hello world".to_vec());
     assert!(response.next_chunk().await?.is_none());
     assert_eq!(transport.send_count(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn held_stream_response_keeps_origin_entry_active_until_drop() -> Result<(), ApiClientError> {
+    let registry = RetryAdmissionRegistry::new(1, std::time::Duration::ZERO);
+    let mut held_response = MockResponse::text(StatusCode::OK, "held");
+    held_response.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let first_transport = MockTransport::new(
+        Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        vec![held_response],
+    );
+    let mut first =
+        ApiClient::<TestCx, _>::with_transport((), TestAuthVars::default(), first_transport);
+    first.configure(|cfg| {
+        cfg.retry_admission(registry.clone());
+    });
+    let held = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(
+        &first,
+        empty_response_plan("HeldOrigin", "/held-origin"),
+    )
+    .await?;
+
+    let retry_policy = retry_policy_for_statuses(2, vec![StatusCode::INTERNAL_SERVER_ERROR]);
+    let mut denied_response = MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "denied");
+    denied_response.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let mut retry_response = MockResponse::text(StatusCode::OK, "retry");
+    retry_response.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let denied_transport = MockTransport::new(
+        Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        vec![denied_response, retry_response],
+    );
+    let mut denied = ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        denied_transport.clone(),
+    );
+    denied.configure(|cfg| {
+        cfg.retry_admission(registry.clone());
+    });
+    let denied = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(
+        &denied,
+        stream_response_plan_on_host(
+            "HeldOriginDenied",
+            Method::GET,
+            "other.example.com",
+            "/held-origin-denied",
+            retry_policy.clone(),
+            PreparedBody::empty(),
+            "application/octet-stream",
+        ),
+    )
+    .await
+    .expect_err("an untracked origin must not retry while the held body is live");
+    assert!(matches!(denied, ApiClientError::HttpStatus { .. }));
+    assert_eq!(denied_transport.sent_count().await, 1);
+
+    let held_body = held.into_body();
+    let post_extract_transport = MockTransport::new(
+        Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "still-held",
+        )],
+    );
+    let mut post_extract = ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        post_extract_transport.clone(),
+    );
+    post_extract.configure(|cfg| {
+        cfg.retry_admission(registry.clone());
+    });
+    let post_extract_error = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(
+        &post_extract,
+        stream_response_plan_on_host(
+            "HeldOriginExtracted",
+            Method::GET,
+            "other.example.com",
+            "/held-origin-extracted",
+            retry_policy.clone(),
+            PreparedBody::empty(),
+            "application/octet-stream",
+        ),
+    )
+    .await
+    .expect_err("an extracted body must retain the origin activity lease");
+    assert!(matches!(
+        post_extract_error,
+        ApiClientError::HttpStatus { .. }
+    ));
+    assert_eq!(post_extract_transport.sent_count().await, 1);
+    drop(held_body);
+
+    let mut retry_response = MockResponse::text(StatusCode::OK, "retry");
+    retry_response.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    let retry_transport = MockTransport::new(
+        Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            retry_response,
+        ],
+    );
+    let mut admitted = ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        retry_transport.clone(),
+    );
+    admitted.configure(|cfg| {
+        cfg.retry_admission(registry);
+    });
+    let mut admitted = <concord_core::advanced::RawStreamResponse<OctetStream> as concord_core::advanced::ResponseEntity>::execute(
+        &admitted,
+        stream_response_plan_on_host(
+            "HeldOriginAdmitted",
+            Method::GET,
+            "other.example.com",
+            "/held-origin-admitted",
+            retry_policy,
+            PreparedBody::empty(),
+            "application/octet-stream",
+        ),
+    )
+    .await?;
+    assert_eq!(
+        admitted.next_chunk().await?.as_deref(),
+        Some(b"retry".as_slice())
+    );
+    assert_eq!(admitted.next_chunk().await?, None);
+    assert_eq!(retry_transport.sent_count().await, 2);
     Ok(())
 }
 

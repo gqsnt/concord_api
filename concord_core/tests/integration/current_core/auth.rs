@@ -6,11 +6,11 @@ use bytes::Bytes;
 #[cfg(feature = "json")]
 use concord_core::advanced::OAuth2ClientCredentialsProvider;
 use concord_core::advanced::{
-    AuthApplicationRequest, AuthAppliedCredential, AuthChallengePolicy, AuthDecision, AuthError,
-    AuthErrorKind, AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement,
-    AuthPreparationReuse, AuthRequirement, AuthStepPolicy, BufferedResponse, CodecError,
-    DecodeContext, PreparedAuthCredential, RequestMeta, ResponseCodec, RetryDecision,
-    TextContentType, auth_decision_for_status,
+    AuthApplicationRequest, AuthAppliedCredential, AuthChallengePolicy, AuthError, AuthErrorKind,
+    AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthPreparationReuse,
+    AuthRequirement, AuthStepPolicy, BufferedResponse, CodecError, DecodeContext,
+    PreparedAuthCredential, RequestMeta, ResponseCodec, RetryDecision, TextContentType,
+    auth_decision_for_status,
 };
 use concord_core::advanced::{
     CredentialContext, CredentialId, CredentialProvider, CredentialRefreshReason, CredentialSlot,
@@ -117,6 +117,7 @@ async fn auth_rejection_is_handled_before_normal_retry() {
         transport,
     );
     client.set_runtime_hooks(Arc::new(RecordingRuntimeHooks::new(events.clone())));
+    configure_runtime(&mut client, None);
     let endpoint = TextEndpoint {
         policy: {
             let mut policy = auth_policy(AuthPlacement::Bearer);
@@ -640,7 +641,7 @@ async fn auth_retry_reuses_cached_preparation_without_auth_refresh() -> Result<(
         ],
     );
     let sent = transport.clone();
-    let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+    let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
         (),
         SlotAuthVars::new(
             Arc::new(CredentialSlot::new(SlotTokenProvider {
@@ -653,6 +654,7 @@ async fn auth_retry_reuses_cached_preparation_without_auth_refresh() -> Result<(
         .with_request_local_reuse(),
         transport,
     );
+    configure_runtime(&mut client, None);
     let endpoint = TextEndpoint {
         policy: {
             let mut policy = auth_policy(AuthPlacement::Bearer);
@@ -695,7 +697,7 @@ async fn auth_retry_without_request_local_reuse_reprepares_auth() -> Result<(), 
         ],
     );
     let sent = transport.clone();
-    let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+    let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
         (),
         SlotAuthVars::new(
             Arc::new(CredentialSlot::new(SlotTokenProvider {
@@ -707,6 +709,7 @@ async fn auth_retry_without_request_local_reuse_reprepares_auth() -> Result<(), 
         ),
         transport,
     );
+    configure_runtime(&mut client, None);
     let endpoint = TextEndpoint {
         policy: {
             let mut policy = auth_policy(AuthPlacement::Bearer);
@@ -750,7 +753,7 @@ async fn transport_retry_reuses_cached_auth_preparation_without_auth_refresh()
         ],
     );
     let sent = transport.clone();
-    let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+    let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
         (),
         SlotAuthVars::new(
             Arc::new(CredentialSlot::new(SlotTokenProvider {
@@ -763,6 +766,7 @@ async fn transport_retry_reuses_cached_auth_preparation_without_auth_refresh()
         .with_request_local_reuse(),
         transport,
     );
+    configure_runtime(&mut client, None);
     let endpoint = TextEndpoint {
         policy: {
             let mut policy = auth_policy(AuthPlacement::Bearer);
@@ -1475,38 +1479,10 @@ async fn absolute_attempt_cap_one_stops_auth_refresh() {
         );
         assert_eq!(harness.transport_attempts().await, 1);
         assert_eq!(harness.event_count("prepare:token").await, 1);
-        assert_eq!(
-            harness.event_count("invalidate:Unauthorized").await,
-            if status == StatusCode::UNAUTHORIZED {
-                1
-            } else {
-                0
-            }
-        );
-        assert_eq!(
-            harness.event_count("invalidate:Forbidden").await,
-            if status == StatusCode::FORBIDDEN {
-                1
-            } else {
-                0
-            }
-        );
-        assert_eq!(
-            harness.event_count("retry:Unauthorized").await,
-            if status == StatusCode::UNAUTHORIZED {
-                1
-            } else {
-                0
-            }
-        );
-        assert_eq!(
-            harness.event_count("retry:Forbidden").await,
-            if status == StatusCode::FORBIDDEN {
-                1
-            } else {
-                0
-            }
-        );
+        assert_eq!(harness.event_count("invalidate:Unauthorized").await, 0);
+        assert_eq!(harness.event_count("invalidate:Forbidden").await, 0);
+        assert_eq!(harness.event_count("retry:Unauthorized").await, 0);
+        assert_eq!(harness.event_count("retry:Forbidden").await, 0);
         assert!(retry_events.lock().await.is_empty());
     }
 }
@@ -1543,7 +1519,7 @@ async fn auth_refresh_respects_absolute_attempt_cap() {
         assert_eq!(
             harness.event_count("invalidate:Unauthorized").await,
             if status == StatusCode::UNAUTHORIZED {
-                2
+                1
             } else {
                 0
             }
@@ -1551,7 +1527,7 @@ async fn auth_refresh_respects_absolute_attempt_cap() {
         assert_eq!(
             harness.event_count("invalidate:Forbidden").await,
             if status == StatusCode::FORBIDDEN {
-                2
+                1
             } else {
                 0
             }
@@ -1559,7 +1535,7 @@ async fn auth_refresh_respects_absolute_attempt_cap() {
         assert_eq!(
             harness.event_count("retry:Unauthorized").await,
             if status == StatusCode::UNAUTHORIZED {
-                2
+                1
             } else {
                 0
             }
@@ -1567,7 +1543,7 @@ async fn auth_refresh_respects_absolute_attempt_cap() {
         assert_eq!(
             harness.event_count("retry:Forbidden").await,
             if status == StatusCode::FORBIDDEN {
-                2
+                1
             } else {
                 0
             }
@@ -2182,33 +2158,65 @@ impl ClientContext for RecordingAuthCx {
         })
     }
 
-    fn handle_auth_response<'a>(
-        requirement: &'a AuthRequirement,
-        applied: &'a AuthAppliedCredential,
+    fn plan_auth_response(
+        requirement: &AuthRequirement,
+        applied: &AuthAppliedCredential,
+        _vars: &Self::Vars,
+        auth: &Self::AuthVars,
+        _meta: &RequestMeta,
+        status: StatusCode,
+        _headers: &HeaderMap,
+    ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
+        if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+            && auth.identity == "refresh"
+        {
+            return Ok(concord_core::advanced::AuthRejectionAction::refresh(
+                requirement,
+                applied,
+                concord_core::advanced::AuthRetryReason::Unauthorized,
+                None,
+            ));
+        }
+        Ok(concord_core::advanced::AuthRejectionAction::terminal(
+            requirement,
+            applied,
+            None,
+        ))
+    }
+
+    fn apply_terminal_auth_action<'a>(
+        _action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _meta: &'a RequestMeta,
+        _status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
+        let events = auth.events.clone();
+        Box::pin(async move {
+            events.lock().await.push("auth_rejection".to_string());
+            Ok(())
+        })
+    }
+
+    fn apply_refresh_auth_action<'a>(
+        _action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
         _vars: &'a Self::Vars,
         auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
         _meta: &'a RequestMeta,
-        status: StatusCode,
-        _headers: &'a HeaderMap,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
+        _status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
         let events = auth.events.clone();
         Box::pin(async move {
-            if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
-                events.lock().await.push("auth_rejection".to_string());
-                if auth.identity == "refresh" {
-                    events.lock().await.push("auth_retry".to_string());
-                    return Ok(AuthDecision::RetryAfterRefresh {
-                        credential: requirement.credential.clone(),
-                        generation: applied.generation,
-                        reason: concord_core::advanced::AuthRetryReason::Unauthorized,
-                    });
-                }
-                Ok(AuthDecision::Fail)
-            } else {
-                Ok(AuthDecision::Continue)
-            }
+            events.lock().await.push("auth_rejection".to_string());
+            events.lock().await.push("auth_retry".to_string());
+            Ok(())
         })
     }
 }
@@ -2286,40 +2294,77 @@ impl ClientContext for PolicyAuthCx {
         })
     }
 
-    fn handle_auth_response<'a>(
-        requirement: &'a AuthRequirement,
-        applied: &'a AuthAppliedCredential,
+    fn plan_auth_response(
+        requirement: &AuthRequirement,
+        applied: &AuthAppliedCredential,
+        _vars: &Self::Vars,
+        auth: &Self::AuthVars,
+        _meta: &RequestMeta,
+        status: StatusCode,
+        _headers: &HeaderMap,
+    ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
+        let Some(decision) = auth_decision_for_status(status, requirement, applied, auth.policy)
+        else {
+            return Ok(concord_core::advanced::AuthRejectionAction::terminal(
+                requirement,
+                applied,
+                None,
+            ));
+        };
+        Ok(match decision.retry_reason {
+            Some(reason) => concord_core::advanced::AuthRejectionAction::refresh(
+                requirement,
+                applied,
+                reason,
+                decision.invalidate_reason,
+            ),
+            None => concord_core::advanced::AuthRejectionAction::terminal(
+                requirement,
+                applied,
+                decision.invalidate_reason,
+            ),
+        })
+    }
+
+    fn apply_terminal_auth_action<'a>(
+        action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _meta: &'a RequestMeta,
+        _status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
+        let events = auth.events.clone();
+        Box::pin(async move {
+            if let Some(reason) = action.invalidate_reason() {
+                events.lock().await.push(format!("invalidate:{reason:?}"));
+            }
+            Ok(())
+        })
+    }
+
+    fn apply_refresh_auth_action<'a>(
+        action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
         _vars: &'a Self::Vars,
         auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
         _meta: &'a RequestMeta,
-        status: StatusCode,
-        _headers: &'a HeaderMap,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
+        _status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
+        let events = auth.events.clone();
         Box::pin(async move {
-            let Some(decision) =
-                auth_decision_for_status(status, requirement, applied, auth.policy)
-            else {
-                return Ok(AuthDecision::Continue);
-            };
-
-            if let Some(reason) = decision.invalidate_reason {
-                auth.events
-                    .lock()
-                    .await
-                    .push(format!("invalidate:{reason:?}"));
+            if let Some(reason) = action.invalidate_reason() {
+                events.lock().await.push(format!("invalidate:{reason:?}"));
             }
-            if let Some(reason) = decision.retry_reason {
-                auth.events.lock().await.push(format!("retry:{reason:?}"));
-                return Ok(AuthDecision::RetryAfterRefresh {
-                    credential: requirement.credential.clone(),
-                    generation: applied.generation,
-                    reason,
-                });
+            if let Some(reason) = action.refresh_reason() {
+                events.lock().await.push(format!("retry:{reason:?}"));
             }
-
-            Ok(AuthDecision::Continue)
+            Ok(())
         })
     }
 }
@@ -2409,40 +2454,77 @@ impl ClientContext for RotatingPolicyAuthCx {
         })
     }
 
-    fn handle_auth_response<'a>(
-        requirement: &'a AuthRequirement,
-        applied: &'a AuthAppliedCredential,
+    fn plan_auth_response(
+        requirement: &AuthRequirement,
+        applied: &AuthAppliedCredential,
+        _vars: &Self::Vars,
+        auth: &Self::AuthVars,
+        _meta: &RequestMeta,
+        status: StatusCode,
+        _headers: &HeaderMap,
+    ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
+        let Some(decision) = auth_decision_for_status(status, requirement, applied, auth.policy)
+        else {
+            return Ok(concord_core::advanced::AuthRejectionAction::terminal(
+                requirement,
+                applied,
+                None,
+            ));
+        };
+        Ok(match decision.retry_reason {
+            Some(reason) => concord_core::advanced::AuthRejectionAction::refresh(
+                requirement,
+                applied,
+                reason,
+                decision.invalidate_reason,
+            ),
+            None => concord_core::advanced::AuthRejectionAction::terminal(
+                requirement,
+                applied,
+                decision.invalidate_reason,
+            ),
+        })
+    }
+
+    fn apply_terminal_auth_action<'a>(
+        action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _meta: &'a RequestMeta,
+        _status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
+        let events = auth.events.clone();
+        Box::pin(async move {
+            if let Some(reason) = action.invalidate_reason() {
+                events.lock().await.push(format!("invalidate:{reason:?}"));
+            }
+            Ok(())
+        })
+    }
+
+    fn apply_refresh_auth_action<'a>(
+        action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
+        _applied: &'a AuthAppliedCredential,
         _vars: &'a Self::Vars,
         auth: &'a Self::AuthVars,
         _auth_state: &'a Self::AuthState,
         _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
         _meta: &'a RequestMeta,
-        status: StatusCode,
-        _headers: &'a HeaderMap,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
+        _status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
+        let events = auth.events.clone();
         Box::pin(async move {
-            let Some(decision) =
-                auth_decision_for_status(status, requirement, applied, auth.policy)
-            else {
-                return Ok(AuthDecision::Continue);
-            };
-
-            if let Some(reason) = decision.invalidate_reason {
-                auth.events
-                    .lock()
-                    .await
-                    .push(format!("invalidate:{reason:?}"));
+            if let Some(reason) = action.invalidate_reason() {
+                events.lock().await.push(format!("invalidate:{reason:?}"));
             }
-            if let Some(reason) = decision.retry_reason {
-                auth.events.lock().await.push(format!("retry:{reason:?}"));
-                return Ok(AuthDecision::RetryAfterRefresh {
-                    credential: requirement.credential.clone(),
-                    generation: applied.generation,
-                    reason,
-                });
+            if let Some(reason) = action.refresh_reason() {
+                events.lock().await.push(format!("retry:{reason:?}"));
             }
-
-            Ok(AuthDecision::Continue)
+            Ok(())
         })
     }
 }
@@ -2500,15 +2582,23 @@ impl RotatingPolicyAuthHarness {
         responses: Vec<MockResponse>,
     ) -> concord_core::prelude::ApiClient<RotatingPolicyAuthCx, MockTransport> {
         let transport = MockTransport::new(self.events.clone(), responses);
-        concord_core::prelude::ApiClient::<RotatingPolicyAuthCx, _>::with_transport(
-            (),
-            RotatingPolicyAuthVars {
-                tokens: Arc::new(Mutex::new(VecDeque::from(self.tokens.clone()))),
-                policy: self.policy,
-                events: self.events.clone(),
-            },
-            transport.clone(),
-        )
+        let mut client =
+            concord_core::prelude::ApiClient::<RotatingPolicyAuthCx, _>::with_transport(
+                (),
+                RotatingPolicyAuthVars {
+                    tokens: Arc::new(Mutex::new(VecDeque::from(self.tokens.clone()))),
+                    policy: self.policy,
+                    events: self.events.clone(),
+                },
+                transport.clone(),
+            );
+        client.configure(|cfg| {
+            cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+                4096,
+                std::time::Duration::from_secs(15 * 60),
+            ));
+        });
+        client
     }
 
     fn endpoint(&self, retry_status: StatusCode) -> TextEndpoint {
@@ -2561,7 +2651,7 @@ impl PolicyAuthHarness {
         responses: Vec<MockResponse>,
     ) -> concord_core::prelude::ApiClient<PolicyAuthCx, MockTransport> {
         let transport = MockTransport::new(self.events.clone(), responses);
-        concord_core::prelude::ApiClient::<PolicyAuthCx, _>::with_transport(
+        let mut client = concord_core::prelude::ApiClient::<PolicyAuthCx, _>::with_transport(
             (),
             PolicyAuthVars {
                 token: "token".to_string(),
@@ -2569,7 +2659,14 @@ impl PolicyAuthHarness {
                 events: self.events.clone(),
             },
             transport.clone(),
-        )
+        );
+        client.configure(|cfg| {
+            cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+                4096,
+                std::time::Duration::from_secs(15 * 60),
+            ));
+        });
+        client
     }
 
     fn endpoint(&self, retry_status: StatusCode) -> TextEndpoint {
@@ -2747,26 +2844,78 @@ impl ClientContext for SlotAuthCx {
         })
     }
 
-    fn handle_auth_response<'a>(
-        requirement: &'a AuthRequirement,
+    fn plan_auth_response(
+        requirement: &AuthRequirement,
+        applied: &AuthAppliedCredential,
+        _vars: &Self::Vars,
+        _auth: &Self::AuthVars,
+        _meta: &RequestMeta,
+        status: StatusCode,
+        _headers: &HeaderMap,
+    ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
+        let Some(decision) =
+            auth_decision_for_status(status, requirement, applied, AuthStepPolicy::default())
+        else {
+            return Ok(concord_core::advanced::AuthRejectionAction::terminal(
+                requirement,
+                applied,
+                None,
+            ));
+        };
+        Ok(match decision.retry_reason {
+            Some(reason) => concord_core::advanced::AuthRejectionAction::refresh(
+                requirement,
+                applied,
+                reason,
+                decision.invalidate_reason,
+            ),
+            None => concord_core::advanced::AuthRejectionAction::terminal(
+                requirement,
+                applied,
+                decision.invalidate_reason,
+            ),
+        })
+    }
+
+    fn apply_terminal_auth_action<'a>(
+        action: &'a concord_core::advanced::AuthRejectionAction,
+        _requirement: &'a AuthRequirement,
         applied: &'a AuthAppliedCredential,
         _vars: &'a Self::Vars,
         auth: &'a Self::AuthVars,
         auth_state: &'a Self::AuthState,
-        executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-        meta: &'a RequestMeta,
-        status: StatusCode,
-        headers: &'a HeaderMap,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
+        _meta: &'a RequestMeta,
+        _status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
         let events = auth.events.clone();
         Box::pin(async move {
-            let Some(decision) =
-                auth_decision_for_status(status, requirement, applied, AuthStepPolicy::default())
-            else {
-                return Ok(AuthDecision::Continue);
-            };
+            if let Some(reason) = action.invalidate_reason() {
+                events
+                    .lock()
+                    .await
+                    .push(format!("slot_invalidate:{reason:?}"));
+                auth_state
+                    .slot
+                    .invalidate_generation_local(applied.generation)?;
+            }
+            Ok(())
+        })
+    }
 
-            if let Some(reason) = decision.invalidate_reason {
+    fn apply_refresh_auth_action<'a>(
+        action: &'a concord_core::advanced::AuthRejectionAction,
+        requirement: &'a AuthRequirement,
+        applied: &'a AuthAppliedCredential,
+        vars: &'a Self::Vars,
+        auth: &'a Self::AuthVars,
+        auth_state: &'a Self::AuthState,
+        executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
+        _meta: &'a RequestMeta,
+        _status: StatusCode,
+    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
+        let events = auth.events.clone();
+        Box::pin(async move {
+            if let Some(reason) = action.invalidate_reason() {
                 events
                     .lock()
                     .await
@@ -2775,7 +2924,7 @@ impl ClientContext for SlotAuthCx {
                     .slot
                     .invalidate_generation(
                         CredentialContext {
-                            vars: _vars,
+                            vars,
                             auth,
                             auth_state,
                             executor,
@@ -2783,25 +2932,14 @@ impl ClientContext for SlotAuthCx {
                             reason: CredentialRefreshReason::Rejected,
                         },
                         applied.generation,
-                        match status {
-                            StatusCode::UNAUTHORIZED => InvalidateReason::Unauthorized,
-                            StatusCode::FORBIDDEN => InvalidateReason::Forbidden,
-                            _ => InvalidateReason::Manual,
-                        },
+                        reason,
                     )
                     .await?;
             }
-            if let Some(reason) = decision.retry_reason {
+            if let Some(reason) = action.refresh_reason() {
                 events.lock().await.push(format!("slot_retry:{reason:?}"));
-                return Ok(AuthDecision::RetryAfterRefresh {
-                    credential: requirement.credential.clone(),
-                    generation: applied.generation,
-                    reason,
-                });
             }
-
-            let _ = (meta, headers);
-            Ok(AuthDecision::Continue)
+            Ok(())
         })
     }
 }
@@ -2944,11 +3082,12 @@ async fn auth_rejection_stale_invalidation_cannot_clear_newer_generation()
             ],
         );
         let sent_transport = transport.clone();
-        let client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
+        let mut client = concord_core::prelude::ApiClient::<SlotAuthCx, _>::with_transport(
             (),
             SlotAuthVars::new(slot.clone(), events.clone(), prepare_calls.clone()),
             transport,
         );
+        configure_runtime(&mut client, None);
         let client = Arc::new(client);
 
         let request = TextEndpoint {

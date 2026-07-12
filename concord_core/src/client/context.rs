@@ -43,8 +43,46 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
         })
     }
 
+    /// Derives one authentication rejection action for this exact requirement
+    /// and applied credential pair without performing any credential,
+    /// provider, or network operation. Core validates and aggregates it.
+    fn plan_auth_response(
+        _requirement: &crate::auth::AuthRequirement,
+        applied: &crate::auth::AuthAppliedCredential,
+        _vars: &Self::Vars,
+        _auth: &Self::AuthVars,
+        _meta: &RequestMeta,
+        _status: http::StatusCode,
+        _headers: &http::HeaderMap,
+    ) -> Result<crate::auth::AuthRejectionAction, AuthError> {
+        Ok(crate::auth::AuthRejectionAction::terminal(
+            _requirement,
+            applied,
+            None,
+        ))
+    }
+
+    /// Applies one terminal action using only local credential state. This
+    /// hook has no executor and cannot acquire or refresh credentials.
     #[allow(clippy::too_many_arguments)]
-    fn handle_auth_response<'a>(
+    fn apply_terminal_auth_action<'a>(
+        _action: &'a crate::auth::AuthRejectionAction,
+        _requirement: &'a crate::auth::AuthRequirement,
+        _applied: &'a crate::auth::AuthAppliedCredential,
+        _vars: &'a Self::Vars,
+        _auth: &'a Self::AuthVars,
+        _auth_state: &'a Self::AuthState,
+        _meta: &'a RequestMeta,
+        _status: http::StatusCode,
+    ) -> crate::auth::AuthFuture<'a, Result<(), AuthError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// Applies the selected refresh action. Core calls this only after a
+    /// retry-admission permit has been reserved.
+    #[allow(clippy::too_many_arguments)]
+    fn apply_refresh_auth_action<'a>(
+        _action: &'a crate::auth::AuthRejectionAction,
         _requirement: &'a crate::auth::AuthRequirement,
         _applied: &'a crate::auth::AuthAppliedCredential,
         _vars: &'a Self::Vars,
@@ -53,9 +91,8 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
         _executor: &'a dyn AuthHttpExecutor,
         _meta: &'a RequestMeta,
         _status: http::StatusCode,
-        _headers: &'a http::HeaderMap,
-    ) -> crate::auth::AuthFuture<'a, Result<crate::auth::AuthDecision, AuthError>> {
-        Box::pin(async { Ok(crate::auth::AuthDecision::Continue) })
+    ) -> crate::auth::AuthFuture<'a, Result<(), AuthError>> {
+        Box::pin(async { Ok(()) })
     }
 
     fn base_route(_vars: &Self::Vars, _auth: &Self::AuthVars) -> RouteBuilder {
@@ -101,10 +138,8 @@ pub(super) struct AuthPreparation {
     pub(super) cache_policy: AuthPreparationCachePolicy,
 }
 
-pub(super) struct AuthRejectionCtx<'a, Cx: ClientContext, T: Transport> {
+pub(super) struct AuthRejectionCtx<'a> {
     pub(super) plan: &'a crate::endpoint::RequestPlanView,
-    pub(super) auth_state: &'a Cx::AuthState,
-    pub(super) auth_http: &'a ClientAuthHttpExecutor<'a, Cx, T>,
     pub(super) meta: &'a RequestMeta,
     pub(super) status: StatusCode,
     pub(super) headers: &'a http::HeaderMap,

@@ -10,12 +10,11 @@ mod query_auth_redaction {
     #[cfg(feature = "transport-reqwest")]
     use concord_core::advanced::ReqwestTransport;
     use concord_core::advanced::{
-        AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
-        AuthHttpRequest, AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement,
-        AuthRequirementId, AuthRetryReason, DebugSink, DecodedResponse, DynBody,
-        PreparedInternalAuth, RequestMeta, RuntimeHooks, SanitizedHeaders, Transport,
-        TransportError, TransportErrorHookContext, TransportErrorKind, apply_basic_credential,
-        apply_secret_credential,
+        AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthErrorKind, AuthHttpRequest,
+        AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement, AuthRequirementId,
+        AuthRetryReason, DebugSink, DecodedResponse, DynBody, PreparedInternalAuth, RequestMeta,
+        RuntimeHooks, SanitizedHeaders, Transport, TransportError, TransportErrorHookContext,
+        TransportErrorKind, apply_basic_credential, apply_secret_credential,
     };
     #[cfg(feature = "json")]
     use concord_core::advanced::{CredentialProvider, OAuth2ClientCredentialsProvider};
@@ -207,20 +206,6 @@ mod query_auth_redaction {
                 };
                 Ok(PreparedAuthCredential::new(applied, application))
             })
-        }
-
-        fn handle_auth_response<'a>(
-            _requirement: &'a AuthRequirement,
-            _applied: &'a AuthAppliedCredential,
-            _vars: &'a Self::Vars,
-            _auth: &'a Self::AuthVars,
-            _auth_state: &'a Self::AuthState,
-            _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-            _meta: &'a RequestMeta,
-            _status: StatusCode,
-            _headers: &'a HeaderMap,
-        ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
-            Box::pin(async { Ok(AuthDecision::Continue) })
         }
     }
 
@@ -1324,29 +1309,29 @@ mod query_auth_redaction {
                 })
             }
 
-            fn handle_auth_response<'a>(
-                requirement: &'a AuthRequirement,
-                applied: &'a AuthAppliedCredential,
-                _vars: &'a Self::Vars,
-                _auth: &'a Self::AuthVars,
-                _auth_state: &'a Self::AuthState,
-                _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-                _meta: &'a RequestMeta,
+            fn plan_auth_response(
+                requirement: &AuthRequirement,
+                applied: &AuthAppliedCredential,
+                _vars: &Self::Vars,
+                _auth: &Self::AuthVars,
+                _meta: &RequestMeta,
                 status: StatusCode,
-                _headers: &'a HeaderMap,
-            ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>>
-            {
-                Box::pin(async move {
-                    if status == StatusCode::UNAUTHORIZED {
-                        Ok(AuthDecision::RetryAfterRefresh {
-                            credential: requirement.credential.clone(),
-                            generation: applied.generation,
-                            reason: AuthRetryReason::Unauthorized,
-                        })
-                    } else {
-                        Ok(AuthDecision::Continue)
-                    }
-                })
+                _headers: &HeaderMap,
+            ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
+                if status == StatusCode::UNAUTHORIZED {
+                    Ok(concord_core::advanced::AuthRejectionAction::refresh(
+                        requirement,
+                        applied,
+                        AuthRetryReason::Unauthorized,
+                        None,
+                    ))
+                } else {
+                    Ok(concord_core::advanced::AuthRejectionAction::terminal(
+                        requirement,
+                        applied,
+                        None,
+                    ))
+                }
             }
         }
 

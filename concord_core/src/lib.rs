@@ -16,6 +16,7 @@ mod redaction;
 mod request;
 mod response_classify;
 mod retry;
+mod retry_admission;
 pub mod runtime;
 mod runtime_hooks;
 mod runtime_state;
@@ -94,14 +95,15 @@ pub mod advanced {
         AuthApplication, AuthApplicationRequest, AuthAppliedCredential, AuthAttemptSummary,
         AuthChallengePolicy, AuthDecision, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor,
         AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode, AuthPlacement,
-        AuthPlacementPlan, AuthPlan, AuthPreparationReuse, AuthProvenance, AuthRejectionDecision,
-        AuthRequirement, AuthRequirementId, AuthRetryReason, AuthStepPolicy, AuthUsageId,
-        CredentialContext, CredentialId, CredentialLease, CredentialMaterial, CredentialProvider,
-        CredentialRef, CredentialRefreshReason, CredentialSlot, InvalidateReason,
-        ManualCredentialProvider, PlannedAuthPlacement, PlannedAuthSlot, PreparedAuthCredential,
-        PreparedInternalAuth, SecretCredential, StaticApiKeyProvider, StaticBasicProvider,
-        StaticBearerProvider, apply_basic_credential, apply_secret_credential,
-        auth_decision_for_status, invalidate_rejected_credential, read_auth_lock, write_auth_lock,
+        AuthPlacementPlan, AuthPlan, AuthPreparationReuse, AuthProvenance, AuthRejectionAction,
+        AuthRejectionDecision, AuthRequirement, AuthRequirementId, AuthRetryReason, AuthStepPolicy,
+        AuthUsageId, CredentialContext, CredentialId, CredentialLease, CredentialMaterial,
+        CredentialProvider, CredentialRef, CredentialRefreshReason, CredentialSlot,
+        InvalidateReason, ManualCredentialProvider, PlannedAuthPlacement, PlannedAuthSlot,
+        PreparedAuthCredential, PreparedInternalAuth, SecretCredential, StaticApiKeyProvider,
+        StaticBasicProvider, StaticBearerProvider, apply_basic_credential, apply_secret_credential,
+        auth_decision_for_status, invalidate_rejected_credential,
+        invalidate_rejected_credential_local, read_auth_lock, write_auth_lock,
     };
     pub use crate::body::{BodyError, BodyErrorKind, DynBody, LimitedBody};
     pub use crate::codec::{
@@ -146,6 +148,7 @@ pub mod advanced {
         ConfiguredRetryPolicy, NoRetryPolicy, RetryClassifierConfig, RetryConfig, RetryContext,
         RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy,
     };
+    pub use crate::retry_admission::RetryAdmissionRegistry;
     #[allow(deprecated)]
     pub use crate::runtime::{DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{

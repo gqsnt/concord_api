@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use concord_core::advanced::{
-    AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthHttpExecutor,
-    AuthPlacement, AuthPreparationReuse, AuthRequirement, CredentialContext, CredentialId,
-    CredentialProvider, CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
+    AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthHttpExecutor, AuthPlacement,
+    AuthPreparationReuse, AuthRequirement, CredentialContext, CredentialId, CredentialProvider,
+    CredentialRefreshReason, CredentialSlot, NoopDebugSink, NoopRateLimiter,
     PreparedAuthCredential, RequestMeta, RetryConfig, RetryIdempotency, Transport,
     apply_secret_credential,
 };
@@ -246,20 +246,6 @@ impl ClientContext for SlotAuthCx {
             Ok(PreparedAuthCredential::new(applied, material)
                 .with_reuse(AuthPreparationReuse::RequestLocal))
         })
-    }
-
-    fn handle_auth_response<'a>(
-        _requirement: &'a AuthRequirement,
-        _applied: &'a AuthAppliedCredential,
-        _vars: &'a Self::Vars,
-        _auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn AuthHttpExecutor,
-        _meta: &'a RequestMeta,
-        _status: StatusCode,
-        _headers: &'a http::HeaderMap,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
-        Box::pin(async move { Ok(AuthDecision::Continue) })
     }
 }
 

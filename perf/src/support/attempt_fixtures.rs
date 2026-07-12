@@ -1,6 +1,6 @@
 use concord_core::advanced::{
-    AuthApplicationRequest, AuthAppliedCredential, AuthDecision, AuthError, AuthErrorKind,
-    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, NoopDebugSink, NoopRateLimiter,
+    AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthErrorKind, AuthPlacement,
+    AuthProvenance, AuthRequirement, AuthUsageId, NoopDebugSink, NoopRateLimiter,
     PreparedAuthCredential, RateLimitContext, RateLimitFuture, RateLimitPermit,
     RateLimitResponseAction, RateLimitResponseContext, RateLimiter, Transport,
 };
@@ -11,7 +11,9 @@ use concord_core::internal::{
     ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
 use concord_core::prelude::{ApiClient, ClientContext, DebugLevel, Endpoint, IntoEndpointPlan};
-use http::{HeaderValue, Method, StatusCode};
+#[cfg(test)]
+use http::StatusCode;
+use http::{HeaderValue, Method};
 use std::cell::Cell;
 use std::fmt;
 use std::future::Future;
@@ -71,20 +73,6 @@ impl ClientContext for PerfCx {
             };
             Ok(PreparedAuthCredential::new(applied, application))
         })
-    }
-
-    fn handle_auth_response<'a>(
-        _requirement: &'a AuthRequirement,
-        _applied: &'a AuthAppliedCredential,
-        _vars: &'a Self::Vars,
-        _auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-        _meta: &'a concord_core::advanced::RequestMeta,
-        _status: StatusCode,
-        _headers: &'a http::HeaderMap,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<AuthDecision, AuthError>> {
-        Box::pin(async move { Ok(AuthDecision::Continue) })
     }
 }
 

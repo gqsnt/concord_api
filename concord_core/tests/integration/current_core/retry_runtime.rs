@@ -1,6 +1,7 @@
 use super::common::{
-    MockOutcome, MockResponse, MockTransport, TestAuthVars, client, request_plan, retry_policy,
-    retry_policy_for_statuses, retry_policy_for_transport_errors,
+    MockOutcome, MockResponse, MockTransport, ObservationAuthCx, ObservationAuthVars, TestAuthVars,
+    TestCx, auth_policy, client, request_plan, retry_policy, retry_policy_for_statuses,
+    retry_policy_for_transport_errors,
 };
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
@@ -12,7 +13,7 @@ use concord_core::internal::{PreparedBody, ResolvedPolicy, RetrySetting};
 use concord_core::prelude::ApiClientError;
 use http::{HeaderValue, Method, StatusCode};
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 
 fn retry_plan(
     name: &'static str,
@@ -85,6 +86,259 @@ impl RetryPolicy for InheritedStatusRetry {
             RetryDecision::Stop
         }
     }
+}
+
+#[tokio::test]
+async fn independently_constructed_default_clients_share_origin_admission_credits()
+-> Result<(), ApiClientError> {
+    const ORIGIN: &str = "shared-default-proof-unique.example";
+
+    let first_transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry"),
+            MockResponse::text(StatusCode::OK, "recovered"),
+        ],
+    );
+    let first_sent = first_transport.clone();
+    let first_client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        first_transport,
+    );
+    let mut first_plan = retry_plan(
+        "SharedDefaultConsumesReserve",
+        Method::GET,
+        "/shared-default/first",
+        retry_policy(2),
+        true,
+    );
+    first_plan.endpoint.route.host = ORIGIN.to_string();
+    let first = first_client
+        .execute_plan::<concord_core::prelude::Text<String>>(first_plan)
+        .await?;
+    assert_eq!(first.value(), "recovered");
+    assert_eq!(first_sent.sent_count().await, 2);
+
+    let second_transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![MockResponse::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "denied",
+        )],
+    );
+    let second_sent = second_transport.clone();
+    let second_client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        second_transport,
+    );
+    let mut second_plan = retry_plan(
+        "SharedDefaultDenied",
+        Method::GET,
+        "/shared-default/second",
+        retry_policy(2),
+        true,
+    );
+    second_plan.endpoint.route.host = ORIGIN.to_string();
+    let denied = second_client
+        .execute_plan::<concord_core::prelude::Text<String>>(second_plan)
+        .await
+        .expect_err("an independently constructed client must observe shared depleted credits");
+    assert!(matches!(denied, ApiClientError::HttpStatus { .. }));
+    assert_eq!(second_sent.sent_count().await, 1);
+
+    // Three independent completed originals add three credits. Together with
+    // the second original, they restore the shared balance to five.
+    for name in ["SharedDepositC", "SharedDepositD", "SharedDepositE"] {
+        let transport = MockTransport::new(
+            Arc::new(Mutex::new(Vec::new())),
+            vec![MockResponse::text(StatusCode::OK, "deposit")],
+        );
+        let client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
+            (),
+            TestAuthVars::default(),
+            transport,
+        );
+        let policy = ResolvedPolicy {
+            retry: RetrySetting::Off,
+            ..ResolvedPolicy::default()
+        };
+        let mut plan = retry_plan(name, Method::GET, "/shared-default/deposit", policy, true);
+        plan.endpoint.route.host = ORIGIN.to_string();
+        client
+            .execute_plan::<concord_core::prelude::Text<String>>(plan)
+            .await?;
+    }
+
+    let final_transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-again"),
+            MockResponse::text(StatusCode::OK, "admitted"),
+        ],
+    );
+    let final_sent = final_transport.clone();
+    let final_client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        final_transport,
+    );
+    let mut final_plan = retry_plan(
+        "SharedDefaultAdmitted",
+        Method::GET,
+        "/shared-default/final",
+        retry_policy(2),
+        true,
+    );
+    final_plan.endpoint.route.host = ORIGIN.to_string();
+    let decoded = final_client
+        .execute_plan::<concord_core::prelude::Text<String>>(final_plan)
+        .await?;
+    assert_eq!(decoded.value(), "admitted");
+    assert_eq!(final_sent.sent_count().await, 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn public_collision_does_not_allocate_a_new_origin_entry() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry"),
+            MockResponse::text(StatusCode::OK, "tracked-after-preflight"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = client(TestAuthVars::default(), transport);
+    client.configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            1,
+            std::time::Duration::from_secs(60),
+        ));
+    });
+
+    let mut collision_policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+    collision_policy.headers.insert(
+        http::header::AUTHORIZATION,
+        HeaderValue::from_static("public"),
+    );
+    let mut collision = retry_plan(
+        "AdmissionCollision",
+        Method::GET,
+        "/admission/collision",
+        collision_policy,
+        true,
+    );
+    collision.endpoint.route.host = "preflight-failure-unique.example".to_string();
+    let collision_error = client
+        .execute_plan::<concord_core::prelude::Text<String>>(collision)
+        .await
+        .expect_err("public auth collision must fail before tracking or transport");
+    assert!(matches!(collision_error, ApiClientError::Auth { .. }));
+
+    let mut retry = retry_plan(
+        "AdmissionUntrackedRetry",
+        Method::GET,
+        "/admission/retry",
+        retry_policy(2),
+        true,
+    );
+    retry.endpoint.route.host = "valid-after-preflight-unique.example".to_string();
+    let retry_result = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry)
+        .await
+        .expect("the valid origin must be tracked after the collision preflight");
+    assert_eq!(retry_result.value(), "tracked-after-preflight");
+    assert_eq!(sent.sent_count().await, 2);
+}
+
+#[tokio::test]
+async fn terminal_auth_rejection_does_not_reserve_or_spend_retry_admission() {
+    const ORIGIN: &str = "terminal-admission-proof-unique.example";
+    let terminal_started = Arc::new(Semaphore::new(0));
+    let terminal_gate = Arc::new(Semaphore::new(0));
+    let terminal_events = Arc::new(Mutex::new(Vec::new()));
+    let mut terminal_auth =
+        ObservationAuthVars::bearer("terminal-token", "terminal", terminal_events);
+    terminal_auth.terminal_started = Some(terminal_started.clone());
+    terminal_auth.terminal_gate = Some(terminal_gate.clone());
+    let terminal_transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![MockResponse::text(StatusCode::UNAUTHORIZED, "terminal")],
+    );
+    let terminal_client = concord_core::prelude::ApiClient::<ObservationAuthCx, _>::with_transport(
+        (),
+        terminal_auth,
+        terminal_transport,
+    );
+    let registry =
+        concord_core::advanced::RetryAdmissionRegistry::new(1, std::time::Duration::from_secs(60));
+    let mut terminal_client = terminal_client;
+    terminal_client.configure(|cfg| {
+        cfg.retry_admission(registry.clone());
+    });
+
+    let mut terminal_policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+    terminal_policy.auth.requirements[0].challenge =
+        concord_core::advanced::AuthChallengePolicy::NeverRefresh;
+    let mut terminal = retry_plan(
+        "TerminalAuthNoReserve",
+        Method::GET,
+        "/admission/terminal-auth",
+        terminal_policy,
+        true,
+    );
+    terminal.endpoint.route.host = ORIGIN.to_string();
+    let terminal_task = tokio::spawn(async move {
+        terminal_client
+            .execute_plan::<concord_core::prelude::Text<String>>(terminal)
+            .await
+    });
+    let _started_permit = terminal_started
+        .acquire()
+        .await
+        .expect("terminal auth start semaphore must remain open");
+
+    let retry_transport = MockTransport::new(
+        Arc::new(Mutex::new(Vec::new())),
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry"),
+            MockResponse::text(StatusCode::OK, "admitted"),
+        ],
+    );
+    let retry_sent = retry_transport.clone();
+    let retry_client = concord_core::prelude::ApiClient::<TestCx, _>::with_transport(
+        (),
+        TestAuthVars::default(),
+        retry_transport,
+    );
+    let mut retry_client = retry_client;
+    retry_client.configure(|cfg| {
+        cfg.retry_admission(registry);
+    });
+    let mut retry = retry_plan(
+        "RetryWhileTerminalHandling",
+        Method::GET,
+        "/admission/retry-while-terminal",
+        retry_policy(2),
+        true,
+    );
+    retry.endpoint.route.host = ORIGIN.to_string();
+    let retry_result = retry_client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry)
+        .await
+        .expect("the valid retry must reserve while terminal handling is paused");
+    assert_eq!(retry_result.value(), "admitted");
+    assert_eq!(retry_sent.sent_count().await, 2);
+
+    terminal_gate.add_permits(1);
+    let terminal_error = terminal_task
+        .await
+        .expect("terminal task must finish")
+        .expect_err("NeverRefresh remains terminal");
+    assert!(matches!(terminal_error, ApiClientError::Auth { .. }));
 }
 
 #[tokio::test]

@@ -482,6 +482,134 @@ pub enum AuthDecision {
     Fail,
 }
 
+/// One side-effect-free action for one exact applied authentication use.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AuthRejectionAction {
+    Terminal {
+        credential: CredentialRef,
+        usage_id: AuthUsageId,
+        step_id: Option<&'static str>,
+        generation: Option<u64>,
+        invalidate_reason: Option<InvalidateReason>,
+    },
+    Refresh {
+        credential: CredentialRef,
+        usage_id: AuthUsageId,
+        step_id: Option<&'static str>,
+        generation: Option<u64>,
+        reason: AuthRetryReason,
+        invalidate_reason: Option<InvalidateReason>,
+    },
+}
+
+/// Aggregate rejection plan for one response. Terminal actions are retained
+/// in order; at most one refresh action is admitted by the runtime.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct AuthRejectionPlan {
+    actions: Vec<AuthRejectionAction>,
+}
+
+impl AuthRejectionAction {
+    pub fn terminal(
+        requirement: &AuthRequirement,
+        applied: &AuthAppliedCredential,
+        invalidate_reason: Option<InvalidateReason>,
+    ) -> Self {
+        Self::Terminal {
+            credential: requirement.credential.clone(),
+            usage_id: applied.usage_id.clone(),
+            step_id: applied.step_id,
+            generation: applied.generation,
+            invalidate_reason,
+        }
+    }
+
+    pub fn refresh(
+        requirement: &AuthRequirement,
+        applied: &AuthAppliedCredential,
+        reason: AuthRetryReason,
+        invalidate_reason: Option<InvalidateReason>,
+    ) -> Self {
+        Self::Refresh {
+            credential: requirement.credential.clone(),
+            usage_id: applied.usage_id.clone(),
+            step_id: applied.step_id,
+            generation: applied.generation,
+            reason,
+            invalidate_reason,
+        }
+    }
+
+    pub fn requests_refresh(&self) -> bool {
+        matches!(self, Self::Refresh { .. })
+    }
+
+    pub fn matches(&self, requirement: &AuthRequirement, applied: &AuthAppliedCredential) -> bool {
+        match self {
+            Self::Terminal {
+                credential,
+                usage_id,
+                step_id,
+                generation,
+                ..
+            }
+            | Self::Refresh {
+                credential,
+                usage_id,
+                step_id,
+                generation,
+                ..
+            } => {
+                credential == &requirement.credential
+                    && credential.id == applied.credential_id
+                    && usage_id == &applied.usage_id
+                    && step_id == &applied.step_id
+                    && generation == &applied.generation
+            }
+        }
+    }
+
+    pub fn invalidate_reason(&self) -> Option<InvalidateReason> {
+        match self {
+            Self::Terminal {
+                invalidate_reason, ..
+            }
+            | Self::Refresh {
+                invalidate_reason, ..
+            } => *invalidate_reason,
+        }
+    }
+
+    pub fn refresh_reason(&self) -> Option<AuthRetryReason> {
+        match self {
+            Self::Refresh { reason, .. } => Some(reason.clone()),
+            Self::Terminal { .. } => None,
+        }
+    }
+}
+
+impl AuthRejectionPlan {
+    pub(crate) fn actions(&self) -> &[AuthRejectionAction] {
+        &self.actions
+    }
+
+    pub(crate) fn requests_refresh(&self) -> bool {
+        self.actions
+            .iter()
+            .any(AuthRejectionAction::requests_refresh)
+    }
+
+    pub(crate) fn append_validated(&mut self, action: AuthRejectionAction) {
+        match action {
+            AuthRejectionAction::Terminal { .. } => self.actions.push(action),
+            AuthRejectionAction::Refresh { .. } if !self.requests_refresh() => {
+                self.actions.push(action)
+            }
+            AuthRejectionAction::Refresh { .. } => {}
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthAppliedCredential {
     pub credential_id: CredentialId,
@@ -626,6 +754,17 @@ where
     };
     slot.invalidate_generation(credential_ctx, applied.generation, reason)
         .await
+}
+
+pub fn invalidate_rejected_credential_local<Cx, P>(
+    slot: &crate::auth::CredentialSlot<Cx, P>,
+    applied: &AuthAppliedCredential,
+) -> Result<(), crate::auth::AuthError>
+where
+    Cx: crate::client::ClientContext,
+    P: crate::auth::CredentialProvider<Cx>,
+{
+    slot.invalidate_generation_local(applied.generation)
 }
 
 #[cfg(test)]
@@ -780,5 +919,72 @@ mod tests {
                 retry_reason: Some(AuthRetryReason::Forbidden),
             }
         );
+    }
+
+    #[test]
+    fn aggregate_plan_keeps_all_terminals_and_one_refresh() {
+        let req = requirement(AuthChallengePolicy::Default);
+        let first = applied();
+        let mut second = applied();
+        second.credential_id = CredentialId::new("test", "other");
+        second.usage_id = AuthUsageId::new("test.other");
+
+        let mut plan = AuthRejectionPlan::default();
+        plan.append_validated(AuthRejectionAction::terminal(
+            &req,
+            &first,
+            Some(InvalidateReason::Unauthorized),
+        ));
+        plan.append_validated(AuthRejectionAction::refresh(
+            &req,
+            &second,
+            AuthRetryReason::Unauthorized,
+            None,
+        ));
+        plan.append_validated(AuthRejectionAction::terminal(
+            &req,
+            &first,
+            Some(InvalidateReason::Forbidden),
+        ));
+        plan.append_validated(AuthRejectionAction::refresh(
+            &req,
+            &second,
+            AuthRetryReason::Forbidden,
+            None,
+        ));
+
+        assert_eq!(plan.actions().len(), 3);
+        assert!(plan.actions()[0].invalidate_reason().is_some());
+        assert!(plan.actions()[1].requests_refresh());
+        assert_eq!(
+            plan.actions()[2].invalidate_reason(),
+            Some(InvalidateReason::Forbidden)
+        );
+    }
+
+    #[test]
+    fn action_matching_requires_exact_use_and_generation() {
+        let req = requirement(AuthChallengePolicy::Default);
+        let action =
+            AuthRejectionAction::refresh(&req, &applied(), AuthRetryReason::Unauthorized, None);
+        assert!(action.matches(&req, &applied()));
+
+        let mut mismatched = applied();
+        mismatched.generation = Some(2);
+        assert!(!action.matches(&req, &mismatched));
+        mismatched.generation = Some(1);
+        mismatched.usage_id = AuthUsageId::new("test.other-use");
+        assert!(!action.matches(&req, &mismatched));
+        mismatched.usage_id = applied().usage_id;
+        mismatched.step_id = Some("other");
+        assert!(!action.matches(&req, &mismatched));
+
+        let mut other_req = req.clone();
+        other_req.usage_id = AuthUsageId::new("test.other-use");
+        let mut other_applied = applied();
+        other_applied.usage_id = other_req.usage_id.clone();
+        let other_action = AuthRejectionAction::terminal(&other_req, &other_applied, None);
+        assert!(other_action.matches(&other_req, &other_applied));
+        assert!(!other_action.matches(&req, &applied()));
     }
 }

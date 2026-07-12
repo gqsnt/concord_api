@@ -95,7 +95,7 @@ async fn auth_endpoint_errors_do_not_render_secret_values() {
 }
 
 #[tokio::test]
-async fn endpoint_backed_session_401_invalidates_without_automatic_retry() {
+async fn endpoint_backed_session_401_does_not_refresh_without_admission() {
     let (transport, handle) = mock()
         .reply(json_reply(r#"{"access_token":"session-token"}"#))
         .reply(
@@ -122,7 +122,7 @@ async fn endpoint_backed_session_401_invalidates_without_automatic_retry() {
         .expect_err("401 should remain the protected response outcome");
 
     assert_eq!(err.category(), ErrorCategory::AuthRejected);
-    assert!(err.to_string().contains("auth challenge rejected"));
+    assert!(matches!(err, ApiClientError::Auth { .. }));
     assert!(!err.to_string().contains("missing credential"));
     assert!(
         !api.auth_state()
@@ -155,7 +155,7 @@ async fn endpoint_backed_session_401_invalidates_without_automatic_retry() {
 }
 
 #[tokio::test]
-async fn endpoint_backed_session_403_invalidates_without_automatic_retry() {
+async fn endpoint_backed_session_403_does_not_refresh_without_admission() {
     let (transport, handle) = mock()
         .reply(json_reply(r#"{"access_token":"session-token"}"#))
         .reply(
@@ -181,7 +181,7 @@ async fn endpoint_backed_session_403_invalidates_without_automatic_retry() {
         .expect_err("403 should remain the protected response outcome");
 
     assert_eq!(err.category(), ErrorCategory::AuthRejected);
-    assert!(err.to_string().contains("auth challenge rejected"));
+    assert!(matches!(err, ApiClientError::Auth { .. }));
     assert!(!err.to_string().contains("missing credential"));
     assert!(
         !api.auth_state()

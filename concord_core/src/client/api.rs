@@ -270,6 +270,7 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             hooks: self.runtime_state.hooks().clone(),
             rate_limiter: self.runtime_state.rate_limiter().clone(),
             retry_policy: self.runtime_state.retry_policy().clone(),
+            retry_admission: self.runtime_state.retry_admission().clone(),
             max_attempts: self.runtime_state.max_attempts(),
             respect_retry_after: self.runtime_state.respect_retry_after(),
             max_rate_limit_cooldown: self.runtime_state.max_rate_limit_cooldown(),
