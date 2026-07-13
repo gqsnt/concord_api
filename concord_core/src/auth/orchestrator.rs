@@ -268,6 +268,7 @@ async fn apply_binding_rejection<Cx: ClientContext>(
     auth: &Cx::AuthVars,
     auth_state: &Cx::AuthState,
     executor: &dyn AuthHttpExecutor,
+    status: http::StatusCode,
 ) -> Result<(), AuthError> {
     binding.validate_requirement(requirement)?;
     if !action.matches(requirement, applied) {
@@ -276,7 +277,7 @@ async fn apply_binding_rejection<Cx: ClientContext>(
             "authentication rejection action does not match its provider binding",
         ));
     }
-    let Some(reason) = action.invalidate_reason() else {
+    let Some(reason) = rejection_invalidation_reason(action, status) else {
         return Ok(());
     };
     if action.requests_refresh() {
@@ -295,6 +296,38 @@ async fn apply_binding_rejection<Cx: ClientContext>(
     } else {
         binding.slot.invalidate_local(applied.generation)
     }
+}
+
+fn rejection_invalidation_reason(
+    action: &AuthRejectionAction,
+    status: http::StatusCode,
+) -> Option<InvalidateReason> {
+    action.invalidate_reason().or_else(|| {
+        action.requests_refresh().then_some(match status {
+            http::StatusCode::FORBIDDEN => InvalidateReason::Forbidden,
+            _ => InvalidateReason::Unauthorized,
+        })
+    })
+}
+
+fn apply_binding_rejection_invalidation_only<Cx: ClientContext>(
+    binding: AuthProviderBinding<'_, Cx>,
+    action: &AuthRejectionAction,
+    requirement: &AuthRequirement,
+    applied: &AuthAppliedCredential,
+    status: http::StatusCode,
+) -> Result<(), AuthError> {
+    binding.validate_requirement(requirement)?;
+    if !action.matches(requirement, applied) {
+        return Err(AuthError::new(
+            AuthErrorKind::InvalidConfiguration,
+            "authentication rejection action does not match its provider binding",
+        ));
+    }
+    if rejection_invalidation_reason(action, status).is_some() {
+        binding.slot.invalidate_local(applied.generation)?;
+    }
+    Ok(())
 }
 
 /// The single protected-request authentication preparation entry point.
@@ -333,6 +366,45 @@ pub(crate) async fn prepare<Cx: ClientContext>(
                 auth_state,
                 executor,
                 meta,
+            )
+            .await
+        }
+    }
+}
+
+/// Applies only generation-conditional local invalidation for a challenged
+/// credential. This path has no provider executor and therefore cannot perform
+/// provider I/O or acquire a replacement credential.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn apply_rejection_invalidation_only<Cx: ClientContext>(
+    action: &AuthRejectionAction,
+    requirement: &AuthRequirement,
+    applied: &AuthAppliedCredential,
+    vars: &Cx::Vars,
+    auth: &Cx::AuthVars,
+    auth_state: &Cx::AuthState,
+    meta: &crate::transport::RequestMeta,
+    status: http::StatusCode,
+) -> Result<(), AuthError> {
+    match Cx::auth_provider_binding(&requirement.credential.id, auth_state) {
+        Some(binding) => {
+            apply_binding_rejection_invalidation_only(binding, action, requirement, applied, status)
+        }
+        None => {
+            let terminal = AuthRejectionAction::terminal(
+                requirement,
+                applied,
+                rejection_invalidation_reason(action, status),
+            );
+            Cx::apply_terminal_auth_action(
+                &terminal,
+                requirement,
+                applied,
+                vars,
+                auth,
+                auth_state,
+                meta,
+                status,
             )
             .await
         }
@@ -383,6 +455,7 @@ pub(crate) async fn apply_rejection<Cx: ClientContext>(
                 auth,
                 auth_state,
                 executor,
+                status,
             )
             .await
         }
@@ -581,6 +654,7 @@ mod tests {
             &(),
             &state,
             &NoHttp,
+            http::StatusCode::UNAUTHORIZED,
         )
         .await
         .expect("provider invalidation");
@@ -600,6 +674,194 @@ mod tests {
         .expect("reacquisition");
         assert_eq!(acquired.load(Ordering::SeqCst), 2);
         assert_ne!(second.applied.generation, third.applied.generation);
+    }
+
+    #[tokio::test]
+    async fn generation_terminal_invalidation_is_local_and_forces_later_reacquisition() {
+        let acquired = Arc::new(AtomicUsize::new(0));
+        let invalidated = Arc::new(AtomicUsize::new(0));
+        let state = TestState {
+            slot: Arc::new(CredentialSlot::new(TestProvider {
+                acquired: acquired.clone(),
+                invalidated: invalidated.clone(),
+            })),
+        };
+        let requirement = requirement();
+        let placement = super::super::AuthPlacementPlan::from_auth_plan(&AuthPlan {
+            requirements: vec![requirement.clone()],
+        })
+        .expect("valid placement");
+        let binding = AuthProviderBinding::secret(
+            state.slot.as_ref(),
+            AuthPreparationMode::RequestLocal,
+            AuthChallengeMode::Refresh,
+        );
+
+        let mut request = AuthApplicationRequest::new(&placement.slots[0]);
+        let initial = prepare_binding(
+            binding,
+            &requirement,
+            &mut request,
+            &(),
+            &(),
+            &state,
+            &NoHttp,
+        )
+        .await
+        .expect("initial generation");
+        let first_challenge = plan_binding_rejection(
+            binding,
+            &requirement,
+            &initial.applied,
+            http::StatusCode::UNAUTHORIZED,
+        )
+        .expect("first challenge");
+        apply_binding_rejection(
+            binding,
+            &first_challenge,
+            &requirement,
+            &initial.applied,
+            &(),
+            &(),
+            &state,
+            &NoHttp,
+            http::StatusCode::UNAUTHORIZED,
+        )
+        .await
+        .expect("first provider-capable invalidation");
+
+        let mut request = AuthApplicationRequest::new(&placement.slots[0]);
+        let replacement = prepare_binding(
+            binding,
+            &requirement,
+            &mut request,
+            &(),
+            &(),
+            &state,
+            &NoHttp,
+        )
+        .await
+        .expect("replacement generation");
+        let second_challenge = plan_binding_rejection(
+            binding,
+            &requirement,
+            &replacement.applied,
+            http::StatusCode::UNAUTHORIZED,
+        )
+        .expect("second challenge");
+        apply_binding_rejection_invalidation_only(
+            binding,
+            &second_challenge,
+            &requirement,
+            &replacement.applied,
+            http::StatusCode::UNAUTHORIZED,
+        )
+        .expect("terminal local invalidation");
+
+        assert_eq!(acquired.load(Ordering::SeqCst), 2);
+        assert_eq!(invalidated.load(Ordering::SeqCst), 1);
+        assert!(!state.slot.has_value().await);
+
+        let mut request = AuthApplicationRequest::new(&placement.slots[0]);
+        let later = prepare_binding(
+            binding,
+            &requirement,
+            &mut request,
+            &(),
+            &(),
+            &state,
+            &NoHttp,
+        )
+        .await
+        .expect("later top-level generation");
+        assert_eq!(acquired.load(Ordering::SeqCst), 3);
+        assert!(later.applied.generation > replacement.applied.generation);
+    }
+
+    #[tokio::test]
+    async fn generation_late_terminal_invalidation_preserves_newer_and_unrelated_slots() {
+        let state = TestState {
+            slot: Arc::new(CredentialSlot::new(TestProvider {
+                acquired: Arc::new(AtomicUsize::new(0)),
+                invalidated: Arc::new(AtomicUsize::new(0)),
+            })),
+        };
+        let unrelated = CredentialSlot::new(TestProvider {
+            acquired: Arc::new(AtomicUsize::new(0)),
+            invalidated: Arc::new(AtomicUsize::new(0)),
+        });
+        let requirement = requirement();
+        let placement = super::super::AuthPlacementPlan::from_auth_plan(&AuthPlan {
+            requirements: vec![requirement.clone()],
+        })
+        .expect("valid placement");
+        let binding = AuthProviderBinding::secret(
+            state.slot.as_ref(),
+            AuthPreparationMode::RequestLocal,
+            AuthChallengeMode::Refresh,
+        );
+
+        let mut request = AuthApplicationRequest::new(&placement.slots[0]);
+        let challenged = prepare_binding(
+            binding,
+            &requirement,
+            &mut request,
+            &(),
+            &(),
+            &state,
+            &NoHttp,
+        )
+        .await
+        .expect("challenged generation");
+        let action = plan_binding_rejection(
+            binding,
+            &requirement,
+            &challenged.applied,
+            http::StatusCode::UNAUTHORIZED,
+        )
+        .expect("delayed challenge plan");
+
+        state
+            .slot
+            .set_manual(ApiKey::new("newer-generation"))
+            .await
+            .expect("install newer generation");
+        unrelated
+            .set_manual(ApiKey::new("unrelated-generation"))
+            .await
+            .expect("install unrelated generation");
+        let newer = state.slot.get_cached().await.expect("newer cached value");
+        let unrelated_before = unrelated
+            .get_cached()
+            .await
+            .expect("unrelated cached value");
+
+        apply_binding_rejection_invalidation_only(
+            binding,
+            &action,
+            &requirement,
+            &challenged.applied,
+            http::StatusCode::UNAUTHORIZED,
+        )
+        .expect("stale terminal invalidation is conditional");
+
+        assert_eq!(
+            state
+                .slot
+                .get_cached()
+                .await
+                .expect("newer remains")
+                .generation,
+            newer.generation
+        );
+        assert_eq!(
+            unrelated
+                .get_cached()
+                .await
+                .expect("unrelated remains")
+                .generation,
+            unrelated_before.generation
+        );
     }
 
     #[test]

@@ -891,6 +891,7 @@ pub(crate) use buffered_endpoint_response_terminal;
 #[derive(Clone)]
 pub struct ObservationAuthVars {
     pub token: Option<String>,
+    pub replacement_token: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
     pub identity: &'static str,
@@ -907,6 +908,25 @@ impl ObservationAuthVars {
     ) -> Self {
         Self {
             token: Some(token.into()),
+            replacement_token: None,
+            username: None,
+            password: None,
+            identity,
+            events,
+            terminal_gate: None,
+            terminal_started: None,
+        }
+    }
+
+    pub fn bearer_replacing(
+        token: impl Into<String>,
+        replacement_token: impl Into<String>,
+        identity: &'static str,
+        events: Arc<Mutex<Vec<String>>>,
+    ) -> Self {
+        Self {
+            token: Some(token.into()),
+            replacement_token: Some(replacement_token.into()),
             username: None,
             password: None,
             identity,
@@ -924,6 +944,7 @@ impl ObservationAuthVars {
     ) -> Self {
         Self {
             token: None,
+            replacement_token: None,
             username: Some(username.into()),
             password: Some(password.into()),
             identity,
@@ -959,18 +980,27 @@ impl ClientContext for ObservationAuthCx {
         Result<concord_core::advanced::PreparedAuthCredential, AuthError>,
     > {
         Box::pin(async move {
-            auth.events.lock().await.push("auth_prepare".to_string());
+            let refreshed = {
+                let mut events = auth.events.lock().await;
+                let refreshed = events.iter().any(|event| event == "auth_retry");
+                events.push("auth_prepare".to_string());
+                refreshed
+            };
             let application = match requirement.placement {
                 AuthPlacement::Bearer | AuthPlacement::Header(_) | AuthPlacement::Query(_) => {
-                    let token = auth.token.as_deref().ok_or_else(|| {
-                        AuthError::new(
-                            AuthErrorKind::MissingCredential,
-                            format!(
-                                "missing credential `{}`; acquire or configure it before sending request",
-                                requirement.credential.id
-                            ),
-                        )
-                    })?;
+                    let token = refreshed
+                        .then_some(auth.replacement_token.as_deref())
+                        .flatten()
+                        .or(auth.token.as_deref())
+                        .ok_or_else(|| {
+                            AuthError::new(
+                                AuthErrorKind::MissingCredential,
+                                format!(
+                                    "missing credential `{}`; acquire or configure it before sending request",
+                                    requirement.credential.id
+                                ),
+                            )
+                        })?;
                     let material = ApiKey::new(token.to_string());
                     concord_core::advanced::apply_secret_credential(
                         request,

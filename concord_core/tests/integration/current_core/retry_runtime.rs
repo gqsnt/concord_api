@@ -1,11 +1,13 @@
 use super::common::{
     MockOutcome, MockResponse, MockTransport, NativeMockReply, ObservationAuthCx,
     ObservationAuthVars, ObservationRuntimeHooks, TestAuthVars, TestCx, auth_policy, client,
-    request_plan, retry_policy, retry_policy_for_statuses, retry_policy_for_transport_errors,
-    transport_error_kind,
+    observation_client, request_plan, retry_policy, retry_policy_for_statuses,
+    retry_policy_for_transport_errors, transport_error_kind,
 };
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
+#[cfg(feature = "multipart")]
+use concord_core::advanced::{ErrorContext, MultipartBody, MultipartRequest, RequestEntity};
 use concord_core::advanced::{
     RetryContext, RetryDecision, RetryIdempotency, RetryOutcome, RetryPolicy, StreamBody,
 };
@@ -67,6 +69,338 @@ fn retry_stream_plan(
         Some(HeaderValue::from_static("application/octet-stream")),
     );
     plan
+}
+
+#[tokio::test]
+async fn auth_recovery_replaces_header_and_query_when_general_retry_is_off() {
+    for (name, placement) in [
+        (
+            "AuthRecoveryBearerRetryOff",
+            concord_core::advanced::AuthPlacement::Bearer,
+        ),
+        (
+            "AuthRecoveryQueryRetryOff",
+            concord_core::advanced::AuthPlacement::Query("api_key"),
+        ),
+    ] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let transport = MockTransport::new(
+            events.clone(),
+            vec![
+                MockResponse::text(StatusCode::UNAUTHORIZED, "challenge"),
+                MockResponse::text(StatusCode::OK, "recovered"),
+            ],
+        );
+        let sent = transport.clone();
+        let mut policy = auth_policy(placement);
+        policy.retry = RetrySetting::Off;
+        let mut client = observation_client(
+            ObservationAuthVars::bearer_replacing(
+                "old-credential",
+                "new-credential",
+                "refresh",
+                events.clone(),
+            ),
+            &transport,
+        );
+        client.configure(|config| {
+            config.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+                4096,
+                std::time::Duration::from_secs(60),
+            ));
+        });
+
+        let response = client
+            .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+                name,
+                Method::GET,
+                "/auth/retry-off",
+                policy,
+                true,
+            ))
+            .await
+            .expect("authentication recovery must not require general retry capacity");
+
+        assert_eq!(response.value(), "recovered");
+        let requests = sent.requests().await;
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].meta.attempt, Some(0));
+        assert_eq!(requests[1].meta.attempt, Some(1));
+        match placement {
+            concord_core::advanced::AuthPlacement::Bearer => {
+                assert_eq!(
+                    requests[0]
+                        .headers
+                        .get(http::header::AUTHORIZATION)
+                        .and_then(|value| value.to_str().ok()),
+                    Some("Bearer old-credential")
+                );
+                assert_eq!(
+                    requests[1]
+                        .headers
+                        .get(http::header::AUTHORIZATION)
+                        .and_then(|value| value.to_str().ok()),
+                    Some("Bearer new-credential")
+                );
+            }
+            concord_core::advanced::AuthPlacement::Query(key) => {
+                for (request, expected) in requests.iter().zip(["old-credential", "new-credential"])
+                {
+                    let values = request
+                        .url
+                        .query_pairs()
+                        .filter(|(name, _)| name == key)
+                        .map(|(_, value)| value.into_owned())
+                        .collect::<Vec<_>>();
+                    assert_eq!(values, vec![expected]);
+                }
+            }
+            _ => unreachable!("focused test only covers bearer and query"),
+        }
+        assert_eq!(
+            events
+                .lock()
+                .await
+                .iter()
+                .filter(|event| event.as_str() == "auth_retry")
+                .count(),
+            1
+        );
+    }
+}
+
+#[cfg(feature = "multipart")]
+#[tokio::test]
+async fn auth_recovery_rebuilds_direct_multipart_without_enabling_general_retry() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::UNAUTHORIZED, "challenge"),
+            MockResponse::text(StatusCode::OK, "recovered"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+    policy.retry = retry_policy(3).retry;
+    let mut plan = retry_plan(
+        "DirectMultipartAuthRecovery",
+        Method::POST,
+        "/auth/direct-multipart",
+        policy,
+        false,
+    );
+    plan.body = MultipartRequest::prepare(
+        MultipartBody::new()
+            .text("title", "fresh")
+            .bytes("payload", Bytes::from_static(b"multipart-body")),
+        ErrorContext {
+            endpoint: "DirectMultipartAuthRecovery",
+            method: Method::POST,
+        },
+    )
+    .expect("reconstructible multipart recipe")
+    .body;
+    let client = observation_client(
+        ObservationAuthVars::bearer("credential", "refresh", events),
+        &transport,
+    );
+
+    let response = client
+        .execute_plan::<concord_core::prelude::Text<String>>(plan)
+        .await
+        .expect("direct reusable multipart must allow authentication recovery");
+
+    assert_eq!(response.value(), "recovered");
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    let first_content_type = requests[0]
+        .headers
+        .get(http::header::CONTENT_TYPE)
+        .expect("first multipart content type");
+    let second_content_type = requests[1]
+        .headers
+        .get(http::header::CONTENT_TYPE)
+        .expect("second multipart content type");
+    assert_ne!(first_content_type, second_content_type);
+    for request in &requests {
+        let body = request.body.as_bytes().expect("captured multipart body");
+        assert!(
+            body.windows(b"multipart-body".len())
+                .any(|window| window == b"multipart-body")
+        );
+    }
+}
+
+#[tokio::test]
+async fn auth_recovery_second_challenge_is_terminal_and_cannot_fall_through_to_status_retry() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::UNAUTHORIZED, "first"),
+            MockResponse::text(StatusCode::UNAUTHORIZED, "second"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+    policy.retry = RetrySetting::Config(concord_core::advanced::RetryConfig {
+        max_attempts: 3,
+        methods: vec![Method::GET],
+        statuses: vec![StatusCode::UNAUTHORIZED],
+        transport_errors: Vec::new(),
+        respect_retry_after: false,
+        idempotency: RetryIdempotency::SafeMethodsOnly,
+    });
+    let mut client = observation_client(
+        ObservationAuthVars::bearer("credential", "refresh", events.clone()),
+        &transport,
+    );
+    client.configure(|config| {
+        config.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(60),
+        ));
+    });
+
+    let error = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "AuthRecoveryCap",
+            Method::GET,
+            "/auth/cap",
+            policy,
+            true,
+        ))
+        .await
+        .expect_err("a second challenge must be terminal");
+
+    assert!(error.to_string().contains("auth challenge rejected"));
+    assert_eq!(sent.sent_count().await, 2);
+    assert_eq!(
+        events
+            .lock()
+            .await
+            .iter()
+            .filter(|event| event.as_str() == "auth_retry")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn auth_recovery_and_status_retry_have_independent_budgets_in_both_orders() {
+    for (name, responses) in [
+        (
+            "StatusThenAuth",
+            vec![
+                MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry"),
+                MockResponse::text(StatusCode::UNAUTHORIZED, "challenge"),
+                MockResponse::text(StatusCode::OK, "ok"),
+            ],
+        ),
+        (
+            "AuthThenStatus",
+            vec![
+                MockResponse::text(StatusCode::UNAUTHORIZED, "challenge"),
+                MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry"),
+                MockResponse::text(StatusCode::OK, "ok"),
+            ],
+        ),
+    ] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let transport = MockTransport::new(events.clone(), responses);
+        let sent = transport.clone();
+        let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+        policy.retry = retry_policy(2).retry;
+        let mut client = observation_client(
+            ObservationAuthVars::bearer("credential", "refresh", events),
+            &transport,
+        );
+        client.configure(|config| {
+            config.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+                4096,
+                std::time::Duration::from_secs(60),
+            ));
+        });
+
+        let response = client
+            .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+                name,
+                Method::GET,
+                "/auth/independent-budgets",
+                policy,
+                true,
+            ))
+            .await
+            .expect("one general retry and one authentication recovery must both fit");
+
+        assert_eq!(response.value(), "ok");
+        let requests = sent.requests().await;
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0].meta.attempt, Some(0));
+        assert_eq!(requests[1].meta.attempt, Some(1));
+        assert_eq!(requests[2].meta.attempt, Some(2));
+    }
+}
+
+#[tokio::test]
+async fn auth_recovery_and_transport_retry_have_independent_budgets_in_both_orders() {
+    for (name, outcomes) in [
+        (
+            "TransportThenAuth",
+            vec![
+                MockOutcome::DisconnectAfterRequest,
+                MockResponse::text(StatusCode::UNAUTHORIZED, "challenge").into(),
+                MockResponse::text(StatusCode::OK, "ok").into(),
+            ],
+        ),
+        (
+            "AuthThenTransport",
+            vec![
+                MockResponse::text(StatusCode::UNAUTHORIZED, "challenge").into(),
+                MockOutcome::DisconnectAfterRequest,
+                MockResponse::text(StatusCode::OK, "ok").into(),
+            ],
+        ),
+    ] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let transport = MockTransport::with_outcomes(events.clone(), outcomes);
+        let sent = transport.clone();
+        let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+        policy.retry = retry_policy_for_transport_errors(
+            2,
+            vec![concord_core::advanced::TransportErrorKind::Request],
+        )
+        .retry;
+        let mut client = observation_client(
+            ObservationAuthVars::bearer("credential", "refresh", events),
+            &transport,
+        );
+        client.configure(|config| {
+            config.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+                4096,
+                std::time::Duration::from_secs(60),
+            ));
+        });
+
+        let response = client
+            .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+                name,
+                Method::GET,
+                "/auth/independent-transport-budgets",
+                policy,
+                true,
+            ))
+            .await
+            .expect("one transport retry and one authentication recovery must both fit");
+
+        assert_eq!(response.value(), "ok");
+        let requests = sent.requests().await;
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0].meta.attempt, Some(0));
+        assert_eq!(requests[1].meta.attempt, Some(1));
+        assert_eq!(requests[2].meta.attempt, Some(2));
+    }
 }
 
 fn response_with_retry_after(

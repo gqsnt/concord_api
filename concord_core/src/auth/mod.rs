@@ -25,7 +25,9 @@ pub use ids::{AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential};
 #[doc(hidden)]
 pub use orchestrator::{AuthChallengeMode, AuthPreparationMode, AuthProviderBinding};
-pub(crate) use orchestrator::{apply_rejection, plan_rejection, prepare};
+pub(crate) use orchestrator::{
+    apply_rejection, apply_rejection_invalidation_only, plan_rejection, prepare,
+};
 pub(crate) use plan::AuthRejectionPlan;
 pub(crate) use plan::AuthTransportMaterial;
 pub use plan::{

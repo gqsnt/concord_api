@@ -248,10 +248,7 @@ async fn non_replayable_request_plan_without_stream_body_does_not_retry() {
 #[tokio::test]
 async fn non_replayable_request_plan_without_stream_body_does_not_auth_refresh() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let transport = MockTransport::new(
-        events.clone(),
-        vec![MockResponse::text(StatusCode::UNAUTHORIZED, "expired")],
-    );
+    let transport = MockTransport::new(events.clone(), Vec::new());
     let sent = transport.clone();
     let client = client(
         TestAuthVars {
@@ -272,8 +269,11 @@ async fn non_replayable_request_plan_without_stream_body_does_not_auth_refresh()
         .await
         .expect_err("non-replayable plan should not auth-refresh");
 
-    assert!(err.to_string().contains("auth challenge rejected"));
-    assert_eq!(sent.sent_count().await, 1);
+    assert!(
+        err.to_string()
+            .contains("authenticated request body cannot be reconstructed")
+    );
+    assert_eq!(sent.sent_count().await, 0);
 }
 
 #[tokio::test]
@@ -816,6 +816,53 @@ async fn runtime_hooks_observe_auth_rejection_before_auth_handling() -> Result<(
             .any(|event| event.contains("PR65_BEARER_SECRET_DO_NOT_LEAK"))
     );
     Ok(())
+}
+
+#[tokio::test]
+async fn auth_recovery_terminal_second_challenge_orders_invalidation_without_third_send() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events.clone(),
+        vec![
+            MockResponse::text(StatusCode::UNAUTHORIZED, "first-challenge"),
+            MockResponse::text(StatusCode::UNAUTHORIZED, "second-challenge"),
+        ],
+    );
+    let sent = transport.clone();
+    let mut client = observation_client(
+        ObservationAuthVars::bearer("ordering-secret", "refresh", events.clone()),
+        &transport,
+    );
+    client.set_runtime_hooks(Arc::new(ObservationRuntimeHooks::new(events.clone())));
+    configure_runtime(
+        &mut client,
+        Some(Arc::new(RecordingRateLimiter::new(events.clone()))),
+    );
+
+    let error = client
+        .request(TextEndpoint {
+            policy: auth_policy(AuthPlacement::Bearer),
+            ..Default::default()
+        })
+        .response()
+        .await
+        .expect_err("second challenge is terminal");
+
+    assert!(error.to_string().contains("auth challenge rejected"));
+    assert_eq!(sent.sent_count().await, 2);
+    let events = events.lock().await.clone();
+    let hooks = positions(&events, "hook_status:401 Unauthorized");
+    let rate_responses = positions(&events, "rate_response");
+    let auth_rejections = positions(&events, "auth_rejection:401 Unauthorized");
+    assert_eq!(hooks.len(), 2);
+    assert_eq!(rate_responses.len(), 2);
+    assert_eq!(auth_rejections.len(), 2);
+    assert!(hooks[1] < rate_responses[1]);
+    assert!(rate_responses[1] < auth_rejections[1]);
+    assert_eq!(positions(&events, "rate_acquire").len(), 2);
+    assert_eq!(positions(&events, "pre_send").len(), 2);
+    assert_eq!(positions(&events, "request_head").len(), 2);
+    assert_eq!(positions(&events, "auth_retry").len(), 1);
 }
 
 #[tokio::test]

@@ -3,7 +3,7 @@ use super::build::PublicRequestHead;
 use super::*;
 
 enum AuthRejectionStep {
-    Retry(AdmissionPermit),
+    Retry,
     Fail(ApiClientError),
 }
 
@@ -24,6 +24,39 @@ enum PendingResend {
     Auth(AuthResendIntent),
 }
 
+enum RecoverableChallengeStep {
+    Recover(AuthResendIntent),
+    InvalidateAndFail(AuthResendIntent),
+}
+
+#[derive(Clone, Copy)]
+enum AuthRejectionApplication {
+    ProviderCapable,
+    InvalidationOnly,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AttemptReason {
+    Initial,
+    GeneralRetry,
+    AuthenticationRecovery,
+}
+
+#[derive(Debug, Default)]
+struct AuthenticationRecoveryBudget {
+    initiated: bool,
+}
+
+impl AuthenticationRecoveryBudget {
+    fn initiate(&mut self) -> bool {
+        if self.initiated {
+            return false;
+        }
+        self.initiated = true;
+        true
+    }
+}
+
 struct AuthRejectionStepCtx<'a, Cx: ClientContext> {
     plan: &'a crate::endpoint::RequestPlanView,
     auth_state: &'a Cx::AuthState,
@@ -33,7 +66,7 @@ struct AuthRejectionStepCtx<'a, Cx: ClientContext> {
     rejection_plan: &'a crate::auth::AuthRejectionPlan,
     status: StatusCode,
     error_ctx: &'a ErrorContext,
-    is_replayable: bool,
+    auth_rebuildable: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -163,26 +196,16 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     async fn apply_auth_rejection_step(
         &self,
         ctx: AuthRejectionStepCtx<'_, Cx>,
-        admission: Option<AdmissionPermit>,
     ) -> Result<AuthRejectionStep, ApiClientError> {
-        if !ctx.is_replayable && ctx.rejection_plan.requests_refresh() {
+        if !ctx.auth_rebuildable && ctx.rejection_plan.requests_refresh() {
             return Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
                 ctx.error_ctx,
             )));
         }
-        if ctx.rejection_plan.requests_refresh() && admission.is_none() {
-            return Ok(AuthRejectionStep::Fail(Self::auth_attempt_cap_exhausted(
-                ctx.error_ctx,
-            )));
-        }
-        self.apply_auth_rejection_plan(&ctx).await?;
+        self.apply_auth_rejection_plan(&ctx, AuthRejectionApplication::ProviderCapable)
+            .await?;
         if ctx.rejection_plan.requests_refresh() {
-            match admission {
-                Some(admission) => Ok(AuthRejectionStep::Retry(admission)),
-                None => Ok(AuthRejectionStep::Fail(Self::auth_attempt_cap_exhausted(
-                    ctx.error_ctx,
-                ))),
-            }
+            Ok(AuthRejectionStep::Retry)
         } else {
             Ok(AuthRejectionStep::Fail(Self::auth_challenge_rejected(
                 ctx.error_ctx,
@@ -193,6 +216,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     async fn apply_auth_rejection_plan(
         &self,
         ctx: &AuthRejectionStepCtx<'_, Cx>,
+        application: AuthRejectionApplication,
     ) -> Result<(), ApiClientError> {
         let requirements = &ctx.plan.endpoint.policy.auth.requirements;
         let applied = &ctx.auth_attempt.applied;
@@ -237,18 +261,35 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             let action = &ctx.rejection_plan.actions()[action_index];
             let requirement = &requirements[requirement_index];
             let applied = &applied[applied_index];
-            let result = crate::auth::apply_rejection::<Cx>(
-                action,
-                requirement,
-                applied,
-                self.vars(),
-                self.auth_vars(),
-                ctx.auth_state,
-                ctx.auth_http,
-                ctx.response_meta,
-                ctx.status,
-            )
-            .await;
+            let result = match application {
+                AuthRejectionApplication::ProviderCapable => {
+                    crate::auth::apply_rejection::<Cx>(
+                        action,
+                        requirement,
+                        applied,
+                        self.vars(),
+                        self.auth_vars(),
+                        ctx.auth_state,
+                        ctx.auth_http,
+                        ctx.response_meta,
+                        ctx.status,
+                    )
+                    .await
+                }
+                AuthRejectionApplication::InvalidationOnly => {
+                    crate::auth::apply_rejection_invalidation_only::<Cx>(
+                        action,
+                        requirement,
+                        applied,
+                        self.vars(),
+                        self.auth_vars(),
+                        ctx.auth_state,
+                        ctx.response_meta,
+                        ctx.status,
+                    )
+                    .await
+                }
+            };
             result.map_err(|source| ApiClientError::Auth {
                 ctx: ErrorContext {
                     endpoint: ctx.response_meta.endpoint,
@@ -260,20 +301,47 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         Ok(())
     }
 
+    fn recoverable_challenge_step(
+        budget: &mut AuthenticationRecoveryBudget,
+        intent: AuthResendIntent,
+    ) -> RecoverableChallengeStep {
+        if budget.initiate() {
+            RecoverableChallengeStep::Recover(intent)
+        } else {
+            RecoverableChallengeStep::InvalidateAndFail(intent)
+        }
+    }
+
+    async fn invalidate_exhausted_auth_challenge(
+        &self,
+        plan: &crate::endpoint::RequestPlanView,
+        auth_state: &Cx::AuthState,
+        auth_http: &ClientAuthHttpExecutor<'_, Cx>,
+        intent: &AuthResendIntent,
+        auth_rebuildable: bool,
+    ) -> Result<ApiClientError, ApiClientError> {
+        self.apply_auth_rejection_plan(
+            &AuthRejectionStepCtx {
+                plan,
+                auth_state,
+                auth_http,
+                response_meta: &intent.response_meta,
+                auth_attempt: &intent.auth_attempt,
+                rejection_plan: &intent.rejection_plan,
+                status: intent.status,
+                error_ctx: &intent.error_ctx,
+                auth_rebuildable,
+            },
+            AuthRejectionApplication::InvalidationOnly,
+        )
+        .await?;
+        Ok(Self::auth_challenge_rejected(&intent.error_ctx))
+    }
+
     fn auth_challenge_rejected(ctx: &ErrorContext) -> ApiClientError {
         ApiClientError::Auth {
             ctx: ctx.clone(),
             source: AuthError::new(AuthErrorKind::ProviderRejected, "auth challenge rejected"),
-        }
-    }
-
-    fn auth_attempt_cap_exhausted(ctx: &ErrorContext) -> ApiClientError {
-        ApiClientError::Auth {
-            ctx: ctx.clone(),
-            source: AuthError::new(
-                AuthErrorKind::ProviderRejected,
-                "maximum request attempts exhausted before authentication refresh",
-            ),
         }
     }
 
@@ -329,7 +397,30 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     ) -> Result<AttemptTransportSuccess, ApiClientError> {
         let dbg_verbose = dbg.is_verbose();
         let dbg_vv = dbg.is_very_verbose();
-        let is_replayable = body.supports_general_retries();
+        let supports_general_retries = body.supports_general_retries();
+        let auth_rebuildable = body.supports_auth_internal_retries();
+        if !auth_rebuildable
+            && plan
+                .endpoint
+                .policy
+                .auth
+                .requirements
+                .iter()
+                .any(|requirement| {
+                    !matches!(
+                        requirement.challenge,
+                        crate::auth::AuthChallengePolicy::NeverRefresh
+                    )
+                })
+        {
+            return Err(ApiClientError::Auth {
+                ctx,
+                source: AuthError::new(
+                    AuthErrorKind::InvalidConfiguration,
+                    "authenticated request body cannot be reconstructed for challenge recovery",
+                ),
+            });
+        }
         if let RetrySetting::Config(config) = &plan.endpoint.policy.retry {
             config.validate(ctx.clone())?;
         }
@@ -353,12 +444,18 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         // the physical managed-client execution in send_flow. Existing
         // RequestMeta/HookMeta attempt values are derived zero-based indexes.
         let mut attempts_used: u32 = 0;
+        // General retry accounting is intentionally independent from the
+        // physical attempt sequence. Authentication recovery never changes
+        // this counter.
+        let mut general_attempts_used: u32 = 0;
+        let mut auth_recovery = AuthenticationRecoveryBudget::default();
         // Request-local auth preparation cache.
         // It is reused across transport/status retries and cleared when auth
         // response handling asks for a refreshed credential state.
         let mut cached_auth_preparation: Option<CachedAuthPreparation> = None;
 
         loop {
+            let mut attempt_reason = AttemptReason::Initial;
             let current_attempt = checked_attempt(base_attempt, attempts_used, &ctx)?;
             let meta = plan
                 .endpoint
@@ -391,7 +488,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             if let Some(resend) = pending_resend.take() {
                 match resend {
                     PendingResend::Ordinary { error, delay } => {
-                        if !is_replayable || attempts_used >= max_attempts {
+                        if !supports_general_retries || general_attempts_used >= max_attempts {
                             return Err(error);
                         }
                         let Some(admission) = origin.reserve() else {
@@ -401,35 +498,30 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                             tokio::time::sleep(delay).await;
                         }
                         attempt_admission = Some(admission);
+                        attempt_reason = AttemptReason::GeneralRetry;
                     }
                     PendingResend::Auth(intent) => {
                         let fallback = Self::auth_challenge_rejected(&intent.error_ctx);
-                        if !is_replayable || attempts_used >= max_attempts {
+                        if !auth_rebuildable {
                             return Err(fallback);
                         }
-                        let Some(admission) = origin.reserve() else {
-                            return Err(fallback);
-                        };
                         let step = self
-                            .apply_auth_rejection_step(
-                                AuthRejectionStepCtx {
-                                    plan,
-                                    auth_state: &auth_state_snapshot,
-                                    auth_http: &auth_http,
-                                    response_meta: &intent.response_meta,
-                                    auth_attempt: &intent.auth_attempt,
-                                    rejection_plan: &intent.rejection_plan,
-                                    status: intent.status,
-                                    error_ctx: &intent.error_ctx,
-                                    is_replayable,
-                                },
-                                Some(admission),
-                            )
+                            .apply_auth_rejection_step(AuthRejectionStepCtx {
+                                plan,
+                                auth_state: &auth_state_snapshot,
+                                auth_http: &auth_http,
+                                response_meta: &intent.response_meta,
+                                auth_attempt: &intent.auth_attempt,
+                                rejection_plan: &intent.rejection_plan,
+                                status: intent.status,
+                                error_ctx: &intent.error_ctx,
+                                auth_rebuildable,
+                            })
                             .await?;
                         match step {
-                            AuthRejectionStep::Retry(admission) => {
+                            AuthRejectionStep::Retry => {
                                 cached_auth_preparation = None;
-                                attempt_admission = Some(admission);
+                                attempt_reason = AttemptReason::AuthenticationRecovery;
                             }
                             AuthRejectionStep::Fail(err) => return Err(err),
                         }
@@ -460,9 +552,24 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             let url_str = built.debug_url();
 
             let retry_config = std::mem::take(&mut built.retry);
+            match attempt_reason {
+                AttemptReason::Initial if general_attempts_used == 0 => {
+                    general_attempts_used = 1;
+                }
+                AttemptReason::GeneralRetry => {
+                    general_attempts_used =
+                        general_attempts_used.checked_add(1).ok_or_else(|| {
+                            ApiClientError::invalid_param(
+                                ctx.clone(),
+                                "general retry attempt counter overflowed",
+                            )
+                        })?;
+                }
+                AttemptReason::Initial | AttemptReason::AuthenticationRecovery => {}
+            }
             let retry_request_headers = self.retry_request_headers_snapshot(
                 &retry_config,
-                attempts_used,
+                general_attempts_used,
                 max_attempts,
                 &built,
             );
@@ -481,6 +588,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                         &mut attempts_used,
                         attempt_admission.take(),
                         origin,
+                        matches!(attempt_reason, AttemptReason::GeneralRetry),
                     )
                     .await
                     .map(AttemptTransportSuccess::Buffered),
@@ -498,6 +606,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                         &mut attempts_used,
                         attempt_admission.take(),
                         origin,
+                        matches!(attempt_reason, AttemptReason::GeneralRetry),
                     )
                     .await
                     .map(AttemptTransportSuccess::Transport),
@@ -523,40 +632,53 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                     })?;
                     match classification {
                         Some(rejection_plan) if rejection_plan.requests_refresh() => {
-                            if !is_replayable {
+                            if !auth_rebuildable {
                                 return Err(Self::auth_challenge_rejected(&ctx));
                             }
-                            if attempts_used >= max_attempts {
-                                return Err(Self::auth_attempt_cap_exhausted(&ctx));
-                            }
-                            pending_resend = Some(PendingResend::Auth(AuthResendIntent {
+                            let intent = AuthResendIntent {
                                 rejection_plan,
                                 status: response_status,
                                 response_meta: response_meta.clone(),
                                 auth_attempt: auth_attempt.summary.clone(),
                                 error_ctx: ctx.clone(),
-                            }));
-                            continue;
+                            };
+                            match Self::recoverable_challenge_step(&mut auth_recovery, intent) {
+                                RecoverableChallengeStep::Recover(intent) => {
+                                    pending_resend = Some(PendingResend::Auth(intent));
+                                    continue;
+                                }
+                                RecoverableChallengeStep::InvalidateAndFail(intent) => {
+                                    drop(resp);
+                                    drop(origin_handle);
+                                    let terminal = self
+                                        .invalidate_exhausted_auth_challenge(
+                                            plan,
+                                            &auth_state_snapshot,
+                                            &auth_http,
+                                            &intent,
+                                            auth_rebuildable,
+                                        )
+                                        .await?;
+                                    return Err(terminal);
+                                }
+                            }
                         }
                         Some(rejection_plan) => match self
-                            .apply_auth_rejection_step(
-                                AuthRejectionStepCtx {
-                                    plan,
-                                    auth_state: &auth_state_snapshot,
-                                    auth_http: &auth_http,
-                                    response_meta,
-                                    auth_attempt: &auth_attempt.summary,
-                                    rejection_plan: &rejection_plan,
-                                    status: response_status,
-                                    error_ctx: &ctx,
-                                    is_replayable,
-                                },
-                                None,
-                            )
+                            .apply_auth_rejection_step(AuthRejectionStepCtx {
+                                plan,
+                                auth_state: &auth_state_snapshot,
+                                auth_http: &auth_http,
+                                response_meta,
+                                auth_attempt: &auth_attempt.summary,
+                                rejection_plan: &rejection_plan,
+                                status: response_status,
+                                error_ctx: &ctx,
+                                auth_rebuildable,
+                            })
                             .await?
                         {
                             AuthRejectionStep::Fail(err) => return Err(err),
-                            AuthRejectionStep::Retry(_) => {
+                            AuthRejectionStep::Retry => {
                                 return Err(Self::auth_challenge_rejected(&ctx));
                             }
                         },
@@ -621,47 +743,60 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                         })?;
                         match classification {
                             Some(rejection_plan) if rejection_plan.requests_refresh() => {
-                                if !is_replayable {
+                                if !auth_rebuildable {
                                     return Err(Self::auth_challenge_rejected(&ctx));
                                 }
-                                if attempts_used >= max_attempts {
-                                    return Err(Self::auth_attempt_cap_exhausted(&ctx));
-                                }
-                                pending_resend = Some(PendingResend::Auth(AuthResendIntent {
+                                let intent = AuthResendIntent {
                                     rejection_plan,
                                     status: *status,
                                     response_meta,
                                     auth_attempt: auth_attempt.summary.clone(),
                                     error_ctx: ctx.clone(),
-                                }));
-                                continue;
+                                };
+                                match Self::recoverable_challenge_step(&mut auth_recovery, intent) {
+                                    RecoverableChallengeStep::Recover(intent) => {
+                                        pending_resend = Some(PendingResend::Auth(intent));
+                                        continue;
+                                    }
+                                    RecoverableChallengeStep::InvalidateAndFail(intent) => {
+                                        drop(err);
+                                        drop(origin_handle);
+                                        let terminal = self
+                                            .invalidate_exhausted_auth_challenge(
+                                                plan,
+                                                &auth_state_snapshot,
+                                                &auth_http,
+                                                &intent,
+                                                auth_rebuildable,
+                                            )
+                                            .await?;
+                                        return Err(terminal);
+                                    }
+                                }
                             }
                             Some(rejection_plan) => match self
-                                .apply_auth_rejection_step(
-                                    AuthRejectionStepCtx {
-                                        plan,
-                                        auth_state: &auth_state_snapshot,
-                                        auth_http: &auth_http,
-                                        response_meta: &response_meta,
-                                        auth_attempt: &auth_attempt.summary,
-                                        rejection_plan: &rejection_plan,
-                                        status: *status,
-                                        error_ctx: &ctx,
-                                        is_replayable,
-                                    },
-                                    None,
-                                )
+                                .apply_auth_rejection_step(AuthRejectionStepCtx {
+                                    plan,
+                                    auth_state: &auth_state_snapshot,
+                                    auth_http: &auth_http,
+                                    response_meta: &response_meta,
+                                    auth_attempt: &auth_attempt.summary,
+                                    rejection_plan: &rejection_plan,
+                                    status: *status,
+                                    error_ctx: &ctx,
+                                    auth_rebuildable,
+                                })
                                 .await?
                             {
                                 AuthRejectionStep::Fail(err) => return Err(err),
-                                AuthRejectionStep::Retry(_) => {
+                                AuthRejectionStep::Retry => {
                                     return Err(Self::auth_challenge_rejected(&ctx));
                                 }
                             },
                             None => {}
                         }
                     }
-                    if !is_replayable {
+                    if !supports_general_retries {
                         return Err(err);
                     }
                     let outcome = Self::retry_outcome_from_error(&err);
@@ -675,7 +810,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                         method: &plan.endpoint.meta.method,
                         url: &url_str,
                         attempt: current_attempt,
-                        retry_count: attempts_used.saturating_sub(1),
+                        retry_count: general_attempts_used.saturating_sub(1),
                         page_index: plan.overrides.page_index,
                         idempotent: plan.endpoint.meta.idempotent,
                         max_delay: self.runtime_state.max_rate_limit_cooldown(),
@@ -684,13 +819,13 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                         outcome,
                     };
                     let Some(delay) =
-                        self.decide_retry(&err, &retry_config, &retry_ctx, attempts_used)?
+                        self.decide_retry(&err, &retry_config, &retry_ctx, general_attempts_used)?
                     else {
                         return Err(err);
                     };
                     // Classification remains observable at the terminal
                     // absolute cap, but it cannot admit another send.
-                    if attempts_used >= max_attempts {
+                    if general_attempts_used >= max_attempts {
                         return Err(err);
                     }
                     pending_resend = Some(PendingResend::Ordinary { error: err, delay });

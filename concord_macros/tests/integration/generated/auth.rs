@@ -699,6 +699,93 @@ async fn generated_oauth_client_credentials_refreshes_after_unauthorized() {
 }
 
 #[tokio::test]
+async fn generated_auth_recovery_second_challenge_invalidates_replacement_without_third_send() {
+    let transport = RecordingTransport::new(vec![
+        ResponseFixture::json(
+            r#"{"access_token":"token-n","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::json(r#"{"name":"Warm"}"#),
+        ResponseFixture::status_json(StatusCode::UNAUTHORIZED, r#"{"error":"expired-n"}"#),
+        ResponseFixture::json(
+            r#"{"access_token":"token-n-plus-1","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::status_json(StatusCode::UNAUTHORIZED, r#"{"error":"expired-n-plus-1"}"#),
+        ResponseFixture::json(
+            r#"{"access_token":"token-n-plus-2","token_type":"Bearer","expires_in":3600}"#,
+        ),
+        ResponseFixture::json(r#"{"name":"Later"}"#),
+    ]);
+    let sent = transport.clone();
+    let api = OAuthHelperApi::new_with_safe_reqwest_builder(
+        "oauth-client".to_string(),
+        "oauth-secret".to_string(),
+        |builder| transport.configure_reqwest(builder),
+    )
+    .expect("mock client")
+    .configure(|cfg| {
+        cfg.retry_admission(concord_core::advanced::RetryAdmissionRegistry::new(
+            4096,
+            std::time::Duration::from_secs(15 * 60),
+        ));
+    });
+
+    let warm = api
+        .oauth_me()
+        .execute()
+        .await
+        .expect("prewarm generation N");
+    assert_eq!(warm.name, "Warm");
+
+    let error = api
+        .oauth_me()
+        .execute()
+        .await
+        .expect_err("second challenge is terminal");
+    assert_eq!(error.category(), ErrorCategory::AuthRejected);
+
+    let challenged_requests = sent.requests().await;
+    assert_eq!(challenged_requests.len(), 5);
+    assert_eq!(
+        challenged_requests[2]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer token-n")
+    );
+    assert_eq!(
+        challenged_requests[4]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer token-n-plus-1")
+    );
+    assert_eq!(
+        challenged_requests[2..]
+            .iter()
+            .filter(|request| request.url.host_str() == Some("auth.example.com"))
+            .count(),
+        1,
+        "the challenged execution performs exactly one provider acquisition"
+    );
+
+    let later = api
+        .oauth_me()
+        .execute()
+        .await
+        .expect("later request reacquires after terminal invalidation");
+    assert_eq!(later.name, "Later");
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 7);
+    assert_eq!(
+        requests[6]
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer token-n-plus-2")
+    );
+}
+
+#[tokio::test]
 async fn generated_static_basic_auth_reprepares_after_auth_rejection_invalidation() {
     let transport = RecordingTransport::new(vec![
         ResponseFixture::status_json(StatusCode::UNAUTHORIZED, r#"{"error":"expired"}"#),

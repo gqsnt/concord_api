@@ -21,6 +21,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             .await;
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn acquire_rate_limit_and_send(
         &self,
         mut built: BuiltRequest,
@@ -29,6 +30,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         attempts_used: &mut u32,
         admission: Option<AdmissionPermit>,
         origin: &OriginHandle,
+        requires_retry_admission: bool,
     ) -> Result<AttemptResponse, ApiClientError> {
         let request_context = built.context();
         let rate_limit_meta = RateLimitContext {
@@ -115,6 +117,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             attempts_used,
             admission,
             origin,
+            requires_retry_admission,
         )
         .await
     }
@@ -164,6 +167,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         attempts_used: &mut u32,
         mut admission: Option<AdmissionPermit>,
         origin: &OriginHandle,
+        requires_retry_admission: bool,
     ) -> Result<AttemptResponse, ApiClientError> {
         let request_context = built.context();
         let endpoint = request_context.meta.endpoint;
@@ -191,7 +195,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                     source,
                 })?;
 
-        if *attempts_used > 0 && admission.is_none() {
+        if requires_retry_admission && admission.is_none() {
             return Err(ApiClientError::PolicyViolation {
                 ctx: ctx.clone(),
                 msg: "retry admission permit missing",
@@ -287,6 +291,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         attempts_used: &mut u32,
         admission: Option<AdmissionPermit>,
         origin: &OriginHandle,
+        requires_retry_admission: bool,
     ) -> Result<AttemptResponse, ApiClientError> {
         let transport_resp = self
             .acquire_rate_limit_and_send(
@@ -296,6 +301,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 attempts_used,
                 admission,
                 origin,
+                requires_retry_admission,
             )
             .await?;
         self.classify_transport_response(
@@ -316,6 +322,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         attempts_used: &mut u32,
         admission: Option<AdmissionPermit>,
         origin: &OriginHandle,
+        requires_retry_admission: bool,
     ) -> Result<AttemptResponse, ApiClientError> {
         let transport_resp = self
             .acquire_rate_limit_and_send(
@@ -325,6 +332,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 attempts_used,
                 admission,
                 origin,
+                requires_retry_admission,
             )
             .await?;
         self.observe_and_classify_transport_response(

@@ -778,7 +778,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn leader_cancellation_during_acquire_recovers() {
+    async fn concurrency_leader_cancellation_during_acquire_recovers() {
         let provider = TestProvider::new();
         let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
 
@@ -820,7 +820,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn leader_cancellation_during_refresh_restores_previous_valid_and_recovers() {
+    async fn concurrency_leader_cancellation_during_refresh_restores_previous_valid_and_recovers() {
         let provider = TestProvider::new();
         let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
         slot.set_manual(TestCredential::expired("old"))
@@ -870,7 +870,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalidate_generation_during_refresh_prevents_cancelled_refresh_from_restoring_invalidated_valid()
+    async fn concurrency_invalidation_during_refresh_prevents_cancelled_refresh_from_restoring_invalidated_valid()
      {
         let provider = TestProvider::new();
         let slot = Arc::new(CredentialSlot::<TestCx, _>::new(provider.clone()));
@@ -1059,7 +1059,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stale_invalidation_does_not_clear_newer_credential() {
+    async fn concurrency_stale_invalidation_does_not_clear_newer_credential() {
         let provider = TestProvider::new();
         let slot = CredentialSlot::<TestCx, _>::new(provider);
         slot.set_manual(TestCredential::fresh("OLD_TOKEN_SHOULD_NOT_SURVIVE"))
@@ -1160,7 +1160,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn waiter_cannot_miss_refresh_completion_notification() {
+    async fn concurrency_waiter_cannot_miss_refresh_completion_notification() {
         let _hook_guard = HOOK_TEST_LOCK.lock().await;
         set_refresh_wait_hook_none();
         let provider = TestProvider::new();
@@ -1223,7 +1223,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn waiters_are_notified_on_cancellation_rollback() {
+    async fn concurrency_waiters_are_notified_on_cancellation_rollback() {
         let _hook_guard = HOOK_TEST_LOCK.lock().await;
         set_refresh_wait_hook_none();
         let provider = TestProvider::new();
