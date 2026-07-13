@@ -1,0 +1,5 @@
+error: generated public API name `new_with_safe_reqwest_builder_fallible` for root endpoint method conflicts with generated client method in generated client
+ --> tests/trybuild/fail/codegen_contract/reserved_safe_reqwest_fallible_method.rs:7:12
+  |
+7 |         as new_with_safe_reqwest_builder_fallible
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

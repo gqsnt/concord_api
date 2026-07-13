@@ -5,6 +5,7 @@ mod codec;
 mod debug;
 mod endpoint;
 pub mod error;
+mod header_ownership;
 mod io;
 mod media;
 #[cfg(feature = "multipart")]
@@ -76,6 +77,7 @@ pub mod prelude {
     pub use crate::debug::DebugLevel;
     pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
     pub use crate::error::{ApiClientError, ErrorCategory, PaginationError, PaginationErrorKind};
+    pub use crate::header_ownership::HeaderOwnershipError;
     pub use crate::pagination::{
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
         PaginationTermination,
@@ -162,7 +164,9 @@ pub mod advanced {
         DecodedResponse, DefaultTransport, DefaultTransportMarker, RequestExecutionContext,
         RequestMeta, Transport, TransportError, TransportErrorKind,
     };
-    pub use crate::transport::{ReqwestClientBuildError, ReqwestTransport};
+    pub use crate::transport::{
+        ReqwestClientBuildError, ReqwestTransport, SafeProxy, SafeProxyError, SafeReqwestBuilder,
+    };
     pub use crate::types::{
         HostLabelSource, HostParts as HostMap, HostSpec, RouteBuilder, UrlPath,
     };

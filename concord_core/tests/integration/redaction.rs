@@ -7,25 +7,29 @@ mod query_auth_redaction {
         request_plan,
     };
     use bytes::Bytes;
+    use concord_core::advanced::RateLimitPlan;
     use concord_core::advanced::ReqwestTransport;
     use concord_core::advanced::{
         AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthErrorKind, AuthHttpRequest,
         AuthInternalPolicy, AuthMode, AuthPlacement, AuthRequirement, AuthRequirementId,
-        AuthRetryReason, DebugSink, DecodedResponse, DynBody, PreparedInternalAuth, RequestMeta,
-        RuntimeHooks, SanitizedHeaders, Transport, TransportError, TransportErrorHookContext,
-        TransportErrorKind, apply_basic_credential, apply_secret_credential,
+        AuthRetryReason, DebugSink, DecodedResponse, DynBody, PreparedAuthCredential,
+        PreparedInternalAuth, RequestMeta, RetryIdempotency, RuntimeHooks, SanitizedHeaders,
+        Transport, TransportError, TransportErrorHookContext, TransportErrorKind,
+        apply_basic_credential, apply_secret_credential,
     };
     #[cfg(feature = "json")]
     use concord_core::advanced::{CredentialProvider, OAuth2ClientCredentialsProvider};
-    use concord_core::advanced::{PreparedAuthCredential, RateLimitPlan};
     #[cfg(feature = "dangerous-raw-response")]
     use concord_core::dangerous::BuiltResponse;
-    use concord_core::internal::{ClientPlanContext, RequestPlan, ResolvedPolicy};
+    use concord_core::internal::{
+        ClientPlanContext, RequestPlan, ResolvedPolicy, ResolvedRoute, RetrySetting,
+    };
     use concord_core::prelude::{
         AccessToken, ApiClient, ApiClientError, ApiKey, BasicCredential, ClientContext, DebugLevel,
         Endpoint, ReusableEndpoint,
     };
     use http::{HeaderMap, Method, StatusCode};
+    use std::error::Error;
     use std::future::Future;
     use std::net::TcpListener;
     use std::pin::Pin;
@@ -240,6 +244,58 @@ mod query_auth_redaction {
         }
     }
 
+    #[derive(Clone)]
+    struct LocalPlanEndpoint {
+        name: &'static str,
+        method: Method,
+        path: &'static str,
+        policy: ResolvedPolicy,
+    }
+
+    impl Endpoint<RedactionCx> for LocalPlanEndpoint {
+        type Response = String;
+
+        buffered_endpoint_execute!(RedactionCx, concord_core::prelude::Text<String>);
+    }
+
+    buffered_endpoint_response_terminal!(
+        LocalPlanEndpoint,
+        RedactionCx,
+        concord_core::prelude::Text<String>
+    );
+
+    impl ReusableEndpoint<RedactionCx> for LocalPlanEndpoint {
+        fn plan(
+            &self,
+            _ctx: &ClientPlanContext<'_, RedactionCx>,
+        ) -> Result<RequestPlan, ApiClientError> {
+            let mut plan = request_plan(
+                self.name,
+                self.method.clone(),
+                self.path,
+                self.policy.clone(),
+                None,
+            );
+            plan.endpoint.route =
+                ResolvedRoute::new(http::uri::Scheme::HTTP, "127.0.0.1", self.path);
+            Ok(plan)
+        }
+    }
+
+    fn proxy_request_plan(
+        name: &'static str,
+        method: Method,
+        path: &'static str,
+        policy: ResolvedPolicy,
+    ) -> LocalPlanEndpoint {
+        LocalPlanEndpoint {
+            name,
+            method,
+            path,
+            policy,
+        }
+    }
+
     #[derive(Default)]
     struct UrlDebugSink {
         events: Mutex<Vec<String>>,
@@ -410,6 +466,18 @@ mod query_auth_redaction {
         Ok((output, sent.requests().await))
     }
 
+    fn assert_absent_in_error_chain(error: &(dyn std::error::Error + 'static), sentinel: &str) {
+        let mut current: Option<&(dyn std::error::Error + 'static)> = Some(error);
+        while let Some(source) = current {
+            let rendered = format!("{source}\n{source:?}");
+            assert!(
+                !rendered.contains(sentinel),
+                "proxy target leaked through serialized error chain: {rendered}"
+            );
+            current = source.source();
+        }
+    }
+
     #[cfg(feature = "dangerous-raw-response")]
     #[test]
     fn response_header_debug_redacts_sensitive_names_case_insensitively() {
@@ -551,11 +619,16 @@ mod query_auth_redaction {
 
             fn request_headers(&self, _dbg: DebugLevel, headers: SanitizedHeaders<'_>) {
                 let mut events = self.events.lock().expect("debug events lock");
+                if let Some(authorization) = headers.get(&http::header::AUTHORIZATION) {
+                    events.push(format!("request_authorization:{authorization}"));
+                } else {
+                    events.push("request_authorization:<absent>".to_string());
+                }
                 events.push(format!(
-                    "request_key:{}",
+                    "request_meta:{}",
                     headers
-                        .get(&http::HeaderName::from_static("x-api-key"))
-                        .expect("api key header should be present")
+                        .get(&http::HeaderName::from_static("x-client-meta"))
+                        .expect("client metadata header should be present")
                         .as_str()
                 ));
                 events.push(format!(
@@ -623,11 +696,16 @@ mod query_auth_redaction {
                 Box::pin(async move {
                     let mut events = self.events.lock().expect("hook events lock");
                     events.push(format!("pre_send_url:{}", ctx.meta.url));
+                    if let Some(authorization) = ctx.headers.get(&http::header::AUTHORIZATION) {
+                        events.push(format!("pre_send_authorization:{authorization}"));
+                    } else {
+                        events.push("pre_send_authorization:<absent>".to_string());
+                    }
                     events.push(format!(
-                        "pre_send_key:{}",
+                        "pre_send_meta:{}",
                         ctx.headers
-                            .get(&http::HeaderName::from_static("x-api-key"))
-                            .expect("api key header should be present")
+                            .get(&http::HeaderName::from_static("x-client-meta"))
+                            .expect("client metadata header should be present")
                             .as_str()
                     ));
                     events.push(format!(
@@ -719,8 +797,8 @@ mod query_auth_redaction {
             challenge: Default::default(),
         });
         policy.headers.insert(
-            http::HeaderName::from_static("x-api-key"),
-            http::HeaderValue::from_static(API_KEY_SECRET),
+            http::HeaderName::from_static("x-client-meta"),
+            http::HeaderValue::from_static("public-client-metadata"),
         );
         policy.headers.insert(
             http::HeaderName::from_static("x-visible-request"),
@@ -753,13 +831,15 @@ mod query_auth_redaction {
         assert!(observed.contains("post_response_url:https://example.com/text"));
         assert!(observed.contains("visible=visible-query"));
         assert!(!observed.contains("api_key="));
-        assert!(observed.contains("pre_send_key:<redacted>"));
+        assert!(observed.contains("pre_send_authorization:<absent>"));
+        assert!(observed.contains("pre_send_meta:public-client-metadata"));
         assert!(observed.contains("pre_send_visible:visible-request"));
         assert!(observed.contains("post_response_cookie:<redacted>"));
         assert!(observed.contains("post_response_authenticate:<redacted>"));
         assert!(observed.contains("post_response_refresh:<redacted>"));
         assert!(observed.contains("post_response_visible:visible-response"));
-        assert!(observed.contains("request_key:<redacted>"));
+        assert!(observed.contains("request_authorization:<absent>"));
+        assert!(observed.contains("request_meta:public-client-metadata"));
         assert!(observed.contains("request_query_visible:visible-request"));
         assert!(observed.contains("response_cookie:<redacted>"));
         assert!(observed.contains("response_authenticate:<redacted>"));
@@ -772,9 +852,9 @@ mod query_auth_redaction {
         assert_eq!(
             requests[0]
                 .headers
-                .get(http::HeaderName::from_static("x-api-key"))
+                .get(http::HeaderName::from_static("x-client-meta"))
                 .and_then(|value| value.to_str().ok()),
-            Some(API_KEY_SECRET)
+            Some("public-client-metadata")
         );
         let expected_bearer = format!("Bearer {BEARER_SECRET}");
         assert_eq!(
@@ -1103,6 +1183,234 @@ mod query_auth_redaction {
     }
 
     #[tokio::test]
+    async fn public_header_suffix_key_collision_is_rejected_before_all_protected_side_effects() {
+        use std::sync::Arc;
+
+        #[derive(Clone)]
+        struct ProbeHooks {
+            pre_send: Arc<AtomicUsize>,
+        }
+
+        impl RuntimeHooks for ProbeHooks {
+            fn pre_send<'a>(
+                &'a self,
+                _ctx: concord_core::advanced::PreSendHookContext<'a>,
+            ) -> concord_core::advanced::AuthFuture<
+                'a,
+                Result<(), concord_core::prelude::ApiClientError>,
+            > {
+                self.pre_send.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        #[derive(Clone)]
+        struct SuffixKeyEndpoint {
+            body_factory_invocations: Arc<AtomicUsize>,
+        }
+
+        impl Endpoint<RedactionCx> for SuffixKeyEndpoint {
+            type Response = String;
+
+            buffered_endpoint_execute!(RedactionCx, concord_core::prelude::Text<String>);
+        }
+
+        buffered_endpoint_response_terminal!(
+            SuffixKeyEndpoint,
+            RedactionCx,
+            concord_core::prelude::Text<String>
+        );
+
+        impl ReusableEndpoint<RedactionCx> for SuffixKeyEndpoint {
+            fn plan(
+                &self,
+                _ctx: &ClientPlanContext<'_, RedactionCx>,
+            ) -> Result<RequestPlan, ApiClientError> {
+                let mut policy = auth_policy(AuthPlacement::Header("X-Metadata"));
+                policy.headers.insert(
+                    http::HeaderName::from_static("x-client-key"),
+                    http::HeaderValue::from_static("public-value"),
+                );
+                let mut plan = request_plan(
+                    "SuffixKeyCollision",
+                    Method::POST,
+                    "/protected",
+                    policy,
+                    None,
+                );
+                plan.body = concord_core::advanced::PreparedBody::replay_factory(
+                    http_body::SizeHint::default(),
+                    None,
+                    {
+                        let body_factory_invocations = self.body_factory_invocations.clone();
+                        move || {
+                            body_factory_invocations.fetch_add(1, Ordering::SeqCst);
+                            Ok(concord_core::advanced::DynBody::empty())
+                        }
+                    },
+                );
+                Ok(plan)
+            }
+        }
+
+        let transport = MockTransport::new(
+            Arc::new(TokioMutex::new(Vec::new())),
+            vec![MockResponse::text(StatusCode::OK, "ok")],
+        );
+        let sent = transport.clone();
+        let auth = redaction_auth_vars();
+        let prepares = auth.prepares.clone();
+        let body_factory_invocations = Arc::new(AtomicUsize::new(0));
+        let pre_send = Arc::new(AtomicUsize::new(0));
+        let mut client = ApiClient::<RedactionCx, _>::with_transport((), auth, transport);
+        client.configure(|cfg| {
+            cfg.runtime_hooks(Arc::new(ProbeHooks {
+                pre_send: pre_send.clone(),
+            }));
+        });
+
+        let err = client
+            .request(SuffixKeyEndpoint {
+                body_factory_invocations: body_factory_invocations.clone(),
+            })
+            .response()
+            .await
+            .expect_err("suffix-key public header collision must fail before side effects");
+
+        let output = format!("{err:?}\n{err}");
+        assert!(output.contains("collides"));
+        assert!(!output.contains(API_KEY_SECRET));
+        assert_eq!(prepares.load(Ordering::SeqCst), 0, "provider must not run");
+        assert_eq!(
+            body_factory_invocations.load(Ordering::SeqCst),
+            0,
+            "body factory must not run"
+        );
+        assert_eq!(
+            pre_send.load(Ordering::SeqCst),
+            0,
+            "pre-send hook must not run"
+        );
+        assert_eq!(sent.sent_count().await, 0, "transport must not execute");
+    }
+
+    #[tokio::test]
+    async fn configured_retry_idempotency_collision_is_rejected_before_all_protected_side_effects()
+    {
+        #[derive(Clone)]
+        struct ProbeHooks {
+            pre_send: Arc<AtomicUsize>,
+        }
+
+        impl RuntimeHooks for ProbeHooks {
+            fn pre_send<'a>(
+                &'a self,
+                _ctx: concord_core::advanced::PreSendHookContext<'a>,
+            ) -> concord_core::advanced::AuthFuture<
+                'a,
+                Result<(), concord_core::prelude::ApiClientError>,
+            > {
+                self.pre_send.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        #[derive(Clone)]
+        struct ConfiguredRetryIdempotencyEndpoint {
+            retry_header: &'static str,
+            body_factory_invocations: Arc<AtomicUsize>,
+        }
+
+        impl Endpoint<RedactionCx> for ConfiguredRetryIdempotencyEndpoint {
+            type Response = String;
+
+            buffered_endpoint_execute!(RedactionCx, concord_core::prelude::Text<String>);
+        }
+
+        buffered_endpoint_response_terminal!(
+            ConfiguredRetryIdempotencyEndpoint,
+            RedactionCx,
+            concord_core::prelude::Text<String>
+        );
+
+        impl ReusableEndpoint<RedactionCx> for ConfiguredRetryIdempotencyEndpoint {
+            fn plan(
+                &self,
+                _ctx: &ClientPlanContext<'_, RedactionCx>,
+            ) -> Result<RequestPlan, ApiClientError> {
+                let mut policy = auth_policy(AuthPlacement::Header("x-metadata"));
+                if let RetrySetting::Config(config) = &mut policy.retry {
+                    config.idempotency =
+                        RetryIdempotency::Header(http::HeaderName::from_static(self.retry_header));
+                }
+                let mut plan = request_plan(
+                    "ConfiguredRetryIdempotency",
+                    Method::POST,
+                    "/configured-retry",
+                    policy,
+                    None,
+                );
+                plan.body = concord_core::advanced::PreparedBody::replay_factory(
+                    http_body::SizeHint::default(),
+                    None,
+                    {
+                        let body_factory_invocations = self.body_factory_invocations.clone();
+                        move || {
+                            body_factory_invocations.fetch_add(1, Ordering::SeqCst);
+                            Ok(concord_core::advanced::DynBody::empty())
+                        }
+                    },
+                );
+                Ok(plan)
+            }
+        }
+
+        for retry_name in [
+            "authorization",
+            "host",
+            "content-length",
+            "content-type",
+            "user-agent",
+            "proxy-authorization",
+            "cookie",
+            "set-cookie",
+            "www-authenticate",
+            "x-api-key",
+        ] {
+            let transport = MockTransport::new(
+                Arc::new(TokioMutex::new(Vec::new())),
+                vec![MockResponse::text(StatusCode::OK, "should-not-send")],
+            );
+            let sent = transport.clone();
+            let auth = redaction_auth_vars();
+            let prepares = auth.prepares.clone();
+            let pre_send = Arc::new(AtomicUsize::new(0));
+            let body_factory_invocations = Arc::new(AtomicUsize::new(0));
+            let mut client = ApiClient::<RedactionCx, _>::with_transport((), auth, transport);
+            client.configure(|cfg| {
+                cfg.runtime_hooks(Arc::new(ProbeHooks {
+                    pre_send: pre_send.clone(),
+                }));
+            });
+
+            let err = client
+                .request(ConfiguredRetryIdempotencyEndpoint {
+                    retry_header: retry_name,
+                    body_factory_invocations: body_factory_invocations.clone(),
+                })
+                .response()
+                .await
+                .expect_err("configured retry idempotency should be rejected");
+
+            assert!(matches!(err, ApiClientError::PolicyViolation { .. }));
+            assert_eq!(pre_send.load(Ordering::SeqCst), 0);
+            assert_eq!(body_factory_invocations.load(Ordering::SeqCst), 0);
+            assert_eq!(prepares.load(Ordering::SeqCst), 0);
+            assert_eq!(sent.sent_count().await, 0);
+        }
+    }
+
+    #[tokio::test]
     async fn basic_auth_collision_with_authorization_header_is_rejected() {
         let events = Arc::new(TokioMutex::new(Vec::new()));
         let transport = MockTransport::new(
@@ -1219,6 +1527,158 @@ mod query_auth_redaction {
             requests[0].url.as_str().contains(API_KEY_SECRET),
             "transport request should still contain real query auth at send boundary"
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failing_proxy_target_is_absent_from_transport_error_hook_chain()
+    -> Result<(), ApiClientError> {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("proxy sink bind");
+        let proxy_marker = listener.local_addr().expect("proxy marker");
+        let proxy_server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("proxy accept");
+            drop(stream);
+        });
+        #[derive(Default)]
+        struct HookChainCollector {
+            events: TokioMutex<Vec<String>>,
+        }
+
+        impl RuntimeHooks for HookChainCollector {
+            fn transport_error<'a>(
+                &'a self,
+                ctx: TransportErrorHookContext<'a>,
+            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+                Box::pin(async move {
+                    let mut events = self.events.lock().await;
+                    events.push(format!("transport_error:{}", ctx.error));
+                    events.push(format!("transport_error_debug:{:?}", ctx.error));
+                    let mut current: Option<&(dyn std::error::Error + '_)> = Some(&ctx.error);
+                    while let Some(source) = current {
+                        events.push(format!("{source}"));
+                        events.push(format!("{source:?}"));
+                        current = source.source();
+                    }
+                })
+            }
+        }
+
+        let proxy = concord_core::advanced::SafeProxy::all(&format!("http://{proxy_marker}"))
+            .expect("safe proxy");
+        let transport = ApiClient::<RedactionCx, _>::with_reqwest_builder(
+            (),
+            redaction_auth_vars(),
+            move |builder| builder.proxy(proxy.clone()),
+        )
+        .expect("managed client");
+        let hooks = Arc::new(HookChainCollector::default());
+        let mut client = transport;
+        client.set_runtime_hooks(hooks.clone());
+
+        let err = client
+            .request(proxy_request_plan(
+                "ProxyHookTarget",
+                Method::GET,
+                "/proxy-redaction",
+                ResolvedPolicy::default(),
+            ))
+            .debug_level(DebugLevel::V)
+            .response()
+            .await
+            .expect_err("proxy routing must fail");
+
+        let marker = proxy_marker.to_string();
+        let request_output = format!("{err}");
+        assert_absent_in_error_chain(&err, &marker);
+        assert!(!request_output.contains(&marker));
+
+        let events = hooks.events.lock().await.clone().join("\n");
+        assert!(!events.contains(&marker));
+        for line in events.lines() {
+            assert!(!line.contains(&marker));
+            assert!(!line.contains("concord-proxy-target"));
+        }
+        proxy_server.join().expect("proxy thread");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn failing_proxy_target_is_absent_from_transport_error_chain_for_ipv6_loopback()
+    -> Result<(), ApiClientError> {
+        let listener = match std::net::TcpListener::bind("[::1]:0") {
+            Ok(listener) => listener,
+            Err(err) => {
+                eprintln!("ipv6 loopback unavailable for proxy redaction test: {err}");
+                return Ok(());
+            }
+        };
+        let proxy_marker = listener.local_addr().expect("ipv6 proxy marker");
+        let proxy_server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("proxy accept");
+            drop(stream);
+        });
+        let marker = format!("[{proxy_marker}]");
+
+        #[derive(Default)]
+        struct MarkerCollector {
+            events: TokioMutex<Vec<String>>,
+        }
+
+        impl RuntimeHooks for MarkerCollector {
+            fn transport_error<'a>(
+                &'a self,
+                ctx: TransportErrorHookContext<'a>,
+            ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+                Box::pin(async move {
+                    let mut events = self.events.lock().await;
+                    let mut current: Option<&(dyn std::error::Error + '_)> = Some(&ctx.error);
+                    while let Some(source) = current {
+                        events.push(format!("{source}"));
+                        events.push(format!("{source:?}"));
+                        current = source.source();
+                    }
+                })
+            }
+        }
+
+        let proxy = concord_core::advanced::SafeProxy::all(&format!("http://{proxy_marker}"))
+            .expect("safe proxy");
+        let transport = ApiClient::<RedactionCx, _>::with_reqwest_builder(
+            (),
+            redaction_auth_vars(),
+            move |builder| builder.proxy(proxy.clone()),
+        )
+        .expect("managed client");
+        let hooks = Arc::new(MarkerCollector::default());
+        let mut client = transport;
+        client.set_runtime_hooks(hooks.clone());
+
+        let err = client
+            .request(proxy_request_plan(
+                "ProxyFailureChain",
+                Method::GET,
+                "/proxy-redaction",
+                ResolvedPolicy::default(),
+            ))
+            .debug_level(DebugLevel::V)
+            .response()
+            .await
+            .expect_err("proxy routing must fail");
+
+        let diagnostics = format!(
+            "{err}\n{err:?}\n{}",
+            err.source().expect("transport source")
+        );
+        let output = hooks.events.lock().await.clone().join("\n");
+        assert!(!diagnostics.contains(&proxy_marker.to_string()));
+        assert!(!diagnostics.contains(&marker));
+        assert!(!output.contains(&proxy_marker.to_string()));
+        assert!(!output.contains(&marker));
+        for line in output.lines() {
+            assert!(!line.contains(&proxy_marker.to_string()));
+            assert!(!line.contains(&marker));
+        }
+        proxy_server.join().expect("ipv6 proxy thread");
         Ok(())
     }
 

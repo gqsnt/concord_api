@@ -413,6 +413,8 @@ fn generated_client_construction_contains_current_api_only() {
         &[
             "pub struct ConstructApi < T : :: concord_core :: advanced :: Transport = :: concord_core :: advanced :: DefaultTransport >",
             "pub fn new ( tenant : String , api_key : String ) -> Self",
+            "pub fn new_with_safe_reqwest_builder ( tenant : String , api_key : String , configure : impl FnOnce (:: concord_core :: advanced :: SafeReqwestBuilder) -> :: concord_core :: advanced :: SafeReqwestBuilder , ) -> :: core :: result :: Result < Self , :: concord_core :: advanced :: ReqwestClientBuildError >",
+            "pub fn new_with_safe_reqwest_builder_fallible ( tenant : String , api_key : String , configure : impl FnOnce (:: concord_core :: advanced :: SafeReqwestBuilder,) -> :: core :: result :: Result < :: concord_core :: advanced :: SafeReqwestBuilder , :: concord_core :: advanced :: ReqwestClientBuildError , > , ) -> :: core :: result :: Result < Self , :: concord_core :: advanced :: ReqwestClientBuildError >",
             "pub fn builder () -> ConstructApiBuilder",
             "pub struct ConstructApiBuilder",
             "tenant : :: core :: option :: Option < String >",
@@ -422,6 +424,9 @@ fn generated_client_construction_contains_current_api_only() {
             "ApiClientError :: invalid_param (__ctx . clone () , \"builder.api_key\")",
             "pub fn configure ( mut self , f : impl FnOnce (& mut :: concord_core :: advanced :: RuntimeConfig)) -> Self",
             "pub fn configure_mut (& mut self , f : impl FnOnce (& mut :: concord_core :: advanced :: RuntimeConfig)) -> & mut Self",
+            "pub fn api_headers (& self) -> & :: http :: HeaderMap",
+            "pub fn set_api_headers (& mut self , headers : :: http :: HeaderMap) -> :: core :: result :: Result < () , :: concord_core :: prelude :: HeaderOwnershipError >",
+            "pub fn with_api_headers ( mut self , headers : :: http :: HeaderMap) -> :: core :: result :: Result < Self , :: concord_core :: prelude :: HeaderOwnershipError >",
         ],
     );
 }
@@ -471,6 +476,25 @@ fn generated_facade_scopes_use_clean_public_names_and_rustdoc() {
         !hidden_facade && !hidden_scope,
         "generated facade scope surface must not expose hidden facade/scope names: __Facade={hidden_facade}, __Scope={hidden_scope}; context={hidden_context}"
     );
+}
+
+#[test]
+fn generated_safe_reqwest_facade_never_leaks_raw_reqwest_types() {
+    let out = expanded(quote! {
+        client SafeFacadeApi { base "https://example.com" }
+        GET Ping path ["ping"] -> Json<String>
+    });
+    assert!(out.contains("SafeReqwestBuilder"));
+    for forbidden in [
+        "reqwest :: ClientBuilder",
+        "reqwest :: Client",
+        "reqwest :: Proxy",
+    ] {
+        assert!(
+            !out.contains(forbidden),
+            "generated API leaked {forbidden}: {out}"
+        );
+    }
 }
 
 #[test]

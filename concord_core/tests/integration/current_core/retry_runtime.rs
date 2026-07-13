@@ -423,7 +423,7 @@ async fn retry_status_exhaustion_redacts_request_and_response_sentinels() {
     let mut policy = retry_policy(2);
     policy
         .headers
-        .insert("x-auth", HeaderValue::from_static(AUTH_SENTINEL));
+        .insert("x-meta", HeaderValue::from_static(AUTH_SENTINEL));
     let client = client(TestAuthVars::default(), transport);
 
     let err = client
@@ -448,14 +448,14 @@ async fn retry_status_exhaustion_redacts_request_and_response_sentinels() {
     assert_eq!(
         requests[0]
             .headers
-            .get("x-auth")
+            .get("x-meta")
             .and_then(|value| value.to_str().ok()),
         Some(AUTH_SENTINEL)
     );
     assert_eq!(
         requests[1]
             .headers
-            .get("x-auth")
+            .get("x-meta")
             .and_then(|value| value.to_str().ok()),
         Some(AUTH_SENTINEL)
     );
@@ -551,7 +551,7 @@ async fn transport_error_exhaustion_redacts_request_sentinel_and_reports_context
     );
     policy
         .headers
-        .insert("x-auth", HeaderValue::from_static(AUTH_SENTINEL));
+        .insert("x-meta", HeaderValue::from_static(AUTH_SENTINEL));
     let client = client(TestAuthVars::default(), transport);
 
     let err = client
@@ -575,14 +575,14 @@ async fn transport_error_exhaustion_redacts_request_sentinel_and_reports_context
     assert_eq!(
         requests[0]
             .headers
-            .get("x-auth")
+            .get("x-meta")
             .and_then(|value| value.to_str().ok()),
         Some(AUTH_SENTINEL)
     );
     assert_eq!(
         requests[1]
             .headers
-            .get("x-auth")
+            .get("x-meta")
             .and_then(|value| value.to_str().ok()),
         Some(AUTH_SENTINEL)
     );
@@ -605,6 +605,10 @@ async fn unsafe_method_without_idempotency_header_does_not_retry() {
         config.methods = vec![Method::POST];
         config.idempotency = RetryIdempotency::SafeMethodsOnly;
     }
+    policy.headers.insert(
+        http::HeaderName::from_static("idempotency-key"),
+        HeaderValue::from_static("provided-but-unused"),
+    );
     let client = client(TestAuthVars::default(), transport);
 
     let err = client
@@ -653,6 +657,58 @@ async fn unsafe_method_with_idempotency_header_retries_with_stable_value()
             "RetryUnsafeWithHeader",
             Method::POST,
             "/retry/unsafe-with-header",
+            policy,
+            false,
+        ))
+        .await?;
+
+    assert_eq!(decoded.value(), "ok");
+    let requests = sent.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]
+            .headers
+            .get(&header)
+            .and_then(|value| value.to_str().ok()),
+        Some("stable-key")
+    );
+    assert_eq!(
+        requests[1]
+            .headers
+            .get(&header)
+            .and_then(|value| value.to_str().ok()),
+        Some("stable-key")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn unsafe_method_with_suffix_key_idempotency_header_retries_with_stable_value()
+-> Result<(), ApiClientError> {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let transport = MockTransport::new(
+        events,
+        vec![
+            MockResponse::text(StatusCode::INTERNAL_SERVER_ERROR, "retry-me"),
+            MockResponse::text(StatusCode::OK, "ok"),
+        ],
+    );
+    let sent = transport.clone();
+    let client = client(TestAuthVars::default(), transport);
+    let header = http::HeaderName::from_static("request-idempotency-key");
+    let mut policy = retry_policy(2);
+    if let RetrySetting::Config(config) = &mut policy.retry {
+        config.methods = vec![Method::POST];
+        config.idempotency = RetryIdempotency::Header(header.clone());
+    }
+    policy
+        .headers
+        .insert(header.clone(), HeaderValue::from_static("stable-key"));
+    let decoded = client
+        .execute_plan::<concord_core::prelude::Text<String>>(retry_plan(
+            "RetryUnsafeWithSuffixKeyHeader",
+            Method::POST,
+            "/retry/unsafe-with-suffix-header",
             policy,
             false,
         ))

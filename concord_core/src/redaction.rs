@@ -36,6 +36,49 @@ pub(crate) fn is_sensitive_name(name: &str) -> bool {
         || ends_with_ignore_ascii_case(name, "-key")
 }
 
+/// Names whose public request values must remain outside of client-owned
+/// credential flow.
+pub(crate) fn is_credential_bearing_header_name(name: &str) -> bool {
+    if crate::header_ownership::is_request_identity_header_name_str(name) {
+        return false;
+    }
+
+    if matches_ignore_ascii_case(
+        name,
+        &["set-cookie", "www-authenticate", "proxy-authenticate"],
+    ) {
+        return false;
+    }
+
+    matches_ignore_ascii_case(
+        name,
+        &[
+            "authorization",
+            "proxy-authorization",
+            "api-key",
+            "access-token",
+            "refresh-token",
+            "session-token",
+            "api-token",
+            "x-api-key",
+            "x-client-key",
+            "x-subscription-key",
+            "ocp-apim-subscription-key",
+            "cookie",
+        ],
+    ) || contains_ignore_ascii_case(name, "authorization")
+        || contains_ignore_ascii_case(name, "credential")
+        || contains_ignore_ascii_case(name, "secret")
+        || contains_ignore_ascii_case(name, "password")
+        || contains_ignore_ascii_case(name, "token")
+        || contains_ignore_ascii_case(name, "auth")
+        || contains_ignore_ascii_case(name, "api")
+            && (contains_ignore_ascii_case(name, "key")
+                || contains_ignore_ascii_case(name, "token"))
+        || ends_with_ignore_ascii_case(name, "_key")
+        || ends_with_ignore_ascii_case(name, "-key")
+}
+
 fn matches_ignore_ascii_case(name: &str, candidates: &[&str]) -> bool {
     candidates
         .iter()
@@ -164,6 +207,30 @@ mod tests {
         for name in ["accept", "x-visible-id", "x-public-handle"] {
             assert!(!is_sensitive_name(name), "{name} should stay visible");
         }
+    }
+
+    #[test]
+    fn credential_bearing_name_classifier_targets_authentication_categories() {
+        assert!(is_credential_bearing_header_name("authorization"));
+        assert!(is_credential_bearing_header_name("x-api-key"));
+        assert!(is_credential_bearing_header_name("access_token"));
+        assert!(is_credential_bearing_header_name("x-session-token"));
+        assert!(is_credential_bearing_header_name("cookie"));
+        assert!(is_credential_bearing_header_name("x-client-key"));
+        assert!(is_credential_bearing_header_name("x-subscription-key"));
+        assert!(is_credential_bearing_header_name(
+            "Ocp-Apim-Subscription-Key"
+        ));
+        assert!(is_credential_bearing_header_name("authorization"));
+
+        assert!(!is_credential_bearing_header_name("idempotency-key"));
+        assert!(!is_credential_bearing_header_name("x-request-id"));
+        assert!(!is_credential_bearing_header_name("x-correlation-id"));
+        assert!(!is_credential_bearing_header_name("set-cookie"));
+        assert!(!is_credential_bearing_header_name("www-authenticate"));
+        assert!(!is_credential_bearing_header_name("proxy-authenticate"));
+        assert!(!is_credential_bearing_header_name("x-client-meta"));
+        assert!(!is_credential_bearing_header_name("x-public-scope"));
     }
 
     #[test]

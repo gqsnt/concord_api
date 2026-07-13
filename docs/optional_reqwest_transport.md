@@ -6,7 +6,8 @@ feature slice is complete, and the temporary architecture remains unchanged:
 - `ApiClient` keeps transport polymorphism (`with_transport(...)` remains available).
 - `ReqwestTransport` remains the default transport type.
 - Generated clients, `ApiClient<Cx, T>`, and request/response transport boundaries are unchanged.
-- Managed builder support remains available through `with_reqwest_builder(...)`.
+- Managed configuration remains available through `with_reqwest_builder(...)`,
+  whose closure receives `SafeReqwestBuilder`, not a raw Reqwest builder.
 - Retry mode remains `reqwest::retry::never()` during this migration slice.
 
 ## Dependency policy
@@ -26,7 +27,6 @@ feature slice is complete, and the temporary architecture remains unchanged:
   - `gzip`
   - `brotli`
   - `deflate`
-  - `cookies`
   - `multipart`
 - No-default transport capabilities:
   - `stream` only

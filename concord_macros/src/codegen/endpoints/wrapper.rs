@@ -438,6 +438,41 @@ fn emit_client_wrapper(
                 Self { inner: __inner }
             }
 
+            #[doc = "Create a client with Concord's safe managed Reqwest configuration surface."]
+            #[inline]
+            pub fn new_with_safe_reqwest_builder(
+                #( #ctor_args, )*
+                configure: impl FnOnce(::concord_core::advanced::SafeReqwestBuilder) -> ::concord_core::advanced::SafeReqwestBuilder,
+            ) -> ::core::result::Result<Self, ::concord_core::advanced::ReqwestClientBuildError> {
+                let vars = #vars_ty::new( #( #new_pass ),* );
+                let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
+                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::with_safe_reqwest_builder(vars, auth_vars, configure)?;
+                #configure_rate_limiter
+                ::core::result::Result::Ok(Self { inner: __inner })
+            }
+
+            #[doc = "Create a client with Concord's safe managed Reqwest configuration surface (fallible)."]
+            #[inline]
+            pub fn new_with_safe_reqwest_builder_fallible(
+                #( #ctor_args, )*
+                configure: impl FnOnce(
+                    ::concord_core::advanced::SafeReqwestBuilder,
+                ) -> ::core::result::Result<
+                    ::concord_core::advanced::SafeReqwestBuilder,
+                    ::concord_core::advanced::ReqwestClientBuildError,
+                >,
+            ) -> ::core::result::Result<Self, ::concord_core::advanced::ReqwestClientBuildError> {
+                let vars = #vars_ty::new( #( #new_pass ),* );
+                let auth_vars = #auth_vars_ty::new( #( #new_auth_pass ),* );
+                let mut __inner = ::concord_core::prelude::ApiClient::<#cx_ty>::with_safe_reqwest_builder_fallible(
+                    vars,
+                    auth_vars,
+                    configure,
+                )?;
+                #configure_rate_limiter
+                ::core::result::Result::Ok(Self { inner: __inner })
+            }
+
 
             #[doc = "Create a client with a custom transport."]
             #[inline]
@@ -527,6 +562,15 @@ fn emit_client_wrapper(
             #[doc = "Mutate advanced runtime configuration in place."]
             #[inline]
             pub fn configure_mut(&mut self, f: impl FnOnce(&mut ::concord_core::advanced::RuntimeConfig)) -> &mut Self { self.inner.configure(f); self }
+            #[doc = "Return client-wide origin API headers."]
+            #[inline]
+            pub fn api_headers(&self) -> &::http::HeaderMap { self.inner.api_headers() }
+            #[doc = "Set validated client-wide origin API headers."]
+            #[inline]
+            pub fn set_api_headers(&mut self, headers: ::http::HeaderMap) -> ::core::result::Result<(), ::concord_core::prelude::HeaderOwnershipError> { self.inner.set_api_headers(headers) }
+            #[doc = "Return this client with validated client-wide origin API headers."]
+            #[inline]
+            pub fn with_api_headers(mut self, headers: ::http::HeaderMap) -> ::core::result::Result<Self, ::concord_core::prelude::HeaderOwnershipError> { self.inner.set_api_headers(headers)?; ::core::result::Result::Ok(self) }
             #[doc = "Create a pending request from an explicit endpoint value."]
             #[inline]
             pub fn request<E>(&self, ep: E) -> ::concord_core::prelude::PendingRequest<'_, #cx_ty, E, T>

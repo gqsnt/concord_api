@@ -31,6 +31,7 @@ fn public_v1_surface_compiles() {
     uses_type::<http::Request<advanced::DynBody>>();
     uses_type::<http::Response<advanced::DynBody>>();
     uses_type::<advanced::TransportError>();
+    uses_type::<advanced::SafeProxyError>();
     uses_type::<advanced::TransportErrorKind>();
     uses_type::<advanced::StreamBody>();
     uses_type::<advanced::StreamBodyError>();
@@ -55,6 +56,12 @@ fn public_v1_surface_compiles() {
     uses_type::<advanced::AuthError>();
     uses_type::<prelude::PaginationTermination>();
     uses_type::<concord_core::internal::ResolvedPolicy>();
+
+    #[allow(clippy::let_unit_value)]
+    let _safe_proxy_error_variants = (
+        advanced::SafeProxyError::InvalidOrigin,
+        advanced::SafeProxyError::TlsUnavailable,
+    );
 }
 
 #[test]

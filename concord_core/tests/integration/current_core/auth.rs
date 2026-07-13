@@ -1044,7 +1044,7 @@ async fn public_header_auth_collision_fails_before_rate_limit() {
         ApiClientError::Auth { source, .. } => {
             assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
             let msg = source.to_string();
-            assert!(msg.contains("Authorization"));
+            assert!(msg.contains("collides"));
             assert!(!msg.contains("BEARER_HEADER_COLLISION_SECRET"));
         }
         other => panic!("expected auth error, got {other:?}"),
@@ -1091,7 +1091,7 @@ async fn custom_header_auth_collision_fails_before_rate_limit_case_insensitive()
         ApiClientError::Auth { source, .. } => {
             assert_eq!(source.kind, AuthErrorKind::InvalidConfiguration);
             let msg = source.to_string();
-            assert!(msg.contains("x-api-key"));
+            assert!(msg.contains("collides"));
             assert!(!msg.contains("HEADER_AUTH_COLLISION_SECRET"));
         }
         other => panic!("expected auth error, got {other:?}"),

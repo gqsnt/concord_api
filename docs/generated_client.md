@@ -20,13 +20,13 @@ let api = session_api::SessionApi::new("upstream-key".to_string());
 
 For example, a client declaring `var tenant`, `var region`, then auth secrets `username` and `password` is constructed as `Example::new(tenant, region, username, password)`. For clients with several same-typed values, the builder API is often clearer.
 
-Default-feature callers can use `new()`, `builder()`, or `new_with_transport(...)`. No-default builds also remain reqwest-backed via `new()`/`builder()` and keep streaming support through Reqwest's `stream` feature, while custom transports continue to work through `new_with_transport(...)`.
+Default-feature callers can use `new()`, `builder()`, `new_with_transport(...)`, or `new_with_safe_reqwest_builder(...)`. The safe managed constructors expose only `SafeReqwestBuilder`; they never expose raw Reqwest builders, clients, or proxies. Use the infallible constructor for reviewed settings such as timeouts, pooling, protocol preferences, and already validated proxy configuration. Use `new_with_safe_reqwest_builder_fallible(...)` when parsing trusted-root or client-identity PEM data. Generated clients also expose `set_api_headers(...)`, `with_api_headers(...)`, and `api_headers()` for validated client-wide origin headers. No-default builds remain reqwest-backed via `new()`/`builder()` and keep streaming support through Reqwest's `stream` feature, while custom transports continue to work through `new_with_transport(...)`.
 
 ```rust
 let api = minimal_api::MinimalApi::new_with_transport(transport);
 ```
 
-Concord's managed reqwest transport disables redirects and Reqwest retries. That keeps auth material on the original request and leaves endpoint retries under Concord's runtime. `with_reqwest_builder(...)` permits client-wide proxy, TLS identity, cookie, and similar configuration while Concord retains those invariants.
+Concord's managed reqwest transport disables redirects and Reqwest retries. That keeps auth material on the original request and leaves endpoint retries under Concord's runtime. `new_with_safe_reqwest_builder(...)` receives only `SafeReqwestBuilder` for infallible settings; `new_with_safe_reqwest_builder_fallible(...)` additionally permits fallible PEM parsing. Both support reviewed timeout, pool, protocol, TLS, and credential-free explicit-proxy settings while keeping Reqwest defaults, cookies, redirects, and retries unavailable.
 
 When you configure runtime hooks or debug sinks, those callbacks receive sanitized metadata views. Sensitive request and response headers and sensitive query values are redacted before callback invocation, and neither surface receives request or response body bytes or raw secret material. High-volume debug can add measurable overhead.
 

@@ -737,7 +737,11 @@ async fn multipart_content_type_conflict_is_rejected_before_body_polling_and_tra
         ))
         .await
         .expect_err("multipart media conflict");
-    assert!(err.to_string().contains("Content-Type conflicts"));
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("request Content-Type conflicts with prepared body media type"),
+        "{rendered}"
+    );
     assert!(!polled.load(Ordering::SeqCst));
     assert_eq!(transport.send_count(), 0);
 }
@@ -861,7 +865,11 @@ async fn multipart_replay_factory_planning_or_media_conflict_does_not_invoke_fac
         .await
         .expect_err("media conflict should fail before attempt");
 
-    assert!(err.to_string().contains("Content-Type conflicts"));
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("request Content-Type conflicts with prepared body media type"),
+        "{rendered}"
+    );
     assert_eq!(factory_calls.load(Ordering::SeqCst), 0);
     assert_eq!(transport.send_count(), 0);
     Ok(())

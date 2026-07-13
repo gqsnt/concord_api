@@ -811,11 +811,7 @@ async fn managed_reqwest_builder_cannot_reenable_redirects_or_retries() {
             token: Some("redirect-secret".to_string()),
             identity: "anon",
         },
-        |builder| {
-            builder
-                .redirect(reqwest::redirect::Policy::limited(5))
-                .retry(reqwest::retry::for_host("127.0.0.1"))
-        },
+        |builder| builder.connect_timeout(Duration::from_secs(2)),
     )
     .expect("managed client should build");
     let endpoint = RedirectEndpoint {
@@ -849,16 +845,10 @@ async fn managed_reqwest_builder_cannot_reenable_redirects_or_retries() {
 
 #[test]
 fn api_client_managed_builder_returns_sanitized_build_error() {
-    let result =
-        ApiClient::<TestCx, _>::with_reqwest_builder((), TestAuthVars::default(), |builder| {
-            builder.user_agent("invalid\r\nhttps://proxy-user:PROXY_SECRET@example.test")
-        });
-    let error = match result {
-        Ok(_) => panic!("invalid client builder configuration must fail"),
-        Err(error) => error,
-    };
+    let error =
+        concord_core::advanced::SafeProxy::all("http://proxy-user:PROXY_SECRET@example.test")
+            .expect_err("credential-bearing proxy targets must be rejected");
     let diagnostics = format!("{error}\n{error:?}");
-    assert!(diagnostics.contains("managed reqwest client construction failed"));
     assert!(!diagnostics.contains("proxy-user"));
     assert!(!diagnostics.contains("PROXY_SECRET"));
     assert!(!diagnostics.contains("example.test"));

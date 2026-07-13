@@ -291,7 +291,7 @@ async fn generated_response_codec_can_omit_accept() {
     assert_eq!(response, "hello");
     let request = &transport.requests()[0];
     assert_eq!(request.content_type, None);
-    assert_eq!(request.accept, None);
+    assert_eq!(request.accept.as_deref(), Some("*/*"));
     assert_eq!(request.body, Bytes::new());
     assert!(!format!("{request:?}").contains("hello"));
 }

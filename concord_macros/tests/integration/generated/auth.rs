@@ -176,9 +176,9 @@ mod policy_merge_helper_contract {
             var client_query_a: String
             var client_query_b: String
 
-            header "X-Client-Key" = vars.client_header_a,
+            header "X-Client-Metadata" = vars.client_header_a,
             headers {
-                "X-Client-Token" = vars.client_header_b
+                "X-Client-Metadata-Extra" = vars.client_header_b
             }
             query "client_key" = vars.client_query_a,
             query {
@@ -189,9 +189,9 @@ mod policy_merge_helper_contract {
         scope merged {
             path ["merged"]
 
-            header "X-Scope-Key" = "scope-a",
+            header "X-Scope-Metadata" = "scope-a",
             headers {
-                "X-Scope-Token" = "scope-b"
+                "X-Scope-Metadata-Extra" = "scope-b"
             }
             query "scope_key" = "scope-a",
             query {
@@ -200,9 +200,9 @@ mod policy_merge_helper_contract {
 
             GET InlineThenBlock
                 path ["inline-then-block"]
-                header "X-Endpoint-Key" = "endpoint-a",
+                header "X-Endpoint-Metadata" = "endpoint-a",
                 headers {
-                    "X-Endpoint-Token" = "endpoint-b"
+                    "X-Endpoint-Metadata-Extra" = "endpoint-b"
                 }
                 query "endpoint_key" = "endpoint-a",
                 query {
@@ -331,12 +331,12 @@ async fn same_layer_policy_header_query_inline_then_block_are_preserved() {
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
     let req = &requests[0];
-    assert_header(req, "X-Client-Key", "client-header-a");
-    assert_header(req, "X-Client-Token", "client-header-b");
-    assert_header(req, "X-Scope-Key", "scope-a");
-    assert_header(req, "X-Scope-Token", "scope-b");
-    assert_header(req, "X-Endpoint-Key", "endpoint-a");
-    assert_header(req, "X-Endpoint-Token", "endpoint-b");
+    assert_header(req, "X-Client-Metadata", "client-header-a");
+    assert_header(req, "X-Client-Metadata-Extra", "client-header-b");
+    assert_header(req, "X-Scope-Metadata", "scope-a");
+    assert_header(req, "X-Scope-Metadata-Extra", "scope-b");
+    assert_header(req, "X-Endpoint-Metadata", "endpoint-a");
+    assert_header(req, "X-Endpoint-Metadata-Extra", "endpoint-b");
     assert_url_contains(req, "client_key=client-query-a");
     assert_url_contains(req, "client_session=client-query-b");
     assert_url_contains(req, "scope_key=scope-a");

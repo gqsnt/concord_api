@@ -1098,7 +1098,11 @@ async fn prepared_media_type_conflict_rejects_encoded_and_stream_bodies_before_p
         .execute_plan::<concord_core::prelude::Text<String>>(encoded)
         .await
         .expect_err("encoded conflict");
-    assert!(err.to_string().contains("Content-Type conflicts"));
+    let encoded_rendered = err.to_string();
+    assert!(
+        encoded_rendered.contains("request Content-Type conflicts with prepared body media type"),
+        "{encoded_rendered}"
+    );
     assert_eq!(transport.send_count(), 0);
 
     let polled = Arc::new(AtomicBool::new(false));
@@ -1117,7 +1121,11 @@ async fn prepared_media_type_conflict_rejects_encoded_and_stream_bodies_before_p
         .execute_plan::<concord_core::prelude::Text<String>>(stream)
         .await
         .expect_err("stream conflict");
-    assert!(err.to_string().contains("Content-Type conflicts"));
+    let stream_rendered = err.to_string();
+    assert!(
+        stream_rendered.contains("request Content-Type conflicts with prepared body media type"),
+        "{stream_rendered}"
+    );
     assert!(!polled.load(Ordering::SeqCst));
     assert_eq!(transport.send_count(), 0);
 }

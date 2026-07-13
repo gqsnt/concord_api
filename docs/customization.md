@@ -6,7 +6,7 @@ See [Security Model](security_model.md) for how `prelude`, `advanced`, and `dang
 
 Use these extension points when the protocol is part of your API contract. Do not use them to change runtime pipeline order or to bypass redaction.
 
-Custom transports are an advanced caller-owned security boundary. Concord's managed reqwest transport disables redirects and Reqwest retries after applying optional client-wide builder configuration. Use `with_reqwest_builder(...)` for TLS identity, proxy, cookie, and similar managed client configuration; it cannot re-enable those transport invariants. The default constructor and managed builder path are built on the default reqwest transport while custom transports can still be used through `with_transport(...)` and remain part of the temporary polymorphic architecture.
+Custom transports are an advanced caller-owned security boundary. Concord's managed reqwest transport disables redirects and Reqwest retries, and never enables system-proxy discovery. Generated clients expose `new_with_safe_reqwest_builder(...)` for infallible reviewed `SafeReqwestBuilder` settings and `new_with_safe_reqwest_builder_fallible(...)` for settings such as trusted-root and client-identity PEM parsing; neither can install Reqwest defaults or re-enable those transport invariants. Direct `ApiClient` users have matching `with_safe_reqwest_builder(...)` and `with_safe_reqwest_builder_fallible(...)` paths. Origin API headers belong in generated client/endpoint policy or generated `set_api_headers(...)`, and are materialized per request. The default constructor and managed configuration path are built on the default reqwest transport while custom transports can still be used through `new_with_transport(...)` and remain part of the temporary polymorphic architecture.
 
 Runtime hooks and debug sinks also sit on a security boundary. They receive sanitized metadata views, not raw header maps, and they never receive request or response body bytes or raw auth material. `pre_send` runs after rate-limit acquisition and before raw auth transport materialization, `post_response` runs after an HTTP response is received and before response body read and endpoint decode, and `transport_error` only observes initial transport-send failures. Sensitive header names and sensitive query values are redacted before callback invocation. High-volume debug can add measurable overhead.
 
@@ -232,5 +232,3 @@ Rules:
 - Runtime retry, auth, rate-limit, and redaction behavior still follow the fixed pipeline.
 
 Complete examples live in `concord_examples/src/custom_codec.rs` and `concord_examples/src/custom_pagination.rs`.
-
-

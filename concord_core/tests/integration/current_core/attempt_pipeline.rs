@@ -262,7 +262,7 @@ async fn http_status_errors_remain_typed_and_redacted() {
     let mut policy = ResolvedPolicy::default();
     policy
         .headers
-        .insert("x-auth", HeaderValue::from_static(sentinels.auth));
+        .insert("x-meta", HeaderValue::from_static(sentinels.auth));
     let endpoint = AttemptEndpoint::new(
         "StatusSafety",
         Method::GET,
@@ -309,7 +309,7 @@ async fn transport_errors_remain_typed_and_redacted() {
     let mut policy = ResolvedPolicy::default();
     policy
         .headers
-        .insert("x-auth", HeaderValue::from_static(sentinels.auth));
+        .insert("x-meta", HeaderValue::from_static(sentinels.auth));
     let endpoint = AttemptEndpoint::new(
         "TransportSafety",
         Method::POST,

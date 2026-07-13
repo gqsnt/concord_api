@@ -42,6 +42,7 @@ struct CapturedRequest {
     meta: RequestMeta,
     method: Method,
     accept: Option<String>,
+    client_header: Option<String>,
 }
 
 #[derive(Clone)]
@@ -84,6 +85,11 @@ impl Transport for RecordingBytesTransport {
             .get(http::header::ACCEPT)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
+        let client_header = req
+            .headers()
+            .get("x-client-wide")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         self.requests
             .lock()
             .expect("request lock")
@@ -96,6 +102,7 @@ impl Transport for RecordingBytesTransport {
                     .clone(),
                 method: req.method().clone(),
                 accept,
+                client_header,
             });
 
         let fixture = self.fixture.clone();
@@ -123,6 +130,76 @@ impl Transport for RecordingBytesTransport {
                 }
             }
         })
+    }
+}
+
+#[tokio::test]
+async fn generated_client_exposes_client_wide_headers_and_safe_reqwest_constructor() {
+    let (fixture, _polls) = buffered_fixture(StatusCode::OK, vec![Bytes::from_static(b"hello")]);
+    let transport = RecordingBytesTransport::new(fixture);
+    let mut api = BytesResponseApi::new_with_transport(transport.clone());
+    let mut headers = HeaderMap::new();
+    headers.insert("x-client-wide", HeaderValue::from_static("present"));
+    api.set_api_headers(headers)
+        .expect("generated header facade");
+    let api = BytesResponseApi::new_with_transport(transport.clone())
+        .with_api_headers(HeaderMap::from_iter([(
+            http::header::HeaderName::from_static("x-client-wide"),
+            HeaderValue::from_static("present"),
+        )]))
+        .expect("generated header with facade");
+    assert_eq!(
+        api.api_headers().get("x-client-wide"),
+        Some(&HeaderValue::from_static("present"))
+    );
+    assert_eq!(
+        api.api_headers().get("x-client-wide"),
+        Some(&HeaderValue::from_static("present"))
+    );
+    api.download().execute().await.expect("download succeeds");
+    assert_eq!(
+        transport.requests()[0].client_header.as_deref(),
+        Some("present")
+    );
+
+    let _api = BytesResponseApi::new_with_safe_reqwest_builder(|builder| {
+        builder.connect_timeout(std::time::Duration::from_secs(1))
+    })
+    .expect("generated safe Reqwest constructor");
+}
+
+#[tokio::test]
+async fn generated_safe_reqwest_builder_fallible_reports_pem_error_without_leak() {
+    let root_error = match BytesResponseApi::new_with_safe_reqwest_builder_fallible(|builder| {
+        builder.add_trusted_root_pem(
+            b"-----BEGIN CERTIFICATE-----\nGENERATED_ROOT_SENTINEL\nnot-base64\n-----END CERTIFICATE-----",
+        )
+    }) {
+        Ok(_) => panic!("invalid pem must fail"),
+        Err(error) => error,
+    };
+    let identity_error = match BytesResponseApi::new_with_safe_reqwest_builder_fallible(|builder| {
+        builder.client_identity_pem(
+            b"-----BEGIN PRIVATE KEY-----\nGENERATED_IDENTITY_SENTINEL\nnot-a-key\n-----END PRIVATE KEY-----",
+        )
+    }) {
+        Ok(_) => panic!("invalid identity pem must fail"),
+        Err(error) => error,
+    };
+    for (label, error) in [("root", root_error), ("identity", identity_error)] {
+        let diagnostics = format!("{error}\n{error:?}");
+        assert!(!diagnostics.contains("GENERATED_ROOT_SENTINEL"), "{label}");
+        assert!(
+            !diagnostics.contains("GENERATED_IDENTITY_SENTINEL"),
+            "{label}"
+        );
+        let mut current: &(dyn std::error::Error + 'static) = &error;
+        while let Some(source) = current.source() {
+            let rendered = format!("{source}\n{source:?}");
+            assert!(!rendered.contains("GENERATED_ROOT_SENTINEL"), "{label}");
+            assert!(!rendered.contains("GENERATED_IDENTITY_SENTINEL"), "{label}");
+            current = source;
+        }
     }
 }
 
@@ -190,7 +267,7 @@ async fn generated_bytes_response_reads_body_without_accept_header() {
     assert_eq!(requests[0].meta.endpoint, "Download");
     assert_eq!(requests[0].meta.method, Method::GET);
     assert_eq!(requests[0].method, Method::GET);
-    assert_eq!(requests[0].accept, None);
+    assert_eq!(requests[0].accept.as_deref(), Some("*/*"));
     assert!(polls.load(Ordering::SeqCst) > 0);
 }
 

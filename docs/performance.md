@@ -87,7 +87,7 @@ For users minimizing dependency and compile footprint, `concord_core` supports `
 
 The feature matrix describes the supported default and no-default dependency surfaces.
 
-`reqwest` transport is mandatory. Default builds enable `reqwest` `stream`, `default-tls`, and `http2` transport capabilities (plus governor by default); no-default builds enable only `stream`. `gzip`, `brotli`, `deflate`, `cookies`, and `multipart` toggle optional transport capabilities and remain off by default in no-default builds; `rate-limit-governor` still controls limiter behavior. Disabling that feature changes the default limiter implementation; see [Feature Matrix](features.md) before using no-default builds in an application.
+`reqwest` transport is mandatory. Default builds enable `reqwest` `stream`, `default-tls`, and `http2` transport capabilities (plus governor by default); no-default builds enable only `stream`. `gzip`, `brotli`, `deflate`, and `multipart` toggle optional transport capabilities and remain off by default in no-default builds; persistent cookies and system-proxy discovery are unsupported. `rate-limit-governor` still controls limiter behavior. Disabling that feature changes the default limiter implementation; see [Feature Matrix](features.md) before using no-default builds in an application.
 
 ## Measuring Your Own Workload
 

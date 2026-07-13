@@ -76,6 +76,14 @@ impl AuthPlacementPlan {
                     PlannedAuthPlacement::Query(name.to_string())
                 }
             };
+            if let PlannedAuthPlacement::Header(name) = &placement
+                && crate::header_ownership::is_forbidden_auth_placement(name)
+            {
+                return Err(crate::auth::AuthError::new(
+                    crate::auth::AuthErrorKind::InvalidConfiguration,
+                    format!("authentication may not own reserved header `{name}`"),
+                ));
+            }
             if planned
                 .slots
                 .iter()
@@ -812,6 +820,26 @@ mod tests {
                 retry_reason: Some(AuthRetryReason::Unauthorized),
             }
         );
+    }
+
+    #[test]
+    fn reserved_protocol_and_body_headers_cannot_be_authentication_placements() {
+        for name in [
+            "content-length",
+            "transfer-encoding",
+            "accept-encoding",
+            "host",
+            "proxy-authorization",
+            "content-type",
+        ] {
+            let mut requirement = requirement(AuthChallengePolicy::Default);
+            requirement.placement = AuthPlacement::Header(name);
+            let error = AuthPlacementPlan::from_auth_plan(&AuthPlan {
+                requirements: vec![requirement],
+            })
+            .expect_err("reserved headers must not become authentication targets");
+            assert_eq!(error.kind, crate::auth::AuthErrorKind::InvalidConfiguration);
+        }
     }
 
     #[test]

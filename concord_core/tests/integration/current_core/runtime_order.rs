@@ -498,6 +498,11 @@ async fn unsafe_method_without_idempotency_header_does_not_retry() {
     );
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        http::header::HeaderName::from_static("idempotency-key"),
+        http::HeaderValue::from_static("public-metadata"),
+    );
     let policy = ResolvedPolicy {
         retry: concord_core::internal::RetrySetting::Config(concord_core::advanced::RetryConfig {
             max_attempts: 2,
@@ -507,6 +512,7 @@ async fn unsafe_method_without_idempotency_header_does_not_retry() {
             respect_retry_after: false,
             idempotency: concord_core::advanced::RetryIdempotency::SafeMethodsOnly,
         }),
+        headers,
         ..Default::default()
     };
 

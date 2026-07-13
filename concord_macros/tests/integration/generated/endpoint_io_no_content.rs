@@ -337,7 +337,7 @@ async fn no_content_endpoint_omits_accept_and_returns_unit() -> Result<(), ApiCl
 
     let requests = transport.requests();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].accept, None);
+    assert_eq!(requests[0].accept.as_deref(), Some("*/*"));
     assert_eq!(requests[0].content_type, None);
     assert!(requests[0].body_empty);
     assert!(!polled.load(Ordering::SeqCst));

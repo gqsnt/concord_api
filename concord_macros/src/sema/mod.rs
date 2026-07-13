@@ -285,6 +285,8 @@ fn validate_client_method_namespace(
     for name in [
         "new",
         "new_with_transport",
+        "new_with_safe_reqwest_builder",
+        "new_with_safe_reqwest_builder_fallible",
         "builder",
         "debug_level",
         "set_debug_level",
@@ -294,6 +296,9 @@ fn validate_client_method_namespace(
         "with_pagination_detect_loops",
         "configure",
         "configure_mut",
+        "api_headers",
+        "set_api_headers",
+        "with_api_headers",
         "request",
         "auth_state",
     ] {
@@ -1130,6 +1135,35 @@ mod tests {
         assert!(snapshot.contains("Login method=POST"));
         assert!(snapshot.contains("body=true"));
         assert!(snapshot.contains("scopes=1"));
+    }
+}
+
+#[cfg(test)]
+mod namespace_tests {
+    use super::*;
+
+    #[test]
+    fn client_method_namespace_reserves_fallible_safe_reqwest_constructor() {
+        let ast = syn::parse2::<crate::ast::RawApi>(quote::quote! {
+            client ReservedSafeReqwestFallibleApi { base "https://example.com" }
+
+            GET FallibleBuilder
+                as new_with_safe_reqwest_builder_fallible
+                path ["fallible-builder"]
+                -> Json<String>
+        })
+        .expect("valid API syntax");
+        let error = analyze(ast).expect_err("reserved generated method must fail sema");
+        assert!(
+            error
+                .to_string()
+                .contains("generated public API name `new_with_safe_reqwest_builder_fallible`")
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("conflicts with generated client method in generated client")
+        );
     }
 }
 

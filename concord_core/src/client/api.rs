@@ -11,6 +11,7 @@ pub struct ApiClient<Cx: ClientContext, T: Transport = DefaultTransport> {
     pub(super) pagination_detect_loops: bool,
     pub(super) debug_sink: Arc<dyn DebugSink>,
     pub(super) runtime_state: Arc<ClientRuntimeState>,
+    pub(super) api_headers: http::HeaderMap,
 }
 
 impl<Cx: ClientContext> ApiClient<Cx, DefaultTransport>
@@ -21,18 +22,57 @@ where
         Self::with_transport(vars, auth_vars, ReqwestTransport::new())
     }
 
-    /// Configures the managed Reqwest client without allowing callers to
-    /// replace Concord's retry and redirect invariants.
+    /// Configures the managed Reqwest client through Concord's reviewed
+    /// configuration surface. Raw Reqwest builders and clients stay private.
     pub fn with_reqwest_builder(
         vars: Cx::Vars,
         auth_vars: Cx::AuthVars,
-        configure: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder,
+        configure: impl FnOnce(
+            crate::transport::SafeReqwestBuilder,
+        ) -> crate::transport::SafeReqwestBuilder,
+    ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
+        Self::with_reqwest_builder_fallible(vars, auth_vars, |builder| Ok(configure(builder)))
+    }
+
+    pub fn with_reqwest_builder_fallible(
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        configure: impl FnOnce(
+            crate::transport::SafeReqwestBuilder,
+        ) -> Result<
+            crate::transport::SafeReqwestBuilder,
+            crate::transport::ReqwestClientBuildError,
+        >,
     ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
         Ok(Self::with_transport(
             vars,
             auth_vars,
-            ReqwestTransport::with_builder(configure)?,
+            ReqwestTransport::with_builder_fallible(configure)?,
         ))
+    }
+
+    /// Clearer spelling for [`Self::with_reqwest_builder`].
+    pub fn with_safe_reqwest_builder(
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        configure: impl FnOnce(
+            crate::transport::SafeReqwestBuilder,
+        ) -> crate::transport::SafeReqwestBuilder,
+    ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
+        Self::with_reqwest_builder(vars, auth_vars, configure)
+    }
+
+    pub fn with_safe_reqwest_builder_fallible(
+        vars: Cx::Vars,
+        auth_vars: Cx::AuthVars,
+        configure: impl FnOnce(
+            crate::transport::SafeReqwestBuilder,
+        ) -> Result<
+            crate::transport::SafeReqwestBuilder,
+            crate::transport::ReqwestClientBuildError,
+        >,
+    ) -> Result<Self, crate::transport::ReqwestClientBuildError> {
+        Self::with_reqwest_builder_fallible(vars, auth_vars, configure)
     }
 }
 
@@ -48,7 +88,31 @@ impl<Cx: ClientContext, T: Transport> ApiClient<Cx, T> {
             pagination_detect_loops: true,
             debug_sink: Arc::new(StderrDebugSink),
             runtime_state: Arc::new(ClientRuntimeState::default()),
+            api_headers: http::HeaderMap::new(),
         }
+    }
+
+    /// Installs client-wide origin API headers. Endpoint headers replace
+    /// matching names during request preparation.
+    pub fn set_api_headers(
+        &mut self,
+        headers: http::HeaderMap,
+    ) -> Result<(), crate::header_ownership::HeaderOwnershipError> {
+        crate::header_ownership::validate_public_headers(&headers)?;
+        self.api_headers = headers;
+        Ok(())
+    }
+
+    pub fn with_api_headers(
+        mut self,
+        headers: http::HeaderMap,
+    ) -> Result<Self, crate::header_ownership::HeaderOwnershipError> {
+        self.set_api_headers(headers)?;
+        Ok(self)
+    }
+
+    pub fn api_headers(&self) -> &http::HeaderMap {
+        &self.api_headers
     }
 
     #[inline]
