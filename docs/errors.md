@@ -11,14 +11,18 @@ responsible for their own text.
 | Configuration/build | typed configuration or client-build error | no | none |
 | Auth preparation | `ApiClientError::Auth` | no endpoint body | no visible execution yet |
 | Rate-limit acquire/action | `ApiClientError::RateLimit` | no | no Concord resend |
-| Transport failure | `ApiClientError::Transport` | no response body | final result of the visible Reqwest execution |
+| Timeout | `ApiClientError::Timeout` | no response body | final visible Reqwest result |
+| Connect failure | `ApiClientError::Connect` | no response body | final visible Reqwest result |
+| Request execution | `ApiClientError::RequestExecution` | no response body | final visible Reqwest result |
+| Request body production | `ApiClientError::RequestBody` | no response body | terminal; preserves a structured `BodyErrorKind` |
+| Request body limit | `ApiClientError::RequestBodyLimitExceeded { limit, actual }` | no response body | terminal request-body failure; the request-error hook observes `RequestBody` |
 | HTTP status | `ApiClientError::HttpStatus` | no endpoint body in status path | final result after Reqwest-internal retry; `401`/`403` may cause one auth recovery |
 | Response limit | `ResponseTooLarge` or `ResponseBodyLimitExceeded` | bounded | terminal |
 | Decode/codec | `Decode` or `Codec` | bounded | terminal |
 | Pagination | typed pagination error/limit | page-dependent | page state does not advance on failure |
 
 There is no retry-exhaustion wrapper, general-attempt counter, or public hidden
-resend count. Reqwest returns the final status or transport result for one
+resend count. Reqwest returns the final status or request result for one
 visible execution. Concord then performs terminal processing or at most one
 authentication recovery.
 

@@ -71,7 +71,69 @@ The generated advanced surfaces are family-specific and keep runtime values free
 - `Bytes` is response-only, returns `bytes::Bytes`, uses the ordinary bounded buffered response path that materializes payloads in memory, and omits `Accept`; request-side `Bytes` remains invalid. Use `Stream<OctetStream>` for unbounded byte transfer.
 - `NoContent` is response-only, returns `()`, and omits `Accept`; request-side `NoContent` remains invalid. The core `NoContent` buffered codec intentionally omits request and response content headers.
 - `Stream<M>` has the dedicated `.execute_stream()` helper; `.execute()` also returns its stream response.
-- `StreamResponse<M>` keeps the native response as its normal authority. `next_chunk()` and `write_to_file()` consume data chunks only and skip trailers; EOF, a native body error, or a streaming-limit error permanently terminates data-only consumption. The explicit `into_body()` escape hatch uses one narrow private native-body wrapper that preserves remaining data and trailer frames, frame order, byte accounting, and the native size hint in the returned `DynBody`. Extraction after a terminal data-only result remains terminal, and normal streaming does not pass through `DynBody`.
+- `StreamResponse<M>` keeps the native response as its authority. `next_chunk()` and `write_to_file()` consume data chunks lazily; EOF, a native body error, or a streaming-limit error permanently terminates consumption.
 - `BodyCodec::try_content_type()` and `ResponseCodec::try_accept()` are the codec-level override points for buffered codecs. `content_type()` and `accept()` are the convenience forms.
-- General retry is selected at client construction. Reqwest hidden retries use only Reqwest-cloneable materialized bodies. A complete `PreparedBody` factory can make a body rebuildable for Concord authentication recovery, but does not make a stream, advanced body, or multipart cloneable by Reqwest.
+- General retry is selected at client construction. Reqwest hidden retries use only Reqwest-cloneable materialized bodies. A complete `concord_core::advanced::PreparedBody` factory can make a body rebuildable for Concord authentication recovery, but does not make a stream, advanced body, or multipart cloneable by Reqwest.
 - Pagination remains buffered-response-only and is rejected for `Stream` and `NoContent` endpoint responses. `Bytes` rejects pagination.
+
+### Request-side body extensions
+
+The request-only extension recipe lives in `concord_core::advanced`; it is not
+a universal request/response body bridge. `AdvancedRequestBody::new` accepts a
+one-shot standard `http_body::Body<Data = Bytes>`. `PreparedBody::factory` and
+`PreparedBody::stream_factory` accept complete terminal factories and invoke
+them once per visible execution, including the one bounded authentication
+recovery. Eligibility checks such as `is_replayable()` never invoke a factory.
+
+```rust
+use bytes::Bytes;
+use concord_core::advanced::{AdvancedRequestBody, BodyError, PreparedBody};
+use http_body::SizeHint;
+use http_body_util::Full;
+
+let mut hint = SizeHint::new();
+hint.set_exact(7);
+let body = PreparedBody::factory(hint, None, || {
+    Ok::<_, BodyError>(AdvancedRequestBody::new(Full::new(
+        Bytes::from_static(b"payload"),
+    )))
+});
+```
+
+`PreparedBody::multipart_factory` similarly requires a complete fresh
+`MultipartBody` recipe. Reqwest creates a new native form and boundary for
+every visible execution. Explicit size hints are enforced by the native
+exact-length guard, and the managed request-size limit remains active for all
+body categories.
+
+`PreparedEndpoint<C>` is the supported hand-written buffered execution path.
+It accepts a `PreparedRequestEntity` (or prepares a public `RequestEntity`), a
+method and static path, and a public response codec such as `Text<String>`.
+`PreparedStreamEndpoint<M>` provides the corresponding native streaming
+response path. Core owns the route, resolved policy, authentication plan, and
+runtime execution structures; applications do not import generated
+integration modules.
+
+```rust
+use concord_core::advanced::{
+    PreparedEndpoint, PreparedRequestEntity, RequestAuthentication,
+};
+use concord_core::prelude::Text;
+use http::Method;
+
+let request = PreparedEndpoint::<Text<String>>::new(
+    "UploadReport",
+    Method::POST,
+    "/reports",
+    PreparedRequestEntity { body },
+)
+.authentication(RequestAuthentication::bearer(credential_id));
+
+let value = request.execute(&client).await?;
+# Ok::<(), concord_core::prelude::ApiClientError>(())
+```
+
+Buffered `DecodedResponse::meta()` and streaming `StreamResponse::meta()` both
+return `RequestExecutionMeta`. It describes only the Concord-visible endpoint,
+method, idempotence, and pagination page; Reqwest-internal resends have no
+public indexes or counters.

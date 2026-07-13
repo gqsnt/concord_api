@@ -12,103 +12,21 @@ pub trait ClientContext: Sized + Send + Sync + 'static {
     ///
     /// Generated APIs emit their descriptor-derived classification. Hand-written
     /// contexts default to
-    /// [`ApiOriginDescriptor::DynamicOrigin`](crate::__private::v1::ApiOriginDescriptor::DynamicOrigin), so status
+    /// [`ApiOriginDescriptor::DynamicOrigin`](crate::advanced::ApiOriginDescriptor::DynamicOrigin), so status
     /// retry is rejected unless they supply verified fixed single-origin
     /// metadata.
-    const ORIGIN: crate::__private::v1::ApiOriginDescriptor =
-        crate::__private::v1::ApiOriginDescriptor::DynamicOrigin;
+    const ORIGIN: crate::retry_mode::ApiOriginDescriptor =
+        crate::retry_mode::ApiOriginDescriptor::DynamicOrigin;
 
     fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState;
 
-    fn apply_internal_auth<'a>(
-        _requirement: &'a AuthRequirementId,
-        _request: &'a mut crate::auth::AuthApplicationRequest<'_>,
-        _vars: &'a Self::Vars,
-        _auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn AuthHttpExecutor,
-    ) -> crate::auth::AuthFuture<'a, Result<crate::auth::PreparedInternalAuth, AuthError>> {
-        Box::pin(async {
-            Err(AuthError::new(
-                AuthErrorKind::UnsupportedScheme,
-                "internal auth requirement is not supported by this client context",
-            ))
-        })
-    }
-
-    /// Resolves secret-free generated binding metadata for one credential.
+    /// Resolves an opaque provider binding for one credential.
     /// Core owns every lifecycle operation performed through the binding.
     fn auth_provider_binding<'a>(
         _credential: &crate::auth::CredentialId,
         _auth_state: &'a Self::AuthState,
-    ) -> Option<crate::__private::v1::AuthProviderBinding<'a, Self>> {
+    ) -> Option<crate::auth::AuthProviderBinding<'a, Self>> {
         None
-    }
-
-    #[doc(hidden)]
-    fn prepare_auth_requirement<'a>(
-        _requirement: &'a crate::auth::AuthRequirement,
-        _request: &'a mut crate::auth::AuthApplicationRequest<'_>,
-        _vars: &'a Self::Vars,
-        _auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn AuthHttpExecutor,
-        _meta: &'a RequestMeta,
-    ) -> crate::auth::AuthFuture<'a, Result<crate::auth::PreparedAuthCredential, AuthError>> {
-        Box::pin(async {
-            Err(AuthError::new(
-                AuthErrorKind::UnsupportedScheme,
-                "auth requirement is not supported by this client context",
-            ))
-        })
-    }
-
-    #[doc(hidden)]
-    fn plan_auth_response(
-        requirement: &crate::auth::AuthRequirement,
-        applied: &crate::auth::AuthAppliedCredential,
-        _vars: &Self::Vars,
-        _auth: &Self::AuthVars,
-        _meta: &RequestMeta,
-        _status: http::StatusCode,
-        _headers: &http::HeaderMap,
-    ) -> Result<crate::auth::AuthRejectionAction, AuthError> {
-        Ok(crate::auth::AuthRejectionAction::terminal(
-            requirement,
-            applied,
-            None,
-        ))
-    }
-
-    #[doc(hidden)]
-    #[allow(clippy::too_many_arguments)]
-    fn apply_terminal_auth_action<'a>(
-        _action: &'a crate::auth::AuthRejectionAction,
-        _requirement: &'a crate::auth::AuthRequirement,
-        _applied: &'a crate::auth::AuthAppliedCredential,
-        _vars: &'a Self::Vars,
-        _auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _meta: &'a RequestMeta,
-        _status: http::StatusCode,
-    ) -> crate::auth::AuthFuture<'a, Result<(), AuthError>> {
-        Box::pin(async { Ok(()) })
-    }
-
-    #[doc(hidden)]
-    #[allow(clippy::too_many_arguments)]
-    fn apply_refresh_auth_action<'a>(
-        _action: &'a crate::auth::AuthRejectionAction,
-        _requirement: &'a crate::auth::AuthRequirement,
-        _applied: &'a crate::auth::AuthAppliedCredential,
-        _vars: &'a Self::Vars,
-        _auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn AuthHttpExecutor,
-        _meta: &'a RequestMeta,
-        _status: http::StatusCode,
-    ) -> crate::auth::AuthFuture<'a, Result<(), AuthError>> {
-        Box::pin(async { Ok(()) })
     }
 
     fn base_route(_vars: &Self::Vars, _auth: &Self::AuthVars) -> RouteBuilder {
@@ -150,12 +68,30 @@ pub(super) struct AuthPreparation {
     pub(super) summary: crate::auth::AuthAttemptSummary,
     pub(super) materials: Vec<crate::auth::AuthTransportMaterial>,
     pub(super) cache_policy: AuthPreparationCachePolicy,
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(super) lifecycle_observation_targets: Vec<AuthLifecycleObservationTarget>,
+}
+
+#[cfg(feature = "dangerous-dev-tools")]
+#[derive(Clone)]
+pub(super) struct AuthLifecycleObservationTarget {
+    pub(super) credential_id: crate::auth::CredentialId,
+    pub(super) usage_id: crate::auth::AuthUsageId,
+    pub(super) step_id: Option<&'static str>,
+    pub(super) target: crate::auth::CredentialLifecycleObservationTarget,
+}
+
+#[cfg(feature = "dangerous-dev-tools")]
+impl AuthLifecycleObservationTarget {
+    pub(super) fn matches(&self, action: &crate::auth::AuthRejectionAction) -> bool {
+        action.matches_use_identity(&self.credential_id, &self.usage_id, self.step_id)
+    }
 }
 
 pub(super) struct AuthRejectionCtx<'a, Cx: ClientContext> {
     pub(super) plan: &'a crate::endpoint::RequestPlanView,
     pub(super) auth_state: &'a Cx::AuthState,
-    pub(super) meta: &'a RequestMeta,
+    pub(super) meta: &'a RequestExecutionMeta,
     pub(super) status: StatusCode,
     pub(super) headers: &'a http::HeaderMap,
     pub(super) auth_attempt: &'a crate::auth::AuthAttemptSummary,

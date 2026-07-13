@@ -19,9 +19,9 @@ fn generated_auth_plan_uses_resolved_requirements() {
     assert_contains_all(
         &out,
         &[
-            "::concord_core::advanced::AuthRequirement",
-            "::concord_core::advanced::AuthPlacement::Header",
-            "::concord_core::__private::v1::AuthUsageId::new(\"header\")",
+            "::concord_core::__private::AuthRequirement",
+            "::concord_core::__private::AuthPlacement::Header",
+            "::concord_core::__private::AuthUsageId::new(\"header\")",
             "AuthProvenance::new(\"endpoint\")",
             "step_id: ::core::option::Option::Some(\"Search:0:key\")",
         ],
@@ -61,15 +61,15 @@ fn generated_auth_dispatch_emits_bindings_without_lifecycle_orchestration() {
             "match(credential.namespace(),credential.name())",
             "(\"AuthDispatchApi\",\"upstream\")=>",
             "(\"AuthDispatchApi\",\"session\")=>",
-            "::concord_core::__private::v1::AuthProviderBinding::secret",
-            "::concord_core::__private::v1::AuthPreparationMode::RequestLocal",
-            "::concord_core::__private::v1::AuthChallengeMode::Refresh",
+            ".secret_binding",
+            "::concord_core::__private::AuthPreparationMode::RequestLocal",
+            "::concord_core::__private::AuthChallengeMode::Refresh",
         ],
     );
     assert_not_contains_all(
         &out,
         &[
-            "ifrequirement.credential.id==::concord_core::__private::v1::CredentialId::new",
+            "ifrequirement.credential.id==::concord_core::__private::CredentialId::new",
             "get_or_refresh",
             "prepare_auth_requirement",
             "plan_auth_response",
@@ -81,9 +81,6 @@ fn generated_auth_dispatch_emits_bindings_without_lifecycle_orchestration() {
             "apply_basic_credential",
             "CredentialContext",
             "CredentialRefreshReason",
-            "::concord_core::advanced::CredentialId",
-            "::concord_core::advanced::AuthUsageId",
-            "::concord_core::advanced::AuthProvenance",
         ],
     );
 }
@@ -148,12 +145,14 @@ fn generated_oauth2_client_credentials_provider_is_typed() {
     assert_contains_all(
         &out,
         &[
-            "::concord_core::advanced::OAuth2ClientCredentialsProvider::from_validated_token_url",
-            "CredentialSlot::new_result",
+            "::concord_core::__private::OAuth2ClientCredentialsProvider::from_validated_token_url",
+            "GeneratedCredentialBinding::new_result",
             ".scope(\"read:me\")",
             "CredentialId::new(\"OAuthProviderApi\",\"oauth\")",
+            "::concord_core::__private::AuthPreparationMode::PerExecution",
         ],
     );
+    assert!(!out.contains("PerAttempt"));
 }
 
 #[test]
@@ -191,18 +190,18 @@ fn generated_auth_session_contains_auth_state_and_acquire_sugar() {
             "pub fn session (& self) -> SnapshotAuthSessionAuth",
             "pub fn auth_state (& self) -> SnapshotAuthAuth",
             "pub async fn acquire < R >",
-            "pub async fn set (& self , value : AccessToken ,) -> :: core :: result :: Result < () , :: concord_core :: advanced :: AuthError >",
-            "pub async fn clear (& self) -> :: core :: result :: Result < () , :: concord_core :: advanced :: AuthError >",
-            "pub async fn is_set (& self) -> :: core :: result :: Result < bool , :: concord_core :: advanced :: AuthError >",
+            "pub async fn set (& self , value : AccessToken ,) -> :: core :: result :: Result < () , :: concord_core :: prelude :: AuthError >",
+            "pub async fn clear (& self) -> :: core :: result :: Result < () , :: concord_core :: prelude :: AuthError >",
+            "pub async fn is_set (& self) -> :: core :: result :: Result < bool , :: concord_core :: prelude :: AuthError >",
             "pub async fn acquire_auth_session",
-            "pub async fn set_auth_session_value (& self , value : AccessToken ,) -> :: core :: result :: Result < () , :: concord_core :: advanced :: AuthError >",
-            "pub async fn clear_auth_session (& self) -> :: core :: result :: Result < () , :: concord_core :: advanced :: AuthError >",
-            "pub async fn has_auth_session (& self) -> :: core :: result :: Result < bool , :: concord_core :: advanced :: AuthError >",
+            "pub async fn set_auth_session_value (& self , value : AccessToken ,) -> :: core :: result :: Result < () , :: concord_core :: prelude :: AuthError >",
+            "pub async fn clear_auth_session (& self) -> :: core :: result :: Result < () , :: concord_core :: prelude :: AuthError >",
+            "pub async fn has_auth_session (& self) -> :: core :: result :: Result < bool , :: concord_core :: prelude :: AuthError >",
             "pub trait SnapshotAuthAcquireAsSessionExt",
             "fn acquire_as_session (self,) -> :: core :: pin :: Pin",
             ". with_missing_hint (\"client.acquire_auth_session(...)\")",
-            ":: concord_core :: advanced :: AuthPlacement :: Bearer",
-            ":: concord_core :: advanced :: AuthPlacement :: Header (\"X-Upstream-Key\")",
+            ":: concord_core :: __private :: AuthPlacement :: Bearer",
+            ":: concord_core :: __private :: AuthPlacement :: Header (\"X-Upstream-Key\")",
         ],
     );
 }

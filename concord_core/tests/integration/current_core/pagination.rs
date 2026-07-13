@@ -3,12 +3,12 @@
 use super::common::*;
 use crate::support::{RedactionSentinels, assert_error_chain_does_not_contain_any};
 use bytes::Bytes;
+use concord_core::__private::{AuthPlacement, ResolvedPolicy};
 use concord_core::advanced::{
-    AuthPlacement, EndpointPagination, PageAdvance, PageApply, PageDecision, PaginateBinding,
-    PaginationRuntime, PaginationRuntimeAdapter, ProgressKey,
+    EndpointPagination, PageAdvance, PageApply, PageDecision, PaginateBinding, PaginationRuntime,
+    PaginationRuntimeAdapter, ProgressKey,
 };
 use concord_core::error::ErrorCategory;
-use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{
     ApiClientError, CursorPagination, Endpoint, PageItems, PagedPagination, PaginatedEndpoint,
     PaginationTermination, ReusableEndpoint,
@@ -42,7 +42,7 @@ impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
 
     fn execute<'a>(
         client: &'a concord_core::prelude::ApiClient<TestCx>,
-        plan: concord_core::internal::RequestPlan,
+        plan: concord_core::__private::RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
         execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
@@ -51,8 +51,8 @@ impl Endpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
 impl ReusableEndpoint<TestCx> for GeneratedHeaderBoundCustomEndpoint {
     fn plan(
         &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
-    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        _ctx: &concord_core::__private::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::__private::RequestPlan, ApiClientError> {
         let mut plan = request_plan(
             "GeneratedHeaderBoundCustom",
             Method::GET,
@@ -164,7 +164,7 @@ impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
 
     fn execute<'a>(
         client: &'a concord_core::prelude::ApiClient<TestCx>,
-        plan: concord_core::internal::RequestPlan,
+        plan: concord_core::__private::RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
         execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
@@ -173,14 +173,14 @@ impl Endpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
 impl ReusableEndpoint<TestCx> for HeaderBoundOffsetLimitEndpoint {
     fn plan(
         &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
-    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        _ctx: &concord_core::__private::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::__private::RequestPlan, ApiClientError> {
         let mut plan = request_plan(
             "HeaderBoundOffsetLimit",
             Method::GET,
             "/header-offset-limit",
             Default::default(),
-            Some(concord_core::internal::PaginationMarker),
+            Some(concord_core::__private::PaginationMarker),
         );
         plan.endpoint.policy.headers.insert(
             http::header::HeaderName::from_static("x-start"),
@@ -237,7 +237,7 @@ impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
 
     fn execute<'a>(
         client: &'a concord_core::prelude::ApiClient<TestCx>,
-        plan: concord_core::internal::RequestPlan,
+        plan: concord_core::__private::RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
         execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
@@ -246,14 +246,14 @@ impl Endpoint<TestCx> for HeaderBoundPagedEndpoint {
 impl ReusableEndpoint<TestCx> for HeaderBoundPagedEndpoint {
     fn plan(
         &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
-    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        _ctx: &concord_core::__private::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::__private::RequestPlan, ApiClientError> {
         let mut plan = request_plan(
             "HeaderBoundPaged",
             Method::GET,
             "/header-paged",
             Default::default(),
-            Some(concord_core::internal::PaginationMarker),
+            Some(concord_core::__private::PaginationMarker),
         );
         plan.endpoint.policy.headers.insert(
             http::header::HeaderName::from_static("x-page"),
@@ -310,7 +310,7 @@ impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
 
     fn execute<'a>(
         client: &'a concord_core::prelude::ApiClient<TestCx>,
-        plan: concord_core::internal::RequestPlan,
+        plan: concord_core::__private::RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
         execute_buffered::<_, CursorItemsCodec>(client, plan)
     }
@@ -319,14 +319,14 @@ impl Endpoint<TestCx> for HeaderBoundCursorEndpoint {
 impl ReusableEndpoint<TestCx> for HeaderBoundCursorEndpoint {
     fn plan(
         &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
-    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        _ctx: &concord_core::__private::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::__private::RequestPlan, ApiClientError> {
         let mut plan = request_plan(
             "HeaderBoundCursor",
             Method::GET,
             "/header-cursor",
             Default::default(),
-            Some(concord_core::internal::PaginationMarker),
+            Some(concord_core::__private::PaginationMarker),
         );
         if let Some(cursor) = &self.cursor {
             plan.endpoint.policy.headers.insert(
@@ -387,7 +387,7 @@ impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
 
     fn execute<'a>(
         client: &'a concord_core::prelude::ApiClient<TestCx>,
-        plan: concord_core::internal::RequestPlan,
+        plan: concord_core::__private::RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
         execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
@@ -396,14 +396,14 @@ impl Endpoint<TestCx> for QueryBoundPagedEndpoint {
 impl ReusableEndpoint<TestCx> for QueryBoundPagedEndpoint {
     fn plan(
         &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, TestCx>,
-    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        _ctx: &concord_core::__private::ClientPlanContext<'_, TestCx>,
+    ) -> Result<concord_core::__private::RequestPlan, ApiClientError> {
         let mut plan = request_plan(
             "QueryBoundPaged",
             Method::GET,
             "/query-paged",
             Default::default(),
-            Some(concord_core::internal::PaginationMarker),
+            Some(concord_core::__private::PaginationMarker),
         );
         plan.endpoint
             .policy
@@ -445,7 +445,7 @@ impl PaginateBinding<concord_core::advanced::PagedPagination> for QueryBoundPage
 struct PaginationEndpoint {
     name: &'static str,
     path: &'static str,
-    policy: concord_core::internal::ResolvedPolicy,
+    policy: concord_core::__private::ResolvedPolicy,
     pagination: Option<PaginationVariant>,
 }
 
@@ -456,7 +456,7 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::Endpoint<C
 
     fn execute<'a>(
         client: &'a concord_core::prelude::ApiClient<Cx>,
-        plan: concord_core::internal::RequestPlan,
+        plan: concord_core::__private::RequestPlan,
     ) -> Pin<Box<dyn Future<Output = Result<Self::Response, ApiClientError>> + Send + 'a>> {
         execute_buffered::<_, CommaSeparatedItems>(client, plan)
     }
@@ -465,8 +465,8 @@ impl<Cx: concord_core::prelude::ClientContext> concord_core::prelude::Endpoint<C
 impl<Cx: concord_core::prelude::ClientContext> ReusableEndpoint<Cx> for PaginationEndpoint {
     fn plan(
         &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, Cx>,
-    ) -> Result<concord_core::internal::RequestPlan, ApiClientError> {
+        _ctx: &concord_core::__private::ClientPlanContext<'_, Cx>,
+    ) -> Result<concord_core::__private::RequestPlan, ApiClientError> {
         Ok(request_plan(
             self.name,
             Method::GET,
@@ -474,7 +474,7 @@ impl<Cx: concord_core::prelude::ClientContext> ReusableEndpoint<Cx> for Paginati
             self.policy.clone(),
             self.pagination
                 .as_ref()
-                .map(|_| concord_core::internal::PaginationMarker),
+                .map(|_| concord_core::__private::PaginationMarker),
         ))
     }
 }
@@ -869,6 +869,7 @@ async fn execute_raw_paginated_endpoint_sends_only_one_request() -> Result<(), A
     assert_eq!(raw.body(), &Bytes::from_static(b"raw-page-1"));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
+    #[cfg(feature = "dangerous-dev-tools")]
     assert_eq!(requests[0].meta.page_index, Some(0));
     assert_eq!(
         query_value(&requests[0].url, "offset"),
@@ -935,6 +936,7 @@ async fn terminal_status_on_page_n_does_not_advance_page_state() -> Result<(), A
     assert_eq!(err.http_status(), Some(StatusCode::INTERNAL_SERVER_ERROR));
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
+    #[cfg(feature = "dangerous-dev-tools")]
     assert_eq!(requests[0].meta.page_index, Some(0));
     assert_eq!(
         query_value(&requests[0].url, "offset"),
@@ -1993,8 +1995,13 @@ async fn later_page_transport_failure_is_typed_and_redacted() -> Result<(), ApiC
         .await
         .expect_err("later transport failure should surface as a typed pagination transport error");
 
-    assert!(matches!(err, ApiClientError::Transport { .. }));
-    assert_eq!(err.category(), ErrorCategory::Transport);
+    assert!(matches!(
+        err,
+        ApiClientError::RequestExecution { .. }
+            | ApiClientError::Connect { .. }
+            | ApiClientError::Timeout { .. }
+    ));
+    assert_eq!(err.category(), ErrorCategory::RequestExecution);
     assert_eq!(err.context().endpoint, "Items");
     assert_eq!(err.context().method, Method::GET);
     assert_eq!(sent.sent_count().await, 2);
@@ -2469,8 +2476,11 @@ async fn auth_refresh_on_page_n_preserves_offset() -> Result<(), ApiClientError>
     );
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 3);
-    assert_eq!(requests[1].meta.page_index, Some(1));
-    assert_eq!(requests[2].meta.page_index, Some(1));
+    #[cfg(feature = "dangerous-dev-tools")]
+    {
+        assert_eq!(requests[1].meta.page_index, Some(1));
+        assert_eq!(requests[2].meta.page_index, Some(1));
+    }
     assert_eq!(
         query_value(&requests[1].url, "offset"),
         Some("2".to_string())

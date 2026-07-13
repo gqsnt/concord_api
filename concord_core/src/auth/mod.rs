@@ -8,13 +8,16 @@ mod orchestrator;
 mod plan;
 mod providers;
 
+#[cfg(feature = "dangerous-dev-tools")]
+pub(crate) use credentials::CredentialLifecycleObservationTarget;
 pub use credentials::{
     AuthStepPolicy, CredentialContext, CredentialLease, CredentialMaterial, CredentialProvider,
     CredentialSlot, SecretCredential,
 };
+#[cfg(feature = "dangerous-dev-tools")]
+pub use credentials::{CredentialGenerationSnapshot, CredentialLifecycleEvent};
 pub use errors::{
-    AuthError, AuthErrorKind, CredentialRefreshReason, InvalidateReason, read_auth_lock,
-    write_auth_lock,
+    AuthError, AuthErrorKind, CredentialRefreshReason, InvalidateReason, write_auth_lock,
 };
 pub use future::AuthFuture;
 pub use http::{
@@ -23,8 +26,9 @@ pub use http::{
 };
 pub use ids::{AuthProvenance, AuthUsageId, CredentialId};
 pub use materials::{AccessToken, ApiKey, BasicCredential};
-#[doc(hidden)]
-pub use orchestrator::{AuthChallengeMode, AuthPreparationMode, AuthProviderBinding};
+pub use orchestrator::{
+    AuthChallengeMode, AuthPreparationMode, AuthProviderBinding, CredentialProviderState,
+};
 pub(crate) use orchestrator::{
     apply_rejection, apply_rejection_invalidation_only, plan_rejection, prepare,
 };
@@ -32,11 +36,10 @@ pub(crate) use plan::AuthRejectionPlan;
 pub(crate) use plan::AuthTransportMaterial;
 pub use plan::{
     AuthApplication, AuthApplicationRequest, AuthAppliedCredential, AuthAttemptSummary,
-    AuthChallengePolicy, AuthDecision, AuthPlacement, AuthPlacementPlan, AuthPlan,
-    AuthPreparationReuse, AuthRejectionAction, AuthRejectionDecision, AuthRequirement,
-    AuthRetryReason, AuthSlotId, CredentialRef, PlannedAuthPlacement, PlannedAuthSlot,
-    PreparedAuthCredential, PreparedInternalAuth, apply_basic_credential, apply_secret_credential,
-    auth_decision_for_status, invalidate_rejected_credential, invalidate_rejected_credential_local,
+    AuthChallengePolicy, AuthPlacement, AuthPlacementPlan, AuthPlan, AuthPreparationReuse,
+    AuthRejectionAction, AuthRequirement, CredentialRef, PlannedAuthPlacement,
+    PreparedAuthCredential, apply_basic_credential, apply_secret_credential,
+    auth_decision_for_status,
 };
 #[cfg(feature = "json")]
 pub use providers::OAuth2ClientCredentialsProvider;

@@ -30,6 +30,9 @@ trait ErasedCredentialSlot<Cx: ClientContext>: Send + Sync {
     ) -> AuthFuture<'a, Result<(), AuthError>>;
 
     fn invalidate_local(&self, generation: Option<u64>) -> Result<(), AuthError>;
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    fn lifecycle_observation_target(&self) -> Option<super::CredentialLifecycleObservationTarget>;
 }
 
 impl<Cx, P> ErasedCredentialSlot<Cx> for CredentialSlot<Cx, P>
@@ -67,6 +70,11 @@ where
     fn invalidate_local(&self, generation: Option<u64>) -> Result<(), AuthError> {
         self.invalidate_generation_local(generation)
     }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    fn lifecycle_observation_target(&self) -> Option<super::CredentialLifecycleObservationTarget> {
+        self.lifecycle_observation_target()
+    }
 }
 
 type Materializer = fn(
@@ -103,12 +111,11 @@ fn materialize_basic(
     apply_basic_credential(request, requirement, value)
 }
 
-/// Opaque generated binding between one typed provider slot and core's
+/// Opaque binding between one typed provider state owner and core's
 /// authentication lifecycle engine.
 ///
 /// The adapter borrows existing state. It contains no credential value,
 /// provider instance, cache entry, lock, future, or HTTP executor.
-#[doc(hidden)]
 pub struct AuthProviderBinding<'a, Cx: ClientContext> {
     slot: &'a dyn ErasedCredentialSlot<Cx>,
     materializer: Materializer,
@@ -124,16 +131,17 @@ impl<Cx: ClientContext> Clone for AuthProviderBinding<'_, Cx> {
     }
 }
 
-/// Secret-free request-local credential reuse metadata emitted by macros.
-#[doc(hidden)]
+/// Controls whether a prepared credential may be reused within one request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthPreparationMode {
-    PerAttempt,
+    /// Prepare once for each Concord-visible execution.
+    ///
+    /// Reqwest-internal resends do not rerun authentication preparation.
+    PerExecution,
     RequestLocal,
 }
 
-/// Secret-free challenge capability for one generated provider binding.
-#[doc(hidden)]
+/// Controls whether one authentication challenge may reacquire a credential.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthChallengeMode {
     InvalidateOnly,
@@ -144,7 +152,7 @@ impl<'a, Cx: ClientContext> AuthProviderBinding<'a, Cx> {
     /// Binds a provider whose material is inserted as a bearer, custom-header,
     /// or query secret.
     #[doc(hidden)]
-    pub fn secret<P>(
+    pub(crate) fn secret<P>(
         slot: &'a CredentialSlot<Cx, P>,
         preparation: AuthPreparationMode,
         challenge: AuthChallengeMode,
@@ -157,7 +165,7 @@ impl<'a, Cx: ClientContext> AuthProviderBinding<'a, Cx> {
             slot,
             materializer: materialize_secret::<P::Credential>,
             reuse: match preparation {
-                AuthPreparationMode::PerAttempt => AuthPreparationReuse::Never,
+                AuthPreparationMode::PerExecution => AuthPreparationReuse::Never,
                 AuthPreparationMode::RequestLocal => AuthPreparationReuse::RequestLocal,
             },
             refresh_on_challenge: matches!(challenge, AuthChallengeMode::Refresh),
@@ -166,7 +174,7 @@ impl<'a, Cx: ClientContext> AuthProviderBinding<'a, Cx> {
 
     /// Binds a provider whose material is inserted as Basic authorization.
     #[doc(hidden)]
-    pub fn basic<P>(
+    pub(crate) fn basic<P>(
         slot: &'a CredentialSlot<Cx, P>,
         preparation: AuthPreparationMode,
         challenge: AuthChallengeMode,
@@ -178,7 +186,7 @@ impl<'a, Cx: ClientContext> AuthProviderBinding<'a, Cx> {
             slot,
             materializer: materialize_basic,
             reuse: match preparation {
-                AuthPreparationMode::PerAttempt => AuthPreparationReuse::Never,
+                AuthPreparationMode::PerExecution => AuthPreparationReuse::Never,
                 AuthPreparationMode::RequestLocal => AuthPreparationReuse::RequestLocal,
             },
             refresh_on_challenge: matches!(challenge, AuthChallengeMode::Refresh),
@@ -193,6 +201,93 @@ impl<'a, Cx: ClientContext> AuthProviderBinding<'a, Cx> {
             ));
         }
         Ok(())
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    fn lifecycle_observation_target(&self) -> Option<super::CredentialLifecycleObservationTarget> {
+        self.slot.lifecycle_observation_target()
+    }
+}
+
+/// Supported owner for one provider and its opaque credential state.
+///
+/// Applications can store this value (normally behind an [`std::sync::Arc`])
+/// in `ClientContext::AuthState` and return a short-lived binding from
+/// `ClientContext::auth_provider_binding`. Credential generations, cache
+/// entries, and invalidation sequencing remain private to Concord.
+pub struct CredentialProviderState<Cx, P>
+where
+    Cx: ClientContext,
+    P: CredentialProvider<Cx>,
+{
+    slot: CredentialSlot<Cx, P>,
+}
+
+impl<Cx, P> CredentialProviderState<Cx, P>
+where
+    Cx: ClientContext,
+    P: CredentialProvider<Cx>,
+{
+    pub fn new(provider: P) -> Self {
+        Self {
+            slot: CredentialSlot::new(provider),
+        }
+    }
+
+    pub fn new_result(id: super::CredentialId, provider: Result<P, AuthError>) -> Self {
+        Self {
+            slot: CredentialSlot::new_result(id, provider),
+        }
+    }
+
+    pub fn secret_binding(
+        &self,
+        preparation: AuthPreparationMode,
+        challenge: AuthChallengeMode,
+    ) -> AuthProviderBinding<'_, Cx>
+    where
+        P::Credential: SecretCredential,
+    {
+        AuthProviderBinding::secret(&self.slot, preparation, challenge)
+    }
+
+    pub fn basic_binding(
+        &self,
+        preparation: AuthPreparationMode,
+        challenge: AuthChallengeMode,
+    ) -> AuthProviderBinding<'_, Cx>
+    where
+        P: CredentialProvider<Cx, Credential = BasicCredential>,
+    {
+        AuthProviderBinding::basic(&self.slot, preparation, challenge)
+    }
+
+    pub async fn set_manual(&self, value: P::Credential) -> Result<(), AuthError> {
+        self.slot.set_manual(value).await
+    }
+
+    pub async fn clear_manual(&self) -> Result<(), AuthError> {
+        self.slot.clear_manual().await
+    }
+
+    pub async fn has_value(&self) -> bool {
+        self.slot.has_value().await
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn install_lifecycle_observer(
+        &self,
+        observer: std::sync::Arc<dyn Fn(super::CredentialLifecycleEvent) + Send + Sync>,
+    ) {
+        self.slot.install_lifecycle_observer(observer);
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) async fn generation_snapshot(&self) -> Option<super::CredentialGenerationSnapshot> {
+        self.slot
+            .get_cached()
+            .await
+            .map(|lease| super::CredentialGenerationSnapshot::from_generation(lease.generation))
     }
 }
 
@@ -226,7 +321,12 @@ async fn prepare_binding<Cx: ClientContext>(
         generation: Some(lease.generation),
         provenance: requirement.provenance.clone(),
     };
-    Ok(super::PreparedAuthCredential::new(applied, application).with_reuse(binding.reuse))
+    let prepared =
+        super::PreparedAuthCredential::new(applied, application).with_reuse(binding.reuse);
+    #[cfg(feature = "dangerous-dev-tools")]
+    let prepared =
+        prepared.with_lifecycle_observation_target(binding.lifecycle_observation_target());
+    Ok(prepared)
 }
 
 fn plan_binding_rejection<Cx: ClientContext>(
@@ -331,9 +431,6 @@ fn apply_binding_rejection_invalidation_only<Cx: ClientContext>(
 }
 
 /// The single protected-request authentication preparation entry point.
-/// Generated contexts always resolve a versioned binding. The callback branch
-/// is retained only for hand-written `ClientContext` compatibility and is not
-/// emitted by `concord_macros`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn prepare<Cx: ClientContext>(
     requirement: &AuthRequirement,
@@ -342,7 +439,7 @@ pub(crate) async fn prepare<Cx: ClientContext>(
     auth: &Cx::AuthVars,
     auth_state: &Cx::AuthState,
     executor: &dyn AuthHttpExecutor,
-    meta: &crate::transport::RequestMeta,
+    _meta: &crate::execution_meta::RequestExecutionMeta,
 ) -> Result<super::PreparedAuthCredential, AuthError> {
     match Cx::auth_provider_binding(&requirement.credential.id, auth_state) {
         Some(binding) => {
@@ -357,18 +454,10 @@ pub(crate) async fn prepare<Cx: ClientContext>(
             )
             .await
         }
-        None => {
-            Cx::prepare_auth_requirement(
-                requirement,
-                request,
-                vars,
-                auth,
-                auth_state,
-                executor,
-                meta,
-            )
-            .await
-        }
+        None => Err(AuthError::new(
+            AuthErrorKind::InvalidConfiguration,
+            "authentication requirement has no generated provider binding",
+        )),
     }
 }
 
@@ -380,34 +469,20 @@ pub(crate) async fn apply_rejection_invalidation_only<Cx: ClientContext>(
     action: &AuthRejectionAction,
     requirement: &AuthRequirement,
     applied: &AuthAppliedCredential,
-    vars: &Cx::Vars,
-    auth: &Cx::AuthVars,
+    _vars: &Cx::Vars,
+    _auth: &Cx::AuthVars,
     auth_state: &Cx::AuthState,
-    meta: &crate::transport::RequestMeta,
+    _meta: &crate::execution_meta::RequestExecutionMeta,
     status: http::StatusCode,
 ) -> Result<(), AuthError> {
     match Cx::auth_provider_binding(&requirement.credential.id, auth_state) {
         Some(binding) => {
             apply_binding_rejection_invalidation_only(binding, action, requirement, applied, status)
         }
-        None => {
-            let terminal = AuthRejectionAction::terminal(
-                requirement,
-                applied,
-                rejection_invalidation_reason(action, status),
-            );
-            Cx::apply_terminal_auth_action(
-                &terminal,
-                requirement,
-                applied,
-                vars,
-                auth,
-                auth_state,
-                meta,
-                status,
-            )
-            .await
-        }
+        None => Err(AuthError::new(
+            AuthErrorKind::InvalidConfiguration,
+            "authentication requirement has no generated provider binding",
+        )),
     }
 }
 
@@ -416,22 +491,25 @@ pub(crate) async fn apply_rejection_invalidation_only<Cx: ClientContext>(
 pub(crate) fn plan_rejection<Cx: ClientContext>(
     requirement: &AuthRequirement,
     applied: &AuthAppliedCredential,
-    vars: &Cx::Vars,
-    auth: &Cx::AuthVars,
+    _vars: &Cx::Vars,
+    _auth: &Cx::AuthVars,
     auth_state: &Cx::AuthState,
-    meta: &crate::transport::RequestMeta,
+    _meta: &crate::execution_meta::RequestExecutionMeta,
     status: http::StatusCode,
-    headers: &http::HeaderMap,
+    _headers: &http::HeaderMap,
 ) -> Result<AuthRejectionAction, AuthError> {
     match Cx::auth_provider_binding(&requirement.credential.id, auth_state) {
         Some(binding) => plan_binding_rejection(binding, requirement, applied, status),
-        None => Cx::plan_auth_response(requirement, applied, vars, auth, meta, status, headers),
+        None => Err(AuthError::new(
+            AuthErrorKind::InvalidConfiguration,
+            "authentication requirement has no generated provider binding",
+        )),
     }
 }
 
 /// The single generation-aware authentication rejection application entry
 /// point. Core selects local terminal invalidation versus provider-capable
-/// invalidation before consulting the compatibility adapter.
+/// invalidation.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn apply_rejection<Cx: ClientContext>(
     action: &AuthRejectionAction,
@@ -441,7 +519,7 @@ pub(crate) async fn apply_rejection<Cx: ClientContext>(
     auth: &Cx::AuthVars,
     auth_state: &Cx::AuthState,
     executor: &dyn AuthHttpExecutor,
-    meta: &crate::transport::RequestMeta,
+    _meta: &crate::execution_meta::RequestExecutionMeta,
     status: http::StatusCode,
 ) -> Result<(), AuthError> {
     match Cx::auth_provider_binding(&requirement.credential.id, auth_state) {
@@ -459,33 +537,10 @@ pub(crate) async fn apply_rejection<Cx: ClientContext>(
             )
             .await
         }
-        None if action.requests_refresh() => {
-            Cx::apply_refresh_auth_action(
-                action,
-                requirement,
-                applied,
-                vars,
-                auth,
-                auth_state,
-                executor,
-                meta,
-                status,
-            )
-            .await
-        }
-        None => {
-            Cx::apply_terminal_auth_action(
-                action,
-                requirement,
-                applied,
-                vars,
-                auth,
-                auth_state,
-                meta,
-                status,
-            )
-            .await
-        }
+        None => Err(AuthError::new(
+            AuthErrorKind::InvalidConfiguration,
+            "authentication requirement has no generated provider binding",
+        )),
     }
 }
 
@@ -882,7 +937,7 @@ mod tests {
         };
         let binding = AuthProviderBinding::secret(
             state.slot.as_ref(),
-            AuthPreparationMode::PerAttempt,
+            AuthPreparationMode::PerExecution,
             AuthChallengeMode::InvalidateOnly,
         );
         let action = plan_binding_rejection(

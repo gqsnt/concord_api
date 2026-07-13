@@ -257,7 +257,7 @@ fn legacy_behavior_keyword_fails_with_migration_diagnostic() {
 
     assert!(
         err.to_string()
-            .contains("`behavior` is not valid V1 DSL; use `profile`"),
+            .contains("`behavior` is not valid current DSL; use `profile`"),
         "{err}"
     );
 }
@@ -282,7 +282,7 @@ fn legacy_behaviors_block_fails_with_migration_diagnostic() {
 
     assert!(
         err.to_string()
-            .contains("`behaviors` is not valid V1 DSL; use `profiles"),
+            .contains("`behaviors` is not valid current DSL; use `profiles"),
         "{err}"
     );
 }
@@ -305,7 +305,7 @@ fn legacy_defaults_block_fails_with_migration_diagnostic() {
 
     assert!(
         err.to_string()
-            .contains("`defaults` is not valid V1 DSL; use `default"),
+            .contains("`defaults` is not valid current DSL; use `default"),
         "{err}"
     );
 }

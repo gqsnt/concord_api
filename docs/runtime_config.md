@@ -16,8 +16,8 @@ Runtime configuration includes:
 - dangerous local development capture when its feature is explicitly enabled.
 
 It does not include `retry_policy`, `max_attempts`,
-`respect_retry_after`, retry admission, retry budgets, physical-attempt
-numbering, or per-endpoint retry configuration.
+endpoint retry policy, retry budgets, resend numbering, or
+per-endpoint retry configuration.
 
 ## Retry construction
 
@@ -50,8 +50,8 @@ override, retry-mode override, or auth-recovery-count override.
 Hooks receive sanitized, body-free metadata. `pre_send` runs after rate-limit
 acquisition and before raw authentication materialization. `post_response`
 observes the final HTTP response returned by Reqwest, before endpoint body read
-and decode. `transport_error` observes a terminal visible-execution transport
-failure.
+and decode. `request_error` observes a terminal visible-execution request
+failure through a sanitized category, without exposing Reqwest errors.
 
 These callbacks run once per visible call to `reqwest::Client::execute`:
 initial execution, one authentication recovery, and each pagination page.

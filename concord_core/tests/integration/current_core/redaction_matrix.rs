@@ -8,16 +8,17 @@ use crate::support::{
     RedactionSentinels, assert_error_chain_does_not_contain_any, assert_text_does_not_contain_any,
 };
 use bytes::Bytes;
-use concord_core::advanced::AuthPlacement;
+use concord_core::__private::{
+    AuthPlacement, BufferedResponse, EncodedRequest, Format, PreparedBody, RequestEntity,
+    RequestPlan, ResponseEntity,
+};
 use concord_core::advanced::{
-    BodyCodec, BufferedResponse, CodecError, DecodeContext, EncodeContext, EncodedBody,
-    EncodedRequest, ErrorContext, RateLimitBucketUse, RateLimitContext, RateLimitErrorKind,
-    RateLimitFuture, RateLimitKey, RateLimitKeyPart, RateLimitKeyValue, RateLimitPermit,
-    RateLimitPlan, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, ResponseCodec,
-    TextContentType,
+    BodyCodec, CodecError, DecodeContext, EncodeContext, EncodedBody, ErrorContext,
+    RateLimitBucketUse, RateLimitContext, RateLimitErrorKind, RateLimitFuture, RateLimitKey,
+    RateLimitKeyPart, RateLimitKeyValue, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter, ResponseCodec, TextContentType,
 };
 use concord_core::error::ErrorCategory;
-use concord_core::internal::{Format, PreparedBody, RequestEntity, RequestPlan, ResponseEntity};
 use concord_core::prelude::{ApiClientError, PaginationTermination, Text};
 use http::{HeaderName, HeaderValue, Method, StatusCode};
 use std::error::Error;
@@ -188,8 +189,8 @@ impl RateLimiter for RecordingRateLimiter {
 fn policy_with_request_markers(
     header: Option<&'static str>,
     query_value: Option<&'static str>,
-) -> concord_core::internal::ResolvedPolicy {
-    let mut policy = concord_core::internal::ResolvedPolicy::default();
+) -> concord_core::__private::ResolvedPolicy {
+    let mut policy = concord_core::__private::ResolvedPolicy::default();
     if let Some(value) = header {
         policy.headers.insert(
             HeaderName::from_static("x-redaction-matrix"),
@@ -208,7 +209,7 @@ fn plan_with_body(
     name: &'static str,
     method: Method,
     path: &'static str,
-    policy: concord_core::internal::ResolvedPolicy,
+    policy: concord_core::__private::ResolvedPolicy,
     body: Option<&'static str>,
 ) -> RequestPlan {
     let mut plan = request_plan(name, method, path, policy, None);
@@ -465,10 +466,23 @@ async fn transport_failure_redacts_request_material() {
         .await
         .expect_err("transport failure should surface as transport error");
 
-    assert!(matches!(err, ApiClientError::Transport { .. }));
-    assert_eq!(err.category(), ErrorCategory::Transport);
+    assert!(matches!(
+        err,
+        ApiClientError::RequestExecution { .. }
+            | ApiClientError::Connect { .. }
+            | ApiClientError::Timeout { .. }
+    ));
+    assert_eq!(err.category(), ErrorCategory::RequestExecution);
     assert_eq!(err.context().endpoint, "TransportMatrix");
     assert_eq!(err.context().method, Method::PUT);
+    let first_source = std::error::Error::source(&err).expect("request error source");
+    let opaque = first_source
+        .downcast_ref::<concord_core::prelude::RequestErrorSource>()
+        .unwrap_or_else(|| panic!("request execution source was {first_source:?}"));
+    assert!(
+        opaque.source().is_some(),
+        "sanitized source chain is retained"
+    );
     assert_eq!(sent.sent_count().await, 1);
     let requests = sent.requests().await;
     assert_eq!(requests.len(), 1);
@@ -550,7 +564,7 @@ async fn terminal_status_redacts_request_and_response_sentinels() {
     );
     let sent = transport.clone();
     let client = client(TestAuthVars::default(), transport);
-    let mut policy = concord_core::internal::ResolvedPolicy::default();
+    let mut policy = concord_core::__private::ResolvedPolicy::default();
     policy.headers.insert(
         HeaderName::from_static("x-redaction-matrix"),
         HeaderValue::from_static(REQUEST_HEADER_SENTINEL),
@@ -593,7 +607,7 @@ async fn rate_limit_acquire_failure_redacts_key_material_and_context() {
     client.configure(|cfg| {
         cfg.rate_limiter(limiter);
     });
-    let mut policy = concord_core::internal::ResolvedPolicy::default();
+    let mut policy = concord_core::__private::ResolvedPolicy::default();
     let mut plan = RateLimitPlan::new();
     plan.push_bucket(
         RateLimitBucketUse::new(

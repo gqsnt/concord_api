@@ -7,10 +7,14 @@ license.workspace = true
 
 
 [dependencies]
-concord_core = { path = "../concord_core", version = "0.1.0", features = ["dangerous-dev-tools"] }
+concord_core = { path = "../concord_core", version = "0.1.0" }
 bytes.workspace = true
 http.workspace = true
 http-body-util.workspace = true
 serde.workspace = true
 url.workspace = true
 serde_json.workspace = true
+
+[features]
+default = []
+dangerous-dev-tools = ["concord_core/dangerous-dev-tools"]

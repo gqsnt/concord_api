@@ -11,7 +11,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::sync::{
-    Mutex,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
 use std::task::{Context, Poll};
@@ -204,6 +204,75 @@ impl fmt::Display for BodyError {
 
 impl Error for BodyError {}
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct RequestBodyErrorSlot(Arc<Mutex<Option<BodyError>>>);
+
+impl RequestBodyErrorSlot {
+    pub(crate) fn record(&self, error: BodyError) {
+        let mut slot = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot.is_none() {
+            *slot = Some(error);
+        }
+    }
+
+    pub(crate) fn get(&self) -> Option<BodyError> {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+pub(crate) struct ObservedRequestBody<B> {
+    inner: Pin<Box<B>>,
+    errors: RequestBodyErrorSlot,
+}
+
+impl<B> ObservedRequestBody<B> {
+    pub(crate) fn new(inner: B, errors: RequestBodyErrorSlot) -> Self {
+        Self {
+            inner: Box::pin(inner),
+            errors,
+        }
+    }
+}
+
+impl<B> Body for ObservedRequestBody<B>
+where
+    B: Body<Data = Bytes>,
+    B::Error: Send + 'static,
+{
+    type Data = Bytes;
+    type Error = BodyError;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        match self.inner.as_mut().poll_frame(cx) {
+            Poll::Ready(Some(Err(error))) => {
+                let error = BodyError::from_producer(error);
+                self.errors.record(error);
+                Poll::Ready(Some(Err(error)))
+            }
+            Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(Ok(frame))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
+
 impl From<std::io::Error> for BodyError {
     fn from(_: std::io::Error) -> Self {
         Self::new(BodyErrorKind::Io)
@@ -217,7 +286,7 @@ impl From<crate::stream_body::StreamBodyError> for BodyError {
             StreamBodyErrorKind::InvalidChunkSize | StreamBodyErrorKind::SizeHint => {
                 Self::invalid_configuration()
             }
-            StreamBodyErrorKind::Transport => Self::input(),
+            StreamBodyErrorKind::Producer => Self::input(),
         }
     }
 }

@@ -252,61 +252,61 @@ fn emit_endpoint_descriptor(api: &ResolvedApi, ep: &ResolvedEndpoint) -> TokenSt
     let name = LitStr::new(&endpoint_qualified_name(ep), ep.name.span());
     let api_name = LitStr::new(&api.client_name.to_string(), api.client_name.span());
     let method = match ep.method.to_string().as_str() {
-        "GET" => quote! { ::concord_core::__private::v1::HttpMethod::Get },
-        "POST" => quote! { ::concord_core::__private::v1::HttpMethod::Post },
-        "PUT" => quote! { ::concord_core::__private::v1::HttpMethod::Put },
-        "DELETE" => quote! { ::concord_core::__private::v1::HttpMethod::Delete },
-        "HEAD" => quote! { ::concord_core::__private::v1::HttpMethod::Head },
-        "OPTIONS" => quote! { ::concord_core::__private::v1::HttpMethod::Options },
-        "PATCH" => quote! { ::concord_core::__private::v1::HttpMethod::Patch },
+        "GET" => quote! { ::concord_core::__private::HttpMethod::Get },
+        "POST" => quote! { ::concord_core::__private::HttpMethod::Post },
+        "PUT" => quote! { ::concord_core::__private::HttpMethod::Put },
+        "DELETE" => quote! { ::concord_core::__private::HttpMethod::Delete },
+        "HEAD" => quote! { ::concord_core::__private::HttpMethod::Head },
+        "OPTIONS" => quote! { ::concord_core::__private::HttpMethod::Options },
+        "PATCH" => quote! { ::concord_core::__private::HttpMethod::Patch },
         _ => return emit_helpers::compile_error_tokens("unsupported resolved descriptor method", ep.method.span()),
     };
     let origin = match &ep.descriptor.origin {
         EndpointOriginIr::Fixed(origin) => {
             let fixed = emit_fixed_origin(origin);
-            quote! { ::concord_core::__private::v1::EndpointOriginDescriptor::Fixed(#fixed) }
+            quote! { ::concord_core::__private::EndpointOriginDescriptor::Fixed(#fixed) }
         }
         EndpointOriginIr::Dynamic => {
-            quote! { ::concord_core::__private::v1::EndpointOriginDescriptor::Dynamic }
+            quote! { ::concord_core::__private::EndpointOriginDescriptor::Dynamic }
         }
     };
     let request_body = match &ep.descriptor.request_body {
         RequestBodyDescriptorIr::None => {
-            quote! { ::concord_core::__private::v1::RequestBodyDescriptor::None }
+            quote! { ::concord_core::__private::RequestBodyDescriptor::None }
         }
         RequestBodyDescriptorIr::Buffered { codec } => {
             let codec = LitStr::new(codec, ep.name.span());
-            quote! { ::concord_core::__private::v1::RequestBodyDescriptor::Buffered { codec: #codec } }
+            quote! { ::concord_core::__private::RequestBodyDescriptor::Buffered { codec: #codec } }
         }
         RequestBodyDescriptorIr::Streaming { media } => {
             let media = LitStr::new(media, ep.name.span());
-            quote! { ::concord_core::__private::v1::RequestBodyDescriptor::Streaming { media: #media } }
+            quote! { ::concord_core::__private::RequestBodyDescriptor::Streaming { media: #media } }
         }
         RequestBodyDescriptorIr::Multipart => {
-            quote! { ::concord_core::__private::v1::RequestBodyDescriptor::Multipart }
+            quote! { ::concord_core::__private::RequestBodyDescriptor::Multipart }
         }
     };
     let response_format = match &ep.descriptor.response_format {
         ResponseFormatDescriptorIr::Buffered { codec } => {
             let codec = LitStr::new(codec, ep.name.span());
-            quote! { ::concord_core::__private::v1::ResponseFormatDescriptor::Buffered { codec: #codec } }
+            quote! { ::concord_core::__private::ResponseFormatDescriptor::Buffered { codec: #codec } }
         }
         ResponseFormatDescriptorIr::Bytes => {
-            quote! { ::concord_core::__private::v1::ResponseFormatDescriptor::Bytes }
+            quote! { ::concord_core::__private::ResponseFormatDescriptor::Bytes }
         }
         ResponseFormatDescriptorIr::NoContent => {
-            quote! { ::concord_core::__private::v1::ResponseFormatDescriptor::NoContent }
+            quote! { ::concord_core::__private::ResponseFormatDescriptor::NoContent }
         }
         ResponseFormatDescriptorIr::Streaming { media } => {
             let media = LitStr::new(media, ep.name.span());
-            quote! { ::concord_core::__private::v1::ResponseFormatDescriptor::Streaming { media: #media } }
+            quote! { ::concord_core::__private::ResponseFormatDescriptor::Streaming { media: #media } }
         }
     };
     let auth_requirements = ep.policy.auth.iter().map(|requirement| {
         let credential = LitStr::new(&requirement.credential.to_string(), requirement.credential.span());
         let usage_id = LitStr::new(&requirement.usage_id, requirement.credential.span());
         quote! {
-            ::concord_core::__private::v1::AuthRequirementDescriptor {
+            ::concord_core::__private::AuthRequirementDescriptor {
                 credential: #credential,
                 usage_id: #usage_id,
             }
@@ -315,7 +315,7 @@ fn emit_endpoint_descriptor(api: &ResolvedApi, ep: &ResolvedEndpoint) -> TokenSt
     let pagination = if ep.paginate.is_some() {
         let can_change_origin = ep.descriptor.pagination_can_change_origin;
         quote! {
-            ::core::option::Option::Some(::concord_core::__private::v1::PaginationDescriptor {
+            ::core::option::Option::Some(::concord_core::__private::PaginationDescriptor {
                 can_change_origin: #can_change_origin,
             })
         }
@@ -325,15 +325,15 @@ fn emit_endpoint_descriptor(api: &ResolvedApi, ep: &ResolvedEndpoint) -> TokenSt
 
     quote! {
         #[doc(hidden)]
-        pub(super) static #descriptor: ::concord_core::__private::v1::EndpointDescriptor =
-            ::concord_core::__private::v1::EndpointDescriptor {
+        pub(super) static #descriptor: ::concord_core::__private::EndpointDescriptor =
+            ::concord_core::__private::EndpointDescriptor {
                 name: #name,
                 api_name: #api_name,
                 method: #method,
                 origin: #origin,
-                request: ::concord_core::__private::v1::RequestDescriptor { body: #request_body },
-                response: ::concord_core::__private::v1::ResponseDescriptor { format: #response_format },
-                auth: ::concord_core::__private::v1::AuthDescriptor {
+                request: ::concord_core::__private::RequestDescriptor { body: #request_body },
+                response: ::concord_core::__private::ResponseDescriptor { format: #response_format },
+                auth: ::concord_core::__private::AuthDescriptor {
                     requirements: &[ #( #auth_requirements ),* ],
                 },
                 pagination: #pagination,
@@ -360,7 +360,7 @@ fn emit_paginate_binding_impl(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenSt
     }).collect();
 
     quote! {
-        impl ::concord_core::advanced::PaginateBinding<#pagination_ty> for #ty_name {
+        impl ::concord_core::__private::PaginateBinding<#pagination_ty> for #ty_name {
             fn load_pagination(&self) -> #pagination_ty {
                 let mut pagination = <#pagination_ty as ::core::default::Default>::default();
                 #( #load_assignments )*
@@ -535,7 +535,7 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
     let request_adapter_ty = &ep.io.request_entity.adapter_ty;
     if ep.io.request_entity.capabilities.has_body {
         Ok(quote! {
-            let __prepared_request_entity = <#request_adapter_ty as ::concord_core::advanced::RequestEntity>::prepare(
+            let __prepared_request_entity = <#request_adapter_ty as ::concord_core::__private::RequestEntity>::prepare(
                 {
                     let __body_value = ep.body;
                     __body_value
@@ -547,7 +547,7 @@ fn endpoint_request_body_plan(ep: &ResolvedEndpoint) -> Result<TokenStream2, Tok
     } else {
         Ok(quote! {
             let __prepared_request_entity =
-                <#request_adapter_ty as ::concord_core::advanced::RequestEntity>::prepare(
+                <#request_adapter_ty as ::concord_core::__private::RequestEntity>::prepare(
                     (),
                     ctx_err.clone(),
                 )?;
@@ -654,7 +654,7 @@ fn endpoint_response_adapter_ty(ep: &ResolvedEndpoint, ty_name: &Ident) -> Token
 fn endpoint_response_plan_tokens(ep: &ResolvedEndpoint, ty_name: &Ident) -> TokenStream2 {
     let response_entity_adapter_ty = endpoint_response_adapter_ty(ep, ty_name);
     quote! {
-        let __response_entity_plan = <#response_entity_adapter_ty as ::concord_core::advanced::ResponseEntity>::plan(ctx_err.clone())?;
+        let __response_entity_plan = <#response_entity_adapter_ty as ::concord_core::__private::ResponseEntity>::plan(ctx_err.clone())?;
         let __response_plan = __response_entity_plan.response_plan.clone();
         let __response_accept = __response_plan.accept.clone();
         let __response_no_content = __response_plan.no_content;
@@ -678,7 +678,7 @@ fn endpoint_execute_override(ep: &ResolvedEndpoint, ty_name: &Ident, cx_ty: &Ide
             >,
         >
         {
-            <#response_entity_adapter_ty as ::concord_core::advanced::ResponseEntity>::execute(
+            <#response_entity_adapter_ty as ::concord_core::__private::ResponseEntity>::execute(
                 client,
                 plan,
             )
@@ -705,7 +705,7 @@ fn endpoint_response_terminal_impl(
                 ::std::boxed::Box<
                     dyn ::core::future::Future<
                             Output = ::core::result::Result<
-                                ::concord_core::advanced::DecodedResponse<Self::Response>,
+                                ::concord_core::prelude::DecodedResponse<Self::Response>,
                                 ::concord_core::prelude::ApiClientError,
                             >,
                         > + Send + 'a,

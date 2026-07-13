@@ -24,3 +24,13 @@ fn trybuild_auth_contract_fixtures() {
 fn trybuild_route_contract_fixtures() {
     support::run_trybuild_pass(&["tests/trybuild/pass/route/*.rs"]);
 }
+
+#[test]
+fn trybuild_codegen_contract_failures() {
+    support::run_trybuild_fail(&["tests/trybuild/fail/codegen_contract/*.rs"]);
+}
+
+#[test]
+fn trybuild_removed_public_surfaces() {
+    support::run_trybuild_fail(&["tests/trybuild/fail/rust_type_errors/removed_transport_api.rs"]);
+}

@@ -186,9 +186,9 @@ impl RuntimeHooks for RecordingHooks {
         })
     }
 
-    fn transport_error<'a>(
+    fn request_error<'a>(
         &'a self,
-        ctx: concord_core::advanced::TransportErrorHookContext<'a>,
+        ctx: concord_core::advanced::RequestErrorHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         let records = self.records.clone();
         let url = ctx.meta.url.to_string();

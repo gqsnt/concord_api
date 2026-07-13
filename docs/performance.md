@@ -42,24 +42,25 @@ does not delay terminal processing of the current 429.
 
 ## Benchmarks
 
-The standalone `perf` crate contains native targets for:
+The standalone `perf` crate contains public-surface targets for:
 
 - managed client construction across all retry modes;
 - visible execution overhead;
-- bounded authentication recovery and credential caching;
-- pagination;
-- native streaming upload/response;
-- rate-limit governor and cooldown processing;
-- redaction/hooks and allocation reporting.
+- generated facade overhead;
+- reusable streaming and direct multipart recipes;
+- native streaming upload and response execution;
+- one bounded authentication recovery;
+- response-limit failures and future-call Retry-After cooldown;
+- deterministic buffered visible execution.
 
 ```text
 cargo check --manifest-path perf/Cargo.toml --all-targets
-cargo bench --manifest-path perf/Cargo.toml --bench retry_modes
-cargo bench --manifest-path perf/Cargo.toml --bench auth_runtime
-cargo bench --manifest-path perf/Cargo.toml --bench streaming_upload
-cargo bench --manifest-path perf/Cargo.toml --bench streaming_response
-cargo bench --manifest-path perf/Cargo.toml --bench rate_limit_governor
+cargo bench --manifest-path perf/Cargo.toml --bench managed_client
+cargo bench --manifest-path perf/Cargo.toml --bench generated_client
+cargo bench --manifest-path perf/Cargo.toml --bench request_bodies
+cargo bench --manifest-path perf/Cargo.toml --bench visible_execution
+cargo bench --manifest-path perf/Cargo.toml --bench native_paths
 ```
 
-Machine-local historical reports may mention the removed Concord attempt loop;
-they are measurements of earlier architecture, not current API guidance.
+The maintained package contains no historical transport-polymorphism or
+Concord retry-loop benchmarks.

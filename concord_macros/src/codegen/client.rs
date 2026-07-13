@@ -96,7 +96,7 @@ fn emit_client_auth_state(resolved_api: &ResolvedApi, auth_state_ty: &Ident, cx_
         let name = &c.name;
         let provider_ty = emit_auth_provider_ty(&c.kind);
         quote! {
-            pub(crate) #name: ::std::sync::Arc<::concord_core::__private::CredentialSlot<#cx_ty, #provider_ty>>
+            pub(crate) #name: ::std::sync::Arc<::concord_core::__private::GeneratedCredentialBinding<#cx_ty, #provider_ty>>
         }
     });
 
@@ -127,13 +127,13 @@ fn emit_client_auth_state_init(resolved_api: &ResolvedApi, auth_state_ty: &Ident
         let provider = emit_auth_provider_init(&client_ns, c);
         match &c.kind {
             AuthCredentialKindIr::OAuth2ClientCredentials { .. } => quote! {
-                #name: ::std::sync::Arc::new(::concord_core::__private::CredentialSlot::new_result(
-                    ::concord_core::__private::v1::CredentialId::new(#client_ns, #name_lit),
+                #name: ::std::sync::Arc::new(::concord_core::__private::GeneratedCredentialBinding::new_result(
+                    ::concord_core::__private::CredentialId::new(#client_ns, #name_lit),
                     #provider,
                 ))
             },
             _ => quote! {
-                #name: ::std::sync::Arc::new(::concord_core::__private::CredentialSlot::new(#provider))
+                #name: ::std::sync::Arc::new(::concord_core::__private::GeneratedCredentialBinding::new(#provider))
             },
         }
     });
@@ -165,19 +165,19 @@ fn emit_client_auth_state_init(resolved_api: &ResolvedApi, auth_state_ty: &Ident
 fn emit_auth_provider_ty(kind: &AuthCredentialKindIr) -> TokenStream2 {
     match kind {
         AuthCredentialKindIr::ApiKey { .. } => {
-            quote! { ::concord_core::advanced::StaticApiKeyProvider }
+            quote! { ::concord_core::__private::StaticApiKeyProvider }
         }
         AuthCredentialKindIr::StaticBearer { .. } => {
-            quote! { ::concord_core::advanced::StaticBearerProvider }
+            quote! { ::concord_core::__private::StaticBearerProvider }
         }
         AuthCredentialKindIr::Basic { .. } => {
-            quote! { ::concord_core::advanced::StaticBasicProvider }
+            quote! { ::concord_core::__private::StaticBasicProvider }
         }
         AuthCredentialKindIr::OAuth2ClientCredentials { .. } => {
-            quote! { ::concord_core::advanced::OAuth2ClientCredentialsProvider }
+            quote! { ::concord_core::__private::OAuth2ClientCredentialsProvider }
         }
         AuthCredentialKindIr::Endpoint { output_ty, .. } => {
-            quote! { ::concord_core::advanced::ManualCredentialProvider<#output_ty> }
+            quote! { ::concord_core::__private::ManualCredentialProvider<#output_ty> }
         }
     }
 }
@@ -186,23 +186,23 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
     let name = &credential.name;
     let name_lit = LitStr::new(&name.to_string(), name.span());
     let credential_id =
-        quote! { ::concord_core::__private::v1::CredentialId::new(#client_ns, #name_lit) };
+        quote! { ::concord_core::__private::CredentialId::new(#client_ns, #name_lit) };
 
     match &credential.kind {
         AuthCredentialKindIr::ApiKey { secret } => quote! {
-            ::concord_core::advanced::StaticApiKeyProvider::new(
+            ::concord_core::__private::StaticApiKeyProvider::new(
                 #credential_id,
                 ::concord_core::prelude::ApiKey::new(auth.#secret.clone()),
             )
         },
         AuthCredentialKindIr::StaticBearer { secret } => quote! {
-            ::concord_core::advanced::StaticBearerProvider::new(
+            ::concord_core::__private::StaticBearerProvider::new(
                 #credential_id,
                 ::concord_core::prelude::AccessToken::new(auth.#secret.clone()),
             )
         },
         AuthCredentialKindIr::Basic { username, password } => quote! {
-            ::concord_core::advanced::StaticBasicProvider::new(
+            ::concord_core::__private::StaticBasicProvider::new(
                 #credential_id,
                 ::concord_core::prelude::BasicCredential::new(
                     auth.#username.clone(),
@@ -218,7 +218,7 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
         } => {
             let provider = quote! {
                 {
-                    let provider = ::concord_core::advanced::OAuth2ClientCredentialsProvider::from_validated_token_url(
+                    let provider = ::concord_core::__private::OAuth2ClientCredentialsProvider::from_validated_token_url(
                         #credential_id,
                         #token_url,
                         auth.#client_id.clone(),
@@ -240,7 +240,7 @@ fn emit_auth_provider_init(client_ns: &LitStr, credential: &AuthCredentialIr) ->
             let acquire_name = emit_helpers::ident(&format!("acquire_auth_{name}"), name.span());
             let hint = LitStr::new(&format!("client.{acquire_name}(...)"), Span::call_site());
             quote! {
-                ::concord_core::advanced::ManualCredentialProvider::new(#credential_id)
+                ::concord_core::__private::ManualCredentialProvider::new(#credential_id)
                     .with_missing_hint(#hint)
             }
         }
@@ -278,42 +278,41 @@ fn emit_client_auth_binding_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
     let arms = resolved_api.client_auth_credentials.iter().map(|c| {
         let name = &c.name;
         let name_lit = LitStr::new(&name.to_string(), name.span());
-        let (constructor, preparation, challenge) = match &c.kind {
+        let (binding_method, preparation, challenge) = match &c.kind {
             AuthCredentialKindIr::Basic { .. } => (
-                quote! { basic },
-                quote! { ::concord_core::__private::v1::AuthPreparationMode::RequestLocal },
-                quote! { ::concord_core::__private::v1::AuthChallengeMode::Refresh },
+                quote! { basic_binding },
+                quote! { ::concord_core::__private::AuthPreparationMode::RequestLocal },
+                quote! { ::concord_core::__private::AuthChallengeMode::Refresh },
             ),
             AuthCredentialKindIr::Endpoint { material_shape, .. } => match material_shape {
                 AuthMaterialShapeIr::Basic => (
-                    quote! { basic },
-                    quote! { ::concord_core::__private::v1::AuthPreparationMode::PerAttempt },
-                    quote! { ::concord_core::__private::v1::AuthChallengeMode::InvalidateOnly },
+                    quote! { basic_binding },
+                    quote! { ::concord_core::__private::AuthPreparationMode::PerExecution },
+                    quote! { ::concord_core::__private::AuthChallengeMode::InvalidateOnly },
                 ),
                 AuthMaterialShapeIr::AccessToken
                 | AuthMaterialShapeIr::SecretValue
                 | AuthMaterialShapeIr::Unknown => (
-                    quote! { secret },
-                    quote! { ::concord_core::__private::v1::AuthPreparationMode::PerAttempt },
-                    quote! { ::concord_core::__private::v1::AuthChallengeMode::InvalidateOnly },
+                    quote! { secret_binding },
+                    quote! { ::concord_core::__private::AuthPreparationMode::PerExecution },
+                    quote! { ::concord_core::__private::AuthChallengeMode::InvalidateOnly },
                 ),
             },
             AuthCredentialKindIr::ApiKey { .. }
             | AuthCredentialKindIr::StaticBearer { .. } => (
-                quote! { secret },
-                quote! { ::concord_core::__private::v1::AuthPreparationMode::RequestLocal },
-                quote! { ::concord_core::__private::v1::AuthChallengeMode::Refresh },
+                quote! { secret_binding },
+                quote! { ::concord_core::__private::AuthPreparationMode::RequestLocal },
+                quote! { ::concord_core::__private::AuthChallengeMode::Refresh },
             ),
             AuthCredentialKindIr::OAuth2ClientCredentials { .. } => (
-                quote! { secret },
-                quote! { ::concord_core::__private::v1::AuthPreparationMode::PerAttempt },
-                quote! { ::concord_core::__private::v1::AuthChallengeMode::Refresh },
+                quote! { secret_binding },
+                quote! { ::concord_core::__private::AuthPreparationMode::PerExecution },
+                quote! { ::concord_core::__private::AuthChallengeMode::Refresh },
             ),
         };
         quote! {
             (#client_ns, #name_lit) => ::core::option::Option::Some(
-                ::concord_core::__private::v1::AuthProviderBinding::#constructor(
-                    auth_state.#name.as_ref(),
+                auth_state.#name.#binding_method(
                     #preparation,
                     #challenge,
                 )
@@ -322,9 +321,9 @@ fn emit_client_auth_binding_fn(resolved_api: &ResolvedApi) -> TokenStream2 {
     });
     quote! {
         fn auth_provider_binding<'a>(
-            credential: &::concord_core::__private::v1::CredentialId,
+            credential: &::concord_core::__private::CredentialId,
             auth_state: &'a Self::AuthState,
-        ) -> ::core::option::Option<::concord_core::__private::v1::AuthProviderBinding<'a, Self>> {
+        ) -> ::core::option::Option<::concord_core::__private::AuthProviderBinding<'a, Self>> {
             match (credential.namespace(), credential.name()) {
                 #( #arms, )*
                 _ => ::core::option::Option::None,
@@ -369,7 +368,7 @@ fn emit_client_context(ctx: ClientContextEmit<'_>) -> TokenStream2 {
             type AuthState = #auth_state_assoc_ty;
             const SCHEME: ::http::uri::Scheme = #scheme;
             const DOMAIN: &'static str = #domain;
-            const ORIGIN: ::concord_core::__private::v1::ApiOriginDescriptor = #origin;
+            const ORIGIN: ::concord_core::__private::ApiOriginDescriptor = #origin;
 
             fn init_auth_state(
                 vars: &Self::Vars,

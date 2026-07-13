@@ -2,7 +2,7 @@ use super::helpers::*;
 use quote::quote;
 
 #[test]
-fn generated_api_and_endpoints_use_only_versioned_descriptor_paths() {
+fn generated_api_and_endpoints_use_the_current_private_contract() {
     let out = expanded(quote! {
         client DescriptorApi {
             base "https://example.com"
@@ -16,20 +16,13 @@ fn generated_api_and_endpoints_use_only_versioned_descriptor_paths() {
         POST Create(body: Text<String>) -> NoContent
     });
 
-    assert_eq!(
-        out.matches("::concord_core::__private::v1::MacroAbi<1>")
-            .count(),
-        1
-    );
-    assert_eq!(
-        out.matches("::concord_core::__private::v1::MACRO_ABI")
-            .count(),
-        1
-    );
+    assert_eq!(out.matches("assert_macro_core_compatibility").count(), 1);
+    assert_eq!(out.matches("GENERATED_API_COMPATIBILITY").count(), 1);
+    assert_eq!(out.matches("ReqwestNativeGeneratedContract").count(), 1);
     assert_contains_all(
         &out,
         &[
-            "pub static API_DESCRIPTOR : :: concord_core :: __private :: v1 :: ApiDescriptor",
+            "pub static API_DESCRIPTOR : :: concord_core :: __private :: ApiDescriptor",
             "name : \"DescriptorApi\"",
             "ApiOriginDescriptor :: FixedSingleOrigin",
             "EndpointDescriptor { name : \"List\"",
@@ -45,18 +38,16 @@ fn generated_api_and_endpoints_use_only_versioned_descriptor_paths() {
         ],
     );
 
-    for descriptor_symbol in [
-        "ApiDescriptor",
-        "EndpointDescriptor",
-        "RequestDescriptor",
-        "ResponseDescriptor",
-        "AuthDescriptor",
-        "PaginationDescriptor",
+    for forbidden in [
+        "__private::v1",
+        "__private::v2",
+        "MacroAbi",
+        "MACRO_ABI",
+        "concord_core::internal",
     ] {
-        let unversioned = format!("::concord_core::__private::{descriptor_symbol}");
         assert!(
-            !out.contains(&unversioned),
-            "unversioned descriptor path: {unversioned}"
+            !out.contains(forbidden),
+            "generated source retained {forbidden}"
         );
     }
 }

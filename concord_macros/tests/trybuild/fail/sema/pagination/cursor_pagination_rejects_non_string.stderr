@@ -22,13 +22,13 @@ note: required by a bound in `concord_core::prelude::PaginatedEndpoint::Paginati
    |     type Pagination;
    |          ---------- required by a bound in this associated type
 
-error[E0277]: the trait bound `concord_core::prelude::CursorPagination<Foo>: std::default::Default` is not satisfied
+error[E0277]: the trait bound `concord_core::prelude::CursorPagination<Foo>: Default` is not satisfied
   --> tests/trybuild/fail/sema/pagination/cursor_pagination_rejects_non_string.rs:13:18
    |
 13 |         paginate CursorPagination<Foo> {
-   |                  ^^^^^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `concord_core::prelude::CursorPagination<Foo>`
+   |                  ^^^^^^^^^^^^^^^^^^^^^ the trait `Default` is not implemented for `concord_core::prelude::CursorPagination<Foo>`
    |
-help: the trait `std::default::Default` is implemented for `concord_core::prelude::CursorPagination`
+help: the trait `Default` is implemented for `concord_core::prelude::CursorPagination`
   --> $WORKSPACE/concord_core/src/pagination/cursor.rs
    |
    | impl Default for CursorPagination<String> {

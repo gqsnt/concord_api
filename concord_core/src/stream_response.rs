@@ -1,24 +1,28 @@
-use crate::body::{BodyError, BodyErrorKind, DynBody};
+#[cfg(test)]
+use crate::body::DynBody;
+use crate::body::{BodyError, BodyErrorKind};
 use crate::codec::ContentType;
 use crate::error::{ApiClientError, ErrorContext};
-use crate::transport::{
-    ExecutionResponse, NativeResponseErrorMapper, TransportError, TransportErrorKind,
-};
+#[cfg(test)]
+use crate::transport::NativeResponseErrorMapper;
+use crate::transport::{ExecutionResponse, TransportError, TransportErrorKind};
 use bytes::Bytes;
 use http::{HeaderMap, StatusCode, Version, header::CONTENT_LENGTH};
+#[cfg(test)]
 use http_body::{Body, Frame, SizeHint};
 use std::fmt;
 use std::marker::PhantomData;
 use std::path::Path;
+#[cfg(test)]
 use std::pin::Pin;
+#[cfg(test)]
 use std::task::{Context, Poll};
 use tokio::io::AsyncWriteExt;
 
 /// A streaming response façade over the runtime's native response body.
 ///
 /// [`StreamResponse::next_chunk`] and [`StreamResponse::write_to_file`] are
-/// data-only conveniences. [`StreamResponse::into_body`] is the explicit
-/// frame-aware escape hatch and retains native data and trailer frames.
+/// data-only conveniences over the native Reqwest response stream.
 pub struct StreamResponse<M> {
     resp: ExecutionResponse,
     terminal: bool,
@@ -34,7 +38,7 @@ impl<M> StreamResponse<M> {
         }
     }
 
-    pub fn meta(&self) -> &crate::transport::RequestMeta {
+    pub fn meta(&self) -> &crate::execution_meta::RequestExecutionMeta {
         &self.resp.context.meta
     }
 
@@ -73,13 +77,8 @@ impl<M> StreamResponse<M> {
         &self.resp.context.rate_limit
     }
 
-    /// Extracts the remaining native response body as a frame-aware body.
-    ///
-    /// Data and trailer frames retain their native order and size hint. This
-    /// narrow extraction path is used only when explicitly requested; normal
-    /// streaming continues to consume native data chunks directly. If data-only
-    /// consumption already reached EOF or failed, the extracted body is terminal.
-    pub fn into_body(self) -> DynBody {
+    #[cfg(test)]
+    pub(crate) fn into_body(self) -> DynBody {
         let terminal = self.terminal;
         let ExecutionResponse {
             message,
@@ -166,9 +165,7 @@ impl<M: ContentType> StreamResponse<M> {
     }
 }
 
-/// The sole frame-aware wrapper used when callers explicitly extract a public
-/// `DynBody` from `StreamResponse`. Normal streaming stays on
-/// `reqwest::Response::chunk` and never passes through this wrapper.
+#[cfg(test)]
 struct NativeFrameBody {
     inner: Pin<Box<reqwest::Body>>,
     error_mapper: NativeResponseErrorMapper,
@@ -177,6 +174,7 @@ struct NativeFrameBody {
     terminal: bool,
 }
 
+#[cfg(test)]
 impl Body for NativeFrameBody {
     type Data = Bytes;
     type Error = BodyError;
@@ -264,18 +262,18 @@ impl<M> StreamResponse<M> {
         } else {
             TransportErrorKind::Io
         };
-        Self::transport_error(ctx, kind, msg)
+        Self::request_error(ctx, kind, msg)
     }
 
-    fn transport_error(
+    fn request_error(
         ctx: ErrorContext,
         kind: TransportErrorKind,
         msg: &'static str,
     ) -> ApiClientError {
-        ApiClientError::Transport {
+        ApiClientError::request_execution(
             ctx,
-            source: TransportError::with_kind(kind, std::io::Error::other(msg)),
-        }
+            TransportError::with_kind(kind, std::io::Error::other(msg)),
+        )
     }
 }
 
@@ -304,9 +302,10 @@ impl<M: ContentType> fmt::Debug for StreamResponse<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execution_meta::RequestExecutionMeta;
     use crate::media::OctetStream;
     use crate::rate_limit::RateLimitPlan;
-    use crate::transport::{ManagedReqwestClient, RequestMeta, ResponseContext, SafeProxy};
+    use crate::transport::{ManagedReqwestClient, ResponseContext, SafeProxy};
     use http::HeaderValue;
     use http_body_util::BodyExt;
     use std::collections::VecDeque;
@@ -398,7 +397,7 @@ mod tests {
         StreamResponse::new(ExecutionResponse {
             message,
             context: ResponseContext {
-                meta: RequestMeta {
+                meta: RequestExecutionMeta {
                     endpoint: "FrameAwareStream",
                     method: http::Method::GET,
                     idempotent: true,

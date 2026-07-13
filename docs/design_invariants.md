@@ -71,11 +71,9 @@ authentication recovery. Body-recipe rebuildability controls that recovery;
 Reqwest body cloneability independently controls hidden resends. Materialized
 multipart and streams are not Reqwest-cloneable.
 
-`DynBody` remains available for advanced public HTTP-body input and for explicit
-body extraction from the public streaming façade. Request execution maps
-terminal recipes directly to `reqwest::Body` or `reqwest::multipart::Form`;
-`DynBody` is not the common request or response representation, multipart
-execution authority, or managed response body pipeline.
+Request execution maps logical recipes directly to `reqwest::Body` or
+`reqwest::multipart::Form`. There is no public universal-body bridge and no
+common transport-neutral request or response boundary.
 
 The managed client returns `reqwest::Response` directly to core. Status/header
 policy inspection happens on that native value. Buffered processing collects

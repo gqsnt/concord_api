@@ -1,5 +1,6 @@
 // Client lifecycle phase modules intentionally share one private parent namespace.
 use super::build::PublicRequestHead;
+use super::send_flow::ObservedExecutionResponse;
 use super::*;
 
 enum AuthRejectionStep {
@@ -11,9 +12,19 @@ enum AuthRejectionStep {
 struct AuthResendIntent {
     rejection_plan: crate::auth::AuthRejectionPlan,
     status: StatusCode,
-    response_meta: RequestMeta,
+    response_meta: RequestExecutionMeta,
     auth_attempt: crate::auth::AuthAttemptSummary,
     error_ctx: ErrorContext,
+    #[cfg(feature = "dangerous-dev-tools")]
+    lifecycle_observation_targets: Vec<AuthLifecycleObservationTarget>,
+}
+
+#[derive(Clone, Copy)]
+struct ChallengeTerminalStatusCtx<'a> {
+    dbg: DebugLevel,
+    dbg_verbose: bool,
+    url_str: &'a str,
+    error_ctx: &'a ErrorContext,
 }
 
 enum RecoverableChallengeStep {
@@ -46,7 +57,7 @@ struct AuthRejectionStepCtx<'a, Cx: ClientContext> {
     plan: &'a crate::endpoint::RequestPlanView,
     auth_state: &'a Cx::AuthState,
     auth_http: &'a ClientAuthHttpExecutor<'a, Cx>,
-    response_meta: &'a RequestMeta,
+    response_meta: &'a RequestExecutionMeta,
     auth_attempt: &'a crate::auth::AuthAttemptSummary,
     rejection_plan: &'a crate::auth::AuthRejectionPlan,
     status: StatusCode,
@@ -160,7 +171,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         }
     }
 
-    fn auth_plan_mismatch(meta: &RequestMeta, message: &'static str) -> ApiClientError {
+    fn auth_plan_mismatch(meta: &RequestExecutionMeta, message: &'static str) -> ApiClientError {
         ApiClientError::Auth {
             ctx: ErrorContext {
                 endpoint: meta.endpoint,
@@ -295,6 +306,76 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         } else {
             RecoverableChallengeStep::InvalidateAndFail(intent)
         }
+    }
+
+    fn release_challenged_response(
+        &self,
+        observed: ObservedExecutionResponse,
+        intent: &AuthResendIntent,
+        terminal_status: Option<ChallengeTerminalStatusCtx<'_>>,
+    ) -> Option<ApiClientError> {
+        #[cfg(not(feature = "dangerous-dev-tools"))]
+        let _ = intent;
+        #[cfg(feature = "dangerous-dev-tools")]
+        let matched_targets = intent
+            .lifecycle_observation_targets
+            .iter()
+            .filter(|target| {
+                intent
+                    .rejection_plan
+                    .actions()
+                    .iter()
+                    .any(|action| target.matches(action))
+            })
+            .collect::<Vec<_>>();
+
+        #[cfg(feature = "dangerous-dev-tools")]
+        for target in &matched_targets {
+            target
+                .target
+                .emit(crate::auth::CredentialLifecycleEvent::ChallengeClassified {
+                    status: intent.status,
+                });
+        }
+
+        let ObservedExecutionResponse {
+            response,
+            rate_limit_action,
+        } = observed;
+        let terminal = terminal_status.map(|terminal| {
+            if terminal.dbg_verbose {
+                self.debug_sink.response_status(
+                    terminal.dbg,
+                    response.status(),
+                    terminal.url_str,
+                    false,
+                );
+                self.debug_sink.response_headers(
+                    terminal.dbg,
+                    crate::debug::SanitizedHeaders::new(response.headers()),
+                );
+            }
+            ApiClientError::HttpStatus {
+                ctx: terminal.error_ctx.clone(),
+                status: response.status(),
+                headers: Box::new(crate::redaction::sanitize_header_map(response.headers())),
+                rate_limit: (!matches!(rate_limit_action, RateLimitResponseAction::Continue))
+                    .then_some(Box::new(rate_limit_action)),
+            }
+        });
+
+        // Dropping the native response here is the single challenged-response
+        // transition. No body frame is polled before credential mutation.
+        drop(response);
+
+        #[cfg(feature = "dangerous-dev-tools")]
+        for target in matched_targets {
+            target
+                .target
+                .emit(crate::auth::CredentialLifecycleEvent::ResponseReleased);
+        }
+
+        terminal
     }
 
     async fn invalidate_exhausted_auth_challenge(
@@ -457,14 +538,30 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                     })?;
                     match classification {
                         Some(rejection_plan) if rejection_plan.requests_refresh() => {
+                            let intent = AuthResendIntent {
+                                rejection_plan,
+                                status: response_status,
+                                response_meta: response_meta.clone(),
+                                auth_attempt: auth_attempt.summary.clone(),
+                                error_ctx: ctx.clone(),
+                                #[cfg(feature = "dangerous-dev-tools")]
+                                lifecycle_observation_targets: auth_attempt
+                                    .lifecycle_observation_targets
+                                    .clone(),
+                            };
                             if !auth_rebuildable {
-                                let intent = AuthResendIntent {
-                                    rejection_plan,
-                                    status: response_status,
-                                    response_meta: response_meta.clone(),
-                                    auth_attempt: auth_attempt.summary.clone(),
-                                    error_ctx: ctx.clone(),
-                                };
+                                let terminal = self
+                                    .release_challenged_response(
+                                        observed,
+                                        &intent,
+                                        Some(ChallengeTerminalStatusCtx {
+                                            dbg,
+                                            dbg_verbose,
+                                            url_str: &url_str,
+                                            error_ctx: &ctx,
+                                        }),
+                                    )
+                                    .expect("terminal challenge status must be captured");
                                 // Rebuildability controls only whether another
                                 // visible execution is possible. The rejected
                                 // applied generation must still be invalidated
@@ -477,21 +574,16 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                                     auth_rebuildable,
                                 )
                                 .await?;
+                                return Err(terminal);
                             } else {
-                                let intent = AuthResendIntent {
-                                    rejection_plan,
-                                    status: response_status,
-                                    response_meta: response_meta.clone(),
-                                    auth_attempt: auth_attempt.summary.clone(),
-                                    error_ctx: ctx.clone(),
-                                };
                                 match Self::recoverable_challenge_step(&mut auth_recovery, intent) {
                                     RecoverableChallengeStep::Recover(intent) => {
+                                        self.release_challenged_response(observed, &intent, None);
                                         pending_auth = Some(intent);
                                         continue;
                                     }
                                     RecoverableChallengeStep::InvalidateAndFail(intent) => {
-                                        drop(observed);
+                                        self.release_challenged_response(observed, &intent, None);
                                         let terminal = self
                                             .invalidate_exhausted_auth_challenge(
                                                 plan,
@@ -506,25 +598,39 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                                 }
                             }
                         }
-                        Some(rejection_plan) => match self
-                            .apply_auth_rejection_step(AuthRejectionStepCtx {
-                                plan,
-                                auth_state: &auth_state_snapshot,
-                                auth_http: &auth_http,
-                                response_meta,
-                                auth_attempt: &auth_attempt.summary,
-                                rejection_plan: &rejection_plan,
+                        Some(rejection_plan) => {
+                            let intent = AuthResendIntent {
+                                rejection_plan,
                                 status: response_status,
-                                error_ctx: &ctx,
-                                auth_rebuildable,
-                            })
-                            .await?
-                        {
-                            AuthRejectionStep::Fail(err) => return Err(err),
-                            AuthRejectionStep::Retry => {
-                                return Err(Self::auth_challenge_rejected(&ctx));
+                                response_meta: response_meta.clone(),
+                                auth_attempt: auth_attempt.summary.clone(),
+                                error_ctx: ctx.clone(),
+                                #[cfg(feature = "dangerous-dev-tools")]
+                                lifecycle_observation_targets: auth_attempt
+                                    .lifecycle_observation_targets
+                                    .clone(),
+                            };
+                            self.release_challenged_response(observed, &intent, None);
+                            match self
+                                .apply_auth_rejection_step(AuthRejectionStepCtx {
+                                    plan,
+                                    auth_state: &auth_state_snapshot,
+                                    auth_http: &auth_http,
+                                    response_meta: &intent.response_meta,
+                                    auth_attempt: &auth_attempt.summary,
+                                    rejection_plan: &intent.rejection_plan,
+                                    status: response_status,
+                                    error_ctx: &ctx,
+                                    auth_rebuildable,
+                                })
+                                .await?
+                            {
+                                AuthRejectionStep::Fail(err) => return Err(err),
+                                AuthRejectionStep::Retry => {
+                                    return Err(Self::auth_challenge_rejected(&ctx));
+                                }
                             }
-                        },
+                        }
                         None => {}
                     }
                     // Both buffered and streaming families perform terminal
@@ -736,6 +842,8 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     ) -> Result<AuthPreparation, ApiClientError> {
         let mut summary = crate::auth::AuthAttemptSummary::default();
         let mut materials = Vec::new();
+        #[cfg(feature = "dangerous-dev-tools")]
+        let mut lifecycle_observation_targets = Vec::new();
         let mut cacheable = !plan.endpoint.policy.auth.requirements.is_empty();
         for (requirement, slot) in plan
             .endpoint
@@ -776,6 +884,15 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             if prepared.reuse != crate::auth::AuthPreparationReuse::RequestLocal {
                 cacheable = false;
             }
+            #[cfg(feature = "dangerous-dev-tools")]
+            if let Some(target) = prepared.lifecycle_observation_target {
+                lifecycle_observation_targets.push(AuthLifecycleObservationTarget {
+                    credential_id: prepared.applied.credential_id.clone(),
+                    usage_id: prepared.applied.usage_id.clone(),
+                    step_id: prepared.applied.step_id,
+                    target,
+                });
+            }
             let applied = prepared.applied;
             summary.applied.push(applied);
             materials.push(prepared.material);
@@ -789,6 +906,8 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             summary,
             materials,
             cache_policy,
+            #[cfg(feature = "dangerous-dev-tools")]
+            lifecycle_observation_targets,
         })
     }
 

@@ -521,21 +521,21 @@ fn removed_retry_syntax_error(input: ParseStream<'_>) -> Result<syn::Error> {
 fn legacy_behavior_keyword_error(span: Span) -> syn::Error {
     syn::Error::new(
         span,
-        "`behavior` is not valid V1 DSL; use `profile` for profile declarations and attachments",
+        "`behavior` is not valid current DSL; use `profile` for profile declarations and attachments",
     )
 }
 
 fn legacy_behaviors_keyword_error(span: Span) -> syn::Error {
     syn::Error::new(
         span,
-        "`behaviors` is not valid V1 DSL; use `profiles { profile NAME { ... } }`",
+        "`behaviors` is not valid current DSL; use `profiles { profile NAME { ... } }`",
     )
 }
 
 fn legacy_defaults_keyword_error(span: Span) -> syn::Error {
     syn::Error::new(
         span,
-        "`defaults` is not valid V1 DSL; use `default { ... }`",
+        "`defaults` is not valid current DSL; use `default { ... }`",
     )
 }
 

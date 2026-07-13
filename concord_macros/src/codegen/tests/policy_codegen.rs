@@ -37,7 +37,7 @@ fn generated_policy_materializes_resolved_policy() {
             "policy.insert_header",
             "HeaderName :: from_bytes (\"X-Endpoint\" . as_bytes ())",
             "HeaderValue :: from_static (\"search\")",
-            ":: concord_core :: advanced :: AuthRequirement",
+            ":: concord_core :: __private :: AuthRequirement",
             "policy.ensure_accept",
             "let (headers , query , timeout , mut rate_limit) = policy.into_parts()",
             "rate_limit.canonicalize()",

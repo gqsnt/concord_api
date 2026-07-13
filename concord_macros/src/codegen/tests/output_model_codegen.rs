@@ -74,7 +74,7 @@ fn generated_bytes_response_uses_response_entity_plan() {
     assert_contains_all(
         &out,
         &[
-            "ResponseDescriptor { format : :: concord_core :: __private :: v1 :: ResponseFormatDescriptor :: Bytes",
+            "ResponseDescriptor { format : :: concord_core :: __private :: ResponseFormatDescriptor :: Bytes",
         ],
     );
     assert_runtime_response_plan_has_no_format_field(&out);
@@ -116,7 +116,7 @@ fn generated_no_content_response_uses_response_entity_plan() {
     assert_contains_all(
         &out,
         &[
-            "ResponseDescriptor { format : :: concord_core :: __private :: v1 :: ResponseFormatDescriptor :: NoContent",
+            "ResponseDescriptor { format : :: concord_core :: __private :: ResponseFormatDescriptor :: NoContent",
         ],
     );
     assert_runtime_response_plan_has_no_format_field(&out);

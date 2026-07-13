@@ -2,11 +2,10 @@ use concord_core::{advanced, prelude};
 use std::sync::Arc;
 
 #[test]
-fn public_v1_surface_compiles() {
+fn final_public_surface_compiles() {
     fn uses_type<T>() {}
     fn uses_endpoint<E: prelude::Endpoint<super::common::TestCx>>() {}
     fn uses_client_context<Cx: prelude::ClientContext>() {}
-    fn uses_standard_body<B: http_body::Body<Data = bytes::Bytes, Error = advanced::BodyError>>() {}
     fn uses_rate_limiter<L: advanced::RateLimiter>() {}
     fn uses_hooks<H: advanced::RuntimeHooks>() {}
     fn uses_debug_sink<S: advanced::DebugSink>() {}
@@ -21,24 +20,31 @@ fn public_v1_surface_compiles() {
     uses_type::<prelude::DebugLevel>();
     uses_endpoint::<super::common::TextEndpoint>();
     uses_client_context::<super::common::TestCx>();
-    uses_standard_body::<advanced::DynBody>();
     uses_rate_limiter::<advanced::NoopRateLimiter>();
     uses_hooks::<advanced::NoopRuntimeHooks>();
     uses_debug_sink::<advanced::NoopDebugSink>();
     uses_page_items::<Vec<String>>();
     uses_next_cursor::<Vec<String>>();
 
-    uses_type::<http::Response<advanced::DynBody>>();
-    uses_type::<advanced::TransportError>();
     uses_type::<advanced::SafeProxyError>();
-    uses_type::<advanced::TransportErrorKind>();
     uses_type::<advanced::StreamBody>();
     uses_type::<advanced::StreamBodyError>();
     uses_type::<http_body::SizeHint>();
-    uses_type::<advanced::DynBody>();
     uses_type::<advanced::BodyError>();
     uses_type::<advanced::BodyErrorKind>();
-    uses_type::<advanced::LimitedBody<advanced::DynBody>>();
+    uses_type::<advanced::AdvancedRequestBody>();
+    uses_type::<advanced::PreparedBody>();
+    uses_type::<advanced::PreparedEndpoint<prelude::Text<String>>>();
+    uses_type::<advanced::PreparedStreamEndpoint<advanced::OctetStream>>();
+    uses_type::<advanced::PreparedRequestEntity>();
+    uses_type::<advanced::RequestAuthentication>();
+    uses_type::<advanced::AuthProviderBinding<'static, super::common::TestCx>>();
+    uses_type::<advanced::ApiOriginDescriptor>();
+    uses_type::<advanced::FixedOriginDescriptor>();
+    uses_type::<advanced::OriginScheme>();
+    uses_type::<prelude::RequestErrorSource>();
+    uses_type::<prelude::RequestErrorSourceKind>();
+    uses_type::<prelude::RequestExecutionMeta>();
     uses_type::<advanced::OctetStream>();
     uses_type::<advanced::Mp3>();
     uses_type::<advanced::Mp4>();
@@ -50,11 +56,8 @@ fn public_v1_surface_compiles() {
     uses_type::<advanced::RateLimitPermit>();
     uses_type::<advanced::RateLimitResponseContext<'static>>();
     uses_type::<advanced::RateLimitResponseAction>();
-    uses_type::<advanced::AuthPlacement>();
-    uses_type::<advanced::AuthDecision>();
     uses_type::<advanced::AuthError>();
     uses_type::<prelude::PaginationTermination>();
-    uses_type::<concord_core::internal::ResolvedPolicy>();
 
     #[allow(clippy::let_unit_value)]
     let _safe_proxy_error_variants = (
@@ -89,7 +92,5 @@ fn advanced_surface_contains_extension_api() {
     ];
 
     let _ctx_ty: Option<advanced::RateLimitResponseContext<'_>> = None;
-    let _slot_ty: Option<
-        advanced::CredentialSlot<super::common::TestCx, advanced::StaticBearerProvider>,
-    > = None;
+    let _per_execution = advanced::AuthPreparationMode::PerExecution;
 }

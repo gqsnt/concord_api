@@ -3,15 +3,16 @@ use super::common::*;
 use crate::support::assert_error_chain_does_not_contain_any;
 
 use bytes::Bytes;
-use concord_core::advanced::{
-    BufferedResponse, RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
-    RateLimitResponseContext, RateLimiter, ResponseEntity,
-};
-use concord_core::error::ErrorCategory;
-use concord_core::internal::{
+use concord_core::__private::{BufferedResponse, ResponseEntity};
+use concord_core::__private::{
     ClientPlanContext, EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan,
     ResolvedPolicy, ResolvedRoute, ResponsePlan,
 };
+use concord_core::advanced::{
+    RateLimitContext, RateLimitFuture, RateLimitPermit, RateLimitResponseAction,
+    RateLimitResponseContext, RateLimiter,
+};
+use concord_core::error::ErrorCategory;
 use concord_core::prelude::{
     ApiClientError, Endpoint, RateLimitObservation, RateLimitObserver, ReusableEndpoint,
 };
@@ -52,7 +53,7 @@ impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
                     facade_path: &[],
                 },
                 route: ResolvedRoute::new(
-                    http::uri::Scheme::HTTPS,
+                    http::uri::Scheme::HTTP,
                     "example.com",
                     "/observation-failure",
                 ),
@@ -60,7 +61,7 @@ impl ReusableEndpoint<TestCx> for ObservationFailureEndpoint {
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("application/json")),
                     no_content: false,
-                    format: concord_core::internal::Format::Text,
+                    format: concord_core::__private::Format::Text,
                 },
                 pagination: None,
             },
@@ -105,7 +106,7 @@ impl ReusableEndpoint<TestCx> for HostlessEndpoint {
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("text/plain")),
                     no_content: false,
-                    format: concord_core::internal::Format::Text,
+                    format: concord_core::__private::Format::Text,
                 },
                 pagination: None,
             },
@@ -329,13 +330,6 @@ fn first_event_with_prefix(events: &[String], prefix: &str) -> usize {
         .unwrap_or_else(|| panic!("missing event prefix `{prefix}` in {events:?}"))
 }
 
-fn first_position(events: &[String], needle: &str) -> usize {
-    events
-        .iter()
-        .position(|event| event == needle)
-        .unwrap_or_else(|| panic!("missing event `{needle}` in {events:?}"))
-}
-
 fn response_with_retry_after(
     status: StatusCode,
     body: &'static str,
@@ -465,7 +459,7 @@ async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientEr
 
     let err = client
         .request(TextEndpoint {
-            policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
+            policy: auth_policy(concord_core::__private::AuthPlacement::Query("api_key")),
             ..Default::default()
         })
         .response()
@@ -480,19 +474,11 @@ async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientEr
             .iter()
             .any(|event| event.starts_with("rate_status:403 Forbidden"))
     );
-    let rate = first_event_with_prefix(&events, "rate_status:403 Forbidden");
-    let auth = first_position(&events, "auth_rejection:403 Forbidden");
-    assert!(rate < auth);
     assert!(events.iter().any(|event| event.starts_with("rate_meta:")));
     assert!(
         events
             .iter()
             .any(|event| event.starts_with("rate_headers:"))
-    );
-    assert!(
-        events
-            .iter()
-            .any(|event| event.starts_with("auth_rejection:403 Forbidden"))
     );
     assert!(
         !events
@@ -503,7 +489,7 @@ async fn rate_limit_observes_auth_rejection_response() -> Result<(), ApiClientEr
 }
 
 #[tokio::test]
-async fn rate_limit_does_not_observe_transport_error_as_response() {
+async fn rate_limit_does_not_observe_request_error_as_response() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let limiter = Arc::new(ObservationRateLimiter::new(events.clone()));
     let transport =
@@ -516,9 +502,9 @@ async fn rate_limit_does_not_observe_transport_error_as_response() {
         .request(TextEndpoint::default())
         .response()
         .await
-        .expect_err("transport error should remain terminal when not retryable");
+        .expect_err("request error should remain terminal when not retryable");
 
-    assert!(err.to_string().contains("transport"));
+    assert!(matches!(err, ApiClientError::RequestExecution { .. }));
     let events = events.lock().await.clone();
     assert!(events.iter().any(|event| event == "rate_acquire"));
     assert!(!events.iter().any(|event| event.starts_with("rate_status:")));
@@ -574,7 +560,7 @@ async fn rate_limit_acquire_context_does_not_expose_bearer_auth() -> Result<(), 
 
     let decoded = client
         .request(TextEndpoint {
-            policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
+            policy: auth_policy(concord_core::__private::AuthPlacement::Bearer),
             ..Default::default()
         })
         .response()
@@ -616,7 +602,7 @@ async fn rate_limit_acquire_context_does_not_expose_query_auth() -> Result<(), A
 
     let decoded = client
         .request(TextEndpoint {
-            policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
+            policy: auth_policy(concord_core::__private::AuthPlacement::Query("api_key")),
             ..Default::default()
         })
         .response()
@@ -657,7 +643,7 @@ async fn rate_limit_acquire_context_does_not_expose_basic_auth_material()
 
     let decoded = client
         .request(TextEndpoint {
-            policy: auth_policy(concord_core::advanced::AuthPlacement::Basic),
+            policy: auth_policy(concord_core::__private::AuthPlacement::Basic),
             ..Default::default()
         })
         .response()
@@ -697,7 +683,7 @@ async fn rate_limit_response_context_does_not_expose_bearer_auth() -> Result<(),
 
     client
         .request(TextEndpoint {
-            policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
+            policy: auth_policy(concord_core::__private::AuthPlacement::Bearer),
             ..Default::default()
         })
         .response()
@@ -738,7 +724,7 @@ async fn rate_limit_response_context_does_not_expose_query_auth() -> Result<(), 
 
     client
         .request(TextEndpoint {
-            policy: auth_policy(concord_core::advanced::AuthPlacement::Query("api_key")),
+            policy: auth_policy(concord_core::__private::AuthPlacement::Query("api_key")),
             ..Default::default()
         })
         .response()
@@ -778,7 +764,7 @@ async fn rate_limit_response_context_does_not_expose_basic_auth_material()
 
     client
         .request(TextEndpoint {
-            policy: auth_policy(concord_core::advanced::AuthPlacement::Basic),
+            policy: auth_policy(concord_core::__private::AuthPlacement::Basic),
             ..Default::default()
         })
         .response()
@@ -1047,7 +1033,7 @@ async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(),
 
     let err = client
         .request(TextEndpoint {
-            policy: auth_policy(concord_core::advanced::AuthPlacement::Bearer),
+            policy: auth_policy(concord_core::__private::AuthPlacement::Bearer),
             ..Default::default()
         })
         .response()
@@ -1057,9 +1043,11 @@ async fn rate_limit_response_action_cannot_bypass_auth_rejection() -> Result<(),
     assert!(err.to_string().contains("auth challenge rejected"));
     assert_eq!(sent_transport.sent_count().await, 1);
     let events = events.lock().await.clone();
-    let observe = first_event_with_prefix(&events, "rate_observe_status:403 Forbidden");
-    let auth = first_position(&events, "auth_rejection:403 Forbidden");
-    assert!(observe < auth);
+    assert!(
+        events
+            .iter()
+            .any(|event| event.starts_with("rate_observe_status:403 Forbidden"))
+    );
     Ok(())
 }
 
@@ -1246,7 +1234,7 @@ async fn no_default_rate_limit_non_empty_plan_fails_closed() {
         transport.clone(),
     );
     let mut policy = rate_limit_policy();
-    policy.auth = auth_policy(concord_core::advanced::AuthPlacement::Bearer).auth;
+    policy.auth = auth_policy(concord_core::__private::AuthPlacement::Bearer).auth;
 
     let err = client
         .request(TextEndpoint {

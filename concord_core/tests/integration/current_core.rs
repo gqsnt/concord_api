@@ -10,6 +10,10 @@ mod output_model;
 mod pagination;
 #[path = "current_core/public_api.rs"]
 mod public_api;
+#[path = "current_core/public_context.rs"]
+mod public_context;
+#[path = "current_core/public_request_bodies.rs"]
+mod public_request_bodies;
 #[path = "current_core/rate_limit.rs"]
 mod rate_limit;
 #[path = "current_core/redaction_matrix.rs"]
@@ -18,6 +22,8 @@ mod redaction_matrix;
 mod release_gate;
 #[path = "current_core/request_entities.rs"]
 mod request_entities;
+#[path = "current_core/request_error.rs"]
+mod request_error;
 #[path = "current_core/response_body_limit.rs"]
 mod response_body_limit;
 #[path = "current_core/retry_modes.rs"]

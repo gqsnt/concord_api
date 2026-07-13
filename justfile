@@ -56,8 +56,7 @@ docs:
 supply-chain: tools-supply-chain
     cargo deny check
 
-# Deferred perf diagnostics. These are not part of release until the historical
-# perf package is updated or removed in a later PR.
+# Compile and exercise the maintained public-surface performance package.
 perf-check:
     cargo check --manifest-path perf/Cargo.toml
 
@@ -86,8 +85,15 @@ clippy-default:
 test-default: tools-nextest
     cargo nextest run --workspace --no-tests fail --no-fail-fast --retries 0
 
+# Verify the core crate at the declared MSRV with both feature extremes.
+check-no-default:
+    cargo +1.97 check -p concord_core --no-default-features
+
+check-all-core:
+    cargo +1.97 check -p concord_core --all-features
+
 # Complete release validation, with one command per validation dimension.
-release: tools fmt-check check clippy test doctest docs supply-chain
+release: tools fmt-check check clippy test doctest docs check-default clippy-default test-default check-no-default check-all-core supply-chain perf-check perf-test bench-check
 
 # CI uses the same canonical release gate.
 alias ci := release

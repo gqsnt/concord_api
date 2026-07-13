@@ -58,7 +58,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
     /// Retry policy is a client-construction decision. Selecting
     /// [`RetryMode::Status`](crate::retry_mode::RetryMode::Status) is only
     /// permitted when this context is classified as a fixed single origin by
-    /// the versioned descriptor ABI; otherwise this fails before any request,
+    /// the generated integration contract; otherwise this fails before any request,
     /// provider, or body side effect.
     pub fn with_retry_mode(
         vars: Cx::Vars,

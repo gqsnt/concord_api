@@ -1,16 +1,17 @@
 use super::common::{
-    TestAuthVars, TestCx, auth_policy, execute_buffered, native_mock, wait_bounded,
+    TestAuthState, TestAuthVars, auth_policy, execute_buffered, native_mock, wait_bounded,
 };
 use bytes::Bytes;
-use concord_core::advanced::{
-    BodyCodec, CodecError, EncodeContext, EncodedBody, EncodedRequest, ErrorContext,
-    PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
-    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RuntimeHooks,
-    SafeProxy, TextContentType, TransportErrorHookContext,
-};
-use concord_core::internal::{
+use concord_core::__private::EncodedRequest;
+use concord_core::__private::{
     EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan, ResolvedPolicy,
     ResolvedRoute, ResponsePlan,
+};
+use concord_core::advanced::{
+    BodyCodec, CodecError, EncodeContext, EncodedBody, ErrorContext, PostResponseHookContext,
+    PreSendHookContext, RateLimitContext, RateLimitFuture, RateLimitPermit,
+    RateLimitResponseAction, RateLimitResponseContext, RateLimiter, RequestErrorHookContext,
+    RuntimeHooks, SafeProxy, TextContentType,
 };
 use concord_core::prelude::{
     ApiClient, ApiClientError, ClientContext, Endpoint, IntoEndpointPlan, RetryMode,
@@ -42,86 +43,27 @@ struct FixedRetryCx;
 impl ClientContext for FixedRetryCx {
     type Vars = ();
     type AuthVars = TestAuthVars;
-    type AuthState = ();
+    type AuthState = TestAuthState<Self>;
 
     const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
     const DOMAIN: &'static str = "retry.example";
-    const ORIGIN: concord_core::__private::v1::ApiOriginDescriptor =
-        concord_core::__private::v1::ApiOriginDescriptor::FixedSingleOrigin(
-            concord_core::__private::v1::FixedOriginDescriptor {
-                scheme: concord_core::__private::v1::OriginScheme::Http,
+    const ORIGIN: concord_core::advanced::ApiOriginDescriptor =
+        concord_core::advanced::ApiOriginDescriptor::FixedSingleOrigin(
+            concord_core::advanced::FixedOriginDescriptor {
+                scheme: concord_core::advanced::OriginScheme::Http,
                 authority: "retry.example",
             },
         );
 
-    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
-
-    fn prepare_auth_requirement<'a>(
-        requirement: &'a concord_core::advanced::AuthRequirement,
-        request: &'a mut concord_core::advanced::AuthApplicationRequest<'_>,
-        vars: &'a Self::Vars,
-        auth: &'a Self::AuthVars,
-        auth_state: &'a Self::AuthState,
-        executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-        meta: &'a concord_core::advanced::RequestMeta,
-    ) -> concord_core::advanced::AuthFuture<
-        'a,
-        Result<concord_core::advanced::PreparedAuthCredential, concord_core::advanced::AuthError>,
-    > {
-        <TestCx as ClientContext>::prepare_auth_requirement(
-            requirement,
-            request,
-            vars,
-            auth,
-            auth_state,
-            executor,
-            meta,
-        )
+    fn init_auth_state(_vars: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
+        TestAuthState::new(auth)
     }
 
-    fn plan_auth_response(
-        requirement: &concord_core::advanced::AuthRequirement,
-        applied: &concord_core::advanced::AuthAppliedCredential,
-        vars: &Self::Vars,
-        auth: &Self::AuthVars,
-        meta: &concord_core::advanced::RequestMeta,
-        status: StatusCode,
-        headers: &http::HeaderMap,
-    ) -> Result<concord_core::advanced::AuthRejectionAction, concord_core::advanced::AuthError>
-    {
-        <TestCx as ClientContext>::plan_auth_response(
-            requirement,
-            applied,
-            vars,
-            auth,
-            meta,
-            status,
-            headers,
-        )
-    }
-
-    fn apply_refresh_auth_action<'a>(
-        action: &'a concord_core::advanced::AuthRejectionAction,
-        requirement: &'a concord_core::advanced::AuthRequirement,
-        applied: &'a concord_core::advanced::AuthAppliedCredential,
-        vars: &'a Self::Vars,
-        auth: &'a Self::AuthVars,
+    fn auth_provider_binding<'a>(
+        credential: &concord_core::advanced::CredentialId,
         auth_state: &'a Self::AuthState,
-        executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-        meta: &'a concord_core::advanced::RequestMeta,
-        status: StatusCode,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<(), concord_core::advanced::AuthError>> {
-        <TestCx as ClientContext>::apply_refresh_auth_action(
-            action,
-            requirement,
-            applied,
-            vars,
-            auth,
-            auth_state,
-            executor,
-            meta,
-            status,
-        )
+    ) -> Option<concord_core::advanced::AuthProviderBinding<'a, Self>> {
+        auth_state.binding(credential)
     }
 }
 
@@ -148,7 +90,7 @@ impl Endpoint<FixedRetryCx> for BodyRetryEndpoint {
 impl IntoEndpointPlan<FixedRetryCx> for BodyRetryEndpoint {
     fn into_plan(
         self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, FixedRetryCx>,
+        _ctx: &concord_core::__private::ClientPlanContext<'_, FixedRetryCx>,
     ) -> Result<RequestPlan, ApiClientError> {
         Ok(retry_plan(Method::GET, self.body))
     }
@@ -168,7 +110,7 @@ fn retry_plan(method: Method, body: PreparedBody) -> RequestPlan {
             response: ResponsePlan {
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
-                format: concord_core::internal::Format::Text,
+                format: concord_core::__private::Format::Text,
             },
             pagination: None,
         },
@@ -191,7 +133,7 @@ impl Endpoint<FixedRetryCx> for RetryEndpoint {
 impl concord_core::prelude::ReusableEndpoint<FixedRetryCx> for RetryEndpoint {
     fn plan(
         &self,
-        _ctx: &concord_core::internal::ClientPlanContext<'_, FixedRetryCx>,
+        _ctx: &concord_core::__private::ClientPlanContext<'_, FixedRetryCx>,
     ) -> Result<RequestPlan, ApiClientError> {
         Ok(retry_plan(self.method.clone(), PreparedBody::empty()))
     }
@@ -221,9 +163,9 @@ impl RuntimeHooks for VisibleCounters {
         Box::pin(async {})
     }
 
-    fn transport_error<'a>(
+    fn request_error<'a>(
         &'a self,
-        _ctx: TransportErrorHookContext<'a>,
+        _ctx: RequestErrorHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async {})
     }
@@ -331,7 +273,7 @@ async fn status_mode_cloneable_encoded_bytes_retry_hidden_with_identical_payload
         }));
     });
     let prepared =
-        <EncodedRequest<CountingByteCodec> as concord_core::advanced::RequestEntity>::prepare(
+        <EncodedRequest<CountingByteCodec> as concord_core::__private::RequestEntity>::prepare(
             Bytes::from_static(PAYLOAD),
             ErrorContext {
                 endpoint: "RetryMode",
@@ -417,7 +359,7 @@ async fn authentication_recovery_gets_an_independent_status_retry_envelope() {
     });
     // Add authentication without making it endpoint-specific retry policy.
     let mut plan = retry_plan(Method::GET, PreparedBody::empty());
-    plan.endpoint.policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+    plan.endpoint.policy = auth_policy(concord_core::__private::AuthPlacement::Bearer);
 
     let response = client
         .execute_plan::<concord_core::prelude::Text<String>>(plan)
@@ -505,7 +447,8 @@ async fn status_mode_does_not_resend_a_direct_stream_body() {
 #[cfg(feature = "multipart")]
 #[tokio::test]
 async fn status_mode_does_not_resend_reusable_multipart() {
-    use concord_core::advanced::{ErrorContext, MultipartBody, MultipartRequest, RequestEntity};
+    use concord_core::__private::{MultipartRequest, RequestEntity};
+    use concord_core::advanced::{ErrorContext, MultipartBody};
 
     let (server, handle) = native_mock::mock()
         .reply(native_mock::MockReply::status(

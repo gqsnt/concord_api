@@ -1,10 +1,10 @@
 use crate::auth::{
     AuthError, AuthErrorKind, AuthHttpExecutor, AuthHttpRequest, AuthHttpResponse, AuthMode,
-    AuthRequirementId,
 };
 use crate::debug::{DebugLevel, DebugSink, StderrDebugSink};
 use crate::endpoint::{ClientPlanContext, RequestPlan};
 use crate::error::{ApiClientError, ErrorContext};
+use crate::execution_meta::RequestExecutionMeta;
 use crate::policy::Policy;
 use crate::rate_limit::{
     RateLimitContext, RateLimitPlan, RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
@@ -12,12 +12,10 @@ use crate::rate_limit::{
 use crate::request::PendingRequest;
 use crate::response_classify::{ResponseClass, classify_status};
 use crate::runtime_hooks::{
-    HookMeta, PostResponseHookContext, PreSendHookContext, RuntimeHooks, TransportErrorHookContext,
+    HookMeta, PostResponseHookContext, PreSendHookContext, RequestErrorHookContext, RuntimeHooks,
 };
 use crate::runtime_state::ClientRuntimeState;
-use crate::transport::{
-    BuiltRequest, BuiltResponse, DecodedResponse, ExecutionResponse, RequestMeta,
-};
+use crate::transport::{BuiltRequest, BuiltResponse, DecodedResponse, ExecutionResponse};
 use crate::types::RouteBuilder;
 use http::StatusCode;
 use http::header::CONTENT_TYPE;

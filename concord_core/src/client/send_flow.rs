@@ -74,11 +74,27 @@ impl<Cx: ClientContext> ApiClient<Cx> {
             if let Some(actual) = known_oversize
                 && actual > limit as u64
             {
-                return Err(ApiClientError::RequestBodyLimitExceeded {
+                let terminal_error = ApiClientError::RequestBodyLimitExceeded {
                     ctx: send_ctx.error_ctx.clone(),
                     limit,
                     actual,
-                });
+                };
+                let request_context = built.context();
+                let method = request_context.meta.method.clone();
+                self.runtime_state
+                    .hooks()
+                    .request_error(RequestErrorHookContext {
+                        meta: HookMeta {
+                            endpoint: request_context.meta.endpoint,
+                            method: &method,
+                            url: send_ctx.url_str,
+                            page_index: request_context.meta.page_index,
+                            idempotent: request_context.meta.idempotent,
+                        },
+                        category: terminal_error.category(),
+                    })
+                    .await;
+                return Err(terminal_error);
             }
             if let Some(body) = built.message.body_mut().take() {
                 if body.as_bytes().is_some() {
@@ -199,15 +215,22 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 })
             }
             Err(e) => {
-                if let Some(body_error) = e.body_error()
+                let e = context
+                    .body_errors
+                    .get()
+                    .map(crate::transport::TransportError::from)
+                    .unwrap_or(e);
+                let terminal_error = if let Some(body_error) = e.body_error()
                     && body_error.kind() == crate::body::BodyErrorKind::LimitExceeded
                 {
-                    return Err(ApiClientError::RequestBodyLimitExceeded {
+                    ApiClientError::RequestBodyLimitExceeded {
                         ctx: ctx.clone(),
                         limit: body_error.limit().unwrap_or_default() as usize,
                         actual: body_error.observed().unwrap_or_default(),
-                    });
-                }
+                    }
+                } else {
+                    ApiClientError::request_execution(ctx.clone(), e)
+                };
                 let hook_meta = HookMeta {
                     endpoint,
                     method: &method,
@@ -217,15 +240,12 @@ impl<Cx: ClientContext> ApiClient<Cx> {
                 };
                 self.runtime_state
                     .hooks()
-                    .transport_error(TransportErrorHookContext {
+                    .request_error(RequestErrorHookContext {
                         meta: hook_meta,
-                        error: &e,
+                        category: terminal_error.category(),
                     })
                     .await;
-                Err(ApiClientError::Transport {
-                    ctx: ctx.clone(),
-                    source: e,
-                })
+                Err(terminal_error)
             }
         }
     }

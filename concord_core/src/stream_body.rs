@@ -15,7 +15,7 @@ pub enum StreamBodyErrorKind {
     Io,
     InvalidChunkSize,
     SizeHint,
-    Transport,
+    Producer,
 }
 
 #[derive(Clone, Copy)]
@@ -42,9 +42,9 @@ impl StreamBodyError {
         }
     }
 
-    pub fn transport(_error: impl Error + Send + Sync + 'static) -> Self {
+    pub fn producer(_error: impl Error + Send + Sync + 'static) -> Self {
         Self {
-            kind: StreamBodyErrorKind::Transport,
+            kind: StreamBodyErrorKind::Producer,
         }
     }
 
@@ -67,7 +67,7 @@ impl fmt::Display for StreamBodyError {
             StreamBodyErrorKind::Io => "stream body I/O error",
             StreamBodyErrorKind::InvalidChunkSize => "stream body chunk size must be non-zero",
             StreamBodyErrorKind::SizeHint => "stream body size hint is invalid",
-            StreamBodyErrorKind::Transport => "stream body transport error",
+            StreamBodyErrorKind::Producer => "stream body producer error",
         })
     }
 }
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn stream_body_from_byte_stream_preserves_stream_errors_safely() {
         let sentinel = Bytes::from_static(b"SECRET_STREAM_BODY_SENTINEL_MUST_NOT_APPEAR");
-        let body = StreamBody::from_byte_stream(ErrorStream::new(StreamBodyError::transport(
+        let body = StreamBody::from_byte_stream(ErrorStream::new(StreamBodyError::producer(
             std::io::Error::other(String::from_utf8_lossy(&sentinel).to_string()),
         )));
         let mut stream = body.into_byte_stream();
@@ -342,7 +342,7 @@ mod tests {
     #[test]
     fn stream_body_error_source_chain_is_body_free() {
         let sentinel = "SECRET_STREAM_BODY_SENTINEL_MUST_NOT_APPEAR";
-        let error = StreamBodyError::transport(std::io::Error::other(sentinel));
+        let error = StreamBodyError::producer(std::io::Error::other(sentinel));
 
         assert!(error.source().is_none());
         assert!(!error_chain_contains(&error, sentinel));

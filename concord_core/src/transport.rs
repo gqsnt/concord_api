@@ -2,7 +2,9 @@ use crate::auth::PlannedAuthPlacement;
 use crate::rate_limit::RateLimitPlan;
 use crate::retry_mode::ReqwestRetryInstall;
 use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode};
+#[cfg(test)]
+use http::Method;
+use http::{HeaderMap, StatusCode};
 use std::fmt;
 use std::time::Duration;
 use url::Url;
@@ -10,17 +12,10 @@ use url::Url;
 use std::error::Error;
 
 #[derive(Clone, Debug)]
-pub struct RequestMeta {
-    pub endpoint: &'static str,
-    pub method: Method,
-    pub idempotent: bool,
-    pub page_index: u32,
-}
-
-#[derive(Clone, Debug)]
 pub(crate) struct RequestExecutionContext {
-    pub(crate) meta: RequestMeta,
+    pub(crate) meta: crate::execution_meta::RequestExecutionMeta,
     pub(crate) timeout: Option<Duration>,
+    pub(crate) body_errors: crate::body::RequestBodyErrorSlot,
 }
 
 pub(crate) struct BuiltRequest {
@@ -65,7 +60,7 @@ pub struct BuiltResponse {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ResponseContext {
-    pub(crate) meta: RequestMeta,
+    pub(crate) meta: crate::execution_meta::RequestExecutionMeta,
     pub(crate) request_url: Url,
     pub(crate) rate_limit: RateLimitPlan,
 }
@@ -150,7 +145,7 @@ impl BuiltResponse {
     /// Wraps a standard buffered response with safe request execution context.
     pub fn from_http(
         message: http::Response<Bytes>,
-        meta: RequestMeta,
+        meta: crate::execution_meta::RequestExecutionMeta,
         request_url: Url,
         rate_limit: RateLimitPlan,
     ) -> Self {
@@ -164,7 +159,7 @@ impl BuiltResponse {
         )
     }
 
-    pub fn meta(&self) -> &RequestMeta {
+    pub fn meta(&self) -> &crate::execution_meta::RequestExecutionMeta {
         &self.context.meta
     }
 
@@ -207,7 +202,7 @@ impl BuiltResponse {
 
 #[derive(Clone)]
 pub struct DecodedResponse<T> {
-    pub meta: RequestMeta,
+    pub meta: crate::execution_meta::RequestExecutionMeta,
     pub url: Url,
     pub status: StatusCode,
     pub headers: HeaderMap,
@@ -331,7 +326,7 @@ pub(crate) fn materialize_authentication(
 
 impl<T> DecodedResponse<T> {
     #[inline]
-    pub fn meta(&self) -> &RequestMeta {
+    pub fn meta(&self) -> &crate::execution_meta::RequestExecutionMeta {
         &self.meta
     }
 
@@ -415,6 +410,10 @@ impl TransportError {
             }
             source = source.source()?;
         }
+    }
+
+    pub(crate) fn into_source(self) -> crate::error::FxError {
+        self.source
     }
 }
 

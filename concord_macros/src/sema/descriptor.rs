@@ -2,7 +2,7 @@
 //!
 //! This module consumes semantic route, I/O, auth, and pagination facts. The
 //! parser does not own descriptor policy, and code generation only translates
-//! this IR to the core ABI.
+//! this IR to the current core integration contract.
 
 use super::*;
 

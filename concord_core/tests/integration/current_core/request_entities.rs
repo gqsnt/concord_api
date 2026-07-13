@@ -1,11 +1,14 @@
 use bytes::Bytes;
-use concord_core::advanced::{
-    BodyCodec, CodecError, ContentType, EncodeContext, EncodedBody, ErrorContext, NoRequestBody,
-    OctetStream, RawStreamRequest, RequestEntity, StreamBody,
-};
+use concord_core::__private::Format;
 #[cfg(feature = "multipart")]
-use concord_core::advanced::{MultipartBody, MultipartRequest};
-use concord_core::internal::Format;
+use concord_core::__private::MultipartRequest;
+use concord_core::__private::{NoRequestBody, RawStreamRequest, RequestEntity};
+#[cfg(feature = "multipart")]
+use concord_core::advanced::MultipartBody;
+use concord_core::advanced::{
+    BodyCodec, CodecError, ContentType, EncodeContext, EncodedBody, ErrorContext, OctetStream,
+    StreamBody,
+};
 use http::Method;
 use std::error::Error;
 use std::fmt;
@@ -73,7 +76,7 @@ fn no_request_body_prepares_empty_body() {
 #[test]
 fn encoded_request_prepares_buffered_bytes() {
     let prepared =
-        concord_core::advanced::EncodedRequest::<concord_core::prelude::Text<String>>::prepare(
+        concord_core::__private::EncodedRequest::<concord_core::prelude::Text<String>>::prepare(
             "hello".to_string(),
             ctx(),
         )
@@ -125,7 +128,7 @@ fn multipart_request_prepares_stream_body_and_content_type() {
 
 #[test]
 fn request_entity_codec_errors_hide_sentinels() {
-    let err = concord_core::advanced::EncodedRequest::<FailingBodyCodec>::prepare(
+    let err = concord_core::__private::EncodedRequest::<FailingBodyCodec>::prepare(
         "ignored".to_string(),
         ctx(),
     )

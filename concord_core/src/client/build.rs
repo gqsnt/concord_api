@@ -2,7 +2,7 @@
 use super::*;
 
 pub(super) struct PublicRequestHead {
-    pub(super) meta: RequestMeta,
+    pub(super) meta: RequestExecutionMeta,
     pub(super) url: url::Url,
     pub(super) headers: http::HeaderMap,
     pub(super) timeout: Option<std::time::Duration>,
@@ -39,7 +39,7 @@ impl PublicRequestHead {
     ) -> Result<BuiltRequest, ApiClientError> {
         let mut headers = self.headers;
         let builder = client.request(self.meta.method.clone(), self.url.clone());
-        let (builder, terminal_media_type) =
+        let (builder, terminal_media_type, body_errors) =
             body.apply_to_reqwest(builder)
                 .map_err(|_| ApiClientError::PolicyViolation {
                     ctx: ctx.clone(),
@@ -64,6 +64,7 @@ impl PublicRequestHead {
         let context = crate::transport::RequestExecutionContext {
             meta: self.meta,
             timeout: self.timeout,
+            body_errors,
         };
         Ok(BuiltRequest {
             message,
@@ -79,7 +80,7 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         &self,
         plan: &crate::endpoint::RequestPlanView,
         body: &crate::io::PreparedBody,
-        meta: RequestMeta,
+        meta: RequestExecutionMeta,
     ) -> Result<PublicRequestHead, ApiClientError> {
         let ctx = ErrorContext {
             endpoint: plan.endpoint.meta.name,
@@ -173,6 +174,9 @@ impl<Cx: ClientContext> ApiClient<Cx> {
         ctx: &ErrorContext,
     ) -> Result<crate::io::ProducedBody, ApiClientError> {
         body.produce_for_execution().map_err(|error| {
+            if let Some(source) = error.body_error() {
+                return ApiClientError::request_body_production(ctx.clone(), source);
+            }
             let msg = match error.kind() {
                 crate::io::BodyProductionErrorKind::AlreadyConsumed => {
                     "one-shot request body has already been consumed"
@@ -248,7 +252,7 @@ mod tests {
             .resolve_public_request_head(
                 &header_test_plan(endpoint_headers),
                 &crate::io::PreparedBody::empty(),
-                RequestMeta {
+                RequestExecutionMeta {
                     endpoint: "HeaderOwnership",
                     method: http::Method::GET,
                     idempotent: true,
@@ -297,7 +301,7 @@ mod tests {
         let result = ApiClient::<BuildCx>::new((), ()).resolve_public_request_head(
             &header_test_plan(endpoint_headers),
             &crate::io::PreparedBody::empty(),
-            RequestMeta {
+            RequestExecutionMeta {
                 endpoint: "HeaderOwnership",
                 method: http::Method::GET,
                 idempotent: true,
@@ -320,7 +324,7 @@ mod tests {
         let result = ApiClient::<BuildCx>::new((), ()).resolve_public_request_head(
             &header_test_plan(endpoint_headers),
             &crate::io::PreparedBody::empty(),
-            RequestMeta {
+            RequestExecutionMeta {
                 endpoint: "HeaderOwnership",
                 method: http::Method::GET,
                 idempotent: true,
@@ -342,7 +346,7 @@ mod tests {
                 headers
             }),
             &crate::io::PreparedBody::empty(),
-            RequestMeta {
+            RequestExecutionMeta {
                 endpoint: "EndpointScope",
                 method: http::Method::GET,
                 idempotent: true,
@@ -366,7 +370,7 @@ mod tests {
         let client_error = client.resolve_public_request_head(
             &header_test_plan(http::HeaderMap::new()),
             &crate::io::PreparedBody::empty(),
-            RequestMeta {
+            RequestExecutionMeta {
                 endpoint: "ClientScope",
                 method: http::Method::GET,
                 idempotent: true,
@@ -434,7 +438,7 @@ mod tests {
             http::HeaderValue::from_static("public"),
         );
         let mut head = PublicRequestHead {
-            meta: RequestMeta {
+            meta: RequestExecutionMeta {
                 endpoint: "PreflightOneShot",
                 method: http::Method::POST,
                 idempotent: false,

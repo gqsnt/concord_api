@@ -1,4 +1,3 @@
-use crate::advanced::DecodedResponse;
 use crate::client::{ApiClient, ClientContext};
 use crate::debug::DebugLevel;
 use crate::endpoint::{
@@ -11,6 +10,7 @@ use crate::pagination::{
 };
 use crate::stream_response::StreamResponse;
 use crate::timeout::TimeoutOverride;
+use crate::transport::DecodedResponse;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::future::{Future, IntoFuture};
@@ -103,7 +103,7 @@ impl<'a, Cx: ClientContext, E: IntoEndpointPlan<Cx>> PendingRequest<'a, Cx, E> {
         E::Response: crate::auth::CredentialMaterial,
         F: FnOnce(
             &Cx::AuthState,
-        ) -> &crate::auth::CredentialSlot<
+        ) -> &crate::__private::GeneratedCredentialBinding<
             Cx,
             crate::auth::ManualCredentialProvider<E::Response>,
         >,

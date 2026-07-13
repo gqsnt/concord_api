@@ -16,11 +16,32 @@
 //! The bounded Concord-owned authentication recovery is independent of every
 //! mode: it is always a visible second call to `reqwest::Client::execute`.
 
-use crate::__private::v1::ApiOriginDescriptor;
 use crate::transport::ReqwestClientBuildError;
 use http::{Method, StatusCode};
 use std::error::Error;
 use std::fmt;
+
+/// A protocol scheme known without consulting runtime client values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OriginScheme {
+    Http,
+    Https,
+}
+
+/// Safe static origin metadata for a fixed single-origin client context.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FixedOriginDescriptor {
+    pub scheme: OriginScheme,
+    pub authority: &'static str,
+}
+
+/// Static origin classification used to validate client-level status retry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApiOriginDescriptor {
+    FixedSingleOrigin(FixedOriginDescriptor),
+    DynamicOrigin,
+    MultiOrigin,
+}
 
 /// Approved statuses for [`RetryMode::Status`]. Selecting `503` means an
 /// immediate Reqwest retry; the hidden retry does not inspect or honor the
@@ -224,7 +245,7 @@ pub enum RetryModeError {
     /// A configured status was not one of `502`, `503`, or `504`.
     UnsupportedStatus(u16),
     /// [`RetryMode::Status`] was selected for an API that is not classified as
-    /// fixed single-origin by the versioned descriptor ABI.
+    /// fixed single-origin by the generated integration contract.
     NotFixedOrigin,
     /// A hand-written fixed-origin descriptor did not contain a structurally
     /// valid HTTP authority.
@@ -276,7 +297,7 @@ impl Error for RetryModeError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::__private::v1::{FixedOriginDescriptor, OriginScheme};
+    use super::{FixedOriginDescriptor, OriginScheme};
 
     fn fixed(authority: &'static str) -> ApiOriginDescriptor {
         ApiOriginDescriptor::FixedSingleOrigin(FixedOriginDescriptor {

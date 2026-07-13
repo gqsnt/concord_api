@@ -1,72 +1,37 @@
 # Internals
 
-This page describes the implementation model for maintainers.
+Concord compiles tokens through `RawAst`, normalized API trees, resolved
+semantic IR, facade IR, and code generation. Generated output consumes only
+resolved facts; parser structures never enter runtime code.
 
-## Design Invariants
+Generated clients target the single current `concord_core::__private`
+integration namespace. It contains descriptors, typed request/response
+adapters, authentication bindings, pagination support, and narrow runtime
+entry points required by macro expansions. It has no numeric namespace,
+migration alias, or public stability promise. Normal application code must not
+import it.
 
-Maintainers should read `design_invariants.md` before changing DSL syntax, semantic resolution, code generation, or runtime pipeline behavior.
+The macro hard-codes the semantic `ReqwestNativeGeneratedContract` marker and
+checks core's `GENERATED_API_COMPATIBILITY` value with
+`assert_macro_core_compatibility`. The unversioned assertion has no runtime
+cost. When the generated contract changes, the semantic marker name changes,
+so an incompatible macro/core pairing fails at expansion time without package
+version inspection or a numeric private namespace.
 
-Maintain the consumer-facing safety boundary described in [Security Model](security_model.md) when changing public surfaces or documentation.
+Every production call uses the managed Reqwest client. Core owns request
+planning, one bounded authentication recovery, rate-limit and hook ordering,
+response limits, and terminal decoding. Reqwest owns protocol or configured
+status retries within each visible execution. Generated code declares facts;
+it does not implement execution loops, credential-cache sequencing, body
+polling, response collection, or retry sequencing.
 
-## Compiler Pipeline
+The public `advanced` module is limited to supported extension points: codecs
+and content types, native streaming and multipart inputs, credential-provider
+integration, sanitized debug and runtime hooks, pagination controllers,
+rate-limit interfaces, retry modes, and safe managed-client configuration.
+Runtime state containers, transport errors, response collectors, generated
+plan adapters, and credential-cache internals are not public extensions.
 
-```text
-tokens
-  -> RawAst
-  -> NormApiTree
-  -> ResolvedApi + FacadeIr
-  -> codegen
-```
-
-Code generation consumes resolved semantic data. Parser structures stay on the parsing and normalization side of the boundary.
-
-Profile use names are preserved as endpoint documentation metadata even though
-profile semantics are lowered into ordinary auth and rate-limit policy data.
-Retry mode is a managed-client construction choice and is absent from endpoint
-semantic IR.
-
-Generated client code targets `concord_core::__private` for plan and plumbing internals. `concord_core::internal` remains a deprecated hidden compatibility alias during the transition, but it is not the intended user import path.
-
-## Runtime Pipeline
-
-```text
-Endpoint::plan -> RequestPlan -> execute_plan
-```
-
-The core runtime is syntax-neutral. It executes request plans with fixed
-ordering for auth preparation, rate limiting, hooks, native execution,
-optional one-time authentication recovery, and decoding. Reqwest owns hidden
-protocol or status resends inside each native execution.
-
-## Standard Body Foundation
-
-`concord_core::advanced::DynBody` is the future common body substrate. It is a
-`BoxBody<Bytes, BodyError>` and preserves data frames, trailer frames, frame
-order, truthful `SizeHint` values, and `is_end_stream`. Empty and buffered
-bodies use the upstream `http-body-util` primitives.
-
-`BodyError` is the typed body error authority. Its `Debug`, `Display`, and
-source chain expose only safe categories and bounded limit metadata; producer
-messages and body bytes are never retained. Send-only inputs use a safe
-exclusive-poll adapter that holds a standard-library mutex only during the
-synchronous poll operation. It does not use `unsafe`, a forwarding task, or a
-buffering queue, and body construction is lazy.
-
-Request planning keeps a single logical recipe rather than a prebuilt
-`DynBody`: reusable bytes, one-shot byte streams, advanced HTTP bodies,
-terminal factories, and multipart recipes remain distinguishable until an
-execution is materialized. The current conversion to `DynBody` is a private
-native request materialization path and has no public executor boundary
-point. Exact stream lengths are guards, not `SizeHint` claims; they reject
-underflow and overflow without retaining payload diagnostics.
-
-`LimitedBody` is the reusable frame-aware limiter. It counts bytes in data
-frames, leaves trailers uncounted and unchanged, and becomes terminal after a
-typed over-limit error. Native streaming responses use direct data chunks for
-normal consumption; the explicit `StreamResponse::into_body()` façade uses a
-narrow private frame-aware wrapper with the same data-only byte accounting.
-
-## Test Artifacts
-
-Runtime behavior is covered by focused `concord_core` tests and end-to-end generated-client tests in `concord_examples/tests/`.
-Parser, sema, and codegen behavior are covered by structural assertions in the owner-layer test modules rather than broad snapshot files.
+Concord's deterministic loopback machinery exists only in test support and a
+development-build seam. It cannot replace production execution in generated
+clients.

@@ -6,6 +6,93 @@ use thiserror::Error;
 
 pub type FxError = Box<dyn Error + Send + Sync>;
 
+/// Stable request-oriented category for an opaque execution error source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum RequestErrorSourceKind {
+    Timeout,
+    Connect,
+    Execution,
+    Body,
+}
+
+/// Opaque, sanitized source retained for request-side execution failures.
+///
+/// Concord controls this type's own diagnostics. Its source chain contains
+/// only URL-free, proxy-aware sanitized request diagnostics or a structured
+/// [`crate::advanced::BodyError`]; it never retains request headers or bytes.
+pub struct RequestErrorSource {
+    kind: RequestErrorSourceKind,
+    body_kind: Option<crate::body::BodyErrorKind>,
+    source: FxError,
+}
+
+impl RequestErrorSource {
+    fn from_transport(source: crate::transport::TransportError) -> Self {
+        let body_kind = source.body_error().map(|error| error.kind());
+        let kind = if body_kind.is_some() {
+            RequestErrorSourceKind::Body
+        } else {
+            match source.kind() {
+                crate::transport::TransportErrorKind::Timeout => RequestErrorSourceKind::Timeout,
+                crate::transport::TransportErrorKind::Connect => RequestErrorSourceKind::Connect,
+                _ => RequestErrorSourceKind::Execution,
+            }
+        };
+        Self {
+            kind,
+            body_kind,
+            source: source.into_source(),
+        }
+    }
+
+    fn from_body(source: crate::body::BodyError) -> Self {
+        Self {
+            kind: RequestErrorSourceKind::Body,
+            body_kind: Some(source.kind()),
+            source: Box::new(source),
+        }
+    }
+
+    pub const fn kind(&self) -> RequestErrorSourceKind {
+        self.kind
+    }
+
+    pub const fn body_kind(&self) -> Option<crate::body::BodyErrorKind> {
+        self.body_kind
+    }
+}
+
+impl Display for RequestErrorSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            RequestErrorSourceKind::Timeout => f.write_str("request timed out"),
+            RequestErrorSourceKind::Connect => f.write_str("connection failed"),
+            RequestErrorSourceKind::Execution => f.write_str("request execution failed"),
+            RequestErrorSourceKind::Body => write!(
+                f,
+                "request body failed ({:?})",
+                self.body_kind.unwrap_or(crate::body::BodyErrorKind::Other)
+            ),
+        }
+    }
+}
+
+impl Debug for RequestErrorSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RequestErrorSource")
+            .field("kind", &self.kind)
+            .field("body_kind", &self.body_kind)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Error for RequestErrorSource {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ErrorContext {
     pub endpoint: &'static str,
@@ -33,10 +120,33 @@ pub enum ApiClientError {
         source: url::ParseError,
     },
 
-    #[error("{ctx}: transport: {source}")]
-    Transport {
+    #[error("{ctx}: request timed out")]
+    Timeout {
         ctx: ErrorContext,
-        source: crate::transport::TransportError,
+        #[source]
+        source: RequestErrorSource,
+    },
+
+    #[error("{ctx}: connection failed")]
+    Connect {
+        ctx: ErrorContext,
+        #[source]
+        source: RequestErrorSource,
+    },
+
+    #[error("{ctx}: request execution failed")]
+    RequestExecution {
+        ctx: ErrorContext,
+        #[source]
+        source: RequestErrorSource,
+    },
+
+    #[error("{ctx}: request body failed ({kind:?})")]
+    RequestBody {
+        ctx: ErrorContext,
+        kind: crate::body::BodyErrorKind,
+        #[source]
+        source: RequestErrorSource,
     },
 
     #[error("{ctx}: response body size hint {actual} exceeds limit {limit} bytes")]
@@ -156,9 +266,25 @@ impl Debug for ApiClientError {
                 .field("ctx", ctx)
                 .field("source", source)
                 .finish(),
-            Self::Transport { ctx, source } => f
-                .debug_struct("Transport")
+            Self::Timeout { ctx, source } => f
+                .debug_struct("Timeout")
                 .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
+            Self::Connect { ctx, source } => f
+                .debug_struct("Connect")
+                .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
+            Self::RequestExecution { ctx, source } => f
+                .debug_struct("RequestExecution")
+                .field("ctx", ctx)
+                .field("source", source)
+                .finish(),
+            Self::RequestBody { ctx, kind, source } => f
+                .debug_struct("RequestBody")
+                .field("ctx", ctx)
+                .field("kind", kind)
                 .field("source", source)
                 .finish(),
             Self::ResponseTooLarge { ctx, limit, actual } => f
@@ -281,7 +407,9 @@ pub enum ErrorCategory {
     Config,
     MissingCredential,
     AuthRejected,
-    Transport,
+    Connect,
+    RequestExecution,
+    RequestBody,
     Timeout,
     HttpStatus,
     Decode,
@@ -347,6 +475,38 @@ pub enum HostLabelInvalidReason {
 }
 
 impl ApiClientError {
+    #[inline]
+    pub(crate) fn request_execution(
+        ctx: ErrorContext,
+        source: crate::transport::TransportError,
+    ) -> Self {
+        let source = RequestErrorSource::from_transport(source);
+        match source.kind() {
+            RequestErrorSourceKind::Body => Self::RequestBody {
+                ctx,
+                kind: source
+                    .body_kind()
+                    .unwrap_or(crate::body::BodyErrorKind::Other),
+                source,
+            },
+            RequestErrorSourceKind::Timeout => Self::Timeout { ctx, source },
+            RequestErrorSourceKind::Connect => Self::Connect { ctx, source },
+            RequestErrorSourceKind::Execution => Self::RequestExecution { ctx, source },
+        }
+    }
+
+    pub(crate) fn request_body_production(
+        ctx: ErrorContext,
+        source: crate::body::BodyError,
+    ) -> Self {
+        let kind = source.kind();
+        Self::RequestBody {
+            ctx,
+            kind,
+            source: RequestErrorSource::from_body(source),
+        }
+    }
+
     #[inline]
     pub fn decode_error(
         ctx: ErrorContext,
@@ -482,7 +642,10 @@ impl ApiClientError {
         match self {
             ApiClientError::InvalidParam { ctx, .. }
             | ApiClientError::BuildUrl { ctx, .. }
-            | ApiClientError::Transport { ctx, .. }
+            | ApiClientError::Timeout { ctx, .. }
+            | ApiClientError::Connect { ctx, .. }
+            | ApiClientError::RequestExecution { ctx, .. }
+            | ApiClientError::RequestBody { ctx, .. }
             | ApiClientError::ResponseTooLarge { ctx, .. }
             | ApiClientError::ResponseBodyLimitExceeded { ctx, .. }
             | ApiClientError::ResponseBody { ctx, .. }
@@ -509,16 +672,14 @@ impl ApiClientError {
             ApiClientError::InvalidParam { .. }
             | ApiClientError::BuildUrl { .. }
             | ApiClientError::InvalidHostLabel { .. } => ErrorCategory::Config,
-            ApiClientError::Transport { source, .. }
-                if source.kind() == crate::transport::TransportErrorKind::Timeout =>
-            {
-                ErrorCategory::Timeout
-            }
-            ApiClientError::Transport { .. } => ErrorCategory::Transport,
+            ApiClientError::Timeout { .. } => ErrorCategory::Timeout,
+            ApiClientError::Connect { .. } => ErrorCategory::Connect,
+            ApiClientError::RequestExecution { .. } => ErrorCategory::RequestExecution,
+            ApiClientError::RequestBody { .. } => ErrorCategory::RequestBody,
             ApiClientError::ResponseTooLarge { .. }
             | ApiClientError::ResponseBodyLimitExceeded { .. }
             | ApiClientError::ResponseBody { .. } => ErrorCategory::Decode,
-            ApiClientError::RequestBodyLimitExceeded { .. } => ErrorCategory::Config,
+            ApiClientError::RequestBodyLimitExceeded { .. } => ErrorCategory::RequestBody,
             ApiClientError::HttpStatus { rate_limit, .. } if rate_limit.is_some() => {
                 ErrorCategory::RateLimit
             }

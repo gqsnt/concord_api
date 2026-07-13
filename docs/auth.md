@@ -109,11 +109,24 @@ Endpoint-backed material can be `AccessToken` or `BasicCredential` when attached
 Authentication execution is core-owned. Generated clients retain their typed
 secret arguments, provider setup, endpoint-backed acquisition helpers, and
 auth-state facades, while emitting only credential identifiers and narrow
-`concord_core::__private::v1` provider bindings. Cache coordination, provider
+generated bindings. Cache coordination, provider
 acquisition and refresh, invalidation, challenge planning, and secret
 materialization are sequenced by `concord_core` on the existing request path.
-The versioned binding ABI is generated-only and is not a public middleware or
-authentication-executor extension point.
+The generated binding contract is private integration plumbing, not a public
+middleware or authentication-executor extension point.
+
+Hand-written `ClientContext` implementations use the supported
+`concord_core::advanced` adapters instead of generated-only paths.
+`ApiOriginDescriptor` represents fixed, dynamic, or multi-origin metadata;
+`CredentialProviderState` owns opaque provider state; and
+`secret_binding`/`basic_binding` return an `AuthProviderBinding` using explicit
+`AuthPreparationMode` and `AuthChallengeMode` values. Applications never name
+credential slots, cache entries, or generations.
+
+`AuthPreparationMode::PerExecution` prepares for each Concord-visible
+execution. Reqwest-internal resends do not rerun authentication preparation.
+`RequestLocal` permits reuse across the single bounded authentication recovery
+when the provider and request recipe allow it.
 
 Generated auth-state accessors expose explicit checks and clearing.
 
@@ -140,7 +153,7 @@ Default rejection behavior:
 | `401 Unauthorized` | yes | yes, for refreshable or runtime-reacquirable credentials |
 | `403 Forbidden` | yes | yes, for refreshable or runtime-reacquirable credentials |
 
-`AuthStepPolicy` remains a bool matrix in v1. The supported combinations are:
+`AuthStepPolicy` remains a bool matrix in the current contract. The supported combinations are:
 
 | retry | invalidate | Observed behavior |
 | --- | --- | --- |

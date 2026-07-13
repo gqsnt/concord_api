@@ -1,10 +1,11 @@
-pub mod auth;
+mod auth;
 mod body;
 mod client;
 mod codec;
 mod debug;
 mod endpoint;
 pub mod error;
+mod execution_meta;
 mod header_ownership;
 mod io;
 mod media;
@@ -16,8 +17,8 @@ mod rate_limit;
 mod redaction;
 mod request;
 mod response_classify;
-pub mod retry_mode;
-pub mod runtime;
+mod retry_mode;
+mod runtime;
 mod runtime_hooks;
 mod runtime_state;
 mod secret;
@@ -28,61 +29,30 @@ mod transport;
 mod types;
 
 #[doc(hidden)]
-pub mod __private {
-    /// Versioned generated-code integration ABI.
-    ///
-    /// This module is deliberately narrow and exists only for code emitted by
-    /// `concord_macros`. It is not a stable user extension API, a transport or
-    /// middleware abstraction, or a home for general runtime internals.
-    #[doc(hidden)]
-    pub mod v1;
+pub mod __private;
 
-    #[doc(hidden)]
-    pub use crate::auth::{CredentialSlot, NoAuthState};
-    #[doc(hidden)]
-    pub use crate::codec::{
-        BodyCodec, CodecError, ContentType, DecodeContext, Decodes, EncodeContext, EncodedBody,
-        Encodes, Format, FormatType, ResponseCodec,
-    };
-    pub use crate::endpoint::{
-        ClientPlanContext, EndpointMeta, EndpointPlan, IntoEndpointPlan, PaginatedEndpoint,
-        PaginationMarker, RequestOverrides, RequestPlan, RequestPlanView, ResolvedRoute,
-        ResponsePlan, ResponseTerminalEndpoint, ReusableEndpoint,
-    };
-    #[cfg(feature = "multipart")]
-    pub use crate::io::MultipartRequest;
-    pub use crate::io::{
-        BufferedResponse, BytesResponse, EncodedRequest, NoContentResponse, NoRequestBody,
-        PreparedBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse, RequestEntity,
-        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan, ResponseEntityWithMeta,
-    };
-    #[cfg(feature = "multipart")]
-    pub use crate::multipart::{
-        FormData, MultipartBody, MultipartBodyError, MultipartBodyErrorKind,
-        MultipartReplayFactory, RawPart,
-    };
-    #[doc(hidden)]
-    pub use crate::pagination::{
-        Control, CursorPagination, EndpointPagination, HasNextCursor, OffsetLimitPagination,
-        PageAdvance, PageApply, PageDecision, PageItems, PagedPagination, PaginateBinding,
-        PaginationCaps, PaginationRuntime, PaginationRuntimeAdapter, PaginationTermination,
-        ProgressKey,
-    };
-    pub use crate::policy::{Policy, PolicyLayer, PolicySnapshot, ResolvedPolicy};
-}
+/// Explicitly enabled support for Concord's deterministic development seam.
+///
+/// This unstable test-observation surface is unavailable unless the
+/// `dangerous-dev-tools` feature is selected. Generated clients never
+/// reference it.
+#[cfg(feature = "dangerous-dev-tools")]
 #[doc(hidden)]
-#[deprecated(note = "use concord_core::__private for generated-code internals")]
-pub use self::__private as internal;
+pub mod __development;
 
 pub mod prelude {
-    pub use crate::auth::{AccessToken, ApiKey, BasicCredential};
+    pub use crate::auth::{AccessToken, ApiKey, AuthError, BasicCredential};
     pub use crate::client::{ApiClient, ClientContext};
     #[cfg(feature = "json")]
     pub use crate::codec::json::Json;
     pub use crate::codec::{ContentType, NoContent, text::Text};
     pub use crate::debug::DebugLevel;
     pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
-    pub use crate::error::{ApiClientError, ErrorCategory, PaginationError, PaginationErrorKind};
+    pub use crate::error::{
+        ApiClientError, ErrorCategory, PaginationError, PaginationErrorKind, RequestErrorSource,
+        RequestErrorSourceKind,
+    };
+    pub use crate::execution_meta::RequestExecutionMeta;
     pub use crate::header_ownership::HeaderOwnershipError;
     pub use crate::pagination::{
         CursorPagination, HasNextCursor, OffsetLimitPagination, PageItems, PagedPagination,
@@ -95,26 +65,20 @@ pub mod prelude {
     pub use crate::request::{PaginatedRequest, PendingRequest};
     pub use crate::retry_mode::{RetryMode, RetryModeError, StatusRetryConfig};
     pub use crate::secret::SecretString;
+    pub use crate::transport::DecodedResponse;
 }
 
 pub mod advanced {
     #[cfg(feature = "json")]
     pub use crate::auth::OAuth2ClientCredentialsProvider;
     pub use crate::auth::{
-        AuthApplication, AuthApplicationRequest, AuthAppliedCredential, AuthAttemptSummary,
-        AuthChallengePolicy, AuthDecision, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor,
-        AuthHttpRequest, AuthHttpResponse, AuthInternalPolicy, AuthMode, AuthPlacement,
-        AuthPlacementPlan, AuthPlan, AuthPreparationReuse, AuthProvenance, AuthRejectionAction,
-        AuthRejectionDecision, AuthRequirement, AuthRequirementId, AuthRetryReason, AuthStepPolicy,
-        AuthUsageId, CredentialContext, CredentialId, CredentialLease, CredentialMaterial,
-        CredentialProvider, CredentialRef, CredentialRefreshReason, CredentialSlot,
-        InvalidateReason, ManualCredentialProvider, PlannedAuthPlacement, PlannedAuthSlot,
-        PreparedAuthCredential, PreparedInternalAuth, SecretCredential, StaticApiKeyProvider,
-        StaticBasicProvider, StaticBearerProvider, apply_basic_credential, apply_secret_credential,
-        auth_decision_for_status, invalidate_rejected_credential,
-        invalidate_rejected_credential_local, read_auth_lock, write_auth_lock,
+        AuthChallengeMode, AuthError, AuthErrorKind, AuthFuture, AuthHttpExecutor, AuthHttpRequest,
+        AuthHttpResponse, AuthInternalPolicy, AuthMode, AuthPreparationMode, AuthProviderBinding,
+        AuthRequirementId, AuthStepPolicy, CredentialContext, CredentialId, CredentialLease,
+        CredentialMaterial, CredentialProvider, CredentialProviderState, CredentialRefreshReason,
+        InvalidateReason, SecretCredential,
     };
-    pub use crate::body::{BodyError, BodyErrorKind, DynBody, LimitedBody};
+    pub use crate::body::{BodyError, BodyErrorKind};
     pub use crate::codec::{
         BodyCodec, CodecError, ContentType, DecodeContext, EncodeContext, EncodedBody,
         ResponseCodec,
@@ -124,12 +88,10 @@ pub mod advanced {
     };
     pub use crate::endpoint::{Endpoint, IntoEndpointPlan, PaginatedEndpoint, ReusableEndpoint};
     pub use crate::error::{ErrorContext, FxError, PaginationError, PaginationErrorKind};
-    #[cfg(feature = "multipart")]
-    pub use crate::io::MultipartRequest;
+    pub use crate::execution_meta::RequestExecutionMeta;
     pub use crate::io::{
-        BufferedResponse, BytesResponse, EncodedRequest, NoContentResponse, NoRequestBody,
-        PreparedBody, PreparedRequestEntity, RawStreamRequest, RawStreamResponse, RequestEntity,
-        ResponseEntity, ResponseEntityCapabilities, ResponseEntityPlan,
+        AdvancedRequestBody, PreparedBody, PreparedEndpoint, PreparedRequestEntity,
+        PreparedStreamEndpoint, RequestAuthentication, RequestEntity,
     };
     pub use crate::media::{
         Jpeg, JsonContentType, Mp3, Mp4, OctetStream, Pdf, Png, TextContentType, Zip,
@@ -153,17 +115,18 @@ pub mod advanced {
         RateLimitResponsePolicy, RateLimitScopeHint, RateLimitSetting, RateLimitWindow,
         RateLimiter, parse_retry_after,
     };
-    pub use crate::retry_mode::{RetryMode, RetryModeError, StatusRetryConfig};
+    pub use crate::retry_mode::{
+        ApiOriginDescriptor, FixedOriginDescriptor, OriginScheme, RetryMode, RetryModeError,
+        StatusRetryConfig,
+    };
     #[allow(deprecated)]
     pub use crate::runtime::{DebugConfig, RuntimeConfig};
     pub use crate::runtime_hooks::{
-        HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext, RuntimeHooks,
-        TransportErrorHookContext,
+        HookMeta, NoopRuntimeHooks, PostResponseHookContext, PreSendHookContext,
+        RequestErrorHookContext, RuntimeHooks,
     };
-    pub use crate::runtime_state::ClientRuntimeState;
     pub use crate::stream_body::{StreamBody, StreamBodyError};
     pub use crate::stream_response::StreamResponse;
-    pub use crate::transport::{DecodedResponse, RequestMeta, TransportError, TransportErrorKind};
     pub use crate::transport::{
         ReqwestClientBuildError, SafeProxy, SafeProxyError, SafeReqwestBuilder,
     };

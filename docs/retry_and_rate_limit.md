@@ -28,7 +28,7 @@ retry is immediate; Reqwest does not honor that response's `Retry-After` for
 the hidden resend.
 
 Status mode is rejected before request, provider, or body side effects unless
-the versioned generated descriptor says the whole API is fixed single-origin.
+the generated descriptor says the whole API is fixed single-origin.
 Dynamic hosts, multiple origins, hostless origins, cross-origin-capable
 pagination, and hand-written contexts without equivalent verified metadata are
 ineligible. Redirects remain disabled.
@@ -71,7 +71,7 @@ Physical-send bounds are:
 | `ProtocolRecovery` | Reqwest-owned bound | Reqwest-owned bound per visible execution |
 
 Pagination applies the same rules independently to each page. Hidden-send
-counters and physical-attempt indices are not public API.
+counters and resend indices are not public API.
 
 Concord rebuildability is used only for authentication recovery. Reusable
 bytes are both rebuildable and Reqwest-cloneable. Factory streams, advanced

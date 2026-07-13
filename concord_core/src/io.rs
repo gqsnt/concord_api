@@ -8,12 +8,13 @@ use crate::stream_body::StreamBody;
 use crate::stream_response::StreamResponse;
 use crate::transport::{BuiltResponse, DecodedResponse};
 use bytes::Bytes;
-use http::HeaderValue;
+use http::{HeaderValue, Method};
 use http_body::{Body as _, SizeHint};
 use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::time::Duration;
 
 // A factory deliberately returns a terminal body, never another recipe. This
 // makes recursive/factory-bearing output structurally impossible.
@@ -58,6 +59,7 @@ impl TerminalBody {
         self,
         builder: reqwest::RequestBuilder,
         exact_length: Option<u64>,
+        body_errors: &crate::body::RequestBodyErrorSlot,
     ) -> Result<reqwest::RequestBuilder, crate::body::BodyError> {
         match self {
             Self::Empty => {
@@ -70,11 +72,19 @@ impl TerminalBody {
             }
             Self::OneShotByteStream(stream) => {
                 let body = reqwest::Body::wrap_stream(stream.into_byte_stream());
-                Ok(builder.body(enforce_native_exact_length(body, exact_length)))
+                Ok(builder.body(observe_native_request_body(
+                    body,
+                    exact_length,
+                    body_errors.clone(),
+                )))
             }
             Self::OneShotHttpBody(body) => {
                 let body = reqwest::Body::wrap(body);
-                Ok(builder.body(enforce_native_exact_length(body, exact_length)))
+                Ok(builder.body(observe_native_request_body(
+                    body,
+                    exact_length,
+                    body_errors.clone(),
+                )))
             }
             #[cfg(feature = "multipart")]
             Self::MultipartRecipe(recipe) => recipe
@@ -108,7 +118,7 @@ pub(crate) enum BodyProductionErrorKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct BodyProductionError {
     kind: BodyProductionErrorKind,
-    body_error_kind: Option<crate::body::BodyErrorKind>,
+    body_error: Option<crate::body::BodyError>,
 }
 
 impl BodyProductionError {
@@ -118,20 +128,24 @@ impl BodyProductionError {
 
     #[cfg(test)]
     pub(crate) fn body_error_kind(&self) -> Option<crate::body::BodyErrorKind> {
-        self.body_error_kind
+        self.body_error.map(|error| error.kind())
+    }
+
+    pub(crate) fn body_error(&self) -> Option<crate::body::BodyError> {
+        self.body_error
     }
 
     fn already_consumed() -> Self {
         Self {
             kind: BodyProductionErrorKind::AlreadyConsumed,
-            body_error_kind: None,
+            body_error: None,
         }
     }
 
     fn factory_failure(error: crate::body::BodyError) -> Self {
         Self {
             kind: BodyProductionErrorKind::FactoryFailure,
-            body_error_kind: Some(error.kind()),
+            body_error: Some(error),
         }
     }
 }
@@ -147,7 +161,13 @@ impl fmt::Display for BodyProductionError {
     }
 }
 
-impl std::error::Error for BodyProductionError {}
+impl std::error::Error for BodyProductionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.body_error
+            .as_ref()
+            .map(|error| error as &(dyn std::error::Error + 'static))
+    }
+}
 
 /// Request-local owner of request body production, metadata, and replayability.
 pub struct PreparedBody {
@@ -160,6 +180,64 @@ pub(crate) struct ProducedBody {
     terminal: TerminalBody,
     media_type: Option<HeaderValue>,
     exact_length: Option<u64>,
+}
+
+/// Opaque request-only wrapper for a one-shot standard [`http_body::Body`].
+///
+/// This type is deliberately not a response-body abstraction. It preserves
+/// frames and safe size metadata while keeping Concord's polling and native
+/// Reqwest adaptation private.
+pub struct AdvancedRequestBody {
+    inner: crate::body::DynBody,
+}
+
+impl AdvancedRequestBody {
+    /// Wrap any one-shot standard body producing [`bytes::Bytes`]. Producer
+    /// diagnostics are converted to Concord's safe [`crate::body::BodyError`]
+    /// taxonomy before they can reach hooks or callers.
+    pub fn new<B>(body: B) -> Self
+    where
+        B: http_body::Body<Data = Bytes> + Send + 'static,
+        B::Error: Send + 'static,
+    {
+        Self {
+            inner: crate::body::DynBody::from_body(body),
+        }
+    }
+
+    /// Override body size metadata without polling the producer.
+    pub fn with_size_hint(mut self, hint: SizeHint) -> Self {
+        self.inner = self.inner.with_size_hint(hint);
+        self
+    }
+
+    /// Apply a request-side byte limit without polling the producer.
+    pub fn limited(mut self, limit: u64) -> Self {
+        self.inner = self.inner.limited(limit);
+        self
+    }
+
+    pub(crate) fn from_dyn(inner: crate::body::DynBody) -> Self {
+        Self { inner }
+    }
+
+    fn into_dyn(self) -> crate::body::DynBody {
+        self.inner
+    }
+}
+
+impl fmt::Debug for AdvancedRequestBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AdvancedRequestBody")
+            .field("size_hint", &self.inner.size_hint())
+            .finish_non_exhaustive()
+    }
+}
+
+impl From<crate::body::DynBody> for AdvancedRequestBody {
+    fn from(inner: crate::body::DynBody) -> Self {
+        Self::from_dyn(inner)
+    }
 }
 
 impl ProducedBody {
@@ -184,7 +262,7 @@ impl ProducedBody {
             http::Method::POST,
             url::Url::parse("http://example.test/").expect("static URL"),
         );
-        let (builder, _) = self.apply_to_reqwest(builder)?;
+        let (builder, _, _) = self.apply_to_reqwest(builder)?;
         let mut request = builder.build().expect("native test request");
         Ok(request
             .body_mut()
@@ -196,9 +274,19 @@ impl ProducedBody {
     pub(crate) fn apply_to_reqwest(
         self,
         builder: reqwest::RequestBuilder,
-    ) -> Result<(reqwest::RequestBuilder, Option<HeaderValue>), crate::body::BodyError> {
-        let builder = self.terminal.apply_to_reqwest(builder, self.exact_length)?;
-        Ok((builder, self.media_type))
+    ) -> Result<
+        (
+            reqwest::RequestBuilder,
+            Option<HeaderValue>,
+            crate::body::RequestBodyErrorSlot,
+        ),
+        crate::body::BodyError,
+    > {
+        let body_errors = crate::body::RequestBodyErrorSlot::default();
+        let builder = self
+            .terminal
+            .apply_to_reqwest(builder, self.exact_length, &body_errors)?;
+        Ok((builder, self.media_type, body_errors))
     }
 }
 
@@ -229,7 +317,16 @@ impl PreparedBody {
         }
     }
 
-    pub fn one_shot(body: crate::body::DynBody, media_type: Option<HeaderValue>) -> Self {
+    /// Prepare a one-shot advanced body. It cannot be reconstructed for an
+    /// authentication recovery execution.
+    pub fn one_shot(body: impl Into<AdvancedRequestBody>, media_type: Option<HeaderValue>) -> Self {
+        Self::one_shot_dyn(body.into().into_dyn(), media_type)
+    }
+
+    pub(crate) fn one_shot_dyn(
+        body: crate::body::DynBody,
+        media_type: Option<HeaderValue>,
+    ) -> Self {
         let size_hint = body.size_hint();
         Self {
             recipe: RequestBodyRecipe::OneShotHttpBody(Some(body)),
@@ -238,7 +335,19 @@ impl PreparedBody {
         }
     }
 
-    pub fn replay_factory<F>(
+    /// Prepare a reconstructible advanced body. The factory is invoked once
+    /// for each visible execution and is never invoked by eligibility checks.
+    pub fn factory<F>(size_hint: SizeHint, media_type: Option<HeaderValue>, factory: F) -> Self
+    where
+        F: Fn() -> Result<AdvancedRequestBody, crate::body::BodyError> + Send + Sync + 'static,
+    {
+        Self::replay_factory_terminal(size_hint, media_type, move || {
+            factory().map(|body| TerminalBody::OneShotHttpBody(body.into_dyn()))
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replay_factory<F>(
         size_hint: SizeHint,
         media_type: Option<HeaderValue>,
         factory: F,
@@ -251,9 +360,22 @@ impl PreparedBody {
         })
     }
 
+    /// Prepare a reconstructible byte stream. Each factory result is a fresh
+    /// terminal stream for one visible execution.
+    pub fn stream_factory<F>(
+        size_hint: SizeHint,
+        media_type: Option<HeaderValue>,
+        factory: F,
+    ) -> Self
+    where
+        F: Fn() -> Result<StreamBody, crate::body::BodyError> + Send + Sync + 'static,
+    {
+        Self::replay_factory_terminal(size_hint, media_type, move || {
+            factory().map(TerminalBody::OneShotByteStream)
+        })
+    }
+
     /// Private terminal-recipe factory used by core-owned body producers.
-    /// Public legacy factories above adapt into this API but never become the
-    /// stored factory authority.
     pub(crate) fn replay_factory_terminal<F>(
         size_hint: SizeHint,
         media_type: Option<HeaderValue>,
@@ -283,6 +405,22 @@ impl PreparedBody {
             media_type: Some(PreparedBodyMediaType::Dynamic),
             size_hint: SizeHint::new(),
         }
+    }
+
+    /// Prepare a reconstructible multipart body. The factory must return a
+    /// complete fresh recipe; Reqwest creates a fresh form and boundary for
+    /// each visible execution.
+    #[cfg(feature = "multipart")]
+    pub fn multipart_factory<F>(factory: F) -> Self
+    where
+        F: Fn() -> Result<MultipartBody, crate::multipart::MultipartBodyError>
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self::replay_multipart_factory(move || {
+            factory().map_err(|_| crate::body::BodyError::invalid_configuration())
+        })
     }
 
     pub fn from_stream_body(body: StreamBody, media_type: Option<HeaderValue>) -> Self {
@@ -456,10 +594,17 @@ impl fmt::Debug for PreparedBody {
 
 // Terminal native-body enforcement. Exact length remains inside the global
 // request limiter installed by the managed execution path.
-fn enforce_native_exact_length(body: reqwest::Body, exact_length: Option<u64>) -> reqwest::Body {
+fn observe_native_request_body(
+    body: reqwest::Body,
+    exact_length: Option<u64>,
+    errors: crate::body::RequestBodyErrorSlot,
+) -> reqwest::Body {
     match exact_length {
-        Some(length) => reqwest::Body::wrap(crate::body::ExactLengthBody::new(body, length)),
-        None => body,
+        Some(length) => reqwest::Body::wrap(crate::body::ObservedRequestBody::new(
+            crate::body::ExactLengthBody::new(body, length),
+            errors,
+        )),
+        None => reqwest::Body::wrap(crate::body::ObservedRequestBody::new(body, errors)),
     }
 }
 
@@ -507,6 +652,345 @@ pub trait RequestEntity {
         input: Self::Input,
         ctx: ErrorContext,
     ) -> Result<PreparedRequestEntity, ApiClientError>;
+}
+
+/// Supported authentication placement for a hand-written prepared endpoint.
+///
+/// The value declares only resolved public facts. Core constructs and owns the
+/// authentication plan, placement validation, credential lifecycle, and
+/// challenge sequencing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RequestAuthentication {
+    credential: crate::auth::CredentialId,
+    placement: PreparedAuthenticationPlacement,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PreparedAuthenticationPlacement {
+    Bearer,
+    Basic,
+    Header(&'static str),
+    Query(&'static str),
+}
+
+impl RequestAuthentication {
+    pub fn bearer(credential: crate::auth::CredentialId) -> Self {
+        Self {
+            credential,
+            placement: PreparedAuthenticationPlacement::Bearer,
+        }
+    }
+
+    pub fn basic(credential: crate::auth::CredentialId) -> Self {
+        Self {
+            credential,
+            placement: PreparedAuthenticationPlacement::Basic,
+        }
+    }
+
+    pub fn header(credential: crate::auth::CredentialId, name: &'static str) -> Self {
+        Self {
+            credential,
+            placement: PreparedAuthenticationPlacement::Header(name),
+        }
+    }
+
+    pub fn query(credential: crate::auth::CredentialId, name: &'static str) -> Self {
+        Self {
+            credential,
+            placement: PreparedAuthenticationPlacement::Query(name),
+        }
+    }
+
+    fn into_requirement(self) -> crate::auth::AuthRequirement {
+        let placement = match self.placement {
+            PreparedAuthenticationPlacement::Bearer => crate::auth::AuthPlacement::Bearer,
+            PreparedAuthenticationPlacement::Basic => crate::auth::AuthPlacement::Basic,
+            PreparedAuthenticationPlacement::Header(name) => {
+                crate::auth::AuthPlacement::Header(name)
+            }
+            PreparedAuthenticationPlacement::Query(name) => crate::auth::AuthPlacement::Query(name),
+        };
+        crate::auth::AuthRequirement {
+            credential: crate::auth::CredentialRef {
+                id: self.credential,
+            },
+            placement,
+            usage_id: crate::auth::AuthUsageId::new("prepared-endpoint"),
+            step_id: None,
+            provenance: crate::auth::AuthProvenance::new("advanced"),
+            challenge: crate::auth::AuthChallengePolicy::Default,
+        }
+    }
+}
+
+struct PreparedEndpointCore {
+    endpoint: &'static str,
+    method: Method,
+    path: &'static str,
+    idempotent: bool,
+    request: PreparedRequestEntity,
+    authentication: Option<RequestAuthentication>,
+    timeout: Option<Duration>,
+}
+
+impl fmt::Debug for PreparedEndpointCore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreparedEndpointCore")
+            .field("endpoint", &self.endpoint)
+            .field("method", &self.method)
+            .field("path", &self.path)
+            .field("idempotent", &self.idempotent)
+            .field("authenticated", &self.authentication.is_some())
+            .field("timeout", &self.timeout)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PreparedEndpointCore {
+    fn new(
+        endpoint: &'static str,
+        method: Method,
+        path: &'static str,
+        request: PreparedRequestEntity,
+    ) -> Self {
+        let idempotent = matches!(
+            method,
+            Method::GET
+                | Method::HEAD
+                | Method::PUT
+                | Method::DELETE
+                | Method::OPTIONS
+                | Method::TRACE
+        );
+        Self {
+            endpoint,
+            method,
+            path,
+            idempotent,
+            request,
+            authentication: None,
+            timeout: None,
+        }
+    }
+
+    fn error_context(&self) -> ErrorContext {
+        ErrorContext {
+            endpoint: self.endpoint,
+            method: self.method.clone(),
+        }
+    }
+
+    fn into_plan<Cx: ClientContext>(
+        self,
+        client: &ApiClient<Cx>,
+        response: ResponsePlan,
+    ) -> Result<RequestPlan, ApiClientError> {
+        let ctx = self.error_context();
+        if !self.path.starts_with('/')
+            || self.path.contains('?')
+            || self.path.contains('#')
+            || self.path.contains('\\')
+        {
+            return Err(ApiClientError::invalid_param(ctx, "path"));
+        }
+
+        let plan_ctx = client.plan_context();
+        let mut route = Cx::base_route(plan_ctx.vars, plan_ctx.auth_vars);
+        route.path_mut().push_raw(self.path);
+        route.host().validate(ctx.clone())?;
+        let resolved_route = crate::endpoint::ResolvedRoute {
+            scheme: Cx::SCHEME,
+            host: route.host().join(Cx::DOMAIN),
+            path: route.path().as_str().to_string(),
+        };
+
+        let mut policy = Cx::base_policy(plan_ctx.vars, plan_ctx.auth_vars, &ctx)?;
+        policy.set_layer(crate::policy::PolicyLayer::Runtime);
+        if self.method != Method::HEAD
+            && !response.no_content
+            && let Some(accept) = response.accept.clone()
+        {
+            policy.ensure_accept(accept);
+        }
+        let (headers, query, timeout, mut rate_limit) = policy.into_parts();
+        rate_limit.canonicalize();
+        let auth = self
+            .authentication
+            .map(RequestAuthentication::into_requirement)
+            .into_iter()
+            .collect();
+
+        Ok(RequestPlan {
+            endpoint: crate::endpoint::EndpointPlan {
+                meta: crate::endpoint::EndpointMeta {
+                    name: self.endpoint,
+                    method: self.method,
+                    idempotent: self.idempotent,
+                    facade_path: &[],
+                },
+                route: resolved_route,
+                policy: crate::policy::ResolvedPolicy {
+                    headers,
+                    query,
+                    timeout,
+                    auth: crate::auth::AuthPlan { requirements: auth },
+                    rate_limit,
+                },
+                response,
+                pagination: None,
+            },
+            body: self.request.body,
+            overrides: crate::endpoint::RequestOverrides {
+                timeout: self.timeout,
+                ..crate::endpoint::RequestOverrides::default()
+            },
+        })
+    }
+}
+
+/// Core-owned execution adapter for a hand-written buffered endpoint.
+///
+/// Applications supply public endpoint facts and a prepared request entity;
+/// Core retains ownership of route, policy, authentication, and runtime plans.
+pub struct PreparedEndpoint<C> {
+    core: PreparedEndpointCore,
+    _codec: PhantomData<fn() -> C>,
+}
+
+impl<C> fmt::Debug for PreparedEndpoint<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PreparedEndpoint")
+            .field("core", &self.core)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<C> PreparedEndpoint<C> {
+    pub fn new(
+        endpoint: &'static str,
+        method: Method,
+        path: &'static str,
+        request: PreparedRequestEntity,
+    ) -> Self {
+        Self {
+            core: PreparedEndpointCore::new(endpoint, method, path, request),
+            _codec: PhantomData,
+        }
+    }
+
+    pub fn from_request_entity<E>(
+        endpoint: &'static str,
+        method: Method,
+        path: &'static str,
+        input: E::Input,
+    ) -> Result<Self, ApiClientError>
+    where
+        E: RequestEntity,
+    {
+        let ctx = ErrorContext {
+            endpoint,
+            method: method.clone(),
+        };
+        Ok(Self::new(endpoint, method, path, E::prepare(input, ctx)?))
+    }
+
+    pub fn authentication(mut self, authentication: RequestAuthentication) -> Self {
+        self.core.authentication = Some(authentication);
+        self
+    }
+
+    pub fn idempotent(mut self, idempotent: bool) -> Self {
+        self.core.idempotent = idempotent;
+        self
+    }
+
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.core.timeout = Some(timeout);
+        self
+    }
+}
+
+impl<C> PreparedEndpoint<C>
+where
+    C: ResponseCodec,
+{
+    pub async fn execute<Cx: ClientContext>(
+        self,
+        client: &ApiClient<Cx>,
+    ) -> Result<C::Value, ApiClientError> {
+        let ctx = self.core.error_context();
+        let response = response_plan_from_codec::<C>(ctx)?;
+        let plan = self.core.into_plan(client, response)?;
+        execute_buffered_codec_response::<Cx, C>(client, plan).await
+    }
+
+    pub async fn response<Cx: ClientContext>(
+        self,
+        client: &ApiClient<Cx>,
+    ) -> Result<DecodedResponse<C::Value>, ApiClientError> {
+        let ctx = self.core.error_context();
+        let response = response_plan_from_codec::<C>(ctx)?;
+        let plan = self.core.into_plan(client, response)?;
+        execute_buffered_codec_response_with_meta::<Cx, C>(client, plan).await
+    }
+}
+
+/// Core-owned execution adapter for a hand-written streaming endpoint.
+pub struct PreparedStreamEndpoint<M> {
+    core: PreparedEndpointCore,
+    _media: PhantomData<fn() -> M>,
+}
+
+impl<M> PreparedStreamEndpoint<M> {
+    pub fn new(
+        endpoint: &'static str,
+        method: Method,
+        path: &'static str,
+        request: PreparedRequestEntity,
+    ) -> Self {
+        Self {
+            core: PreparedEndpointCore::new(endpoint, method, path, request),
+            _media: PhantomData,
+        }
+    }
+
+    pub fn authentication(mut self, authentication: RequestAuthentication) -> Self {
+        self.core.authentication = Some(authentication);
+        self
+    }
+
+    pub fn idempotent(mut self, idempotent: bool) -> Self {
+        self.core.idempotent = idempotent;
+        self
+    }
+
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.core.timeout = Some(timeout);
+        self
+    }
+}
+
+impl<M> PreparedStreamEndpoint<M>
+where
+    M: ContentType,
+{
+    pub async fn execute<Cx: ClientContext>(
+        self,
+        client: &ApiClient<Cx>,
+    ) -> Result<StreamResponse<M>, ApiClientError> {
+        let ctx = self.core.error_context();
+        let response = ResponsePlan {
+            accept: Some(
+                M::try_header_value()
+                    .map_err(|_| ApiClientError::invalid_param(ctx.clone(), "content_type"))?,
+            ),
+            no_content: false,
+            format: crate::codec::Format::Binary,
+        };
+        let plan = self.core.into_plan(client, response)?;
+        client.execute_stream_response::<M>(plan).await
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1486,7 +1970,13 @@ mod tests {
         );
         assert!(!format!("{error}").contains(sentinel));
         assert!(!format!("{error:?}").contains(sentinel));
-        assert!(std::error::Error::source(&error).is_none());
+        let source = std::error::Error::source(&error)
+            .and_then(|source| source.downcast_ref::<crate::body::BodyError>())
+            .expect("safe structured factory source is retained");
+        assert_eq!(
+            source.kind(),
+            crate::body::BodyErrorKind::InvalidConfiguration
+        );
     }
 
     #[test]
@@ -1512,7 +2002,7 @@ mod tests {
             http::Method::POST,
             url::Url::parse("http://example.test/native").expect("static URL"),
         );
-        let (builder, media_type) = produced
+        let (builder, media_type, _body_errors) = produced
             .apply_to_reqwest(builder)
             .expect("native body materialization");
         let mut request = builder.build().expect("native request");

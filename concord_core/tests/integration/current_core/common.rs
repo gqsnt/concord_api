@@ -1,22 +1,22 @@
 #![allow(dead_code, unused_imports)]
 
 use bytes::Bytes;
-use concord_core::advanced::{
-    AuthApplicationRequest, AuthAppliedCredential, AuthError, AuthErrorKind, AuthPlacement,
-    AuthProvenance, AuthRequirement, AuthUsageId, BufferedResponse, CodecError, CursorPagination,
-    DecodeContext, DynBody, OffsetLimitPagination, PagedPagination, PaginateBinding,
-    PaginationRuntimeAdapter, PostResponseHookContext, PreSendHookContext, RateLimitContext,
-    RateLimitFuture, RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext,
-    RateLimiter, RequestMeta, ResponseCodec, ResponseEntity, RuntimeHooks, TextContentType,
-    TransportError, TransportErrorHookContext, TransportErrorKind, apply_basic_credential,
-};
-use concord_core::internal::{
+use concord_core::__private::{
+    AuthPlacement, AuthProvenance, AuthRequirement, AuthUsageId, BufferedResponse,
     ClientPlanContext, EndpointMeta, EndpointPlan, PaginationMarker, PreparedBody,
-    RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponsePlan,
+    RequestOverrides, RequestPlan, ResolvedPolicy, ResolvedRoute, ResponseEntity, ResponsePlan,
+};
+use concord_core::advanced::{
+    AuthError, AuthErrorKind, AuthFuture, CodecError, CredentialContext, CredentialId,
+    CredentialProvider, CredentialProviderState, CursorPagination, DecodeContext, InvalidateReason,
+    OffsetLimitPagination, PagedPagination, PaginateBinding, PaginationRuntimeAdapter,
+    PostResponseHookContext, PreSendHookContext, RateLimitContext, RateLimitFuture,
+    RateLimitPermit, RateLimitResponseAction, RateLimitResponseContext, RateLimiter,
+    RequestErrorHookContext, ResponseCodec, RuntimeHooks, TextContentType,
 };
 use concord_core::prelude::{
     ApiClient, ApiClientError, ApiKey, BasicCredential, ClientContext, Endpoint, PaginatedEndpoint,
-    ReusableEndpoint,
+    RequestExecutionMeta, ReusableEndpoint,
 };
 use concord_core::prelude::{HasNextCursor, PageItems};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -27,7 +27,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
-use tokio::sync::{Mutex, Notify, Semaphore};
+use tokio::sync::{Mutex, Notify};
 
 #[path = "../../../../concord_test_support/src/mock.rs"]
 pub(super) mod native_mock;
@@ -35,7 +35,7 @@ use native_mock::{MockHandle as NativeMockHandle, MockServer};
 pub use native_mock::{MockReply as NativeMockReply, ReplyGate as NativeReplyGate};
 
 pub struct CapturedTransportRequest {
-    pub meta: CapturedRequestMeta,
+    pub meta: CapturedRequestExecutionMeta,
     pub url: url::Url,
     pub headers: HeaderMap,
     pub body: CapturedBody,
@@ -43,7 +43,7 @@ pub struct CapturedTransportRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CapturedRequestMeta {
+pub struct CapturedRequestExecutionMeta {
     pub endpoint: Option<String>,
     pub method: Method,
     pub page_index: Option<u32>,
@@ -92,7 +92,7 @@ impl fmt::Debug for CapturedTransportRequest {
 
 #[derive(Clone, Debug)]
 pub struct CapturedTransportRequestSnapshot {
-    pub meta: RequestMeta,
+    pub meta: RequestExecutionMeta,
     pub url: url::Url,
     pub headers: HeaderMap,
 }
@@ -114,6 +114,94 @@ impl Default for TestAuthVars {
 
 #[derive(Clone)]
 pub struct TestCx;
+
+#[derive(Clone)]
+pub struct TestCredentialProvider;
+
+impl<Cx> CredentialProvider<Cx> for TestCredentialProvider
+where
+    Cx: ClientContext<AuthVars = TestAuthVars>,
+{
+    type Credential = ApiKey;
+
+    fn id(&self) -> CredentialId {
+        CredentialId::new("test", "token")
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        ctx: CredentialContext<'a, Cx>,
+    ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
+        Box::pin(async move {
+            ctx.auth
+                .token
+                .as_ref()
+                .map(|token| ApiKey::new(token.clone()))
+                .ok_or_else(|| {
+                    AuthError::new(
+                        AuthErrorKind::MissingCredential,
+                        "missing credential `test/token`; configure it before sending request",
+                    )
+                })
+        })
+    }
+
+    fn invalidate<'a>(
+        &'a self,
+        ctx: CredentialContext<'a, Cx>,
+        _current: Option<&'a Self::Credential>,
+        _reason: InvalidateReason,
+    ) -> AuthFuture<'a, Result<(), AuthError>> {
+        Box::pin(async move {
+            if ctx.auth.identity == "refresh-error" {
+                return Err(AuthError::new(
+                    AuthErrorKind::ProviderRejected,
+                    "auth refresh failed",
+                ));
+            }
+            Ok(())
+        })
+    }
+}
+
+pub struct TestAuthState<Cx: ClientContext<AuthVars = TestAuthVars>> {
+    slot: Arc<CredentialProviderState<Cx, TestCredentialProvider>>,
+    refresh_on_challenge: bool,
+}
+
+impl<Cx: ClientContext<AuthVars = TestAuthVars>> Clone for TestAuthState<Cx> {
+    fn clone(&self) -> Self {
+        Self {
+            slot: self.slot.clone(),
+            refresh_on_challenge: self.refresh_on_challenge,
+        }
+    }
+}
+
+impl<Cx: ClientContext<AuthVars = TestAuthVars>> TestAuthState<Cx> {
+    pub fn new(auth: &TestAuthVars) -> Self {
+        Self {
+            slot: Arc::new(CredentialProviderState::new(TestCredentialProvider)),
+            refresh_on_challenge: matches!(auth.identity, "refresh" | "refresh-error"),
+        }
+    }
+
+    pub fn binding<'a>(
+        &'a self,
+        credential: &CredentialId,
+    ) -> Option<concord_core::advanced::AuthProviderBinding<'a, Cx>> {
+        (credential == &CredentialId::new("test", "token")).then(|| {
+            self.slot.secret_binding(
+                concord_core::advanced::AuthPreparationMode::RequestLocal,
+                if self.refresh_on_challenge {
+                    concord_core::advanced::AuthChallengeMode::Refresh
+                } else {
+                    concord_core::advanced::AuthChallengeMode::InvalidateOnly
+                },
+            )
+        })
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PaginationVariant {
@@ -148,110 +236,19 @@ impl PaginationVariant {
 impl ClientContext for TestCx {
     type Vars = ();
     type AuthVars = TestAuthVars;
-    type AuthState = ();
-    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
+    type AuthState = TestAuthState<Self>;
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
     const DOMAIN: &'static str = "example.com";
 
-    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
-
-    fn prepare_auth_requirement<'a>(
-        requirement: &'a AuthRequirement,
-        request: &'a mut AuthApplicationRequest<'_>,
-        _vars: &'a Self::Vars,
-        auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-        _meta: &'a RequestMeta,
-    ) -> concord_core::advanced::AuthFuture<
-        'a,
-        Result<concord_core::advanced::PreparedAuthCredential, AuthError>,
-    > {
-        Box::pin(async move {
-            let token = auth.token.as_deref().ok_or_else(|| {
-                AuthError::new(
-                    AuthErrorKind::MissingCredential,
-                    format!(
-                        "missing credential `{}`; acquire or configure it before sending request",
-                        requirement.credential.id
-                    ),
-                )
-            })?;
-            let application = match requirement.placement {
-                AuthPlacement::Bearer | AuthPlacement::Header(_) | AuthPlacement::Query(_) => {
-                    let material = ApiKey::new(token.to_string());
-                    concord_core::advanced::apply_secret_credential(
-                        request,
-                        requirement,
-                        &material,
-                    )?
-                }
-                AuthPlacement::Basic => {
-                    return Err(AuthError::new(
-                        AuthErrorKind::UnsupportedScheme,
-                        "test context supports bearer/header/query auth only",
-                    ));
-                }
-            };
-            let applied = AuthAppliedCredential {
-                credential_id: requirement.credential.id.clone(),
-                usage_id: requirement.usage_id.clone(),
-                step_id: requirement.step_id,
-                generation: Some(1),
-                provenance: requirement.provenance.clone(),
-            };
-            Ok(concord_core::advanced::PreparedAuthCredential::new(
-                applied,
-                application,
-            ))
-        })
+    fn init_auth_state(_vars: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
+        TestAuthState::new(auth)
     }
 
-    fn plan_auth_response(
-        requirement: &AuthRequirement,
-        applied: &AuthAppliedCredential,
-        _vars: &Self::Vars,
-        auth: &Self::AuthVars,
-        _meta: &RequestMeta,
-        status: StatusCode,
-        _headers: &HeaderMap,
-    ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
-        if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
-            && matches!(auth.identity, "refresh" | "refresh-error")
-        {
-            return Ok(concord_core::advanced::AuthRejectionAction::refresh(
-                requirement,
-                applied,
-                concord_core::advanced::AuthRetryReason::Unauthorized,
-                None,
-            ));
-        }
-        Ok(concord_core::advanced::AuthRejectionAction::terminal(
-            requirement,
-            applied,
-            None,
-        ))
-    }
-
-    fn apply_refresh_auth_action<'a>(
-        action: &'a concord_core::advanced::AuthRejectionAction,
-        _requirement: &'a AuthRequirement,
-        _applied: &'a AuthAppliedCredential,
-        _vars: &'a Self::Vars,
-        auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-        _meta: &'a RequestMeta,
-        _status: StatusCode,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
-        Box::pin(async move {
-            if action.requests_refresh() && auth.identity == "refresh-error" {
-                return Err(AuthError::new(
-                    AuthErrorKind::ProviderRejected,
-                    "auth refresh failed",
-                ));
-            }
-            Ok(())
-        })
+    fn auth_provider_binding<'a>(
+        credential: &CredentialId,
+        auth_state: &'a Self::AuthState,
+    ) -> Option<concord_core::advanced::AuthProviderBinding<'a, Self>> {
+        auth_state.binding(credential)
     }
 }
 
@@ -812,12 +809,12 @@ pub fn request_plan(
                 idempotent: true,
                 facade_path: &[],
             },
-            route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", path),
+            route: ResolvedRoute::new(http::uri::Scheme::HTTP, "example.com", path),
             policy,
             response: ResponsePlan {
                 accept: Some(HeaderValue::from_static("text/plain")),
                 no_content: false,
-                format: concord_core::internal::Format::Text,
+                format: concord_core::__private::Format::Text,
             },
             pagination,
         },
@@ -841,7 +838,7 @@ macro_rules! buffered_endpoint_execute {
     ($cx:ty, $codec:ty) => {
         fn execute<'a>(
             client: &'a concord_core::prelude::ApiClient<$cx>,
-            plan: concord_core::internal::RequestPlan,
+            plan: concord_core::__private::RequestPlan,
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
@@ -859,15 +856,15 @@ pub(crate) use buffered_endpoint_execute;
 
 macro_rules! buffered_endpoint_response_terminal {
     ($endpoint:ty, $cx:ty, $codec:ty) => {
-        impl ::concord_core::internal::ResponseTerminalEndpoint<$cx> for $endpoint {
+        impl ::concord_core::__private::ResponseTerminalEndpoint<$cx> for $endpoint {
             fn execute_response<'a>(
                 client: &'a concord_core::prelude::ApiClient<$cx>,
-                plan: concord_core::internal::RequestPlan,
+                plan: concord_core::__private::RequestPlan,
             ) -> std::pin::Pin<
                 Box<
                     dyn std::future::Future<
                             Output = Result<
-                                ::concord_core::advanced::DecodedResponse<Self::Response>,
+                                ::concord_core::prelude::DecodedResponse<Self::Response>,
                                 concord_core::prelude::ApiClientError,
                             >,
                         > + Send
@@ -875,7 +872,7 @@ macro_rules! buffered_endpoint_response_terminal {
                 >,
             >
             {
-                <concord_core::advanced::BufferedResponse<$codec> as ::concord_core::internal::ResponseEntityWithMeta>::execute_with_meta(
+                <concord_core::__private::BufferedResponse<$codec> as ::concord_core::__private::ResponseEntityWithMeta>::execute_with_meta(
                     client,
                     plan,
                 )
@@ -894,8 +891,7 @@ pub struct ObservationAuthVars {
     pub password: Option<String>,
     pub identity: &'static str,
     pub events: Arc<Mutex<Vec<String>>>,
-    pub terminal_gate: Option<Arc<Semaphore>>,
-    pub terminal_started: Option<Arc<Semaphore>>,
+    pub binding_resolutions: Arc<AtomicUsize>,
 }
 
 impl ObservationAuthVars {
@@ -911,8 +907,7 @@ impl ObservationAuthVars {
             password: None,
             identity,
             events,
-            terminal_gate: None,
-            terminal_started: None,
+            binding_resolutions: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -929,8 +924,7 @@ impl ObservationAuthVars {
             password: None,
             identity,
             events,
-            terminal_gate: None,
-            terminal_started: None,
+            binding_resolutions: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -947,8 +941,7 @@ impl ObservationAuthVars {
             password: Some(password.into()),
             identity,
             events,
-            terminal_gate: None,
-            terminal_started: None,
+            binding_resolutions: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -956,177 +949,195 @@ impl ObservationAuthVars {
 #[derive(Clone)]
 pub struct ObservationAuthCx;
 
-impl ClientContext for ObservationAuthCx {
-    type Vars = ();
-    type AuthVars = ObservationAuthVars;
-    type AuthState = ();
-    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTPS;
-    const DOMAIN: &'static str = "example.com";
+#[derive(Clone)]
+struct ObservationSecretProvider;
 
-    fn init_auth_state(_vars: &Self::Vars, _auth: &Self::AuthVars) -> Self::AuthState {}
+impl CredentialProvider<ObservationAuthCx> for ObservationSecretProvider {
+    type Credential = ApiKey;
 
-    fn prepare_auth_requirement<'a>(
-        requirement: &'a AuthRequirement,
-        request: &'a mut AuthApplicationRequest<'_>,
-        _vars: &'a Self::Vars,
-        auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-        _meta: &'a RequestMeta,
-    ) -> concord_core::advanced::AuthFuture<
-        'a,
-        Result<concord_core::advanced::PreparedAuthCredential, AuthError>,
-    > {
+    fn id(&self) -> CredentialId {
+        CredentialId::new("test", "token")
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        ctx: CredentialContext<'a, ObservationAuthCx>,
+    ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
         Box::pin(async move {
             let refreshed = {
-                let mut events = auth.events.lock().await;
+                let mut events = ctx.auth.events.lock().await;
                 let refreshed = events.iter().any(|event| event == "auth_retry");
                 events.push("auth_prepare".to_string());
                 refreshed
             };
-            let application = match requirement.placement {
-                AuthPlacement::Bearer | AuthPlacement::Header(_) | AuthPlacement::Query(_) => {
-                    let token = refreshed
-                        .then_some(auth.replacement_token.as_deref())
-                        .flatten()
-                        .or(auth.token.as_deref())
-                        .ok_or_else(|| {
-                            AuthError::new(
-                                AuthErrorKind::MissingCredential,
-                                format!(
-                                    "missing credential `{}`; acquire or configure it before sending request",
-                                    requirement.credential.id
-                                ),
-                            )
-                        })?;
-                    let material = ApiKey::new(token.to_string());
-                    concord_core::advanced::apply_secret_credential(
-                        request,
-                        requirement,
-                        &material,
-                    )?
-                }
-                AuthPlacement::Basic => {
-                    let username = auth.username.as_deref().ok_or_else(|| {
-                        AuthError::new(
-                            AuthErrorKind::MissingCredential,
-                            format!(
-                                "missing username credential `{}`; acquire or configure it before sending request",
-                                requirement.credential.id
-                            ),
-                        )
-                    })?;
-                    let password = auth.password.as_deref().ok_or_else(|| {
-                        AuthError::new(
-                            AuthErrorKind::MissingCredential,
-                            format!(
-                                "missing password credential `{}`; acquire or configure it before sending request",
-                                requirement.credential.id
-                            ),
-                        )
-                    })?;
-                    let material = BasicCredential::new(username.to_string(), password.to_string());
-                    apply_basic_credential(request, requirement, &material)?
-                }
-            };
-            let applied = AuthAppliedCredential {
-                credential_id: requirement.credential.id.clone(),
-                usage_id: requirement.usage_id.clone(),
-                step_id: requirement.step_id,
-                generation: Some(1),
-                provenance: requirement.provenance.clone(),
-            };
-            Ok(concord_core::advanced::PreparedAuthCredential::new(
-                applied,
-                application,
+            refreshed
+                .then_some(ctx.auth.replacement_token.as_deref())
+                .flatten()
+                .or(ctx.auth.token.as_deref())
+                .map(|token| ApiKey::new(token.to_string()))
+                .ok_or_else(|| {
+                    AuthError::new(
+                        AuthErrorKind::MissingCredential,
+                        "missing credential `test/token`; acquire or configure it before sending request",
+                    )
+                })
+        })
+    }
+
+    fn invalidate<'a>(
+        &'a self,
+        ctx: CredentialContext<'a, ObservationAuthCx>,
+        _current: Option<&'a Self::Credential>,
+        reason: InvalidateReason,
+    ) -> AuthFuture<'a, Result<(), AuthError>> {
+        Box::pin(async move {
+            let _ = reason;
+            let mut events = ctx.auth.events.lock().await;
+            events.push("provider_refresh".to_string());
+            events.push("auth_retry".to_string());
+            Ok(())
+        })
+    }
+}
+
+#[derive(Clone)]
+struct ObservationBasicProvider;
+
+impl CredentialProvider<ObservationAuthCx> for ObservationBasicProvider {
+    type Credential = BasicCredential;
+
+    fn id(&self) -> CredentialId {
+        CredentialId::new("test", "token")
+    }
+
+    fn acquire<'a>(
+        &'a self,
+        ctx: CredentialContext<'a, ObservationAuthCx>,
+    ) -> AuthFuture<'a, Result<Self::Credential, AuthError>> {
+        Box::pin(async move {
+            ctx.auth
+                .events
+                .lock()
+                .await
+                .push("auth_prepare".to_string());
+            let username = ctx.auth.username.as_deref().ok_or_else(|| {
+                AuthError::new(AuthErrorKind::MissingCredential, "missing basic username")
+            })?;
+            let password = ctx.auth.password.as_deref().ok_or_else(|| {
+                AuthError::new(AuthErrorKind::MissingCredential, "missing basic password")
+            })?;
+            Ok(BasicCredential::new(
+                username.to_string(),
+                password.to_string(),
             ))
         })
     }
+}
 
-    fn plan_auth_response(
-        requirement: &AuthRequirement,
-        applied: &AuthAppliedCredential,
-        _vars: &Self::Vars,
-        auth: &Self::AuthVars,
-        _meta: &RequestMeta,
-        status: StatusCode,
-        _headers: &HeaderMap,
-    ) -> Result<concord_core::advanced::AuthRejectionAction, AuthError> {
-        auth.events
-            .try_lock()
-            .expect("auth classification events lock")
-            .push(format!("auth_classify:{status}"));
-        if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
-            && auth.identity == "refresh"
-        {
-            return Ok(concord_core::advanced::AuthRejectionAction::refresh(
-                requirement,
-                applied,
-                concord_core::advanced::AuthRetryReason::Unauthorized,
-                None,
-            ));
+pub struct ObservationAuthState {
+    secret: Arc<CredentialProviderState<ObservationAuthCx, ObservationSecretProvider>>,
+    basic: Arc<CredentialProviderState<ObservationAuthCx, ObservationBasicProvider>>,
+    use_basic: bool,
+    refresh_on_challenge: bool,
+    binding_resolutions: Arc<AtomicUsize>,
+}
+
+impl Clone for ObservationAuthState {
+    fn clone(&self) -> Self {
+        Self {
+            secret: self.secret.clone(),
+            basic: self.basic.clone(),
+            use_basic: self.use_basic,
+            refresh_on_challenge: self.refresh_on_challenge,
+            binding_resolutions: self.binding_resolutions.clone(),
         }
-        Ok(concord_core::advanced::AuthRejectionAction::terminal(
-            requirement,
-            applied,
-            None,
-        ))
+    }
+}
+
+impl ClientContext for ObservationAuthCx {
+    type Vars = ();
+    type AuthVars = ObservationAuthVars;
+    type AuthState = ObservationAuthState;
+    const SCHEME: http::uri::Scheme = http::uri::Scheme::HTTP;
+    const DOMAIN: &'static str = "example.com";
+
+    fn init_auth_state(_vars: &Self::Vars, auth: &Self::AuthVars) -> Self::AuthState {
+        let secret = Arc::new(CredentialProviderState::new(ObservationSecretProvider));
+        let basic = Arc::new(CredentialProviderState::new(ObservationBasicProvider));
+        #[cfg(feature = "dangerous-dev-tools")]
+        {
+            let events = auth.events.clone();
+            concord_core::__development::observe_credential_provider_state(
+                secret.as_ref(),
+                Arc::new(move |event| {
+                    let rendered = match event {
+                        concord_core::__development::CredentialLifecycleEvent::ChallengeClassified { status } => {
+                            format!("auth_classification:{status}")
+                        }
+                        concord_core::__development::CredentialLifecycleEvent::ResponseReleased => {
+                            "auth_response_released".to_string()
+                        }
+                        concord_core::__development::CredentialLifecycleEvent::GenerationInvalidated { requested, current, applied } => {
+                            format!("auth_invalidation:identity_match={}:applied={applied}", requested == current)
+                        }
+                    };
+                    events
+                        .try_lock()
+                        .expect("auth observation event lock")
+                        .push(rendered);
+                }),
+            );
+
+            let events = auth.events.clone();
+            concord_core::__development::observe_credential_provider_state(
+                basic.as_ref(),
+                Arc::new(move |event| {
+                    let name = match event {
+                        concord_core::__development::CredentialLifecycleEvent::ChallengeClassified { .. } => "unrelated_auth_classification",
+                        concord_core::__development::CredentialLifecycleEvent::ResponseReleased => "unrelated_auth_response_released",
+                        concord_core::__development::CredentialLifecycleEvent::GenerationInvalidated { .. } => "unrelated_auth_invalidation",
+                    };
+                    events
+                        .try_lock()
+                        .expect("unrelated auth observation event lock")
+                        .push(name.to_string());
+                }),
+            );
+        }
+        ObservationAuthState {
+            secret,
+            basic,
+            use_basic: auth.username.is_some(),
+            refresh_on_challenge: auth.identity == "refresh",
+            binding_resolutions: auth.binding_resolutions.clone(),
+        }
     }
 
-    fn apply_terminal_auth_action<'a>(
-        _action: &'a concord_core::advanced::AuthRejectionAction,
-        _requirement: &'a AuthRequirement,
-        _applied: &'a AuthAppliedCredential,
-        _vars: &'a Self::Vars,
-        auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _meta: &'a RequestMeta,
-        status: StatusCode,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
-        let events = auth.events.clone();
-        Box::pin(async move {
-            // Core invokes terminal challenge handling only after releasing
-            // the response/error that carried the challenge.
-            events.lock().await.push("response_released".to_string());
-            events
-                .lock()
-                .await
-                .push("generation_invalidation".to_string());
-            events.lock().await.push(format!("auth_rejection:{status}"));
-            events.lock().await.push("auth_fail".to_string());
-            if let Some(started) = auth.terminal_started.as_ref() {
-                started.add_permits(1);
-            }
-            if let Some(gate) = auth.terminal_gate.as_ref() {
-                let _permit = gate
-                    .acquire()
-                    .await
-                    .expect("terminal auth release semaphore must remain open");
-            }
-            Ok(())
-        })
-    }
-
-    fn apply_refresh_auth_action<'a>(
-        _action: &'a concord_core::advanced::AuthRejectionAction,
-        _requirement: &'a AuthRequirement,
-        _applied: &'a AuthAppliedCredential,
-        _vars: &'a Self::Vars,
-        auth: &'a Self::AuthVars,
-        _auth_state: &'a Self::AuthState,
-        _executor: &'a dyn concord_core::advanced::AuthHttpExecutor,
-        _meta: &'a RequestMeta,
-        status: StatusCode,
-    ) -> concord_core::advanced::AuthFuture<'a, Result<(), AuthError>> {
-        let events = auth.events.clone();
-        Box::pin(async move {
-            // Recovery is entered after the challenged response has left the
-            // execution scope.
-            events.lock().await.push("response_released".to_string());
-            events.lock().await.push("provider_refresh".to_string());
-            events.lock().await.push(format!("auth_rejection:{status}"));
-            events.lock().await.push("auth_retry".to_string());
-            Ok(())
+    fn auth_provider_binding<'a>(
+        credential: &CredentialId,
+        auth_state: &'a Self::AuthState,
+    ) -> Option<concord_core::advanced::AuthProviderBinding<'a, Self>> {
+        auth_state
+            .binding_resolutions
+            .fetch_add(1, AtomicOrdering::SeqCst);
+        if credential != &CredentialId::new("test", "token") {
+            return None;
+        }
+        let challenge = if auth_state.refresh_on_challenge {
+            concord_core::advanced::AuthChallengeMode::Refresh
+        } else {
+            concord_core::advanced::AuthChallengeMode::InvalidateOnly
+        };
+        Some(if auth_state.use_basic {
+            auth_state.basic.basic_binding(
+                concord_core::advanced::AuthPreparationMode::RequestLocal,
+                challenge,
+            )
+        } else {
+            auth_state.secret.secret_binding(
+                concord_core::advanced::AuthPreparationMode::RequestLocal,
+                challenge,
+            )
         })
     }
 }
@@ -1160,9 +1171,9 @@ impl ReusableEndpoint<ObservationAuthCx> for TextEndpoint {
 
 pub fn auth_policy(placement: AuthPlacement) -> ResolvedPolicy {
     ResolvedPolicy {
-        auth: concord_core::advanced::AuthPlan {
+        auth: concord_core::__private::AuthPlan {
             requirements: vec![AuthRequirement {
-                credential: concord_core::advanced::CredentialRef {
+                credential: concord_core::__private::CredentialRef {
                     id: concord_core::advanced::CredentialId::new("test", "token"),
                 },
                 placement,
@@ -1173,13 +1184,6 @@ pub fn auth_policy(placement: AuthPlacement) -> ResolvedPolicy {
             }],
         },
         ..Default::default()
-    }
-}
-
-pub fn transport_error_kind(error: &ApiClientError) -> Option<TransportErrorKind> {
-    match error {
-        ApiClientError::Transport { source, .. } => Some(source.kind()),
-        _ => None,
     }
 }
 
@@ -1434,7 +1438,7 @@ fn captured_native_request(request: native_mock::RecordedRequest) -> CapturedTra
         CapturedBody::Bytes(request.body)
     };
     CapturedTransportRequest {
-        meta: CapturedRequestMeta {
+        meta: CapturedRequestExecutionMeta {
             endpoint: request.endpoint,
             method: request.method.clone(),
             page_index: request.page_index,
@@ -1570,16 +1574,16 @@ impl RuntimeHooks for ObservationRuntimeHooks {
         })
     }
 
-    fn transport_error<'a>(
+    fn request_error<'a>(
         &'a self,
-        ctx: TransportErrorHookContext<'a>,
+        ctx: RequestErrorHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         let events = self.events.clone();
         Box::pin(async move {
             events
                 .lock()
                 .await
-                .push(format!("transport_error:{:?}:{ctx:?}", ctx.error.kind()));
+                .push(format!("request_error:{:?}:{ctx:?}", ctx.category));
         })
     }
 }
@@ -1617,20 +1621,46 @@ impl RuntimeHooks for RecordingRuntimeHooks {
         })
     }
 
-    fn transport_error<'a>(
+    fn request_error<'a>(
         &'a self,
-        _ctx: TransportErrorHookContext<'a>,
+        _ctx: RequestErrorHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         let events = self.events.clone();
         Box::pin(async move {
-            events.lock().await.push("transport_error".to_string());
+            events.lock().await.push("request_error".to_string());
         })
     }
 }
 
-pub fn client(auth: TestAuthVars, transport: MockTransport) -> ApiClient<TestCx> {
-    ApiClient::with_safe_reqwest_builder((), auth, |builder| transport.configure_reqwest(builder))
-        .expect("native mock client")
+#[derive(Clone)]
+pub struct TestClient {
+    inner: ApiClient<TestCx>,
+    _transport: MockTransport,
+}
+
+impl std::ops::Deref for TestClient {
+    type Target = ApiClient<TestCx>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl std::ops::DerefMut for TestClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+pub fn client(auth: TestAuthVars, transport: MockTransport) -> TestClient {
+    let inner = ApiClient::with_safe_reqwest_builder((), auth, |builder| {
+        transport.configure_reqwest(builder)
+    })
+    .expect("native mock client");
+    TestClient {
+        inner,
+        _transport: transport,
+    }
 }
 
 pub fn observation_client(
@@ -2111,9 +2141,9 @@ impl RuntimeHooks for GateableHooks {
         })
     }
 
-    fn transport_error<'a>(
+    fn request_error<'a>(
         &'a self,
-        _ctx: TransportErrorHookContext<'a>,
+        _ctx: RequestErrorHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             let drop_token = self.drop_probe.as_ref().map(DropProbe::token);
@@ -2121,8 +2151,8 @@ impl RuntimeHooks for GateableHooks {
             self.events
                 .lock()
                 .await
-                .push("hook_transport_error".to_string());
-            self.gate.enter("hook_transport_error").await;
+                .push("hook_request_error".to_string());
+            self.gate.enter("hook_request_error").await;
         })
     }
 }

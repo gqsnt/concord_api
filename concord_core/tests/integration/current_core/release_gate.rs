@@ -4,31 +4,29 @@ use std::path::{Path, PathBuf};
 #[test]
 fn release_gate_documents_all_required_invariants() {
     let doc = read_repo_file("dev_doc/release_gate.md");
-    for heading in [
-        "body-auth-redaction-safety",
-        "url-host-path-hardening",
-        "body-limit-behavior",
-        "feature-dependency-matrix",
-        "runtimeconfig-defaults-precedence",
-        "public-error-taxonomy-diagnostics",
-        "deterministic-async-harness",
-        "timeout-cancellation-drop-semantics",
-        "concurrency-shared-state-isolation",
-        "execute-raw-bypass-contract",
-        "pagination-loop-determinism",
-        "semantic-ir-codegen-diagnostics",
-        "behavior-profile-semantic-only-sugar",
-        "endpoint-io-contract-current",
+    for anchor in [
+        "just release",
+        "formatting",
+        "Nextest",
+        "doctests",
+        "no-default",
+        "supply-chain",
+        "performance-package",
+        "benchmark",
+        "numeric private namespaces",
+        "transport polymorphism",
+        "`Retry-After` resend",
+        "Hyper/Tower-family",
     ] {
         assert!(
-            doc.contains(heading),
-            "release gate doc should contain invariant anchor `{heading}`"
+            doc.contains(anchor),
+            "release gate doc should contain final validation anchor `{anchor}`"
         );
     }
 }
 
 #[test]
-fn examples_cover_v1_usage_surface() {
+fn examples_cover_current_usage_surface() {
     let examples_main = read_repo_file("concord_examples/tests/main.rs");
     for module in [
         "minimal",
@@ -100,10 +98,165 @@ fn examples_cover_v1_usage_surface() {
     assert!(explicit.contains("execute_raw_response"));
 }
 
+#[test]
+fn final_public_extension_boundary_has_no_private_planning_leaks() {
+    let fixture = read_repo_file("concord_core/tests/public_extension.rs");
+    assert!(!fixture.contains("concord_core::__private"));
+    assert!(!fixture.contains("concord_core::__development"));
+    for anchor in [
+        "PreparedEndpoint",
+        "PreparedStreamEndpoint",
+        "RequestEntity",
+        "CredentialProvider",
+        "RequestExecutionMeta",
+        "AuthPreparationMode::PerExecution",
+    ] {
+        assert!(
+            fixture.contains(anchor),
+            "downstream fixture should use `{anchor}`"
+        );
+    }
+
+    let public_exports = read_repo_file("concord_core/src/lib.rs");
+    let advanced = public_exports
+        .split("pub mod advanced")
+        .nth(1)
+        .expect("advanced module")
+        .split("pub mod dangerous")
+        .next()
+        .expect("advanced module body");
+    assert!(!advanced.contains("RequestPlan"));
+    assert!(!advanced.contains("ResolvedPolicy"));
+
+    let core_sources = [
+        read_repo_file("concord_core/src/transport.rs"),
+        read_repo_file("concord_core/src/stream_response.rs"),
+        read_repo_file("concord_core/src/auth/orchestrator.rs"),
+    ]
+    .join("\n");
+    assert!(!core_sources.contains("pub struct RequestMeta"));
+    assert!(!core_sources.contains("-> &RequestMeta"));
+    assert!(!core_sources.contains("AuthPreparationMode::PerAttempt"));
+}
+
+#[test]
+fn development_boundary_is_explicit_narrow_and_not_generated() {
+    let lib = read_repo_file("concord_core/src/lib.rs");
+    let declaration = lib
+        .split("pub mod __development;")
+        .next()
+        .expect("development declaration")
+        .rsplit_once("#[doc(hidden)]")
+        .expect("hidden development declaration")
+        .0;
+    assert!(declaration.ends_with("#[cfg(feature = \"dangerous-dev-tools\")]\n"));
+    assert!(!lib.contains("cfg(debug_assertions)"));
+
+    let manifest = read_repo_file("concord_core/Cargo.toml");
+    let defaults = manifest
+        .lines()
+        .find(|line| line.starts_with("default ="))
+        .expect("core default feature declaration");
+    assert!(!defaults.contains("dangerous-dev-tools"));
+
+    let development = read_repo_file("concord_core/src/__development.rs");
+    for forbidden in [
+        "CredentialSlot",
+        "AuthApplicationRequest",
+        "AuthAppliedCredential",
+        "AuthRejectionAction",
+        "AuthRequirement",
+        "DynBody",
+        "LimitedBody",
+        "TransportError",
+        "TransportErrorKind",
+        "ResponseEntity",
+        "RequestEntity",
+    ] {
+        assert!(
+            !development.contains(forbidden),
+            "development module exposed `{forbidden}`"
+        );
+    }
+    assert!(!development.contains("-> u64"));
+    assert!(!development.contains("pub struct CredentialGenerationSnapshot("));
+
+    let credentials = read_repo_file("concord_core/src/auth/credentials.rs");
+    let lifecycle_event = credentials
+        .split("pub enum CredentialLifecycleEvent")
+        .nth(1)
+        .expect("credential lifecycle event")
+        .split("enum SlotAction")
+        .next()
+        .expect("credential lifecycle event body");
+    assert!(lifecycle_event.contains("Option<CredentialGenerationSnapshot>"));
+    assert!(!lifecycle_event.contains("u64"));
+    assert!(credentials.contains("CredentialGenerationSnapshot(<opaque>)"));
+
+    let execute = read_repo_file("concord_core/src/client/execute.rs");
+    assert!(!execute.contains("observe_response_released"));
+    assert!(!execute.contains("drop(observed)"));
+    assert_eq!(
+        execute
+            .matches("CredentialLifecycleEvent::ResponseReleased")
+            .count(),
+        1
+    );
+    assert!(execute.contains("fn release_challenged_response("));
+
+    let context = read_repo_file("concord_core/src/client/context.rs");
+    let observation_target = context
+        .split("struct AuthLifecycleObservationTarget")
+        .nth(1)
+        .expect("auth lifecycle observation target")
+        .split("impl AuthLifecycleObservationTarget")
+        .next()
+        .expect("auth lifecycle observation target fields");
+    for identity in ["credential_id", "usage_id", "step_id", "target"] {
+        assert!(observation_target.contains(identity));
+    }
+
+    for root in ["concord_macros/src", "concord_examples"] {
+        for source in read_repo_tree(root) {
+            assert!(
+                !source.contains("concord_core::__development"),
+                "normal generated/example source imported __development"
+            );
+        }
+    }
+}
+
 fn read_repo_file(path: impl AsRef<Path>) -> String {
     let path = repo_root().join(path);
     fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
+}
+
+fn read_repo_tree(path: impl AsRef<Path>) -> Vec<String> {
+    fn visit(path: &Path, output: &mut Vec<String>) {
+        for entry in fs::read_dir(path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
+        {
+            let path = entry.expect("repository directory entry").path();
+            if path.is_dir() {
+                if path.file_name().and_then(|name| name.to_str()) != Some("target") {
+                    visit(&path, output);
+                }
+            } else if matches!(
+                path.extension().and_then(|extension| extension.to_str()),
+                Some("rs" | "md")
+            ) {
+                output.push(
+                    fs::read_to_string(&path)
+                        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display())),
+                );
+            }
+        }
+    }
+
+    let mut output = Vec::new();
+    visit(&repo_root().join(path), &mut output);
+    output
 }
 
 fn repo_root() -> PathBuf {

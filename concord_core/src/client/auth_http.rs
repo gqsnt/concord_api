@@ -112,7 +112,7 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                 };
                 auth_plan.validate_public_request(&headers, &url)?;
 
-                let meta = RequestMeta {
+                let meta = RequestExecutionMeta {
                     endpoint: "<auth>",
                     method,
                     idempotent: false,
@@ -159,7 +159,7 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
                 let mut auth_materials = Vec::new();
                 match mode {
                     AuthMode::SkipAuth => {}
-                    AuthMode::UseAuth { id, requirement: _ } => {
+                    AuthMode::UseAuth { id, requirement } => {
                         let requirement_key = id.safe_fragment();
                         let recursive = AUTH_INTERNAL_STACK.with(|stack| {
                             stack.borrow().iter().any(|item| item == &requirement_key)
@@ -173,26 +173,32 @@ impl<Cx: ClientContext> AuthHttpExecutor for ClientAuthHttpExecutor<'_, Cx> {
 
                         let auth_state_snapshot = self.client.try_auth_state()?;
                         let _stack_guard = AuthInternalStackGuard::push(requirement_key);
-                        let applied = {
+                        let prepared = {
                             let slot = base_request
                                 .auth_plan
                                 .slots
                                 .first()
                                 .expect("validated internal auth plan must contain one slot");
                             let mut auth_request = crate::auth::AuthApplicationRequest::new(slot);
-                            Cx::apply_internal_auth(
-                                &id,
+                            crate::auth::prepare::<Cx>(
+                                &requirement,
                                 &mut auth_request,
                                 self.client.vars(),
                                 self.client.auth_vars(),
                                 auth_state_snapshot.as_ref(),
                                 self,
+                                &base_request.meta,
                             )
                             .await
                         };
-                        let applied = applied?;
-                        applied.validate_bindings(&base_request.auth_plan)?;
-                        auth_materials = applied.materials;
+                        let prepared = prepared?;
+                        let slot = base_request
+                            .auth_plan
+                            .slots
+                            .first()
+                            .expect("validated internal auth plan must contain one slot");
+                        prepared.validate_binding(slot)?;
+                        auth_materials.push(prepared.material);
                     }
                 }
 

@@ -6,12 +6,12 @@ use super::common::{
 };
 use crate::support::assert_error_chain_does_not_contain_any;
 use bytes::Bytes;
+use concord_core::__private::ResolvedPolicy;
 use concord_core::advanced::{
     DebugSink, RateLimitBucketUse, RateLimitContext, RateLimitFuture, RateLimitKey,
     RateLimitKeyPart, RateLimitPermit, RateLimitPlan, RateLimitResponseAction,
     RateLimitResponseContext, RateLimitWindow, RateLimiter, RuntimeHooks,
 };
-use concord_core::internal::ResolvedPolicy;
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel};
 use http::{HeaderValue, Method, StatusCode};
 use std::num::NonZeroU32;
@@ -223,8 +223,12 @@ async fn per_request_timeout_override_wins_and_does_not_leak() -> Result<(), Api
     client.request(endpoint).response().await?;
 
     let requests = transport.requests().await;
-    assert_eq!(requests[0].timeout, Some(Duration::from_secs(2)));
-    assert_eq!(requests[1].timeout, Some(Duration::from_secs(5)));
+    assert_eq!(requests.len(), 2);
+    #[cfg(feature = "dangerous-dev-tools")]
+    {
+        assert_eq!(requests[0].timeout, Some(Duration::from_secs(2)));
+        assert_eq!(requests[1].timeout, Some(Duration::from_secs(5)));
+    }
     Ok(())
 }
 
@@ -255,7 +259,7 @@ async fn execute_raw_uses_same_runtime_safety_config() {
             .rate_limiter(limiter)
             .runtime_hooks(hooks);
     });
-    let mut policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+    let mut policy = auth_policy(concord_core::__private::AuthPlacement::Bearer);
     policy.rate_limit = rate_limit_policy().rate_limit;
 
     let err = client
@@ -509,7 +513,7 @@ async fn run_debug_safety_request(level: DebugLevel) -> Result<Vec<String>, ApiC
     client.configure(|cfg| {
         cfg.debug_level(level).debug_sink(debug.clone());
     });
-    let policy = auth_policy(concord_core::advanced::AuthPlacement::Bearer);
+    let policy = auth_policy(concord_core::__private::AuthPlacement::Bearer);
 
     client
         .request(TextEndpoint {

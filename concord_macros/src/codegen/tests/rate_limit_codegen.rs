@@ -27,7 +27,7 @@ fn generated_rate_limit_contains_runtime_plan() {
     assert_contains_all(
         &out,
         &[
-            "policy . add_rate_limit (:: concord_core :: advanced :: RateLimitPlan :: from_buckets",
+            "policy . add_rate_limit (:: concord_core :: __private :: RateLimitPlan :: from_buckets",
             "RateLimitBucketUse :: new (\"application\" , \"app_0\"",
             "RateLimitBucketUse :: new",
             "ApiClientError :: rate_limit",
@@ -66,7 +66,7 @@ fn generated_rate_limit_materializes_resolved_policy() {
         &[
             "RateLimitWindow::new(::std::num::NonZeroU32::new(10u32).ok_or_else",
             "RateLimitBucketUse::new(\"application\",\"app_0\"",
-            "policy.add_rate_limit(::concord_core::advanced::RateLimitPlan::from_buckets",
+            "policy.add_rate_limit(::concord_core::__private::RateLimitPlan::from_buckets",
             "ApiClientError :: rate_limit",
         ],
     );

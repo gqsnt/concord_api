@@ -159,7 +159,71 @@ pub struct CredentialSlot<Cx: ClientContext, P: CredentialProvider<Cx>> {
     provider: Option<P>,
     init_error: Option<AuthError>,
     inner: Arc<Mutex<CredentialSlotInner<P::Credential>>>,
+    #[cfg(feature = "dangerous-dev-tools")]
+    observer: Mutex<Option<CredentialLifecycleObserver>>,
     _cx: PhantomData<Cx>,
+}
+
+#[cfg(feature = "dangerous-dev-tools")]
+type CredentialLifecycleObserver = Arc<dyn Fn(CredentialLifecycleEvent) + Send + Sync>;
+
+/// Equality-only identity for one credential-cache generation.
+#[cfg(feature = "dangerous-dev-tools")]
+#[derive(Clone, Eq, PartialEq)]
+pub struct CredentialGenerationSnapshot(u64);
+
+#[cfg(feature = "dangerous-dev-tools")]
+impl CredentialGenerationSnapshot {
+    pub(crate) fn from_generation(generation: u64) -> Self {
+        Self(generation)
+    }
+}
+
+#[cfg(feature = "dangerous-dev-tools")]
+impl std::fmt::Debug for CredentialGenerationSnapshot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CredentialGenerationSnapshot(<opaque>)")
+    }
+}
+
+#[cfg(feature = "dangerous-dev-tools")]
+impl std::fmt::Display for CredentialGenerationSnapshot {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("<opaque credential generation>")
+    }
+}
+
+#[cfg(feature = "dangerous-dev-tools")]
+#[derive(Clone)]
+pub(crate) struct CredentialLifecycleObservationTarget(CredentialLifecycleObserver);
+
+#[cfg(feature = "dangerous-dev-tools")]
+impl CredentialLifecycleObservationTarget {
+    pub(crate) fn emit(&self, event: CredentialLifecycleEvent) {
+        (self.0)(event);
+    }
+}
+
+#[cfg(feature = "dangerous-dev-tools")]
+impl std::fmt::Debug for CredentialLifecycleObservationTarget {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CredentialLifecycleObservationTarget(<opaque>)")
+    }
+}
+
+/// Development-only observations from the core-owned credential lifecycle.
+#[cfg(feature = "dangerous-dev-tools")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CredentialLifecycleEvent {
+    ChallengeClassified {
+        status: http::StatusCode,
+    },
+    ResponseReleased,
+    GenerationInvalidated {
+        requested: Option<CredentialGenerationSnapshot>,
+        current: Option<CredentialGenerationSnapshot>,
+        applied: bool,
+    },
 }
 
 enum SlotAction<T> {
@@ -274,6 +338,8 @@ where
                 state: CredentialSlotState::Empty { generation: 0 },
                 next_owner: 1,
             })),
+            #[cfg(feature = "dangerous-dev-tools")]
+            observer: Mutex::new(None),
             _cx: PhantomData,
         }
     }
@@ -292,13 +358,10 @@ where
                 state: CredentialSlotState::Empty { generation: 0 },
                 next_owner: 1,
             })),
+            #[cfg(feature = "dangerous-dev-tools")]
+            observer: Mutex::new(None),
             _cx: PhantomData,
         }
-    }
-
-    #[inline]
-    pub fn provider(&self) -> Option<&P> {
-        self.provider.as_ref()
     }
 
     #[inline]
@@ -463,7 +526,8 @@ where
         reason: InvalidateReason,
     ) -> Result<(), AuthError> {
         let provider = self.provider_ref()?;
-        let current = self.invalidate_generation_state(generation)?;
+        let (current, current_generation) = self.invalidate_generation_state(generation)?;
+        self.observe_generation_invalidation(generation, current_generation, current.is_some());
         provider.invalidate(ctx, current.as_ref(), reason).await
     }
 
@@ -471,17 +535,24 @@ where
     /// from provider invalidation so terminal response handling cannot access
     /// an executor or initiate network/provider work.
     pub fn invalidate_generation_local(&self, generation: Option<u64>) -> Result<(), AuthError> {
-        let _ = self.invalidate_generation_state(generation)?;
+        let (current, current_generation) = self.invalidate_generation_state(generation)?;
+        self.observe_generation_invalidation(generation, current_generation, current.is_some());
         Ok(())
     }
 
     fn invalidate_generation_state(
         &self,
         generation: Option<u64>,
-    ) -> Result<Option<P::Credential>, AuthError> {
+    ) -> Result<(Option<P::Credential>, Option<u64>), AuthError> {
         Ok({
             let mut inner = lock_slot_inner(&self.inner);
-            match &mut inner.state {
+            let current_generation = match &inner.state {
+                CredentialSlotState::Valid { generation, .. }
+                | CredentialSlotState::Refreshing { generation, .. }
+                | CredentialSlotState::Failed { generation, .. }
+                | CredentialSlotState::Empty { generation } => Some(*generation),
+            };
+            let current = match &mut inner.state {
                 CredentialSlotState::Valid {
                     value,
                     generation: current_generation,
@@ -518,8 +589,63 @@ where
                     current
                 }
                 _ => None,
-            }
+            };
+            (current, current_generation)
         })
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn install_lifecycle_observer(&self, observer: CredentialLifecycleObserver) {
+        *self
+            .observer
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(observer);
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn observe_lifecycle(&self, event: CredentialLifecycleEvent) {
+        let observer = self
+            .observer
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if let Some(observer) = observer {
+            observer(event);
+        }
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn lifecycle_observation_target(
+        &self,
+    ) -> Option<CredentialLifecycleObservationTarget> {
+        self.observer
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+            .map(CredentialLifecycleObservationTarget)
+    }
+
+    #[cfg(not(feature = "dangerous-dev-tools"))]
+    fn observe_generation_invalidation(
+        &self,
+        _requested: Option<u64>,
+        _current: Option<u64>,
+        _applied: bool,
+    ) {
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    fn observe_generation_invalidation(
+        &self,
+        requested: Option<u64>,
+        current: Option<u64>,
+        applied: bool,
+    ) {
+        self.observe_lifecycle(CredentialLifecycleEvent::GenerationInvalidated {
+            requested: requested.map(CredentialGenerationSnapshot::from_generation),
+            current: current.map(CredentialGenerationSnapshot::from_generation),
+            applied,
+        });
     }
 
     pub async fn set_manual(&self, value: P::Credential) -> Result<(), AuthError> {
@@ -572,6 +698,7 @@ where
         matches!(inner.state, CredentialSlotState::Valid { .. })
     }
 
+    #[cfg_attr(not(any(test, feature = "dangerous-dev-tools")), allow(dead_code))]
     pub async fn get_cached(&self) -> Option<CredentialLease<P::Credential>> {
         if self.init_error.is_some() {
             return None;
@@ -775,6 +902,53 @@ mod tests {
             err.to_string()
                 .contains("credential generation counter overflowed")
         );
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    #[tokio::test]
+    async fn lifecycle_invalidation_compares_opaque_generation_identities() {
+        let slot = CredentialSlot::<TestCx, _>::new(TestProvider::new());
+        let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = events.clone();
+        slot.install_lifecycle_observer(Arc::new(move |event| {
+            observed.lock().expect("lifecycle event lock").push(event);
+        }));
+
+        slot.set_manual(TestCredential::fresh("first"))
+            .await
+            .expect("install first credential");
+        let first = slot
+            .get_cached()
+            .await
+            .expect("first credential generation");
+        let first_identity = CredentialGenerationSnapshot::from_generation(first.generation);
+
+        slot.set_manual(TestCredential::fresh("replacement"))
+            .await
+            .expect("install replacement credential");
+        let replacement = slot
+            .get_cached()
+            .await
+            .expect("replacement credential generation");
+        let replacement_identity =
+            CredentialGenerationSnapshot::from_generation(replacement.generation);
+        assert_ne!(first_identity, replacement_identity);
+
+        slot.invalidate_generation_local(Some(first.generation))
+            .expect("stale invalidation is safely ignored");
+        let events = events.lock().expect("lifecycle event lock");
+        let CredentialLifecycleEvent::GenerationInvalidated {
+            requested,
+            current,
+            applied,
+        } = events.last().expect("generation invalidation observation")
+        else {
+            panic!("expected generation invalidation observation")
+        };
+        assert_eq!(requested.as_ref(), Some(&first_identity));
+        assert_eq!(current.as_ref(), Some(&replacement_identity));
+        assert_ne!(requested, current);
+        assert!(!applied);
     }
 
     #[tokio::test]

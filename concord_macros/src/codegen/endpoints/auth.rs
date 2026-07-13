@@ -1,6 +1,6 @@
 fn emit_endpoint_auth_plan(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) -> TokenStream2 {
     if ep.policy.auth.is_empty() {
-        return quote! { ::concord_core::advanced::AuthPlan::default() };
+        return quote! { ::concord_core::__private::AuthPlan::default() };
     }
     let requirements = ep
         .policy
@@ -8,7 +8,7 @@ fn emit_endpoint_auth_plan(resolved_api: &ResolvedApi, ep: &ResolvedEndpoint) ->
         .iter()
         .map(|req| emit_auth_requirement(resolved_api, req));
     quote! {
-        ::concord_core::advanced::AuthPlan {
+        ::concord_core::__private::AuthPlan {
             requirements: ::std::vec![ #( #requirements ),* ],
         }
     }
@@ -25,28 +25,28 @@ fn emit_auth_requirement(
     let provenance = LitStr::new(&requirement.provenance.label, Span::call_site());
     let placement = emit_auth_placement(&requirement.placement);
     quote! {
-        ::concord_core::advanced::AuthRequirement {
-            credential: ::concord_core::advanced::CredentialRef {
-                id: ::concord_core::__private::v1::CredentialId::new(#client_ns, #credential_name),
+        ::concord_core::__private::AuthRequirement {
+            credential: ::concord_core::__private::CredentialRef {
+                id: ::concord_core::__private::CredentialId::new(#client_ns, #credential_name),
             },
             placement: #placement,
-            usage_id: ::concord_core::__private::v1::AuthUsageId::new(#usage_id),
+            usage_id: ::concord_core::__private::AuthUsageId::new(#usage_id),
             step_id: ::core::option::Option::Some(#step_id),
-            provenance: ::concord_core::__private::v1::AuthProvenance::new(#provenance),
-            challenge: ::concord_core::advanced::AuthChallengePolicy::Default,
+            provenance: ::concord_core::__private::AuthProvenance::new(#provenance),
+            challenge: ::concord_core::__private::AuthChallengePolicy::Default,
         }
     }
 }
 
 fn emit_auth_placement(placement: &AuthPlacementIr) -> TokenStream2 {
     match placement {
-        AuthPlacementIr::Bearer => quote! { ::concord_core::advanced::AuthPlacement::Bearer },
+        AuthPlacementIr::Bearer => quote! { ::concord_core::__private::AuthPlacement::Bearer },
         AuthPlacementIr::Header { name } => {
-            quote! { ::concord_core::advanced::AuthPlacement::Header(#name) }
+            quote! { ::concord_core::__private::AuthPlacement::Header(#name) }
         }
         AuthPlacementIr::Query { key } => {
-            quote! { ::concord_core::advanced::AuthPlacement::Query(#key) }
+            quote! { ::concord_core::__private::AuthPlacement::Query(#key) }
         }
-        AuthPlacementIr::Basic => quote! { ::concord_core::advanced::AuthPlacement::Basic },
+        AuthPlacementIr::Basic => quote! { ::concord_core::__private::AuthPlacement::Basic },
     }
 }

@@ -163,16 +163,16 @@ impl concord_core::advanced::RuntimeHooks for RecordingHooks {
         })
     }
 
-    fn transport_error<'a>(
+    fn request_error<'a>(
         &'a self,
-        ctx: concord_core::advanced::TransportErrorHookContext<'a>,
+        ctx: concord_core::advanced::RequestErrorHookContext<'a>,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         let events = self.events.clone();
         Box::pin(async move {
             events
                 .lock()
                 .expect("hooks lock")
-                .push(format!("hook_transport_error:{}", ctx.meta.endpoint));
+                .push(format!("hook_request_error:{}", ctx.meta.endpoint));
         })
     }
 }

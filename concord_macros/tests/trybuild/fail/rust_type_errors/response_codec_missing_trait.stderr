@@ -32,7 +32,7 @@ help: the following other types implement trait `ResponseCodec`
    |
    |   impl ResponseCodec for Text<String> {
    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Text`
-   = note: required for `BufferedResponse<MissingResponse<User>>` to implement `ResponseEntity`
+   = note: required for `concord_core::__private::BufferedResponse<MissingResponse<User>>` to implement `concord_core::__private::ResponseEntity`
    = note: this error originates in the macro `api` (in Nightly builds, run with -Z macro-backtrace for more info)
 
 error[E0277]: the trait bound `MissingResponse<User>: ResponseCodec` is not satisfied
@@ -69,7 +69,7 @@ help: the following other types implement trait `ResponseCodec`
    |
    |   impl ResponseCodec for Text<String> {
    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Text`
-   = note: required for `BufferedResponse<MissingResponse<User>>` to implement `ResponseEntity`
+   = note: required for `concord_core::__private::BufferedResponse<MissingResponse<User>>` to implement `concord_core::__private::ResponseEntity`
 note: required by a bound in `concord_core::__private::ResponseEntityWithMeta::execute_with_meta`
   --> $WORKSPACE/concord_core/src/io.rs
    |

@@ -8,7 +8,7 @@ See [Security Model](security_model.md) for the consumer-facing boundary between
 
 | Crate | Default features | Optional features | Supported no-default build | Notes |
 | --- | --- | --- | --- | --- |
-| `concord_core` | `default-tls`, `http2`, `rate-limit-governor` | `json`, `default-tls`, `http2`, `gzip`, `brotli`, `deflate`, `multipart`, `dangerous-raw-response`, `dangerous-dev-tools` | yes | `reqwest` is mandatory and required for the default transport. `new()` and `builder()` therefore build with a reqwest-backed transport even with `--no-default-features`. In no-default builds, only `stream` is guaranteed. `json` keeps the built-in JSON/auth helpers available in all builds. `default-tls`, `http2`, `gzip`, `brotli`, `deflate`, and `multipart` are optional reqwest transport capabilities; all are off in no-default mode. Persistent cookies and system-proxy discovery are unsupported. `dangerous-raw-response` enables the raw-response escape hatch and `dangerous-dev-tools` enables the dev-body-capture configuration API; neither feature enables the escape hatch by itself. `serde` and `serde_json` are always present in `concord_core`; `reqwest` is always on for transport and can be composed by optional transport capabilities. When `rate-limit-governor` is off, the default limiter fails closed for non-empty declared plans and `NoopRateLimiter` is the explicit opt-out. |
+| `concord_core` | `default-tls`, `http2`, `rate-limit-governor` | `json`, `default-tls`, `http2`, `gzip`, `brotli`, `deflate`, `multipart`, `dangerous-raw-response`, `dangerous-dev-tools` | yes | Reqwest `=0.13.4` is mandatory in every build. `new()` and `builder()` always create the managed Reqwest client, including with `--no-default-features`. Optional features add reviewed Reqwest capabilities; cookies and redirects remain unavailable. Dangerous and development surfaces require explicit features. When `rate-limit-governor` is off, non-empty declared plans fail closed and `NoopRateLimiter` is the explicit opt-out. |
 | `concord_macros` | none | none | yes | Proc-macro crate. |
 | `concord_examples` | none | `dangerous-raw-response`, `dangerous-dev-tools` | no | Compile-checked examples depend on `concord_core` with `json` enabled and forward the dangerous escape-hatch features for example-specific compile checks; neither feature is enabled by default. |
 
@@ -53,17 +53,33 @@ feature ownership changes:
 
 ## Focused Feature Diagnostics
 
-No-default and feature-specific commands remain optional diagnostics. They are
-not dependencies of `just release`:
+No-default and all-feature core checks are composed into `just release`.
+Additional feature-specific Nextest runs remain useful diagnostics:
 
 ```bash
 cargo nextest run -p concord_core --no-default-features
 cargo nextest run -p concord_core --no-default-features --features json
 ```
 
-The root `justfile` owns the canonical compile, test, documentation, and
-supply-chain gate. It does not claim individual feature isolation or
-dependency-tree equivalence.
+The root `justfile` owns the canonical compile, test, documentation,
+supply-chain, performance-package, and benchmark-compilation gate.
+
+## Explicit Development Seam
+
+`concord_core::__development` is an unstable deterministic-test observation
+seam. It is compiled only when `dangerous-dev-tools` is explicitly selected;
+ordinary downstream debug builds do not expose it, and the feature is not in
+`concord_core`'s defaults. The module exposes purpose-specific lifecycle
+observations and opaque snapshots, not credential slots, request/response
+planning types, body engines, or transport errors. Generated clients and
+normal examples never import it. Snapshot identities support cloning and
+equality comparison only; their constructors, numeric representation, and
+ordering are private, and their diagnostics render only an opaque label.
+
+The same feature also owns the deprecated local response-capture diagnostic.
+Enabling the feature makes these development capabilities available but does
+not activate capture or instrumentation by itself. Treat the whole feature as
+unstable test tooling and do not enable it in production dependencies.
 
 ## Extending The Surface
 

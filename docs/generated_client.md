@@ -26,7 +26,12 @@ Callers can use `new()`, `builder()`, or `new_with_safe_reqwest_builder(...)`. T
 let api = minimal_api::MinimalApi::new();
 ```
 
-Concord's managed reqwest transport disables redirects and Reqwest retries. That keeps auth material on the original request and leaves endpoint retries under Concord's runtime. `new_with_safe_reqwest_builder(...)` receives only `SafeReqwestBuilder` for infallible settings; `new_with_safe_reqwest_builder_fallible(...)` additionally permits fallible PEM parsing. Both support reviewed timeout, pool, protocol, TLS, and credential-free explicit-proxy settings while keeping Reqwest defaults, cookies, redirects, and retries unavailable.
+Concord's managed Reqwest client disables redirects and cookies. Retry behavior
+is selected once with client-level `RetryMode`: protocol recovery, disabled, or
+bounded safe-method status retry for verified fixed-origin APIs.
+`new_with_safe_reqwest_builder(...)` receives only `SafeReqwestBuilder` for
+infallible settings; the fallible variant additionally permits PEM parsing.
+Neither constructor exposes a raw Reqwest builder or client.
 
 When you configure runtime hooks or debug sinks, those callbacks receive sanitized metadata views. Sensitive request and response headers and sensitive query values are redacted before callback invocation, and neither surface receives request or response body bytes or raw secret material. High-volume debug can add measurable overhead.
 
@@ -212,7 +217,7 @@ Use advanced endpoints for focused tests, reusable endpoint values, or explicit 
 
 Generated public names are validated before codegen within their generated namespace. Client facade names are checked against generated client methods such as `new`, `builder`, `configure`, `request`, and `auth_state`. Endpoint-backed auth helper names, auth-state credential accessors, scope facade methods, endpoint methods, generated request-extension traits, endpoint marker types, and support types are also collision-validated in their own namespaces.
 
-Raw Rust identifiers such as `r#type` are rejected for public generated names in v1. Use ordinary DSL names or aliases that generate stable public Rust names.
+Raw Rust identifiers such as `r#type` are rejected for public generated names. Use ordinary DSL names or aliases that generate stable public Rust names.
 
 Endpoint-backed credentials expose deterministic acquisition helpers such as `.acquire_as_session()` on the endpoint request that returns credential material. Stored credential state is accessed through `api.auth_state().session().set(...)`, `.clear()`, and `.is_set()`.
 

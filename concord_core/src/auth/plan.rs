@@ -271,6 +271,8 @@ pub struct PreparedAuthCredential {
     pub applied: AuthAppliedCredential,
     pub(crate) reuse: AuthPreparationReuse,
     pub(crate) material: AuthTransportMaterial,
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) lifecycle_observation_target: Option<super::CredentialLifecycleObservationTarget>,
 }
 
 impl PreparedAuthCredential {
@@ -280,12 +282,23 @@ impl PreparedAuthCredential {
             applied,
             reuse: AuthPreparationReuse::Never,
             material: application.material,
+            #[cfg(feature = "dangerous-dev-tools")]
+            lifecycle_observation_target: None,
         }
     }
 
     #[inline]
     pub fn with_reuse(mut self, reuse: AuthPreparationReuse) -> Self {
         self.reuse = reuse;
+        self
+    }
+
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn with_lifecycle_observation_target(
+        mut self,
+        target: Option<super::CredentialLifecycleObservationTarget>,
+    ) -> Self {
+        self.lifecycle_observation_target = target;
         self
     }
 
@@ -318,61 +331,6 @@ pub enum AuthPreparationReuse {
     #[default]
     Never,
     RequestLocal,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct PreparedInternalAuth {
-    pub(crate) materials: Vec<AuthTransportMaterial>,
-}
-
-impl PreparedInternalAuth {
-    #[inline]
-    pub fn none() -> Self {
-        Self::default()
-    }
-
-    #[inline]
-    pub fn from_application(application: AuthApplication) -> Self {
-        Self {
-            materials: vec![application.material],
-        }
-    }
-
-    #[inline]
-    pub fn push_application(&mut self, application: AuthApplication) {
-        self.materials.push(application.material);
-    }
-
-    pub(crate) fn validate_bindings(
-        &self,
-        plan: &AuthPlacementPlan,
-    ) -> Result<(), crate::auth::AuthError> {
-        if self.materials.len() != plan.slots.len() {
-            return Err(crate::auth::AuthError::new(
-                crate::auth::AuthErrorKind::InvalidConfiguration,
-                "internal credential material count does not match the preplanned authentication slots",
-            ));
-        }
-        for slot in &plan.slots {
-            let Some(material) = self
-                .materials
-                .iter()
-                .find(|material| material.slot_id() == slot.id)
-            else {
-                return Err(crate::auth::AuthError::new(
-                    crate::auth::AuthErrorKind::InvalidConfiguration,
-                    "internal credential material does not match the preplanned authentication slot",
-                ));
-            };
-            if !material_matches_slot(material, slot) {
-                return Err(crate::auth::AuthError::new(
-                    crate::auth::AuthErrorKind::InvalidConfiguration,
-                    "internal credential material is incompatible with its preplanned authentication placement",
-                ));
-            }
-        }
-        Ok(())
-    }
 }
 
 impl AuthTransportMaterial {
@@ -479,17 +437,6 @@ pub enum AuthChallengePolicy {
     NeverRefresh,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AuthDecision {
-    Continue,
-    RetryAfterRefresh {
-        credential: CredentialRef,
-        generation: Option<u64>,
-        reason: AuthRetryReason,
-    },
-    Fail,
-}
-
 /// One side-effect-free action for one exact applied authentication use.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthRejectionAction {
@@ -552,6 +499,33 @@ impl AuthRejectionAction {
         matches!(self, Self::Refresh { .. })
     }
 
+    #[cfg(feature = "dangerous-dev-tools")]
+    pub(crate) fn matches_use_identity(
+        &self,
+        credential_id: &CredentialId,
+        usage_id: &AuthUsageId,
+        step_id: Option<&'static str>,
+    ) -> bool {
+        match self {
+            Self::Terminal {
+                credential,
+                usage_id: action_usage_id,
+                step_id: action_step_id,
+                ..
+            }
+            | Self::Refresh {
+                credential,
+                usage_id: action_usage_id,
+                step_id: action_step_id,
+                ..
+            } => {
+                &credential.id == credential_id
+                    && action_usage_id == usage_id
+                    && *action_step_id == step_id
+            }
+        }
+    }
+
     pub fn matches(&self, requirement: &AuthRequirement, applied: &AuthAppliedCredential) -> bool {
         match self {
             Self::Terminal {
@@ -585,13 +559,6 @@ impl AuthRejectionAction {
             | Self::Refresh {
                 invalidate_reason, ..
             } => *invalidate_reason,
-        }
-    }
-
-    pub fn refresh_reason(&self) -> Option<AuthRetryReason> {
-        match self {
-            Self::Refresh { reason, .. } => Some(reason.clone()),
-            Self::Terminal { .. } => None,
         }
     }
 }
@@ -631,13 +598,6 @@ pub struct AuthAppliedCredential {
 pub struct AuthAttemptSummary {
     pub applied: Vec<AuthAppliedCredential>,
     pub refreshed_credentials: usize,
-}
-
-impl AuthAttemptSummary {
-    #[inline]
-    pub fn applied_credentials(&self) -> usize {
-        self.applied.len()
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -737,42 +697,6 @@ pub fn apply_basic_credential(
             password: material.password.clone(),
         },
     })
-}
-
-pub async fn invalidate_rejected_credential<Cx, P>(
-    slot: &crate::auth::CredentialSlot<Cx, P>,
-    vars: &Cx::Vars,
-    auth: &Cx::AuthVars,
-    auth_state: &Cx::AuthState,
-    executor: &dyn crate::auth::AuthHttpExecutor,
-    applied: &AuthAppliedCredential,
-    reason: crate::auth::InvalidateReason,
-) -> Result<(), crate::auth::AuthError>
-where
-    Cx: crate::client::ClientContext,
-    P: crate::auth::CredentialProvider<Cx>,
-{
-    let credential_ctx = crate::auth::CredentialContext {
-        vars,
-        auth,
-        auth_state,
-        executor,
-        credential_id: applied.credential_id.clone(),
-        reason: crate::auth::CredentialRefreshReason::Rejected,
-    };
-    slot.invalidate_generation(credential_ctx, applied.generation, reason)
-        .await
-}
-
-pub fn invalidate_rejected_credential_local<Cx, P>(
-    slot: &crate::auth::CredentialSlot<Cx, P>,
-    applied: &AuthAppliedCredential,
-) -> Result<(), crate::auth::AuthError>
-where
-    Cx: crate::client::ClientContext,
-    P: crate::auth::CredentialProvider<Cx>,
-{
-    slot.invalidate_generation_local(applied.generation)
 }
 
 #[cfg(test)]

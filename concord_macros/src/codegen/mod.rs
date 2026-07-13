@@ -113,8 +113,11 @@ fn emit_resolved(resolved_api: ResolvedApi, facade_ir: &FacadeIr) -> TokenStream
         mod #mod_name {
             use super::*;
 
-            const _: ::concord_core::__private::v1::MacroAbi<1> =
-                ::concord_core::__private::v1::MACRO_ABI;
+            const _: () = {
+                let actual: ::concord_core::__private::ReqwestNativeGeneratedContract =
+                    ::concord_core::__private::GENERATED_API_COMPATIBILITY;
+                ::concord_core::__private::assert_macro_core_compatibility(actual);
+            };
 
             #vars_struct
             #auth_vars_struct
@@ -142,8 +145,8 @@ fn emit_api_descriptor(api: &ResolvedApi) -> TokenStream2 {
     });
     quote! {
         #[doc(hidden)]
-        pub static API_DESCRIPTOR: ::concord_core::__private::v1::ApiDescriptor =
-            ::concord_core::__private::v1::ApiDescriptor {
+        pub static API_DESCRIPTOR: ::concord_core::__private::ApiDescriptor =
+            ::concord_core::__private::ApiDescriptor {
                 name: #api_name,
                 origin: #origin,
                 endpoints: &[ #( #endpoint_refs ),* ],
@@ -155,13 +158,13 @@ fn emit_origin_descriptor(origin: &ApiOriginIr) -> TokenStream2 {
     match origin {
         ApiOriginIr::FixedSingle(origin) => {
             let fixed = emit_fixed_origin(origin);
-            quote! { ::concord_core::__private::v1::ApiOriginDescriptor::FixedSingleOrigin(#fixed) }
+            quote! { ::concord_core::__private::ApiOriginDescriptor::FixedSingleOrigin(#fixed) }
         }
         ApiOriginIr::Dynamic => {
-            quote! { ::concord_core::__private::v1::ApiOriginDescriptor::DynamicOrigin }
+            quote! { ::concord_core::__private::ApiOriginDescriptor::DynamicOrigin }
         }
         ApiOriginIr::Multi => {
-            quote! { ::concord_core::__private::v1::ApiOriginDescriptor::MultiOrigin }
+            quote! { ::concord_core::__private::ApiOriginDescriptor::MultiOrigin }
         }
     }
 }
@@ -169,11 +172,11 @@ fn emit_origin_descriptor(origin: &ApiOriginIr) -> TokenStream2 {
 fn emit_fixed_origin(origin: &FixedOriginIr) -> TokenStream2 {
     let authority = LitStr::new(&origin.authority, Span::call_site());
     let scheme = match origin.scheme {
-        OriginSchemeIr::Http => quote! { ::concord_core::__private::v1::OriginScheme::Http },
-        OriginSchemeIr::Https => quote! { ::concord_core::__private::v1::OriginScheme::Https },
+        OriginSchemeIr::Http => quote! { ::concord_core::__private::OriginScheme::Http },
+        OriginSchemeIr::Https => quote! { ::concord_core::__private::OriginScheme::Https },
     };
     quote! {
-        ::concord_core::__private::v1::FixedOriginDescriptor {
+        ::concord_core::__private::FixedOriginDescriptor {
             scheme: #scheme,
             authority: #authority,
         }

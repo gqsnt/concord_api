@@ -4,13 +4,13 @@ use super::common::{
     buffered_endpoint_response_terminal, client, configure_runtime, execute_buffered,
 };
 use bytes::Bytes;
-use concord_core::advanced::{
-    CodecError, DecodeContext, OctetStream, RawStreamResponse, ResponseCodec, ResponseEntity,
-    StreamResponse, TextContentType,
-};
-use concord_core::internal::{
+use concord_core::__private::{
     ClientPlanContext, EndpointMeta, EndpointPlan, PreparedBody, RequestOverrides, RequestPlan,
     ResolvedPolicy, ResolvedRoute, ResponsePlan,
+};
+use concord_core::__private::{RawStreamResponse, ResponseEntity};
+use concord_core::advanced::{
+    CodecError, DecodeContext, OctetStream, ResponseCodec, StreamResponse, TextContentType,
 };
 use concord_core::prelude::{ApiClient, ApiClientError, DebugLevel, Endpoint, ReusableEndpoint};
 use http::{HeaderValue, Method, StatusCode};
@@ -64,12 +64,12 @@ impl ReusableEndpoint<TestCx> for ByteBodyEndpoint {
                     idempotent: false,
                     facade_path: &[],
                 },
-                route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", "/byte-body"),
+                route: ResolvedRoute::new(http::uri::Scheme::HTTP, "example.com", "/byte-body"),
                 policy: ResolvedPolicy::default(),
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("text/plain")),
                     no_content: false,
-                    format: concord_core::internal::Format::Text,
+                    format: concord_core::__private::Format::Text,
                 },
                 pagination: None,
             },
@@ -106,12 +106,12 @@ impl ReusableEndpoint<TestCx> for StreamEndpoint {
                     idempotent: true,
                     facade_path: &[],
                 },
-                route: ResolvedRoute::new(http::uri::Scheme::HTTPS, "example.com", "/stream-limit"),
+                route: ResolvedRoute::new(http::uri::Scheme::HTTP, "example.com", "/stream-limit"),
                 policy: ResolvedPolicy::default(),
                 response: ResponsePlan {
                     accept: Some(HeaderValue::from_static("application/octet-stream")),
                     no_content: false,
-                    format: concord_core::internal::Format::Binary,
+                    format: concord_core::__private::Format::Binary,
                 },
                 pagination: None,
             },

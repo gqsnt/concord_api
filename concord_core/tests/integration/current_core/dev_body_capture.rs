@@ -1,11 +1,15 @@
-use super::common::{
-    MockResponse, MockTransport, ObservationRuntimeHooks, SafeRecordingDebugSink, TestAuthVars,
-    TextEndpoint, auth_policy, client,
-};
+use super::common::{MockResponse, MockTransport, TestAuthVars, TextEndpoint, client};
+#[cfg(feature = "dangerous-dev-tools")]
+use super::common::{ObservationRuntimeHooks, SafeRecordingDebugSink, auth_policy};
+#[cfg(feature = "dangerous-dev-tools")]
 use super::response_body_limit::ByteBodyEndpoint;
+#[cfg(feature = "dangerous-dev-tools")]
 use bytes::Bytes;
-use concord_core::advanced::AuthPlacement;
-use concord_core::prelude::{ApiClientError, DebugLevel};
+#[cfg(feature = "dangerous-dev-tools")]
+use concord_core::__private::AuthPlacement;
+use concord_core::prelude::ApiClientError;
+#[cfg(feature = "dangerous-dev-tools")]
+use concord_core::prelude::DebugLevel;
 use http::StatusCode;
 use std::sync::Arc;
 use tokio::sync::Mutex;

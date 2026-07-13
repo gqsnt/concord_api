@@ -24,7 +24,7 @@ api! {
 
 `base` is a URL literal. Static host prefixes can remain fixed-origin;
 context/endpoint-variable host pieces are descriptor-classified as dynamic.
-The generated versioned descriptor records fixed, dynamic, or multi-origin
+The generated descriptor records fixed, dynamic, or multi-origin
 classification and whether pagination can change origin.
 
 ## Routes and parameters
@@ -136,14 +136,12 @@ retry off
 ```
 
 This includes retry profiles and inheritance, endpoint retry patches,
-`max_attempts`, method/status/transport lists, retry idempotency declarations,
-and `Retry-After` retry switches. Removed syntax is not accepted as a no-op or
-compatibility alias.
+`max_attempts`, method/status lists, retry idempotency declarations, and
+`Retry-After` retry switches. Removed syntax produces a focused compile error.
 
 ## Generated construction
 
 `GeneratedApi::new(...)` uses `RetryMode::ProtocolRecovery`. Generated clients
 also expose retry-aware constructors for `Disabled` and validated `Status`
-mode. Generated source emits only versioned descriptor metadata and narrow
-runtime calls; it emits no retry closure, classifier, loop, delay, admission,
-or attempt logic.
+mode. Generated source emits only generated descriptor metadata and narrow
+runtime calls; it emits no retry closure, classifier, loop, or delay logic.

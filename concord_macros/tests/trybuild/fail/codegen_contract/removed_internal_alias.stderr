@@ -1,0 +1,5 @@
+error[E0433]: cannot find `internal` in `concord_core`
+ --> tests/trybuild/fail/codegen_contract/removed_internal_alias.rs:2:27
+  |
+2 |     let _ = concord_core::internal::GENERATED_API_COMPATIBILITY;
+  |                           ^^^^^^^^ could not find `internal` in `concord_core`

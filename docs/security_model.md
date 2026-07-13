@@ -1,6 +1,6 @@
 # Security Model
 
-This document is the safe-consumer guide for Concord V1. It describes the public surfaces Concord intends to keep safe by default, the explicit extension points that stay under caller control, and the dangerous escape hatches that can expose raw body bytes or local capture files when deliberately enabled.
+This document is the safe-consumer guide for the current Concord release. It describes the public surfaces Concord intends to keep safe by default, the explicit extension points that stay under caller control, and the dangerous escape hatches that can expose raw body bytes or local capture files when deliberately enabled.
 
 Concord is designed to keep the ordinary path narrow:
 
@@ -37,7 +37,8 @@ These surfaces are intended for application code. They do not intentionally expo
 - auth providers and auth materialization helpers where supported;
 - hooks and debug sinks that intentionally receive sanitized metadata views;
 - pagination controllers and other explicit extension hooks;
-- metadata-bearing response types such as `DecodedResponse` where needed.
+- native streaming and multipart body inputs;
+- safe managed-client configuration.
 
 Advanced surfaces remain safe only within their contract. Concord cannot prevent leaks introduced by user-authored codecs or callbacks that inspect metadata.
 
@@ -57,17 +58,22 @@ These enable, respectively:
 
 These features are intended for controlled diagnostics, protocol testing, and local debugging. They should not be treated as the default application surface, and they should not be enabled in production unless that risk is intentionally accepted.
 
+`concord_core::__development` is additionally available only with
+`dangerous-dev-tools`. It is a hidden, unstable observation seam for Concord's
+deterministic tests, not an alternate transport or a normal debug-build API.
+Without the explicit feature it does not exist—even under `debug_assertions`.
+Its narrow observations do not make credential cache, body engine, response
+entity, or transport error types public.
+
 ### Generated-code-only plumbing
 
-`concord_core::__private` is generated-code-only plumbing. New descriptor and
-authentication-binding integration uses the narrow, versioned
-`concord_core::__private::v1` surface. That module is not a stable reflection,
-transport, middleware, or authentication-executor API; its public visibility
-exists only so macro expansions compile across crate boundaries.
+`concord_core::__private` is generated-code-only plumbing. Descriptor and
+authentication-binding integration uses this single current namespace. It is
+not a stable reflection, transport, middleware, or authentication-executor
+API; its public visibility exists only so macro expansions compile across
+crate boundaries.
 
 It exists so macro-generated code has stable paths for request planning, response planning, endpoint internals, and other implementation details that are not intended as a public user API. Normal application code should not import it.
-
-The compatibility alias `concord_core::internal` is not the preferred path. Generated code should use `__private`.
 
 ## Secret Handling
 
@@ -94,14 +100,10 @@ The following surfaces are metadata-only or body-free by design:
 
 Body-size limit failures remain typed and body-free. Diagnostic surfaces may mention the failing endpoint, status, limit, or safe header metadata, but they do not receive raw body bytes.
 
-The standard `DynBody` path preserves HTTP data and trailer frames while using
-`Bytes` and the redacted `BodyError` type. Send-only streams and readers are
-adapted with safe exclusive synchronous polling; no unsafe trait adaptation,
-background forwarding task, or unbounded queue is involved. Its reusable
-frame-aware limiter counts data bytes only, so trailer fields do not consume a
-byte budget. For responses this frame-aware path is used only by explicit
-`StreamResponse::into_body()` extraction; normal buffered and streaming
-processing stays on the native response and does not use `DynBody`.
+Reusable bytes, streaming inputs, and multipart recipes are converted directly
+to their native Reqwest capabilities. Buffered responses use bounded native
+collection and streaming responses retain native lazy delivery. No universal
+public body or response bridge is part of the final surface.
 
 The dangerous surfaces are the exception:
 

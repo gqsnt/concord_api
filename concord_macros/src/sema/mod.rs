@@ -846,11 +846,11 @@ mod tests {
             .expect("buffered endpoint");
         assert_eq!(
             ty_string(&buffered.io.request_entity.adapter_ty),
-            "::concord_core::advanced::EncodedRequest<Json<Body>>"
+            "::concord_core::__private::EncodedRequest<Json<Body>>"
         );
         assert_eq!(
             ty_string(&buffered.io.response_entity.adapter_ty),
-            "::concord_core::advanced::BufferedResponse<Json<Resp>>"
+            "::concord_core::__private::BufferedResponse<Json<Resp>>"
         );
 
         let streamed = resolved_api
@@ -860,7 +860,7 @@ mod tests {
             .expect("streamed endpoint");
         assert_eq!(
             ty_string(&streamed.io.response_entity.adapter_ty),
-            "::concord_core::advanced::RawStreamResponse<Bytes>"
+            "::concord_core::__private::RawStreamResponse<Bytes>"
         );
     }
 
@@ -902,14 +902,14 @@ mod tests {
             .expect("no body endpoint");
         assert_eq!(
             ty_string(&no_body.io.request_entity.adapter_ty),
-            "::concord_core::advanced::NoRequestBody"
+            "::concord_core::__private::NoRequestBody"
         );
         assert!(no_body.io.request_entity.public_input_ty.is_none());
         assert!(no_body.io.request_entity.body_field_ty.is_none());
         assert!(no_body.io.request_entity.doc.facade_summary.is_none());
         assert_eq!(
             ty_string(&no_body.io.response_entity.adapter_ty),
-            "::concord_core::advanced::BufferedResponse<Json<NoBodyResponse>>"
+            "::concord_core::__private::BufferedResponse<Json<NoBodyResponse>>"
         );
         assert_eq!(
             ty_string(&no_body.io.response_entity.public_output_ty),
@@ -926,7 +926,7 @@ mod tests {
             .expect("buffered endpoint");
         assert_eq!(
             ty_string(&buffered.io.request_entity.adapter_ty),
-            "::concord_core::advanced::EncodedRequest<Json<BufferedBody>>"
+            "::concord_core::__private::EncodedRequest<Json<BufferedBody>>"
         );
         assert_eq!(
             ty_string(
@@ -956,7 +956,7 @@ mod tests {
         );
         assert_eq!(
             ty_string(&buffered.io.response_entity.adapter_ty),
-            "::concord_core::advanced::BufferedResponse<Json<BufferedResponse>>"
+            "::concord_core::__private::BufferedResponse<Json<BufferedResponse>>"
         );
         assert_eq!(
             ty_string(&buffered.io.response_entity.public_output_ty),
@@ -970,7 +970,7 @@ mod tests {
             .expect("stream request endpoint");
         assert_eq!(
             ty_string(&stream_req.io.request_entity.adapter_ty),
-            "::concord_core::advanced::RawStreamRequest<OctetStream>"
+            "::concord_core::__private::RawStreamRequest<OctetStream>"
         );
         assert!(stream_req.io.request_entity.capabilities.has_body);
         assert!(stream_req.io.request_entity.capabilities.is_streaming);
@@ -1017,7 +1017,7 @@ mod tests {
             .expect("streamed endpoint");
         assert_eq!(
             ty_string(&streamed.io.response_entity.adapter_ty),
-            "::concord_core::advanced::RawStreamResponse<OctetStream>"
+            "::concord_core::__private::RawStreamResponse<OctetStream>"
         );
         assert_eq!(
             streamed.io.response_entity.doc.facade_summary.as_deref(),
@@ -1032,7 +1032,7 @@ mod tests {
             .expect("no content endpoint");
         assert_eq!(
             ty_string(&no_content.io.response_entity.adapter_ty),
-            "::concord_core::advanced::NoContentResponse"
+            "::concord_core::__private::NoContentResponse"
         );
         assert!(no_content.io.response_entity.capabilities.is_no_content);
         assert!(!no_content.io.response_entity.capabilities.is_streaming);

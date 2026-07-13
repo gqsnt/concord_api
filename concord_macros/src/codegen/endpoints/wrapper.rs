@@ -198,7 +198,7 @@ fn emit_client_wrapper(
             #[inline]
             fn __concord_rebuild_auth_state_preserving_manual(
                 &mut self,
-            ) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
+            ) -> ::core::result::Result<(), ::concord_core::prelude::AuthError> {
                 let __old_auth_state = self.inner.try_auth_state()?;
                 let mut __new_auth_state =
                     <#cx_ty as ::concord_core::prelude::ClientContext>::init_auth_state(
@@ -212,10 +212,9 @@ fn emit_client_wrapper(
     };
     let configure_rate_limiter = if let Some(policy) = &resolved_api.rate_limit_response_policy {
         quote! {
-            __inner.set_rate_limiter(::std::sync::Arc::new(
-                ::concord_core::advanced::GovernorRateLimiter::new()
-                    .with_response_policy(::std::sync::Arc::new(#policy::default()))
-            ));
+            __inner.set_rate_limiter(
+                ::concord_core::__private::generated_rate_limiter(#policy::default())
+            );
         }
     } else {
         quote! {}
@@ -238,11 +237,10 @@ fn emit_client_wrapper(
             if rebuild_auth_state {
                 quote! {
                     #[inline]
-                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&mut Self, ::concord_core::advanced::AuthError> {
+                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&mut Self, ::concord_core::prelude::AuthError> {
                         {
-                            let mut __g = ::concord_core::advanced::write_auth_lock(
+                            let mut __g = ::concord_core::__private::generated_auth_write(
                                 self.inner.auth_vars(),
-                                "auth vars lock poisoned",
                             )?;
                             __g.#f = ::core::option::Option::Some(v.into());
                         }
@@ -250,11 +248,10 @@ fn emit_client_wrapper(
                         ::core::result::Result::Ok(self)
                     }
                     #[inline]
-                    pub fn #clear_name(&mut self) -> ::core::result::Result<&mut Self, ::concord_core::advanced::AuthError> {
+                    pub fn #clear_name(&mut self) -> ::core::result::Result<&mut Self, ::concord_core::prelude::AuthError> {
                         {
-                            let mut __g = ::concord_core::advanced::write_auth_lock(
+                            let mut __g = ::concord_core::__private::generated_auth_write(
                                 self.inner.auth_vars(),
-                                "auth vars lock poisoned",
                             )?;
                             __g.#f = ::core::option::Option::None;
                         }
@@ -265,19 +262,17 @@ fn emit_client_wrapper(
             } else {
                 quote! {
                     #[inline]
-                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&Self, ::concord_core::advanced::AuthError> {
-                        let mut __g = ::concord_core::advanced::write_auth_lock(
+                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&Self, ::concord_core::prelude::AuthError> {
+                        let mut __g = ::concord_core::__private::generated_auth_write(
                             self.inner.auth_vars(),
-                            "auth vars lock poisoned",
                         )?;
                         __g.#f = ::core::option::Option::Some(v.into());
                         ::core::result::Result::Ok(self)
                     }
                     #[inline]
-                    pub fn #clear_name(&self) -> ::core::result::Result<&Self, ::concord_core::advanced::AuthError> {
-                        let mut __g = ::concord_core::advanced::write_auth_lock(
+                    pub fn #clear_name(&self) -> ::core::result::Result<&Self, ::concord_core::prelude::AuthError> {
+                        let mut __g = ::concord_core::__private::generated_auth_write(
                             self.inner.auth_vars(),
-                            "auth vars lock poisoned",
                         )?;
                         __g.#f = ::core::option::Option::None;
                         ::core::result::Result::Ok(self)
@@ -288,11 +283,10 @@ fn emit_client_wrapper(
             if rebuild_auth_state {
                 quote! {
                     #[inline]
-                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&mut Self, ::concord_core::advanced::AuthError> {
+                    pub fn #set_name(&mut self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&mut Self, ::concord_core::prelude::AuthError> {
                         {
-                            let mut __g = ::concord_core::advanced::write_auth_lock(
+                            let mut __g = ::concord_core::__private::generated_auth_write(
                                 self.inner.auth_vars(),
-                                "auth vars lock poisoned",
                             )?;
                             __g.#f = v.into();
                         }
@@ -303,10 +297,9 @@ fn emit_client_wrapper(
             } else {
                 quote! {
                     #[inline]
-                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&Self, ::concord_core::advanced::AuthError> {
-                        let mut __g = ::concord_core::advanced::write_auth_lock(
+                    pub fn #set_name(&self, v: impl Into<::concord_core::prelude::SecretString>) -> ::core::result::Result<&Self, ::concord_core::prelude::AuthError> {
+                        let mut __g = ::concord_core::__private::generated_auth_write(
                             self.inner.auth_vars(),
-                            "auth vars lock poisoned",
                         )?;
                         __g.#f = v.into();
                         ::core::result::Result::Ok(self)
@@ -351,19 +344,19 @@ fn emit_client_wrapper(
             pub async fn #set_name(
                 &self,
                 value: #output_ty,
-            ) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
+            ) -> ::core::result::Result<(), ::concord_core::prelude::AuthError> {
                 let __auth_state = self.inner.try_auth_state()?;
                 __auth_state.#name.set_manual(value).await
             }
 
             #[inline]
-            pub async fn #clear_name(&self) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
+            pub async fn #clear_name(&self) -> ::core::result::Result<(), ::concord_core::prelude::AuthError> {
                 let __auth_state = self.inner.try_auth_state()?;
                 __auth_state.#name.clear_manual().await
             }
 
             #[inline]
-            pub async fn #has_name(&self) -> ::core::result::Result<bool, ::concord_core::advanced::AuthError> {
+            pub async fn #has_name(&self) -> ::core::result::Result<bool, ::concord_core::prelude::AuthError> {
                 let __auth_state = self.inner.try_auth_state()?;
                 ::core::result::Result::Ok(__auth_state.#name.has_value().await)
             }
@@ -654,7 +647,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
                     let value: #output_ty = request.await?;
                     let __auth_state = self.client.inner.try_auth_state().map_err(|source| {
                         ::concord_core::prelude::ApiClientError::Auth {
-                            ctx: ::concord_core::advanced::ErrorContext {
+                            ctx: ::concord_core::__private::ErrorContext {
                                 endpoint: #endpoint_name_lit,
                                 method: ::http::Method::GET,
                             },
@@ -663,7 +656,7 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
                     })?;
                     __auth_state.#name.set_manual(value).await.map_err(|source| {
                         ::concord_core::prelude::ApiClientError::Auth {
-                            ctx: ::concord_core::advanced::ErrorContext {
+                            ctx: ::concord_core::__private::ErrorContext {
                                 endpoint: #endpoint_name_lit,
                                 method: ::http::Method::GET,
                             },
@@ -676,19 +669,19 @@ fn emit_auth_facade(resolved_api: &ResolvedApi, client_ty: &Ident) -> (TokenStre
                 pub async fn set(
                     &self,
                     value: #output_ty,
-                ) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
+                ) -> ::core::result::Result<(), ::concord_core::prelude::AuthError> {
                     let __auth_state = self.client.inner.try_auth_state()?;
                     __auth_state.#name.set_manual(value).await
                 }
 
                 #[inline]
-                pub async fn clear(&self) -> ::core::result::Result<(), ::concord_core::advanced::AuthError> {
+                pub async fn clear(&self) -> ::core::result::Result<(), ::concord_core::prelude::AuthError> {
                     let __auth_state = self.client.inner.try_auth_state()?;
                     __auth_state.#name.clear_manual().await
                 }
 
                 #[inline]
-                pub async fn is_set(&self) -> ::core::result::Result<bool, ::concord_core::advanced::AuthError> {
+                pub async fn is_set(&self) -> ::core::result::Result<bool, ::concord_core::prelude::AuthError> {
                     let __auth_state = self.client.inner.try_auth_state()?;
                     ::core::result::Result::Ok(__auth_state.#name.has_value().await)
                 }

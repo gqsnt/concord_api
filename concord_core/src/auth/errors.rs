@@ -68,7 +68,8 @@ pub enum InvalidateReason {
     ProviderRejected,
 }
 
-pub fn read_auth_lock<'a, T>(
+#[cfg(test)]
+fn read_auth_lock<'a, T>(
     lock: &'a std::sync::RwLock<T>,
     message: &'static str,
 ) -> Result<std::sync::RwLockReadGuard<'a, T>, AuthError> {

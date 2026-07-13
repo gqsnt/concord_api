@@ -20,7 +20,7 @@ async fn decoded_response_exposes_user_metadata() -> Result<(), ApiClientError> 
 
     assert_eq!(decoded.status(), StatusCode::CREATED);
     assert_eq!(decoded.headers()[http::header::CONTENT_TYPE], "text/plain");
-    assert_eq!(decoded.url().as_str(), "https://example.com/text");
+    assert_eq!(decoded.url().as_str(), "http://example.com/text");
     assert_eq!(decoded.meta().endpoint, "Text");
     assert_eq!(decoded.value(), "created");
     assert_eq!(decoded.into_value(), "created");
@@ -73,7 +73,7 @@ async fn execute_raw_returns_classified_raw_response() -> Result<(), ApiClientEr
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.meta().endpoint, "Text");
-    assert_eq!(response.url().as_str(), "https://example.com/text");
+    assert_eq!(response.url().as_str(), "http://example.com/text");
     assert_eq!(response.body(), &Bytes::from_static(b"raw"));
     Ok(())
 }

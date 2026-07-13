@@ -231,7 +231,7 @@ pub(super) fn endpoint_public_output_ty(endpoint: &NormEndpoint) -> Result<Type>
 pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> RequestEntityPlanIr {
     match request_io {
         ResolvedRequestBodyIo::None => RequestEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::NoRequestBody),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::NoRequestBody),
             public_input_ty: None,
             body_field_ty: None,
             doc: IoDocIr {
@@ -247,7 +247,7 @@ pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> Requ
         ResolvedRequestBodyIo::BufferedCodec(io) => {
             let marker = &io.marker;
             RequestEntityPlanIr {
-                adapter_ty: syn::parse_quote!(::concord_core::advanced::EncodedRequest<#marker>),
+                adapter_ty: syn::parse_quote!(::concord_core::__private::EncodedRequest<#marker>),
                 public_input_ty: Some(io.value_ty.clone()),
                 body_field_ty: Some(io.value_ty.clone()),
                 doc: IoDocIr {
@@ -268,7 +268,7 @@ pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> Requ
             }
         }
         ResolvedRequestBodyIo::RawStream { media_ty } => RequestEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::RawStreamRequest<#media_ty>),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::RawStreamRequest<#media_ty>),
             public_input_ty: Some(syn::parse_quote!(StreamBody)),
             body_field_ty: Some(syn::parse_quote!(StreamBody)),
             doc: IoDocIr {
@@ -282,7 +282,7 @@ pub(super) fn request_entity_plan_ir(request_io: &ResolvedRequestBodyIo) -> Requ
             },
         },
         ResolvedRequestBodyIo::Multipart { value_ty } => RequestEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::MultipartRequest),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::MultipartRequest),
             public_input_ty: Some(syn::parse_quote!(::concord_core::advanced::MultipartBody)),
             body_field_ty: Some(syn::parse_quote!(::concord_core::advanced::MultipartBody)),
             doc: IoDocIr {
@@ -305,7 +305,7 @@ pub(super) fn response_entity_plan_ir(
         ResolvedResponseBodyIo::BufferedCodec(io) => {
             let marker = &io.marker;
             ResponseEntityPlanIr {
-                adapter_ty: syn::parse_quote!(::concord_core::advanced::BufferedResponse<#marker>),
+                adapter_ty: syn::parse_quote!(::concord_core::__private::BufferedResponse<#marker>),
                 public_output_ty: response_public_output_ty(response_io),
                 doc: IoDocIr {
                     summary: format!(
@@ -325,7 +325,7 @@ pub(super) fn response_entity_plan_ir(
             }
         }
         ResolvedResponseBodyIo::BufferedBytes => ResponseEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::BytesResponse),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::BytesResponse),
             public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Buffered bytes response.".to_string(),
@@ -338,7 +338,7 @@ pub(super) fn response_entity_plan_ir(
             },
         },
         ResolvedResponseBodyIo::NoContent => ResponseEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::NoContentResponse),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::NoContentResponse),
             public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "No response body.".to_string(),
@@ -351,7 +351,7 @@ pub(super) fn response_entity_plan_ir(
             },
         },
         ResolvedResponseBodyIo::RawStream { media_ty } => ResponseEntityPlanIr {
-            adapter_ty: syn::parse_quote!(::concord_core::advanced::RawStreamResponse<#media_ty>),
+            adapter_ty: syn::parse_quote!(::concord_core::__private::RawStreamResponse<#media_ty>),
             public_output_ty: response_public_output_ty(response_io),
             doc: IoDocIr {
                 summary: "Streaming response body.".to_string(),

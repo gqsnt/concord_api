@@ -50,7 +50,7 @@ fn generated_pagination_marker_covers_controller_types() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = OffsetLimitPagination",
-            ":: concord_core :: advanced :: PaginateBinding",
+            ":: concord_core :: __private :: PaginateBinding",
             "let __pagination_plan = :: core :: option :: Option :: Some",
             "PaginationMarker",
         ],
@@ -130,7 +130,7 @@ fn generated_pagination_bindings_for_offset_limit() {
     assert_contains_all(
         &out,
         &[
-            ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
+            ":: concord_core :: __private :: PaginateBinding < OffsetLimitPagination >",
             "fn load_pagination",
             "fn store_pagination",
             "pagination . offset = self . start . clone ()",
@@ -165,7 +165,7 @@ fn generated_offset_limit_uses_type_driven_pagination_only() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = OffsetLimitPagination",
-            ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
+            ":: concord_core :: __private :: PaginateBinding < OffsetLimitPagination >",
         ],
     );
 }
@@ -194,7 +194,7 @@ fn generated_offset_limit_exposes_pagination_binding_and_type() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = OffsetLimitPagination",
-            ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
+            ":: concord_core :: __private :: PaginateBinding < OffsetLimitPagination >",
         ],
     );
 }
@@ -221,7 +221,7 @@ fn generated_offset_limit_emits_paginate_binding_impl() {
     assert_contains_all(
         &out,
         &[
-            ":: concord_core :: advanced :: PaginateBinding < OffsetLimitPagination >",
+            ":: concord_core :: __private :: PaginateBinding < OffsetLimitPagination >",
             "fn load_pagination",
             "fn store_pagination",
             "pagination . offset = self . start . clone ()",
@@ -256,7 +256,7 @@ fn generated_paged_uses_type_driven_pagination_only() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = PagedPagination",
-            ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
+            ":: concord_core :: __private :: PaginateBinding < PagedPagination >",
         ],
     );
 }
@@ -283,7 +283,7 @@ fn generated_paged_emits_paginate_binding_impl() {
     assert_contains_all(
         &out,
         &[
-            ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
+            ":: concord_core :: __private :: PaginateBinding < PagedPagination >",
             "fn load_pagination",
             "fn store_pagination",
             "pagination . page = self . page . clone ()",
@@ -318,7 +318,7 @@ fn generated_paged_exposes_pagination_binding_and_type() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = PagedPagination",
-            ":: concord_core :: advanced :: PaginateBinding < PagedPagination >",
+            ":: concord_core :: __private :: PaginateBinding < PagedPagination >",
         ],
     );
 }
@@ -347,7 +347,7 @@ fn generated_custom_uses_type_driven_pagination_only() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = HeaderPagePagination",
-            ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+            ":: concord_core :: __private :: PaginateBinding < HeaderPagePagination >",
             "HeaderPagePagination",
         ],
     );
@@ -382,7 +382,7 @@ fn generated_custom_emits_paginate_binding_impl() {
     assert_contains_all(
         &out,
         &[
-            ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+            ":: concord_core :: __private :: PaginateBinding < HeaderPagePagination >",
             "fn load_pagination",
             "fn store_pagination",
             "pagination . page = self . page . clone ()",
@@ -416,7 +416,7 @@ fn generated_custom_literal_assignment_is_load_only() {
     assert_contains_all(
         &out,
         &[
-            ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+            ":: concord_core :: __private :: PaginateBinding < HeaderPagePagination >",
             "fn load_pagination",
             "fn store_pagination",
             "pagination . page = self . page . clone ()",
@@ -456,7 +456,7 @@ fn generated_custom_exposes_pagination_binding_and_type() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = HeaderPagePagination",
-            ":: concord_core :: advanced :: PaginateBinding < HeaderPagePagination >",
+            ":: concord_core :: __private :: PaginateBinding < HeaderPagePagination >",
         ],
     );
 }
@@ -490,7 +490,7 @@ fn generated_cursor_uses_type_driven_pagination_only() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = CursorPagination < String >",
-            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+            ":: concord_core :: __private :: PaginateBinding < CursorPagination < String > >",
         ],
     );
 }
@@ -519,7 +519,7 @@ fn generated_cursor_emits_paginate_binding_impl() {
     assert_contains_all(
         &out,
         &[
-            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+            ":: concord_core :: __private :: PaginateBinding < CursorPagination < String > >",
             "fn load_pagination",
             "fn store_pagination",
             "pagination . cursor = self . cursor . clone ()",
@@ -566,7 +566,7 @@ fn generated_cursor_exposes_pagination_binding_and_type() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = CursorPagination < String >",
-            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+            ":: concord_core :: __private :: PaginateBinding < CursorPagination < String > >",
         ],
     );
 }
@@ -597,7 +597,7 @@ fn generated_cursor_pagination_preserves_controller_flags() {
         &[
             "impl :: concord_core :: prelude :: PaginatedEndpoint",
             "type Pagination = CursorPagination < String >",
-            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+            ":: concord_core :: __private :: PaginateBinding < CursorPagination < String > >",
             "send_cursor_on_first = (true)",
             "stop_when_cursor_missing = (false)",
         ],
@@ -626,7 +626,7 @@ fn generated_pagination_binding_clones_non_copy_cursor() {
     assert_contains_all(
         &out,
         &[
-            ":: concord_core :: advanced :: PaginateBinding < CursorPagination < String > >",
+            ":: concord_core :: __private :: PaginateBinding < CursorPagination < String > >",
             "pagination . cursor = self . cursor . clone ()",
             "self . cursor = pagination . cursor . clone ()",
         ],

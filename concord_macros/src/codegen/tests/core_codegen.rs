@@ -146,7 +146,7 @@ fn codegen_uses_resolved_ir() {
     assert_contains_all(
         &out,
         &[
-            "policy.add_rate_limit(::concord_core::advanced::RateLimitPlan::from_buckets",
+            "policy.add_rate_limit(::concord_core::__private::RateLimitPlan::from_buckets",
             "RateLimitBucketUse::new(\"application\",\"app_0\"",
         ],
     );

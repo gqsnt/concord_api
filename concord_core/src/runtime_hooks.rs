@@ -1,6 +1,5 @@
 use crate::debug::SanitizedHeaders;
 use crate::error::ApiClientError;
-use crate::transport::TransportError;
 use http::{Method, StatusCode};
 use std::fmt;
 use std::future::Future;
@@ -50,9 +49,9 @@ impl fmt::Debug for PostResponseHookContext<'_> {
 }
 
 #[derive(Debug)]
-pub struct TransportErrorHookContext<'a> {
+pub struct RequestErrorHookContext<'a> {
     pub meta: HookMeta<'a>,
-    pub error: &'a TransportError,
+    pub category: crate::error::ErrorCategory,
 }
 
 pub trait RuntimeHooks: Send + Sync + 'static {
@@ -67,7 +66,7 @@ pub trait RuntimeHooks: Send + Sync + 'static {
         Box::pin(async {})
     }
 
-    fn transport_error<'a>(&'a self, _ctx: TransportErrorHookContext<'a>) -> HookFuture<'a, ()> {
+    fn request_error<'a>(&'a self, _ctx: RequestErrorHookContext<'a>) -> HookFuture<'a, ()> {
         Box::pin(async {})
     }
 }

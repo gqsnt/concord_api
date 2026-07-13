@@ -49,6 +49,11 @@ let user = api.users().get_user(42).await?;
 
 Feature-gated raw response access and dev body capture live behind `concord_core::dangerous` plus the `dangerous-raw-response` and `dangerous-dev-tools` features.
 
+The hidden deterministic-test observation seam `concord_core::__development`
+is also unavailable unless `dangerous-dev-tools` is explicitly selected. It is
+unstable development infrastructure, not a debug-profile API or an alternate
+client backend.
+
 Import `concord_core::prelude::*` for normal generated-client use, `concord_core::advanced::*` for stable extension points, `concord_core::dangerous::*` for explicit escape hatches, and `concord_core::__private::*` only from generated code.
 
 ## Docs

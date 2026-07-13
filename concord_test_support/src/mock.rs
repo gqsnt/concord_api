@@ -223,13 +223,16 @@ impl MockServer {
         &self,
         builder: concord_core::advanced::SafeReqwestBuilder,
     ) -> concord_core::advanced::SafeReqwestBuilder {
-        builder.proxy(
-            concord_core::advanced::SafeProxy::__test_origin_override_with_guard(
-                self.base_url.as_str(),
-                self.lifetime.clone(),
-            )
-            .expect("loopback mock URL is a safe test origin"),
+        #[cfg(feature = "dangerous-dev-tools")]
+        let proxy = concord_core::advanced::SafeProxy::__test_origin_override_with_guard(
+            self.base_url.as_str(),
+            self.lifetime.clone(),
         )
+        .expect("loopback mock URL is a safe test origin");
+        #[cfg(not(feature = "dangerous-dev-tools"))]
+        let proxy = concord_core::advanced::SafeProxy::all(self.base_url.as_str())
+            .expect("loopback mock URL is a safe test proxy");
+        builder.proxy(proxy)
     }
 }
 

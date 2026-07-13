@@ -1,0 +1,7 @@
+error[E0308]: mismatched types
+ --> tests/trybuild/fail/codegen_contract/mismatched_macro_core_marker.rs:3:38
+  |
+3 | const _: PreviousGeneratedContract = concord_core::__private::GENERATED_API_COMPATIBILITY;
+  |          -------------------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `PreviousGeneratedContract`, found `ReqwestNativeGeneratedContract`
+  |          |
+  |          expected because of the type of the constant

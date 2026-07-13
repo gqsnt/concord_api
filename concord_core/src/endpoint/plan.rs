@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
+use crate::execution_meta::RequestExecutionMeta;
 use crate::policy::ResolvedPolicy;
-use crate::transport::RequestMeta;
 use http::HeaderValue;
 use http::Method;
 use std::fmt;
@@ -16,8 +16,8 @@ pub struct EndpointMeta {
 
 impl EndpointMeta {
     #[inline]
-    pub fn request_meta(&self, page_index: u32) -> RequestMeta {
-        RequestMeta {
+    pub fn request_meta(&self, page_index: u32) -> RequestExecutionMeta {
+        RequestExecutionMeta {
             endpoint: self.name,
             method: self.method.clone(),
             idempotent: self.idempotent,

@@ -71,7 +71,7 @@ fn body_signature_response_resolve_into_endpoint_model() {
     );
     assert_eq!(
         ty_string(&endpoint.io.request_entity.adapter_ty),
-        "::concord_core::advanced::EncodedRequest<Json<CreateBody>>"
+        "::concord_core::__private::EncodedRequest<Json<CreateBody>>"
     );
     assert_eq!(
         ty_string(
@@ -86,7 +86,7 @@ fn body_signature_response_resolve_into_endpoint_model() {
     );
     assert_eq!(
         ty_string(&endpoint.io.response_entity.adapter_ty),
-        "::concord_core::advanced::BufferedResponse<Json<CreateResponse>>"
+        "::concord_core::__private::BufferedResponse<Json<CreateResponse>>"
     );
     assert_eq!(
         ty_string(&endpoint.io.response_entity.public_output_ty),

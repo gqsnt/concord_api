@@ -266,9 +266,9 @@ impl MultipartReplayFactory {
         let factory = self.factory;
         // Each factory call supplies a wholly fresh recipe, never a flattened
         // form or a partial replacement for a consumed streamed part.
-        Ok(crate::io::PreparedBody::replay_multipart_factory(
-            move || factory().map_err(|_| crate::body::BodyError::invalid_configuration()),
-        ))
+        Ok(crate::io::PreparedBody::multipart_factory(move || {
+            factory()
+        }))
     }
 }
 
