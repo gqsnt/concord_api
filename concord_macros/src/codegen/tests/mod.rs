@@ -5,6 +5,8 @@ mod auth_codegen;
 #[cfg(test)]
 mod core_codegen;
 #[cfg(test)]
+mod descriptor_codegen;
+#[cfg(test)]
 mod endpoint_io_codegen;
 #[cfg(test)]
 mod facade_codegen;

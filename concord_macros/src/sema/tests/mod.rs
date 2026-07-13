@@ -6,6 +6,7 @@ mod auth_uses;
 mod behavior_diagnostics;
 mod behavior_inheritance;
 mod behavior_resolution;
+mod descriptor_resolution;
 mod diagnostics;
 mod helpers;
 mod normalize_routes;

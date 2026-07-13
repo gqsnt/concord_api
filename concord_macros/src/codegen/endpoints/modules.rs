@@ -11,6 +11,14 @@ fn endpoint_internal_ident(ep: &ResolvedEndpoint) -> Ident {
     emit_helpers::ident(&name, ep.name.span())
 }
 
+fn endpoint_descriptor_ident(ep: &ResolvedEndpoint) -> Ident {
+    let internal = endpoint_internal_ident(ep);
+    emit_helpers::ident(
+        &format!("{}_DESCRIPTOR", internal.to_string().to_uppercase()),
+        ep.name.span(),
+    )
+}
+
 fn endpoint_pending_ext_trait_ident(ep: &ResolvedEndpoint) -> Ident {
     emit_helpers::ident(
         &crate::model::facade::generated_endpoint_request_ext_trait_type_name(ep),

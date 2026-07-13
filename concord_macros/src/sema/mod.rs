@@ -24,12 +24,14 @@ use std::collections::{BTreeMap, BTreeSet as PublicNameSet};
 use syn::{Expr, Ident, LitStr, Path, Result, Type, spanned::Spanned};
 
 mod behavior;
+mod descriptor;
 mod ir;
 mod normalize;
 mod profiles;
 #[path = "resolve.rs"]
 mod resolve_stage;
 
+use self::descriptor::{classify_api_origin, resolve_endpoint_descriptor};
 pub(crate) use self::ir::*;
 pub(crate) use self::policy::*;
 
@@ -184,6 +186,8 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
 
     let mut ancestry: Vec<usize> = Vec::new();
     let mut walk_ctx = WalkItemsCtx {
+        base_scheme: norm.client.scheme,
+        base_domain: &norm.client.host,
         client_vars: &client_vars_map,
         auth_vars: &auth_vars_map,
         auth_credentials: &auth_credential_map,
@@ -203,6 +207,9 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
         0,
     )?;
     let client_query_cardinalities = collect_client_query_cardinalities(&client_policy, &endpoints);
+    let descriptor = ApiDescriptorIr {
+        origin: classify_api_origin(&endpoints),
+    };
 
     let resolved_api = ResolvedApi {
         mod_name,
@@ -219,6 +226,7 @@ fn resolve(norm: NormApiTree) -> Result<ResolvedApiPipeline> {
             .rate_limit
             .as_ref()
             .and_then(|block| block.response_policy.clone()),
+        descriptor,
         endpoints,
     };
 

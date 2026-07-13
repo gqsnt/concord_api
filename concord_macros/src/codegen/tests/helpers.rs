@@ -89,6 +89,21 @@ pub(super) fn forbidden_response_plan_struct() -> String {
     ["ResponsePlan", " {"].concat()
 }
 
+pub(super) fn assert_runtime_response_plan_has_no_format_field(expanded: &str) {
+    let start = expanded
+        .find("let__response_entity_plan=")
+        .expect("generated runtime response-entity plan");
+    let end = expanded[start..]
+        .find("let__pagination_plan=")
+        .map(|offset| start + offset)
+        .expect("runtime response-plan section terminator");
+    let runtime_response_plan = &expanded[start..end];
+    assert!(
+        !runtime_response_plan.contains("format:"),
+        "runtime response plan unexpectedly reconstructed a `format` field: {runtime_response_plan}"
+    );
+}
+
 pub(super) fn forbidden_response_codec_try_accept() -> String {
     ["ResponseCodec", ">::try_accept()"].concat()
 }

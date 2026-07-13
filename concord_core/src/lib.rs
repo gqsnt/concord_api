@@ -30,6 +30,14 @@ mod types;
 
 #[doc(hidden)]
 pub mod __private {
+    /// Versioned generated-code integration ABI.
+    ///
+    /// This module is deliberately narrow and exists only for code emitted by
+    /// `concord_macros`. It is not a stable user extension API, a transport or
+    /// middleware abstraction, or a home for general runtime internals.
+    #[doc(hidden)]
+    pub mod v1;
+
     #[doc(hidden)]
     pub use crate::auth::{CredentialSlot, NoAuthState};
     #[doc(hidden)]

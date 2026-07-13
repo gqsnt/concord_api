@@ -143,6 +143,7 @@ fn emit_endpoint_def(
     let paginate_binding_impl = emit_paginate_binding_impl(ep, ty_name);
     let pagination_marker_impl = emit_paginated_endpoint_impl(ep, ty_name, cx_ty);
     let pending_ext_trait = endpoint_pending_ext_trait_ident(ep);
+    let endpoint_descriptor = emit_endpoint_descriptor(resolved_api, ep);
     let pending_setter_decls: Vec<TokenStream2> = facade
         .setters
         .iter()
@@ -214,6 +215,8 @@ fn emit_endpoint_def(
     };
 
     quote! {
+        #endpoint_descriptor
+
         #( #[doc = #endpoint_docs] )*
         #[doc = "Advanced explicit endpoint request. Prefer facade methods for normal use."]
         pub struct #ty_name {
@@ -243,6 +246,100 @@ fn emit_endpoint_def(
         #pagination_marker_impl
 
         #pending_request_ext
+    }
+}
+
+fn emit_endpoint_descriptor(api: &ResolvedApi, ep: &ResolvedEndpoint) -> TokenStream2 {
+    let descriptor = endpoint_descriptor_ident(ep);
+    let name = LitStr::new(&endpoint_qualified_name(ep), ep.name.span());
+    let api_name = LitStr::new(&api.client_name.to_string(), api.client_name.span());
+    let method = match ep.method.to_string().as_str() {
+        "GET" => quote! { ::concord_core::__private::v1::HttpMethod::Get },
+        "POST" => quote! { ::concord_core::__private::v1::HttpMethod::Post },
+        "PUT" => quote! { ::concord_core::__private::v1::HttpMethod::Put },
+        "DELETE" => quote! { ::concord_core::__private::v1::HttpMethod::Delete },
+        "HEAD" => quote! { ::concord_core::__private::v1::HttpMethod::Head },
+        "OPTIONS" => quote! { ::concord_core::__private::v1::HttpMethod::Options },
+        "PATCH" => quote! { ::concord_core::__private::v1::HttpMethod::Patch },
+        _ => return emit_helpers::compile_error_tokens("unsupported resolved descriptor method", ep.method.span()),
+    };
+    let origin = match &ep.descriptor.origin {
+        EndpointOriginIr::Fixed(origin) => {
+            let fixed = emit_fixed_origin(origin);
+            quote! { ::concord_core::__private::v1::EndpointOriginDescriptor::Fixed(#fixed) }
+        }
+        EndpointOriginIr::Dynamic => {
+            quote! { ::concord_core::__private::v1::EndpointOriginDescriptor::Dynamic }
+        }
+    };
+    let request_body = match &ep.descriptor.request_body {
+        RequestBodyDescriptorIr::None => {
+            quote! { ::concord_core::__private::v1::RequestBodyDescriptor::None }
+        }
+        RequestBodyDescriptorIr::Buffered { codec } => {
+            let codec = LitStr::new(codec, ep.name.span());
+            quote! { ::concord_core::__private::v1::RequestBodyDescriptor::Buffered { codec: #codec } }
+        }
+        RequestBodyDescriptorIr::Streaming { media } => {
+            let media = LitStr::new(media, ep.name.span());
+            quote! { ::concord_core::__private::v1::RequestBodyDescriptor::Streaming { media: #media } }
+        }
+        RequestBodyDescriptorIr::Multipart => {
+            quote! { ::concord_core::__private::v1::RequestBodyDescriptor::Multipart }
+        }
+    };
+    let response_format = match &ep.descriptor.response_format {
+        ResponseFormatDescriptorIr::Buffered { codec } => {
+            let codec = LitStr::new(codec, ep.name.span());
+            quote! { ::concord_core::__private::v1::ResponseFormatDescriptor::Buffered { codec: #codec } }
+        }
+        ResponseFormatDescriptorIr::Bytes => {
+            quote! { ::concord_core::__private::v1::ResponseFormatDescriptor::Bytes }
+        }
+        ResponseFormatDescriptorIr::NoContent => {
+            quote! { ::concord_core::__private::v1::ResponseFormatDescriptor::NoContent }
+        }
+        ResponseFormatDescriptorIr::Streaming { media } => {
+            let media = LitStr::new(media, ep.name.span());
+            quote! { ::concord_core::__private::v1::ResponseFormatDescriptor::Streaming { media: #media } }
+        }
+    };
+    let auth_requirements = ep.policy.auth.iter().map(|requirement| {
+        let credential = LitStr::new(&requirement.credential.to_string(), requirement.credential.span());
+        let usage_id = LitStr::new(&requirement.usage_id, requirement.credential.span());
+        quote! {
+            ::concord_core::__private::v1::AuthRequirementDescriptor {
+                credential: #credential,
+                usage_id: #usage_id,
+            }
+        }
+    });
+    let pagination = if ep.paginate.is_some() {
+        let can_change_origin = ep.descriptor.pagination_can_change_origin;
+        quote! {
+            ::core::option::Option::Some(::concord_core::__private::v1::PaginationDescriptor {
+                can_change_origin: #can_change_origin,
+            })
+        }
+    } else {
+        quote! { ::core::option::Option::None }
+    };
+
+    quote! {
+        #[doc(hidden)]
+        pub(super) static #descriptor: ::concord_core::__private::v1::EndpointDescriptor =
+            ::concord_core::__private::v1::EndpointDescriptor {
+                name: #name,
+                api_name: #api_name,
+                method: #method,
+                origin: #origin,
+                request: ::concord_core::__private::v1::RequestDescriptor { body: #request_body },
+                response: ::concord_core::__private::v1::ResponseDescriptor { format: #response_format },
+                auth: ::concord_core::__private::v1::AuthDescriptor {
+                    requirements: &[ #( #auth_requirements ),* ],
+                },
+                pagination: #pagination,
+            };
     }
 }
 
@@ -630,4 +727,3 @@ fn endpoint_response_terminal_impl(
         }
     }
 }
-

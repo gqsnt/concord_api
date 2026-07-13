@@ -1,6 +1,8 @@
 use super::*;
 
 pub(super) struct WalkItemsCtx<'a> {
+    pub(super) base_scheme: Scheme,
+    pub(super) base_domain: &'a LitStr,
     pub(super) client_vars: &'a BTreeMap<String, VarInfo>,
     pub(super) auth_vars: &'a BTreeMap<String, VarInfo>,
     pub(super) auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
@@ -14,6 +16,8 @@ pub(super) struct WalkItemsCtx<'a> {
 }
 
 pub(super) struct EndpointAnalysisCtx<'a> {
+    base_scheme: Scheme,
+    base_domain: &'a LitStr,
     client_vars: &'a BTreeMap<String, VarInfo>,
     auth_vars: &'a BTreeMap<String, VarInfo>,
     auth_credentials: &'a BTreeMap<String, AuthCredentialIr>,
@@ -131,6 +135,8 @@ pub(super) fn walk_items(
             }
             NormNode::Endpoint(ed) => {
                 let analysis_ctx = EndpointAnalysisCtx {
+                    base_scheme: ctx.base_scheme,
+                    base_domain: ctx.base_domain,
                     client_vars: ctx.client_vars,
                     auth_vars: ctx.auth_vars,
                     auth_credentials: ctx.auth_credentials,
@@ -793,6 +799,14 @@ pub(super) fn analyze_endpoint(
             &ep_vars,
         )?),
     };
+    let descriptor = resolve_endpoint_descriptor(
+        ctx.base_scheme,
+        ctx.base_domain,
+        &prefix_pieces,
+        &request_io,
+        &response_io,
+        paginate.as_ref(),
+    );
     let mut behavior_doc_names = Vec::new();
     behavior_doc_names.extend(ctx.client_default_behavior_names.iter().cloned());
     for &lid in ancestry {
@@ -830,6 +844,7 @@ pub(super) fn analyze_endpoint(
         behavior_doc: BehaviorDocMeta {
             names: behavior_doc_names,
         },
+        descriptor,
         paginate,
     })
 }

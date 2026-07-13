@@ -69,9 +69,15 @@ fn generated_bytes_response_uses_response_entity_plan() {
             &forbidden_generated_decode_binding(),
             &forbidden_endpoint_execute_box_wrapper(),
             "no_content :",
-            "format :",
         ],
     );
+    assert_contains_all(
+        &out,
+        &[
+            "ResponseDescriptor { format : :: concord_core :: __private :: v1 :: ResponseFormatDescriptor :: Bytes",
+        ],
+    );
+    assert_runtime_response_plan_has_no_format_field(&out);
 }
 
 #[test]
@@ -105,7 +111,13 @@ fn generated_no_content_response_uses_response_entity_plan() {
             &forbidden_response_codec_decode(),
             &forbidden_generated_decode_binding(),
             "no_content :",
-            "format :",
         ],
     );
+    assert_contains_all(
+        &out,
+        &[
+            "ResponseDescriptor { format : :: concord_core :: __private :: v1 :: ResponseFormatDescriptor :: NoContent",
+        ],
+    );
+    assert_runtime_response_plan_has_no_format_field(&out);
 }

@@ -16,7 +16,34 @@ pub struct ResolvedApi {
     pub client_query_cardinalities: std::collections::BTreeMap<String, QueryValueCardinality>,
     pub rate_limit_response_policy: Option<syn::Path>,
 
+    /// Descriptor facts resolved before code generation.
+    pub descriptor: ApiDescriptorIr,
+
     pub endpoints: Vec<ResolvedEndpoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiDescriptorIr {
+    pub origin: ApiOriginIr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApiOriginIr {
+    FixedSingle(FixedOriginIr),
+    Dynamic,
+    Multi,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FixedOriginIr {
+    pub scheme: OriginSchemeIr,
+    pub authority: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum OriginSchemeIr {
+    Http,
+    Https,
 }
 
 #[derive(Debug, Clone)]
@@ -70,7 +97,41 @@ pub struct ResolvedEndpoint {
     pub policy: ResolvedPolicySpec,
     pub behavior_doc: BehaviorDocMeta,
 
+    /// Static descriptor facts derived from the same semantic inputs as the
+    /// runtime plan. Codegen emits these facts; it does not reclassify them.
+    pub descriptor: EndpointDescriptorIr,
+
     pub paginate: Option<PaginateResolved>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndpointDescriptorIr {
+    pub origin: EndpointOriginIr,
+    pub request_body: RequestBodyDescriptorIr,
+    pub response_format: ResponseFormatDescriptorIr,
+    pub pagination_can_change_origin: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EndpointOriginIr {
+    Fixed(FixedOriginIr),
+    Dynamic,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestBodyDescriptorIr {
+    None,
+    Buffered { codec: String },
+    Streaming { media: String },
+    Multipart,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResponseFormatDescriptorIr {
+    Buffered { codec: String },
+    Bytes,
+    NoContent,
+    Streaming { media: String },
 }
 
 #[derive(Debug, Clone)]
